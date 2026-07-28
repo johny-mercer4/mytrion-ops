@@ -40,6 +40,22 @@ export interface Deal {
   dealId: string;
 }
 export interface Card { id: string; number: string; status: string; driver: string; unit: string; }
+export interface CardLastUsedRow {
+  cardNumber: string;
+  status: string;
+  lastUsed: string | null;
+  daysSinceLastUse: number | null;
+  transactions: number | null;
+  source: 'efs' | 'dwh' | 'none';
+}
+export interface LimitUpdateResult {
+  cardNumber: string;
+  limitId: string;
+  previousLimit: number;
+  newLimit: number;
+  delta: number;
+  direction: 'increase' | 'decrease';
+}
 export interface WexResult { company: string; appId: string; contact: string; status: string; group: string; }
 export interface InvRow { id: string; inv: string; date: string; amount: string; status: string; }
 /** Lightweight on-screen txn list row (full report lives in TxnReportState). */
@@ -77,6 +93,8 @@ export type DonePayload =
   | { kind: 'transactions' }
   | { kind: 'message'; message: string }
   | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
+  | { kind: 'card-last-used'; rows: CardLastUsedRow[] }
+  | { kind: 'limit-update'; result: LimitUpdateResult }
   | { kind: 'link'; label: string; url: string }
   | { kind: 'tracking'; carrierId: string; fedexTracking: string; entries: TrackingEntry[] }
   | { kind: 'wex-tasks'; appId: string; summary: string; tasks: WexTaskEntry[] }
@@ -153,6 +171,7 @@ export const LIMITTYPES = [
   { value: 'RFR', label: 'RFR — Reefer' },
   { value: 'DSL', label: 'DSL — Diesel' },
 ] as const;
+export const LIMIT_CHANGE_MAX = 350;
 
 export const MONEY_CODE_REASONS = [
   'Driver stranded — fuel needed',
@@ -282,10 +301,12 @@ function mapCard(r: Record<string, unknown>, i: number): Card {
 export async function loadCards(carrierId: string): Promise<Card[]> {
   let data: Array<Record<string, unknown>> = [];
   try {
-    const res = await callTouchpoint('dwh.cards', { carrierId });
+    // Status-changing actions must read the same live EFS source they write. DWH is a fallback
+    // only, so C-3 immediately sees a card activated through C-1.
+    const res = await callTouchpoint('efs.cards', { carrierId });
     data = (res.data ?? []) as Array<Record<string, unknown>>;
   } catch {
-    const res = await callTouchpoint('efs.cards', { carrierId });
+    const res = await callTouchpoint('dwh.cards', { carrierId });
     data = (res.data ?? []) as Array<Record<string, unknown>>;
   }
   return data.map((c, i) => mapCard(c, i));

@@ -10,18 +10,16 @@ import { useSales } from '../ctx';
 import { deptStyle, iconBox, nyDaysAgo, nyToday } from '../salesData';
 import { useLoad, money } from '../live';
 import {
-  AUTO_LIST, LIMITTYPES, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
+  AUTO_LIST, LIMITTYPES, LIMIT_CHANGE_MAX, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
   autoIconColor, loadDeals, loadCards, loadMoneyCodePreview, str,
   type Automation, type Deal, type Card, type InvRow,
   type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
 import { runAutomation, type AutoPriority } from '../autoRunners';
-import { AutoInvoicesPanel, AutoTransactionsPanel } from '../AutoResultPanels';
-import { AutoTrackingPanel, AutoWexTasksPanel, AutoPaymentsPanel } from '../AutoRichResults';
 import { AutoCatalog } from '../AutoCatalog';
 import { AutoDealPicklist, AutoCardPicklist, AutoMacroLoader, cardStatusBadge } from '../AutoPicklist';
-import { AutoStatusResult, isEmptyResultMessage } from '../AutoActionResult';
 import { AutoBocaCloseForm } from '../AutoBocaCloseForm';
+import { AutoDoneStep, hasWideAutoResult } from '../AutoDoneStep';
 import { AutoWexPanel } from '../AutoWexPanel';
 import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
 
@@ -33,7 +31,6 @@ const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:14px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:14px;color:var(--danger);line-height:1.5';
-const mono = "font-family:'JetBrains Mono',monospace";
 const invRanges = [
   { label: 'Last 7 Days', range: 'last_7' },
   { label: 'Last 30 Days', range: 'last_30' },
@@ -303,11 +300,13 @@ export function AutoTab() {
   const moneyReady = !!mcPreview?.eligible && moneyForm.amount.trim().length > 0 && moneyForm.reason.trim().length > 0 && moneyForm.unitNumber.trim().length > 0;
   const unitReady = b?.id !== 'unit-driver' || [unitDriver.unitNumber, unitDriver.driverId, unitDriver.driverName].some((v) => v.trim());
   const addrReady = b?.id !== 'card-replacement' || [autoAddr.address, autoAddr.city, autoAddr.state, autoAddr.zip].every((v) => v.trim());
+  const limitDelta = Number(autoLimitValue);
+  const limitReady = Number.isFinite(limitDelta) && limitDelta > 0 && limitDelta <= LIMIT_CHANGE_MAX;
   const canRun = !unavailable && (
     kind === 'link' ? true
       : kind === 'invoices' || kind === 'transactions' || kind === 'simple' || kind === 'wex-tasks' ? hasDeal
         : kind === 'money' ? hasDeal && moneyReady
-          : kind === 'card' ? hasCard && (!b?.limits || autoLimitValue.length > 0) && unitReady
+          : kind === 'card' ? hasCard && (!b?.limits || limitReady) && unitReady
             : kind === 'form' || kind === 'ticket' ? hasDeal && addrReady
               : false);
   const runVerb = kind === 'invoices' ? 'Get Invoices' : kind === 'transactions' ? 'Fetch Transactions' : b?.verb || 'Submit';
@@ -316,33 +315,9 @@ export function AutoTab() {
       : `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
   const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
   const autoCardBadge = autoCard ? cardStatusBadge(autoCard.status) : { text: '', style: '' };
-  const autoResultInvoices = autoResult?.kind === 'invoices';
-  const autoResultTxn = autoResult?.kind === 'transactions';
-  const autoResultTable = autoResult?.kind === 'table' ? autoResult : null;
-  const autoResultTracking = autoResult?.kind === 'tracking' ? autoResult : null;
-  const autoResultWex = autoResult?.kind === 'wex-tasks' ? autoResult : null;
-  const autoResultPayments = autoResult?.kind === 'payments' ? autoResult : null;
-  const invoicesEmpty = autoResultInvoices && invRows.length === 0;
-  const txnEmpty = autoResultTxn && !(txnReport?.transactions.length);
-  const tableEmpty = !!autoResultTable && autoResultTable.rows.length === 0;
-  const messageEmpty = autoResult?.kind === 'message' && isEmptyResultMessage(autoResult.message);
-  /** WEX/tracking/payments keep a rich panel (empty state inside) so the modal stays readable. */
-  const statusEmpty = invoicesEmpty || txnEmpty || tableEmpty || messageEmpty;
-  const autoIsRichResult = (
-    autoResultInvoices || autoResultTxn || !!autoResultTable || !!autoResultTracking || !!autoResultWex || !!autoResultPayments
-  ) && !statusEmpty;
-  const modalMaxW = autoStep === 'done' && autoIsRichResult && (autoResultTxn || autoResultInvoices) ? '820px' : '640px';
-  const bodyTxnSplit = autoStep === 'done' && autoIsRichResult && autoResultTxn;
-  const emptyTitle = invoicesEmpty ? 'No invoices found'
-    : txnEmpty ? 'No transactions found'
-      : tableEmpty ? (autoResultTable?.title ? `No ${autoResultTable.title.toLowerCase()}` : 'Nothing found')
-        : messageEmpty ? (successMsg.replace(/\.$/, '') || 'Nothing found')
-          : 'Nothing found';
-  const emptyMessage = messageEmpty ? undefined
-    : invoicesEmpty ? 'No invoices found for the selected date range.'
-      : txnEmpty ? 'No transactions in this range. Try a different window or deal.'
-        : tableEmpty ? 'Nothing matched for this carrier.'
-          : 'Try a different search or selection.';
+  const wideResult = autoStep === 'done' && hasWideAutoResult(autoResult, invRows, txnReport);
+  const modalMaxW = wideResult ? '820px' : '640px';
+  const bodyTxnSplit = wideResult && autoResult?.kind === 'transactions';
 
   return (
     <>
@@ -439,8 +414,9 @@ export function AutoTab() {
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
                         <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(inp42)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-                        <div><Lbl t="New Value" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" placeholder="e.g. 2500" className="ss-in" style={s(inp42)} /></div>
+                        <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(inp42)} /></div>
                       </div>
+                      <div style={s(`font-size:12px;color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
                       <div>
                         <Lbl t="Direction" />
                         <div style={s('display:flex;gap:9px')}>
@@ -583,79 +559,19 @@ export function AutoTab() {
                 </>
               )}
 
-              {autoStep === 'done' && (autoRunErr ? (
-                <AutoStatusResult
-                  tone="error"
-                  title="Couldn't complete that"
-                  message={autoRunErr}
+              {autoStep === 'done' && (
+                <AutoDoneStep
+                  error={autoRunErr}
+                  result={autoResult}
+                  invoiceRows={invRows}
+                  txnReport={txnReport}
+                  runVerb={runVerb}
+                  successMessage={successMsg}
+                  splitTransactions={bodyTxnSplit}
                   onDone={closeAuto}
-                  onSecondary={resetAuto}
-                  secondaryLabel="Try again"
+                  onReset={resetAuto}
                 />
-              ) : statusEmpty ? (
-                <AutoStatusResult
-                  tone="empty"
-                  title={emptyTitle}
-                  message={emptyMessage}
-                  onDone={closeAuto}
-                  onSecondary={resetAuto}
-                  secondaryLabel="Run another"
-                />
-              ) : autoIsRichResult ? (
-                <div style={s(bodyTxnSplit ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px' : 'display:flex;flex-direction:column;gap:14px')}>
-                  {autoResultInvoices && <AutoInvoicesPanel rows={invRows} />}
-                  {autoResultTxn && (
-                    <AutoTransactionsPanel report={txnReport} splitLayout />
-                  )}
-                  {autoResultTracking && (
-                    <AutoTrackingPanel
-                      carrierId={autoResultTracking.carrierId}
-                      fedexTracking={autoResultTracking.fedexTracking}
-                      entries={autoResultTracking.entries}
-                    />
-                  )}
-                  {autoResultWex && (
-                    <AutoWexTasksPanel
-                      appId={autoResultWex.appId}
-                      summary={autoResultWex.summary}
-                      tasks={autoResultWex.tasks}
-                    />
-                  )}
-                  {autoResultPayments && (
-                    <AutoPaymentsPanel
-                      summary={autoResultPayments.summary}
-                      cmpInvoices={autoResultPayments.cmpInvoices}
-                      cmpError={autoResultPayments.cmpError}
-                    />
-                  )}
-                  {autoResultTable && (
-                    <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
-                      <div style={s('padding:11px 15px;background:var(--alt);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{autoResultTable.title}</div>
-                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
-                        {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
-                      </div>
-                      {autoResultTable.rows.map((row, i) => (
-                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:14px`)}>
-                          {row.map((cell, j) => <span key={j} style={s(j === 0 ? mono : 'color:var(--text2)')}>{cell}</span>)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:4px'}`)}>
-                    <button onClick={resetAuto} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:14px')}>Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:14px'))}>Done</button>
-                  </div>
-                </div>
-              ) : (
-                <AutoStatusResult
-                  tone="success"
-                  title={`${runVerb} complete`}
-                  message={successMsg}
-                  onDone={closeAuto}
-                  onSecondary={resetAuto}
-                  secondaryLabel="Run another"
-                />
-              ))}
+              )}
             </div>
           </div>
         </div>

@@ -105,7 +105,15 @@ export interface CardLimitsResult {
 
 export interface EfsCardsResult {
   count?: number;
-  data?: Array<{ card_number?: string; status?: string; [k: string]: unknown }>;
+  data?: Array<{
+    card_number?: string;
+    cardNumber?: string;
+    status?: string;
+    last_used_date?: string | null;
+    lastUsedDate?: string | null;
+    lastTransaction?: string | null;
+    [k: string]: unknown;
+  }>;
 }
 
 export interface BillingFormResult {
@@ -466,6 +474,20 @@ export interface TouchpointMap {
       driverName?: string;
     };
     result: Record<string, unknown>;
+  };
+  'efs.card_status': {
+    params: { carrierId: string; cardNumber: string; action: 'ACTIVATE' | 'DEACTIVATE' };
+    result: CardActionResult;
+  };
+  'efs.card_limits': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      limitId: string;
+      value: number;
+      action: 'INCREASE' | 'DECREASE';
+    };
+    result: CardLimitsResult;
   };
   'efs.card_override': { params: { carrierId: string; cardNumber: string }; result: CardActionResult };
   'fraud.hold_release': {
