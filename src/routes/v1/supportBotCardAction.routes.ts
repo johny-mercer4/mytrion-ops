@@ -169,6 +169,9 @@ export async function supportBotCardActionRoutes(
         },
       },
     );
-    return execution.result;
+    return {
+      ...execution.result,
+      ...(execution.replayed ? { replayed: true } : {}),
+    };
   });
 }

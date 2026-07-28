@@ -187,4 +187,39 @@ describe('support-bot card-action route', () => {
     );
     expect(mocks.setCardStatus).not.toHaveBeenCalled();
   });
+
+  it('echoes replay metadata without changing fresh response bodies', async () => {
+    env.FF_SUPPORT_BOT_IDEMPOTENCY = true;
+    mocks.executeOperation.mockResolvedValue({
+      operationId: 'sbo-1',
+      replayed: true,
+      result: {
+        success: true,
+        last6: '123456',
+        action: 'deactivate',
+      },
+    });
+    const server = await app();
+    const response = await server.inject({
+      method: 'POST',
+      url: '/support-bot/card-action',
+      headers: {
+        'idempotency-key': 'b'.repeat(64),
+        'x-support-bot-turn-id': 'tg:700',
+        'x-support-bot-write-occurrence': '0',
+        'x-support-bot-session-key': 'a'.repeat(64),
+        'x-support-bot-fencing-token': '12',
+      },
+      payload: body,
+    });
+    await server.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      success: true,
+      last6: '123456',
+      action: 'deactivate',
+      replayed: true,
+    });
+  });
 });
