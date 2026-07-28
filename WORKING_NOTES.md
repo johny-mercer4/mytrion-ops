@@ -7372,3 +7372,4 @@ Fix: `pnpm build:widget` so `app/index.html` and `app/assets/*` hashes match aga
 (entry now `index-vD7wZkth.js` + `index-DYzu9WTp.css`; billing styles in `index-B3yk86w_.css`).
 Colors return once this bundle is deployed. Touchpoints `401` on
 `/v1/touchpoints/billing.datacenter.deals` is a separate auth issue, not the CSS break.
+Mismatched JS chunks (`index-C-Zlcfe9.js` + `index-DM6WA7bf.js`) also triggered React #321.
