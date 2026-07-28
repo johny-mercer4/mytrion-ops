@@ -7360,3 +7360,15 @@ invented.
 **Pre-existing failure seen while running the suite, NOT touched:**
 `src/mytrions/sales/redesign/dashDebtorsData.test.ts` — `debtorsSummary` now returns a `debtorCount`
 field the test's `toEqual` doesn't list. Stale test, unrelated to this change.
+
+## 2026-07-29 — Billing Mytrion colors broken (missing CSS asset)
+
+Prod console: stylesheet `https://octane-ops-ai.onrender.com/assets/index-CwpF6G9d.css` refused
+because MIME was `application/json` — the file 404ed and the not-found handler returned JSON.
+`index.html` still pointed at that hash after commit `f89affb` deleted the CSS during a
+rebase-bundle rebuild (JS was updated to `index-C-Zlcfe9.js`, CSS href left stale).
+
+Fix: `pnpm build:widget` so `app/index.html` and `app/assets/*` hashes match again
+(entry now `index-vD7wZkth.js` + `index-DYzu9WTp.css`; billing styles in `index-B3yk86w_.css`).
+Colors return once this bundle is deployed. Touchpoints `401` on
+`/v1/touchpoints/billing.datacenter.deals` is a separate auth issue, not the CSS break.
