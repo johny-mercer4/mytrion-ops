@@ -33,9 +33,11 @@ import {
   type TxRow,
   extractRecords,
   normalizeTx,
+  parseTxSearch,
   readBool,
   readNum,
   rebuildHaystack,
+  txMatchesSearch,
   txSourceLabel,
   txStatusBadgeClass,
 } from './transactionModel';
@@ -225,8 +227,10 @@ export function Transactions() {
   const query = search.trim().toLowerCase();
   const searchResults = useMemo<TxRow[] | null>(() => {
     if (!query) return null;
-    const isCarrierId = /^\d+$/.test(query);
-    const local = rows.filter((t) => (isCarrierId ? (t.carrierId ?? '') === query : t.haystack.includes(query)));
+    // Amount / carrier-id / text are all handled by the shared matcher (see parseTxSearch) so the
+    // loaded rows and the server search agree on what "500", "500.00" and "$1,234.56" mean.
+    const parsed = parseTxSearch(query);
+    const local = rows.filter((t) => txMatchesSearch(t, parsed));
     if (!serverExtras) return local;
     const localIds = new Set(local.map((t) => t.recordId));
     const extras = serverExtras.map(applyPatch).filter((t) => !localIds.has(t.recordId));
@@ -517,7 +521,7 @@ export function Transactions() {
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} type="text" placeholder="Search by sender, memo, transaction #…" autoComplete="off" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} type="text" placeholder="Search by sender, memo, transaction #, amount…" autoComplete="off" />
               {searchFetching ? (
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>loading all…</span>
               ) : search ? (
