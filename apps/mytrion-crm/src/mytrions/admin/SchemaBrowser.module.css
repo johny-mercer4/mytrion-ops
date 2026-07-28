@@ -54,6 +54,13 @@
   border-bottom: none;
 }
 
+.frequencyPill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Per-row schema qualifier badge, shown before the table name for multi-schema sources. */
 .schemaBadge {
   padding: 1px var(--space-1_5);

@@ -12,6 +12,7 @@ import { Jobs } from './Jobs';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { KpiData } from './KpiData';
+import { MytrionDatabase } from './MytrionDatabase';
 import { OctaneScope } from './scope/OctaneScope';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
@@ -34,6 +35,7 @@ type Tab =
   | 'cmp'
   | 'dwh'
   | 'verification-db'
+  | 'mytrion-db'
   | 'kpi-data'
   | 'access'
   | 'horizon';
@@ -186,6 +188,15 @@ export default function AdminMytrion() {
       label: 'Data',
       items: [
         {
+          key: 'mytrion-db',
+          tone: 'var(--tone-cyan)',
+          label: 'Mytrion Database',
+          icon: <DatabaseIcon />,
+          active: tab === 'mytrion-db',
+          onClick: () => setTab('mytrion-db'),
+          keywords: ['postgres', 'database', 'metadata', 'tables', 'columns', 'api names', 'types'],
+        },
+        {
           key: 'cmp',
           tone: 'var(--tone-indigo)',
           label: 'CMP Database',
@@ -249,6 +260,7 @@ export default function AdminMytrion() {
       {tab === 'audit' && <AuditLog />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}
+      {tab === 'mytrion-db' && <MytrionDatabase />}
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}
       {tab === 'verification-db' && <VerificationDatabase />}

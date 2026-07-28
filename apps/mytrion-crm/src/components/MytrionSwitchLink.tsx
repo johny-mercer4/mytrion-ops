@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { Grid2x2 } from 'lucide-react';
 import { useUserContext } from '../context/UserContextProvider';
@@ -21,9 +22,12 @@ import { resolveAccessibleMytrions } from '../access/resolveAccess';
 export function MytrionSwitchLink({
   className,
   label = 'Switch',
+  style,
 }: {
   className?: string;
   label?: string;
+  /** Host-supplied layout, so a bespoke sidebar/header can match its own controls exactly. */
+  style?: CSSProperties;
 }) {
   const user = useUserContext();
   const { accessible } = resolveAccessibleMytrions(user);
@@ -34,7 +38,7 @@ export function MytrionSwitchLink({
       className={className}
       title={`Switch Mytrion (${accessible.length} available)`}
       aria-label="Switch Mytrion"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', ...style }}
     >
       <Grid2x2 size={14} />
       {label}

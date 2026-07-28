@@ -22,6 +22,19 @@ export interface PgColumn {
   comment: string;
 }
 
+export interface PgWriteActivity {
+  inserts: number;
+  updates: number;
+  deletes: number;
+  totalWrites: number;
+  /** Database statistics window used for the rate estimate. */
+  statsResetAt: string | null;
+  /** Average inserts + updates + deletes per day since the statistics reset. */
+  writesPerDay: number | null;
+  /** Human-readable estimate; PostgreSQL does not store an exact table update schedule. */
+  frequency: 'Every minute' | 'Hourly' | 'Daily' | 'Weekly' | 'Occasional' | 'No writes' | 'Unknown';
+}
+
 export interface PgTable {
   schema: string;
   name: string;
@@ -32,6 +45,8 @@ export interface PgTable {
   updateTime: string | null;
   createTime: string | null;
   comment: string;
+  /** Cumulative pg_stat counters and their estimated frequency; null for views/foreign tables. */
+  writeActivity: PgWriteActivity | null;
   columns: PgColumn[];
 }
 
@@ -64,6 +79,9 @@ const RELATIONS_SQL = `
               THEN COALESCE(NULLIF(c.reltuples, -1)::bigint, s.n_live_tup)
               ELSE NULL END AS approx_rows,
          GREATEST(s.last_vacuum, s.last_autovacuum, s.last_analyze, s.last_autoanalyze) AS update_time,
+         s.n_tup_ins::text AS inserts,
+         s.n_tup_upd::text AS updates,
+         s.n_tup_del::text AS deletes,
          obj_description(c.oid, 'pg_class') AS comment
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -118,6 +136,9 @@ interface RelationRow {
   type: string;
   approx_rows: string | number | null;
   update_time: Date | string | null;
+  inserts: string | null;
+  updates: string | null;
+  deletes: string | null;
   comment: string | null;
 }
 interface ColumnRow {
@@ -142,6 +163,9 @@ interface FkRow {
   table_name: string;
   name: string;
 }
+interface DatabaseStatRow {
+  stats_reset: Date | string | null;
+}
 
 function toIso(value: Date | string | null): string | null {
   if (value == null) return null;
@@ -154,6 +178,60 @@ function keyOf(...parts: string[]): string {
   return JSON.stringify(parts);
 }
 
+function count(value: string | null): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function writeActivityOf(
+  relation: RelationRow,
+  statsResetAt: string | null,
+): PgWriteActivity | null {
+  if (!['BASE TABLE', 'MATERIALIZED VIEW'].includes(relation.type)) return null;
+  const inserts = count(relation.inserts);
+  const updates = count(relation.updates);
+  const deletes = count(relation.deletes);
+  const totalWrites = inserts + updates + deletes;
+  if (!statsResetAt) {
+    return {
+      inserts,
+      updates,
+      deletes,
+      totalWrites,
+      statsResetAt: null,
+      writesPerDay: null,
+      frequency: totalWrites === 0 ? 'No writes' : 'Unknown',
+    };
+  }
+
+  const elapsedDays = Math.max(
+    (Date.now() - new Date(statsResetAt).getTime()) / 86_400_000,
+    1 / 24,
+  );
+  const writesPerDay = totalWrites / elapsedDays;
+  const frequency: PgWriteActivity['frequency'] =
+    totalWrites === 0
+      ? 'No writes'
+      : writesPerDay >= 1_440
+        ? 'Every minute'
+        : writesPerDay >= 24
+          ? 'Hourly'
+          : writesPerDay >= 1
+            ? 'Daily'
+            : writesPerDay >= 1 / 7
+              ? 'Weekly'
+              : 'Occasional';
+  return {
+    inserts,
+    updates,
+    deletes,
+    totalWrites,
+    statsResetAt,
+    writesPerDay,
+    frequency,
+  };
+}
+
 /**
  * Read the full structure of a Postgres database from pg_catalog: relations (with freshness + row
  * estimates), columns, and key roles (PK/UNIQUE/FK), stitched into one nested snapshot across all
@@ -163,13 +241,19 @@ export async function introspectPgSchema(
   runner: PgQueryRunner,
   dbFallback: string,
 ): Promise<PgSchemaSnapshot> {
-  const [dbRow, relations, columns, keys, fks] = await Promise.all([
+  const [dbRow, relations, columns, keys, fks, databaseStats] = await Promise.all([
     runner.query<{ db: string }>('SELECT current_database() AS db'),
     runner.query<RelationRow>(RELATIONS_SQL),
     runner.query<ColumnRow>(COLUMNS_SQL),
     runner.query<KeyRow>(KEYS_SQL),
     runner.query<FkRow>(FKS_SQL),
+    runner.query<DatabaseStatRow>(
+      `SELECT COALESCE(stats_reset, pg_postmaster_start_time()) AS stats_reset
+         FROM pg_stat_database
+        WHERE datname = current_database()`,
+    ),
   ]);
+  const statsResetAt = toIso(databaseStats[0]?.stats_reset ?? null);
 
   // Column key role: PK wins over UNIQUE wins over FK. Map keyed by (schema, table, column).
   const keyRole = new Map<string, string>();
@@ -208,6 +292,7 @@ export async function introspectPgSchema(
       updateTime: toIso(r.update_time),
       createTime: null,
       comment: r.comment ?? '',
+      writeActivity: writeActivityOf(r, statsResetAt),
       columns: columnsByTable.get(keyOf(r.schema, r.name)) ?? [],
     };
   });

@@ -15,6 +15,7 @@ import { ClientModal, type ClientModalTab } from './ClientModal';
 import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
+import { MytrionSwitchLink } from '@/components/MytrionSwitchLink';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
 import { DealCallWizardHost } from './DealCallWizard';
@@ -351,6 +352,14 @@ export function SalesRedesign() {
             ))}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
+            {/* Route back to the Mytrion picker. Sales agents now hold more than one Mytrion, and the
+                sidebar was a dead end — the only exit was the top bar, which the full-bleed tabs cover.
+                Hidden automatically for anyone with a single Mytrion (see MytrionSwitchLink). */}
+            <MytrionSwitchLink
+              className="ss-ico-btn"
+              label={navCollapsed ? '' : 'Switch Mytrion'}
+              style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}
+            />
             <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
               <Icon name={theme === 'light' ? 'moon' : 'sun'} size={16} style={{ flexShrink: 0 }} />
               {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
@@ -383,7 +392,10 @@ export function SalesRedesign() {
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
-            <div id="ss-panels" key={actAsKey} style={s(fullBleed && !sectionComingSoon ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+            {/* A Coming-soon placeholder is chrome, not reading content, so it takes the FULL panel
+                width rather than the 1180px measure — clamped, it read as a small card floating in a
+                large empty page. */}
+            <div id="ss-panels" key={actAsKey} style={s((fullBleed || sectionComingSoon) ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {sectionComingSoon ? (
                 <ComingSoonPanel sectionId={section} />
               ) : (
