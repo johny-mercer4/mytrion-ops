@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { callTouchpointMock, requestBlobMock } = vi.hoisted(() => ({
+const { callTouchpointMock, requestMock, requestBlobMock } = vi.hoisted(() => ({
   callTouchpointMock: vi.fn(),
+  requestMock: vi.fn(),
   requestBlobMock: vi.fn(),
 }));
 
@@ -10,6 +11,7 @@ vi.mock('@/api/touchpoints', () => ({
 }));
 
 vi.mock('@/api/transport', () => ({
+  request: requestMock,
   requestBlob: requestBlobMock,
 }));
 
@@ -181,6 +183,7 @@ describe('invoice download', () => {
 
   beforeEach(() => {
     callTouchpointMock.mockReset();
+    requestMock.mockReset();
     requestBlobMock.mockReset();
     anchorClick.mockClear();
     // jsdom ships no object-URL implementation; deliverBlob needs both halves.
@@ -196,9 +199,9 @@ describe('invoice download', () => {
   it('fetches the bytes from our own origin and delivers them as a blob', async () => {
     requestBlobMock.mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
 
-    await downloadInvoice('100', 'pdf', 'INV/100');
+    await downloadInvoice('100', 'pdf', 'INV/100', '12345');
 
-    expect(requestBlobMock).toHaveBeenCalledWith('/sales/invoices/100/pdf');
+    expect(requestBlobMock).toHaveBeenCalledWith('/sales/invoices/100/pdf?carrierId=12345');
     // No signed-URL round trip on desktop: the proxy carries the key for us.
     expect(callTouchpointMock).not.toHaveBeenCalled();
     expect(anchorClick).toHaveBeenCalledOnce();
@@ -207,22 +210,28 @@ describe('invoice download', () => {
   it('rejects an empty body instead of reporting a phantom success', async () => {
     requestBlobMock.mockResolvedValue(new Blob([], { type: 'application/pdf' }));
 
-    await expect(downloadInvoice('100', 'excel', 'INV/100')).rejects.toThrow(/No EXCEL available/i);
+    await expect(downloadInvoice('100', 'excel', 'INV/100', '12345')).rejects.toThrow(/No EXCEL available/i);
     expect(anchorClick).not.toHaveBeenCalled();
+  });
+
+  it('requires a carrier scope before requesting invoice bytes', async () => {
+    await expect(downloadInvoice('100', 'pdf', 'INV/100')).rejects.toThrow(/Pick a client/i);
+    expect(requestBlobMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it('falls back to the signed URL inside the Zoho app WebView (blob URLs die on the tab hop)', async () => {
     const open = vi.fn();
     vi.stubGlobal('open', open);
     window.MytrionDownload = { deliverBlob: vi.fn(), isMobileWebView: () => true };
-    callTouchpointMock.mockResolvedValue({ url: 'https://servercrm.example/signed?token=abc' });
+    requestMock.mockResolvedValue({ url: 'https://servercrm.example/signed?token=abc' });
 
-    await downloadInvoice('100', 'pdf', 'INV/100');
+    await downloadInvoice('100', 'pdf', 'INV/100', '12345');
 
-    expect(callTouchpointMock).toHaveBeenCalledWith('sales_mytrion.invoice_signed_url', {
-      invoiceId: '100',
-      type: 'pdf',
-    });
+    expect(requestMock).toHaveBeenCalledWith(
+      'GET',
+      '/sales/invoices/100/pdf/signed-url?carrierId=12345',
+    );
     expect(requestBlobMock).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith('https://servercrm.example/signed?token=abc', '_blank', 'noopener');
   });

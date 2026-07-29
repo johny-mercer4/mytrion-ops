@@ -40,8 +40,11 @@ function statusBadge(status: string): BadgeVM {
 
 export function AutoInvoicesPanel({
   rows,
+  carrierId,
 }: {
   rows: InvRow[];
+  /** Scope for the download routes — they verify the invoice belongs to this carrier. */
+  carrierId: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dlBusy, setDlBusy] = useState<string | null>(null);
@@ -67,7 +70,7 @@ export function AutoInvoicesPanel({
     if (!row.id) return;
     setDlBusy(`${row.id}-${type}`);
     setPanelMsg(null);
-    downloadInvoice(row.id, type, row.inv)
+    downloadInvoice(row.id, type, row.inv, carrierId)
       .then(() => setPanelMsg({ title: 'Download', body: `${type.toUpperCase()} for ${row.inv}`, type: 'success' }))
       .catch((err: unknown) => setPanelMsg({ title: 'Download failed', body: err instanceof Error ? err.message : String(err), type: 'error' }))
       .finally(() => setDlBusy(null));
@@ -81,7 +84,7 @@ export function AutoInvoicesPanel({
     }
     setDlBusy(`bulk-${type}`);
     setPanelMsg(null);
-    downloadInvoicesSequential(list, type, (msg) => setPanelMsg({ title: 'Downloading', body: msg, type: 'success' }))
+    downloadInvoicesSequential(list, type, (msg) => setPanelMsg({ title: 'Downloading', body: msg, type: 'success' }), carrierId)
       .then(({ ok, fail }) => {
         if (fail === 0) setPanelMsg({ title: 'Downloaded', body: `${ok} invoice(s) (${type.toUpperCase()}).`, type: 'success' });
         else if (ok === 0) setPanelMsg({ title: 'Download failed', body: 'Could not download the selected invoice(s).', type: 'error' });

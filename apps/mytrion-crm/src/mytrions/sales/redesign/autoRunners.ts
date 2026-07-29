@@ -5,7 +5,7 @@
  */
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
-import { requestBlob } from '@/api/transport';
+import { request, requestBlob } from '@/api/transport';
 import { money } from './live';
 import { deliverBlob } from './txnExportLibs';
 import {
@@ -503,22 +503,30 @@ export async function downloadInvoice(
   invoiceId: string,
   type: 'pdf' | 'excel' = 'pdf',
   fileBase?: string,
+  carrierId?: string,
 ): Promise<void> {
   if (!invoiceId) throw new Error('This invoice has no downloadable id.');
+  // Required by the backend: servercrm keys invoices by id alone, so the route proves the caller
+  // owns this carrier AND that the invoice is part of it before releasing any bytes.
+  const carrier = String(carrierId ?? '').trim();
+  if (!carrier) throw new Error('Pick a client before downloading invoices.');
   const safe = String(fileBase || `invoice-${invoiceId}`).replace(/[^\w.\- ]+/g, '_').trim();
   const ext = type === 'excel' ? 'xlsx' : 'pdf';
   const fileName = new RegExp(`\\.${ext}$`, 'i').test(safe) ? safe : `${safe}.${ext}`;
+  const base = `/sales/invoices/${encodeURIComponent(invoiceId)}/${type}`;
+  const scope = `?carrierId=${encodeURIComponent(carrier)}`;
 
   // Zoho app WebView: blob URLs don't survive the tab hop, so open the short-lived signed URL and
-  // let the OS download it natively. Same carve-out (and reason) as the widget.
+  // let the OS download it natively. Same carve-out (and reason) as the widget — but routed through
+  // our own gate rather than the unscoped servercrm endpoint.
   if (window.MytrionDownload?.isMobileWebView?.()) {
-    const { url } = await callTouchpoint('sales_mytrion.invoice_signed_url', { invoiceId, type });
+    const { url } = (await request('GET', `${base}/signed-url${scope}`)) as { url?: string };
     if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
     window.open(url, '_blank', 'noopener');
     return;
   }
 
-  const blob = await requestBlob(`/sales/invoices/${encodeURIComponent(invoiceId)}/${type}`);
+  const blob = await requestBlob(`${base}${scope}`);
   if (blob.size === 0) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
   deliverBlob(blob, fileName);
 }
@@ -528,6 +536,7 @@ export async function downloadInvoicesSequential(
   invoices: InvRow[],
   type: 'pdf' | 'excel',
   onProgress?: (msg: string) => void,
+  carrierId?: string,
 ): Promise<{ ok: number; fail: number }> {
   let ok = 0;
   let fail = 0;
@@ -535,7 +544,7 @@ export async function downloadInvoicesSequential(
     const inv = invoices[i]!;
     onProgress?.(`Downloading ${inv.inv} (${i + 1}/${invoices.length})…`);
     try {
-      await downloadInvoice(inv.id, type, inv.inv);
+      await downloadInvoice(inv.id, type, inv.inv, carrierId);
       ok++;
       if (i < invoices.length - 1) await new Promise((r) => setTimeout(r, 600));
     } catch {

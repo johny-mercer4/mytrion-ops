@@ -87,6 +87,11 @@ export function AutoTab() {
 
   const progTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   /**
+   * Synchronous submit latch. React state does not update until after the click handler returns, so
+   * disabling the button alone still leaves a window where two rapid clicks dispatch two writes.
+   */
+  const runInFlight = useRef(false);
+  /**
    * Run token. Every start bumps it and the handlers below ignore any result whose token is stale,
    * so a slow response that lands after the user cancelled, closed, or switched automation can no
    * longer overwrite the current view. NOTE: the HTTP request itself is not aborted — callTouchpoint
@@ -99,8 +104,7 @@ export function AutoTab() {
   const cardInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
 
-  // ESC closes the runner, at any step. Previously there was no keyboard exit at all: during a run
-  // the backdrop and X both no-opped, so a hung automation could only be escaped by reloading.
+  // ESC follows the same guarded-close rule as the backdrop and X.
   useEffect(() => {
     if (!autoModal) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -182,14 +186,12 @@ export function AutoTab() {
     clearInterval(progTimer.current);
     clearTimeout(fetchTimer.current);
   };
-  /**
-   * Closing is always allowed — including mid-run. It used to early-return while `running`, and
-   * since this was the handler for BOTH the backdrop and the X, a hung automation left the agent
-   * with no exit but a page reload.
-   */
-  const closeAuto = (): void => { abandonRun(); setAutoModal(null); };
-  /** Cancel from the running step: keep the modal open, go back to the form. */
-  const cancelRun = (): void => { abandonRun(); setAutoPhase(''); setAutoStep('config'); };
+  /** A write must settle before the modal can close or expose the filled form for a retry. */
+  const closeAuto = (): void => {
+    if (runInFlight.current) return;
+    abandonRun();
+    setAutoModal(null);
+  };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
   const selectDeal = (d: Deal): void => {
     setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); setAutoCardQuery('');
@@ -209,6 +211,7 @@ export function AutoTab() {
   const setMc = (k: keyof MoneyCodeForm, v: string): void => setMoneyForm((f) => ({ ...f, [k]: v }));
 
   const resetAuto = (): void => {
+    if (runInFlight.current) return;
     abandonRun();
     setAutoStep('config'); setAutoPhase(''); setAutoResult(null); setAutoCard(null);
     setAutoRunErr(null); setInvRows([]); setTxnReport(null);
@@ -219,8 +222,10 @@ export function AutoTab() {
   };
 
   const runAuto = (): void => {
+    if (runInFlight.current) return;
     const bm = autoModal;
     if (!bm) return;
+    runInFlight.current = true;
     setAutoRunErr(null); setAutoResult(null); setAutoStep('running'); setTxnReport(null);
     const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
     abandonRun();
@@ -233,12 +238,11 @@ export function AutoTab() {
       setAutoPhase(phases[phaseIdx] ?? '');
       if (phaseIdx === phases.length - 1) clearInterval(progTimer.current);
     }, 2500);
-    // Watchdog: a run that never settles becomes a real error instead of an endless spinner.
+    // A slow write stays guarded: telling the agent to retry while the original request is still
+    // alive can duplicate a real money code or other irreversible action.
     const watchdog = setTimeout(() => {
       if (seq !== runSeq.current) return;
-      abandonRun();
-      setAutoRunErr('This is taking longer than expected. It may still be processing — check the record before retrying.');
-      setAutoStep('done');
+      setAutoPhase('Still processing — keep this window open…');
     }, 90_000);
     runAutomation({
       action: bm, deal: autoDeal, card: autoCard,
@@ -266,6 +270,9 @@ export function AutoTab() {
         clearInterval(progTimer.current);
         setAutoRunErr(e instanceof Error ? e.message : 'The action failed — try again.');
         setAutoStep('done');
+      })
+      .finally(() => {
+        runInFlight.current = false;
       });
   };
 
@@ -348,7 +355,16 @@ export function AutoTab() {
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
                 <div style={s('font-size:14px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
-              <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:36px;height:36px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s')}>{closeX16}</button>
+              <button
+                type="button"
+                onClick={closeAuto}
+                disabled={autoStep === 'running'}
+                aria-label={autoStep === 'running' ? 'Close unavailable while action is running' : 'Close'}
+                className="ss-ico-btn"
+                style={s(`width:36px;height:36px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:${autoStep === 'running' ? 'not-allowed' : 'pointer'};opacity:${autoStep === 'running' ? '.5' : '1'};flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s`)}
+              >
+                {closeX16}
+              </button>
             </div>
             <div
               className={bodyTxnSplit ? undefined : 'ss-scroll'}
@@ -528,18 +544,7 @@ export function AutoTab() {
               )}
 
               {autoStep === 'running' && (
-                <>
-                  <AutoMacroLoader phase={autoPhase} />
-                  <div style={s('display:flex;justify-content:center;padding:0 20px 28px')}>
-                    <button
-                      type="button"
-                      onClick={cancelRun}
-                      style={s('height:38px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
+                <AutoMacroLoader phase={autoPhase} />
               )}
 
               {autoStep === 'done' && (
@@ -547,6 +552,7 @@ export function AutoTab() {
                   error={autoRunErr}
                   result={autoResult}
                   invoiceRows={invRows}
+                  invoiceCarrierId={autoDeal?.carrier ?? ''}
                   txnReport={txnReport}
                   runVerb={runVerb}
                   successMessage={successMsg}
