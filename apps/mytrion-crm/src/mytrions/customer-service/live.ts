@@ -6,12 +6,14 @@
 import {
   csTouchpoint,
   getCallsAnalytics,
+  getCitifuelDecisionSplit,
   getCitifuelStats,
   getCsContext,
   getDeskRoster,
   getMaintenanceAnalytics,
   getMaintenanceCount,
   getTeamOpenTickets,
+  type CitiDecisionSplit,
   type CsOpenTicket,
   type MaintenanceAnalytics,
   getTicketsAnalytics,
@@ -33,6 +35,7 @@ import type {
 
 export { useLoad, type Loaded } from '../_shared/useLoad';
 export { getCsContext, type CsContext };
+export type { CitiDecisionSplit };
 
 // ---- shared coercions ----
 
@@ -307,6 +310,11 @@ export async function loadCiti(
 
 export async function loadCitiStats(): Promise<{ total: number; byStatus: Record<string, number> }> {
   return getCitifuelStats();
+}
+
+/** Citi-vs-Octane report for a window of Date_of_Request (QA feedback 2026-07-28). */
+export async function loadCitiDecisionSplit(from: string, to: string): Promise<CitiDecisionSplit> {
+  return getCitifuelDecisionSplit(from, to);
 }
 
 // ---- Analytics ----

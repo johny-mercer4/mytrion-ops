@@ -100,6 +100,24 @@ export function getCitifuelStats(): Promise<{ total: number; byStatus: Record<st
   }>;
 }
 
+/** Citi-vs-Octane counts for a Date_of_Request window (QA feedback: report over any period). */
+export interface CitiDecisionSplit {
+  from: string;
+  to: string;
+  total: number;
+  citifuel: number;
+  octane: number;
+  undecided: number;
+  byDecision: Array<{ decision: string; count: number }>;
+}
+
+export function getCitifuelDecisionSplit(from: string, to: string): Promise<CitiDecisionSplit> {
+  return request('GET', '/cs/citifuel/decision-split', {
+    headers: CS_HEADERS,
+    query: { from, to },
+  }) as Promise<CitiDecisionSplit>;
+}
+
 export function lookupAccounts(q: string): Promise<{ accounts: Array<{ id: string; Account_Name?: string }> }> {
   return request('GET', '/cs/citifuel/lookup/accounts', {
     headers: CS_HEADERS,
