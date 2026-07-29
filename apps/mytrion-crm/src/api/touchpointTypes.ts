@@ -103,9 +103,28 @@ export interface CardLimitsResult {
   message?: string;
 }
 
+export interface CardEfsInfoResult {
+  success?: boolean;
+  carrier_id?: number | string;
+  card_number?: string;
+  status?: string | null;
+  unit_number?: string | null;
+  driver_id?: string | null;
+  driver_name?: string | null;
+  efs_error?: string | null;
+}
+
 export interface EfsCardsResult {
   count?: number;
-  data?: Array<{ card_number?: string; status?: string; [k: string]: unknown }>;
+  data?: Array<{
+    card_number?: string;
+    cardNumber?: string;
+    status?: string;
+    last_used_date?: string | null;
+    lastUsedDate?: string | null;
+    lastTransaction?: string | null;
+    [k: string]: unknown;
+  }>;
 }
 
 export interface BillingFormResult {
@@ -115,6 +134,11 @@ export interface BillingFormResult {
 }
 
 export interface MoneyCodePreview {
+  /**
+   * The authoritative draw-reason vocabulary, straight from servercrm's own validator. Preferred over
+   * the frontend fallback so the list cannot drift out of sync with what the backend will accept.
+   */
+  moneycode_reasons?: string[];
   company_name?: string;
   available?: number | string;
   eligible?: boolean;
@@ -467,6 +491,20 @@ export interface TouchpointMap {
     };
     result: Record<string, unknown>;
   };
+  'efs.card_status': {
+    params: { carrierId: string; cardNumber: string; action: 'ACTIVATE' | 'DEACTIVATE' };
+    result: CardActionResult;
+  };
+  'efs.card_limits': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      limitId: string;
+      value: number;
+      action: 'INCREASE' | 'DECREASE';
+    };
+    result: CardLimitsResult;
+  };
   'efs.card_override': { params: { carrierId: string; cardNumber: string }; result: CardActionResult };
   'fraud.hold_release': {
     params: {
@@ -480,6 +518,10 @@ export interface TouchpointMap {
   };
   'application.update': { params: { appId: string }; result: WexTasksResult };
   'wex.application': { params: { appId: string }; result: WexApplicationResult };
+  'dwh.card_efs': {
+    params: { carrierId: string; cardNumber: string };
+    result: CardEfsInfoResult;
+  };
   'wex.applications_search': {
     params: {
       appId?: string;

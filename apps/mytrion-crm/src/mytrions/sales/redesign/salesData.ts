@@ -86,7 +86,7 @@ export interface NavItem {
 
 /**
  * Sidebar clusters (no visible labels — only a hairline between groups).
- * Order: daily → sell → parked soon → measure.
+ * Order: daily → sell → measure → parked soon (SOON tabs always last).
  */
 export interface NavGroup {
   id: string;
@@ -100,8 +100,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
-      // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
-      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
     ],
   },
   {
@@ -110,19 +108,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'records', label: 'Data Center', icon: 'records' },
       { id: 'create', label: 'Create', icon: 'create' },
       { id: 'carriers', label: 'Carriers', icon: 'carriers' },
-    ],
-  },
-  {
-    id: 'soon',
-    items: [
       // Retention owns Cases + Open Pool as in-page tabs (Phase 1 live).
       { id: 'retention', label: 'Retention', icon: 'retention' },
-      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
-      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
-      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
-      // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
-      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
-      { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
     ],
   },
   {
@@ -130,6 +117,19 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'auto', label: 'Automations', icon: ICO.bolt },
       { id: 'dash', label: 'Dashboard', icon: 'dash' },
+    ],
+  },
+  {
+    id: 'soon',
+    items: [
+      // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
+      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
+      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
+      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
+      // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
+      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
+      { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
     ],
   },
 ];

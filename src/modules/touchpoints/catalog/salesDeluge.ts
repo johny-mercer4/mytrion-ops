@@ -17,6 +17,7 @@ import {
   fetchApplicationUpdate,
   fetchInbox,
 } from '../../../integrations/salesCrmActions.js';
+import { assertWexApplicationActionAllowed } from '../../sales/wexApplicationGuard.js';
 import type { Touchpoint } from '../types.js';
 import { idString, SALES, shortText, ymdDate } from './common.js';
 
@@ -43,7 +44,11 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     riskClass: 'read',
     departments: SALES,
     paramsSchema: z.object({ appId: idString }),
-    handler: (_ctx, params) => fetchApplicationUpdate(String(params.appId)),
+    handler: async (_ctx, params) => {
+      const appId = String(params.appId);
+      await assertWexApplicationActionAllowed(appId, 'Application Update — WEX Tasks');
+      return fetchApplicationUpdate(appId);
+    },
   },
   {
     kind: 'local',

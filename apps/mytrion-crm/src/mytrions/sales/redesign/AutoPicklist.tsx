@@ -262,7 +262,7 @@ export function CardPickOption({
       <span style={s(`${MONO};font-size:14px;font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
       <Badge vm={cardStatusBadge(card.status)} />
       <span style={s('font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
-        {`${card.driver || 'No driver'} · Unit ${card.unit || '—'}`}
+        {`${card.driver || 'No driver'} · ID ${card.driverId || '—'} · Unit ${card.unit || '—'}`}
       </span>
     </div>
   );

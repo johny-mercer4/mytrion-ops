@@ -12,14 +12,15 @@
  *   3. collapse children by `Carrier_ID` so shared volume is counted ONCE (several child records
  *      routinely point at the same carrier; paying per record would multiply the payout)
  *   4. read one month of DWH volume for those carriers
- *   5. apply each child's `Calculation` logic and upsert the resulting rows
+ *   5. resolve each child's `Calculation` logic PARENT-FIRST (the parent copy is the populated one;
+ *      a non-null child value overrides) and upsert the resulting rows
  *
  * Every run is bracketed by a `mytrion_referral_calc_runs` row, so a month can be audited and a bad
  * run can be reverted with `deleteForRun`.
  *
- * NOT YET LIVE: `Calculation` is null on every Zoho record today, so a run legitimately computes
- * zero rows. That is reported as `skippedNoCalculation`, not treated as an error — the engine is
- * ready for the moment the picklist is populated.
+ * `Calculation` is live on the PARENT side as of the 2026-07-28 import (665 of 687 populated: 615
+ * 'Swipes (Legacy)', 50 'Gallons (Legacy)'); it remains null on all `Child_Referrals`. A child whose
+ * parent has no value is reported as `skippedNoCalculation`, not an error.
  */
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import {
@@ -55,6 +56,12 @@ interface ParentRow {
   id: string;
   referrerId: string;
   name: string | null;
+  /**
+   * The AUTHORITATIVE bonus-logic selector. `Calculation` exists as an independent picklist on BOTH
+   * modules, and it is the PARENT copy that carries the data: 665 of 687 parents are populated
+   * (615 'Swipes (Legacy)', 50 'Gallons (Legacy)') while it is null on 100% of children.
+   */
+  calculation: string | null;
 }
 interface ChildRow {
   id: string;
@@ -63,6 +70,13 @@ interface ChildRow {
   carrierId: number | null;
   calculation: string | null;
 }
+
+/**
+ * Rows per COQL page when loading the referral rosters. Zoho's own max (2000) is the cheapest per row
+ * on the tiered credit scale, and these SELECTs are only 5-6 narrow columns, so there is no reason to
+ * page smaller here — unlike the card's wide 25-column drain.
+ */
+const BONUS_COQL_PAGE_SIZE = 2000;
 
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
 const strOrNull = (v: unknown): string | null => str(v) || null;
@@ -88,9 +102,19 @@ export function previousMonthStart(date: Date): string {
 }
 
 async function loadParents(): Promise<Map<string, ParentRow>> {
-  const res = await zohoCrm.runCoql(
-    'select id, ReferrerId, Name, Company_Name from Parent_Referrers where id is not null limit 0, 2000',
+  // Drained, not one page: a parent missing from this map earns its referrer NOTHING, so a silent
+  // cut-off is a money bug. Parents grew by 680 in a single import on 2026-07-28, and the old
+  // hardcoded `limit 0, 2000` had no signal at all for overflow. `id desc` makes the offset paging
+  // sound — Created_Time is not a total order in this module (one import shares a timestamp).
+  const res = await zohoCrm.runCoqlAll(
+    'select id, ReferrerId, Name, Company_Name, Calculation from Parent_Referrers where id is not null order by id desc',
+    { pageSize: BONUS_COQL_PAGE_SIZE },
   );
+  if (res.truncated) {
+    throw new Error(
+      `[referral-bonus] parent referrer drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial roster`,
+    );
+  }
   const byCode = new Map<string, ParentRow>();
   for (const r of res.rows) {
     const code = str(r.ReferrerId);
@@ -99,15 +123,23 @@ async function loadParents(): Promise<Map<string, ParentRow>> {
       id: str(r.id),
       referrerId: code,
       name: strOrNull(r.Name) ?? strOrNull(r.Company_Name),
+      calculation: strOrNull(r.Calculation),
     });
   }
   return byCode;
 }
 
 async function loadChildren(): Promise<ChildRow[]> {
-  const res = await zohoCrm.runCoql(
-    'select id, Referrer_ID, Name, Company_Name, Carrier_ID, Calculation from Child_Referrals where id is not null limit 0, 2000',
+  // Drained for the same reason as the parents: a child left out of this list is a bonus never paid.
+  const res = await zohoCrm.runCoqlAll(
+    'select id, Referrer_ID, Name, Company_Name, Carrier_ID, Calculation from Child_Referrals where id is not null order by id desc',
+    { pageSize: BONUS_COQL_PAGE_SIZE },
   );
+  if (res.truncated) {
+    throw new Error(
+      `[referral-bonus] child referral drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial roster`,
+    );
+  }
   return res.rows.map((r) => ({
     id: str(r.id),
     referrerId: strOrNull(r.Referrer_ID),
@@ -130,7 +162,7 @@ function usd(n: number): string {
  */
 function computeAmount(
   spec: ReferralBonusSpec,
-  vol: { gallons: number; newCards: number; cumulativeGallons: number },
+  vol: { gallons: number; swipes: number; cumulativeGallons: number },
 ): { amount: number; qtyGallons: number | null; qtyNewCards: number | null } | null {
   switch (spec.type) {
     case 'gallons_legacy': {
@@ -138,8 +170,10 @@ function computeAmount(
       return { amount: vol.gallons * spec.rateUsd, qtyGallons: vol.gallons, qtyNewCards: null };
     }
     case 'swipes_legacy': {
-      if (vol.newCards <= 0) return null;
-      return { amount: vol.newCards * spec.rateUsd, qtyGallons: null, qtyNewCards: vol.newCards };
+      if (vol.swipes <= 0) return null;
+      // `qtyNewCards` keeps its column name (qty_new_cards) to avoid a migration, but it now holds the
+      // program's SWIPE count — distinct cards that transacted in the month, not first-ever cards.
+      return { amount: vol.swipes * spec.rateUsd, qtyGallons: null, qtyNewCards: vol.swipes };
     }
     default: {
       // One-time: award in the month the cumulative threshold is first crossed. The repo's partial
@@ -182,8 +216,21 @@ export async function runReferralBonusCalculation(
     const [parentsByCode, children] = await Promise.all([loadParents(), loadChildren()]);
     summary.children = children.length;
 
+    /**
+     * Resolve each child's driving logic PARENT-FIRST.
+     *
+     * The engine used to read `Calculation` only from `Child_Referrals`, where it is null on 100% of
+     * records — so every run skipped every child and wrote zero rows while reporting success. The
+     * populated copy is on `Parent_Referrers` (665 of 687). A non-null value on the child is honoured
+     * as an explicit per-child override, since the two picklists are independent fields and can drift.
+     */
+    const resolved = children.map((c) => {
+      const parent = c.referrerId ? parentsByCode.get(c.referrerId) : undefined;
+      return { ...c, parent, calculation: c.calculation ?? parent?.calculation ?? null };
+    });
+
     // Only children with BOTH a logic and a carrier can be measured.
-    const workable = children.filter((c) => {
+    const workable = resolved.filter((c) => {
       if (!c.calculation || bonusTypesForCalculation(c.calculation).length === 0) {
         summary.skippedNoCalculation += 1;
         return false;
@@ -217,7 +264,7 @@ export async function runReferralBonusCalculation(
     let total = 0;
 
     for (const child of [...workable].sort((a, b) => a.id.localeCompare(b.id))) {
-      const parent = child.referrerId ? parentsByCode.get(child.referrerId) : undefined;
+      const { parent } = child;
       for (const type of bonusTypesForCalculation(child.calculation)) {
         const spec = REFERRAL_BONUS_SPEC_BY_TYPE[type];
         const claimKey = `${child.carrierId}:${type}`;

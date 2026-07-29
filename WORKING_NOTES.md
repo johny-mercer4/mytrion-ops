@@ -7402,6 +7402,331 @@ clean tree, unrelated. Verified the server predicate read-only against the live 
 (`$510.45`) is found by `510.45`, `$510.45`, `510` and `$510`, and a bogus amount returns 0.
 No in-browser pass — the CRM needs a Zoho OAuth sign-in I can't perform.
 
+## 2026-07-29 — Referrals: COQL drained instead of capped at 200 (+ a silent ordering bug)
+
+The Manager Referrals card showed "200 parent referrers" because it fetched ONE COQL page of 200 and
+reported the page length as the total. There are 687. Every child whose parent fell outside that page
+was then reported as *unlinked*, because the parent→child grouping is client-side over the fetched
+slice — so the cap was not just under-counting, it was mis-classifying.
+
+**New shared paginator.** `zohoCrm.runCoqlAll(baseQuery, {pageSize, maxRows, budgetMs})` drains a COQL
+query page by page (`src/integrations/zohoCrm.ts`). It replaces a third copy of a loop that already
+existed twice privately (`kpi/collector.ts pagedCoql`, `salesDashboards.ts coqlAllDeals`) and finally
+gives the exported-but-unused `MAX_COQL_ROWS` a caller. Termination needs BOTH signals: an offset past
+the end returns HTTP 200 `{"data":[]}` with **no `info` block**, so `more_records` alone is unsafe;
+a short page is the reliable marker. Hard stops: the 100k offset ceiling (this repo hit it in prod on a
+Calls drain), an optional row budget, and a wall-clock budget. `truncated` now means "a guard stopped
+us with rows still upstream" — never just "the last page was short".
+
+**Ordering was quietly broken.** `order by Created_Time desc` is not a total order here: 680 of 687
+parents share one timestamp from the 2026-07-28 import, so every page boundary fell inside one tie
+group — offset paging over that can duplicate and skip rows. Worse, within the tie Zoho ordered `id`
+ASCENDING, so the "newest 200" page started at REF-000513 and the genuinely newest record (REF-000692)
+was absent. Now `order by Created_Time desc, id desc`. Verified live: page 1 starts at REF-000692.
+
+**Page size 1000** as requested. Note for later: COQL credits are tiered (≤200 → 1, ≤1000 → 2,
+≤2000 → 3), so 2000/page is ~33% cheaper per row; 1000 keeps one page comfortably inside the outbound
+timeout on the card's wide 22–25 column SELECT. The bonus engine's narrow 5-column SELECTs use 2000.
+
+**`?limit` semantics changed.** It is now an optional row *budget*, not a page size, and an invalid
+value means "drain everything" instead of silently falling back to 200 — `?limit=abc` used to
+resurrect the exact bug being fixed (routes parse it with bare `Number()`, no zod).
+
+**Money bug fixed alongside:** `referralBonusEngine` read the same two modules at a hardcoded
+`limit 0, 2000`, unpaginated and with no overflow signal. A parent missing from that map earns its
+referrer nothing. Both loaders now drain, and refuse to calculate at all if a guard trips — a partial
+roster must not silently produce partial payouts.
+
+**Verified live through the real code path:** parents total=687 pages=1, children total=4, links 0/0,
+`truncated=false` everywhere. An honest total cannot come from COQL `count(id)` — aggregates return
+SYNTAX_ERROR / "missing clause: group by" on this org — so a complete drain IS the only source of a
+true total.
+
+**Multi-page paths are unit-tested** (`tests/unit/coql-paginate.test.ts`, 10 tests) because prod can't
+exercise them: 687 and 4 both fit in one page, so the loop would otherwise ship unexercised. Covers
+page-walking, short-page stop, missing-`info` stop, 204, row budget, time budget, page-size clamp, and
+the 100k ceiling (50 pages).
+
+**Not fixed, and NOT fixable by fetching more:** "linked 0 · unlinked 4" stays. All 4 children carry
+`Referrer_ID` 'REF-000002', which matches no parent record, and `Parent_Referrer` is null on 100% of
+children org-wide. That is a data problem in Zoho, not a paging one.
+
+## 2026-07-29 — Loyalty: owner-operator now means ONE TRUCK, not one card
+
+Reported as "in Manager loyalty the owner operator carriers are the ones which only 1 truck — fix that
+error". It was a wrong FIELD, not a wrong boundary. `resolveTrack` bucketed on a fuel-CARD count and
+called the 1-card bucket "Owner-Operator"; the word "trucks" appeared nowhere in the loyalty path. The
+boundary was already `=== 1` and already correct — no threshold needed moving.
+
+This also CLOSES the open question left at WORKING_NOTES.md:6843 ("switching the input would re-tier the
+entire book, so it needs a decision"). Decision: the fleet-size axis is `octane.dim_company.trucks`.
+
+**Two axes, deliberately separate.** The one number was doing two jobs, which is why a naive
+`trucks === 1` swap would be wrong:
+- ACTIVITY (prev-month transacting cards) stays the program-MEMBERSHIP gate. No pumps → no track.
+  This keeps the ~2,975 one-truck carriers with zero fuel activity out of "Building" — collapsing the
+  two axes would re-create the "huge number of Building clients that aren't really Building" symptom
+  the 2026-07-28 fix removed.
+- TRUCKS bucket the track. Unknown trucks (184 carriers, null; no carrier legitimately reports 0) fall
+  back to the old card proxy, so nobody drops out of the program — 19 of those hold a live track today,
+  one at 9,259 gal. `trackCaption` says "fleet size unknown, scored on cards" when that happens.
+
+`trucks` had to be wired the whole way: it was never selected. dim_company.trucks → OWNED_COLS → outer
+select → ClientDbRow/AgentClientRow (via a new `intOrNull`, NOT `num()`, which coerces null to 0 and
+would have turned "unknown" into "zero trucks") → LoyaltyClientRow → the two frontend API types →
+RecordVM → ClientRecord. All five type edits land together on purpose: if `trucks` reached Manager but
+not Sales, the two surfaces would silently disagree about the same carrier, which is the one failure
+mode `_shared/loyalty.ts` exists to prevent.
+
+**Verified live over all 8,059 carriers:** trucks known 7,875 / unknown 184. Tracks now T1 982 · T2 628
+· T3 395 · no tier 6,054. Of 3,947 one-truck carriers, 972 are also fuelling and are now correctly
+badged Owner-Operator; the rest are correctly gated out by activity.
+
+**Fixed alongside:** `ClientModal` called `resolveTier(client.active, …)` — the account's ALL-TIME card
+total — bypassing `resolveTierForRow`, so the modal could already disagree with the grid row that
+opened it. After this change that argument is a fleet size, so passing a card total would score an
+85-card carrier as an 85-truck fleet. Now goes through the one entry point.
+
+`TierResult.activeCards` → `fleetSize` (+ new `fleetSizeKnown`). Verified zero consumers read the old
+field. Boundaries, gallon thresholds and the 10% grace rule are untouched — not in scope.
+
+**LEFT ALONE on purpose: the carrier mini-app `companyType`** (`inviteService.ts:161`,
+`CarrierUserForm.tsx`, `ClientManagePanel.tsx`, `CarrierUsers.tsx`). Same words, different concept, and
+RBAC-bearing: `requireRegisteredOwner` gates driver management on `companyType === 'fleet-manager'`,
+and the value is PERSISTED (`carrier_invitations.company_type`), so re-basing it needs a migration +
+backfill. For "does this owner drive the truck themself", card count is the right proxy. Do not "fix"
+it to match loyalty.
+
+**Open risk, flagged to the user, NOT papered over in the tier math:** declared trucks is self-reported
+at signup and sometimes wrong. 160 carriers declare 1 truck while running 2+ transacting cards. The
+worst is carrier 5810474 RAWDEAL LOGISTICS LLC — trucks=1, 21 cards, 29,538 gal last month — which now
+scores T1 **gold** at the 2,000-gal owner-operator bar and takes every Gold reward (Love's rebate,
+TA/Petro discount, 30% money-code limit). One truck cannot pump 29,538 gal/month, so that is bad data,
+not a bad tier. Options offered: keep as-is (the rule as stated) + an Ops report of the ~160
+disagreements to fix at source; or add a sanity guard that scores on distinct fuelled units when they
+clearly exceed the declared count.
+
+Bundle rebuilt (`pnpm build:widget`) in the same commit — `apps/mytrion-crm/app` is a tracked artifact,
+and skipping it is exactly why the previous loyalty fix never reached prod.
+
+## 2026-07-29 — Sales Mytrion automation reliability (C-1/3/4/5/15/20/24/27, Q-1)
+
+Worked on `feature/Referrals`; existing referral/loyalty edits were preserved.
+
+- C-4/C-5 now treat the entered amount as a delta, enforce a 350-gallon maximum in the UI,
+  touchpoint schema, and shared environment default, write through servercrm's direct EFS limit
+  endpoint, and render the previous/resulting limit returned by EFS.
+- C-1/C-3 now share the direct EFS status-write endpoint. Card pickers fetch EFS first with DWH only
+  as a fallback, so activation is visible immediately in deactivation.
+- C-24 fetches the live EFS card roster/status and merges historical DWH usage only where the current
+  servercrm EFS summary omits a last-used timestamp. The previous blank-field bug (`last_used_date`
+  was not read) is fixed and the result uses explicit status/source badges.
+- C-20/Q-1 no longer `fetch()` the cross-origin signed invoice URL. The signed attachment URL is
+  opened directly, removing the browser CORS “Failed to fetch” failure.
+- C-15 loads jsPDF from the bundle with a safe vendor-base fallback, loads PDF helpers only for PDF,
+  uses bundled ExcelJS for Excel, and leaves CSV/Text dependency-free. Invoice references are
+  hydrated before filters run; output flags now apply consistently to grouped exports.
+- C-27 is fire-and-forget: the touchpoint queues `sales.boca-request`, returns immediately, and the
+  worker writes a C-27 Mytrion Inbox completion/failure message for the authenticated requester.
+  Jobs-off local development uses an immediate in-process fallback with the same inbox behavior.
+
+Regression coverage added for the 350/351 boundary, direct signed-link downloads (and absence of
+cross-origin fetch), every transaction match/filter/sort/range path, destructive touchpoint catalog
+metadata, and BOCA success/failure inbox delivery. `AutoTab.tsx` was reduced below the 600-line cap by
+extracting completed-result rendering.
+
+## 2026-07-29 — Referral bonus: the Calculation field was read off the WRONG module
+
+Audited all four bonus types against the supplied "Referral Bonus Calculation Types" PDF (one
+adversarial verifier per type, each proving its case with live DWH queries). The rates, thresholds,
+recipients, fuel sets and period grains in `referralBonusTypes.ts` all match the spec exactly —
+including Type 4's recipient exception (child, not parent). What was broken is everything around them.
+
+**Fixed now.**
+1. **`Calculation` came off `Child_Referrals`, where it is null on 100% of records.** The populated copy
+   is on `Parent_Referrers` — 665 of 687 (615 'Swipes (Legacy)', 50 'Gallons (Legacy)'), from the
+   2026-07-28 import. So a run today skipped every child and wrote ZERO rows while reporting success.
+   Now resolved parent-first, with a non-null child value honoured as an explicit override (the two
+   picklists are independent fields on independent ids and can drift).
+2. **One value now selects exactly ONE type.** `bonusTypesForCalculation` expanded EITHER legacy value
+   into BOTH legacy types, which made the two values indistinguishable in effect and paid the
+   per-gallon bonus on top of the per-swipe one for 615 referrers — a verified extra $508.92 on one
+   carrier's June alone (BUKHARA INC / IOK TRANS, 50,891.93 gal). The picklist is single-select and the
+   import deliberately split 615/50, so the split has to mean something.
+
+**Nothing has been mis-paid:** `FF_JOBS_ENABLED` is deliberately absent from render.yaml, so the monthly
+cron has never run in prod, and no HTTP route exposes `mytrion_referral_bonuses` at all.
+
+**Confirmed defects NOT yet fixed** (each verified, none reachable while the job is off):
+- `'DSL'` matches ZERO mart rows. Types 3/4's fuel set silently collapses to ULSD+ULSR — identical to
+  the legacy pair. The diesel codes that exist are DSL1 (31,899 gal), CDSL (47,701), BDSL (19,479),
+  BDSR, CBDL. `DEFD` must NOT be included (Diesel Exhaust Fluid, not fuel).
+- One-time types re-award every month once cumulative >= threshold. The only guard is a partial unique
+  index raising a raw 23505 INSIDE the per-child loop, which the single try/catch turns into a failed
+  run that abandons every remaining child. Re-running a month containing an approved/paid row also
+  throws (`setWhere` suppresses the update, `.returning()` is empty, `firstOrThrow` raises).
+- The one-time dedup key is the child RECORD id while the volume and award are keyed on CARRIER, so
+  duplicate child records under one carrier can be paid the same $50 twice.
+- 288,451 mart rows / 19.39M gallons carry a NULL `line_item_category` (100% of Feb–Jul 2025 — a
+  pipeline outage). They are silently dropped: ~$20,048.97 of Type 1 zeroed, and Type 2 swipe dates are
+  re-dated to the month the pipeline recovered.
+- No Zoho writeback for the spec's "mark as paid" step; `Child_Referrals.Paid` / `Parent_Paid` are
+  referenced in a comment only.
+
+**Open questions taken to the user with numbers attached** (money-affecting, not decidable from code):
+Type 2's "swipe" definition (first-EVER eligible swipe, as implemented, vs the PDF sentence's
+first-in-month — verified $9,650 vs $55,750 for June 2026 across all referred children, recurring);
+which codes 'DSL' means; whether 'Gallons (Parent)'/'Gallons (Child)' really bind to the 500/1,000
+one-time awards (the labels name only the recipient, and ZERO records use either value); the child
+roster source (Zoho holds 4 obvious test rows, all `Referrer_ID` 'REF-000002' matching no parent, while
+`octane.intm_zoho_deals.referral_source` holds 944 children / 582 parents); and how to treat the
+pre-existing one-time backlog on first enable (~$74,900 in a single run).
+
+Also fixed: `tests/unit/data-center-routes.test.ts` fixture missing `trucks` — the loyalty commit
+(9cd0887) left `pnpm typecheck` red because I only ran the web app's typecheck after that edit.
+
+## 2026-07-29 — Referral bonus swipe: the PROGRAM defines it, not the Sales dashboard
+
+Corrected after the user pointed out the distinction: the Sales Mytrion dashboard (and Home) are their
+own surface and stay untouched; the loyalty/bonus program is a different thing with its own rules.
+
+`referralBonusTypes.ts` had it in writing — "'Swipe' resolves to the Sales Mytrion dashboard's NEW-CARD
+metric" — so Type 2 counted cards whose FIRST-EVER eligible transaction fell in the month. That pays a
+referrer $50 once per card per LIFETIME. The calculation spec says the opposite: "a card qualifies as a
+new swipe in a given month only via its FIRST transaction that month — further transactions on the same
+card in the same month do not generate additional swipe bonuses." One count per unique card per month,
+recurring monthly.
+
+Now `count(distinct card_number)` inside the period month (`dwhReferralVolume.ts`), and the runtime
+field is renamed `newCards` → `swipes` so the misnomer that caused the conflation cannot re-teach it.
+The DB column keeps its `qty_new_cards` name (no migration) with a comment saying what it now holds.
+
+Verified live — IOK TRANS LLC (carrier 5796264), June 2026, ULSD+ULSR:
+  PROGRAM rule (distinct cards in month):   35 swipes → $1,750
+  OLD basis (dashboard new-card metric):     3 swipes → $150
+So the old basis under-paid this carrier's referrer by ~12x for the month.
+
+NEITHER of the dashboard's two metrics governs this program, and both remain untouched:
+  · dashboard `new_cards_*` = a card's first-EVER appearance (what this wrongly borrowed)
+  · dashboard `swipes_*`    = count(distinct transaction_id), i.e. per fill-up
+`salesDashboards.ts`, `dashSalesData.ts` and `SalesDashPanel.tsx` are unmodified — confirmed by
+git status — and no dashboard or Home file references `_shared/loyalty` at all, so the loyalty track
+change cannot have moved a dashboard number either.
+
+## 2026-07-29 — Sales sidebar: SOON tabs at bottom
+
+Reordered `NAV_GROUPS` in `salesData.ts`: daily → sell (incl. live Retention) →
+measure → soon. Parked tabs (My Tasks, Tickets, Verification, Call Hub) now sit
+at the bottom of the Sales Mytrion sidebar instead of above Automations/Dashboard.
+
+## 2026-07-29 — Sales automations: live WEX guards and EFS card credentials
+
+Added fail-closed WEX state guards for C-27 BOCA, C-14 Close Application and
+C-2/C-19 Application Update — WEX Tasks. The source is servercrm's live WEX
+Salesforce endpoint (`GET /api/wex/application/:appId`), not an additional Zoho
+read. Expansion, Closed/Lost/Closed/Fraud, Disqualified and Cards Produced /
+Cards Sent applications are blocked. BOCA checks before enqueue and again in
+the worker; Close and Application Update check before their downstream work.
+
+Added a matching Sales modal eligibility notice and disabled action state. Added
+a direct single-card EFS read (`dwh.card_efs`) for C-1 activation, C-3
+deactivation and C-26 Unit/Driver Change. The modal now shows current live card
+status, driver name, driver ID and unit number; activation and unit/driver edit
+fields initialize from those live values. EFS verification failures disable the
+action rather than showing stale DWH values as current.
+
+Verification: backend lint (0 errors / 25 pre-existing warnings), typecheck and
+production build; 27 targeted guard/catalog tests; CRM typecheck and production
+build; 12 targeted CRM automation/mapper tests. Full suites still expose the
+branch's unrelated baseline failures (backend 11/1115; CRM 1/268).
+
+## 2026-07-29 — HR: Zoho CRM login ↔ employee mapping (the RBAC anchor)
+
+Mytrion HR is migrating off Zoho People, and its RBAC needs to answer "which employee is this session".
+Nothing linked the two: `hr_employees.zoho_record_id` is a Zoho **People** record, while portal sign-in
+is Zoho **CRM** OAuth — two products, two id spaces, no shared key. Same trap that forced the DWH
+by-agent queries onto a NAME fallback when the session's Zoho id matched no `agent_zoho_user_id`.
+
+**Decision (user's): match on EMAIL only.** It is the sole field both sides carry.
+
+Migration `0066_hr_employee_zoho_user.sql` adds `zoho_user_id`, `zoho_user_id_source`
+(`email_match` | `manual`) and `zoho_user_linked_at`, plus a PARTIAL UNIQUE on
+(tenant_id, zoho_user_id) — one login maps to at most one employee, or two rows would both answer "who
+is this session", which is an RBAC hole rather than a data-quality nit — and a functional index on
+(tenant_id, LOWER(TRIM(email))) so per-sign-in resolution does not seq-scan.
+
+**db:generate is unusable in this repo — hand-written migration instead.** There are 66 journal entries
+but only 25 snapshots (0000–0024): every migration from 0025 on was hand-written, so drizzle-kit has no
+recent snapshot to diff and fails with a `0022/0023 pointing to a parent snapshot … collision`. Diffing
+against the 0024 state would try to re-create forty migrations' worth of tables. So 0066 follows the
+established hand-written pattern (idempotent `IF NOT EXISTS`, journal entry appended, applied with
+`pnpm db:migrate`) — a committed migration file, never `push`. **Repairing the snapshot chain is real
+pending debt**; anyone who wants `db:generate` back has to rebuild snapshots 0025+.
+
+**MEASURED, and the safety result is the important one:**
+  CRM users who can sign in : 128
+  HR employees              : 213   (0 without a usable email)
+  linked                    : 127   (99.2% of all CRM logins)
+  AMBIGUOUS                 : 0     ← no duplicate email on either side
+  CRM logins with no employee : 1   — kabir.k@tsst.ai "Company", a non-person account
+  employees with no CRM login : 86  — HR-only records, no portal access to grant anyway
+
+Zero ambiguity is what makes email-only defensible here. The resolver still refuses to link an email
+that is ambiguous on EITHER side rather than guessing, because a wrong link shows one person another
+person's private record — worse than an unresolved one. Re-run is a no-op (idempotence verified:
+wouldLink=0, alreadyLinked=127), and a manual admin link (`source='manual'`) is never overwritten by
+the automatic pass.
+
+`hrEmployeeRepo.findByZohoUserId()` is the RBAC entry point and deliberately does NOT fall back to
+email at request time — the mapping is resolved once, deliberately, and audited. Verified round-trip:
+zoho_user_id → UMIDJON ABDUG'APPOROV <umidjon.a@octanefuel.com> (source=email_match).
+
+**Still open:** a terminated employee may still hold an active CRM login, so termination must decide
+whether portal access is revoked or the row is merely marked. `listAllForMapping` deliberately includes
+terminated rows so RBAC can deny them on purpose rather than by accident.
+
+## 2026-07-29 — HR had NO department gate (any worker could read the whole directory)
+
+Found while designing HR RBAC, verified by reading the code directly rather than taking the audit's word
+for it. `requireHrInternal` checked only `ctx.audience !== 'internal'`:
+
+    function requireHrInternal(request) {
+      const ctx = requireContext(request);
+      if (ctx.audience !== 'internal') throw new RBACError('HR directory is internal-only');
+      return ctx;
+    }
+
+That is not a gate. **Every signed-in worker — a sales agent, a billing agent — could read all 213
+employee rows** (names, emails, mobiles, joining dates, reporting lines), the designation picklist and
+the entire org structure. With 127 CRM logins now mapped to employees, that is 127 people with access to
+the full HR directory.
+
+ROOT CAUSE: `'hr'` was missing from `KNOWN_DEPARTMENTS` (src/lib/department.ts), so
+`requireDepartment(request, 'hr', …)` did not even typecheck — the tag itself was always granted
+(`MYTRION_DEPARTMENT.hr = 'hr'`), there was just no way to require it. Added 'hr' to the list and moved
+the HR read gate onto `requireDepartment`, so HR now sits behind the same boundary as Billing or CS.
+Write/sync routes already required Mytrion Admin and are unchanged.
+
+Noted on the substring matcher: 'hr' is now the shortest tag, and `deriveWorkerDepartments` is a
+case-insensitive SUBSTRING test, so a profile containing "hr" anywhere derives this department. That
+derivation only BOUNDS a body-asserted view behind FF_WORKER_DEPT_STRICT and cannot grant access on its
+own (the DB grant is authoritative), so the false-positive risk is limited to widening a view the grant
+already permits.
+
+**Three tests were pinning the hole** — they asserted a `'Sales Rep'` gets 200 on `/v1/hr/employees`,
+`/v1/hr/meta/designations` and `/v1/hr/org-structure`. Rewritten: the sales worker now asserts 403 with
+the reason recorded in the test body, and a new case asserts an HR-department worker still gets 200.
+
+Also fixed a straggler from the 1:1 Calculation mapping: `referral-bonus-repo.test.ts` still asserted
+"either legacy value selects BOTH legacy bonuses". Flipped, with the reason inline.
+
+Suite back to the pre-existing baseline (6 files / 10 tests, all failing at origin/main too); lint 0
+errors. `agent-scripted-turn` and a ~47-test spike were load flakiness from concurrent workflows — both
+pass in isolation.
+
+**Still open for HR RBAC (design done, not built):** row-level scoping (self / manager-chain / dept /
+all) keyed on the new `zoho_user_id`, field-level withholding for sensitive columns, recursive
+hierarchy queries with cycle protection, and whether termination revokes portal access.
 ## 2026-07-29 — Returns: Zoho→PG match-state sync + double-reversal guard (`feature/returns-zoho-sync`)
 
 Asked to sync returns from the Zoho side into mytrion-ops and review the returns logic. Measured

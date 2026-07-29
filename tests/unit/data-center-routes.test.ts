@@ -217,6 +217,8 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     activeCards: 4,
     moneyCode: 'MC-1',
     dot: '12345',
+    // The loyalty TRACK basis (dim_company.trucks) — 1 truck = Owner-Operator.
+    trucks: 4,
     isLocSuspended: false,
     computedIsActive: true,
     computedDebt: 0,

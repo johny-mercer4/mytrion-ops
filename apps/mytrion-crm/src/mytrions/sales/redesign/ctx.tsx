@@ -29,6 +29,8 @@ export interface ClientRecord {
   phone: string;
   cards: number;
   active: number;
+  /** Declared trucks — the loyalty tier's TRACK basis; `null` = unknown (falls back to cards). */
+  trucks: number | null;
   gallons: string;
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;

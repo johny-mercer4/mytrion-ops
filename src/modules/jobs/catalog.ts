@@ -204,6 +204,22 @@ export const kpiSalesMonthCloseJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** C-27 BOCA browser automation — queued so the HTTP/UI request returns immediately. */
+export const salesBocaRequestJob = defineJob({
+  name: 'sales.boca-request',
+  schema: z.object({
+    ctx: tenantContextSchema,
+    requestKey: z.string().min(1).max(160),
+    appId: z.string().min(1).max(120),
+    assignedTo: z.string().max(200).default(''),
+    priority: z.enum(['', 'High', 'Normal', 'Low']).default(''),
+    dueDate: z.string().max(20).default(''),
+    status: z.string().max(50).default('Not Started'),
+  }),
+  // Never retry automatically: an upstream timeout may have created the BOCA task already.
+  queue: { policy: 'standard', retryLimit: 0, expireInSeconds: 900, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 export const verificationRecheckJob = defineJob({
   name: 'automation.verification.recheck-reminders',
   schema: emptyPayload,
@@ -251,6 +267,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   kpiSalesReconcileJob,
   kpiSalesDailyRollupJob,
   kpiSalesMonthCloseJob,
+  salesBocaRequestJob,
   verificationRecheckJob,
   checkpointSweepJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the

@@ -65,6 +65,12 @@ export interface AgentClientRow {
   activeCards: number;
   moneyCode: string;
   dot: string;
+  /**
+   * Declared fleet size (`dim_company.trucks`, from the Zoho Deal "Trucks" field). `null` = UNKNOWN —
+   * the column is null for ~184 carriers and no carrier legitimately reports 0. This is the loyalty
+   * TRACK basis: 1 truck = Owner-Operator (see _shared/loyalty.ts).
+   */
+  trucks: number | null;
   isLocSuspended: boolean;
   computedIsActive: boolean;
   computedDebt: number;
@@ -91,6 +97,7 @@ interface ClientDbRow {
   deal_money_code: string | null;
   comdata_id: string | number | null;
   dot: string | number | null;
+  trucks: number | string | null;
   is_loc_suspended: boolean | null;
   computed_is_active: boolean | null;
   computed_debt: string | number | null;
@@ -107,6 +114,17 @@ interface ClientDbRow {
 function num(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * A declared count, or null when it is absent/unusable. Deliberately NOT `num()`: that coerces null to
+ * 0, which would turn "fleet size unknown" into "zero trucks" for ~184 carriers — 19 of which hold a
+ * live loyalty track today. 0 is rejected too: no dim row has trucks = 0, while the upstream Zoho deal
+ * field carries 0 as an unfilled blank, so a 0 after a sync means unknown.
+ */
+function intOrNull(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v ?? NaN);
+  return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
 /** Trim to a non-empty string, or '' when null/blank. */
@@ -126,7 +144,7 @@ const byName = (n: number): string => `lower(c.agent) = lower($${n})`;
 
 /** The dim_company columns the roster surfaces — selected identically in every owner-resolution arm. */
 const OWNED_COLS = `carrier_id, company_name, deal_full_name, agent, deal_phone, contact_phone,
-              total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, is_loc_suspended`;
+              total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, trucks, is_loc_suspended`;
 
 /** One owner-resolution arm: the newest dim row per carrier matching `pred`, selecting `cols`. */
 const ownedArm = (pred: string, cols: string = OWNED_COLS): string =>
@@ -220,7 +238,7 @@ async function runClientsQuery(ownedCteSql: string, binds: string[]): Promise<Cl
      )
      select o.carrier_id, o.company_name, o.deal_full_name, o.agent, o.deal_phone, o.contact_phone,
             o.total_produced_cards, o.total_active_cards, o.deal_money_code, o.comdata_id, o.dot,
-            o.is_loc_suspended,
+            o.trucks, o.is_loc_suspended,
             coalesce(g.last_tx >= now() - interval '${ACTIVE_DAYS} days', false) as computed_is_active,
             coalesce(d.debt, 0) as computed_debt,
             d.debt_days as computed_debt_days,
@@ -252,6 +270,7 @@ function toClient(r: ClientDbRow): AgentClientRow {
     activeCards: num(r.total_active_cards),
     moneyCode: dash(str(r.deal_money_code) || str(r.comdata_id)),
     dot: dash(str(r.dot)),
+    trucks: intOrNull(r.trucks),
     isLocSuspended: r.is_loc_suspended === true,
     computedIsActive: r.computed_is_active === true,
     computedDebt: num(r.computed_debt),

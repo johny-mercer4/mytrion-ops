@@ -3,9 +3,10 @@
  * Child_Referrals) with their FULL field set, for a manager-facing record browser. Read-only.
  *
  * Field list comes from the live catalog (`getModuleFields`, gives labels + types for the UI); the
- * records are then fetched with a single COQL SELECT of those fields (`zohoCrm.runCoql`). COQL needs
- * an explicit column list, so system/non-scalar noise is dropped first. Default fetch limit is 200
- * (COQL caps a page at 2000). Lookups (Parent_Referrer, Owner) come back as `{ name, id }`.
+ * records are then fetched with a COQL SELECT of those fields, drained page by page via
+ * `zohoCrm.runCoqlAll` at {@link REFERRAL_PAGE_SIZE} until Zoho runs out — so `total` is the module's
+ * real count, not a page length. COQL needs an explicit column list, so system/non-scalar noise is
+ * dropped first. Lookups (Parent_Referrer, Owner) come back as `{ name, id }`.
  */
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
@@ -22,10 +23,24 @@ export function isReferralModuleKey(v: string): v is ReferralModuleKey {
   return v === 'parents' || v === 'children';
 }
 
-/** Default number of records fetched per module. */
-export const DEFAULT_REFERRAL_LIMIT = 200;
-/** COQL hard page cap (Zoho CRM v8). */
-const MAX_REFERRAL_LIMIT = 2000;
+/**
+ * Rows per COQL page. The card used to fetch ONE page of 200 and call it the total, so a manager
+ * looking at 687 parent referrers saw "200 parent referrers" and every child whose parent fell
+ * outside that page was reported as unlinked. Now every module is drained page by page at this size
+ * until Zoho runs out.
+ *
+ * 1000 is a deliberate choice, not Zoho's max (2000): COQL credits are tiered (≤200 → 1, ≤1000 → 2,
+ * ≤2000 → 3), so 2000/page is marginally cheaper per row, but 1000 keeps a single page well inside
+ * the outbound HTTP timeout on a wide 25-column SELECT. Raise it if drains ever get long.
+ */
+export const REFERRAL_PAGE_SIZE = 1000;
+
+/**
+ * Wall-clock budget for one module's drain. The browser sends no AbortSignal and the outbound timeout
+ * is per-call, so without this a deep drain could outlive the request that asked for it. On expiry the
+ * partial rows come back with `truncated: true` rather than an error.
+ */
+const REFERRAL_DRAIN_BUDGET_MS = 25_000;
 
 /** One column descriptor for the UI: api name + human label + Zoho data type (+ picklist options). */
 export interface ReferralField {
@@ -41,9 +56,16 @@ export interface ReferralRecordsResult {
   moduleKey: ReferralModuleKey;
   fields: ReferralField[];
   rows: Array<Record<string, unknown>>;
+  /**
+   * The module's TRUE record count. Every page is drained, so this is the real total — not a page
+   * length pretending to be one. (A COQL `count(id)` can't supply it: aggregates return
+   * SYNTAX_ERROR/"missing clause: group by" on this org, verified live.)
+   */
   total: number;
-  /** True when more rows exist beyond the fetched limit. */
+  /** True only when a guard (time budget / 100k offset ceiling) stopped the drain with rows left. */
   truncated: boolean;
+  /** COQL calls spent on this module — surfaced so a slow card can be reasoned about. */
+  pages: number;
 }
 
 /**
@@ -94,29 +116,50 @@ async function displayFields(module: string): Promise<ReferralField[]> {
   return fields;
 }
 
-/** Clamp a caller-supplied limit to [1, 2000], defaulting to 200 for missing / invalid input. */
-function clampLimit(limit: number | undefined): number {
-  const n = Math.floor(limit ?? DEFAULT_REFERRAL_LIMIT);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_REFERRAL_LIMIT;
-  return Math.min(n, MAX_REFERRAL_LIMIT);
+/**
+ * Optional row budget from `?limit`. Absent / zero / NaN means "no budget — drain everything", which
+ * is the opposite of the old behaviour: a malformed `?limit=abc` used to silently fall back to 200 and
+ * re-introduce the very truncation this module exists to avoid.
+ */
+function rowBudget(limit: number | undefined): number | undefined {
+  if (limit === undefined) return undefined;
+  const n = Math.floor(limit);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
 }
 
 /**
- * Fetch a referral module's full-field records via COQL (single page, default 200). Read-only. Wraps
- * any Zoho failure as a 502 ZOHO_CRM_ERROR so the route surfaces a clean, retryable error.
+ * Ordering for every referral drain.
+ *
+ * `id desc` is not decoration — it is what makes offset pagination sound. Created_Time alone is not a
+ * total order here (680 of 687 parents share one timestamp from the 2026-07-28 bulk import), and
+ * paging through a tie group has no defined row order, so pages could repeat or skip records. The tie
+ * break also fixes a live bug: within the tie Zoho was ordering id ASCENDING, so the "newest 200"
+ * page actually started at REF-000513 and the genuinely newest record was nowhere on it.
+ */
+const REFERRAL_ORDER = 'order by Created_Time desc, id desc';
+
+/**
+ * Fetch a referral module's full-field records via COQL, draining every page. Read-only. Wraps any
+ * Zoho failure as a 502 ZOHO_CRM_ERROR so the route surfaces a clean, retryable error.
  */
 export async function fetchReferralRecords(
   moduleKey: ReferralModuleKey,
   limit?: number,
 ): Promise<ReferralRecordsResult> {
   const module = REFERRAL_MODULES[moduleKey];
-  const cap = clampLimit(limit);
+  const maxRows = rowBudget(limit);
   try {
     const fields = await displayFields(module);
     const cols = fields.map((f) => f.apiName).join(', ');
     // COQL requires a WHERE — `id is not null` is the universal match-all predicate.
-    const res = await zohoCrm.runCoql(
-      `select ${cols} from ${module} where id is not null order by Created_Time desc limit 0, ${cap}`,
+    const res = await zohoCrm.runCoqlAll(
+      `select ${cols} from ${module} where id is not null ${REFERRAL_ORDER}`,
+      {
+        pageSize: REFERRAL_PAGE_SIZE,
+        budgetMs: REFERRAL_DRAIN_BUDGET_MS,
+        ...(maxRows !== undefined ? { maxRows } : {}),
+      },
     );
     return {
       module,
@@ -124,7 +167,8 @@ export async function fetchReferralRecords(
       fields,
       rows: res.rows,
       total: res.rows.length,
-      truncated: res.moreRecords,
+      truncated: res.truncated,
+      pages: res.pages,
     };
   } catch (err) {
     throw new AppError(`Zoho CRM read failed for ${module}: ${errorMessage(err)}`, {
@@ -146,8 +190,10 @@ export interface LinkedRecords {
   module: string;
   fields: ReferralField[];
   rows: Array<Record<string, unknown>>;
+  /** True total — drained, same as {@link ReferralRecordsResult.total}. */
   total: number;
   truncated: boolean;
+  pages: number;
 }
 
 export interface ReferralAssociations {
@@ -174,24 +220,36 @@ const DEAL_DISPLAY: ReferralField[] = [
 /** Lookup keys selected for grouping on the client (not shown as columns). */
 const LINK_KEYS = ['Parent_Referrer', 'Child_Referrer', 'id'] as const;
 
-async function fetchLinked(module: string, display: ReferralField[], cap: number): Promise<LinkedRecords> {
+async function fetchLinked(
+  module: string,
+  display: ReferralField[],
+  maxRows: number | undefined,
+): Promise<LinkedRecords> {
   const cols = [...display.map((f) => f.apiName), ...LINK_KEYS].join(', ');
-  const res = await zohoCrm.runCoql(
-    `select ${cols} from ${module} where Parent_Referrer is not null or Child_Referrer is not null order by Created_Time desc limit 0, ${cap}`,
+  const res = await zohoCrm.runCoqlAll(
+    `select ${cols} from ${module} where Parent_Referrer is not null or Child_Referrer is not null ${REFERRAL_ORDER}`,
+    {
+      pageSize: REFERRAL_PAGE_SIZE,
+      budgetMs: REFERRAL_DRAIN_BUDGET_MS,
+      ...(maxRows !== undefined ? { maxRows } : {}),
+    },
   );
-  return { module, fields: display, rows: res.rows, total: res.rows.length, truncated: res.moreRecords };
+  return { module, fields: display, rows: res.rows, total: res.rows.length, truncated: res.truncated, pages: res.pages };
 }
 
 /**
  * Leads + Deals that reference a referral (via Parent_Referrer / Child_Referrer), for the card to
- * group under each parent/child. Read-only; default limit 200 per module. 502 on any Zoho failure.
+ * group under each parent/child. Read-only, fully drained. 502 on any Zoho failure.
+ *
+ * Both sets are empty org-wide today (no Lead or Deal has either referral lookup set), so each drain
+ * costs exactly one COQL call that returns nothing — the same cost as the old single-page fetch.
  */
 export async function fetchReferralAssociations(limit?: number): Promise<ReferralAssociations> {
-  const cap = clampLimit(limit);
+  const maxRows = rowBudget(limit);
   try {
     const [leads, deals] = await Promise.all([
-      fetchLinked('Leads', LEAD_DISPLAY, cap),
-      fetchLinked('Deals', DEAL_DISPLAY, cap),
+      fetchLinked('Leads', LEAD_DISPLAY, maxRows),
+      fetchLinked('Deals', DEAL_DISPLAY, maxRows),
     ]);
     return { leads, deals };
   } catch (err) {

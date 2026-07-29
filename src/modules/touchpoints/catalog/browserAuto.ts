@@ -3,6 +3,8 @@
  * Widget parity: POST BROWSER_AUTO /wex/boca/:appId and /wex/application/:appId/close.
  */
 import { z } from 'zod';
+import { submitBocaRequest } from '../../browserAutomation/bocaRequest.js';
+import { closeWexApplication } from '../../browserAutomation/closeApplication.js';
 import type { Touchpoint } from '../types.js';
 import { idString, SALES } from './common.js';
 
@@ -20,23 +22,36 @@ const taskBody = z.object({
 
 export const browserAutoTouchpoints: Touchpoint[] = [
   {
-    kind: 'browserauto',
+    kind: 'local',
     key: 'browser.boca',
     title: 'Send BOCA link (browser automation)',
     riskClass: 'write',
     departments: SALES,
-    method: 'POST',
-    pathTemplate: '/wex/boca/{appId}',
     paramsSchema: taskBody,
+    handler: (ctx, params) => submitBocaRequest(ctx, {
+      appId: String(params.appId),
+      assignedTo: String(params.assignedTo ?? ''),
+      priority: params.priority === 'High' || params.priority === 'Normal' || params.priority === 'Low'
+        ? params.priority
+        : '',
+      dueDate: String(params.dueDate ?? ''),
+      status: String(params.status ?? 'Not Started'),
+    }),
   },
   {
-    kind: 'browserauto',
+    kind: 'local',
     key: 'browser.close_application',
     title: 'Close WEX application (browser automation)',
     riskClass: 'write',
     departments: SALES,
-    method: 'POST',
-    pathTemplate: '/wex/application/{appId}/close',
     paramsSchema: taskBody,
+    handler: (_ctx, params) => closeWexApplication(String(params.appId), {
+      assignedTo: String(params.assignedTo ?? ''),
+      priority: params.priority === 'High' || params.priority === 'Normal' || params.priority === 'Low'
+        ? params.priority
+        : '',
+      dueDate: String(params.dueDate ?? ''),
+      status: String(params.status ?? 'Not Started'),
+    }),
   },
 ];

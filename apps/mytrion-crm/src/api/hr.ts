@@ -17,6 +17,8 @@ export interface HrEmployeeDto {
   role: string | null;
   dateOfJoining: string | null;
   mobile: string | null;
+  /** Bare Telegram handle — no '@', no t.me/ prefix. The UI renders the '@'. */
+  telegramUsername: string | null;
   reportingTo: string | null;
   reportingToZohoId: string | null;
   photoUrl: string | null;
@@ -40,6 +42,7 @@ export interface HrEmployeeWriteInput {
   dateOfJoining?: string | null;
   mobile?: string | null;
   reportingTo?: string | null;
+  telegramUsername?: string | null;
 }
 
 export type HrEmployeePatchInput = Partial<HrEmployeeWriteInput>;
@@ -49,6 +52,7 @@ export interface ListHrEmployeesOpts {
   status?: string;
   department?: string;
   departmentId?: string;
+  designation?: string;
   limit?: number;
   offset?: number;
   signal?: AbortSignal;
@@ -66,6 +70,7 @@ export async function listHrEmployees(opts: ListHrEmployeesOpts = {}): Promise<L
       status: opts.status,
       department: opts.department,
       departmentId: opts.departmentId,
+      designation: opts.designation,
       limit: opts.limit,
       offset: opts.offset,
     },

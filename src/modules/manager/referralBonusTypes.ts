@@ -72,11 +72,16 @@ const GALLONS_LEGACY: ReferralBonusSpec = {
 /**
  * Type 2 — Swipes (Legacy): $50 per unique NEW CARD, every month, to the parent.
  *
- * "Swipe" resolves to the Sales Mytrion dashboard's NEW-CARD metric: a card counts in the month its
- * first-ever transaction falls, i.e. servercrm agentDwh.js
- * `MIN(transaction_date) OVER (PARTITION BY carrier_id, card_number)`, with `card_number IS NOT
- * NULL`. Note the dashboard field literally named `swipes_*` is `COUNT(DISTINCT transaction_id)`
- * (transactions) — that is NOT this metric; the one to mirror is `new_cards_*`.
+ * THE PROGRAM DEFINES THE SWIPE — not the Sales Mytrion dashboard. Per the calculation spec: "a card
+ * qualifies as a new swipe in a given month only via its FIRST transaction that month — further
+ * transactions on the same card in the same month do not generate additional swipe bonuses." So it is
+ * one count per unique card per month, and it RECURS: a card fuelling in March and April is a swipe in
+ * both.
+ *
+ * This used to be defined as the dashboard's `new_cards_*` metric (a card's FIRST-EVER appearance),
+ * which paid a referrer $50 once per card per LIFETIME instead of per month — roughly a 6x
+ * under-count. The dashboard is a separate surface with its own definitions (its `swipes_*` field is
+ * `count(distinct transaction_id)`, i.e. per fill-up) and neither of its metrics governs this program.
  */
 const SWIPES_LEGACY: ReferralBonusSpec = {
   type: 'swipes_legacy',
@@ -144,19 +149,28 @@ export function isOneTimeBonusType(type: ReferralBonusType): boolean {
 }
 
 /**
- * Map a Zoho `Calculation` picklist value to the bonus types it selects.
+ * Map a Zoho `Calculation` picklist value to the bonus type it selects — ONE value, ONE type.
  *
- * The picklist is single-select, but the PDF describes types 1 and 2 as concurrent monthly payouts,
- * so a child on either legacy value accrues BOTH legacy bonuses. Unknown / unset (`-None-`, null)
- * selects nothing — as of 2026-07-27 `Calculation` is null on every record in both modules and will
- * be populated by BA/Admin.
+ * This used to expand EITHER legacy value into BOTH legacy types, on the reading that the PDF
+ * describes types 1 and 2 as concurrent monthly payouts. The live data says otherwise: `Calculation`
+ * is a single-select picklist and the 2026-07-28 import deliberately split the roster 615
+ * 'Swipes (Legacy)' vs 50 'Gallons (Legacy)'. Under the old expansion those two values were
+ * indistinguishable in effect, which would make the split meaningless — and it silently paid the
+ * per-gallon bonus on top of the per-swipe one for 615 referrers (a verified $508.92 extra on one
+ * carrier's June alone).
+ *
+ * Unknown / unset (`-None-`, null, an unrecognised value) selects nothing.
+ *
+ * The full picklist, verbatim and identical on both modules: '-None-', 'Swipes (Legacy)',
+ * 'Gallons (Legacy)', 'Gallons (Parent)', 'Gallons (Child)'.
+ *
+ * ⚠ 'Gallons (Parent)' → type 3 and 'Gallons (Child)' → type 4 is INFERRED from the recipient word.
+ * The labels encode neither the 500 vs 1,000 threshold nor "one-time", and ZERO records use either
+ * value today, so that binding is unconfirmed by data — see WORKING_NOTES 2026-07-29.
  */
 export function bonusTypesForCalculation(value: string | null | undefined): ReferralBonusType[] {
   const v = (value ?? '').trim();
   if (!v || v === '-None-') return [];
-  if (v === 'Gallons (Legacy)' || v === 'Swipes (Legacy)') {
-    return ['gallons_legacy', 'swipes_legacy'];
-  }
   const spec = REFERRAL_BONUS_SPECS.find((s) => s.zohoPicklistValue === v);
   return spec ? [spec.type] : [];
 }

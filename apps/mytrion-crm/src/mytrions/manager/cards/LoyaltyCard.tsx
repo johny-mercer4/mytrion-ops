@@ -229,6 +229,13 @@ function ClientCard({ row }: { row: Scored }) {
           <dd>{n0(gallons)}</dd>
         </div>
         <div className="mg-lty-fig">
+          {/* The TRACK basis — shown so an Owner-Operator badge next to "Cards 2/5" reads as
+              deliberate rather than broken. '—' means the Zoho Trucks field is empty and the tier
+              fell back to the card proxy. */}
+          <dt>Trucks</dt>
+          <dd>{client.trucks ?? '—'}</dd>
+        </div>
+        <div className="mg-lty-fig">
           <dt>Cards</dt>
           <dd>
             {client.activeCardsThisMonth}/{client.activeCards}
@@ -266,7 +273,7 @@ function ClientCard({ row }: { row: Scored }) {
         </div>
       ) : (
         <div className="mg-lty-prog-lbl">
-          <span>No card activity — no tier</span>
+          <span>No fuel activity — no tier</span>
         </div>
       )}
     </article>
@@ -345,7 +352,7 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
             <div className="mg-kicker">Workspaces</div>
             <h1 className="mg-page-title">Loyalty Program</h1>
             <p className="mg-page-sub">
-              Every carrier&apos;s Loyalty Tiers v3 standing — track from active cards, tier from this
+              Every carrier&apos;s Loyalty Tiers v3 standing — track from fleet size (trucks), tier from this
               month&apos;s gallons. Company-wide; Sales sees the same tiers for their own book.
             </p>
           </div>
