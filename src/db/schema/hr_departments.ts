@@ -34,10 +34,15 @@ export const hrDepartments = pgTable(
     code: text('code'),
     /** Zoho `MailAlias`. */
     mailAlias: text('mail_alias'),
-    /** Zoho `Department_Lead` display. */
+    /** Zoho `Department_Lead` display — kept in sync from `leadEmployeeId` when set via the picker. */
     leadName: text('lead_name'),
     leadZohoId: text('lead_zoho_id'),
     leadEmail: text('lead_email'),
+    /**
+     * FK → hr_employees.id — the department lead as a STABLE person, not a free-text name.
+     * Zoho's Department_Lead.ID maps here via zoho_record_id; the admin picker writes this directly.
+     */
+    leadEmployeeId: text('lead_employee_id'),
     /** Zoho `Parent_Department` display. */
     parentName: text('parent_name'),
     parentZohoId: text('parent_zoho_id'),
@@ -69,6 +74,7 @@ export const hrDepartments = pgTable(
       .where(sql`${table.zohoRecordId} IS NOT NULL`),
     nameUk: uniqueIndex('hr_departments_tenant_name_uk').on(table.tenantId, table.name),
     parentIdx: index('hr_departments_tenant_parent_idx').on(table.tenantId, table.parentId),
+    leadEmpIdx: index('hr_departments_tenant_lead_emp_idx').on(table.tenantId, table.leadEmployeeId),
   }),
 );
 

@@ -2,7 +2,7 @@
  * Pull every Zoho People employee record and upsert into hr_employees (tenant-scoped).
  */
 import { zohoPeople } from '../../integrations/zohoPeople.js';
-import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
+import { hrEmployeeSyncRepo } from '../../repos/hrEmployeeSyncRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { mapZohoEmployeeToUpsert } from './mapZohoEmployee.js';
 
@@ -10,6 +10,8 @@ export interface HrEmployeeSyncResult {
   fetched: number;
   inserted: number;
   updated: number;
+  /** Rows whose id-based manager link was (re)resolved from the synced `reporting_to` name. */
+  relinkedManagers: number;
   errors: Array<{ zohoRecordId: string; message: string }>;
 }
 
@@ -48,7 +50,18 @@ export async function syncHrEmployeesFromZoho(
    * single ON CONFLICT statement, so `updated` carries the total and `inserted` stays 0. The useful
    * signal was always fetched-vs-written, which is what a partial run actually shows up in.
    */
-  const { written } = await hrEmployeeRepo.bulkUpsertFromZoho(ctx, mapped);
+  const { written } = await hrEmployeeSyncRepo.bulkUpsertFromZoho(ctx, mapped);
 
-  return { fetched: records.length, inserted: 0, updated: written, errors };
+  /**
+   * Re-resolve the id-based manager links from the names the upsert just wrote.
+   *
+   * The upsert overwrites `reporting_to` (Zoho owns the name) and knows nothing about
+   * `reporting_to_employee_id`, which the org canvas draws its reporting lines from. Without this pass
+   * the two columns contradict each other after every sync: a person's card shows one manager while the
+   * chart draws the line to whoever the id still pointed at. Runs once, set-based, after the writes — so
+   * it also picks up new hires whose manager only exists as of this batch.
+   */
+  const relinkedManagers = await hrEmployeeSyncRepo.relinkManagers(ctx);
+
+  return { fetched: records.length, inserted: 0, updated: written, relinkedManagers, errors };
 }

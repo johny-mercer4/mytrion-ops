@@ -81,7 +81,11 @@ export function TopBar({
           </div>
         )}
         <span className={styles.avatar} title={user.userName}>
-          {initials(user.userName)}
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" className={styles.avatarImg} />
+          ) : (
+            initials(user.userName)
+          )}
         </span>
         {user.trusted && (
           <button

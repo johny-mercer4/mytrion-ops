@@ -15,6 +15,8 @@ export interface SessionWorker {
   email: string | null;
   profile: string | null;
   role: string | null;
+  /** Profile picture as a data-URL (from `worker_profiles`), when set. */
+  avatarUrl?: string | null;
   /** Whether the worker has see-everything access (DB-resolved by the backend). */
   allDepartmentAccess?: boolean;
   /** The Mytrions this worker may enter — DB-resolved server-side (authoritative). */

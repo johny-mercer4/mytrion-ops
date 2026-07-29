@@ -120,6 +120,13 @@
   font-family: var(--font-head);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   flex: none;
+  overflow: hidden;
+}
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ── Horizon skin ──────────────────────────────────────────────────────────────

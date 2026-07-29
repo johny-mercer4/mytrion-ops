@@ -239,6 +239,7 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
     const ctx = managerContext(request);
     const query = listTaskQuerySchema.parse(request.query ?? {});
     const tasks = await workerTaskRepo.list(ctx, {
+      department: 'sales',
       ...(query.assigneeZohoUserId !== undefined
         ? { assigneeZohoUserId: query.assigneeZohoUserId }
         : {}),
@@ -262,6 +263,7 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
       deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
       priority: body.priority ?? 'normal',
       source: 'manager',
+      department: 'sales',
       externalId: body.externalId ?? null,
     });
     await auditFromContext(ctx, {

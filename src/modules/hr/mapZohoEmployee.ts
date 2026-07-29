@@ -3,7 +3,7 @@
  * Field keys are Zoho labelnames (see peopleSchema / meta:zoho-people).
  */
 import type { EmployeeRecord } from '../../integrations/zohoPeople.js';
-import type { UpsertFromZohoInput } from '../../repos/hrEmployeeRepo.js';
+import type { UpsertFromZohoInput } from '../../repos/hrEmployeeSyncRepo.js';
 
 function str(v: unknown): string {
   if (v == null) return '';
@@ -35,6 +35,8 @@ export function mapZohoEmployeeToUpsert(record: EmployeeRecord): UpsertFromZohoI
     role: str(f.Role) || null,
     dateOfJoining: dateStr(f.Dateofjoining) || dateStr(f.Date_of_joining) || null,
     mobile: str(f.Mobile) || null,
+    /** Zoho People biometric / access-control id (`Face_ID`). Keep as text — values are zero-padded. */
+    faceId: str(f.Face_ID) || str(f.FaceID) || null,
     reportingTo: str(f.Reporting_To) || null,
     reportingToZohoId: str(f['Reporting_To.ID']) || null,
     photoUrl: str(f.Photo_downloadUrl) || str(f.Photo) || null,

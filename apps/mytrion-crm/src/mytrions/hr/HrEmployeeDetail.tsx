@@ -1,6 +1,18 @@
-import { useEffect } from 'react';
-import { Briefcase, CalendarDays, Mail, MapPin, Pencil, Phone, Send, User, X } from 'lucide-react';
+import { useEffect, type CSSProperties } from 'react';
+import {
+  Briefcase,
+  CalendarDays,
+  Fingerprint,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Send,
+  User,
+  X,
+} from 'lucide-react';
 import type { HrEmployeeDto } from '../../api/hr';
+import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
 import { Pill, toneFor } from './HrBits';
 
@@ -17,16 +29,20 @@ import { Pill, toneFor } from './HrBits';
 export function HrEmployeeDetail({
   employee,
   admin,
+  departmentColor,
   onClose,
   onEdit,
 }: {
   employee: HrEmployeeDto;
   admin: boolean;
+  /** Department tone token — colours the department badge to match its department card. */
+  departmentColor?: string | null;
   onClose: () => void;
   onEdit: (e: HrEmployeeDto) => void;
 }) {
   const name = `${employee.firstName} ${employee.lastName}`.trim();
   const handle = (employee.telegramUsername ?? '').trim().replace(/^@+/, '');
+  const deptTone = departmentTone(departmentColor ?? null);
 
   // Escape closes it. A modal you can only dismiss with the mouse is a trap for keyboard users.
   useEffect(() => {
@@ -44,6 +60,7 @@ export function HrEmployeeDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="hr-empd-title"
+        style={{ ['--dc' as string]: deptTone } as CSSProperties}
         onClick={(ev) => ev.stopPropagation()}
       >
         <header className="hr-empd-head">
@@ -63,6 +80,12 @@ export function HrEmployeeDetail({
 
         <dl className="hr-empd-grid">
           <Field icon={<User size={12} />} label="Employee ID" value={employee.employeeId} mono />
+          <Field
+            icon={<Fingerprint size={12} />}
+            label="Face ID"
+            value={employee.faceId}
+            mono
+          />
           <Field icon={<Mail size={12} />} label="Email" value={employee.email} mono />
           <Field icon={<Phone size={12} />} label="Mobile" value={employee.mobile} mono />
           {/* The '@' is presentation only — the column stores the bare handle. */}

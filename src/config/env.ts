@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   MYTRION_OPS_DATABASE_URL: z.string().default(''),
   DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  // Admin Data Loader launch target. NocoDB owns its own auth and runs outside this process.
+  NOCODB_BASE_URL: z.string().default(''),
 
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
@@ -389,6 +391,10 @@ const EnvSchema = z.object({
   // --- Inbox-message webhook (Zoho CRM Org_Module → mytrion_inbox_messages). A dedicated shared
   //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
   INBOX_WEBHOOK_SECRET: z.string().default(''),
+
+  // --- HR attendance webhook (Hikvision / servercrm → hr_attendance_punches). Header
+  //     `x-attendance-webhook-secret`. Blank → route answers 503 (boot still succeeds). ---
+  HR_ATTENDANCE_WEBHOOK_SECRET: z.string().default(''),
 
   // --- Rejection-report webhook (Zoho Desk Deluge → mytrion_rejection_reports). A dedicated shared
   //     secret in the `x-rejection-secret` header, scoped to just that endpoint (NOT the full

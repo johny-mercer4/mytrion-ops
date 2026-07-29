@@ -2,6 +2,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { sql } from 'drizzle-orm';
 import {
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -52,10 +53,25 @@ export const hrEmployees = pgTable(
     /** ISO date YYYY-MM-DD when known. */
     dateOfJoining: text('date_of_joining'),
     mobile: text('mobile'),
+    /**
+     * Zoho People `Face_ID` — biometric / access-control id used on site. Stored as text (values are
+     * zero-padded numerics like `00000390`, not integers we should parse).
+     */
+    faceId: text('face_id'),
     /** Telegram handle, stored BARE — no leading '@', no t.me/ prefix. The UI renders the '@'. */
     telegramUsername: text('telegram_username'),
     reportingTo: text('reporting_to'),
     reportingToZohoId: text('reporting_to_zoho_id'),
+    /**
+     * FK → hr_employees.id — the manager as a STABLE ID, which `reportingTo` (a display name) can
+     * never be. The org canvas re-parents people by dragging one node onto another, so the link has
+     * to survive a rename; matching on name would silently detach everyone the moment HR fixes a
+     * typo, and would fan out across the two "Aziz Karimov"s the directory already has.
+     *
+     * Resolved from `reportingTo` only when the name matches EXACTLY ONE other employee (see
+     * `resolveManagerEmployeeId`); ambiguous names stay null and the person renders as a root.
+     */
+    reportingToEmployeeId: text('reporting_to_employee_id'),
     /**
      * Zoho People's `Photo_downloadUrl`. OAuth-gated, so a browser `<img src>` gets a 401 — this is why
      * avatars render broken. Kept for provenance; `photoFileId` is what the UI should use.
@@ -80,6 +96,13 @@ export const hrEmployees = pgTable(
     zohoUserIdSource: text('zoho_user_id_source'),
     /** When the link was last (re)resolved — so a stale mapping is visible. */
     zohoUserLinkedAt: timestamp('zoho_user_linked_at', { withTimezone: true }),
+    /**
+     * Org-canvas position, once a user drags this person's node. Null = let the auto-layout place
+     * them, which is what every row starts as. Mirrors hr_departments.canvas_x/y so both node levels
+     * on the canvas persist the same way.
+     */
+    canvasX: integer('canvas_x'),
+    canvasY: integer('canvas_y'),
     /** `zoho_people` | `manual` */
     source: text('source').notNull().default('manual'),
     /** Full Zoho People field bag (or last sync snapshot). */
@@ -100,6 +123,7 @@ export const hrEmployees = pgTable(
     /** Plain, NOT unique — two people can legitimately share a handle blank, and duplicates are a
      *  data-quality question for HR to resolve, not a reason to reject a save. */
     telegramIdx: index('hr_employees_tenant_telegram_idx').on(table.tenantId, table.telegramUsername),
+    faceIdIdx: index('hr_employees_tenant_face_id_idx').on(table.tenantId, table.faceId),
     /**
      * One CRM user maps to AT MOST one employee. Without this the mapping could fan out and two
      * employee rows would both answer "who is this session", which is an RBAC hole rather than a
@@ -110,6 +134,8 @@ export const hrEmployees = pgTable(
       .where(sql`${table.zohoUserId} IS NOT NULL`),
     deptIdIdx: index('hr_employees_tenant_dept_id_idx').on(table.tenantId, table.departmentId),
     deptZohoIdx: index('hr_employees_tenant_dept_zoho_idx').on(table.tenantId, table.departmentZohoId),
+    /** The org canvas walks children-by-manager for every node; without this that is a table scan per node. */
+    managerIdx: index('hr_employees_tenant_manager_idx').on(table.tenantId, table.reportingToEmployeeId),
   }),
 );
 

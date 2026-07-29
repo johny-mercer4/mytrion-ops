@@ -1,378 +1,416 @@
-import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
-// Shared stale-while-revalidate cache (the app's Data-Center caching system) — instant re-entry.
-import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  listChildReferrals,
-  listParentReferrers,
-  listReferralAssociations,
-  type CrmRow,
-  type ReferralAssociations,
-  type ReferralField,
-} from '../../../api/referrals';
+  ArrowLeft,
+  BadgeDollarSign,
+  Building2,
+  Calculator,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  CreditCard,
+  Fuel,
+  Link2,
+  RefreshCw,
+  Search,
+  Target,
+  TriangleAlert,
+  UsersRound,
+} from 'lucide-react';
+import { getReferralWorkspace } from '../../../api/referrals';
+import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
+import { ReferralDetailModal } from './ReferralDetailModal';
+import { buildReferralCards, cardMatchesFilter, type ReferralCardModel } from './referralModel';
+import './referrals.css';
 
-interface ParentGroup {
-  parent: CrmRow;
-  children: CrmRow[];
-}
-type LinkField = 'Parent_Referrer' | 'Child_Referrer';
+const PAGE_SIZE = 24;
+const FILTERS = [
+  { id: 'all', label: 'All referrals' },
+  { id: 'Swipes (Legacy)', label: 'Swipes' },
+  { id: 'Gallons (Legacy)', label: 'Legacy gallons' },
+  { id: 'Gallons (Parent)', label: 'Parent · 500 gal' },
+  { id: 'Gallons (Child)', label: 'Child · 1,000 gal' },
+  { id: 'needs_setup', label: 'Needs setup' },
+] as const;
 
-/** Format one raw Zoho value: lookups → name, booleans → Yes/No, urls → link, empty → N/A badge. */
-function renderCell(value: unknown): { text: string; href?: string; empty?: boolean } {
-  if (value === null || value === undefined || value === '') return { text: 'N/A', empty: true };
-  if (typeof value === 'boolean') return { text: value ? 'Yes' : 'No' };
-  if (typeof value === 'object') {
-    const o = value as Record<string, unknown>;
-    if (o.name != null) return { text: String(o.name) };
-    if (o.id != null) return { text: String(o.id) };
-    return { text: JSON.stringify(value) };
-  }
-  const s = String(value);
-  if (/^https?:\/\//i.test(s)) return { text: s.length > 48 ? `${s.slice(0, 48)}…` : s, href: s };
-  return { text: s };
-}
-
-/** A single value, N/A-badged when empty. */
-function Value({ value }: { value: unknown }) {
-  const cell = renderCell(value);
-  if (cell.empty) return <span className="mg-na">N/A</span>;
-  if (cell.href)
-    return (
-      <a href={cell.href} target="_blank" rel="noreferrer">
-        {cell.text}
-      </a>
-    );
-  return <>{cell.text}</>;
-}
-
-/**
- * One row's searchable text, lowercased, built ONCE per fetch.
- *
- * This used to be a `rowMatches(row, q)` called from the render body, so every keystroke walked 687
- * parents x ~22 fields and re-ran `renderCell` on each value — the same "whole table re-renders on
- * every keystroke" problem already fixed for CS in 3737033, and it got far worse when the card started
- * fetching all 687 parents instead of 200.
- */
-function rowHaystack(row: CrmRow): string {
-  return Object.values(row)
-    .map((v) => renderCell(v).text)
-    .join(' \u0000 ')
-    .toLowerCase();
-}
-
-const str = (v: unknown): string => (v == null ? '' : String(v).trim());
-const parentRefId = (p: CrmRow): string => str(p.ReferrerId);
-const childRefId = (c: CrmRow): string => str(c.Referrer_ID);
-/** Read the record id out of a lookup field ({name,id}) — the grouping key. */
-const lookupId = (rec: CrmRow, field: string): string => {
-  const v = rec[field];
-  return v && typeof v === 'object' && 'id' in v ? str((v as { id?: unknown }).id) : '';
+const TYPE_META: Record<
+  string,
+  { label: string; className: string; Icon: typeof Fuel; caption: string }
+> = {
+  'Gallons (Legacy)': {
+    label: 'Legacy gallons',
+    className: 'mg-rf-tone-cyan',
+    Icon: Fuel,
+    caption: '$0.01 / gallon · monthly',
+  },
+  'Swipes (Legacy)': {
+    label: 'Legacy swipes',
+    className: 'mg-rf-tone-violet',
+    Icon: CreditCard,
+    caption: '$50 / unique card · monthly',
+  },
+  'Gallons (Parent)': {
+    label: 'Parent milestone',
+    className: 'mg-rf-tone-amber',
+    Icon: Target,
+    caption: '$50 once · 500 gallons',
+  },
+  'Gallons (Child)': {
+    label: 'Child milestone',
+    className: 'mg-rf-tone-emerald',
+    Icon: Building2,
+    caption: '$50 once · 1,000 gallons',
+  },
 };
 
-/** Full-field definition grid (label → value) — shows every field without a wide table. */
-function DetailGrid({ fields, row }: { fields: ReferralField[]; row: CrmRow }) {
+function currentPeriod(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function money(value: number | string): string {
+  return Number(value || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+function setupCopy(card: ReferralCardModel): string {
+  if (card.setupState === 'needs_calculation') return 'Calculation field required';
+  if (card.setupState === 'needs_child') return 'No child referrals linked';
+  if (card.setupState === 'needs_deal') return 'Related Deal with Carrier ID required';
+  return '';
+}
+
+function ReferralCard({
+  card,
+  onOpen,
+}: {
+  card: ReferralCardModel;
+  onOpen: (card: ReferralCardModel) => void;
+}) {
+  const meta = TYPE_META[card.calculation];
+  const Icon = meta?.Icon ?? Calculator;
+  const preview = card.previews[0];
+  const paid = card.previews.some((item) => item.state === 'paid');
+  const earned = card.previews.some((item) => item.state === 'earned');
+  const carriers = new Set(card.previews.map((item) => item.carrierId)).size;
   return (
-    <dl className="mg-dl">
-      {fields.map((f) => (
-        <div className="mg-dl-item" key={f.apiName}>
-          <dt title={`${f.apiName} · ${f.type}`}>{f.label}</dt>
-          <dd>
-            <Value value={row[f.apiName]} />
-          </dd>
+    <button
+      type="button"
+      className={`mg-rf-card ${meta?.className ?? 'mg-rf-tone-neutral'}`}
+      onClick={() => onOpen(card)}
+      aria-label={`Open ${card.name} referral details`}
+    >
+      <span className="mg-rf-card-glow" aria-hidden="true" />
+      <header className="mg-rf-card-head">
+        <span className="mg-rf-card-icon">
+          <Icon size={19} />
+        </span>
+        <span className="mg-rf-card-type">
+          <strong>{meta?.label ?? 'Setup required'}</strong>
+          <small>{meta?.caption ?? setupCopy(card)}</small>
+        </span>
+        <ChevronRight className="mg-rf-card-arrow" size={16} />
+      </header>
+
+      <div className="mg-rf-card-identity">
+        <span className="mg-rf-avatar">{card.name.slice(0, 2).toUpperCase()}</span>
+        <span>
+          <strong>{card.name}</strong>
+          <small>{card.company || card.referrerId || 'Parent Referrer'}</small>
+        </span>
+      </div>
+
+      {card.setupState === 'ready' ? (
+        <>
+          <div className="mg-rf-card-amount">
+            <span>{preview?.recurring ? 'This month' : 'Milestone award'}</span>
+            <strong>
+              {money(card.previews.reduce((sum, item) => sum + Number(item.amountUsd), 0))}
+            </strong>
+            <small>
+              {paid
+                ? 'Previously paid'
+                : earned
+                  ? `${money(card.payableAmount)} payable`
+                  : 'In progress'}
+            </small>
+          </div>
+          {!preview?.recurring && preview ? (
+            <div className="mg-rf-card-progress">
+              <span>
+                <span style={{ width: `${preview.progressPct}%` }} />
+              </span>
+              <small>{Math.round(preview.progressPct)}% of threshold</small>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="mg-rf-card-alert">
+          <TriangleAlert size={15} />
+          <span>{setupCopy(card)}</span>
+        </div>
+      )}
+
+      <footer className="mg-rf-card-foot">
+        <span>
+          <UsersRound size={13} /> {card.children.length} children
+        </span>
+        <span>
+          <Link2 size={13} /> {card.deals.length} deals
+        </span>
+        <span>
+          <Fuel size={13} /> {carriers} carriers
+        </span>
+        {paid ? (
+          <span className="is-success">
+            <CircleCheck size={13} /> Paid
+          </span>
+        ) : null}
+      </footer>
+    </button>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="mg-rf-grid" aria-label="Loading referral cards">
+      {Array.from({ length: 8 }, (_, index) => (
+        <div className="mg-rf-card mg-rf-card-skeleton" key={index}>
+          <span />
+          <span />
+          <span />
+          <span />
         </div>
       ))}
-    </dl>
-  );
-}
-
-/** Referrer-code chip, or an N/A badge when blank. */
-function RefChip({ code, alt }: { code: string; alt?: boolean }) {
-  if (!code) return <span className="mg-na">N/A</span>;
-  return <span className={`mg-refchip${alt ? ' mg-refchip-alt' : ''}`}>{code}</span>;
-}
-
-/** Leads or Deals that reference a parent/child — a labelled, compact list. */
-function LinkedSection({
-  label,
-  kind,
-  fields,
-  rows,
-}: {
-  label: string;
-  kind: string;
-  fields: ReferralField[];
-  rows: CrmRow[];
-}) {
-  const nameKey = fields[0]?.apiName;
-  return (
-    <>
-      <div className="mg-section-label">
-        {label} · {rows.length}
-      </div>
-      {rows.length === 0 ? (
-        <div className="mg-empty-sm">None.</div>
-      ) : (
-        rows.map((r) => (
-          <div className="mg-link" key={str(r.id)}>
-            <div className="mg-child-head">
-              <span className="mg-kindchip">{kind}</span>
-              <span className="mg-child-name">{(nameKey && str(r[nameKey])) || 'Unnamed'}</span>
-            </div>
-            <DetailGrid fields={fields} row={r} />
-          </div>
-        ))
-      )}
-    </>
-  );
-}
-
-function ChildBlock({
-  child,
-  fields,
-  assoc,
-}: {
-  child: CrmRow;
-  fields: ReferralField[];
-  assoc: ReferralAssociations | null;
-}) {
-  const id = str(child.id);
-  const leads = assoc ? assoc.leads.rows.filter((l) => lookupId(l, 'Child_Referrer') === id) : [];
-  const deals = assoc ? assoc.deals.rows.filter((d) => lookupId(d, 'Child_Referrer') === id) : [];
-  return (
-    <div className="mg-child">
-      <div className="mg-child-head">
-        <RefChip code={childRefId(child)} alt />
-        <span className="mg-child-name">{str(child.Name) || 'Unnamed'}</span>
-        {str(child.Referral_Type) ? <span className="mg-tagchip">{str(child.Referral_Type)}</span> : null}
-      </div>
-      <DetailGrid fields={fields} row={child} />
-      {assoc ? (
-        <>
-          <LinkedSection label="Leads (Child Referral)" kind="Lead" fields={assoc.leads.fields} rows={leads} />
-          <LinkedSection label="Deals (Child Referral)" kind="Deal" fields={assoc.deals.fields} rows={deals} />
-        </>
-      ) : null}
     </div>
   );
 }
 
-/**
- * Referrals card — parent referrers with their child referrals nested in an accordion, plus the Leads
- * and Deals that reference each parent/child (via Parent_Referrer / Child_Referrer). Children link to
- * a parent by referrer id (child.Referrer_ID === parent.ReferrerId), falling back to the Parent_Referrer
- * lookup. Every field is shown; empty values read as N/A. Data is served stale-while-revalidate
- * (useCachedLoad) so re-entering the card paints instantly. Fetched from prod Zoho CRM.
- */
 export function ReferralsCard({ onBack }: { onBack?: () => void }) {
+  const [periodMonth, setPeriodMonth] = useState(currentPeriod);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<ReferralCardModel | null>(null);
+
   const { data, loading, revalidating, error, reload, cachedAt } = useCachedLoad(
-    'manager:referrals',
-    async () => {
-      const [parents, children, assoc] = await Promise.all([
-        listParentReferrers(),
-        listChildReferrals(),
-        listReferralAssociations(),
-      ]);
-      return { parents, children, assoc };
-    },
+    `manager:referrals:workspace:${periodMonth}`,
+    () => getReferralWorkspace(periodMonth),
     { staleMs: 120_000 },
   );
-  const [q, setQ] = useState('');
+  const model = useMemo(() => (data ? buildReferralCards(data) : null), [data]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      (model?.cards ?? []).filter(
+        (card) =>
+          cardMatchesFilter(card, filter) &&
+          (!normalizedQuery || card.searchText.includes(normalizedQuery)),
+      ),
+    [model, filter, normalizedQuery],
+  );
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const parents = data?.parents ?? null;
-  const children = data?.children ?? null;
-  const assoc = data?.assoc ?? null;
+  useEffect(() => setPage(1), [filter, normalizedQuery, periodMonth]);
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
-  const { groups, orphans, linkedCount, hay } = useMemo(() => {
-    const empty: {
-      groups: ParentGroup[];
-      orphans: CrmRow[];
-      linkedCount: number;
-      hay: Map<CrmRow, string>;
-    } = {
-      groups: [],
-      orphans: [],
-      linkedCount: 0,
-      hay: new Map(),
-    };
-    if (!parents || !children) return empty;
-    const built: ParentGroup[] = parents.rows.map((parent) => {
-      const pid = parentRefId(parent);
-      const pRecId = str(parent.id);
-      const kids = children.rows.filter(
-        (c) =>
-          (pid !== '' && childRefId(c) === pid) ||
-          (lookupId(c, 'Parent_Referrer') !== '' && lookupId(c, 'Parent_Referrer') === pRecId),
-      );
-      return { parent, children: kids };
-    });
-    const matched = new Set(built.flatMap((g) => g.children.map((c) => str(c.id))));
-    const orphaned = children.rows.filter((c) => !matched.has(str(c.id)));
-    // Keyed by row identity, which is stable for the life of one fetch — the map dies with this memo.
-    const hay = new Map<CrmRow, string>();
-    for (const p of parents.rows) hay.set(p, rowHaystack(p));
-    for (const c of children.rows) hay.set(c, rowHaystack(c));
-    return { groups: built, orphans: orphaned, linkedCount: matched.size, hay };
-  }, [parents, children]);
-
-  const linked = (id: string, field: LinkField, kind: 'leads' | 'deals'): CrmRow[] =>
-    assoc ? assoc[kind].rows.filter((r) => lookupId(r, field) === id) : [];
-
-  const ql = q.trim().toLowerCase();
-  // Memoised on the query, so typing only re-filters against prebuilt strings instead of re-deriving
-  // every cell's text; an empty query short-circuits to the full lists with no work at all.
-  const { shownGroups, shownOrphans } = useMemo(() => {
-    if (!ql) return { shownGroups: groups, shownOrphans: orphans };
-    const hit = (r: CrmRow): boolean => (hay.get(r) ?? '').includes(ql);
-    return {
-      shownGroups: groups.filter((g) => hit(g.parent) || g.children.some(hit)),
-      shownOrphans: orphans.filter(hit),
-    };
-  }, [groups, orphans, hay, ql]);
-  // One indicator per wait: the Refresh glyph spins ONLY for a background revalidation. While the cold
-  // load runs, the body skeleton is the single indicator — spinning both is the double loader the
-  // project rules forbid.
-  const spinRefresh = revalidating && !loading;
+  const filterCounts = useMemo(() => {
+    const cards = model?.cards ?? [];
+    return Object.fromEntries(
+      FILTERS.map((item) => [
+        item.id,
+        cards.filter((card) => cardMatchesFilter(card, item.id)).length,
+      ]),
+    );
+  }, [model]);
 
   return (
-    <div className="mg-page">
+    <div className="mg-page mg-rf-page">
       <header className="mg-page-head">
         <div className="mg-page-head-left">
           {onBack ? (
-            <button type="button" className="mg-backbtn" onClick={onBack} aria-label="Back to overview">
+            <button
+              type="button"
+              className="mg-backbtn"
+              onClick={onBack}
+              aria-label="Back to overview"
+            >
               <ArrowLeft size={16} />
             </button>
           ) : null}
           <div>
-            {/* Same kicker → title → sub rhythm as the department landings. */}
-            <div className="mg-kicker">Workspaces</div>
-            <h1 className="mg-page-title">Referrals</h1>
+            <div className="mg-kicker">Partner growth</div>
+            <h1 className="mg-page-title">Referral intelligence</h1>
             <p className="mg-page-sub">
-              Parent referrers, their child referrals (by referrer id), and the Leads &amp; Deals that
-              reference each — full details, from prod Zoho CRM.
+              Zoho relationships, Deal carrier IDs, and MART fuel activity brought into one
+              auditable calculation workspace.
             </p>
           </div>
         </div>
         <div className="mg-head-actions">
-          {/* Reserved height either way — a caption that pops in on first load shoves the Refresh
-              button sideways. "Refreshing…" instead of a stale timestamp during a background refetch. */}
           <span className="mg-cachedat">
-            {revalidating ? 'Refreshing…' : cachedAt ? `Updated ${formatCachedAt(cachedAt)}` : '\u00a0'}
+            {revalidating
+              ? 'Refreshing…'
+              : cachedAt
+                ? `Updated ${formatCachedAt(cachedAt)}`
+                : '\u00a0'}
           </span>
-          <button type="button" className="mg-btn" onClick={reload} disabled={loading || revalidating}>
-            <RefreshCw size={15} className={spinRefresh ? 'mg-spin' : ''} />
+          <label className="mg-rf-month">
+            <CalendarDays size={14} />
+            <input
+              type="month"
+              value={periodMonth.slice(0, 7)}
+              onChange={(event) =>
+                setPeriodMonth(event.target.value ? `${event.target.value}-01` : currentPeriod())
+              }
+              aria-label="Calculation month"
+            />
+          </label>
+          <button
+            type="button"
+            className="mg-btn"
+            onClick={reload}
+            disabled={loading || revalidating}
+          >
+            <RefreshCw size={15} className={revalidating && !loading ? 'mg-spin' : ''} />
             Refresh
           </button>
         </div>
       </header>
 
-      <div className="mg-toolbar">
-        {parents && children ? (
-          <div className="mg-summary">
-            <strong>{parents.total}</strong> parent referrers · <strong>{children.total}</strong> child
-            referrals · <strong>{linkedCount}</strong> linked · <strong>{orphans.length}</strong> unlinked
+      {data ? (
+        <section className="mg-rf-kpis" aria-label="Referral summary">
+          <div>
+            <span className="is-violet">
+              <UsersRound size={17} />
+            </span>
+            <small>Parent referrers</small>
+            <strong>{data.summary.parents.toLocaleString()}</strong>
+            <em>{data.summary.configuredParents.toLocaleString()} configured</em>
           </div>
-        ) : (
-          <span />
-        )}
-        <label className="mg-search">
-          <Search size={15} />
+          <div>
+            <span className="is-cyan">
+              <Link2 size={17} />
+            </span>
+            <small>Related deals</small>
+            <strong>{data.summary.relatedDeals.toLocaleString()}</strong>
+            <em>{data.summary.connectedCarriers.toLocaleString()} MART carriers</em>
+          </div>
+          <div>
+            <span className="is-emerald">
+              <BadgeDollarSign size={17} />
+            </span>
+            <small>Payable this run</small>
+            <strong>{money(data.summary.payableAmountUsd)}</strong>
+            <em>{data.summary.earned} earned awards</em>
+          </div>
+          <div>
+            <span className="is-amber">
+              <TriangleAlert size={17} />
+            </span>
+            <small>Needs attention</small>
+            <strong>{data.summary.needsDealLink + data.summary.needsCalculation}</strong>
+            <em>missing Deal link or calculation</em>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="mg-rf-controls">
+        <label className="mg-rf-search">
+          <Search size={16} />
           <input
             type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Filter parents & children…"
-            aria-label="Filter referral records"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search referrer, company, child, deal or carrier…"
+            aria-label="Search referrals"
           />
         </label>
-      </div>
+        <div className="mg-rf-filters" role="group" aria-label="Filter calculation type">
+          {FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-pressed={filter === item.id}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+              <span>{filterCounts[item.id] ?? 0}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {loading ? (
-        <div className="mg-loading">
-          <span className="mg-spinner" aria-hidden="true" />
-          Loading referral records…
-        </div>
-      ) : error && !parents ? (
+        <SkeletonGrid />
+      ) : error && !data ? (
         <div className="mg-error">
           <p>{error}</p>
           <button type="button" className="mg-btn" onClick={reload}>
             Retry
           </button>
         </div>
-      ) : parents && children ? (
-        <div className="mg-acc-list">
-          {shownGroups.length === 0 && shownOrphans.length === 0 ? (
-            <div className="mg-empty">
-              {q.trim()
-                ? `No referral records match “${q.trim()}”.`
-                : 'No parent referrers or child referrals in Zoho CRM yet.'}
-            </div>
+      ) : visible.length ? (
+        <>
+          <div className="mg-rf-result-meta">
+            <span>
+              Showing <strong>{visible.length}</strong> of <strong>{filtered.length}</strong>{' '}
+              referrals
+            </span>
+            {model?.orphanChildren.length ? (
+              <span className="is-warning">
+                <TriangleAlert size={13} />
+                {model.orphanChildren.length} unlinked child referrals
+              </span>
+            ) : null}
+          </div>
+          <div className="mg-rf-grid">
+            {visible.map((card) => (
+              <ReferralCard key={card.id} card={card} onOpen={setSelected} />
+            ))}
+          </div>
+          {pageCount > 1 ? (
+            <nav className="mg-rf-pagination" aria-label="Referral pages">
+              <button
+                type="button"
+                onClick={() => setPage((value) => value - 1)}
+                disabled={page === 1}
+              >
+                <ChevronLeft size={15} /> Previous
+              </button>
+              <span>
+                Page <strong>{page}</strong> of {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((value) => value + 1)}
+                disabled={page === pageCount}
+              >
+                Next <ChevronRight size={15} />
+              </button>
+            </nav>
           ) : null}
-
-          {shownGroups.map((g) => {
-            const pid = str(g.parent.id);
-            return (
-              <details className="mg-acc" key={pid} {...(ql ? { open: true } : {})}>
-                <summary className="mg-acc-summary">
-                  <ChevronRight size={16} className="mg-acc-chevron" />
-                  <RefChip code={parentRefId(g.parent)} />
-                  <span className="mg-acc-name">{str(g.parent.Name) || 'Unnamed referrer'}</span>
-                  <span className="mg-acc-company">{str(g.parent.Company_Name)}</span>
-                  <span className={`mg-count${g.children.length ? '' : ' mg-count-zero'}`}>
-                    {g.children.length} {g.children.length === 1 ? 'child' : 'children'}
-                  </span>
-                </summary>
-                <div className="mg-acc-body">
-                  <div className="mg-section-label">Parent details</div>
-                  <DetailGrid fields={parents.fields} row={g.parent} />
-                  {assoc ? (
-                    <>
-                      <LinkedSection
-                        label="Leads (Parent Referrer)"
-                        kind="Lead"
-                        fields={assoc.leads.fields}
-                        rows={linked(pid, 'Parent_Referrer', 'leads')}
-                      />
-                      <LinkedSection
-                        label="Deals (Parent Referrer)"
-                        kind="Deal"
-                        fields={assoc.deals.fields}
-                        rows={linked(pid, 'Parent_Referrer', 'deals')}
-                      />
-                    </>
-                  ) : null}
-                  <div className="mg-section-label">Child referrals · {g.children.length}</div>
-                  {g.children.length === 0 ? (
-                    <div className="mg-empty-sm">No child referrals linked to this referrer id.</div>
-                  ) : (
-                    g.children.map((child) => (
-                      <ChildBlock key={str(child.id)} child={child} fields={children.fields} assoc={assoc} />
-                    ))
-                  )}
-                </div>
-              </details>
-            );
-          })}
-
-          {shownOrphans.length > 0 ? (
-            <details className="mg-acc mg-acc-orphan" {...(ql ? { open: true } : {})}>
-              <summary className="mg-acc-summary">
-                <ChevronRight size={16} className="mg-acc-chevron" />
-                <span className="mg-acc-name">Unlinked child referrals</span>
-                <span className={`mg-count ${shownOrphans.length ? 'mg-count-warn' : ''}`}>
-                  {shownOrphans.length}
-                </span>
-              </summary>
-              <div className="mg-acc-body">
-                <div className="mg-empty-sm">
-                  These child referrals have no parent match (their referrer id doesn’t match any parent).
-                </div>
-                {shownOrphans.map((child) => (
-                  <ChildBlock key={str(child.id)} child={child} fields={children.fields} assoc={assoc} />
-                ))}
-              </div>
-            </details>
-          ) : null}
+        </>
+      ) : (
+        <div className="mg-empty">
+          <Search size={20} />
+          {query.trim()
+            ? `No referrals match “${query.trim()}”.`
+            : 'No referrals match this filter.'}
         </div>
+      )}
+
+      {selected && data ? (
+        <ReferralDetailModal
+          card={selected}
+          parentFields={data.parents.fields}
+          childFields={data.children.fields}
+          dealFields={data.associations.deals.fields}
+          periodMonth={periodMonth}
+          onClose={() => setSelected(null)}
+        />
       ) : null}
     </div>
   );

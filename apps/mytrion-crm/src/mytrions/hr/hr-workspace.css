@@ -1,0 +1,975 @@
+/* =====================================================
+   HR workspace — the surfaces added by the Employees / Departments / Org Structure rework.
+
+   A SECOND stylesheet rather than more of hr.css, which is already 1375 lines (the repo's cap is 600).
+   Same scope (`.hr-root`) and the same Horizon vocabulary as hr.css — read that file's header first;
+   every token, easing and radius used here is defined there or in styles/horizon.css. Nothing in here
+   introduces a new colour, easing or radius.
+
+   Imported by HrShell alongside hr.css.
+   ===================================================== */
+
+/* ── Loaders ────────────────────────────────────────────────────────────────────
+   Everything here reuses `hrSheen` (defined above with `.hr-sk`) rather than adding a second
+   animation, so the toolbar, the cards and any future skeleton wipe in step — two loaders running at
+   slightly different phases is the tell that a page was assembled from parts.
+
+   Comma-separated layers: --hz-pane is a GRADIENT and cannot sit in the <bg-color> slot. */
+.hr-root .hr-sk-bar {
+  display: inline-block;
+  height: 34px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background:
+    linear-gradient(100deg, transparent 20%, var(--hz-glass-hover) 45%, transparent 70%),
+    var(--hz-pane-alt);
+  background-size: 220% 100%, auto;
+  background-repeat: no-repeat, no-repeat;
+  animation: hrSheen 1.25s var(--hz-ease) infinite;
+}
+.hr-root .hr-sk-search {
+  flex: 1;
+  min-width: min(100%, 260px);
+  max-width: 300px;
+}
+.hr-root .hr-sk-control {
+  width: 128px;
+}
+.hr-root .hr-sk-count {
+  width: 92px;
+  height: 14px;
+  margin-left: auto;
+  border-radius: var(--hr-r-pill);
+}
+.hr-root .hr-sk-btn {
+  width: 104px;
+}
+/* The loading toolbar keeps the real one's frame but drops the space-between: skeletons read as a
+   left-aligned row, and pinning the count right is what `.hr-sk-count`'s auto margin does. */
+.hr-root .hr-toolbar.is-loading {
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .hr-root .hr-sk-control:nth-of-type(n + 3) {
+    display: none;
+  }
+}
+
+/* A write in flight. Not a skeleton — the content is already on screen. */
+.hr-root .hr-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hr-root .hr-busy-ring {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+  animation: hrSpin 0.7s linear infinite;
+}
+.hr-root .hr-busy-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A card whose row is being saved or deleted: dimmed and inert, never removed. Pulling a card out of
+   the grid mid-save makes the layout jump and loses the user's place. */
+.hr-root .hr-card-saving {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+
+/* A modal with a save in flight: the form stays readable, and the actions row owns the feedback. */
+.hr-root .hr-form.is-saving .hr-form-grid,
+.hr-root .hr-form.is-saving .hr-rt {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.hr-root .hr-modal-actions .hr-busy {
+  margin-right: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-sk-bar {
+    animation: none;
+  }
+}
+
+/* ── Small shared bits ─────────────────────────────────────────────────────── */
+/* "Updated 12s ago" beside Refresh. The cache is invisible otherwise, and a user who cannot tell
+   whether they are looking at fresh data hits Refresh out of doubt. */
+.hr-root .hr-cached {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-note,
+.hr-root .hr-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.hr-root .hr-hint {
+  flex: 1;
+  min-width: 240px;
+  text-align: right;
+}
+/* A fieldset is the only element that can disable a whole form in one attribute; it must not bring
+   its default border and padding with it. */
+.hr-root .hr-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.hr-root .hr-btn-danger {
+  margin-right: auto;
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--hz-pane-bd));
+  color: var(--danger);
+}
+.hr-root .hr-btn-danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, var(--hz-pane-lift));
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  box-shadow: 0 4px 16px -4px color-mix(in srgb, var(--danger) 35%, transparent), var(--hz-glass-inset);
+}
+/* The org canvas wants the viewport, not the reading measure the text pages use. */
+.hr-root .hr-page-wide {
+  max-width: none;
+}
+
+/* A labelled block for controls that are not a single input (the pickers, the editor). */
+.hr-root .hr-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+}
+.hr-root .hr-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-field-hint {
+  margin: -3px 0 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Department cards ──────────────────────────────────────────────────────────
+   `--dc` is the department's own tone, resolved in JS from an allow-listed token (never interpolated
+   from the stored value). Everything tinted below reads it, so one department = one colour. */
+.hr-root .hr-deptc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+  gap: 14px;
+}
+.hr-root .hr-deptc {
+  --dc: var(--accent);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background:
+    linear-gradient(152deg, color-mix(in srgb, var(--dc) 9%, transparent), transparent 58%),
+    var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.hr-root .hr-deptc:hover .hr-empc-shimmer {
+  opacity: 1;
+}
+.hr-root .hr-deptc:hover {
+  border-color: color-mix(in srgb, var(--dc) 46%, var(--hz-pane-bd));
+  box-shadow:
+    0 16px 40px -14px color-mix(in srgb, var(--dc) 30%, transparent),
+    var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-deptc-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.hr-root .hr-deptc-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--dc) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc) 30%, transparent);
+  color: var(--dc);
+  box-shadow: var(--hz-glass-inset);
+  transition: background var(--hz-dur-tone) var(--hz-ease), box-shadow var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-deptc:hover .hr-deptc-glyph {
+  background: color-mix(in srgb, var(--dc) 23%, transparent);
+  box-shadow:
+    0 4px 18px -4px color-mix(in srgb, var(--dc) 45%, transparent),
+    var(--hz-glass-inset);
+}
+.hr-root .hr-deptc-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.hr-root .hr-deptc-name {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-deptc-code {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--hr-r-pill);
+  background: color-mix(in srgb, var(--dc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc) 26%, transparent);
+  color: var(--dc);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+/* Two lines of the description, so a card stays a card. The full rich text lives in the modal. */
+.hr-root .hr-deptc-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.hr-root .hr-deptc-desc.is-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.hr-root .hr-deptc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--hz-pane-bd);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hr-root .hr-deptc-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hr-root .hr-deptc-head strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-deptc-head svg {
+  color: var(--dc);
+}
+.hr-root .hr-deptc-parent {
+  font-size: 11.5px;
+  opacity: 0.85;
+}
+
+/* ── Department modal ──────────────────────────────────────────────────────── */
+.hr-root .hr-deptm {
+  --dc: var(--accent);
+  width: min(100%, 680px);
+}
+.hr-root .hr-deptm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding-bottom: 15px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-deptm-ident {
+  flex: 1;
+  min-width: 0;
+}
+.hr-root .hr-deptm-ident h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-deptm-ident p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.hr-root .hr-deptm-about {
+  margin-top: 16px;
+}
+.hr-root .hr-deptm-about h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Icon + colour pickers ─────────────────────────────────────────────────── */
+.hr-root .hr-iconpick {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px;
+}
+.hr-root .hr-iconpick-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-iconpick-cell:hover {
+  color: var(--dc);
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--dc) 35%, var(--hz-pane-bd));
+}
+.hr-root .hr-iconpick-cell[aria-checked='true'] {
+  color: var(--dc);
+  background: color-mix(in srgb, var(--dc) 15%, transparent);
+  border-color: color-mix(in srgb, var(--dc) 55%, transparent);
+}
+
+.hr-root .hr-tonepick {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hr-root .hr-tonepick-cell {
+  --sw: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--on-accent, #04131c);
+  background: var(--sw);
+  /* A 2px gap between swatch and ring, so the selected state reads without changing the size. */
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--hz-pane-bd);
+  transition: box-shadow var(--hz-dur-wash) var(--hz-ease), transform var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-tonepick-cell:hover {
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-tonepick-cell[aria-checked='true'] {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--sw);
+}
+
+/* ── Rich-text (markdown) field ────────────────────────────────────────────── */
+.hr-root .hr-rt {
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  overflow: hidden;
+  transition: border-color var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-rt:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--hz-pane-bd));
+}
+.hr-root .hr-rt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+}
+.hr-root .hr-rt-tools {
+  display: inline-flex;
+  gap: 2px;
+}
+.hr-root .hr-rt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--hr-r-pill);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-rt-toggle:hover,
+.hr-root .hr-rt-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.hr-root .hr-rt-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 0;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hr-root .hr-rt-preview {
+  padding: 11px 13px;
+  min-height: 108px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.hr-root .hr-rt-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12.5px;
+}
+
+/* ── Org canvas ────────────────────────────────────────────────────────────────
+   The pane is a fixed-height glass surface rather than page-flow height: React Flow measures its
+   container, and a container that grows with its content has no height to measure. */
+.hr-root .hr-ocanvas {
+  position: relative;
+  height: clamp(460px, calc(100vh - 300px), 860px);
+  border-radius: var(--hr-r-lg);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  overflow: hidden;
+}
+.hr-root .hr-ocanvas-panel {
+  margin: 10px;
+}
+
+/* React Flow's own chrome, brought onto the Horizon palette. Its stylesheet ships light-theme
+   defaults, so every one of these is a deliberate override, not decoration. */
+.hr-root .react-flow__controls {
+  border-radius: var(--hr-r-sm);
+  overflow: hidden;
+  box-shadow: var(--hz-shadow-rest);
+}
+.hr-root .react-flow__controls-button {
+  border: none;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: background var(--hz-dur-wash) var(--hz-ease), color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .react-flow__controls-button:hover {
+  background: var(--hz-glass-hover);
+  color: var(--accent);
+}
+.hr-root .react-flow__controls-button svg {
+  fill: currentColor;
+}
+.hr-root .react-flow__minimap {
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--surface-alt);
+  box-shadow: var(--hz-shadow-rest);
+}
+.hr-root .react-flow__attribution {
+  display: none;
+}
+.hr-root .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  stroke-width: 1.6;
+}
+/* Reporting lines are tinted and department lines are neutral, so the two kinds of hierarchy on one
+   canvas are distinguishable without a legend. */
+.hr-root .hr-oedge.is-report .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.hr-root .hr-oedge.is-staff .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--accent) 34%, transparent);
+  stroke-dasharray: 4 4;
+}
+.hr-root .react-flow__edge.selected .react-flow__edge-path,
+.hr-root .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+.hr-root .react-flow__handle {
+  border: none;
+}
+.hr-root .hr-ohandle {
+  width: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  border: 1px solid var(--surface);
+  opacity: 0;
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+/* Handles appear on hover: always-visible dots on 200 nodes is visual noise, but a hidden handle you
+   cannot find is worse — so hovering anywhere on the node reveals both of its handles. */
+.hr-root .hr-onode:hover .hr-ohandle,
+.hr-root .react-flow__node.selected .hr-ohandle,
+.hr-root .react-flow__node:focus-within .hr-ohandle {
+  opacity: 1;
+}
+
+/* ── Org nodes ─────────────────────────────────────────────────────────────── */
+.hr-root .hr-onode {
+  --dc: var(--accent);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-lift);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  color: var(--text-primary);
+  cursor: grab;
+  transition:
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.hr-root .hr-onode.is-dept {
+  width: 248px;
+  height: 96px;
+  background:
+    linear-gradient(152deg, color-mix(in srgb, var(--dc) 12%, transparent), transparent 62%),
+    var(--hz-pane-lift);
+}
+/* Height MUST match EMP_H in orgGraph.ts — dagre lays out against that constant and the canvas measures
+   drop targets with it. 76px was shorter than the node's own content, so the chevron on anyone with
+   direct reports hung outside the card. */
+.hr-root .hr-onode.is-emp {
+  width: 216px;
+  height: 88px;
+}
+.hr-root .hr-onode:hover {
+  border-color: color-mix(in srgb, var(--dc) 50%, var(--hz-pane-bd));
+  box-shadow:
+    0 14px 34px -14px color-mix(in srgb, var(--dc) 34%, transparent),
+    var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+/* A drop target has to be unmistakable mid-drag, so the selected/hover ring is a full outline rather
+   than a border tint — a 1px colour change is invisible while the pointer is moving. */
+.hr-root .hr-onode.is-selected,
+.hr-root .react-flow__node.dragging .hr-onode {
+  border-color: var(--dc);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dc) 45%, transparent), var(--hz-shadow-rest);
+}
+.hr-root .hr-onode.is-terminated {
+  border-left: 3px solid var(--danger);
+}
+.hr-root .hr-onode.is-terminated .hr-avatar {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+.hr-root .hr-onode-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.hr-root .hr-onode-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--dc) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc) 30%, transparent);
+  color: var(--dc);
+}
+.hr-root .hr-onode-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.hr-root .hr-onode-label {
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.008em;
+  line-height: 1.25;
+  /* One line with an ellipsis: node height is fixed so dagre's layout stays stable, which means text
+     cannot be allowed to wrap and overflow the box. The full name is on the record. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-onode-sub {
+  display: flex;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-onode-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.hr-root .hr-onode-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-onode-count svg {
+  color: var(--dc);
+}
+.hr-root .hr-onode-count strong {
+  color: var(--text-primary);
+}
+.hr-root .hr-onode-dim {
+  opacity: 0.7;
+}
+.hr-root .hr-onode-chev {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px 2px 4px;
+  border-radius: var(--hr-r-pill);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-onode-chev:hover {
+  color: var(--dc);
+  border-color: color-mix(in srgb, var(--dc) 42%, transparent);
+  background: color-mix(in srgb, var(--dc) 12%, transparent);
+}
+.hr-root .hr-onode-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 7px;
+  border: 1px dashed color-mix(in srgb, var(--dc) 45%, var(--hz-pane-bd));
+  background: transparent;
+  color: var(--dc);
+  cursor: pointer;
+  /* Hidden until the node is hovered or focused: a "+" on every node turns the canvas into a grid of
+     buttons, but it must never be keyboard-unreachable. */
+  opacity: 0;
+  transition: opacity var(--hz-dur-tone) var(--hz-ease), background var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-onode:hover .hr-onode-add,
+.hr-root .hr-onode-add:focus-visible {
+  opacity: 1;
+}
+.hr-root .hr-onode-add:hover {
+  background: color-mix(in srgb, var(--dc) 16%, transparent);
+}
+
+/* Canvas skeleton — node-shaped rows inside the real pane, so the chart does not appear from nothing. */
+.hr-root .hr-ocanvas-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 28px;
+}
+.hr-root .hr-osk-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hr-root .hr-ocanvas-loading .hr-osk-dept {
+  width: 248px;
+  height: 96px;
+}
+.hr-root .hr-ocanvas-loading .hr-osk-emp {
+  width: 216px;
+  height: 88px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-onode:hover,
+  .hr-root .hr-deptc:hover,
+  .hr-root .hr-tonepick-cell:hover {
+    transform: none;
+  }
+}
+
+/* ── "Add under X" choice ──────────────────────────────────────────────────────
+   Two named options rather than a window.confirm, whose OK/Cancel cannot express "create A" versus
+   "create B" — mapping a create onto Cancel is backwards from what that button means everywhere else. */
+.hr-root .hr-addchoice {
+  width: min(100%, 440px);
+}
+.hr-root .hr-addchoice-opts {
+  display: grid;
+  gap: 10px;
+}
+.hr-root .hr-addchoice-opt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 14px 15px;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-addchoice-opt:hover {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-addchoice-opt svg {
+  grid-row: span 2;
+  color: var(--accent);
+}
+.hr-root .hr-addchoice-t {
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+}
+.hr-root .hr-addchoice-d {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-addchoice-opt:hover {
+    transform: none;
+  }
+}
+
+/* ── Leaf classes that had no rule of their own ────────────────────────────────
+   Each of these was inheriting from its parent and rendering acceptably by accident. Given a rule so
+   the styling is intentional rather than incidental, and so a future change to the parent cannot move
+   them silently. */
+.hr-root .hr-deptc-lead {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-deptm-read {
+  margin-top: 4px;
+}
+.hr-root .hr-deptm-read .hr-empd-grid {
+  margin-top: 0;
+}
+
+/* People assigned to this department — list + add picker inside the department modal. */
+.hr-root .hr-deptm-members {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-deptm-members h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.hr-root .hr-deptm-members-count {
+  font-family: var(--font-body, inherit);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.hr-root .hr-deptm-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.hr-root .hr-deptm-member-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dc, var(--accent)) 6%, transparent);
+}
+.hr-root .hr-deptm-member-list li.is-busy {
+  opacity: 0.55;
+}
+.hr-root .hr-deptm-member-ident {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.hr-root .hr-deptm-member-ident strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-deptm-member-ident span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-deptm-member-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hr-root .hr-deptm-member-add label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+/* React Flow's own stylesheet already sizes its root to 100%; this pins it so a future container
+   change cannot collapse the canvas to zero height without the rule being visible here. */
+.hr-root .hr-ocanvas-flow {
+  width: 100%;
+  height: 100%;
+}
+.hr-root .hr-onode-chev-n {
+  min-width: 8px;
+  text-align: center;
+}
+
+/* The lead's email under their name in the read-only department view. */
+.hr-root .hr-empd-sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Department-card skeletons match the department grid's card height. */
+.hr-root .hr-deptc-grid .hr-sk {
+  height: 186px;
+}
+
+/* Admin Settings — Zoho sync card. */
+.hr-root .hr-settings-card {
+  margin-top: 8px;
+  padding: 18px 20px;
+  border-radius: var(--hr-r-md, 14px);
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  background: var(--hz-pane, var(--surface));
+  max-width: 640px;
+}
+.hr-root .hr-settings-card h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+}
+.hr-root .hr-settings-card > p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.hr-root .hr-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hr-root .hr-settings-ok {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--tone-emerald, var(--accent));
+  font-family: var(--font-mono, ui-monospace, monospace);
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { useUserContext } from '../../context/UserContextProvider';
@@ -11,12 +11,13 @@ import {
   type ManagerDepartmentId,
   type ManagerViewId,
 } from './managerNav';
-import { DepartmentSoon } from './DepartmentSoon';
+import { DepartmentDesk } from './DepartmentDesk';
 import { ManagerHome } from './ManagerHome';
-import { SalesManagement } from './SalesManagement';
 import { LoyaltyCard } from './cards/LoyaltyCard';
 import { ReferralsCard } from './cards/ReferralsCard';
 import './manager.css';
+import './managerWorkspace.css';
+import './managerLoyalty.css';
 
 /**
  * Manager hub shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell, chat dock disabled.
@@ -39,6 +40,14 @@ export function ManagerShell() {
   const openDept = (id: ManagerDepartmentId): void => {
     if (canOpenManagerDepartment(user, id)) setView(id);
   };
+
+  // Each workspace is a page transition even though the shell stays mounted. Reset the shell's
+  // scroll positions so a card opened from lower on Overview never lands beneath the fixed top bar.
+  // Narrow layouts scroll the document; desktop layouts scroll the module root.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+    document.querySelector<HTMLElement>('.mg-root')?.scrollTo({ top: 0 });
+  }, [view]);
 
   const navSections: NavSection[] = [
     {
@@ -81,8 +90,7 @@ export function ManagerShell() {
         ) : null}
         {view === 'referrals' ? <ReferralsCard onBack={() => setView('overview')} /> : null}
         {view === 'loyalty' ? <LoyaltyCard onBack={() => setView('overview')} /> : null}
-        {activeDept?.id === 'sales' ? <SalesManagement /> : null}
-        {activeDept && activeDept.id !== 'sales' ? <DepartmentSoon dept={activeDept} /> : null}
+        {activeDept ? <DepartmentDesk dept={activeDept} /> : null}
       </div>
     </MytrionShell>
   );

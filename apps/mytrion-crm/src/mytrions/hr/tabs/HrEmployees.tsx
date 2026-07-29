@@ -1,331 +1,274 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Plus, RefreshCw, Search, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
-import {
-  createHrEmployee,
-  deleteHrEmployee,
-  listHrDepartments,
-  listHrDesignations,
-  listHrEmployees,
-  updateHrEmployee,
-  type HrDepartmentDto,
-  type HrEmployeeDto,
-  type HrEmployeeWriteInput,
-} from '../../../api/hr';
+import { deleteHrEmployee, type HrEmployeeDto } from '../../../api/hr';
+import { formatCachedAt } from '../../_shared/swrCache';
 import { useUserContext } from '../../../context/UserContextProvider';
 import { HrEmployeeCard } from '../HrEmployeeCard';
 import { HrEmployeeDetail } from '../HrEmployeeDetail';
-import { HrEmpty, HrPageHead } from '../HrBits';
+import { HrEmployeeForm, type EmployeeFormMode } from '../HrEmployeeForm';
+import {
+  DIRECTORY_WINDOW,
+  invalidateHrEmployees,
+  useFilteredEmployees,
+  useHrDepartments,
+  useHrDesignations,
+  useHrDirectory,
+  useHrEmployeeSearch,
+  type HrEmployeeFilters,
+} from '../hrData';
+import {
+  HrCardGridSkeleton,
+  HrEmpty,
+  HrHeadActionsSkeleton,
+  HrPageHead,
+  HrToolbarSkeleton,
+} from '../HrBits';
 
-type StatusFilter = 'all' | 'Active' | 'Terminated';
-type FormMode = { kind: 'create' } | { kind: 'edit'; employee: HrEmployeeDto };
-
-const EMPTY_FORM: HrEmployeeWriteInput = {
-  firstName: '',
-  lastName: '',
-  employeeId: '',
-  email: '',
-  departmentId: '',
-  designation: '',
-  telegramUsername: '',
-  location: '',
-  status: 'Active',
-  role: '',
-  dateOfJoining: '',
-  mobile: '',
-  reportingTo: '',
-};
-
-
-function displayName(e: HrEmployeeDto): string {
-  return `${e.firstName} ${e.lastName}`.trim();
-}
-
-function toForm(e: HrEmployeeDto): HrEmployeeWriteInput {
-  return {
-    firstName: e.firstName,
-    lastName: e.lastName,
-    employeeId: e.employeeId ?? '',
-    email: e.email ?? '',
-    departmentId: e.departmentId ?? '',
-    designation: e.designation ?? '',
-    telegramUsername: e.telegramUsername ?? '',
-    location: e.location ?? '',
-    status: e.status || 'Active',
-    role: e.role ?? '',
-    dateOfJoining: e.dateOfJoining ?? '',
-    mobile: e.mobile ?? '',
-    reportingTo: e.reportingTo ?? '',
-  };
-}
-
-function normalizeWrite(form: HrEmployeeWriteInput): HrEmployeeWriteInput {
-  const trimOrNull = (v: string | null | undefined): string | null => {
-    const t = (v ?? '').trim();
-    return t.length ? t : null;
-  };
-  return {
-    firstName: form.firstName.trim(),
-    lastName: form.lastName.trim(),
-    employeeId: trimOrNull(form.employeeId),
-    email: trimOrNull(form.email),
-    departmentId: trimOrNull(form.departmentId),
-    department: null,
-    designation: trimOrNull(form.designation),
-    telegramUsername: trimOrNull(form.telegramUsername),
-    location: trimOrNull(form.location),
-    status: (form.status ?? 'Active').trim() || 'Active',
-    role: trimOrNull(form.role),
-    dateOfJoining: trimOrNull(form.dateOfJoining),
-    mobile: trimOrNull(form.mobile),
-    reportingTo: trimOrNull(form.reportingTo),
-  };
-}
-
-function isAbortError(err: unknown): boolean {
-  return (
-    (err instanceof DOMException && err.name === 'AbortError') ||
-    (err instanceof Error && err.name === 'AbortError') ||
-    (typeof err === 'object' &&
-      err !== null &&
-      'message' in err &&
-      String((err as { message: unknown }).message).toLowerCase().includes('abort'))
-  );
-}
+const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`.trim();
 
 /**
  * HR → Employees. Reads Mytrion's own `hr_employees` table (not live Zoho People).
  * Create / edit / delete: Mytrion Admin only.
+ *
+ * LOADING. The directory is fetched once into the shared SWR store (see `hrData.ts`) and every filter
+ * runs in memory, so typing and switching filters cost no network at all and re-entering the tab paints
+ * from cache. Two consequences shape the UI below:
+ *
+ *  - There is no debounce, because there is nothing to debounce.
+ *  - `loading` is only true with an EMPTY cache. A revalidation shows the caption next to Refresh, never
+ *    a skeleton over data that is already correct — which is also why the toolbar and the cards share
+ *    one skeleton pass instead of the header rendering fake controls above shimmering cards.
  */
 export function HrEmployees() {
   const user = useUserContext();
   const admin = isAdmin(user);
 
-  const [items, setItems] = useState<HrEmployeeDto[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [q, setQ] = useState('');
+  /**
+   * A debounced copy of `q`, used ONLY by the server-search fallback.
+   *
+   * The in-memory path needs no debounce (it does no I/O), but the fallback keys its cache by the term —
+   * so without this every keystroke minted a new key and fired a request.
+   */
   const [debouncedQ, setDebouncedQ] = useState('');
-  const [status, setStatus] = useState<StatusFilter>('all');
-  const [departmentId, setDepartmentId] = useState('');
-  const [designation, setDesignation] = useState('');
-  /** The employee whose detail modal is open — a card click, not an admin edit. */
-  const [detail, setDetail] = useState<HrEmployeeDto | null>(null);
-  const [deptOptions, setDeptOptions] = useState<HrDepartmentDto[]>([]);
-  const [designations, setDesignations] = useState<string[]>([]);
-  const [reloadTick, setReloadTick] = useState(0);
-  const [formMode, setFormMode] = useState<FormMode | null>(null);
-  const [form, setForm] = useState<HrEmployeeWriteInput>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
-
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q.trim()), 280);
     return () => window.clearTimeout(t);
   }, [q]);
+  const [status, setStatus] = useState<HrEmployeeFilters['status']>('all');
+  const [departmentId, setDepartmentId] = useState('');
+  const [designation, setDesignation] = useState('');
+  /** The employee whose detail modal is open — a card click, not an admin edit. */
+  const [detail, setDetail] = useState<HrEmployeeDto | null>(null);
+  const [formMode, setFormMode] = useState<EmployeeFormMode | null>(null);
+  /** The row a delete is in flight for — dims that one card instead of yanking it out of the grid. */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const ac = new AbortController();
-    void Promise.all([
-      listHrDepartments({ limit: 500, signal: ac.signal }),
-      listHrDesignations(ac.signal),
-    ])
-      .then(([depts, desigs]) => {
-        if (ac.signal.aborted) return;
-        setDeptOptions(depts.items);
-        setDesignations(desigs);
-      })
-      .catch((err: unknown) => {
-        if (ac.signal.aborted || isAbortError(err)) return;
-        setDeptOptions([]);
-        setDesignations([]);
-      });
-    return () => ac.abort();
-  }, [reloadTick]);
+  const directory = useHrDirectory();
+  const departments = useHrDepartments();
+  const designations = useHrDesignations();
 
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setError('');
-    void listHrEmployees({
-      ...(debouncedQ ? { q: debouncedQ } : {}),
-      ...(status !== 'all' ? { status } : {}),
-      ...(departmentId ? { departmentId } : {}),
-      ...(designation ? { designation } : {}),
-      limit: 500,
-      signal: ac.signal,
-    })
-      .then((res) => {
-        if (ac.signal.aborted) return;
-        setItems(res.items);
-        setTotal(res.total);
-      })
-      .catch((err: unknown) => {
-        if (ac.signal.aborted || isAbortError(err)) return;
-        setError(err instanceof Error ? err.message : String(err));
-        setItems([]);
-        setTotal(0);
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
-    return () => ac.abort();
-  }, [debouncedQ, status, departmentId, designation, reloadTick]);
+  /**
+   * The directory outgrew one page, so an in-memory search would only cover the rows we hold. Falling
+   * back to the server keeps search honest; at today's ~213 employees this never engages.
+   */
+  const needsServerSearch =
+    directory.data != null && directory.data.total > directory.data.items.length;
+  const serverMode = needsServerSearch && debouncedQ.length > 0;
+  const serverSearch = useHrEmployeeSearch(debouncedQ, serverMode);
 
-  const reload = useCallback((): void => {
-    setReloadTick((n) => n + 1);
+  const source = serverMode ? serverSearch : directory;
+  const filters: HrEmployeeFilters = { q, status, departmentId, designation };
+  const visible = useFilteredEmployees(
+    source.data?.items,
+    // A server search already applied the term; re-applying it locally would drop rows the server
+    // matched on a column the local predicate does not check.
+    serverMode ? { ...filters, q: '' } : filters,
+  );
+
+  const deptOptions = departments.data?.items ?? [];
+  const designationOptions = designations.data ?? [];
+  /** id → iconColor token — cards colour their department chip from this, not a fixed accent. */
+  const deptColorById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const d of deptOptions) map.set(d.id, d.iconColor);
+    return map;
+  }, [deptOptions]);
+  const total = directory.data?.total ?? 0;
+  const filtered = visible.length;
+  const isFiltered = Boolean(q.trim() || status !== 'all' || departmentId || designation);
+
+  /** One reload for the tab: the directory plus the two picklists that sit beside it. */
+  const reloadAll = useCallback((): void => {
+    directory.reload();
+    departments.reload();
+    designations.reload();
+  }, [directory, departments, designations]);
+
+  const onSaved = useCallback((): void => {
+    setFormMode(null);
+    invalidateHrEmployees();
   }, []);
 
-  const openCreate = (): void => {
-    setForm(EMPTY_FORM);
-    setFormError('');
-    setFormMode({ kind: 'create' });
-  };
-
-  const openEdit = (employee: HrEmployeeDto): void => {
-    setForm(toForm(employee));
-    setFormError('');
-    setFormMode({ kind: 'edit', employee });
-  };
-
   const onDelete = async (employee: HrEmployeeDto): Promise<void> => {
-    if (!admin) return;
-    const ok = window.confirm(`Delete ${displayName(employee)} from the HR directory?`);
-    if (!ok) return;
+    if (!admin || deletingId) return;
+    if (!window.confirm(`Delete ${displayName(employee)} from the HR directory?`)) return;
     setError('');
+    setDeletingId(employee.id);
     try {
       await deleteHrEmployee(employee.id);
-      reload();
+      invalidateHrEmployees();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  const onSave = async (ev: FormEvent): Promise<void> => {
-    ev.preventDefault();
-    if (!admin || !formMode || saving) return;
-    const body = normalizeWrite(form);
-    if (!body.firstName || !body.lastName) {
-      setFormError('First and last name are required.');
-      return;
-    }
-    setSaving(true);
-    setFormError('');
-    try {
-      if (formMode.kind === 'create') await createHrEmployee(body);
-      else await updateHrEmployee(formMode.employee.id, body);
-      setFormMode(null);
-      reload();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  /**
+   * First paint with nothing cached: head + toolbar + grid render as skeletons together.
+   *
+   * Keyed on the DIRECTORY, never on the active source. Keying it on `source` meant that in server-search
+   * mode each new term produced a cold key, `firstLoad` flipped true, and the whole toolbar — including
+   * the focused search input — was replaced by a skeleton mid-typing. The results area shows the
+   * in-flight state for a search; the chrome around it must stay mounted.
+   */
+  const firstLoad = directory.loading && !directory.data;
+  /** A search whose results have not arrived yet: the grid waits, the toolbar does not. */
+  const searching = serverMode && source.loading && !source.data;
+
+  const cachedCaption = useMemo(() => formatCachedAt(source.cachedAt), [source.cachedAt]);
 
   return (
     <div className="hr-page">
       <HrPageHead
         tab="employees"
         actions={
-          <>
-            <button type="button" className="hr-btn" disabled={loading} onClick={reload}>
-              <RefreshCw size={14} className={loading ? 'hr-spin' : undefined} />
-              Refresh
-            </button>
-            {admin ? (
-              <button type="button" className="hr-btn hr-btn-primary" onClick={openCreate}>
-                <Plus size={14} />
-                Add employee
+          firstLoad ? (
+            <HrHeadActionsSkeleton buttons={admin ? 2 : 1} />
+          ) : (
+            <>
+              {/* ONE loader per surface: the Refresh icon spins, and the caption is text only. An
+                  HrBusy ring here put a second spinner right next to the spinning icon. */}
+              <span className="hr-cached">
+                {source.revalidating ? 'Refreshing…' : cachedCaption ? `Updated ${cachedCaption}` : ''}
+              </span>
+              <button
+                type="button"
+                className="hr-btn"
+                disabled={source.revalidating}
+                onClick={reloadAll}
+              >
+                <RefreshCw size={14} className={source.revalidating ? 'hr-spin' : undefined} />
+                Refresh
               </button>
-            ) : null}
-          </>
+              {admin ? (
+                <button
+                  type="button"
+                  className="hr-btn hr-btn-primary"
+                  onClick={() => setFormMode({ kind: 'create' })}
+                >
+                  <Plus size={14} />
+                  Add employee
+                </button>
+              ) : null}
+            </>
+          )
         }
       />
 
-      <div className="hr-toolbar">
-        <label className="hr-search">
-          <Search size={14} />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, email, employee id…"
-            aria-label="Search employees"
-          />
-        </label>
-        <div className="hr-chips" role="group" aria-label="Status filter">
-          {(['all', 'Active', 'Terminated'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="hr-chip"
-              aria-pressed={status === s}
-              onClick={() => setStatus(s)}
-            >
-              {s === 'all' ? 'All' : s}
-            </button>
-          ))}
-        </div>
-        <label className="hr-select">
-          <span className="hr-sr">Department</span>
-          <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-            <option value="">All departments</option>
-            {deptOptions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
+      {firstLoad ? (
+        <HrToolbarSkeleton slots={3} />
+      ) : (
+        <div className="hr-toolbar">
+          <label className="hr-search">
+            <Search size={14} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, email, employee id…"
+              aria-label="Search employees"
+            />
+          </label>
+          <div className="hr-chips" role="group" aria-label="Status filter">
+            {(['all', 'Active', 'Terminated'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="hr-chip"
+                aria-pressed={status === s}
+                onClick={() => setStatus(s)}
+              >
+                {s === 'all' ? 'All' : s}
+              </button>
             ))}
-          </select>
-        </label>
-        <label className="hr-select">
-          <span className="hr-sr">Designation</span>
-          <select value={designation} onChange={(e) => setDesignation(e.target.value)}>
-            <option value="">All designations</option>
-            {designations.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="hr-summary">
-          <strong>{total}</strong> {total === 1 ? 'employee' : 'employees'}
+          </div>
+          <label className="hr-select">
+            <span className="hr-sr">Department</span>
+            <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+              <option value="">All departments</option>
+              {deptOptions.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="hr-select">
+            <span className="hr-sr">Designation</span>
+            <select value={designation} onChange={(e) => setDesignation(e.target.value)}>
+              <option value="">All designations</option>
+              {designationOptions.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="hr-summary">
+            {/* Filtered-of-total, not a bare count: "12 employees" while a filter is on reads as the
+                whole company having twelve people. */}
+            <strong>{filtered}</strong>
+            {isFiltered ? <> of {total}</> : null} {total === 1 ? 'employee' : 'employees'}
+          </div>
         </div>
-      </div>
+      )}
 
-      {error ? (
+      {error || source.error ? (
         <p className="hr-banner-error" role="alert">
-          {error}
+          {error || source.error}
         </p>
       ) : null}
 
-      {loading ? (
-        <div className="hr-empc-grid" aria-busy="true" aria-label="Loading employees">
-          {/* One loader for all of HR: card-shaped skeletons, never a spinner beside them. */}
-          {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="hr-sk" />
-          ))}
-        </div>
-      ) : items.length === 0 ? (
+      {firstLoad || searching ? (
+        <HrCardGridSkeleton count={8} label="Loading employees" />
+      ) : filtered === 0 ? (
         <HrEmpty
           icon={<Users size={26} />}
-          title={debouncedQ || status !== 'all' || departmentId ? 'No matches' : 'No employees yet'}
+          title={isFiltered ? 'No matches' : 'No employees yet'}
           body={
-            admin
-              ? 'Add an employee manually, or load rows into hr_employees.'
-              : 'No employee records in the directory yet.'
+            isFiltered
+              ? 'No one in the directory matches those filters.'
+              : admin
+                ? 'Add an employee manually, or run the Zoho People sync.'
+                : 'No employee records in the directory yet.'
           }
         />
       ) : (
         <div className="hr-empc-grid">
-          {items.map((e) => (
+          {visible.map((e) => (
             <HrEmployeeCard
               key={e.id}
               employee={e}
               admin={admin}
+              busy={deletingId === e.id}
+              departmentColor={
+                e.departmentId ? (deptColorById.get(e.departmentId) ?? null) : null
+              }
               onOpen={setDetail}
-              onEdit={openEdit}
+              onEdit={(emp) => setFormMode({ kind: 'edit', employee: emp })}
               onDelete={(emp) => void onDelete(emp)}
             />
           ))}
@@ -336,188 +279,34 @@ export function HrEmployees() {
         <HrEmployeeDetail
           employee={detail}
           admin={admin}
+          departmentColor={
+            detail.departmentId ? (deptColorById.get(detail.departmentId) ?? null) : null
+          }
           onClose={() => setDetail(null)}
           onEdit={(emp) => {
             setDetail(null);
-            openEdit(emp);
+            setFormMode({ kind: 'edit', employee: emp });
           }}
         />
       ) : null}
 
       {formMode && admin ? (
-        <div className="hr-modal-backdrop" role="presentation" onClick={() => setFormMode(null)}>
-          <div
-            className="hr-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hr-emp-form-title"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <header className="hr-modal-head">
-              <h2 id="hr-emp-form-title">
-                {formMode.kind === 'create' ? 'Add employee' : `Edit ${displayName(formMode.employee)}`}
-              </h2>
-              <button type="button" className="hr-icon-btn" aria-label="Close" onClick={() => setFormMode(null)}>
-                <X size={16} />
-              </button>
-            </header>
-            <form className="hr-form" onSubmit={(ev) => void onSave(ev)}>
-              <div className="hr-form-grid">
-                <label>
-                  First name *
-                  <input
-                    required
-                    value={form.firstName}
-                    onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Last name *
-                  <input
-                    required
-                    value={form.lastName}
-                    onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Employee ID
-                  <input
-                    value={form.employeeId ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, employeeId: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={form.email ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Department
-                  <select
-                    value={form.departmentId ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {deptOptions.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Designation
-                  {/*
-                    A real <select>, not the <datalist> this used to be. A datalist renders as native
-                    browser chrome that CSS cannot touch, which is why this one field looked nothing
-                    like the inputs around it — no amount of styling could fix it. The picklist is
-                    DISTINCT designations already in the directory, so a plain select is complete;
-                    a new title is added by typing it into the "Other designation" field below.
-                  */}
-                  <select
-                    value={designations.includes(form.designation ?? '') ? (form.designation ?? '') : ''}
-                    onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {designations.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Other designation
-                  <input
-                    placeholder="Only if it is not in the list"
-                    value={designations.includes(form.designation ?? '') ? '' : (form.designation ?? '')}
-                    onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Telegram
-                  {/* The '@' is a static prefix, so the stored value stays the bare handle no matter
-                      whether the user types '@name', 'name' or a t.me link (the API strips those too). */}
-                  <span className="hr-prefixed">
-                    <span aria-hidden="true">@</span>
-                    <input
-                      value={(form.telegramUsername ?? '').replace(/^@+/, '')}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, telegramUsername: e.target.value.replace(/^@+/, '') }))
-                      }
-                      placeholder="username"
-                      autoCapitalize="off"
-                      autoCorrect="off"
-                      spellCheck={false}
-                    />
-                  </span>
-                </label>
-                <label>
-                  Location
-                  <input
-                    value={form.location ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Status
-                  <select
-                    value={form.status ?? 'Active'}
-                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Terminated">Terminated</option>
-                  </select>
-                </label>
-                <label>
-                  Role
-                  <input
-                    value={form.role ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Date of joining
-                  <input
-                    value={form.dateOfJoining ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, dateOfJoining: e.target.value }))}
-                    placeholder="YYYY-MM-DD"
-                  />
-                </label>
-                <label>
-                  Mobile
-                  <input
-                    value={form.mobile ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Reporting to
-                  <input
-                    value={form.reportingTo ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, reportingTo: e.target.value }))}
-                  />
-                </label>
-              </div>
-              {formError ? (
-                <p className="hr-banner-error" role="alert">
-                  {formError}
-                </p>
-              ) : null}
-              <div className="hr-modal-actions">
-                <button type="button" className="hr-btn" onClick={() => setFormMode(null)} disabled={saving}>
-                  Cancel
-                </button>
-                <button type="submit" className="hr-btn hr-btn-primary" disabled={saving}>
-                  {saving ? 'Saving…' : formMode.kind === 'create' ? 'Create' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <HrEmployeeForm
+          mode={formMode}
+          departments={deptOptions}
+          designations={designationOptions}
+          /* The already-loaded directory, so the manager picker costs no extra request. */
+          colleagues={directory.data?.items ?? []}
+          onClose={() => setFormMode(null)}
+          onSaved={onSaved}
+        />
+      ) : null}
+
+      {needsServerSearch ? (
+        <p className="hr-note">
+          The directory holds {total} people, more than the {DIRECTORY_WINDOW}-row page — search is run
+          on the server so it covers everyone, while the filters apply to the loaded rows.
+        </p>
       ) : null}
     </div>
   );

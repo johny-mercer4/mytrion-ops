@@ -135,6 +135,7 @@ const task: MytrionWorkerTask = {
   idempotencyKey: null,
   payloadHash: null,
   externalId: null,
+  department: 'sales',
   taskType: 'general',
   subject: 'Follow up',
   description: null,

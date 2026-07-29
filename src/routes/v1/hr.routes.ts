@@ -7,12 +7,13 @@
  */
 import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { NotFoundError, RBACError } from '../../lib/errors.js';
+import { NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { syncHrEmployeesFromZoho } from '../../modules/hr/hrEmployeeSync.js';
 import { buildHrOrgStructure } from '../../modules/hr/hrOrgStructure.js';
-import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
-import type { HrEmployee } from '../../db/schema/hr_employees.js';
+import { departmentWouldCycle, employeeWouldCycle } from '../../modules/hr/orgReparent.js';
+import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
+import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
@@ -38,7 +39,7 @@ function requireHrAdmin(request: FastifyRequest): TenantContext {
   return ctx;
 }
 
-function toDto(row: HrEmployee) {
+function toDto(row: HrEmployeeRow) {
   return {
     id: row.id,
     zohoRecordId: row.zohoRecordId,
@@ -55,10 +56,14 @@ function toDto(row: HrEmployee) {
     role: row.role,
     dateOfJoining: row.dateOfJoining,
     mobile: row.mobile,
+    faceId: row.faceId,
     telegramUsername: row.telegramUsername,
     reportingTo: row.reportingTo,
     reportingToZohoId: row.reportingToZohoId,
+    reportingToEmployeeId: row.reportingToEmployeeId,
     photoUrl: row.photoUrl,
+    canvasX: row.canvasX,
+    canvasY: row.canvasY,
     source: row.source,
     lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -89,6 +94,8 @@ const writeBody = z.object({
   role: z.string().max(200).nullable().optional(),
   dateOfJoining: z.string().max(40).nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
+  /** Zoho People `Face_ID` — biometric / access id. Text, not integer (zero-padded values). */
+  faceId: z.string().max(80).nullable().optional(),
   /**
    * Telegram handle. Stored BARE — a leading '@' and any t.me/ prefix are stripped on write so the
    * column holds one canonical form and the UI owns the presentation.
@@ -100,11 +107,44 @@ const writeBody = z.object({
     .optional()
     .transform((v) => (v == null ? v : v.trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^@+/, '') || null)),
   reportingTo: z.string().max(200).nullable().optional(),
+  /**
+   * The manager as an id. Set this rather than `reportingTo` where a picker is available — the repo
+   * resolves the display name from the row, so the two columns cannot drift apart.
+   */
+  reportingToEmployeeId: z.string().max(80).nullable().optional(),
 });
 
 const patchBody = writeBody.partial().extend({
   firstName: z.string().min(1).max(120).optional(),
   lastName: z.string().min(1).max(120).optional(),
+});
+
+/** Which of the two node levels an org-canvas write is addressing. */
+const orgNodeKind = z.enum(['department', 'employee']);
+
+/**
+ * Canvas coordinates are bounded, not free-form. A finite range keeps a bad client (or a fuzzed
+ * request) from parking a node at 1e12 where the viewport can never reach it again, and integers keep
+ * the stored layout stable — subpixel drift on every drag would rewrite rows that did not move.
+ */
+const orgPositionBody = z.object({
+  kind: orgNodeKind,
+  id: z.string().min(1).max(80),
+  position: z
+    .object({
+      x: z.number().finite().min(-100_000).max(100_000),
+      y: z.number().finite().min(-100_000).max(100_000),
+    })
+    .nullable(),
+});
+
+const orgReparentBody = z.object({
+  kind: orgNodeKind,
+  id: z.string().min(1).max(80),
+  /** null detaches — a root department, or an unassigned/unmanaged person. */
+  parentId: z.string().min(1).max(80).nullable(),
+  /** What the node was dropped ON; an employee can land on either level. */
+  parentKind: orgNodeKind,
 });
 
 export async function hrRoutes(app: FastifyInstance): Promise<void> {
@@ -117,10 +157,121 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
     return { designations };
   });
 
-  /** Org tree from hr_departments.parent_id + employee headcounts — no mock nodes. */
+  /**
+   * Org graph: departments (parent_id) + people (reporting_to_employee_id) + headcounts, in one
+   * round trip. Flat lists — see `hrOrgStructure.ts` for why it is not a nested tree.
+   */
   app.get('/hr/org-structure', auth, async (request) => {
     const ctx = requireHrInternal(request);
     return buildHrOrgStructure(ctx);
+  });
+
+  /**
+   * Persist a node's dragged canvas position. Admin-only like every other write, and a `position` of
+   * null hands the node back to the auto-layout.
+   *
+   * A bare 200 rather than the whole row: the client already knows where it dropped the node, and the
+   * canvas fires one of these per drag — echoing a full record back would be pure payload.
+   */
+  app.patch('/hr/org/position', auth, async (request) => {
+    const ctx = requireHrAdmin(request);
+    const body = orgPositionBody.parse(request.body);
+    const pos = body.position ? { x: body.position.x, y: body.position.y } : null;
+    const ok =
+      body.kind === 'department'
+        ? await hrDepartmentRepo.setCanvasPosition(ctx, body.id, pos)
+        : await hrEmployeeRepo.setCanvasPosition(ctx, body.id, pos);
+    if (!ok) throw new NotFoundError('Org node not found');
+    // Deliberately NOT audit-logged. A drag is a layout preference, not a change to the record, and
+    // one audit row per nudge would bury the edits that matter.
+    return { ok: true };
+  });
+
+  /**
+   * Re-parent a node — what dropping one node onto another, or drawing an edge, means:
+   *
+   *   department → department   moves the sub-department (parent_id)
+   *   employee   → department   moves the person into that department (department_id)
+   *   employee   → employee     makes the target their manager (reporting_to_employee_id)
+   *
+   * A null `parentId` detaches: a department becomes a root, a person becomes unassigned/unmanaged.
+   *
+   * CYCLES ARE REJECTED, not tolerated. Dropping a department onto its own descendant would create a
+   * ring with no root, and the layout would then either loop forever or silently drop the whole branch
+   * off the canvas — so the walk up from the proposed parent has to prove it never reaches the node
+   * being moved. The same applies to reporting lines.
+   */
+  app.patch('/hr/org/reparent', auth, async (request) => {
+    const ctx = requireHrAdmin(request);
+    const body = orgReparentBody.parse(request.body);
+
+    if (body.parentId && body.parentId === body.id) {
+      throw new ValidationError('A node cannot be its own parent');
+    }
+
+    if (body.kind === 'department') {
+      if (body.parentKind !== 'department') {
+        throw new ValidationError('A department can only sit under another department');
+      }
+      if (body.parentId && (await departmentWouldCycle(ctx, body.id, body.parentId))) {
+        throw new ValidationError('That would put the department inside one of its own sub-departments');
+      }
+      const row = await hrDepartmentRepo.setParent(ctx, body.id, body.parentId);
+      if (!row) throw new NotFoundError('Department or parent not found');
+      await auditFromContext(ctx, {
+        action: 'hr.org.reparent',
+        status: 'ok',
+        resourceType: 'hr_department',
+        resourceId: row.id,
+        detail: { parentId: body.parentId },
+      });
+      return { ok: true };
+    }
+
+    // An employee: under a department (department_id) or under a manager (reporting_to_employee_id).
+    if (body.parentKind === 'department') {
+      // `true` detaches the manager: the person was dropped onto the department itself, which is what
+      // "reports to the department, not to a person" means on the canvas.
+      const row = await hrEmployeeRepo.setDepartment(ctx, body.id, body.parentId, true);
+      if (!row) throw new NotFoundError('Employee or department not found');
+      await auditFromContext(ctx, {
+        action: 'hr.org.reparent',
+        status: 'ok',
+        resourceType: 'hr_employee',
+        resourceId: row.id,
+        detail: { departmentId: body.parentId },
+      });
+      return { ok: true };
+    }
+
+    if (body.parentId && (await employeeWouldCycle(ctx, body.id, body.parentId))) {
+      throw new ValidationError('That would make the reporting line report to itself');
+    }
+    const row = await hrEmployeeRepo.setManager(ctx, body.id, body.parentId);
+    if (!row) throw new NotFoundError('Employee or manager not found');
+    await auditFromContext(ctx, {
+      action: 'hr.org.reparent',
+      status: 'ok',
+      resourceType: 'hr_employee',
+      resourceId: row.id,
+      detail: { reportingToEmployeeId: body.parentId },
+    });
+    return { ok: true };
+  });
+
+  /**
+   * The signed-in worker's own employee row (when linked via `zoho_user_id`).
+   * Read-only — used by the profile panel. Missing link → 404 (UI shows session fields only).
+   */
+  app.get('/hr/me', auth, async (request) => {
+    const ctx = requireHrInternal(request);
+    const zohoUserId = ctx.userId.startsWith('zoho:')
+      ? ctx.userId.replace(/^zoho:/, '')
+      : '';
+    if (!zohoUserId) throw new NotFoundError('No employee record linked to this sign-in');
+    const row = await hrEmployeeRepo.findByZohoUserId(ctx, zohoUserId);
+    if (!row) throw new NotFoundError('No employee record linked to this sign-in');
+    return toDto(row);
   });
 
   app.get('/hr/employees', auth, async (request) => {
@@ -131,6 +282,9 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
       ...(q.status !== undefined ? { status: q.status } : {}),
       ...(q.department !== undefined ? { department: q.department } : {}),
       ...(q.departmentId !== undefined ? { departmentId: q.departmentId } : {}),
+      // Was parsed and validated here and then never passed on, so ?designation=… silently returned the
+      // unfiltered list. The repo has supported it all along.
+      ...(q.designation !== undefined ? { designation: q.designation } : {}),
     };
     const page = {
       ...filters,
@@ -160,7 +314,14 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
       ...(body.role !== undefined ? { role: body.role } : {}),
       ...(body.dateOfJoining !== undefined ? { dateOfJoining: body.dateOfJoining } : {}),
       ...(body.mobile !== undefined ? { mobile: body.mobile } : {}),
+      ...(body.faceId !== undefined ? { faceId: body.faceId } : {}),
+      // Was omitted here (and in the PATCH below), so the Telegram field on the form never reached
+      // the repo — the handle appeared to save and did not.
+      ...(body.telegramUsername !== undefined ? { telegramUsername: body.telegramUsername } : {}),
       ...(body.reportingTo !== undefined ? { reportingTo: body.reportingTo } : {}),
+      ...(body.reportingToEmployeeId !== undefined
+        ? { reportingToEmployeeId: body.reportingToEmployeeId }
+        : {}),
     });
     await auditFromContext(ctx, {
       action: 'hr.employee.create',
@@ -219,8 +380,27 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
       ...(body.role !== undefined ? { role: body.role } : {}),
       ...(body.dateOfJoining !== undefined ? { dateOfJoining: body.dateOfJoining } : {}),
       ...(body.mobile !== undefined ? { mobile: body.mobile } : {}),
+      ...(body.faceId !== undefined ? { faceId: body.faceId } : {}),
+      ...(body.telegramUsername !== undefined ? { telegramUsername: body.telegramUsername } : {}),
       ...(body.reportingTo !== undefined ? { reportingTo: body.reportingTo } : {}),
+      ...(body.reportingToEmployeeId !== undefined
+        ? { reportingToEmployeeId: body.reportingToEmployeeId }
+        : {}),
     };
+    /**
+     * The SAME cycle guard the canvas uses.
+     *
+     * It lived only on /hr/org/reparent, but the edit form's "Reporting to" picker writes this column
+     * too — so two saves (A reports to B, then B reports to A) built a ring that the canvas endpoint
+     * would have refused. A reporting ring has no root, so both people then drop off the org chart
+     * entirely with nothing on screen to say why.
+     */
+    if (
+      patch.reportingToEmployeeId &&
+      (await employeeWouldCycle(ctx, request.params.id, patch.reportingToEmployeeId))
+    ) {
+      throw new ValidationError('That reporting line would report to itself');
+    }
     const row = await hrEmployeeRepo.update(ctx, request.params.id, patch);
     if (!row) throw new NotFoundError('Employee not found');
     await auditFromContext(ctx, {

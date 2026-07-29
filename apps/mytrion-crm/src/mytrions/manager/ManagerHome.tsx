@@ -1,4 +1,4 @@
-import { ArrowRight, Clock3 } from 'lucide-react';
+import { ArrowRight, ListTodo } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import {
   accessibleManagerCards,
@@ -110,11 +110,9 @@ export function ManagerHome({
                     <span className="mg-dept-title">{dept.label}</span>
                     <span className="mg-dept-desc">{dept.description}</span>
                   </span>
-                  {/* Honest about state: every department landing is a "coming soon" today, so the
-                      card says so up front rather than letting the click be the discovery. */}
                   <span className="mg-dept-soon">
-                    <Clock3 size={11} strokeWidth={2.4} aria-hidden />
-                    Soon
+                    <ListTodo size={11} strokeWidth={2.4} aria-hidden />
+                    Tasks
                   </span>
                 </button>
               );

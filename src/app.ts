@@ -25,12 +25,14 @@ import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { dataLoaderRoutes } from './routes/v1/dataLoader.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
 import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
 import { mytrionSchemaRoutes } from './routes/v1/mytrionSchema.routes.js';
 import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.js';
 import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
+import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
@@ -48,6 +50,8 @@ import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
 import { hrRoutes } from './routes/v1/hr.routes.js';
 import { hrDepartmentsRoutes } from './routes/v1/hrDepartments.routes.js';
+import { hrAttendanceRoutes } from './routes/v1/hrAttendance.routes.js';
+import { hrLeaveRoutes } from './routes/v1/hrLeave.routes.js';
 import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
@@ -69,6 +73,7 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
@@ -271,6 +276,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(dataLoaderRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
       await v1.register(mytrionSchemaRoutes);
@@ -288,6 +294,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(salesInvoicesRoutes);
       await v1.register(managerRoutes);
       await v1.register(verificationPipelineRoutes);
+      await v1.register(verificationClientsRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csAnalyticsRoutes);
@@ -297,6 +304,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(inboxMessagesRoutes);
       await v1.register(hrRoutes);
       await v1.register(hrDepartmentsRoutes);
+      await v1.register(hrAttendanceRoutes);
+      await v1.register(hrLeaveRoutes);
       // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
       await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);
@@ -307,6 +316,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
       await v1.register(salesKpiRoutes);
+      await v1.register(managerTasksRoutes);
       await v1.register(kpiAdminRoutes);
     },
     { prefix: API_PREFIX },

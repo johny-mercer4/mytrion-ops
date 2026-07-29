@@ -1,12 +1,21 @@
-import { ArrowRight, Building2, CalendarClock, Inbox, Network, UserRound, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  Building2,
+  CalendarClock,
+  Inbox,
+  Network,
+  Settings,
+  Users,
+} from 'lucide-react';
+import { accessibleHrTabs, type HrTabId } from '../hrNav';
 import { HrSection } from '../HrBits';
-import { HR_TABS, type HrTabId } from '../hrNav';
+import { useUserContext } from '../../../context/UserContextProvider';
 
 /**
  * HR → Home. The landing and launcher.
  *
- * There is no "at a glance" figure row yet — Attendance / Requests still soon. Employees,
- * Departments, and Org Structure are live against our own tables.
+ * Jump cards respect Layer-2 access (Settings is admin-only). Profile is not listed — it lives on
+ * the sidebar username at the bottom of the shell.
  */
 const JUMP_ICON: Record<HrTabId, typeof Users> = {
   home: Users,
@@ -15,11 +24,12 @@ const JUMP_ICON: Record<HrTabId, typeof Users> = {
   org: Network,
   attendance: CalendarClock,
   requests: Inbox,
-  profile: UserRound,
+  settings: Settings,
 };
 
 export function HrHome({ onOpen }: { onOpen: (tab: HrTabId) => void }) {
-  const jumps = HR_TABS.filter((t) => t.id !== 'home');
+  const user = useUserContext();
+  const jumps = accessibleHrTabs(user).filter((t) => t.id !== 'home');
 
   return (
     <div className="hr-page">
