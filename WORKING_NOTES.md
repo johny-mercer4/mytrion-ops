@@ -7858,6 +7858,399 @@ Payment ID, by Reference, by customer text, and by a typed id even when `custome
 conflicting amount are also sent (the old code returned nothing); suggest and window modes both
 report their real mode. No CMP write was fired — the reversal path is covered by mocked tests only.
 
+## 2026-07-29 (3) — Data Loader pre-implementation safety audit (`feature/hr-workspace-v2`)
+
+Reviewed `docs/DATA_LOADER_HANDOFF.md` against the current branch before implementing its direct
+Postgres writer. The mandatory cross-tenant RBAC gate passes (9/9). Fixed the independent Drizzle
+inventory prerequisite: `drizzle.config.ts` now includes `agent_blackboards.ts`, `agent_skills.ts`,
+`mytrion_role_defaults.ts`, and `support_bot_messages.ts`, so migration generation cannot mistake
+those existing tables for removals.
+
+Implementation is paused at the handoff's explicit escalation point. Table-level grants do not
+restore the `tenant_id` isolation that NocoDB bypasses: one `mytrion_loader` connection could touch
+every tenant, while proposed tier-1 tables `client_news_reads` and `payment_carrier_memory` have no
+`tenant_id` column at all. The safe direction is database RLS for tenant-owned allowlisted tables
+keyed by a loader-session tenant setting, a joined policy for `client_news_reads`, and an explicit
+single-tenant attribution decision for the global payment-carrier memory table; this needs
+orchestrator approval before grants or triggers are written.
+
+Two handoff facts have also aged since 2026-07-26: current NocoDB Community uses the Fair Code
+Sustainable Use License rather than AGPLv3, and the official self-hosted stack now includes a
+Redis-backed background worker for imports/exports alongside the web service and metadata Postgres.
+Production/legal review therefore remains a deployment prerequisite, and the local Compose design
+must be updated rather than copying the older one-service assumption.
+
+## 2026-07-29 (4) — Hardened Admin Data Loader implemented (`feature/hr-workspace-v2`)
+
+Implemented the approved single-tenant tier-1 Data Loader. Migration
+`0069_data_loader_journal.sql` creates the before/after journal and attaches its
+`SECURITY DEFINER` trigger to the same four tables exported by
+`src/modules/dataLoader/allowlist.ts`. `scripts/nocodb-role.sql` provisions a no-DDL,
+no-inherit writer, enables literal-tenant RLS (including the parent join for
+`client_news_reads`), and fails closed if PUBLIC privileges widen the surface.
+`payment_carrier_memory` remains excluded.
+
+Added the tenant-first journal repo, drift-checked transactional inversion for insert/update/delete,
+same-transaction `data_loader.revert` auditing, four Admin-only routes, and the Horizon Admin Data
+Loader tab with loading/error/empty/loaded states, before/after diffs, paging, NocoDB launch, and a
+destructive confirmation flow. Local Compose now defines pinned NocoDB web + worker, separate
+metadata Postgres, and Redis; production hosting remains deliberately absent.
+
+Verification:
+
+- `pnpm lint` passes with 24 existing warnings; root `pnpm typecheck` and `pnpm build` pass.
+- Admin UI `typecheck` passes and a production Vite bundle completes to a temporary directory.
+- Data Loader backend tests: 10 pass; UI state tests: 4 pass.
+- The database trigger integration test is present but skips without
+  `MYTRION_OPS_TEST_DATABASE_URL`.
+- `docker compose config --quiet` and `git diff --check` pass.
+- The full backend suite has 10 unrelated failures (stream adapter, touchpoints/tools counts and
+  gates, Zoho MCP mock, retention claim, and notification text); the full frontend suite has one
+  unrelated Sales debtor-summary fixture failure. No Data Loader test fails.
+
+The Docker daemon is not running in this environment, so migration execution, the role's live
+permission/RLS checklist, NocoDB login/import/export, and end-to-end rollback against Postgres remain
+deployment verification steps. Concurrent HR and generated frontend asset changes were preserved
+and not modified as part of this work.
+
+## 2026-07-29 (5) — Data Loader local API 500 repaired
+
+The running API returned Postgres `42P01` for `/v1/admin/data-loader/batches`: the external app
+database had migrations only through `0067`, so `bulk_change_log` did not exist. Applied only the
+idempotent `0069_data_loader_journal.sql` statements directly to the configured database, leaving
+the pending HR `0068` migration untouched. The normal migrator ledger was deliberately not advanced
+past `0068`; a future `pnpm db:migrate` will apply `0068` and safely replay idempotent `0069`.
+
+Verified the live repository list/count query, all four trigger attachments, and the authenticated
+HTTP endpoint (`200`, empty batches). Data Loader routes now translate a missing journal relation
+into an exposed `503 DATA_LOADER_NOT_READY` response naming migration 0069 instead of returning an
+opaque 500. Focused route/allowlist/revert/tenant tests pass 11/11, and root typecheck/build pass.
+
+## 2026-07-29 (6) — Local NocoDB launched and loader role provisioned
+
+The Data Loader launch button remained disabled after `.env` was populated because the long-running
+API had cached an empty `NOCODB_BASE_URL`. Relaunched the backend and verified
+`GET /v1/admin/data-loader/config` returns `http://127.0.0.1:8080`. Started Docker Desktop and the
+four Compose services; NocoDB web, metadata Postgres, and Redis report healthy, the worker is
+running, and both `/` and `/api/v1/health` respond successfully.
+
+Provisioning exposed a PostgreSQL privilege nuance in `scripts/nocodb-role.sql`: a CREATEROLE
+database owner may create a normal role but cannot repeat `NOSUPERUSER` in `ALTER ROLE`.
+The script now fails closed if the existing loader has any privileged attribute, then alters only
+the attributes the database owner may manage. Live `mytrion_loader` login and SELECT on all four
+allowlisted tables pass; SELECT on `audit_log` is denied as required.
+
+The manually entered `NOCODB_LOADER_DATABASE_URL` used the correct loader credentials but the wrong
+host/database. Derived the correct restricted URL from `MYTRION_OPS_DATABASE_URL`, verified it by
+logging in, and copied it to the macOS clipboard without printing the credential.
+
+## 2026-07-29 (4) — HR workspace: employees loader + caching, departments as cards, org canvas (`feature/hr-workspace-v2`)
+
+Reworked all three live HR tabs. Branched off `build` (never committed onto it).
+
+**Employees.** The tab issued one 500-row request per keystroke and per filter change, and every row
+carried the whole Zoho `raw_fields` bag because `hrEmployeeRepo.list()` used `db.select()`. Two fixes:
+`EMPLOYEE_COLUMNS` / `DEPT_COLUMNS` explicit projections drop `raw_fields` from every read path, and the
+directory is now fetched ONCE into the shared client SWR store — search, the status chips and both
+dropdowns filter that array in memory, so typing costs no network and re-entering the tab paints from
+cache. `hrData.ts` owns the keys (`hr:*`) and the invalidation map. If the directory ever exceeds the
+500-row page, `useHrEmployeeSearch` falls back to server-side search rather than searching only the rows
+it holds.
+
+The header no longer lies while loading: `HrToolbarSkeleton` / `HrHeadActionsSkeleton` replace the old
+behaviour where a fully-formed filter bar with inert dropdowns and a stale "213 employees" rendered above
+shimmering cards. Edits get a real in-flight state (`HrBusy`, disabled fieldset, backdrop/Escape blocked
+mid-save) instead of the word "Saving…" in a still-live form.
+
+**Cache promotion.** `sales/redesign/dcCache.ts` → `_shared/swrCache.ts`, with `dcCache.ts` left as an
+alias re-export so all fifteen existing importers are untouched and there is still ONE store. Manager's
+cards were already importing it across modules, which is what showed it had outgrown the folder. Note
+`@tanstack/react-query` is a declared-but-unused dependency; the hand-rolled store is the deliberate
+choice (dcCache's own header said so) and this respects it rather than adding a second cache.
+
+**Departments.** Table → glass cards + a modal that IS the editor for admins (read-only layout for
+everyone else). Icon picker (curated lucide set) and tone picker (Horizon `--tone-*` tokens), plus a
+markdown "rich text" description with a toolbar and a Write/Preview switch. `mail_alias` and `source` are
+no longer surfaced. Card headcounts come from the already-cached directory, so they agree with the
+Employees tab instead of needing another endpoint.
+
+Injection safety is two independent layers, neither trusting the other: the backend validates SHAPE
+(`modules/hr/departmentAppearance.ts` — PascalCase identifier / `tone-*` token, so nothing with a quote,
+brace or `url(` can be stored) and the client resolves the stored value through a static Map with a
+fallback (`departmentAppearance.tsx`). Deliberately NOT a duplicated 1,600-name allow-list, which would
+drift. Verified: `icon: '<script>x'` and `iconColor: 'red;background:url(x)'` both normalize to null,
+and a PATCH omitting a key leaves it untouched.
+
+**Org Structure.** Nested `<ul>` → a React Flow v12 canvas, `rankdir: TB`, following the Scope blueprint
+(`admin/scope/Blueprint.tsx`) as the in-repo reference. Nodes are BOTH departments and employees. Drag to
+move (persisted, debounced, no audit row — a nudge is layout, not an edit); drop a node on a node to
+re-parent; drag handle→handle for the same thing; per-node chevron+count to expand/collapse; "+" to add a
+child; double-click to open the record.
+
+Migration `0068` adds `hr_employees.reporting_to_employee_id` (+ index) and `canvas_x/canvas_y`, mirroring
+what `0067` gave departments. The manager link is an ID, not the `reporting_to` NAME, because the canvas
+re-parents by id and a name breaks on rename and is ambiguous across duplicates. NOT a real FK: deleting
+an employee must not cascade away their whole reporting line. The edit form's "Reporting to" is now a
+picker writing that id, so the form and the canvas can no longer disagree.
+
+Hand-written migration again, for the reason 0067 was: `pnpm db:generate` still fails with
+`[meta/0022_snapshot.json, meta/0023_snapshot.json] are pointing to a parent snapshot ... which is a
+collision`. That baseline damage is unrelated to this work but blocks generation for everyone — worth
+repairing separately.
+
+**Bug found and fixed on the way:** `telegramUsername` was on the route body, the repo input type and the
+form, but neither `createManual` nor `update()` ever wrote the column. The field looked saved and was not.
+
+**Bug caught by a new test:** `buildOrgGraph` dropped anyone whose `department_id` pointed at a deleted
+department — bucketed under an id no walk visits, so they vanished from the canvas with nothing on screen
+saying so, and they are exactly the rows HR needs to find. Now routed to `floating` and drawn as roots.
+`orgGraph.test.ts` covers that plus cross-department managers, hidden terminated managers, dangling
+parent ids, reporting cycles from a bad import, and pinned-vs-auto layout.
+
+**Verification.** `pnpm lint` 0 errors (24 pre-existing warnings). Both typechecks clean. HR backend
+tests 32/32 (`hr-routes`, `hr-departments-routes`, new `hr-org-canvas-routes` covering the admin gate,
+bounded coordinates, cycle rejection and department-under-person). `orgGraph.test.ts` 16/16. Six backend
+test files (10 tests) and one frontend test file fail identically on a clean tree — pre-existing:
+`stream-adapter`, `tools`, `zoho-crm`, `touchpoints-routes`, `retention-cs-caps`,
+`notification-templates`, `dashDebtorsData`.
+
+**Not verified against a live DB.** Docker was not running this session, so `:5433` was down and
+migration `0068` has NOT been applied or run against a throwaway DB, and no tab was exercised in a
+browser. Both need doing before this merges. `modern-web-guidance` (CLAUDE.md rule 10) does not exist in
+`.claude/skills/` or `~/.claude/skills/`; held to the existing Horizon vocabulary instead — worth either
+adding the skill or dropping the rule.
+
+### Same session — adversarial review round
+
+Ran a six-dimension review over the diff (org-canvas logic, backend correctness, client cache,
+security, UX/a11y, scope regressions), each finding then put to three independent skeptics. 51 findings;
+the ones that held up are fixed below. Several were bugs I had introduced and two were latent holes the
+new code made reachable.
+
+**Data loss / silent-wrong, fixed:**
+- Canvas re-parent invalidated the graph and the directory but NOT `hr:departments:all`. Because the org
+  tab feeds that cached row straight into the department modal, moving a sub-department and then opening
+  it and pressing Save wrote the stale parent back — silently undoing the move.
+- Any employee edit wiped the manager NAME for every row whose manager id had never resolved (ambiguous
+  or unmatched `reporting_to`). The form seeds the picker to "—" for those, and sending that back reads
+  as "no manager". The patch now includes `reportingToEmployeeId` only when the user changed it, and an
+  unresolved name shows as a disabled "(not linked)" option instead of looking absent.
+- `PATCH /hr/employees/:id` and `PATCH /hr/departments/:id` had no cycle guard — it existed only on
+  `/hr/org/reparent`. Two form saves could build a reporting or department ring, which has no root, and
+  a ring makes the canvas drop its members. Both PATCHes now run the same guard.
+- `buildOrgGraph` dropped BOTH departments of a parent cycle plus everything under them, and both people
+  of a reporting cycle. Now an explicit invariant with a recursion guard: every row is either drawn or
+  deliberately hidden behind a collapsed ancestor, and unreachable rows surface as roots — which is the
+  only place the loop can be fixed. `orgGraph.test.ts` covers both cycle shapes and asserts
+  drawn + hidden = total. (One earlier test passed VACUOUSLY: it asserted id uniqueness, which an empty
+  node list satisfies.)
+- Expanding or collapsing anything threw away every position the user had dragged, because the graph
+  rebuilds from the fetched payload. Local drags are now kept in an override map applied on each rebuild,
+  and pending debounced writes flush before a re-parent and on unmount instead of being discarded.
+
+**Shared-cache fixes (they affect Sales and Manager too, via the promoted store):**
+- The `alive` ref was reset to true on every effect run, so a superseded response passed the liveness
+  check and wrote itself into state — switching agent / term / filter could leave the previous subject's
+  rows on screen under the new key. Replaced with a monotonic run id; the cache write still happens under
+  the correct key.
+- On a key change with a cold cache the previous key's data was presented as the new key's result. Now
+  cleared, matching the sibling `useLoad`'s documented rule.
+- New `swrCache.test.ts` (14 tests) locks both, plus StrictMode remount — my first version of the fix
+  latched a `mounted` ref false on the first teardown, which would have broken every consumer in dev.
+
+**Also fixed:** departments read gate (was `audience`-only while its sibling required the `hr` grant —
+any signed-in worker could read every department with its lead email); the Zoho sync overwrote
+`reporting_to` without touching the id column, so name and chart disagreed after every sync (added
+`relinkManagers`, run at the end of the sync); dropping a person onto a department node was a visible
+no-op because they stayed under their manager (now detaches); `setDepartment` left `department_zoho_id`
+contradicting `department_id`; the `designation` query filter was parsed and then never forwarded; a
+duplicate department name 500'd instead of returning a conflict; employee node height (76px) was shorter
+than its own content so the chevron hung outside the card; double-click opened a record AND zoomed the
+canvas; drop-to-reparent used React Flow's any-pixel-overlap test, so nudging a node beside a neighbour
+re-parented it (now centre-in-target); auto-placed nodes could land on top of pinned ones; `hiddenCount`
+was computed and never shown; the "+" used a `window.confirm` whose Cancel button created a
+sub-department; two loaders ran during a refresh (ring + spinning icon); the department card borrowed the
+employee card's shimmer class but not its reveal selector, so its hover hairline could never appear; the
+departments skeleton used the employees grid geometry so the page jumped; modals declared `aria-modal`
+without trapping or restoring focus; the icon picker was 26 tab stops with no arrow keys and announced
+raw lucide component names; canvas records were double-click-only with no keyboard path.
+
+`hrEmployeeRepo.ts` had grown to 694 lines, past the 600 cap (rule 5). Split along a real seam: the Zoho
+write paths (`bulkUpsertFromZoho`, `upsertFromZoho`, `relinkManagers`) moved to `hrEmployeeSyncRepo.ts` —
+they are reached only from the sync, write with Zoho as the authority, and are the only code touching
+`raw_fields`. 476 + 239 lines.
+
+**Deliberately NOT changed** (real, but pre-existing and outside this work): `relinkParents` wipes
+`parent_id` when the denormalized `parent_name` no longer resolves; the "Other designation" field clears
+itself once what you typed matches an existing title. Also left: a canvas department move is overwritten
+by the next Zoho People sync for `source = 'zoho_people'` rows, since Zoho still owns department
+assignment until HR finishes migrating off it — documented at `setDepartment` rather than papered over.
+
+**Verification after the review round.** Both typechecks clean. Backend suite run SERIALLY
+(`--no-file-parallelism`): 6 files / 10 tests fail, identical to the clean-tree baseline, 1146 passing.
+Running it in parallel on this machine produces extra ~5s timeout failures in unrelated files
+(`cs-routes`, `retention-cases`, `files`) that pass on their own — load flakiness, not regressions.
+Frontend: 305 passing, 1 pre-existing failure (`dashDebtorsData`). `pnpm lint` was clean earlier in the
+session (0 errors, 24 pre-existing warnings) but was NOT re-run after this last round of edits.
+
+## 2026-07-29 — HR employees 500 (missing 0068 columns)
+
+`GET /v1/hr/employees` and `/v1/hr/org-structure` 500ed locally because schema
+selected `reporting_to_employee_id` / `canvas_x` / `canvas_y` but migration
+`0068_hr_org_canvas_employee` had not been applied. `pnpm db:migrate` fixed it.
+
+## 2026-07-29 (7) — NocoDB ERD metadata visibility
+
+Granted the restricted `mytrion_loader` role `REFERENCES` on all public tables so NocoDB can discover
+the full schema for table navigation and ERD display without granting row reads. Live verification
+shows the database owner and loader both discover all 68 public tables. The loader can still read the
+four writable Data Loader tables, while a direct `SELECT` from `audit_log` remains permission denied.
+Added a regression assertion that permits the metadata grant but forbids `SELECT ON ALL TABLES`.
+
+## 2026-07-29 (8) — Manager Referrals calculation workspace
+
+Replaced the Manager Referrals record accordion with a calculation workspace based on
+`Referral_Bonus_Calculation_Types_1.pdf`: premium referral cards, month/search/type filters, KPI
+summary, pagination, and an accessible three-tab detail modal. The backend now returns one read model
+joining full Zoho Parent/Child records, related Deals, `Deals.Carrier_ID`, MART transaction-line-item
+gallons/swipes, and the local payout ledger. Calculation rules are centralized and shared with the
+monthly engine: legacy gallons ($0.01/gal), legacy unique-card swipes ($50/card/month), parent 500-gal
+one-time ($50), and child 1,000-gal one-time ($50).
+
+Relationship resolution is intentionally strict: referral → related Deal → Deal Carrier_ID → MART.
+It never falls back to the referral modules' free-text Carrier_ID. One-time payouts are guarded by
+both child/type and economic carrier/type, including old child-keyed ledger rows and every frozen
+status. Added migration `0070_referral_bonus_carrier_guard.sql`; it has NOT been applied.
+
+Live read-only smoke result for July 2026: 687 parents, 665 configured calculations, 4 children,
+0 related referral Deals, 0 connected MART carriers, and 687 visible setup states. Thus the screen
+correctly shows $0 payable until Zoho relationships are populated instead of manufacturing payouts.
+
+Verification: backend and frontend typechecks/builds pass; targeted lint is clean; referral backend
+tests 51/51 and frontend model tests 4/4 pass. Browser validation covered live cards, modal tabs,
+focus/close behavior, desktop and narrow layouts, and zero console errors. It also exposed and fixed
+Manager's retained scroll offset across workspace transitions. The full backend suite has 1,157
+passing and 10 unrelated existing failures (`stream-adapter`, `touchpoints-routes`, `zoho-crm`,
+`tools`, `retention-cs-caps`, `notification-templates`). Full lint is blocked by two unrelated
+unused-import errors in the in-progress HR files.
+
+## 2026-07-30 — Manager readability and referral modal separation
+
+Raised the Manager-scoped typography floor across shared navigation, workspace descriptions, KPI
+tiles, referral cards, filters, pagination, and referral-detail content. The change is scoped through
+Manager CSS variables so the other Mytrion workspaces retain their existing type scale.
+
+Strengthened the referral-detail modal in both themes with a darker blurred scrim, a two-layer
+accent perimeter, deeper elevation, and four explicit corner brackets. Browser QA exposed that the
+portal carried its calculation-tone class on the same node as `.mg-root`; the original
+descendant-only tone selector therefore left the modal's accent custom property unset. Added the
+same-node selectors so each calculation type now reliably colors its modal frame and internal
+accents.
+
+Mechanically split the oversized Manager stylesheet into base, workspace, and loyalty files; all
+three are below the repository's 600-line cap and retain their original cascade order.
+
+Verification: frontend typecheck and production build pass; referral model tests pass 4/4. Browser
+validation covered the Referrals workspace and modal in dark and light themes at desktop width; the
+larger three-column cards remain unclipped and the browser console is clean.
+
+## 2026-07-30 — HR employees FaceID + department lead/members
+
+Continued Mytrion HR on `feature/hr-workspace-v2`:
+
+1. **Employee card hover conflict** — card is now an `<article>` with a dedicated hit `<button>` and
+   real admin action buttons at bottom-right (no nested interactives over the status/ID row).
+2. **Department-coloured badges** — employee cards/detail set `--dc` from the department's
+   `iconColor` tone so the chip + designation use that colour dynamically.
+3. **Face ID** — migration `0071_hr_faceid_and_lead_employee` adds `hr_employees.face_id`, backfills
+   from Zoho `raw_fields->>'Face_ID'`, maps/syncs `Face_ID` on Zoho upsert, exposes on DTO + card /
+   detail / edit form.
+4. **Department lead = employee lookup** — `hr_departments.lead_employee_id` + backfill from
+   `lead_zoho_id` → `zoho_record_id` (email fallback). Admin modal uses a people `<select>`;
+   denormalized lead name/email follow the chosen row. Sync runs `relinkLeads` after parents.
+5. **Department members** — opening a department lists its people; admins can add/remove via
+   `PATCH /hr/employees/:id` `departmentId` (same path as the org canvas).
+
+Verification: `pnpm db:migrate` applied 0071; backend `pnpm typecheck` green; CRM `tsc --noEmit`
+green; `hr-map-zoho-employee`, `hr-routes`, `hr-departments-routes` 20/20.
+
+## 2026-07-30 — Sidebar username profile + HR admin Settings
+
+- Removed the HR **Profile** nav tab. Username now sits at the bottom of every `MytrionShell`
+  sidebar; click opens a read-only account profile with the only write being profile-picture upload
+  (`PUT /auth/me/avatar` → `worker_profiles`, migration `0072`). Linked HR employee details come from
+  `GET /hr/me` when `zoho_user_id` is mapped.
+- Added HR **Settings** tab, gated by `isAdmin` (Administrator / CEO / `allDepartmentAccess`) — Zoho
+  People employee + department sync buttons. Non-admins keep read-only Employees / Departments / Org
+  (write UI already hidden; backend `requireHrAdmin` unchanged).
+
+## 2026-07-30 — Mytrion HR Attendance (own webhook + shifts)
+
+Own attendance stack — **no Zoho People attendance** dual-write/sync.
+
+1. **Migration `0073_hr_attendance`** — `hr_attendance_shifts`, `hr_attendance_shift_assignments`,
+   `hr_attendance_punches` (FaceID + UTC punch + UZB `work_date`, dedup UK).
+2. **Ingest** — `POST /v1/hr/attendance/webhook` with `x-attendance-webhook-secret`
+   (`HR_ATTENDANCE_WEBHOOK_SECRET`). Maps `empCode` → `hr_employees.face_id`; door_name →
+   check_in/out; wall-clock parsed as Asia/Tashkent; overnight shift day bucketing.
+3. **API** — `GET /hr/attendance/me|summary|export`, shift CRUD + assign (admin).
+4. **CRM** — Attendance tab My Data week UI; Settings → Shifts / assign / CSV / webhook hint.
+   Point Hikvision/servercrm at `https://<ops-host>/v1/hr/attendance/webhook`.
+
+Verification: unit `hr-attendance-uzb` + route webhook/admin gates; migrate + typecheck as below.
+
+## 2026-07-30 — Attendance Team visibility
+
+Department managers and HR elevated roles can open **Team** next to My Data:
+
+- **Direct** = `reporting_to_employee_id` reportees.
+- **All (manager)** = Direct ∪ members of departments where they are `lead_employee_id`.
+- **All (HR Manager profile / Admin)** = every Active employee (org-wide).
+- `GET /hr/attendance/summary?employeeId=` re-checks the same scope (managers cannot open outsiders).
+- CSV export still Admin-only (`requireHrAdmin`).
+
+UI: Attendance panes My Data | Team; Direct/All toggle + search + person week detail.
+
+## 2026-07-30 — Manager Inter + department Tasks blocks
+
+1. **Inter** across Manager (`[data-mytrion=manager]` + `.mg-root`) — same body/head face as Sales.
+2. **Tasks block** on every department desk (Sales, CS, Billing, Finance, Collection, Mobile,
+   Verification): assign form + assignment list + beautified detail (stats, actions, event timeline).
+3. **Backend** — migration `0075_worker_task_department`; routes `/manager/:department/{workers,tasks…}`.
+   Sales assignees stay KPI-eligible; other desks resolve Zoho users who can enter that Mytrion.
+
+## 2026-07-30 — Native Mytrion Time Off
+
+Replaced the Zoho People leave runtime with a tenant-scoped Mytrion domain on
+`feature/hr-workspace-v2`. The read-only Zoho audit found 675 historical requests, the three UZ
+leave types, Kristina Smirnova's mapped HR employee/login, complete department-lead coverage, and
+the 11 configured 2026 holidays. Those findings informed the native policy; no production request
+path calls Zoho People.
+
+- Migration `0074_hr_time_off.sql` creates policy types, yearly entitlements, holidays, settings,
+  requests, and an append-only action journal. It seeds Sick 7, Annual Paid 17.5, Unpaid 60,
+  Kristina as final approver when present, current-year employee balances, and the audited 2026
+  holiday calendar. The migration is committed but was **not applied** from this session.
+- Pending requests reserve balance immediately. Weekends/full holidays cost zero, half-day
+  holidays cost 0.5, cross-year requests are refused, and pending/approved overlaps are blocked
+  under an employee/year advisory transaction lock.
+- Escalation snapshots the department lead and final HR approver at submission. The lead acts
+  first; Kristina/Settings approver is final. A department lead requesting their own leave (or an
+  unavailable/unmapped lead) routes directly to HR. Only the snapshotted current approver can act.
+- Every transition is tenant-scoped, audit-logged, journaled, and emits a durable/realtime inbox
+  event to the mapped Zoho login. Rejection/cancellation releases the reservation; final approval
+  converts pending days to booked days without double-deducting.
+- Every Mytrion sidebar now exposes a self-service Time Off modal (summary, apply, history,
+  approvals). HR's Time Off page adds the org-wide register. Admin Settings controls defaults,
+  yearly application of defaults, final approver, and full/half-day holidays.
+
+Verification: backend typecheck/build and frontend production bundling pass; lint has warnings only.
+The Time Off frontend typechecked cleanly before concurrent Verification workspace edits introduced
+unrelated `VerificationClientModal.tsx` exact-optional errors in the shared worktree. Time Off
+calendar/service/route tests pass 12/12. Browser QA covered summary, request form,
+approver queue/detail with persistent decision controls, the HR register, policy, and holidays.
+The full backend suite has 1,195 passing with 10 unrelated failures; frontend has 309 passing with
+one unrelated Sales debtors-summary expectation failure.
 ## 2026-07-29 (3) — QA automations round 3 follow-up review (`fix/qa-automations-round3`)
 
 Reviewed the invoice-download and card-refresh fixes after the branch was rebased onto `build`.

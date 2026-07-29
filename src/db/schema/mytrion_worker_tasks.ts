@@ -60,6 +60,11 @@ export const mytrionWorkerTasks = pgTable(
     idempotencyKey: text('idempotency_key'),
     payloadHash: text('payload_hash'),
     externalId: text('external_id'),
+    /**
+     * Manager desk that owns this assignment (`sales`, `billing`, `customer-service`, …).
+     * Filters the per-department Tasks block; existing rows default to `sales`.
+     */
+    department: text('department').notNull().default('sales'),
     taskType: text('task_type').notNull(),
     subject: text('subject').notNull(),
     description: text('description'),
@@ -87,6 +92,11 @@ export const mytrionWorkerTasks = pgTable(
     ),
     tenantCreatedIdx: index('mytrion_worker_tasks_tenant_created_idx').on(
       table.tenantId,
+      table.createdAt,
+    ),
+    tenantDeptCreatedIdx: index('mytrion_worker_tasks_tenant_dept_created_idx').on(
+      table.tenantId,
+      table.department,
       table.createdAt,
     ),
   }),

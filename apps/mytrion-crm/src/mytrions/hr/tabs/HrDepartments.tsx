@@ -1,357 +1,229 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Building2, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { Building2, Plus, RefreshCw, Search } from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
-import {
-  createHrDepartment,
-  deleteHrDepartment,
-  listHrDepartments,
-  updateHrDepartment,
-  type HrDepartmentDto,
-  type HrDepartmentWriteInput,
-} from '../../../api/hr';
+import { deleteHrDepartment, type HrDepartmentDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
-import { HrEmpty, HrPageHead } from '../HrBits';
+import { formatCachedAt } from '../../_shared/swrCache';
+import { HrDepartmentCard } from '../HrDepartmentCard';
+import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModal';
+import {
+  invalidateHrDepartments,
+  invalidateHrEmployees,
+  isActiveStatus,
+  useHrDepartments,
+  useHrDirectory,
+} from '../hrData';
+import {
+  HrCardGridSkeleton,
+  HrEmpty,
+  HrHeadActionsSkeleton,
+  HrPageHead,
+  HrToolbarSkeleton,
+} from '../HrBits';
 
-type FormMode = { kind: 'create' } | { kind: 'edit'; department: HrDepartmentDto };
-
-const EMPTY_FORM: HrDepartmentWriteInput = {
-  name: '',
-  code: '',
-  mailAlias: '',
-  leadName: '',
-  parentName: '',
-};
-
-function toForm(d: HrDepartmentDto): HrDepartmentWriteInput {
-  return {
-    name: d.name,
-    code: d.code ?? '',
-    mailAlias: d.mailAlias ?? '',
-    leadName: d.leadName ?? '',
-    parentName: d.parentName ?? '',
-  };
-}
-
-function normalizeWrite(form: HrDepartmentWriteInput): HrDepartmentWriteInput {
-  const trimOrNull = (v: string | null | undefined): string | null => {
-    const t = (v ?? '').trim();
-    return t.length ? t : null;
-  };
-  return {
-    name: form.name.trim(),
-    code: trimOrNull(form.code),
-    mailAlias: trimOrNull(form.mailAlias),
-    leadName: trimOrNull(form.leadName),
-    parentName: trimOrNull(form.parentName),
-  };
-}
-
-function isAbortError(err: unknown): boolean {
-  return (
-    (err instanceof DOMException && err.name === 'AbortError') ||
-    (err instanceof Error && err.name === 'AbortError') ||
-    (typeof err === 'object' &&
-      err !== null &&
-      'message' in err &&
-      String((err as { message: unknown }).message).toLowerCase().includes('abort'))
-  );
-}
-
-/** HR → Departments. Own `hr_departments` table (migrated from Zoho People). */
+/**
+ * HR → Departments. Own `hr_departments` table (migrated from Zoho People).
+ *
+ * Cards, not a table: see `HrDepartmentCard`. The card click opens the modal, which for an admin is the
+ * editor — including the icon, its colour, and the rich-text description. `mail_alias` and `source` are
+ * no longer surfaced anywhere in this tab.
+ *
+ * Headcount comes from the already-cached directory rather than a second endpoint, so the number a card
+ * shows is the same number the Employees tab shows.
+ */
 export function HrDepartments() {
   const user = useUserContext();
   const admin = isAdmin(user);
 
-  const [items, setItems] = useState<HrDepartmentDto[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [q, setQ] = useState('');
-  const [debouncedQ, setDebouncedQ] = useState('');
-  const [reloadTick, setReloadTick] = useState(0);
-  const [formMode, setFormMode] = useState<FormMode | null>(null);
-  const [form, setForm] = useState<HrDepartmentWriteInput>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
+  const [modal, setModal] = useState<DepartmentModalMode | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedQ(q.trim()), 280);
-    return () => window.clearTimeout(t);
-  }, [q]);
+  const departments = useHrDepartments();
+  const directory = useHrDirectory();
 
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setError('');
-    void listHrDepartments({
-      ...(debouncedQ ? { q: debouncedQ } : {}),
-      limit: 500,
-      signal: ac.signal,
-    })
-      .then((res) => {
-        if (ac.signal.aborted) return;
-        setItems(res.items);
-        setTotal(res.total);
-      })
-      .catch((err: unknown) => {
-        if (ac.signal.aborted || isAbortError(err)) return;
-        setError(err instanceof Error ? err.message : String(err));
-        setItems([]);
-        setTotal(0);
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
-    return () => ac.abort();
-  }, [debouncedQ, reloadTick]);
+  /**
+   * id → headcount, from the cached directory.
+   *
+   * `null` while the directory has not loaded (or failed), which is NOT the same as zero: a card that
+   * renders "No one assigned" before the fetch lands is stating something false about the department, and
+   * the delete confirmation would drop its "N people are still assigned" warning at exactly the moment it
+   * matters most.
+   */
+  const headcounts = useMemo(() => {
+    if (!directory.data) return null;
+    const map = new Map<string, { total: number; active: number }>();
+    for (const e of directory.data.items) {
+      if (!e.departmentId) continue;
+      const cur = map.get(e.departmentId) ?? { total: 0, active: 0 };
+      cur.total += 1;
+      if (isActiveStatus(e.status)) cur.active += 1;
+      map.set(e.departmentId, cur);
+    }
+    return map;
+  }, [directory.data]);
 
-  const reload = useCallback((): void => {
-    setReloadTick((n) => n + 1);
-  }, []);
+  /** undefined = not known yet; a zero-filled entry = genuinely nobody. */
+  const headcountFor = (id: string): { total: number; active: number } | undefined =>
+    headcounts ? (headcounts.get(id) ?? { total: 0, active: 0 }) : undefined;
 
-  const openCreate = (): void => {
-    setForm(EMPTY_FORM);
-    setFormError('');
-    setFormMode({ kind: 'create' });
-  };
+  const items = departments.data?.items ?? [];
+  const term = q.trim().toLowerCase();
+  const visible = useMemo(() => {
+    if (!term) return items;
+    return items.filter((d) =>
+      [d.name, d.code, d.leadName, d.parentName, d.description].some((v) =>
+        (v ?? '').toLowerCase().includes(term),
+      ),
+    );
+  }, [items, term]);
 
-  const openEdit = (department: HrDepartmentDto): void => {
-    setForm(toForm(department));
-    setFormError('');
-    setFormMode({ kind: 'edit', department });
-  };
+  const reloadAll = useCallback((): void => {
+    departments.reload();
+    directory.reload();
+  }, [departments, directory]);
 
   const onDelete = async (department: HrDepartmentDto): Promise<void> => {
-    if (!admin) return;
-    if (!window.confirm(`Delete department “${department.name}”?`)) return;
+    if (!admin || deletingId) return;
+    const staff = headcountFor(department.id);
+    const warning = !staff
+      ? // Headcount unknown: warn rather than imply the department is empty.
+        `Delete department “${department.name}”?\n\nIts headcount has not loaded yet, so anyone still assigned to it will be left without a department.`
+      : staff.total
+        ? `“${department.name}” still has ${staff.total} ${staff.total === 1 ? 'person' : 'people'} assigned. They will be left without a department. Delete anyway?`
+        : `Delete department “${department.name}”?`;
+    if (!window.confirm(warning)) return;
     setError('');
+    setDeletingId(department.id);
     try {
       await deleteHrDepartment(department.id);
-      reload();
+      setModal(null);
+      invalidateHrDepartments();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  const onSave = async (ev: FormEvent): Promise<void> => {
-    ev.preventDefault();
-    if (!admin || !formMode || saving) return;
-    const body = normalizeWrite(form);
-    if (!body.name) {
-      setFormError('Name is required.');
-      return;
-    }
-    setSaving(true);
-    setFormError('');
-    try {
-      if (formMode.kind === 'create') await createHrDepartment(body);
-      else await updateHrDepartment(formMode.department.id, body);
-      setFormMode(null);
-      reload();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const firstLoad = departments.loading && !departments.data;
+  const cachedCaption = formatCachedAt(departments.cachedAt);
 
   return (
     <div className="hr-page">
       <HrPageHead
         tab="departments"
         actions={
-          <>
-            <button type="button" className="hr-btn" disabled={loading} onClick={reload}>
-              <RefreshCw size={14} className={loading ? 'hr-spin' : undefined} />
-              Refresh
-            </button>
-            {admin ? (
-              <button type="button" className="hr-btn hr-btn-primary" onClick={openCreate}>
-                <Plus size={14} />
-                Add department
+          firstLoad ? (
+            <HrHeadActionsSkeleton buttons={admin ? 2 : 1} />
+          ) : (
+            <>
+              {/* One loader: the Refresh icon spins; this stays text. */}
+              <span className="hr-cached">
+                {departments.revalidating
+                  ? 'Refreshing…'
+                  : cachedCaption
+                    ? `Updated ${cachedCaption}`
+                    : ''}
+              </span>
+              <button
+                type="button"
+                className="hr-btn"
+                disabled={departments.revalidating}
+                onClick={reloadAll}
+              >
+                <RefreshCw size={14} className={departments.revalidating ? 'hr-spin' : undefined} />
+                Refresh
               </button>
-            ) : null}
-          </>
+              {admin ? (
+                <button
+                  type="button"
+                  className="hr-btn hr-btn-primary"
+                  onClick={() => setModal({ kind: 'create' })}
+                >
+                  <Plus size={14} />
+                  Add department
+                </button>
+              ) : null}
+            </>
+          )
         }
       />
 
-      <div className="hr-toolbar">
-        <label className="hr-search">
-          <Search size={14} />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, code, lead, parent…"
-            aria-label="Search departments"
-          />
-        </label>
-        <div className="hr-summary">
-          <strong>{total}</strong> {total === 1 ? 'department' : 'departments'}
-        </div>
-      </div>
-
-      {error ? (
-        <p className="hr-banner-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {loading ? (
-        <div className="hr-emp-grid" aria-busy="true" aria-label="Loading departments">
-          <div className="hr-sk" />
-          <div className="hr-sk" />
-        </div>
-      ) : items.length === 0 ? (
-        <HrEmpty
-          icon={<Building2 size={26} />}
-          title={debouncedQ ? 'No matches' : 'No departments yet'}
-          body={
-            admin
-              ? 'Add a department manually, or migrate rows into hr_departments.'
-              : 'No department records in the directory yet.'
-          }
-        />
+      {firstLoad ? (
+        <HrToolbarSkeleton slots={0} />
       ) : (
-        <div className="hr-table-wrap">
-          <div className="hr-table-scroll">
-            <table className="hr-table">
-              <thead>
-                <tr>
-                  <th>Department</th>
-                  <th>Code</th>
-                  <th>Lead</th>
-                  <th>Parent</th>
-                  <th>Mail alias</th>
-                  <th>Source</th>
-                  {admin ? <th className="hr-right">Actions</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((d) => (
-                  <tr key={d.id}>
-                    <td className="hr-strong">{d.name}</td>
-                    <td className="hr-mono">{d.code ?? '—'}</td>
-                    <td>
-                      <div>{d.leadName ?? '—'}</div>
-                      {d.leadEmail ? <div className="hr-emp-id">{d.leadEmail}</div> : null}
-                    </td>
-                    <td>{d.parentName ?? '—'}</td>
-                    <td className="hr-mono">{d.mailAlias ?? '—'}</td>
-                    <td className="hr-mono">{d.source === 'zoho_people' ? 'Migrated' : 'Manual'}</td>
-                    {admin ? (
-                      <td className="hr-right">
-                        <div className="hr-row-actions">
-                          <button
-                            type="button"
-                            className="hr-icon-btn"
-                            aria-label={`Edit ${d.name}`}
-                            onClick={() => openEdit(d)}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="hr-icon-btn hr-icon-danger"
-                            aria-label={`Delete ${d.name}`}
-                            onClick={() => void onDelete(d)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="hr-toolbar">
+          <label className="hr-search">
+            <Search size={14} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, code, lead, description…"
+              aria-label="Search departments"
+            />
+          </label>
+          <div className="hr-summary">
+            <strong>{visible.length}</strong>
+            {term ? <> of {items.length}</> : null}{' '}
+            {items.length === 1 ? 'department' : 'departments'}
           </div>
         </div>
       )}
 
-      {formMode && admin ? (
-        <div className="hr-modal-backdrop" role="presentation" onClick={() => setFormMode(null)}>
-          <div
-            className="hr-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hr-dept-form-title"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <header className="hr-modal-head">
-              <h2 id="hr-dept-form-title">
-                {formMode.kind === 'create' ? 'Add department' : `Edit ${formMode.department.name}`}
-              </h2>
-              <button type="button" className="hr-icon-btn" aria-label="Close" onClick={() => setFormMode(null)}>
-                <X size={16} />
-              </button>
-            </header>
-            <form className="hr-form" onSubmit={(ev) => void onSave(ev)}>
-              <div className="hr-form-grid">
-                <label>
-                  Name *
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Code
-                  <input
-                    value={form.code ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Lead
-                  <input
-                    value={form.leadName ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, leadName: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  Parent department
-                  <select
-                    value={form.parentName ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {items
-                      .filter((d) =>
-                        formMode.kind === 'edit' ? d.id !== formMode.department.id : true,
-                      )
-                      .map((d) => (
-                        <option key={d.id} value={d.name}>
-                          {d.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label>
-                  Mail alias
-                  <input
-                    type="email"
-                    value={form.mailAlias ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, mailAlias: e.target.value }))}
-                  />
-                </label>
-              </div>
-              {formError ? (
-                <p className="hr-banner-error" role="alert">
-                  {formError}
-                </p>
-              ) : null}
-              <div className="hr-modal-actions">
-                <button type="button" className="hr-btn" onClick={() => setFormMode(null)} disabled={saving}>
-                  Cancel
-                </button>
-                <button type="submit" className="hr-btn hr-btn-primary" disabled={saving}>
-                  {saving ? 'Saving…' : formMode.kind === 'create' ? 'Create' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
+      {error || departments.error ? (
+        <p className="hr-banner-error" role="alert">
+          {error || departments.error}
+        </p>
+      ) : null}
+
+      {firstLoad ? (
+        <HrCardGridSkeleton count={6} label="Loading departments" gridClass="hr-deptc-grid" />
+      ) : visible.length === 0 ? (
+        <HrEmpty
+          icon={<Building2 size={26} />}
+          title={term ? 'No matches' : 'No departments yet'}
+          body={
+            term
+              ? 'No department matches that search.'
+              : admin
+                ? 'Add a department, or run the Zoho People migrate sync.'
+                : 'No department records in the directory yet.'
+          }
+        />
+      ) : (
+        <div className="hr-deptc-grid">
+          {visible.map((d) => (
+            <HrDepartmentCard
+              key={d.id}
+              department={d}
+              headcount={headcountFor(d.id)}
+              busy={deletingId === d.id}
+              onOpen={(dep) => setModal({ kind: 'edit', department: dep })}
+            />
+          ))}
         </div>
+      )}
+
+      {modal ? (
+        <HrDepartmentModal
+          mode={modal}
+          admin={admin}
+          departments={items}
+          employees={directory.data?.items ?? []}
+          headcount={modal.kind === 'edit' ? headcountFor(modal.department.id) : undefined}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            invalidateHrDepartments();
+          }}
+          onDirectoryChanged={() => {
+            invalidateHrEmployees();
+            directory.reload();
+          }}
+          onDelete={(dep) => void onDelete(dep)}
+        />
       ) : null}
     </div>
   );

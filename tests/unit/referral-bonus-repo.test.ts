@@ -49,7 +49,8 @@ function makeBuilder(): Record<string, unknown> {
   ]) {
     builder[method] = record(method);
   }
-  builder.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resultRows).then(resolve);
+  builder.then = (resolve: (value: unknown) => unknown) =>
+    Promise.resolve(resultRows).then(resolve);
   return builder;
 }
 
@@ -67,7 +68,13 @@ import type { TenantContext } from '../../src/types/tenantContext.js';
 const dialect = new PgDialect();
 
 const ctx = (tenantId: string): TenantContext =>
-  ({ tenantId, userId: 'u_1', role: 'admin', scopes: ['*'], audience: 'internal' }) as TenantContext;
+  ({
+    tenantId,
+    userId: 'u_1',
+    role: 'admin',
+    scopes: ['*'],
+    audience: 'internal',
+  }) as TenantContext;
 
 const ACME = ctx('tenant_acme');
 const RIVAL = ctx('tenant_rival');
@@ -106,9 +113,13 @@ const BONUS_ROW = {
 describe('every ledger read is bound to the caller tenant', () => {
   const reads: Array<[string, (t: TenantContext) => Promise<unknown>]> = [
     ['list', (t) => referralBonusRepo.list(t)],
-    ['list (filtered)', (t) => referralBonusRepo.list(t, { periodMonth: '2026-06-01', bonusType: 'swipes_legacy' })],
+    [
+      'list (filtered)',
+      (t) => referralBonusRepo.list(t, { periodMonth: '2026-06-01', bonusType: 'swipes_legacy' }),
+    ],
     ['totals', (t) => referralBonusRepo.totals(t, '2026-06-01')],
     ['listRuns', (t) => referralBonusRepo.listRuns(t)],
+    ['listOneTimeClaims', (t) => referralBonusRepo.listOneTimeClaims(t)],
   ];
 
   for (const [name, run] of reads) {
@@ -184,6 +195,11 @@ describe('every ledger write is bound to the caller tenant', () => {
     const set = (conflict?.args[0] as { set: Record<string, unknown> }).set;
     expect(Object.keys(set)).not.toContain('status');
     expect(Object.keys(set)).toContain('amountUsd');
+  });
+
+  it('treats a frozen-row conflict as a successful no-op', async () => {
+    resultRows = [];
+    await expect(referralBonusRepo.upsert(ACME, BONUS_ROW)).resolves.toBeUndefined();
   });
 
   const writes: Array<[string, (t: TenantContext) => Promise<unknown>]> = [

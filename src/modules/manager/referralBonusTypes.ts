@@ -3,9 +3,8 @@
  *
  * Source of truth is the `Referral Bonus Calculation Types — CRM Automation Reference` PDF. This
  * module holds only data — rates, thresholds, recipients, eligible fuel codes and the Zoho picklist
- * mapping. No aggregation happens here; the calculation engine (not yet built) reads these values so
- * that changing a rate or a fuel-code list is a one-line edit in ONE place rather than a hunt
- * through SQL strings.
+ * mapping. No aggregation happens here; both the calculation engine and Manager preview read these
+ * values so a rate or fuel-code change is made once rather than repeated through SQL and React.
  */
 import type {
   ReferralBonusRecipient,
@@ -141,9 +140,12 @@ export const REFERRAL_BONUS_SPEC_BY_TYPE: Readonly<Record<ReferralBonusType, Ref
 };
 
 /** The one-time types — the pair guarded by the partial unique index on the ledger. */
-export const ONE_TIME_BONUS_TYPES: readonly ReferralBonusType[] = ['gallons_parent', 'gallons_child'];
+export const ONE_TIME_BONUS_TYPES: readonly ReferralBonusType[] = [
+  'gallons_parent',
+  'gallons_child',
+];
 
-/** True when a type may exist at most once per child, in any month. */
+/** True when a type may exist at most once per child and economic carrier, in any month. */
 export function isOneTimeBonusType(type: ReferralBonusType): boolean {
   return ONE_TIME_BONUS_TYPES.includes(type);
 }

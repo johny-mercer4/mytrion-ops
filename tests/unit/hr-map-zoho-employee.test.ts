@@ -18,6 +18,7 @@ describe('mapZohoEmployeeToUpsert', () => {
         Role: 'Staff',
         Dateofjoining: '09-Dec-1943',
         Mobile: '+1',
+        Face_ID: '00000390',
         Reporting_To: 'Boss',
         'Reporting_To.ID': 'zp_1',
         Photo_downloadUrl: 'https://example.com/p.jpg',
@@ -34,6 +35,7 @@ describe('mapZohoEmployeeToUpsert', () => {
       designation: 'Admiral',
       location: 'NYC',
       status: 'Active',
+      faceId: '00000390',
       reportingToZohoId: 'zp_1',
       photoUrl: 'https://example.com/p.jpg',
     });

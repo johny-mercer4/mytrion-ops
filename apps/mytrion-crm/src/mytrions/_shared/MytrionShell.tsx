@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
@@ -6,7 +7,16 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
 import { horizonSkin } from './horizonSkin';
+import { UserProfileModal } from './UserProfileModal';
+import { UserTimeOffModal } from './UserTimeOffModal';
 import styles from './MytrionShell.module.css';
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
 
 export interface NavItem {
   key: string;
@@ -147,6 +157,8 @@ export function MytrionShell({
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [timeOffOpen, setTimeOffOpen] = useState(false);
   const flatFallback: NavItem[] = nav ?? [
     { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
   ];
@@ -156,6 +168,8 @@ export function MytrionShell({
   const q = navQuery.trim().toLowerCase();
   const visibleSections = filterSections(sections, q);
   const showSearch = enableNavSearch || Boolean(navSections?.length);
+  const displayName = user.userName.trim() || 'Account';
+  const roleLine = [user.profile, user.role].filter(Boolean).join(' · ');
 
   const select = (item: NavItem) => {
     setChatView(false);
@@ -206,7 +220,22 @@ export function MytrionShell({
             </div>
           </div>
 
-          <div className={styles.navGroup}>
+          <div className={styles.navFooter}>
+            <button
+              type="button"
+              title="My time off"
+              aria-label="Open My time off"
+              className={styles.navBtn}
+              onClick={() => {
+                setChatView(false);
+                setTimeOffOpen(true);
+              }}
+            >
+              <span className={styles.navIcon}>
+                <CalendarDays size={19} />
+              </span>
+              <span className={styles.navLabel}>Time Off</span>
+            </button>
             {enableDockChat && (
               <button
                 type="button"
@@ -221,6 +250,28 @@ export function MytrionShell({
                 <span className={styles.navLabel}>Chat</span>
               </button>
             )}
+            <button
+              type="button"
+              className={styles.userBtn}
+              title={`Open profile · ${displayName}`}
+              aria-label={`Open profile for ${displayName}`}
+              onClick={() => {
+                setChatView(false);
+                setProfileOpen(true);
+              }}
+            >
+              <span className={styles.userAvatar} aria-hidden="true">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" />
+                ) : (
+                  initials(displayName)
+                )}
+              </span>
+              <span className={styles.userMeta}>
+                <span className={styles.userName}>{displayName}</span>
+                {roleLine ? <span className={styles.userRole}>{roleLine}</span> : null}
+              </span>
+            </button>
           </div>
         </nav>
 
@@ -237,6 +288,8 @@ export function MytrionShell({
           )}
         </div>
       </div>
+      {profileOpen ? <UserProfileModal onClose={() => setProfileOpen(false)} /> : null}
+      {timeOffOpen ? <UserTimeOffModal onClose={() => setTimeOffOpen(false)} /> : null}
     </div>
   );
 }

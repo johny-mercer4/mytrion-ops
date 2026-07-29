@@ -5,12 +5,10 @@
  * `mytrion_referral_bonuses` accumulates permanent history rather than being re-derived on demand.
  *
  * Shape of a run:
- *   1. read `Parent_Referrers` + `Child_Referrals` from Zoho (COQL)
- *   2. join child → parent on the REF CODE, not the lookup — `Child_Referrals.Parent_Referrer` is
- *      null across the entire org (verified 2026-07-28); the populated key is the text pair
- *      `Parent_Referrers.ReferrerId` ↔ `Child_Referrals.Referrer_ID`
- *   3. collapse children by `Carrier_ID` so shared volume is counted ONCE (several child records
- *      routinely point at the same carrier; paying per record would multiply the payout)
+ *   1. read `Parent_Referrers`, `Child_Referrals`, and their related `Deals` from Zoho (COQL)
+ *   2. resolve child → parent from the lookup first, with the legacy ref-code pair as a fallback
+ *   3. resolve Child Referral → related Deal → Deal.Carrier_ID; referral-module carrier text is not
+ *      accepted as an audit substitute
  *   4. read one month of DWH volume for those carriers
  *   5. resolve each child's `Calculation` logic PARENT-FIRST (the parent copy is the populated one;
  *      a non-null child value overrides) and upsert the resulting rows
@@ -31,12 +29,14 @@ import { logger } from '../../lib/logger.js';
 import { referralBonusRepo } from '../../repos/referralBonusRepo.js';
 import type { ReferralBonusType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { REFERRAL_BONUS_SPEC_BY_TYPE, isOneTimeBonusType } from './referralBonusTypes.js';
+import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
 import {
-  REFERRAL_BONUS_SPEC_BY_TYPE,
-  bonusTypesForCalculation,
-  isOneTimeBonusType,
-  type ReferralBonusSpec,
-} from './referralBonusTypes.js';
+  resolveReferralTargets,
+  type ReferralChildSource,
+  type ReferralDealSource,
+  type ReferralParentSource,
+} from './referralResolution.js';
 
 export interface ReferralBonusRunSummary {
   runId: string;
@@ -52,25 +52,6 @@ export interface ReferralBonusRunSummary {
   amountTotalUsd: string;
 }
 
-interface ParentRow {
-  id: string;
-  referrerId: string;
-  name: string | null;
-  /**
-   * The AUTHORITATIVE bonus-logic selector. `Calculation` exists as an independent picklist on BOTH
-   * modules, and it is the PARENT copy that carries the data: 665 of 687 parents are populated
-   * (615 'Swipes (Legacy)', 50 'Gallons (Legacy)') while it is null on 100% of children.
-   */
-  calculation: string | null;
-}
-interface ChildRow {
-  id: string;
-  referrerId: string | null;
-  name: string | null;
-  carrierId: number | null;
-  calculation: string | null;
-}
-
 /**
  * Rows per COQL page when loading the referral rosters. Zoho's own max (2000) is the cheapest per row
  * on the tiered credit scale, and these SELECTs are only 5-6 narrow columns, so there is no reason to
@@ -80,6 +61,11 @@ const BONUS_COQL_PAGE_SIZE = 2000;
 
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
 const strOrNull = (v: unknown): string | null => str(v) || null;
+const bool = (v: unknown): boolean => v === true || String(v).toLowerCase() === 'true';
+const lookupId = (v: unknown): string | null => {
+  if (!v || typeof v !== 'object' || !('id' in v)) return null;
+  return strOrNull((v as { id?: unknown }).id);
+};
 
 /** Carrier ids arrive as text in Zoho; only a clean positive integer can join the mart. */
 function carrierIdOf(v: unknown): number | null {
@@ -101,13 +87,13 @@ export function previousMonthStart(date: Date): string {
   return monthStart(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1)));
 }
 
-async function loadParents(): Promise<Map<string, ParentRow>> {
+async function loadParents(): Promise<ReferralParentSource[]> {
   // Drained, not one page: a parent missing from this map earns its referrer NOTHING, so a silent
   // cut-off is a money bug. Parents grew by 680 in a single import on 2026-07-28, and the old
   // hardcoded `limit 0, 2000` had no signal at all for overflow. `id desc` makes the offset paging
   // sound — Created_Time is not a total order in this module (one import shares a timestamp).
   const res = await zohoCrm.runCoqlAll(
-    'select id, ReferrerId, Name, Company_Name, Calculation from Parent_Referrers where id is not null order by id desc',
+    'select id, ReferrerId, Name, Company_Name, Calculation, Deal_Id from Parent_Referrers where id is not null order by id desc',
     { pageSize: BONUS_COQL_PAGE_SIZE },
   );
   if (res.truncated) {
@@ -115,24 +101,19 @@ async function loadParents(): Promise<Map<string, ParentRow>> {
       `[referral-bonus] parent referrer drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial roster`,
     );
   }
-  const byCode = new Map<string, ParentRow>();
-  for (const r of res.rows) {
-    const code = str(r.ReferrerId);
-    if (!code) continue;
-    byCode.set(code, {
-      id: str(r.id),
-      referrerId: code,
-      name: strOrNull(r.Name) ?? strOrNull(r.Company_Name),
-      calculation: strOrNull(r.Calculation),
-    });
-  }
-  return byCode;
+  return res.rows.map((r) => ({
+    id: str(r.id),
+    referrerId: str(r.ReferrerId),
+    name: strOrNull(r.Name) ?? strOrNull(r.Company_Name),
+    calculation: strOrNull(r.Calculation),
+    dealId: lookupId(r.Deal_Id),
+  }));
 }
 
-async function loadChildren(): Promise<ChildRow[]> {
+async function loadChildren(): Promise<ReferralChildSource[]> {
   // Drained for the same reason as the parents: a child left out of this list is a bonus never paid.
   const res = await zohoCrm.runCoqlAll(
-    'select id, Referrer_ID, Name, Company_Name, Carrier_ID, Calculation from Child_Referrals where id is not null order by id desc',
+    'select id, Referrer_ID, Name, Company_Name, Calculation, Parent_Referrer, Paid, Parent_Paid from Child_Referrals where id is not null order by id desc',
     { pageSize: BONUS_COQL_PAGE_SIZE },
   );
   if (res.truncated) {
@@ -143,9 +124,30 @@ async function loadChildren(): Promise<ChildRow[]> {
   return res.rows.map((r) => ({
     id: str(r.id),
     referrerId: strOrNull(r.Referrer_ID),
+    parentLookupId: lookupId(r.Parent_Referrer),
     name: strOrNull(r.Name) ?? strOrNull(r.Company_Name),
-    carrierId: carrierIdOf(r.Carrier_ID),
     calculation: strOrNull(r.Calculation),
+    paid: bool(r.Paid),
+    parentPaid: bool(r.Parent_Paid),
+  }));
+}
+
+async function loadDeals(): Promise<ReferralDealSource[]> {
+  const res = await zohoCrm.runCoqlAll(
+    'select id, Deal_Name, Carrier_ID, Parent_Referrer, Child_Referrer from Deals where Parent_Referrer is not null or Child_Referrer is not null order by id desc',
+    { pageSize: BONUS_COQL_PAGE_SIZE },
+  );
+  if (res.truncated) {
+    throw new Error(
+      `[referral-bonus] related Deal drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial relationship set`,
+    );
+  }
+  return res.rows.map((r) => ({
+    id: str(r.id),
+    name: strOrNull(r.Deal_Name),
+    carrierId: carrierIdOf(r.Carrier_ID),
+    parentLookupId: lookupId(r.Parent_Referrer),
+    childLookupId: lookupId(r.Child_Referrer),
   }));
 }
 
@@ -155,41 +157,10 @@ function usd(n: number): string {
 }
 
 /**
- * The amount for one logic in one month, plus the quantities that justify it.
- *
- * One-time types return null below their threshold: no row is written at all, so the partial unique
- * index never sees a zero-value placeholder it would later have to reconcile against a real award.
- */
-function computeAmount(
-  spec: ReferralBonusSpec,
-  vol: { gallons: number; swipes: number; cumulativeGallons: number },
-): { amount: number; qtyGallons: number | null; qtyNewCards: number | null } | null {
-  switch (spec.type) {
-    case 'gallons_legacy': {
-      if (vol.gallons <= 0) return null;
-      return { amount: vol.gallons * spec.rateUsd, qtyGallons: vol.gallons, qtyNewCards: null };
-    }
-    case 'swipes_legacy': {
-      if (vol.swipes <= 0) return null;
-      // `qtyNewCards` keeps its column name (qty_new_cards) to avoid a migration, but it now holds the
-      // program's SWIPE count — distinct cards that transacted in the month, not first-ever cards.
-      return { amount: vol.swipes * spec.rateUsd, qtyGallons: null, qtyNewCards: vol.swipes };
-    }
-    default: {
-      // One-time: award in the month the cumulative threshold is first crossed. The repo's partial
-      // unique index is what actually guarantees "once" across re-runs.
-      const threshold = spec.thresholdGallons ?? 0;
-      if (vol.cumulativeGallons < threshold) return null;
-      return { amount: spec.rateUsd, qtyGallons: vol.gallons, qtyNewCards: null };
-    }
-  }
-}
-
-/**
  * Compute + persist one month of referral bonuses.
  *
- * `periodMonth` is 'YYYY-MM-01'. Safe to re-run: the monthly rows upsert in place, and a one-time
- * award that would land in a different month raises loudly rather than double-paying (see the repo).
+ * `periodMonth` is 'YYYY-MM-01'. Safe to re-run: monthly rows upsert in place, while prior one-time
+ * claims are skipped before any DWH award is written.
  */
 export async function runReferralBonusCalculation(
   ctx: TenantContext,
@@ -213,40 +184,23 @@ export async function runReferralBonusCalculation(
   };
 
   try {
-    const [parentsByCode, children] = await Promise.all([loadParents(), loadChildren()]);
+    const [parents, children, deals, priorClaims] = await Promise.all([
+      loadParents(),
+      loadChildren(),
+      loadDeals(),
+      referralBonusRepo.listOneTimeClaims(ctx),
+    ]);
     summary.children = children.length;
-
-    /**
-     * Resolve each child's driving logic PARENT-FIRST.
-     *
-     * The engine used to read `Calculation` only from `Child_Referrals`, where it is null on 100% of
-     * records — so every run skipped every child and wrote zero rows while reporting success. The
-     * populated copy is on `Parent_Referrers` (665 of 687). A non-null value on the child is honoured
-     * as an explicit per-child override, since the two picklists are independent fields and can drift.
-     */
-    const resolved = children.map((c) => {
-      const parent = c.referrerId ? parentsByCode.get(c.referrerId) : undefined;
-      return { ...c, parent, calculation: c.calculation ?? parent?.calculation ?? null };
-    });
-
-    // Only children with BOTH a logic and a carrier can be measured.
-    const workable = resolved.filter((c) => {
-      if (!c.calculation || bonusTypesForCalculation(c.calculation).length === 0) {
-        summary.skippedNoCalculation += 1;
-        return false;
-      }
-      if (c.carrierId == null) {
-        summary.unresolved += 1;
-        return false;
-      }
-      return true;
-    });
+    const resolution = resolveReferralTargets(parents, children, deals);
+    summary.skippedNoCalculation = resolution.skippedNoCalculationChildIds.length;
+    summary.unresolved = resolution.unresolvedChildIds.length;
 
     // Fuel-code sets differ per logic, so fetch volume once per DISTINCT set rather than per child.
-    const carrierIds = [...new Set(workable.map((c) => c.carrierId as number))];
+    const carrierIds = [...new Set(resolution.targets.map((target) => target.carrierId))];
     const bySpecKey = new Map<string, Map<number, ReferralCarrierVolume>>();
-    const specsInPlay = new Set<ReferralBonusType>();
-    for (const c of workable) for (const t of bonusTypesForCalculation(c.calculation)) specsInPlay.add(t);
+    const specsInPlay = new Set<ReferralBonusType>(
+      resolution.targets.map((target) => target.bonusType),
+    );
     for (const type of specsInPlay) {
       const spec = REFERRAL_BONUS_SPEC_BY_TYPE[type];
       const key = [...spec.fuelCodes].sort().join(',');
@@ -254,58 +208,64 @@ export async function runReferralBonusCalculation(
       bySpecKey.set(key, await fetchReferralVolume(carrierIds, periodMonth, spec.fuelCodes));
     }
 
-    /**
-     * Carrier-level, not record-level. Several `Child_Referrals` legitimately share one carrier; the
-     * volume belongs to the CARRIER, so only the first child per (carrier, type) is paid. Sorting by
-     * record id keeps that choice deterministic across re-runs — otherwise a re-run could move the
-     * award to a sibling record and trip the one-time index.
-     */
-    const claimed = new Set<string>();
+    const claimedCarriers = new Set(
+      priorClaims
+        .filter((claim) => claim.carrierId !== null && isClaimedStatus(claim.status))
+        .map((claim) => `${claim.carrierId}:${claim.bonusType}`),
+    );
+    const claimedChildren = new Set(
+      priorClaims
+        .filter((claim) => isClaimedStatus(claim.status))
+        .map((claim) => `${claim.childReferralId}:${claim.bonusType}`),
+    );
     let total = 0;
 
-    for (const child of [...workable].sort((a, b) => a.id.localeCompare(b.id))) {
-      const { parent } = child;
-      for (const type of bonusTypesForCalculation(child.calculation)) {
-        const spec = REFERRAL_BONUS_SPEC_BY_TYPE[type];
-        const claimKey = `${child.carrierId}:${type}`;
-        if (claimed.has(claimKey)) continue;
-
-        const volumes = bySpecKey.get([...spec.fuelCodes].sort().join(','));
-        const vol = volumes?.get(child.carrierId as number);
-        if (!vol) continue;
-
-        const computed = computeAmount(spec, vol);
-        if (!computed) continue;
-
-        // The parent is the payee for three of the four logics; a missing parent means we cannot say
-        // who to pay, so the row is not written and the child counts as unresolved.
-        if (spec.recipient === 'parent' && !parent) {
-          summary.unresolved += 1;
-          continue;
-        }
-
-        claimed.add(claimKey);
-        await referralBonusRepo.upsert(ctx, {
-          bonusType: type,
-          periodMonth,
-          childReferralId: child.id,
-          parentReferrerId: parent?.id ?? null,
-          childName: child.name,
-          parentName: parent?.name ?? null,
-          carrierId: child.carrierId,
-          resolution: 'carrier_id',
-          recipientKind: spec.recipient,
-          recipientName: spec.recipient === 'parent' ? (parent?.name ?? null) : child.name,
-          qtyGallons: computed.qtyGallons != null ? computed.qtyGallons.toFixed(2) : null,
-          qtyNewCards: computed.qtyNewCards,
-          cumulativeGallons: isOneTimeBonusType(type) ? vol.cumulativeGallons.toFixed(2) : null,
-          rate: spec.rateUsd.toFixed(4),
-          amountUsd: usd(computed.amount),
-          calcRunId: run.id,
-        });
-        summary.rowsWritten += 1;
-        total += computed.amount;
+    for (const target of resolution.targets) {
+      const spec = REFERRAL_BONUS_SPEC_BY_TYPE[target.bonusType];
+      const carrierClaimKey = `${target.carrierId}:${target.bonusType}`;
+      const childClaimKey = `${target.child.id}:${target.bonusType}`;
+      if (
+        isOneTimeBonusType(target.bonusType) &&
+        (claimedCarriers.has(carrierClaimKey) || claimedChildren.has(childClaimKey))
+      ) {
+        continue;
       }
+
+      const volumes = bySpecKey.get([...spec.fuelCodes].sort().join(','));
+      const vol = volumes?.get(target.carrierId);
+      if (!vol) continue;
+
+      const computed = computeReferralBonus(spec, vol, target.alreadyPaidInZoho);
+      if (computed.payableAmount <= 0) continue;
+
+      const saved = await referralBonusRepo.upsert(ctx, {
+        bonusType: target.bonusType,
+        periodMonth,
+        childReferralId: target.child.id,
+        parentReferrerId: target.parent.id,
+        childName: target.child.name,
+        parentName: target.parent.name,
+        carrierId: target.carrierId,
+        zohoDealId: target.deal.id,
+        resolution: 'deal_lookup',
+        recipientKind: spec.recipient,
+        recipientName: spec.recipient === 'parent' ? target.parent.name : target.child.name,
+        qtyGallons: computed.qtyGallons != null ? computed.qtyGallons.toFixed(2) : null,
+        qtyNewCards: computed.qtySwipes,
+        cumulativeGallons: isOneTimeBonusType(target.bonusType)
+          ? vol.cumulativeGallons.toFixed(2)
+          : null,
+        rate: spec.rateUsd.toFixed(4),
+        amountUsd: usd(computed.payableAmount),
+        calcRunId: run.id,
+      });
+      if (!saved) continue;
+      if (isOneTimeBonusType(target.bonusType)) {
+        claimedCarriers.add(carrierClaimKey);
+        claimedChildren.add(childClaimKey);
+      }
+      summary.rowsWritten += 1;
+      total += computed.payableAmount;
     }
 
     summary.amountTotalUsd = usd(total);

@@ -1,0 +1,416 @@
+/* Portal modal re-establishes .mg-root and the Manager accent outside the page tree. */
+.mg-root .mg-rf-scrim {
+  position: fixed;
+  z-index: 10020;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(3, 7, 18, 0.68);
+  backdrop-filter: blur(14px) saturate(0.72);
+}
+.mg-root .mg-rf-modal {
+  --rf-modal-edge: color-mix(in srgb, var(--rf-tone) 72%, white);
+  position: relative;
+  isolation: isolate;
+  width: min(1160px, 96vw);
+  max-height: min(880px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--rf-modal-edge) 70%, var(--hz-pane-bd));
+  border-radius: 18px;
+  outline: 1px solid color-mix(in srgb, var(--rf-modal-edge) 36%, transparent);
+  outline-offset: 4px;
+  background: color-mix(in srgb, var(--bg-primary) 97%, var(--rf-tone));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--rf-modal-edge) 34%, transparent),
+    0 36px 110px -24px rgba(0, 0, 0, 0.72),
+    0 0 76px -24px color-mix(in srgb, var(--rf-tone) 82%, transparent),
+    var(--hz-glass-inset);
+}
+.mg-root .mg-rf-modal::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  inset: 7px;
+  border-radius: 11px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, var(--rf-modal-edge), var(--rf-modal-edge)) top left / 52px 3px no-repeat,
+    linear-gradient(180deg, var(--rf-modal-edge), var(--rf-modal-edge)) top left / 3px 52px
+      no-repeat,
+    linear-gradient(270deg, var(--rf-modal-edge), var(--rf-modal-edge)) top right / 52px 3px
+      no-repeat,
+    linear-gradient(180deg, var(--rf-modal-edge), var(--rf-modal-edge)) top right / 3px 52px
+      no-repeat,
+    linear-gradient(90deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom left / 52px 3px
+      no-repeat,
+    linear-gradient(0deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom left / 3px 52px
+      no-repeat,
+    linear-gradient(270deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom right / 52px 3px
+      no-repeat,
+    linear-gradient(0deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom right / 3px 52px
+      no-repeat;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--rf-tone) 70%, transparent));
+}
+.mg-root .mg-rf-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 19px 20px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--rf-tone) 11%, transparent),
+    transparent 60%
+  );
+}
+.mg-root .mg-rf-modal-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 14.5px;
+}
+.mg-root .mg-rf-modal-identity {
+  min-width: 0;
+  flex: 1;
+}
+.mg-root .mg-rf-eyebrow {
+  display: block;
+  color: var(--rf-tone);
+  font: 700 10.5px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.mg-root .mg-rf-modal-identity h2 {
+  margin: 5px 0 2px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: 750 22px/1.2 var(--font-head);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-root .mg-rf-modal-identity p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.mg-root .mg-rf-modal-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.mg-root .mg-rf-modal-amount span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mg-root .mg-rf-modal-amount strong {
+  font: 750 24px/1 var(--font-head);
+}
+.mg-root .mg-rf-modal-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 9px;
+  background: var(--hz-pane);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mg-root .mg-rf-modal-close:hover {
+  color: var(--text-primary);
+  background: var(--hz-pane-lift);
+}
+.mg-root .mg-rf-modal-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 7px 14px;
+  flex: none;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+}
+.mg-root .mg-rf-modal-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 650 13px/1 var(--font-body);
+  cursor: pointer;
+}
+.mg-root .mg-rf-modal-tabs button[aria-selected='true'] {
+  border-color: color-mix(in srgb, var(--rf-tone) 27%, transparent);
+  background: color-mix(in srgb, var(--rf-tone) 10%, transparent);
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-modal-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 18px;
+}
+.mg-root .mg-rf-modal-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.mg-root .mg-rf-modal-kpis > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: 'icon label' 'icon value';
+  align-items: center;
+  gap: 3px 9px;
+  padding: 12px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 11px;
+  background: var(--hz-pane);
+}
+.mg-root .mg-rf-modal-kpis svg {
+  grid-area: icon;
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-modal-kpis span {
+  grid-area: label;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mg-root .mg-rf-modal-kpis strong {
+  grid-area: value;
+  font: 700 18px/1.2 var(--font-head);
+}
+.mg-root .mg-rf-breakdowns,
+.mg-root .mg-rf-related-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mg-root .mg-rf-breakdown,
+.mg-root .mg-rf-related-record,
+.mg-root .mg-rf-crm-panel {
+  padding: 14px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 12px;
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-rf-breakdown > header,
+.mg-root .mg-rf-related-record > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mg-root .mg-rf-breakdown-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--rf-tone);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--rf-tone) 11%, transparent);
+}
+.mg-root .mg-rf-breakdown header > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.mg-root .mg-rf-breakdown header strong,
+.mg-root .mg-rf-related-record header strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.mg-root .mg-rf-breakdown header span,
+.mg-root .mg-rf-related-record header span {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.mg-root .mg-rf-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.mg-root .mg-rf-state.is-paid {
+  color: var(--success);
+}
+.mg-root .mg-rf-state.is-earned {
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-state.is-tracking {
+  color: var(--text-muted);
+}
+.mg-root .mg-rf-breakdown-formula {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.mg-root .mg-rf-breakdown-formula svg {
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-breakdown-formula strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.mg-root .mg-rf-progress {
+  margin-top: 11px;
+}
+.mg-root .mg-rf-progress > div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mg-root .mg-rf-progress > div strong {
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-mini-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.mg-root .mg-rf-mini-metrics dt,
+.mg-root .mg-rf-detail-grid dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mg-root .mg-rf-mini-metrics dd,
+.mg-root .mg-rf-detail-grid dd {
+  margin: 3px 0 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mg-root .mg-rf-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mg-root .mg-rf-section-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-section-head h3 {
+  margin: 0;
+  flex: 1;
+  color: var(--text-primary);
+  font: 700 12.5px/1 var(--font-head);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mg-root .mg-rf-section-head > span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rf-tone) 10%, transparent);
+  font: 700 10.5px/1 var(--font-mono);
+}
+.mg-root .mg-rf-related-record > header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-related-record header strong {
+  flex: 1;
+}
+.mg-root .mg-rf-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 11px 16px;
+  margin: 11px 0 0;
+}
+.mg-root .mg-rf-detail-grid > div {
+  min-width: 0;
+}
+.mg-root .mg-rf-detail-grid a {
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-empty-value {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.mg-root .mg-rf-inline-empty,
+.mg-root .mg-rf-modal-empty {
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--warning) 30%, var(--hz-pane-bd));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.mg-root .mg-rf-modal-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--warning);
+}
+.mg-root .mg-rf-modal-empty div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mg-root .mg-rf-modal-empty span {
+  max-width: 70ch;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .mg-root .mg-rf-modal-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mg-root .mg-rf-mini-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .mg-root .mg-rf-scrim {
+    padding: 0;
+  }
+  .mg-root .mg-rf-modal {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+  .mg-root .mg-rf-modal-head {
+    padding: 14px;
+  }
+  .mg-root .mg-rf-modal-amount {
+    display: none;
+  }
+  .mg-root .mg-rf-modal-tabs {
+    overflow-x: auto;
+  }
+  .mg-root .mg-rf-modal-body {
+    padding: 13px;
+  }
+  .mg-root .mg-rf-modal-kpis,
+  .mg-root .mg-rf-mini-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}

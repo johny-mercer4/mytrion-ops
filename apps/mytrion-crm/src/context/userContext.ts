@@ -16,6 +16,9 @@ export interface UserContext {
   profile: string;
   role: string;
   userName: string;
+  email?: string | null;
+  /** Profile picture data-URL from `/auth/me`, when the worker has uploaded one. */
+  avatarUrl?: string | null;
   /** True when the identity came from a verified Zoho session (false only for the dev mock). */
   trusted: boolean;
   /**
@@ -49,6 +52,8 @@ export function contextFromWorker(worker: SessionWorker): UserContext {
     profile: worker.profile ?? '',
     role: worker.role ?? '',
     userName: worker.userName ?? '',
+    email: worker.email ?? null,
+    avatarUrl: worker.avatarUrl ?? null,
     trusted: true,
   };
   if (worker.accessibleMytrions) ctx.accessibleMytrions = worker.accessibleMytrions;
