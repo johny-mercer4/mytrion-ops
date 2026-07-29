@@ -55,6 +55,23 @@ export const hrEmployees = pgTable(
     reportingTo: text('reporting_to'),
     reportingToZohoId: text('reporting_to_zoho_id'),
     photoUrl: text('photo_url'),
+    /**
+     * Zoho CRM user id of the person who signs in AS this employee — the anchor for HR RBAC.
+     *
+     * Two different Zoho products, two id spaces: `zohoRecordId` above is a Zoho PEOPLE record, while
+     * portal sign-in is Zoho CRM OAuth. Nothing links them, so this is resolved by matching work
+     * EMAIL (case-insensitive, trimmed) — the only field both sides carry. Null means "not resolved",
+     * which HR RBAC must treat as no access rather than as a wildcard.
+     *
+     * A link is only written when the email matches EXACTLY ONE CRM user and EXACTLY ONE employee;
+     * anything ambiguous is left null and reported, because a wrong link here shows one person another
+     * person's private record.
+     */
+    zohoUserId: text('zoho_user_id'),
+    /** How `zohoUserId` was set: `email_match` (automatic) | `manual` (an admin bound it). */
+    zohoUserIdSource: text('zoho_user_id_source'),
+    /** When the link was last (re)resolved — so a stale mapping is visible. */
+    zohoUserLinkedAt: timestamp('zoho_user_linked_at', { withTimezone: true }),
     /** `zoho_people` | `manual` */
     source: text('source').notNull().default('manual'),
     /** Full Zoho People field bag (or last sync snapshot). */
@@ -72,6 +89,14 @@ export const hrEmployees = pgTable(
       .on(table.tenantId, table.employeeId)
       .where(sql`${table.employeeId} IS NOT NULL`),
     emailIdx: index('hr_employees_tenant_email_idx').on(table.tenantId, table.email),
+    /**
+     * One CRM user maps to AT MOST one employee. Without this the mapping could fan out and two
+     * employee rows would both answer "who is this session", which is an RBAC hole rather than a
+     * data-quality nit.
+     */
+    zohoUserUk: uniqueIndex('hr_employees_tenant_zoho_user_uk')
+      .on(table.tenantId, table.zohoUserId)
+      .where(sql`${table.zohoUserId} IS NOT NULL`),
     deptIdIdx: index('hr_employees_tenant_dept_id_idx').on(table.tenantId, table.departmentId),
     deptZohoIdx: index('hr_employees_tenant_dept_zoho_idx').on(table.tenantId, table.departmentZohoId),
   }),

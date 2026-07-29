@@ -7639,3 +7639,48 @@ Verification: backend lint (0 errors / 25 pre-existing warnings), typecheck and
 production build; 27 targeted guard/catalog tests; CRM typecheck and production
 build; 12 targeted CRM automation/mapper tests. Full suites still expose the
 branch's unrelated baseline failures (backend 11/1115; CRM 1/268).
+
+## 2026-07-29 — HR: Zoho CRM login ↔ employee mapping (the RBAC anchor)
+
+Mytrion HR is migrating off Zoho People, and its RBAC needs to answer "which employee is this session".
+Nothing linked the two: `hr_employees.zoho_record_id` is a Zoho **People** record, while portal sign-in
+is Zoho **CRM** OAuth — two products, two id spaces, no shared key. Same trap that forced the DWH
+by-agent queries onto a NAME fallback when the session's Zoho id matched no `agent_zoho_user_id`.
+
+**Decision (user's): match on EMAIL only.** It is the sole field both sides carry.
+
+Migration `0066_hr_employee_zoho_user.sql` adds `zoho_user_id`, `zoho_user_id_source`
+(`email_match` | `manual`) and `zoho_user_linked_at`, plus a PARTIAL UNIQUE on
+(tenant_id, zoho_user_id) — one login maps to at most one employee, or two rows would both answer "who
+is this session", which is an RBAC hole rather than a data-quality nit — and a functional index on
+(tenant_id, LOWER(TRIM(email))) so per-sign-in resolution does not seq-scan.
+
+**db:generate is unusable in this repo — hand-written migration instead.** There are 66 journal entries
+but only 25 snapshots (0000–0024): every migration from 0025 on was hand-written, so drizzle-kit has no
+recent snapshot to diff and fails with a `0022/0023 pointing to a parent snapshot … collision`. Diffing
+against the 0024 state would try to re-create forty migrations' worth of tables. So 0066 follows the
+established hand-written pattern (idempotent `IF NOT EXISTS`, journal entry appended, applied with
+`pnpm db:migrate`) — a committed migration file, never `push`. **Repairing the snapshot chain is real
+pending debt**; anyone who wants `db:generate` back has to rebuild snapshots 0025+.
+
+**MEASURED, and the safety result is the important one:**
+  CRM users who can sign in : 128
+  HR employees              : 213   (0 without a usable email)
+  linked                    : 127   (99.2% of all CRM logins)
+  AMBIGUOUS                 : 0     ← no duplicate email on either side
+  CRM logins with no employee : 1   — kabir.k@tsst.ai "Company", a non-person account
+  employees with no CRM login : 86  — HR-only records, no portal access to grant anyway
+
+Zero ambiguity is what makes email-only defensible here. The resolver still refuses to link an email
+that is ambiguous on EITHER side rather than guessing, because a wrong link shows one person another
+person's private record — worse than an unresolved one. Re-run is a no-op (idempotence verified:
+wouldLink=0, alreadyLinked=127), and a manual admin link (`source='manual'`) is never overwritten by
+the automatic pass.
+
+`hrEmployeeRepo.findByZohoUserId()` is the RBAC entry point and deliberately does NOT fall back to
+email at request time — the mapping is resolved once, deliberately, and audited. Verified round-trip:
+zoho_user_id → UMIDJON ABDUG'APPOROV <umidjon.a@octanefuel.com> (source=email_match).
+
+**Still open:** a terminated employee may still hold an active CRM login, so termination must decide
+whether portal access is revoked or the row is merely marked. `listAllForMapping` deliberately includes
+terminated rows so RBAC can deny them on purpose rather than by accident.

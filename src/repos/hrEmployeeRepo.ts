@@ -112,6 +112,67 @@ export const hrEmployeeRepo = {
       .offset(offset);
   },
 
+  /**
+   * Every employee, unpaginated, for the Zoho-user email mapping.
+   *
+   * Deliberately includes TERMINATED rows: a departed person may still hold an active CRM login, and
+   * RBAC has to resolve them in order to deny them on purpose rather than by accident. Bounded by the
+   * directory's real size (a few hundred), so no pagination — but it is NOT a general-purpose list;
+   * use `list()` for anything user-facing.
+   */
+  async listAllForMapping(ctx: TenantContext): Promise<HrEmployee[]> {
+    return db
+      .select()
+      .from(hrEmployees)
+      .where(eq(hrEmployees.tenantId, ctx.tenantId))
+      .orderBy(asc(hrEmployees.lastName), asc(hrEmployees.firstName));
+  },
+
+  /**
+   * Bind (or rebind) an employee to a Zoho CRM login.
+   *
+   * Tenant-scoped like every other write here. The partial unique index on (tenant_id, zoho_user_id)
+   * is what actually guarantees one login maps to one employee; a violation surfaces as a clear error
+   * rather than silently fanning out, because two rows answering "who is this session" is an RBAC hole.
+   */
+  async setZohoUserLink(
+    ctx: TenantContext,
+    employeeId: string,
+    zohoUserId: string,
+    source: 'email_match' | 'manual',
+  ): Promise<HrEmployee | undefined> {
+    const rows = await db
+      .update(hrEmployees)
+      .set({
+        zohoUserId,
+        zohoUserIdSource: source,
+        zohoUserLinkedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, employeeId)))
+      .returning();
+    return firstOrUndefined(rows);
+  },
+
+  /**
+   * The employee a signed-in Zoho CRM user IS — the entry point for HR RBAC.
+   *
+   * Returns undefined when the session has no mapped employee, which callers must treat as NO ACCESS.
+   * Never fall back to matching on email here: the mapping is resolved deliberately and audited by
+   * `syncZohoUserMapping`, and a per-request email guess is exactly how one person ends up reading
+   * another's record.
+   */
+  async findByZohoUserId(ctx: TenantContext, zohoUserId: string): Promise<HrEmployee | undefined> {
+    const id = zohoUserId.trim();
+    if (!id) return undefined;
+    const rows = await db
+      .select()
+      .from(hrEmployees)
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.zohoUserId, id)))
+      .limit(1);
+    return firstOrUndefined(rows);
+  },
+
   async count(
     ctx: TenantContext,
     opts: Omit<HrEmployeeListOpts, 'limit' | 'offset'> = {},
