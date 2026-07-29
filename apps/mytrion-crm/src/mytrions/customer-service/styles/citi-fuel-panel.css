@@ -326,6 +326,25 @@
     color: var(--text-primary);
 }
 
+/* Client Name cell: company leads, contact sits beneath it (QA feedback 2026-07-28). Tight line
+   spacing so a two-line cell doesn't change the row rhythm of the table. */
+.cs-root .cs-citi-cell-client {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    line-height: 1.25;
+}
+
+.cs-root .cs-citi-cell-company {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-citi-cell-contact {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 .cs-root .cs-citi-cell-text {
     font-size: 0.8125rem;
     color: var(--text-secondary);
@@ -333,5 +352,78 @@
 
 .cs-root .cs-citi-cell-date {
     font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* ── Citi-vs-Octane report (QA feedback 2026-07-28) ──────────────────────────
+   The rail itself reuses .cs-an-rc* from analytics-panel.css; only the result tiles are local. */
+.cs-root .cs-citi-report-btn-on {
+    border-color: var(--cs-accent);
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-citi-report-out {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.625rem;
+    margin-top: 0.125rem;
+}
+
+.cs-root .cs-citi-report-tile {
+    padding: 0.75rem 0.875rem;
+    border-radius: var(--radius-md);
+    background: var(--hz-pane-alt);
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+
+.cs-root .cs-citi-report-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-citi-report-label {
+    margin-top: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+/* Share-of-total track. The tile tone says which side of the split it is. */
+.cs-root .cs-citi-report-bar {
+    margin-top: 0.5rem;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+    overflow: hidden;
+}
+.cs-root .cs-citi-report-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    transition: width var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-citi-report-tile.is-citi .cs-citi-report-bar span {
+    background: linear-gradient(90deg, var(--cs-sky) 0%, var(--cs-accent) 100%);
+}
+.cs-root .cs-citi-report-tile.is-octane .cs-citi-report-bar span {
+    background: linear-gradient(90deg, var(--cs-success) 0%, var(--accent-2) 100%);
+}
+.cs-root .cs-citi-report-tile.is-none .cs-citi-report-bar span {
+    background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.cs-root .cs-citi-report-pct {
+    margin-top: 0.3125rem;
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
     color: var(--text-muted);
 }
