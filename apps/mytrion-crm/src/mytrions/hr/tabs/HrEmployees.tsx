@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Pencil, Plus, RefreshCw, Search, Trash2, Users, X } from 'lucide-react';
+import { Plus, RefreshCw, Search, Users, X } from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
 import {
   createHrEmployee,
@@ -13,7 +13,9 @@ import {
   type HrEmployeeWriteInput,
 } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
-import { HrEmpty, HrPageHead, Pill, toneFor } from '../HrBits';
+import { HrEmployeeCard } from '../HrEmployeeCard';
+import { HrEmployeeDetail } from '../HrEmployeeDetail';
+import { HrEmpty, HrPageHead } from '../HrBits';
 
 type StatusFilter = 'all' | 'Active' | 'Terminated';
 type FormMode = { kind: 'create' } | { kind: 'edit'; employee: HrEmployeeDto };
@@ -25,6 +27,7 @@ const EMPTY_FORM: HrEmployeeWriteInput = {
   email: '',
   departmentId: '',
   designation: '',
+  telegramUsername: '',
   location: '',
   status: 'Active',
   role: '',
@@ -33,9 +36,6 @@ const EMPTY_FORM: HrEmployeeWriteInput = {
   reportingTo: '',
 };
 
-function initials(e: HrEmployeeDto): string {
-  return `${e.firstName.charAt(0)}${e.lastName.charAt(0)}`.toUpperCase() || '?';
-}
 
 function displayName(e: HrEmployeeDto): string {
   return `${e.firstName} ${e.lastName}`.trim();
@@ -49,6 +49,7 @@ function toForm(e: HrEmployeeDto): HrEmployeeWriteInput {
     email: e.email ?? '',
     departmentId: e.departmentId ?? '',
     designation: e.designation ?? '',
+    telegramUsername: e.telegramUsername ?? '',
     location: e.location ?? '',
     status: e.status || 'Active',
     role: e.role ?? '',
@@ -71,6 +72,7 @@ function normalizeWrite(form: HrEmployeeWriteInput): HrEmployeeWriteInput {
     departmentId: trimOrNull(form.departmentId),
     department: null,
     designation: trimOrNull(form.designation),
+    telegramUsername: trimOrNull(form.telegramUsername),
     location: trimOrNull(form.location),
     status: (form.status ?? 'Active').trim() || 'Active',
     role: trimOrNull(form.role),
@@ -107,6 +109,9 @@ export function HrEmployees() {
   const [debouncedQ, setDebouncedQ] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [departmentId, setDepartmentId] = useState('');
+  const [designation, setDesignation] = useState('');
+  /** The employee whose detail modal is open — a card click, not an admin edit. */
+  const [detail, setDetail] = useState<HrEmployeeDto | null>(null);
   const [deptOptions, setDeptOptions] = useState<HrDepartmentDto[]>([]);
   const [designations, setDesignations] = useState<string[]>([]);
   const [reloadTick, setReloadTick] = useState(0);
@@ -147,6 +152,7 @@ export function HrEmployees() {
       ...(debouncedQ ? { q: debouncedQ } : {}),
       ...(status !== 'all' ? { status } : {}),
       ...(departmentId ? { departmentId } : {}),
+      ...(designation ? { designation } : {}),
       limit: 500,
       signal: ac.signal,
     })
@@ -165,7 +171,7 @@ export function HrEmployees() {
         if (!ac.signal.aborted) setLoading(false);
       });
     return () => ac.abort();
-  }, [debouncedQ, status, departmentId, reloadTick]);
+  }, [debouncedQ, status, departmentId, designation, reloadTick]);
 
   const reload = useCallback((): void => {
     setReloadTick((n) => n + 1);
@@ -272,6 +278,17 @@ export function HrEmployees() {
             ))}
           </select>
         </label>
+        <label className="hr-select">
+          <span className="hr-sr">Designation</span>
+          <select value={designation} onChange={(e) => setDesignation(e.target.value)}>
+            <option value="">All designations</option>
+            {designations.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="hr-summary">
           <strong>{total}</strong> {total === 1 ? 'employee' : 'employees'}
         </div>
@@ -284,10 +301,11 @@ export function HrEmployees() {
       ) : null}
 
       {loading ? (
-        <div className="hr-emp-grid" aria-busy="true" aria-label="Loading employees">
-          <div className="hr-sk" />
-          <div className="hr-sk" />
-          <div className="hr-sk" />
+        <div className="hr-empc-grid" aria-busy="true" aria-label="Loading employees">
+          {/* One loader for all of HR: card-shaped skeletons, never a spinner beside them. */}
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="hr-sk" />
+          ))}
         </div>
       ) : items.length === 0 ? (
         <HrEmpty
@@ -300,72 +318,31 @@ export function HrEmployees() {
           }
         />
       ) : (
-        <div className="hr-table-wrap">
-          <div className="hr-table-scroll">
-            <table className="hr-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>ID</th>
-                  <th>Department</th>
-                  <th>Designation</th>
-                  <th>Status</th>
-                  <th>Source</th>
-                  {admin ? <th className="hr-right">Actions</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((e) => (
-                  <tr key={e.id}>
-                    <td className="hr-strong">
-                      <div className="hr-emp-inline">
-                        {e.photoUrl ? (
-                          <img className="hr-avatar hr-avatar-sm" src={e.photoUrl} alt="" />
-                        ) : (
-                          <span className="hr-avatar hr-avatar-sm">{initials(e)}</span>
-                        )}
-                        <div className="hr-emp-inline-text">
-                          <div>{displayName(e)}</div>
-                          {e.email ? <div className="hr-emp-id">{e.email}</div> : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hr-mono">{e.employeeId ?? '—'}</td>
-                    <td>{e.department ?? '—'}</td>
-                    <td>{e.designation ?? '—'}</td>
-                    <td>
-                      <Pill label={e.status} tone={toneFor(e.status)} />
-                    </td>
-                    <td className="hr-mono">{e.source === 'zoho_people' ? 'Migrated' : 'Manual'}</td>
-                    {admin ? (
-                      <td className="hr-right">
-                        <div className="hr-row-actions">
-                          <button
-                            type="button"
-                            className="hr-icon-btn"
-                            aria-label={`Edit ${displayName(e)}`}
-                            onClick={() => openEdit(e)}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="hr-icon-btn hr-icon-danger"
-                            aria-label={`Delete ${displayName(e)}`}
-                            onClick={() => void onDelete(e)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="hr-empc-grid">
+          {items.map((e) => (
+            <HrEmployeeCard
+              key={e.id}
+              employee={e}
+              admin={admin}
+              onOpen={setDetail}
+              onEdit={openEdit}
+              onDelete={(emp) => void onDelete(emp)}
+            />
+          ))}
         </div>
       )}
+
+      {detail ? (
+        <HrEmployeeDetail
+          employee={detail}
+          admin={admin}
+          onClose={() => setDetail(null)}
+          onEdit={(emp) => {
+            setDetail(null);
+            openEdit(emp);
+          }}
+        />
+      ) : null}
 
       {formMode && admin ? (
         <div className="hr-modal-backdrop" role="presentation" onClick={() => setFormMode(null)}>
@@ -433,16 +410,50 @@ export function HrEmployees() {
                 </label>
                 <label>
                   Designation
+                  {/*
+                    A real <select>, not the <datalist> this used to be. A datalist renders as native
+                    browser chrome that CSS cannot touch, which is why this one field looked nothing
+                    like the inputs around it — no amount of styling could fix it. The picklist is
+                    DISTINCT designations already in the directory, so a plain select is complete;
+                    a new title is added by typing it into the "Other designation" field below.
+                  */}
+                  <select
+                    value={designations.includes(form.designation ?? '') ? (form.designation ?? '') : ''}
+                    onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {designations.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Other designation
                   <input
-                    list="hr-designation-list"
-                    value={form.designation ?? ''}
+                    placeholder="Only if it is not in the list"
+                    value={designations.includes(form.designation ?? '') ? '' : (form.designation ?? '')}
                     onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
                   />
-                  <datalist id="hr-designation-list">
-                    {designations.map((d) => (
-                      <option key={d} value={d} />
-                    ))}
-                  </datalist>
+                </label>
+                <label>
+                  Telegram
+                  {/* The '@' is a static prefix, so the stored value stays the bare handle no matter
+                      whether the user types '@name', 'name' or a t.me link (the API strips those too). */}
+                  <span className="hr-prefixed">
+                    <span aria-hidden="true">@</span>
+                    <input
+                      value={(form.telegramUsername ?? '').replace(/^@+/, '')}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, telegramUsername: e.target.value.replace(/^@+/, '') }))
+                      }
+                      placeholder="username"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                  </span>
                 </label>
                 <label>
                   Location

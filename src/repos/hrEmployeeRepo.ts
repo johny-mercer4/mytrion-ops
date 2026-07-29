@@ -11,6 +11,7 @@ export interface HrEmployeeListOpts {
   status?: string;
   department?: string;
   departmentId?: string;
+  designation?: string;
   limit?: number;
   offset?: number;
 }
@@ -48,6 +49,7 @@ export interface ManualEmployeeInput {
   role?: string | null;
   dateOfJoining?: string | null;
   mobile?: string | null;
+  telegramUsername?: string | null;
   reportingTo?: string | null;
 }
 
@@ -92,6 +94,11 @@ export const hrEmployeeRepo = {
     } else if (opts.department?.trim()) {
       clauses.push(ilike(hrEmployees.department, `%${opts.department.trim()}%`));
     }
+    // Exact, not ILIKE: the values come from the picklist itself, so a substring match would let
+    // "Manager" also select "Billing Manager" and quietly widen the filter.
+    if (opts.designation?.trim()) {
+      clauses.push(eq(hrEmployees.designation, opts.designation.trim()));
+    }
     if (opts.q?.trim()) {
       const q = `%${opts.q.trim()}%`;
       clauses.push(
@@ -107,7 +114,16 @@ export const hrEmployeeRepo = {
       .select()
       .from(hrEmployees)
       .where(and(...clauses))
-      .orderBy(asc(hrEmployees.lastName), asc(hrEmployees.firstName))
+      /*
+       * ACTIVE FIRST, then alphabetical. Terminated people are still in the directory (they must be, for
+       * history and for RBAC to deny them deliberately) but they are not who anyone is looking for.
+       * `status` is the second column of hr_employees_tenant_idx, so this ordering is index-supported.
+       */
+      .orderBy(
+        sql`case when lower(${hrEmployees.status}) = 'active' then 0 else 1 end`,
+        asc(hrEmployees.lastName),
+        asc(hrEmployees.firstName),
+      )
       .limit(limit)
       .offset(offset);
   },
@@ -183,6 +199,11 @@ export const hrEmployeeRepo = {
       clauses.push(eq(hrEmployees.departmentId, opts.departmentId.trim()));
     } else if (opts.department?.trim()) {
       clauses.push(ilike(hrEmployees.department, `%${opts.department.trim()}%`));
+    }
+    // Exact, not ILIKE: the values come from the picklist itself, so a substring match would let
+    // "Manager" also select "Billing Manager" and quietly widen the filter.
+    if (opts.designation?.trim()) {
+      clauses.push(eq(hrEmployees.designation, opts.designation.trim()));
     }
     if (opts.q?.trim()) {
       const q = `%${opts.q.trim()}%`;

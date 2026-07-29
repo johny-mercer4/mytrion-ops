@@ -55,6 +55,7 @@ function toDto(row: HrEmployee) {
     role: row.role,
     dateOfJoining: row.dateOfJoining,
     mobile: row.mobile,
+    telegramUsername: row.telegramUsername,
     reportingTo: row.reportingTo,
     reportingToZohoId: row.reportingToZohoId,
     photoUrl: row.photoUrl,
@@ -70,6 +71,7 @@ const listQuery = z.object({
   status: z.string().max(80).optional(),
   department: z.string().max(200).optional(),
   departmentId: z.string().max(80).optional(),
+  designation: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -87,6 +89,16 @@ const writeBody = z.object({
   role: z.string().max(200).nullable().optional(),
   dateOfJoining: z.string().max(40).nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
+  /**
+   * Telegram handle. Stored BARE — a leading '@' and any t.me/ prefix are stripped on write so the
+   * column holds one canonical form and the UI owns the presentation.
+   */
+  telegramUsername: z
+    .string()
+    .max(64)
+    .nullable()
+    .optional()
+    .transform((v) => (v == null ? v : v.trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^@+/, '') || null)),
   reportingTo: z.string().max(200).nullable().optional(),
 });
 
