@@ -204,6 +204,13 @@ const EnvSchema = z.object({
   // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
   // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.
   DB_MIGRATE_ON_BOOT: z.string().default(''),
+  /**
+   * How long boot migrations may wait out a database that is still coming up (Postgres 57P03 /
+   * connection refused) before giving up. A deploy that races a Render Postgres restart used to die
+   * outright — see the incident note in db/migrate.ts. Only transient codes are retried; bad SQL
+   * still aborts boot immediately. 0 disables waiting entirely.
+   */
+  DB_BOOT_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(90),
 
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
