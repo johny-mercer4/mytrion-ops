@@ -8251,3 +8251,32 @@ calendar/service/route tests pass 12/12. Browser QA covered summary, request for
 approver queue/detail with persistent decision controls, the HR register, policy, and holidays.
 The full backend suite has 1,195 passing with 10 unrelated failures; frontend has 309 passing with
 one unrelated Sales debtors-summary expectation failure.
+## 2026-07-29 (3) — QA automations round 3 follow-up review (`fix/qa-automations-round3`)
+
+Reviewed the invoice-download and card-refresh fixes after the branch was rebased onto `build`.
+The card refresh fix is correct. The invoice proxy needed a second authorization pass: servercrm
+keys downloads by invoice id alone, so the route now requires a carrier the worker owns and proves
+the invoice appears in that carrier's full paginated invoice set before returning bytes or a mobile
+signed URL. The old generic `sales_mytrion.invoice_signed_url` touchpoint was removed because a
+carrier-only dispatcher guard still allowed an owned carrier to be paired with someone else's
+invoice id. Upstream 401/403 responses now map to 502 so they cannot trigger a refresh of the
+worker's unrelated Mytrion bearer token.
+
+Updated the Sales UI to carry `carrierId` through single, bulk, desktop, and mobile downloads;
+updated its tests; and added 17 route tests covering authentication, department and carrier scope,
+invoice/carrier mismatch, pagination, upstream failures, binary delivery, audit, and signed URLs.
+Also restored the vendored transaction-PDF behavior from zoho-octane: hiding discount now removes
+the Discount KPI and makes Total Spent use retail (funded + discount).
+
+The next write-safety item is also complete. `AutoTab` now acquires a synchronous ref latch before
+dispatch, so two clicks in the same React batch cannot issue two requests. Escape, backdrop, X,
+reset, and the former Cancel path cannot expose the form again while a request is alive; a slow
+request remains visibly in progress instead of inviting a retry at the 90-second watchdog. A
+component test holds the promise open, submits twice, verifies one dispatch and guarded close, then
+confirms normal close after settlement.
+
+Rebuilt the committed `apps/mytrion-crm/app` artifact so the source fixes are deployable. Backend and
+web typechecks pass; lint has 0 errors / 25 pre-existing warnings; all web tests pass (272/272);
+invoice route tests pass (17/17); catalog shape test passes. The full backend run remains at 38
+failures across 12 unrelated suites (including sandbox-blocked localhost/Postgres tests and stale
+session/tool-count expectations); none are in the new invoice suite.

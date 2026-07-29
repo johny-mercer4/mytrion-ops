@@ -159,16 +159,6 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
   },
   {
     kind: 'servercrm',
-    key: 'sales_mytrion.invoice_signed_url',
-    title: 'Invoice download link (2-min signed URL)',
-    riskClass: 'read',
-    departments: SALES,
-    method: 'GET',
-    pathTemplate: '/api/salesMytrion/invoices/{invoiceId}/signed-url',
-    paramsSchema: z.object({ invoiceId: idString, type: z.enum(['pdf', 'excel']).default('pdf') }),
-  },
-  {
-    kind: 'servercrm',
     key: 'clients.by_agent',
     title: 'Client roster by agent (with CMP debt)',
     riskClass: 'read',

@@ -5,7 +5,9 @@
  */
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
+import { request, requestBlob } from '@/api/transport';
 import { money } from './live';
+import { deliverBlob } from './txnExportLibs';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
@@ -484,32 +486,49 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
 }
 
 /**
- * Signed invoice URLs are intentionally opened directly. Fetching the cross-origin URL first
- * requires servercrm/CMP CORS headers and produced the browser-level “Failed to fetch” error even
- * when the signed URL itself was valid. The upstream URL already carries `download=1` and an
- * attachment Content-Disposition, so no client-side blob conversion is needed.
+ * Download one invoice export, mirroring the self-service widget's `_downloadInvoicePdf`:
+ * fetch the bytes, then hand a BLOB to the anchor.
+ *
+ * The previous implementation navigated an anchor straight at the servercrm signed URL. That is
+ * the widget's MOBILE-only branch — on desktop it silently produced nothing, because (a) the click
+ * happens after an await, outside the user-activation window, and (b) `download` is ignored on a
+ * cross-origin href, so the filename and the download intent are both dropped. The promise still
+ * resolved, so the UI reported success for a file that never arrived (QA round 3).
+ *
+ * `/sales/invoices/:id/:type` is our own same-origin proxy (see salesInvoices.routes.ts), which
+ * keeps the servercrm API key server-side and sidesteps the cross-origin fetch that made the
+ * earlier direct-fetch attempt fail CORS.
  */
 export async function downloadInvoice(
   invoiceId: string,
   type: 'pdf' | 'excel' = 'pdf',
   fileBase?: string,
+  carrierId?: string,
 ): Promise<void> {
   if (!invoiceId) throw new Error('This invoice has no downloadable id.');
-  const { url } = await callTouchpoint('sales_mytrion.invoice_signed_url', { invoiceId, type });
-  if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
+  // Required by the backend: servercrm keys invoices by id alone, so the route proves the caller
+  // owns this carrier AND that the invoice is part of it before releasing any bytes.
+  const carrier = String(carrierId ?? '').trim();
+  if (!carrier) throw new Error('Pick a client before downloading invoices.');
   const safe = String(fileBase || `invoice-${invoiceId}`).replace(/[^\w.\- ]+/g, '_').trim();
   const ext = type === 'excel' ? 'xlsx' : 'pdf';
   const fileName = new RegExp(`\\.${ext}$`, 'i').test(safe) ? safe : `${safe}.${ext}`;
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = 'noopener';
-  if (/android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)) {
-    anchor.target = '_blank';
+  const base = `/sales/invoices/${encodeURIComponent(invoiceId)}/${type}`;
+  const scope = `?carrierId=${encodeURIComponent(carrier)}`;
+
+  // Zoho app WebView: blob URLs don't survive the tab hop, so open the short-lived signed URL and
+  // let the OS download it natively. Same carve-out (and reason) as the widget — but routed through
+  // our own gate rather than the unscoped servercrm endpoint.
+  if (window.MytrionDownload?.isMobileWebView?.()) {
+    const { url } = (await request('GET', `${base}/signed-url${scope}`)) as { url?: string };
+    if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
+    window.open(url, '_blank', 'noopener');
+    return;
   }
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+
+  const blob = await requestBlob(`${base}${scope}`);
+  if (blob.size === 0) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
+  deliverBlob(blob, fileName);
 }
 
 /** Sequential multi-invoice download (reference: downloadAllSelected / downloadSelectedExcel). */
@@ -517,6 +536,7 @@ export async function downloadInvoicesSequential(
   invoices: InvRow[],
   type: 'pdf' | 'excel',
   onProgress?: (msg: string) => void,
+  carrierId?: string,
 ): Promise<{ ok: number; fail: number }> {
   let ok = 0;
   let fail = 0;
@@ -524,7 +544,7 @@ export async function downloadInvoicesSequential(
     const inv = invoices[i]!;
     onProgress?.(`Downloading ${inv.inv} (${i + 1}/${invoices.length})…`);
     try {
-      await downloadInvoice(inv.id, type, inv.inv);
+      await downloadInvoice(inv.id, type, inv.inv, carrierId);
       ok++;
       if (i < invoices.length - 1) await new Promise((r) => setTimeout(r, 600));
     } catch {

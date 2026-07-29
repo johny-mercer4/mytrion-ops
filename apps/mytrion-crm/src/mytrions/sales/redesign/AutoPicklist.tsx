@@ -70,8 +70,9 @@ export function PicklistMicroLoader({ rows = 4, label = 'Loading' }: { rows?: nu
  * rules call out explicitly. Worse, the percentage was invented client-side
  * (`p + (3 + Math.random() * 6)` capped at 92) so it stalled at 92% for the rest of every run and
  * actively misinformed: a long automation looked stuck at "almost done". We do not know the real
- * progress of a touchpoint dispatch, so we no longer pretend to — the sweep says "working", the
- * phase label says what we're actually waiting on, and the Cancel button below gives a way out.
+ * progress of a touchpoint dispatch, so we no longer pretend to — the sweep says "working" and the
+ * phase label says what we're actually waiting on. The modal stays open until a write settles so an
+ * agent cannot dismiss and retry an operation that may still be processing.
  */
 export function AutoMacroLoader({ phase }: { phase: string }) {
   return (

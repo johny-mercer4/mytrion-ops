@@ -74,7 +74,7 @@ describe('GET /v1/touchpoints (discovery)', () => {
     // 106 = the current assembled catalog total (including direct EFS status + limit writes).
     // The catalog assembler throws on duplicate keys, so a 200 here already proves uniqueness;
     // this count pins the total so a silent add/drop is caught.
-    expect(touchpoints.length).toBe(106);
+    expect(touchpoints.length).toBe(105);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 

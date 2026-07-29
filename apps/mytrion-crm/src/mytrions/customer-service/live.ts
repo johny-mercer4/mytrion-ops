@@ -6,12 +6,14 @@
 import {
   csTouchpoint,
   getCallsAnalytics,
+  getCitifuelDecisionSplit,
   getCitifuelStats,
   getCsContext,
   getDeskRoster,
   getMaintenanceAnalytics,
   getMaintenanceCount,
   getTeamOpenTickets,
+  type CitiDecisionSplit,
   type CsOpenTicket,
   type MaintenanceAnalytics,
   getTicketsAnalytics,
@@ -33,6 +35,7 @@ import type {
 
 export { useLoad, type Loaded } from '../_shared/useLoad';
 export { getCsContext, type CsContext };
+export type { CitiDecisionSplit };
 
 // ---- shared coercions ----
 
@@ -66,6 +69,14 @@ export function fmtDate(v: unknown): string {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return s;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Whole dollars when round, cents when not — the bonus is a $2.50 multiple. */
+export function fmtUsd(n: number): string {
+  return `$${n.toLocaleString('en-US', {
+    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function relTime(v: unknown): string {
@@ -114,8 +125,10 @@ function mapAppRow(r: CsApplicationRow): Application {
     dot: str(r.DOT),
     phone: str(r.Phone),
     email: str(r.Email),
+    street: str(r.Address),
     city: str(r.City),
     state: str(r.State),
+    zip: str(r.Zip_Code),
     credit: num(r.Credit_Score),
     trucks: num(r.Number_of_Trucks) ?? 0,
     cards: num(pick(r, 'Cards_Requested', 'Cards_Ordered')) ?? 0,
@@ -277,6 +290,7 @@ function mapCitiRow(r: Record<string, unknown>): CitiRow {
   return {
     id: str(r.id),
     name: str(r.Name),
+    company: lookupName(r.Company_Name),
     appId: str(r.App_ID),
     status: str(r.Status_of_App) as CitiClient['status'],
     request: str(r.Request) as CitiClient['request'],
@@ -306,6 +320,11 @@ export async function loadCiti(
 
 export async function loadCitiStats(): Promise<{ total: number; byStatus: Record<string, number> }> {
   return getCitifuelStats();
+}
+
+/** Citi-vs-Octane report for a window of Date_of_Request (QA feedback 2026-07-28). */
+export async function loadCitiDecisionSplit(from: string, to: string): Promise<CitiDecisionSplit> {
+  return getCitifuelDecisionSplit(from, to);
 }
 
 // ---- Analytics ----
@@ -522,8 +541,15 @@ export async function loadAnalytics(
     }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
+  // col2 carries the agent's bonus as a formatted string — the backend owns the $5 / $2.50 rates
+  // (csMaintenance BONUS_FULL_USD / BONUS_HALF_USD) so they are not duplicated in the UI.
   const maintBoard: LeaderboardRow[] = (maint.data?.byOwner ?? [])
-    .map((o) => ({ agent: str(o.name) || str(o.id), col1: Number(o.count) || 0, col2: '—', col3: 0 }))
+    .map((o) => ({
+      agent: str(o.name) || str(o.id),
+      col1: Number(o.count) || 0,
+      col2: fmtUsd(Number(o.bonusUsd) || 0),
+      col3: Number(o.fullComplete) || 0,
+    }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
   void callsByEmail; // reserved for future merged-board parity
@@ -576,7 +602,7 @@ export async function loadAnalytics(
       ],
       volume: toVolume(maint.data?.daily),
       breakdown: toBreakdown(maint.data?.byStatus),
-      leaderboardCols: ['Cases', '', ''],
+      leaderboardCols: ['Cases', 'Bonus', 'Full'],
       leaderboard: maintBoard,
     },
   };
