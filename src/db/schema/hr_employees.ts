@@ -52,9 +52,17 @@ export const hrEmployees = pgTable(
     /** ISO date YYYY-MM-DD when known. */
     dateOfJoining: text('date_of_joining'),
     mobile: text('mobile'),
+    /** Telegram handle, stored BARE — no leading '@', no t.me/ prefix. The UI renders the '@'. */
+    telegramUsername: text('telegram_username'),
     reportingTo: text('reporting_to'),
     reportingToZohoId: text('reporting_to_zoho_id'),
+    /**
+     * Zoho People's `Photo_downloadUrl`. OAuth-gated, so a browser `<img src>` gets a 401 — this is why
+     * avatars render broken. Kept for provenance; `photoFileId` is what the UI should use.
+     */
     photoUrl: text('photo_url'),
+    /** Our own re-hosted avatar → `file_assets.id`. Served as a presigned URL, which an `<img>` can load. */
+    photoFileId: text('photo_file_id'),
     /**
      * Zoho CRM user id of the person who signs in AS this employee — the anchor for HR RBAC.
      *
@@ -89,6 +97,9 @@ export const hrEmployees = pgTable(
       .on(table.tenantId, table.employeeId)
       .where(sql`${table.employeeId} IS NOT NULL`),
     emailIdx: index('hr_employees_tenant_email_idx').on(table.tenantId, table.email),
+    /** Plain, NOT unique — two people can legitimately share a handle blank, and duplicates are a
+     *  data-quality question for HR to resolve, not a reason to reject a save. */
+    telegramIdx: index('hr_employees_tenant_telegram_idx').on(table.tenantId, table.telegramUsername),
     /**
      * One CRM user maps to AT MOST one employee. Without this the mapping could fan out and two
      * employee rows would both answer "who is this session", which is an RBAC hole rather than a

@@ -2,6 +2,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { sql } from 'drizzle-orm';
 import {
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -42,6 +43,18 @@ export const hrDepartments = pgTable(
     parentZohoId: text('parent_zoho_id'),
     /** FK → hr_departments.id (resolved from parentZohoId). Roots have null. */
     parentId: text('parent_id'),
+    /** Free-text purpose of the department — shown on the org-canvas node detail. */
+    description: text('description'),
+    /**
+     * Allow-listed lucide-react component NAME (e.g. 'Building2'), never raw SVG markup — rendering
+     * user-supplied SVG would be an injection surface for no benefit.
+     */
+    icon: text('icon'),
+    /** A Horizon tone TOKEN name (e.g. 'tone-sky'), not a raw hex, so departments stay on-palette. */
+    iconColor: text('icon_color'),
+    /** Canvas position once a user drags the node. Null = let the auto-layout place it. */
+    canvasX: integer('canvas_x'),
+    canvasY: integer('canvas_y'),
     /** `zoho_people` | `manual` */
     source: text('source').notNull().default('manual'),
     rawFields: jsonb('raw_fields').$type<Record<string, unknown>>(),

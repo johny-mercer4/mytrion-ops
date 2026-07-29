@@ -89,6 +89,8 @@ function employeeRow(overrides: Partial<HrEmployee> = {}): HrEmployee {
     id: 'hre_1',
     tenantId: DEFAULT_TENANT_ID,
     zohoRecordId: null,
+    telegramUsername: null,
+    photoFileId: null,
     // The Zoho CRM login this employee IS — the HR RBAC anchor, unresolved by default.
     zohoUserId: null,
     zohoUserIdSource: null,
