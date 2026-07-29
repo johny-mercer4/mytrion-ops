@@ -201,11 +201,6 @@ export interface MoneyCodeVoidResult {
   efs?: { amount?: number | string; numUses?: number | string };
 }
 
-export interface SignedUrlResult {
-  url?: string;
-  expiresIn?: number;
-}
-
 // ---- panel result shapes (user-keyed touchpoints; identity is server-injected) ----
 
 /** mytrionhomesnapshot — arrives as {snapshot, brief_context} or a 1-element array of it. */
@@ -586,10 +581,6 @@ export interface TouchpointMap {
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
     result: SalesInvoicesResult;
-  };
-  'sales_mytrion.invoice_signed_url': {
-    params: { invoiceId: string; type?: 'pdf' | 'excel' };
-    result: SignedUrlResult;
   };
   // ---- panel touchpoints (identity server-injected; params are empty or filters only) ----
   'dashboard.home_snapshot': { params: Record<string, never>; result: HomeSnapshotResult };
