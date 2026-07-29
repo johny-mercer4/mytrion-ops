@@ -212,6 +212,10 @@ export function AutoTab() {
     abandonRun();
     setAutoStep('config'); setAutoPhase(''); setAutoResult(null); setAutoCard(null);
     setAutoRunErr(null); setInvRows([]); setTxnReport(null);
+    // "Run another" keeps the deal, so `cardCarrier` is unchanged and the cards useLoad would NOT
+    // refire — the picker would still show the statuses read BEFORE this run. That is how an
+    // activation via C-1 appeared not to reach C-3 (QA round 1). Re-read live EFS explicitly.
+    cardsLoad.reload();
   };
 
   const runAuto = (): void => {
