@@ -10,6 +10,7 @@ import { HrOrgStructure } from './tabs/HrOrgStructure';
 import { HrProfile } from './tabs/HrProfile';
 import { HrRequests } from './tabs/HrRequests';
 import './hr.css';
+import './hr-workspace.css';
 
 /**
  * HR Mytrion shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell.

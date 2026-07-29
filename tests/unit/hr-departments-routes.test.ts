@@ -103,11 +103,25 @@ describe('HR departments — auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET allows an internal worker to read', async () => {
+  it('GET REFUSES a sales worker — the department table is not company-wide', async () => {
+    // This previously asserted 200, which pinned a hole open: the route checked only
+    // `audience === 'internal'`, so any signed-in worker could read every department along with its
+    // lead name and lead email. The employees route was tightened to require the `hr` department grant;
+    // this half had been left behind, so the two ends of the same tab disagreed about who may read it.
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/departments',
       headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it('GET allows a worker holding the hr department', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/departments',
+      headers: bearer(await workerToken('HR Manager')),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ items: [], total: 0 });

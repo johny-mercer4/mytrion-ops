@@ -373,7 +373,6 @@ use), the light-mode contrast pass, and the workspace picker rebuild.
 - Sales/Finance use inline-style helpers while everything else uses Horizon tokens.
 - Duplicated Finance module (`finance/redesign/` live, old `finance/*.tsx` not deleted).
 - Three pagination paradigms in Admin — a product decision, not a cleanup.
-- `drizzle.config.ts` is missing 4 schema files (see §4).
 - Live-eval floors breached on routing/grounding/delegation (see §5).
 - pg-boss is off in prod (see §6).
 - Stale docs: `README.md` says two audiences (there are three) and "no queue" for ingestion (there is
@@ -389,3 +388,29 @@ use), the light-mode contrast pass, and the workspace picker rebuild.
 | What jobs exist? | `src/modules/jobs/catalog.ts` |
 | What touchpoints exist? | `apps/mytrion-crm/src/api/touchpointTypes.ts` |
 | Why is it like this? | `WORKING_NOTES.md` — search by date |
+
+---
+
+## 11. Admin Data Loader
+
+The Admin Mytrion has a **Data Loader** tab for controlled CSV/XLSX bulk work through a self-hosted
+NocoDB workspace. NocoDB writes directly to app Postgres, so its connection uses the
+`mytrion_loader` role from `scripts/nocodb-role.sql`, never the application user. The role has no
+DDL, no default privileges, no audit/job/checkpointer access, and native Postgres RLS pins it to one
+configured tenant.
+
+Tier 1 is deliberately small: `client_news`, `client_news_reads`, `scope_risk_items`, and
+`mytrion_calls`. The canonical application list is `src/modules/dataLoader/allowlist.ts`; writable
+grants in `scripts/nocodb-role.sql` and trigger attachments in migration
+`0069_data_loader_journal.sql` must match it exactly. A regression test compares all three.
+
+Every allowed insert, update, or delete writes a before/after row to `bulk_change_log` through a
+`SECURITY DEFINER` trigger. Admin routes under `/v1/admin/data-loader/*` expose the journal and revert
+a batch newest-first in one transaction. Revert locks and compares current rows to the journal's
+after-images first, so a later legitimate edit causes the whole revert to stop instead of being
+overwritten. The inverse changes are themselves journaled and `data_loader.revert` is written to
+`audit_log`.
+
+Local Compose runs NocoDB on `127.0.0.1:8080` with separate metadata Postgres, Redis, and a worker.
+Production hosting is intentionally absent from `render.yaml`; legal review of NocoDB's current Fair
+Code Sustainable Use License and an internal/IP-restricted deployment are prerequisites.

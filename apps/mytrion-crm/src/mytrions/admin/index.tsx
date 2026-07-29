@@ -6,6 +6,7 @@ import { CarrierUsers } from './CarrierUsers';
 import { ClientNews } from './ClientNews';
 import { CmpDatabase } from './CmpDatabase';
 import { Deals } from './Deals';
+import { DataLoader } from './DataLoader';
 import { DwhDatabase } from './DwhDatabase';
 import { VerificationDatabase } from './VerificationDatabase';
 import { Jobs } from './Jobs';
@@ -37,6 +38,7 @@ type Tab =
   | 'verification-db'
   | 'mytrion-db'
   | 'kpi-data'
+  | 'data-loader'
   | 'access'
   | 'horizon';
 
@@ -144,6 +146,15 @@ export default function AdminMytrion() {
           active: tab === 'kpi-data',
           onClick: () => setTab('kpi-data'),
           keywords: ['sales', 'metrics', 'collection', 'health', 'workers', 'facts'],
+        },
+        {
+          key: 'data-loader',
+          tone: 'var(--tone-purple)',
+          label: 'Data Loader',
+          icon: <DatabaseIcon />,
+          active: tab === 'data-loader',
+          onClick: () => setTab('data-loader'),
+          keywords: ['import', 'csv', 'excel', 'nocodb', 'bulk', 'rollback'],
         },
         {
           key: 'news',
@@ -260,6 +271,7 @@ export default function AdminMytrion() {
       {tab === 'audit' && <AuditLog />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}
+      {tab === 'data-loader' && <DataLoader />}
       {tab === 'mytrion-db' && <MytrionDatabase />}
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}

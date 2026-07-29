@@ -477,6 +477,20 @@
       "when": 1785279600000,
       "tag": "0067_hr_local_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0068_hr_org_canvas_employee",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785286800000,
+      "tag": "0069_data_loader_journal",
+      "breakpoints": true
     }
   ]
 }

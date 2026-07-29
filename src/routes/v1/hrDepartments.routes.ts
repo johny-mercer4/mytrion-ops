@@ -1,23 +1,32 @@
 /**
  * Mytrion HR — departments REST (`hr_departments` own DB).
- * Reads: any authenticated internal worker. Writes + Zoho migrate sync: Mytrion Admin.
+ * Reads: a worker holding the `hr` department. Writes + Zoho migrate sync: Mytrion Admin.
  */
 import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { NotFoundError, RBACError } from '../../lib/errors.js';
+import { ConflictError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import {
+  normalizeDepartmentIcon,
+  normalizeDepartmentTone,
+} from '../../modules/hr/departmentAppearance.js';
 import { syncHrDepartmentsFromZoho } from '../../modules/hr/hrDepartmentSync.js';
-import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
-import type { HrDepartment } from '../../db/schema/hr_departments.js';
+import { departmentWouldCycle } from '../../modules/hr/orgReparent.js';
+import { hrDepartmentRepo, type HrDepartmentRow } from '../../repos/hrDepartmentRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
+/**
+ * READ access — requires the `hr` department grant, matching `hr.routes.ts`.
+ *
+ * This used to check only `audience === 'internal'`, which is not a gate: every signed-in worker could
+ * read the whole department table, including each department's lead name and lead EMAIL. Its sibling
+ * (the employees route) was tightened to `requireDepartment` for exactly this reason and this half was
+ * left behind, so the two ends of the same tab disagreed about who may read it — a caller without the
+ * grant already got a 403 on /hr/employees while /hr/departments answered in full.
+ */
 function requireHrInternal(request: FastifyRequest): TenantContext {
-  const ctx = requireContext(request);
-  if (ctx.audience !== 'internal') {
-    throw new RBACError('HR directory is internal-only');
-  }
-  return ctx;
+  return requireDepartment(request, 'hr', 'HR directory');
 }
 
 function requireHrAdmin(request: FastifyRequest): TenantContext {
@@ -28,7 +37,7 @@ function requireHrAdmin(request: FastifyRequest): TenantContext {
   return ctx;
 }
 
-function toDto(row: HrDepartment) {
+function toDto(row: HrDepartmentRow) {
   return {
     id: row.id,
     zohoRecordId: row.zohoRecordId,
@@ -41,6 +50,11 @@ function toDto(row: HrDepartment) {
     parentName: row.parentName,
     parentZohoId: row.parentZohoId,
     parentId: row.parentId,
+    description: row.description,
+    icon: row.icon,
+    iconColor: row.iconColor,
+    canvasX: row.canvasX,
+    canvasY: row.canvasY,
     source: row.source,
     lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -54,12 +68,34 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
+/**
+ * `icon` / `iconColor` are normalized rather than rejected — an unrecognised glyph must not block
+ * saving the department's name and description. See `departmentAppearance.ts` for why shape validation
+ * (not an allow-list of every lucide name) is the right boundary here.
+ *
+ * `description` is markdown, capped rather than sanitized: the client renders it through
+ * react-markdown + rehype-sanitize, so raw HTML in the source never becomes live markup. Storing the
+ * author's literal text keeps the field round-trippable in the editor.
+ */
 const writeBody = z.object({
   name: z.string().min(1).max(200),
   code: z.string().max(40).nullable().optional(),
   mailAlias: z.string().max(254).nullable().optional(),
   leadName: z.string().max(200).nullable().optional(),
   parentName: z.string().max(200).nullable().optional(),
+  description: z.string().max(4000).nullable().optional(),
+  icon: z
+    .string()
+    .max(60)
+    .nullable()
+    .optional()
+    .transform((v) => normalizeDepartmentIcon(v)),
+  iconColor: z
+    .string()
+    .max(40)
+    .nullable()
+    .optional()
+    .transform((v) => normalizeDepartmentTone(v)),
 });
 
 const patchBody = writeBody.partial().extend({
@@ -96,6 +132,9 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
       ...(body.mailAlias !== undefined ? { mailAlias: body.mailAlias } : {}),
       ...(body.leadName !== undefined ? { leadName: body.leadName } : {}),
       ...(body.parentName !== undefined ? { parentName: body.parentName } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      ...(body.icon !== undefined ? { icon: body.icon } : {}),
+      ...(body.iconColor !== undefined ? { iconColor: body.iconColor } : {}),
     });
     await auditFromContext(ctx, {
       action: 'hr.department.create',
@@ -147,7 +186,25 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
       ...(body.mailAlias !== undefined ? { mailAlias: body.mailAlias } : {}),
       ...(body.leadName !== undefined ? { leadName: body.leadName } : {}),
       ...(body.parentName !== undefined ? { parentName: body.parentName } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      ...(body.icon !== undefined ? { icon: body.icon } : {}),
+      ...(body.iconColor !== undefined ? { iconColor: body.iconColor } : {}),
     };
+    /**
+     * A parent change here needs the SAME cycle guard as the canvas.
+     *
+     * `parentName` on this route resolves to a parent_id, so saving the form could put a department
+     * inside its own sub-department — which /hr/org/reparent refuses. The result is a ring with no root,
+     * and the org canvas then drops that whole branch, which reads as losing departments.
+     */
+    if (patch.parentName) {
+      const parent = await hrDepartmentRepo.findByName(ctx, patch.parentName);
+      if (parent && (await departmentWouldCycle(ctx, request.params.id, parent.id))) {
+        throw new ValidationError(
+          'That would put the department inside one of its own sub-departments',
+        );
+      }
+    }
     const row = await hrDepartmentRepo.update(ctx, request.params.id, patch);
     if (!row) throw new NotFoundError('Department not found');
     await auditFromContext(ctx, {

@@ -3,7 +3,7 @@
  * Field keys are Zoho labelnames (see peopleSchema / meta:zoho-people).
  */
 import type { EmployeeRecord } from '../../integrations/zohoPeople.js';
-import type { UpsertFromZohoInput } from '../../repos/hrEmployeeRepo.js';
+import type { UpsertFromZohoInput } from '../../repos/hrEmployeeSyncRepo.js';
 
 function str(v: unknown): string {
   if (v == null) return '';

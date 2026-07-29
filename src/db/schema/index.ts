@@ -13,6 +13,7 @@ export * from './tool_calls.js';
 export * from './knowledge_docs.js';
 export * from './knowledge_chunks.js';
 export * from './audit_log.js';
+export * from './bulk_change_log.js';
 export * from './automation_logs.js';
 export * from './scope_risk_items.js';
 export * from './money_code_requests.js';

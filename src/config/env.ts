@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   MYTRION_OPS_DATABASE_URL: z.string().default(''),
   DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  // Admin Data Loader launch target. NocoDB owns its own auth and runs outside this process.
+  NOCODB_BASE_URL: z.string().default(''),
 
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),

@@ -77,11 +77,16 @@ const auditQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
-export async function adminRoutes(app: FastifyInstance): Promise<void> {
-  const adminOnly: RouteShorthandOptions = {
+/** Shared guard for every Admin-Mytrion route module. */
+export function adminOnlyOptions(app: FastifyInstance): RouteShorthandOptions {
+  return {
     onRequest: [app.authenticate],
     preHandler: [app.requireRole('admin')],
   };
+}
+
+export async function adminRoutes(app: FastifyInstance): Promise<void> {
+  const adminOnly = adminOnlyOptions(app);
 
   app.get('/admin/users', adminOnly, async (request) => {
     const ctx = requireContext(request);

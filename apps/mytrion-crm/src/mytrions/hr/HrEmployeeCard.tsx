@@ -19,12 +19,21 @@ export const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.las
 export function HrEmployeeCard({
   employee,
   admin,
+  busy,
   onOpen,
   onEdit,
   onDelete,
 }: {
   employee: HrEmployeeDto;
   admin: boolean;
+  /**
+   * A write is in flight for this row: dim it and make it inert, in place.
+   *
+   * Taken as a prop rather than handled by wrapping the card in a div at the call site — the grid sizes
+   * its children, so an extra element between the grid and the card broke the equal-height rows the whole
+   * layout depends on, and only for the one card being saved.
+   */
+  busy?: boolean;
   onOpen: (e: HrEmployeeDto) => void;
   onEdit: (e: HrEmployeeDto) => void;
   onDelete: (e: HrEmployeeDto) => void;
@@ -36,9 +45,10 @@ export function HrEmployeeCard({
   return (
     <button
       type="button"
-      className={`hr-empc${terminated ? ' is-terminated' : ''}`}
+      className={`hr-empc${terminated ? ' is-terminated' : ''}${busy ? ' hr-card-saving' : ''}`}
       onClick={() => onOpen(employee)}
       aria-label={`Open ${name}`}
+      aria-busy={busy}
     >
       <span className="hr-empc-shimmer" aria-hidden="true" />
 

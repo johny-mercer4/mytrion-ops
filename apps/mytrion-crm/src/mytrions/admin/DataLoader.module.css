@@ -1,0 +1,226 @@
+.launchGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: var(--space-5);
+}
+
+.launchBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.launchButton {
+  text-decoration: none;
+}
+
+.guardrailList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-5);
+  list-style: none;
+}
+
+.guardrailItem {
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  font-size: var(--text-sm);
+  line-height: var(--lh-md);
+  color: var(--text-secondary);
+}
+
+.guardrailDot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.tableList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tableChip,
+.opPill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-full);
+  background: var(--hz-pane-alt);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.tableChip {
+  padding: 4px var(--space-2_5);
+}
+
+.batchTable {
+  grid-template-columns: 1.1fr 1fr 1.25fr 1.5fr 0.8fr 0.9fr;
+}
+
+.opCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+
+.opPill {
+  padding: 2px var(--space-2);
+}
+
+.opPill[data-op='insert'] {
+  color: var(--success);
+}
+
+.opPill[data-op='update'] {
+  color: var(--warning);
+}
+
+.opPill[data-op='delete'] {
+  color: var(--danger);
+}
+
+.batchActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.expanded {
+  border-bottom: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--accent) 4%, var(--hz-pane));
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.detailError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--hz-pane-bd));
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.changeCard {
+  overflow: hidden;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  background: var(--hz-pane-alt);
+}
+
+.changeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2_5) var(--space-3);
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+.changePk {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.65fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.diff > span {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-light);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+
+.diff > span:nth-child(3n + 1) {
+  color: var(--text-muted);
+}
+
+.diff > span:nth-child(3n + 2),
+.diff > span:nth-child(3n + 3) {
+  border-left: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+
+.diffHead {
+  background: var(--hz-pane);
+  font-family: var(--font-body) !important;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted) !important;
+}
+
+.diffChanged {
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+@media (max-width: 900px) {
+  .launchGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .batchTable {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .batchTable > :nth-child(2),
+  .batchTable > :nth-child(4),
+  .batchTable > :nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .batchTable {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .batchTable > :nth-child(3) {
+    display: none;
+  }
+
+  .diff {
+    grid-template-columns: minmax(92px, 0.55fr) minmax(0, 1fr);
+  }
+
+  .diff > span:nth-child(3n + 2) {
+    display: none;
+  }
+
+  .diff > span:nth-child(3n + 3) {
+    border-left: 1px solid var(--border-light);
+  }
+}
+

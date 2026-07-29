@@ -16,25 +16,6 @@ export interface HrEmployeeListOpts {
   offset?: number;
 }
 
-export interface UpsertFromZohoInput {
-  zohoRecordId: string;
-  employeeId?: string | null;
-  firstName: string;
-  lastName: string;
-  email?: string | null;
-  department?: string | null;
-  departmentZohoId?: string | null;
-  designation?: string | null;
-  location?: string | null;
-  status?: string | null;
-  role?: string | null;
-  dateOfJoining?: string | null;
-  mobile?: string | null;
-  reportingTo?: string | null;
-  reportingToZohoId?: string | null;
-  photoUrl?: string | null;
-  rawFields?: Record<string, unknown> | null;
-}
 
 export interface ManualEmployeeInput {
   employeeId?: string | null;
@@ -51,7 +32,57 @@ export interface ManualEmployeeInput {
   mobile?: string | null;
   telegramUsername?: string | null;
   reportingTo?: string | null;
+  /** The manager as an id — what the org canvas sets. `reportingTo` is kept in sync from it. */
+  reportingToEmployeeId?: string | null;
 }
+
+/**
+ * Everything except `raw_fields`.
+ *
+ * `raw_fields` holds the ENTIRE Zoho People payload per person — tabular sections and all. A
+ * `db.select()` on the list path therefore shipped the full Zoho mirror for up to 500 employees on
+ * every keystroke of the directory search, for a UI that reads eighteen scalar columns. That is the
+ * single biggest cost in loading the Employees tab, and no client-side cache can undo it.
+ *
+ * Keep this in sync with the route DTO. Anything not listed here is unreachable from a read path,
+ * which is the point: `raw_fields` is for the sync to write and for support to inspect in SQL.
+ */
+const EMPLOYEE_COLUMNS = {
+  id: hrEmployees.id,
+  tenantId: hrEmployees.tenantId,
+  zohoRecordId: hrEmployees.zohoRecordId,
+  employeeId: hrEmployees.employeeId,
+  firstName: hrEmployees.firstName,
+  lastName: hrEmployees.lastName,
+  email: hrEmployees.email,
+  departmentId: hrEmployees.departmentId,
+  department: hrEmployees.department,
+  departmentZohoId: hrEmployees.departmentZohoId,
+  designation: hrEmployees.designation,
+  location: hrEmployees.location,
+  status: hrEmployees.status,
+  role: hrEmployees.role,
+  dateOfJoining: hrEmployees.dateOfJoining,
+  mobile: hrEmployees.mobile,
+  telegramUsername: hrEmployees.telegramUsername,
+  reportingTo: hrEmployees.reportingTo,
+  reportingToZohoId: hrEmployees.reportingToZohoId,
+  reportingToEmployeeId: hrEmployees.reportingToEmployeeId,
+  photoUrl: hrEmployees.photoUrl,
+  photoFileId: hrEmployees.photoFileId,
+  zohoUserId: hrEmployees.zohoUserId,
+  zohoUserIdSource: hrEmployees.zohoUserIdSource,
+  zohoUserLinkedAt: hrEmployees.zohoUserLinkedAt,
+  canvasX: hrEmployees.canvasX,
+  canvasY: hrEmployees.canvasY,
+  source: hrEmployees.source,
+  lastSyncedAt: hrEmployees.lastSyncedAt,
+  createdAt: hrEmployees.createdAt,
+  updatedAt: hrEmployees.updatedAt,
+} as const;
+
+/** An employee row without the `raw_fields` bag — what every read path returns. */
+export type HrEmployeeRow = Omit<HrEmployee, 'rawFields'>;
 
 /**
  * hr_employees — tenant-scoped directory. Every query filters `tenant_id`. Zoho sync upserts by
@@ -59,9 +90,9 @@ export interface ManualEmployeeInput {
  * hr_departments when resolvable.
  */
 export const hrEmployeeRepo = {
-  async getById(ctx: TenantContext, id: string): Promise<HrEmployee | undefined> {
+  async getById(ctx: TenantContext, id: string): Promise<HrEmployeeRow | undefined> {
     const rows = await db
-      .select()
+      .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
       .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
       .limit(1);
@@ -71,9 +102,9 @@ export const hrEmployeeRepo = {
   async findByZohoRecordId(
     ctx: TenantContext,
     zohoRecordId: string,
-  ): Promise<HrEmployee | undefined> {
+  ): Promise<HrEmployeeRow | undefined> {
     const rows = await db
-      .select()
+      .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
       .where(
         and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.zohoRecordId, zohoRecordId)),
@@ -82,7 +113,7 @@ export const hrEmployeeRepo = {
     return firstOrUndefined(rows);
   },
 
-  async list(ctx: TenantContext, opts: HrEmployeeListOpts = {}): Promise<HrEmployee[]> {
+  async list(ctx: TenantContext, opts: HrEmployeeListOpts = {}): Promise<HrEmployeeRow[]> {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
     const offset = Math.max(opts.offset ?? 0, 0);
     const clauses = [eq(hrEmployees.tenantId, ctx.tenantId)];
@@ -111,7 +142,7 @@ export const hrEmployeeRepo = {
       );
     }
     return db
-      .select()
+      .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
       .where(and(...clauses))
       /*
@@ -136,9 +167,9 @@ export const hrEmployeeRepo = {
    * directory's real size (a few hundred), so no pagination — but it is NOT a general-purpose list;
    * use `list()` for anything user-facing.
    */
-  async listAllForMapping(ctx: TenantContext): Promise<HrEmployee[]> {
+  async listAllForMapping(ctx: TenantContext): Promise<HrEmployeeRow[]> {
     return db
-      .select()
+      .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
       .where(eq(hrEmployees.tenantId, ctx.tenantId))
       .orderBy(asc(hrEmployees.lastName), asc(hrEmployees.firstName));
@@ -156,7 +187,7 @@ export const hrEmployeeRepo = {
     employeeId: string,
     zohoUserId: string,
     source: 'email_match' | 'manual',
-  ): Promise<HrEmployee | undefined> {
+  ): Promise<HrEmployeeRow | undefined> {
     const rows = await db
       .update(hrEmployees)
       .set({
@@ -166,7 +197,7 @@ export const hrEmployeeRepo = {
         updatedAt: new Date(),
       })
       .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, employeeId)))
-      .returning();
+      .returning(EMPLOYEE_COLUMNS);
     return firstOrUndefined(rows);
   },
 
@@ -178,11 +209,11 @@ export const hrEmployeeRepo = {
    * `syncZohoUserMapping`, and a per-request email guess is exactly how one person ends up reading
    * another's record.
    */
-  async findByZohoUserId(ctx: TenantContext, zohoUserId: string): Promise<HrEmployee | undefined> {
+  async findByZohoUserId(ctx: TenantContext, zohoUserId: string): Promise<HrEmployeeRow | undefined> {
     const id = zohoUserId.trim();
     if (!id) return undefined;
     const rows = await db
-      .select()
+      .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
       .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.zohoUserId, id)))
       .limit(1);
@@ -240,7 +271,7 @@ export const hrEmployeeRepo = {
     return rows.map((r) => r.designation!).filter(Boolean);
   },
 
-  async createManual(ctx: TenantContext, input: ManualEmployeeInput): Promise<HrEmployee> {
+  async createManual(ctx: TenantContext, input: ManualEmployeeInput): Promise<HrEmployeeRow> {
     const link = await resolveDepartmentLinkForManual(ctx, input);
     const row: NewHrEmployee = {
       tenantId: ctx.tenantId,
@@ -258,12 +289,19 @@ export const hrEmployeeRepo = {
       role: input.role?.trim() || null,
       dateOfJoining: input.dateOfJoining?.trim() || null,
       mobile: input.mobile?.trim() || null,
+      /**
+       * The handle arrives already bare (the route strips '@' and any t.me/ prefix). This line was
+       * MISSING: `telegramUsername` was on the input type and on the form, so the field looked saved
+       * and silently wasn't — a create never wrote it and an edit never updated it.
+       */
+      telegramUsername: input.telegramUsername?.trim() || null,
       reportingTo: input.reportingTo?.trim() || null,
+      reportingToEmployeeId: input.reportingToEmployeeId?.trim() || null,
       source: 'manual',
       rawFields: null,
       lastSyncedAt: null,
     };
-    const rows = await db.insert(hrEmployees).values(row).returning();
+    const rows = await db.insert(hrEmployees).values(row).returning(EMPLOYEE_COLUMNS);
     return firstOrThrow(rows, 'hr_employees insert returned no row');
   },
 
@@ -271,7 +309,7 @@ export const hrEmployeeRepo = {
     ctx: TenantContext,
     id: string,
     patch: Partial<ManualEmployeeInput>,
-  ): Promise<HrEmployee | undefined> {
+  ): Promise<HrEmployeeRow | undefined> {
     const updates: Partial<NewHrEmployee> = { updatedAt: new Date() };
     if (patch.employeeId !== undefined) updates.employeeId = patch.employeeId?.trim() || null;
     if (patch.firstName !== undefined) updates.firstName = patch.firstName.trim();
@@ -293,14 +331,133 @@ export const hrEmployeeRepo = {
       updates.dateOfJoining = patch.dateOfJoining?.trim() || null;
     }
     if (patch.mobile !== undefined) updates.mobile = patch.mobile?.trim() || null;
+    // See createManual: this branch was missing too, so editing a Telegram handle was a no-op.
+    if (patch.telegramUsername !== undefined) {
+      updates.telegramUsername = patch.telegramUsername?.trim() || null;
+    }
     if (patch.reportingTo !== undefined) updates.reportingTo = patch.reportingTo?.trim() || null;
+    /**
+     * An id-based manager change resolves the display NAME too, exactly as `setManager` does. Without
+     * this the edit form (which picks a manager by id) and the org canvas (which drags one) would write
+     * different columns, and the card would keep showing the old manager's name forever.
+     *
+     * An unknown id clears both rather than storing a link to a row that is not there.
+     */
+    if (patch.reportingToEmployeeId !== undefined) {
+      const managerId = patch.reportingToEmployeeId?.trim() || null;
+      if (managerId && managerId !== id) {
+        const manager = await this.getById(ctx, managerId);
+        updates.reportingToEmployeeId = manager?.id ?? null;
+        updates.reportingTo = manager ? `${manager.firstName} ${manager.lastName}`.trim() : null;
+      } else {
+        updates.reportingToEmployeeId = null;
+        updates.reportingTo = null;
+      }
+    }
 
     const rows = await db
       .update(hrEmployees)
       .set(updates)
       .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
-      .returning();
+      .returning(EMPLOYEE_COLUMNS);
     return firstOrUndefined(rows);
+  },
+
+  /**
+   * Move a person under a manager BY ID — a drag on the org canvas.
+   *
+   * Writes `reportingTo` from the target row at the same time so the display name and the id link can
+   * never disagree, and returns undefined if either row is missing in this tenant (so a cross-tenant
+   * id is a no-op, not a silent re-parent). Cycle rejection lives in the route, which is the only
+   * layer that can see the whole tree.
+   */
+  async setManager(
+    ctx: TenantContext,
+    id: string,
+    managerId: string | null,
+  ): Promise<HrEmployeeRow | undefined> {
+    let reportingTo: string | null = null;
+    if (managerId) {
+      if (managerId === id) return undefined; // nobody reports to themselves
+      const manager = await this.getById(ctx, managerId);
+      if (!manager) return undefined;
+      reportingTo = `${manager.firstName} ${manager.lastName}`.trim();
+    }
+    const rows = await db
+      .update(hrEmployees)
+      .set({ reportingToEmployeeId: managerId, reportingTo, updatedAt: new Date() })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
+      .returning(EMPLOYEE_COLUMNS);
+    return firstOrUndefined(rows);
+  },
+
+  /**
+   * Move a person into a department BY ID — dropping their node onto a department node. Keeps the
+   * denormalized `department` name in step with `department_id`, exactly as `update()` does.
+   */
+  async setDepartment(
+    ctx: TenantContext,
+    id: string,
+    departmentId: string | null,
+    /**
+     * Clear the manager link at the same time.
+     *
+     * The canvas passes true: dropping a person onto a DEPARTMENT node means "you hang directly off this
+     * department". Leaving their manager set made that gesture a visible no-op — the org chart draws a
+     * person under their manager in preference to their department, so the node stayed exactly where it
+     * was and the drag looked broken even though the write succeeded.
+     */
+    detachManager = false,
+  ): Promise<HrEmployeeRow | undefined> {
+    let name: string | null = null;
+    if (departmentId) {
+      const dept = await hrDepartmentRepo.getById(ctx, departmentId);
+      if (!dept) return undefined;
+      name = dept.name;
+    }
+    const rows = await db
+      .update(hrEmployees)
+      .set({
+        departmentId,
+        department: name,
+        /**
+         * Cleared, because it is Zoho's opinion of the department and it no longer matches ours. Leaving
+         * it would have three columns disagreeing about one fact.
+         *
+         * NOTE the limitation this does NOT remove: for a row the Zoho People sync still owns
+         * (`source = 'zoho_people'`), the next sync re-asserts Zoho's department and overwrites this
+         * move, because Zoho remains authoritative for department assignment until HR finishes migrating
+         * off it. A canvas move is durable for `source = 'manual'` rows and is a stopgap for synced ones.
+         */
+        departmentZohoId: null,
+        ...(detachManager ? { reportingToEmployeeId: null, reportingTo: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
+      .returning(EMPLOYEE_COLUMNS);
+    return firstOrUndefined(rows);
+  },
+
+
+  /**
+   * Persist a dragged canvas position. Like the department equivalent, it deliberately leaves
+   * `updated_at` alone: nudging a node is a layout preference, not an edit to the person's record, and
+   * bumping the timestamp would make "last changed" useless for spotting real HR changes.
+   */
+  async setCanvasPosition(
+    ctx: TenantContext,
+    id: string,
+    pos: { x: number; y: number } | null,
+  ): Promise<boolean> {
+    const rows = await db
+      .update(hrEmployees)
+      .set({
+        canvasX: pos ? Math.round(pos.x) : null,
+        canvasY: pos ? Math.round(pos.y) : null,
+      })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
+      .returning({ id: hrEmployees.id });
+    return rows.length > 0;
   },
 
   async delete(ctx: TenantContext, id: string): Promise<boolean> {
@@ -309,168 +466,6 @@ export const hrEmployeeRepo = {
       .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
       .returning({ id: hrEmployees.id });
     return rows.length > 0;
-  },
-
-  /**
-   * Upsert a whole Zoho page in CHUNKED multi-row statements.
-   *
-   * `upsertFromZoho` costs ~4 round-trips per employee (findByZohoRecordId + two department lookups +
-   * the write). Against the Render Postgres, measured at ~266 ms RTT, 213 employees is ~226 s — so the
-   * full sync could never finish inside a request. It died partway and left the table half-populated
-   * with no error surfaced anywhere, which is why prod sat at 88 of 213 records.
-   *
-   * This resolves departments ONCE into a lookup map and writes in chunks, taking the same sync from
-   * ~850 round-trips to ~3. Conflicts target the partial unique index on (tenant, zoho_record_id) —
-   * its predicate has to be repeated in the ON CONFLICT clause for Postgres to match it.
-   */
-  async bulkUpsertFromZoho(
-    ctx: TenantContext,
-    inputs: readonly UpsertFromZohoInput[],
-    opts: { chunkSize?: number } = {},
-  ): Promise<{ written: number }> {
-    if (inputs.length === 0) return { written: 0 };
-    const chunkSize = Math.min(Math.max(opts.chunkSize ?? 100, 1), 500);
-
-    // One read instead of two per employee. Both arms of resolveDepartmentId (Zoho id, then exact
-    // name) are reproduced against the map so linking behaviour is unchanged.
-    const departments = await hrDepartmentRepo.list(ctx);
-    const byZohoId = new Map<string, { id: string; name: string }>();
-    const byName = new Map<string, { id: string; name: string }>();
-    for (const d of departments) {
-      if (d.zohoRecordId) byZohoId.set(d.zohoRecordId, { id: d.id, name: d.name });
-      byName.set(d.name, { id: d.id, name: d.name });
-    }
-
-    const now = new Date();
-    const rows: NewHrEmployee[] = inputs.map((input) => {
-      const zohoDeptId = input.departmentZohoId?.trim() || null;
-      const deptName = input.department?.trim() || null;
-      const link =
-        (zohoDeptId ? byZohoId.get(zohoDeptId) : undefined) ??
-        (deptName ? byName.get(deptName) : undefined);
-      return {
-        tenantId: ctx.tenantId,
-        zohoRecordId: input.zohoRecordId,
-        employeeId: input.employeeId?.trim() || null,
-        firstName: input.firstName.trim() || 'Unknown',
-        lastName: input.lastName.trim() || 'Unknown',
-        email: input.email?.trim() || null,
-        departmentId: link?.id ?? null,
-        department: link?.name ?? deptName,
-        departmentZohoId: zohoDeptId,
-        designation: input.designation?.trim() || null,
-        location: input.location?.trim() || null,
-        status: input.status?.trim() || 'Active',
-        role: input.role?.trim() || null,
-        dateOfJoining: input.dateOfJoining?.trim() || null,
-        mobile: input.mobile?.trim() || null,
-        reportingTo: input.reportingTo?.trim() || null,
-        reportingToZohoId: input.reportingToZohoId?.trim() || null,
-        photoUrl: input.photoUrl?.trim() || null,
-        source: 'zoho_people',
-        rawFields: input.rawFields ?? null,
-        lastSyncedAt: now,
-        updatedAt: now,
-      };
-    });
-
-    let written = 0;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-      const done = await db
-        .insert(hrEmployees)
-        .values(chunk)
-        .onConflictDoUpdate({
-          target: [hrEmployees.tenantId, hrEmployees.zohoRecordId],
-          targetWhere: sql`${hrEmployees.zohoRecordId} is not null`,
-          set: {
-            employeeId: sql`excluded.employee_id`,
-            firstName: sql`excluded.first_name`,
-            lastName: sql`excluded.last_name`,
-            email: sql`excluded.email`,
-            departmentId: sql`excluded.department_id`,
-            department: sql`excluded.department`,
-            departmentZohoId: sql`excluded.department_zoho_id`,
-            designation: sql`excluded.designation`,
-            location: sql`excluded.location`,
-            status: sql`excluded.status`,
-            role: sql`excluded.role`,
-            dateOfJoining: sql`excluded.date_of_joining`,
-            mobile: sql`excluded.mobile`,
-            reportingTo: sql`excluded.reporting_to`,
-            reportingToZohoId: sql`excluded.reporting_to_zoho_id`,
-            photoUrl: sql`excluded.photo_url`,
-            source: sql`excluded.source`,
-            rawFields: sql`excluded.raw_fields`,
-            lastSyncedAt: sql`excluded.last_synced_at`,
-            updatedAt: sql`excluded.updated_at`,
-          },
-        })
-        .returning({ id: hrEmployees.id });
-      written += done.length;
-    }
-    return { written };
-  },
-
-  async upsertFromZoho(ctx: TenantContext, input: UpsertFromZohoInput): Promise<'inserted' | 'updated'> {
-    const existing = await this.findByZohoRecordId(ctx, input.zohoRecordId);
-    const link = await resolveDepartmentId(ctx, {
-      ...(input.departmentZohoId !== undefined
-        ? { departmentZohoId: input.departmentZohoId }
-        : {}),
-      ...(input.department !== undefined ? { departmentName: input.department } : {}),
-    });
-    const projected = {
-      employeeId: input.employeeId?.trim() || null,
-      firstName: input.firstName.trim() || 'Unknown',
-      lastName: input.lastName.trim() || 'Unknown',
-      email: input.email?.trim() || null,
-      departmentId: link.departmentId,
-      department: link.departmentName ?? (input.department?.trim() || null),
-      departmentZohoId: input.departmentZohoId?.trim() || null,
-      designation: input.designation?.trim() || null,
-      location: input.location?.trim() || null,
-      status: input.status?.trim() || 'Active',
-      role: input.role?.trim() || null,
-      dateOfJoining: input.dateOfJoining?.trim() || null,
-      mobile: input.mobile?.trim() || null,
-      reportingTo: input.reportingTo?.trim() || null,
-      reportingToZohoId: input.reportingToZohoId?.trim() || null,
-      photoUrl: input.photoUrl?.trim() || null,
-      source: 'zoho_people' as const,
-      rawFields: input.rawFields ?? null,
-      lastSyncedAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    if (existing) {
-      await db
-        .update(hrEmployees)
-        .set(projected)
-        .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, existing.id)));
-      return 'updated';
-    }
-
-    try {
-      await db.insert(hrEmployees).values({
-        tenantId: ctx.tenantId,
-        zohoRecordId: input.zohoRecordId,
-        ...projected,
-      });
-      return 'inserted';
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        const raced = await this.findByZohoRecordId(ctx, input.zohoRecordId);
-        if (raced) {
-          await db
-            .update(hrEmployees)
-            .set(projected)
-            .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, raced.id)));
-          return 'updated';
-        }
-      }
-      throw err;
-    }
   },
 };
 

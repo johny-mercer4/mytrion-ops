@@ -26,13 +26,15 @@ vi.mock('../../src/modules/hr/hrEmployeeSync.js', () => ({
     fetched: 0,
     inserted: 0,
     updated: 0,
+    relinkedManagers: 0,
     errors: [],
   })),
 }));
 
 vi.mock('../../src/modules/hr/hrOrgStructure.js', () => ({
   buildHrOrgStructure: vi.fn(async () => ({
-    roots: [],
+    departments: [],
+    employees: [],
     departmentCount: 0,
     employeeLinkedCount: 0,
     employeeUnlinkedCount: 0,
@@ -110,6 +112,10 @@ function employeeRow(overrides: Partial<HrEmployee> = {}): HrEmployee {
     mobile: null,
     reportingTo: null,
     reportingToZohoId: null,
+    /** The id-based manager link + canvas position the org chart drags onto — unset by default. */
+    reportingToEmployeeId: null,
+    canvasX: null,
+    canvasY: null,
     photoUrl: null,
     source: 'manual',
     rawFields: null,
@@ -189,7 +195,7 @@ describe('HR employees — admin writes', () => {
   });
 
   it('Administrator can sync from Zoho', async () => {
-    syncMock.mockResolvedValue({ fetched: 2, inserted: 1, updated: 1, errors: [] });
+    syncMock.mockResolvedValue({ fetched: 2, inserted: 1, updated: 1, relinkedManagers: 0, errors: [] });
     const res = await app.inject({
       method: 'POST',
       url: '/v1/hr/employees/sync',
@@ -233,18 +239,36 @@ describe('HR employees — admin writes', () => {
     expect(res.json()).toEqual({ designations: ['Engineer', 'Manager'] });
   });
 
-  it('GET /hr/org-structure returns the tree from tables', async () => {
+  it('GET /hr/org-structure returns both node levels from tables', async () => {
     orgMock.mockResolvedValue({
-      roots: [
+      departments: [
         {
           id: 'hrd_1',
           name: 'Operations',
           code: 'OPS',
           leadName: null,
           parentId: null,
+          description: null,
+          icon: null,
+          iconColor: null,
+          canvasX: null,
+          canvasY: null,
           employeeCount: 2,
           activeEmployeeCount: 2,
-          children: [],
+        },
+      ],
+      employees: [
+        {
+          id: 'hre_1',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          designation: 'Engineer',
+          status: 'Active',
+          departmentId: 'hrd_1',
+          reportingToEmployeeId: null,
+          photoUrl: null,
+          canvasX: null,
+          canvasY: null,
         },
       ],
       departmentCount: 1,
