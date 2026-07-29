@@ -14,14 +14,19 @@ import { buildHrOrgStructure } from '../../modules/hr/hrOrgStructure.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import type { HrEmployee } from '../../db/schema/hr_employees.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
+/**
+ * READ access to the HR directory — requires the 'hr' department grant.
+ *
+ * This used to check only `audience === 'internal'`, which is not a gate at all: every signed-in
+ * worker, a sales agent included, could read all 213 employee rows (names, emails, mobiles, joining
+ * dates, reporting lines) and the whole org structure. `requireDepartment` handles the admin /
+ * all-department / bypass paths identically to every other module, so HR now sits behind the same
+ * boundary as Billing or CS instead of behind none.
+ */
 function requireHrInternal(request: FastifyRequest): TenantContext {
-  const ctx = requireContext(request);
-  if (ctx.audience !== 'internal') {
-    throw new RBACError('HR directory is internal-only');
-  }
-  return ctx;
+  return requireDepartment(request, 'hr', 'HR directory');
 }
 
 /** Create / edit / delete / Zoho sync — Mytrion Admin (all-department) only. */

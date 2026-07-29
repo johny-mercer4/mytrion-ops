@@ -22,6 +22,18 @@ export const KNOWN_DEPARTMENTS = [
   'retention',
   'c-level',
   'management',
+  /**
+   * HR. Already granted as a tag (MYTRION_DEPARTMENT.hr = 'hr'), but it was missing here — which meant
+   * `requireDepartment(request, 'hr', …)` did not even typecheck, so the HR routes fell back to an
+   * audience-only check and every signed-in worker could read the whole employee directory.
+   *
+   * Note for `deriveWorkerDepartments` below: 'hr' is the shortest tag in this list, and that matcher is
+   * a case-insensitive SUBSTRING test, so a profile containing the letters "hr" anywhere would derive
+   * this department. That derivation is only used behind FF_WORKER_DEPT_STRICT to BOUND a body-asserted
+   * view — it cannot grant access on its own (the DB grant is authoritative) — so the false-positive
+   * risk is bounded to widening a view the grant already permits.
+   */
+  'hr',
 ] as const;
 
 export type KnownDepartment = (typeof KNOWN_DEPARTMENTS)[number];

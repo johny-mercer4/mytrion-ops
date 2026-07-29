@@ -7684,3 +7684,46 @@ zoho_user_id → UMIDJON ABDUG'APPOROV <umidjon.a@octanefuel.com> (source=email_
 **Still open:** a terminated employee may still hold an active CRM login, so termination must decide
 whether portal access is revoked or the row is merely marked. `listAllForMapping` deliberately includes
 terminated rows so RBAC can deny them on purpose rather than by accident.
+
+## 2026-07-29 — HR had NO department gate (any worker could read the whole directory)
+
+Found while designing HR RBAC, verified by reading the code directly rather than taking the audit's word
+for it. `requireHrInternal` checked only `ctx.audience !== 'internal'`:
+
+    function requireHrInternal(request) {
+      const ctx = requireContext(request);
+      if (ctx.audience !== 'internal') throw new RBACError('HR directory is internal-only');
+      return ctx;
+    }
+
+That is not a gate. **Every signed-in worker — a sales agent, a billing agent — could read all 213
+employee rows** (names, emails, mobiles, joining dates, reporting lines), the designation picklist and
+the entire org structure. With 127 CRM logins now mapped to employees, that is 127 people with access to
+the full HR directory.
+
+ROOT CAUSE: `'hr'` was missing from `KNOWN_DEPARTMENTS` (src/lib/department.ts), so
+`requireDepartment(request, 'hr', …)` did not even typecheck — the tag itself was always granted
+(`MYTRION_DEPARTMENT.hr = 'hr'`), there was just no way to require it. Added 'hr' to the list and moved
+the HR read gate onto `requireDepartment`, so HR now sits behind the same boundary as Billing or CS.
+Write/sync routes already required Mytrion Admin and are unchanged.
+
+Noted on the substring matcher: 'hr' is now the shortest tag, and `deriveWorkerDepartments` is a
+case-insensitive SUBSTRING test, so a profile containing "hr" anywhere derives this department. That
+derivation only BOUNDS a body-asserted view behind FF_WORKER_DEPT_STRICT and cannot grant access on its
+own (the DB grant is authoritative), so the false-positive risk is limited to widening a view the grant
+already permits.
+
+**Three tests were pinning the hole** — they asserted a `'Sales Rep'` gets 200 on `/v1/hr/employees`,
+`/v1/hr/meta/designations` and `/v1/hr/org-structure`. Rewritten: the sales worker now asserts 403 with
+the reason recorded in the test body, and a new case asserts an HR-department worker still gets 200.
+
+Also fixed a straggler from the 1:1 Calculation mapping: `referral-bonus-repo.test.ts` still asserted
+"either legacy value selects BOTH legacy bonuses". Flipped, with the reason inline.
+
+Suite back to the pre-existing baseline (6 files / 10 tests, all failing at origin/main too); lint 0
+errors. `agent-scripted-turn` and a ~47-test spike were load flakiness from concurrent workflows — both
+pass in isolation.
+
+**Still open for HR RBAC (design done, not built):** row-level scoping (self / manager-chain / dept /
+all) keyed on the new `zoho_user_id`, field-level withholding for sensitive columns, recursive
+hierarchy queries with cycle protection, and whether termination revokes portal access.
