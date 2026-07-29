@@ -271,9 +271,12 @@ describe('bonus spec matches the calculation-types PDF', () => {
 });
 
 describe('Zoho Calculation picklist → bonus types', () => {
-  it('either legacy value selects BOTH legacy bonuses (concurrent per the PDF)', () => {
-    expect(bonusTypesForCalculation('Gallons (Legacy)')).toEqual(['gallons_legacy', 'swipes_legacy']);
-    expect(bonusTypesForCalculation('Swipes (Legacy)')).toEqual(['gallons_legacy', 'swipes_legacy']);
+  it('each legacy value selects exactly ONE type — the picklist is single-select', () => {
+    // Previously asserted BOTH types for either value, which made 'Gallons (Legacy)' and
+    // 'Swipes (Legacy)' indistinguishable in effect and paid per-gallon on top of per-swipe for the
+    // 615 referrers set to Swipes (Legacy). The import deliberately split the roster 615/50.
+    expect(bonusTypesForCalculation('Gallons (Legacy)')).toEqual(['gallons_legacy']);
+    expect(bonusTypesForCalculation('Swipes (Legacy)')).toEqual(['swipes_legacy']);
   });
 
   it('the new-logic values select a single type each', () => {
@@ -281,7 +284,7 @@ describe('Zoho Calculation picklist → bonus types', () => {
     expect(bonusTypesForCalculation('Gallons (Child)')).toEqual(['gallons_child']);
   });
 
-  it('unset / -None- / unknown selects nothing (Calculation is null on every record today)', () => {
+  it('unset / -None- / unknown selects nothing (null on every CHILD; the parent copy is populated)', () => {
     expect(bonusTypesForCalculation(null)).toEqual([]);
     expect(bonusTypesForCalculation(undefined)).toEqual([]);
     expect(bonusTypesForCalculation('')).toEqual([]);

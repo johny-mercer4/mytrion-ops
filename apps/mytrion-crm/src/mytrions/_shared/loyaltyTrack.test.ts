@@ -1,13 +1,25 @@
 /**
- * Loyalty Tiers v3 — the track basis and the 10% grace band.
+ * Loyalty Tiers v3 — the two axes, and the 10% grace band.
  *
- * Pinned against the deck, which is explicit: "System counts active cards (>=1 transaction previous
- * month) on 1st of each month", and "1-month grace if within 10%".
+ * Since 2026-07-29 the axes are separate: TRUCKS bucket the track (1 truck = Owner-Operator) while
+ * fuel activity gates program membership. The deck's "System counts active cards (>=1 transaction
+ * previous month)" still defines membership; its card count is no longer the bucketer. Grace is
+ * unchanged: "1-month grace if within 10%".
+ *
+ * NOTE on the older blocks below: they pass literal numbers as `resolveTier`'s first argument, which is
+ * now a FLEET SIZE. The arithmetic is identical so they still hold, but read them as trucks.
  */
 import { describe, expect, it } from 'vitest';
-import { resolveTier, resolveTierForRow, resolveTrackCards } from './loyalty';
+import {
+  resolveFleetSize,
+  resolveSegment,
+  resolveTier,
+  resolveTierForRow,
+  resolveTrack,
+  resolveTrackCards,
+} from './loyalty';
 
-describe('resolveTrackCards — what the track is scored against', () => {
+describe('resolveTrackCards — the program-membership gate (and the fallback bucketer)', () => {
   it('uses PREVIOUS-month transacting cards, not the account total', () => {
     // The bug this fixes: 20 cards issued, 12 "active" on the account, but only 3 trucks fuelled.
     expect(resolveTrackCards({ activeCardsPrevMonth: 3, activeCardsThisMonth: 2 })).toBe(3);
@@ -104,5 +116,73 @@ describe('resolveTierForRow — the single entry point both surfaces use', () =>
     });
     expect(t.level).toBe('gold');
     expect(t.grace).toBe(true);
+  });
+});
+
+
+describe('owner-operator means exactly ONE TRUCK (2026-07-29 rule change)', () => {
+  it('scores a 1-truck carrier running 21 cards as Owner-Operator, not Fleet', () => {
+    // Carrier 5810474 RAWDEAL LOGISTICS LLC, from the live DWH: trucks 1, 21 transacting cards last
+    // month, 29,539 gal. The card proxy put it in T3 Fleet; one truck is one truck.
+    const t = resolveTierForRow({ trucks: 1, activeCardsPrevMonth: 21, gallonsThisMonth: 29_539 });
+    expect(t.track).toBe('T1');
+    expect(t.trackLabel).toBe('Owner-Operator');
+    expect(t.segment).toBeNull();
+    expect(t.fleetSize).toBe(1);
+    expect(t.fleetSizeKnown).toBe(true);
+  });
+
+  it('does NOT call a 12-truck fleet an owner-operator just because one card transacted', () => {
+    const t = resolveTierForRow({ trucks: 12, activeCardsPrevMonth: 1, gallonsThisMonth: 14_612 });
+    expect(t.track).toBe('T3');
+    expect(t.segment).toBe('fleet');
+  });
+
+  it('keeps a 1-truck carrier with NO fuel activity out of the program entirely', () => {
+    // The load-bearing case. A bare `trucks === 1` swap would hand these a T1 track and flood
+    // "Building" with ~2,975 dormant carriers — the exact symptom the 2026-07-28 fix removed.
+    const t = resolveTierForRow({ trucks: 1, activeCardsPrevMonth: 0, activeCardsThisMonth: 0, gallonsThisMonth: 0 });
+    expect(t.track).toBeNull();
+    expect(t.level).toBe('none');
+  });
+
+  it('activity alone cannot grant a track when there are no gallons and no cards', () => {
+    expect(resolveTierForRow({ trucks: 4, activeCardsPrevMonth: 0, activeCardsThisMonth: 0 }).track).toBeNull();
+  });
+
+  it('falls back to the card proxy when the truck count is unknown, and says so', () => {
+    // ~184 carriers have a null Trucks field; 19 of them hold a live track (one at 9,259 gal).
+    for (const trucks of [null, undefined, 0, -1, 1.5, Number.NaN]) {
+      const t = resolveTierForRow({ trucks, activeCardsPrevMonth: 3, gallonsThisMonth: 3200 });
+      expect(t.track, `trucks=${String(trucks)}`).toBe('T2');
+      expect(t.fleetSizeKnown, `trucks=${String(trucks)}`).toBe(false);
+      expect(t.fleetSize, `trucks=${String(trucks)}`).toBe(3);
+    }
+  });
+
+  it('treats only a positive integer as a known fleet size', () => {
+    expect(resolveFleetSize({ trucks: 1 })).toBe(1);
+    expect(resolveFleetSize({ trucks: 12 })).toBe(12);
+    expect(resolveFleetSize({ trucks: 0 })).toBeNull();
+    expect(resolveFleetSize({ trucks: -3 })).toBeNull();
+    expect(resolveFleetSize({ trucks: 2.5 })).toBeNull();
+    expect(resolveFleetSize({ trucks: null })).toBeNull();
+    expect(resolveFleetSize({})).toBeNull();
+  });
+
+  it('the ladder is total: every fleet size lands in exactly one track (and one segment at 4+)', () => {
+    for (let fleet = 1; fleet <= 30; fleet += 1) {
+      const track = resolveTrack(fleet);
+      const matches = ['T1', 'T2', 'T3'].filter((t) => t === track);
+      expect(matches, `fleet=${fleet}`).toHaveLength(1);
+      const segment = resolveSegment(fleet);
+      if (fleet < 4) expect(segment, `fleet=${fleet}`).toBeNull();
+      else expect(segment, `fleet=${fleet}`).not.toBeNull();
+      if (fleet >= 13) expect(segment, `fleet=${fleet}`).toBe('fleet'); // capped, incl. the 2,024 outlier
+    }
+    expect(resolveTrack(1)).toBe('T1');
+    expect(resolveTrack(2)).toBe('T2');
+    expect(resolveTrack(3)).toBe('T2');
+    expect(resolveTrack(4)).toBe('T3');
   });
 });

@@ -18,7 +18,7 @@ import { Icon, type IconName } from './icons';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import {
-  resolveTier,
+  resolveTierForRow,
   tierRewards,
   tierColor,
   tierTextColor,
@@ -162,9 +162,10 @@ export function ClientModal({
   const [lbl, col] = REC_STATUS[client.status];
   const statusBadge = badge(lbl, col);
   const initials = client.name.split(' ').map((w) => w[0]).slice(0, 2).join('');
-  // Tier level = this-calendar-month gallons (program basis), falling back to this-cycle gallons when
-  // the client has no current-month pumps yet (matches RecordsTab's tierGallons).
-  const tier = resolveTier(client.active, client.gallonsThisMonth > 0 ? client.gallonsThisMonth : client.cycleGallons);
+  // One entry point, same as the grid row that opened this modal. It used to call resolveTier with
+  // `client.active` — the account's ALL-TIME card total — which already disagreed with the grid, and
+  // would now be read as a truck count (an 85-card carrier scored as an 85-truck fleet).
+  const tier = resolveTierForRow(client);
   const rewards = tierRewards(tier.level);
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
   const billingL = useLoad(() => loadClientBilling(client.id), [client.id]);

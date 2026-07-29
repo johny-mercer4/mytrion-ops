@@ -13,7 +13,10 @@ export interface LoyaltyClient {
   companyName: string;
   /** Current owning agent, '—' when the warehouse has none. */
   agentName: string;
-  /** Total active cards on the account — context only; the TRACK uses prev-month transacting cards. */
+  /** Declared fleet size — the loyalty TRACK basis (1 truck = Owner-Operator). `null` = unknown, in
+   * which case the tier falls back to the transacting-card proxy. */
+  trucks: number | null;
+  /** Total active cards on the account — context only; the TRACK uses `trucks`. */
   activeCards: number;
   activeCardsThisMonth: number;
   /** Cards that transacted LAST month — the program's track basis (see _shared/loyalty.ts). */

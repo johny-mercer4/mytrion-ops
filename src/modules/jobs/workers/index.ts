@@ -17,6 +17,7 @@ import {
   kpiSalesHourlySyncJob,
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
+  salesBocaRequestJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
@@ -40,6 +41,7 @@ import {
   runKpiMonthClose,
   runKpiReconcile,
 } from './salesKpi.js';
+import { runBocaRequest } from '../../browserAutomation/bocaRequest.js';
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(agentRunJob.name, { batchSize: env.JOBS_CONCURRENCY }, handleAgentRunJobs);
@@ -104,6 +106,11 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     const job = jobs[0];
     if (!job) return undefined;
     return runKpiMonthClose(kpiSalesMonthCloseJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(salesBocaRequestJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runBocaRequest(salesBocaRequestJob.schema.parse(job.data ?? {}));
   });
   await boss.work(bulkIngestJob.name, { batchSize: 1 }, handleBulkIngestJobs);
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());

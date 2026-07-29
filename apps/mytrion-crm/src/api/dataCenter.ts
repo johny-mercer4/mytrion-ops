@@ -144,6 +144,9 @@ export interface AgentClient {
   producedCards: number;
   activeCards: number;
   moneyCode: string;
+  /** Declared fleet size — the loyalty TRACK basis (1 truck = Owner-Operator). `null` = unknown, in
+   * which case the tier falls back to the transacting-card proxy. */
+  trucks: number | null;
   dot: string;
   isLocSuspended: boolean;
   computedIsActive: boolean;

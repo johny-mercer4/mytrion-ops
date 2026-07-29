@@ -14,14 +14,19 @@ import { buildHrOrgStructure } from '../../modules/hr/hrOrgStructure.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import type { HrEmployee } from '../../db/schema/hr_employees.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
+/**
+ * READ access to the HR directory — requires the 'hr' department grant.
+ *
+ * This used to check only `audience === 'internal'`, which is not a gate at all: every signed-in
+ * worker, a sales agent included, could read all 213 employee rows (names, emails, mobiles, joining
+ * dates, reporting lines) and the whole org structure. `requireDepartment` handles the admin /
+ * all-department / bypass paths identically to every other module, so HR now sits behind the same
+ * boundary as Billing or CS instead of behind none.
+ */
 function requireHrInternal(request: FastifyRequest): TenantContext {
-  const ctx = requireContext(request);
-  if (ctx.audience !== 'internal') {
-    throw new RBACError('HR directory is internal-only');
-  }
-  return ctx;
+  return requireDepartment(request, 'hr', 'HR directory');
 }
 
 /** Create / edit / delete / Zoho sync — Mytrion Admin (all-department) only. */
@@ -50,6 +55,7 @@ function toDto(row: HrEmployee) {
     role: row.role,
     dateOfJoining: row.dateOfJoining,
     mobile: row.mobile,
+    telegramUsername: row.telegramUsername,
     reportingTo: row.reportingTo,
     reportingToZohoId: row.reportingToZohoId,
     photoUrl: row.photoUrl,
@@ -65,6 +71,7 @@ const listQuery = z.object({
   status: z.string().max(80).optional(),
   department: z.string().max(200).optional(),
   departmentId: z.string().max(80).optional(),
+  designation: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -82,6 +89,16 @@ const writeBody = z.object({
   role: z.string().max(200).nullable().optional(),
   dateOfJoining: z.string().max(40).nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
+  /**
+   * Telegram handle. Stored BARE — a leading '@' and any t.me/ prefix are stripped on write so the
+   * column holds one canonical form and the UI owns the presentation.
+   */
+  telegramUsername: z
+    .string()
+    .max(64)
+    .nullable()
+    .optional()
+    .transform((v) => (v == null ? v : v.trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^@+/, '') || null)),
   reportingTo: z.string().max(200).nullable().optional(),
 });
 

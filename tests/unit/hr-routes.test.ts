@@ -89,6 +89,12 @@ function employeeRow(overrides: Partial<HrEmployee> = {}): HrEmployee {
     id: 'hre_1',
     tenantId: DEFAULT_TENANT_ID,
     zohoRecordId: null,
+    telegramUsername: null,
+    photoFileId: null,
+    // The Zoho CRM login this employee IS — the HR RBAC anchor, unresolved by default.
+    zohoUserId: null,
+    zohoUserIdSource: null,
+    zohoUserLinkedAt: null,
     employeeId: 'HRM01',
     firstName: 'Ada',
     lastName: 'Lovelace',
@@ -121,11 +127,24 @@ describe('HR employees — auth', () => {
     expect(repo.list).not.toHaveBeenCalled();
   });
 
-  it('GET /hr/employees allows an internal sales worker to read', async () => {
+  it('GET /hr/employees REFUSES a sales worker — the directory is not company-wide', async () => {
+    // This test previously asserted 200. That was pinning a hole: the route checked only
+    // `audience === 'internal'`, so any signed-in worker could read all 213 employee rows — names,
+    // emails, mobiles, joining dates, reporting lines — plus the whole org structure.
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees',
       headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it('GET /hr/employees allows a worker holding the hr department', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/employees',
+      headers: bearer(await workerToken('HR Manager')),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ items: [], total: 0 });
@@ -208,7 +227,7 @@ describe('HR employees — admin writes', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/meta/designations',
-      headers: bearer(await workerToken('Sales Rep')),
+      headers: bearer(await workerToken('HR Manager')),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ designations: ['Engineer', 'Manager'] });
@@ -235,7 +254,7 @@ describe('HR employees — admin writes', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/org-structure',
-      headers: bearer(await workerToken('Sales Rep')),
+      headers: bearer(await workerToken('HR Manager')),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ departmentCount: 1, employeeLinkedCount: 2 });

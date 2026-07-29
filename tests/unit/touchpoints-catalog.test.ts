@@ -40,11 +40,10 @@ describe('catalog shape', () => {
     // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
-    // servercrm reads incl. 7 billing (deals, debtors, avg-days, carrier-type, 3× prepay); count
-    // reflects the build merge (retention work moved some CS touchpoints to kind:'local').
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(49);
-    // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
-    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(2);
+    // Includes direct EFS card-status and delta-limit writes used by Sales automations.
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
+    // BOCA and Close Application are guarded local handlers around Playwright.
+    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(0);
     expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
   });
 
@@ -105,7 +104,7 @@ describe('catalog shape', () => {
     }
   });
 
-  it('flags exactly the five destructive touchpoints', () => {
+  it('flags exactly the destructive touchpoints', () => {
     const destructive = all
       .filter((t) => t.riskClass === 'destructive')
       .map((t) => t.key)
@@ -114,7 +113,9 @@ describe('catalog shape', () => {
       'cards.limits',
       'cards.status',
       'dwh.money_code_draw',
+      'efs.card_limits',
       'efs.card_override',
+      'efs.card_status',
       'fraud.hold_release',
       'money_code.void',
     ]);
@@ -162,6 +163,26 @@ describe('param schemas', () => {
         action: 'INCREASE',
       }),
     ).toMatchObject({ limitValue: '300', action: 'INCREASE' });
+
+    const efsLimits = getTouchpoint('efs.card_limits');
+    expect(
+      efsLimits?.paramsSchema.parse({
+        carrierId: '1',
+        cardNumber: '7083051234',
+        limitId: 'ULSD',
+        value: 350,
+        action: 'DECREASE',
+      }),
+    ).toMatchObject({ value: 350, action: 'DECREASE' });
+    expect(() =>
+      efsLimits?.paramsSchema.parse({
+        carrierId: '1',
+        cardNumber: '7083051234',
+        limitId: 'ULSD',
+        value: 351,
+        action: 'INCREASE',
+      }),
+    ).toThrow();
 
     const lead = getTouchpoint('leads.create');
     expect(() =>

@@ -8,6 +8,7 @@ import { callTouchpoint } from '@/api/touchpoints';
 import { money } from './live';
 import {
   EFS_LOGIN_URL,
+  LIMIT_CHANGE_MAX,
   fmtDate,
   mapInvRange,
   mapInvStatus,
@@ -26,7 +27,6 @@ import {
   type UnitDriverForm,
 } from './autoLive';
 import { fetchTxnReport, type TxnReportState } from './txnReport';
-import { deliverBlob } from './txnExportLibs';
 
 export type AutoPriority = '' | 'High' | 'Normal' | 'Low';
 
@@ -255,17 +255,48 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       return { kind: 'tracking', carrierId, fedexTracking, entries };
     }
     case 'card-last-used': {
-      const res = await callTouchpoint('dwh.cards_last_used', { carrierId: requireCarrier(deal), range: 'all_time' });
-      const rows = (res.data ?? []).map((c) => {
-        const r = c as Record<string, unknown>;
-        return [
-          shortCard(r.card_number ?? r.cardNumber),
-          fmtDate(r.last_used ?? r.lastUsed ?? r.last_transaction_date),
-          str(r.status) || '—',
-        ];
+      const carrierId = requireCarrier(deal);
+      // Status and any header-level last-used value come from live EFS. The historical DWH lookup
+      // fills dates/counts when EFS omits them and also covers cards missing from the live summary.
+      const [efsResult, dwhResult] = await Promise.allSettled([
+        callTouchpoint('efs.cards', { carrierId }),
+        callTouchpoint('dwh.cards_last_used', { carrierId, range: 'all_time' }),
+      ]);
+      if (efsResult.status === 'rejected' && dwhResult.status === 'rejected') {
+        throw efsResult.reason;
+      }
+      const efsRows = efsResult.status === 'fulfilled'
+        ? ((efsResult.value.data ?? []) as Array<Record<string, unknown>>)
+        : [];
+      const dwhRows = dwhResult.status === 'fulfilled'
+        ? ((dwhResult.value.data ?? []) as Array<Record<string, unknown>>)
+        : [];
+      const cardKey = (r: Record<string, unknown>): string =>
+        str(r.card_number ?? r.cardNumber).replace(/\D/g, '');
+      const dwhByCard = new Map(dwhRows.map((r) => [cardKey(r), r]));
+      const keys = new Set([...efsRows.map(cardKey), ...dwhRows.map(cardKey)].filter(Boolean));
+      const rows = Array.from(keys).map((key) => {
+        const efs = efsRows.find((r) => cardKey(r) === key);
+        const dwh = dwhByCard.get(key);
+        const efsLastUsed = str(
+          efs?.lastUsedDate ?? efs?.last_used_date ?? efs?.lastUsed ?? efs?.last_used,
+        ).trim();
+        const dwhLastUsed = str(
+          dwh?.last_used_date ?? dwh?.last_used ?? dwh?.lastUsed ?? dwh?.last_transaction_date,
+        ).trim();
+        const days = Number(dwh?.days_since_last_use ?? dwh?.daysSinceLastUse);
+        const txCount = Number(dwh?.transactions ?? dwh?.transaction_count);
+        return {
+          cardNumber: key,
+          status: str(efs?.status ?? dwh?.status) || 'Unknown',
+          lastUsed: efsLastUsed || dwhLastUsed || null,
+          daysSinceLastUse: Number.isFinite(days) ? days : null,
+          transactions: Number.isFinite(txCount) ? txCount : null,
+          source: efsLastUsed ? 'efs' as const : dwhLastUsed ? 'dwh' as const : 'none' as const,
+        };
       });
-      if (rows.length === 0) return { kind: 'message', message: 'No card last-used rows for this carrier.' };
-      return { kind: 'table', title: 'Card last used', columns: ['Card', 'Last used', 'Status'], rows };
+      if (rows.length === 0) return { kind: 'message', message: 'No cards found for this carrier.' };
+      return { kind: 'card-last-used', rows };
     }
     case 'money-code': {
       const cid = requireCarrier(deal);
@@ -290,7 +321,11 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
     case 'card-activation': {
       const cid = requireCarrier(deal);
       const cardNumber = requireCard(card);
-      await callTouchpoint('dwh.card_activate', { carrierId: cid, cardNumber });
+      await callTouchpoint('efs.card_status', {
+        carrierId: cid,
+        cardNumber,
+        action: 'ACTIVATE',
+      });
       const { unitNumber, driverId, driverName } = input.unitDriver;
       const extras = [unitNumber.trim(), driverId.trim(), driverName.trim()].some(Boolean);
       if (extras) {
@@ -305,7 +340,7 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       return { kind: 'message', message: `Card ${shortCard(cardNumber)} activated${extras ? ' with unit/driver prompts updated' : ''}.` };
     }
     case 'card-deactivation': {
-      const res = await callTouchpoint('cards.status', {
+      const res = await callTouchpoint('efs.card_status', {
         carrierId: requireCarrier(deal),
         cardNumber: requireCard(card),
         action: 'DEACTIVATE',
@@ -313,16 +348,38 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       return { kind: 'message', message: str(res.message) || `Card ${shortCard(card?.number)} set to ${str(res.newStatus) || 'INACTIVE'}.` };
     }
     case 'limits-change': {
-      const res = await callTouchpoint('cards.limits', {
+      const delta = Number(input.limitValue);
+      if (!Number.isFinite(delta) || delta <= 0) {
+        throw new Error('Enter a limit change greater than 0 gallons.');
+      }
+      if (delta > LIMIT_CHANGE_MAX) {
+        throw new Error(`A single limit change cannot exceed ${LIMIT_CHANGE_MAX} gallons.`);
+      }
+      const res = await callTouchpoint('efs.card_limits', {
         carrierId: requireCarrier(deal),
         cardNumber: requireCard(card),
         limitId: input.limitId,
-        limitValue: input.limitValue,
+        value: delta,
         action: input.limitDir === 'increase' ? 'INCREASE' : 'DECREASE',
       });
+      const previousLimit = Number(res.previousLimit);
+      const newLimit = Number(res.newLimit);
+      if (!Number.isFinite(newLimit)) {
+        throw new Error('EFS accepted the update but did not return the resulting gallon limit.');
+      }
       return {
-        kind: 'message',
-        message: str(res.message) || `${input.limitId} ${input.limitDir}d to ${input.limitValue} on card ${shortCard(card?.number)}.`,
+        kind: 'limit-update',
+        result: {
+          cardNumber: requireCard(card),
+          limitId: input.limitId,
+          previousLimit: Number.isFinite(previousLimit) ? previousLimit : Math.max(
+            0,
+            input.limitDir === 'increase' ? newLimit - delta : newLimit + delta,
+          ),
+          newLimit,
+          delta,
+          direction: input.limitDir,
+        },
       };
     }
     case 'unit-driver': {
@@ -382,6 +439,12 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
         dueDate: input.due.trim(),
         status: 'Not Started',
       });
+      if (res.action === 'queued') {
+        return {
+          kind: 'message',
+          message: `BOCA request queued for Application ${appId}. You can close this window; Mytrion Inbox will notify you when it finishes.`,
+        };
+      }
       return browserTaskMessage('BOCA', appId, res);
     }
     case 'close-app': {
@@ -420,7 +483,12 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
   }
 }
 
-/** Signed URL → blob download (same end result as reference pdf/excel?download=1). */
+/**
+ * Signed invoice URLs are intentionally opened directly. Fetching the cross-origin URL first
+ * requires servercrm/CMP CORS headers and produced the browser-level “Failed to fetch” error even
+ * when the signed URL itself was valid. The upstream URL already carries `download=1` and an
+ * attachment Content-Disposition, so no client-side blob conversion is needed.
+ */
 export async function downloadInvoice(
   invoiceId: string,
   type: 'pdf' | 'excel' = 'pdf',
@@ -429,13 +497,19 @@ export async function downloadInvoice(
   if (!invoiceId) throw new Error('This invoice has no downloadable id.');
   const { url } = await callTouchpoint('sales_mytrion.invoice_signed_url', { invoiceId, type });
   if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Invoice ${type.toUpperCase()} download failed (${resp.status}).`);
-  const blob = await resp.blob();
   const safe = String(fileBase || `invoice-${invoiceId}`).replace(/[^\w.\- ]+/g, '_').trim();
   const ext = type === 'excel' ? 'xlsx' : 'pdf';
   const fileName = new RegExp(`\\.${ext}$`, 'i').test(safe) ? safe : `${safe}.${ext}`;
-  deliverBlob(blob, fileName);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = 'noopener';
+  if (/android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)) {
+    anchor.target = '_blank';
+  }
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 /** Sequential multi-invoice download (reference: downloadAllSelected / downloadSelectedExcel). */
@@ -459,4 +533,3 @@ export async function downloadInvoicesSequential(
   }
   return { ok, fail };
 }
-

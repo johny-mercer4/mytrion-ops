@@ -326,7 +326,7 @@ export function RecordsTab() {
         tier,
         onClick: () => openClient({
           id: c.id, name: c.name, carrier: c.carrier, contact: c.contact, phone: c.phone,
-          cards: c.cards, active: c.active, gallons: c.gallons, cycleGallons: c.cycleGallons,
+          cards: c.cards, active: c.active, trucks: c.trucks, gallons: c.gallons, cycleGallons: c.cycleGallons,
           status: c.status, mc: c.mc, dot: c.dot, owed: c.computedDebt,
           gallonsThisMonth: c.gallonsThisMonth, activeCardsThisMonth: c.activeCardsThisMonth,
           transactionsThisMonth: c.transactionsThisMonth, gallonsPrevMonth: c.gallonsPrevMonth,

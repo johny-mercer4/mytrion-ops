@@ -1080,3 +1080,296 @@
   border: 1px solid var(--tint-warn-bd);
   color: var(--warning);
 }
+
+/* ── Employee cards ─────────────────────────────────────────────────────────────
+   The directory renders as cards rather than table rows: a person is an entity with a face, a role and
+   a handle, and a 6-column table made all of that equally grey.
+
+   Everything below reuses the module's existing tokens (--hr-r-*, --hz-pane*, --hz-ease, --hz-dur-*)
+   so it inherits the same glass, hover-lift and focus ring as the rest of Mytrion. No new easings, no
+   new radii, no hard-coded colours. */
+.hr-root .hr-empc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 14px;
+}
+
+.hr-root .hr-empc {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 16px;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.hr-root .hr-empc:hover {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--hz-pane-bd));
+  box-shadow:
+    0 16px 40px -14px color-mix(in srgb, var(--accent) 26%, transparent),
+    var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+
+/* 1px specular hairline that wipes in on hover — the same language the jump cards use. */
+.hr-root .hr-empc-shimmer {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: var(--hz-shimmer);
+  opacity: 0;
+  transition: opacity 0.3s var(--hz-ease);
+}
+.hr-root .hr-empc:hover .hr-empc-shimmer {
+  opacity: 1;
+}
+
+/* Terminated reads as terminated at a glance: a danger rail plus a desaturated face, legible even in
+   greyscale rather than relying on the badge colour alone. */
+.hr-root .hr-empc.is-terminated {
+  border-left: 3px solid var(--danger);
+}
+.hr-root .hr-empc.is-terminated .hr-avatar {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.hr-root .hr-empc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.hr-root .hr-empc-id {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hr-root .hr-empc-name {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  /* Long names are common here — wrap to two lines instead of ellipsing a person. */
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empc-role {
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.hr-root .hr-empc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hz-pane-bd);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.hr-root .hr-empc-dept {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 11px;
+}
+.hr-root .hr-empc-mail,
+.hr-root .hr-empc-tg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11.5px;
+  /* Emails and handles are the one place truncation is right — identifiers, not prose. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-empc-tg {
+  color: var(--hz-4, var(--accent-2, var(--accent)));
+}
+
+/* Actions stay out of the way until hover/focus — the card itself is the primary action, and two
+   always-visible icons across 213 cards is noise. */
+.hr-root .hr-empc-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-empc:hover .hr-empc-actions,
+.hr-root .hr-empc:focus-within .hr-empc-actions {
+  opacity: 1;
+  transform: none;
+}
+/* Keyboard users must never lose the controls. */
+.hr-root .hr-empc-actions [role='button']:focus-visible {
+  opacity: 1;
+}
+
+/* Deterministic per-person tones for the initials fallback. */
+.hr-root .hr-avatar[data-tone='0'] { background: color-mix(in srgb, var(--hz-1, #6366f1) 22%, transparent); color: var(--hz-1, #6366f1); }
+.hr-root .hr-avatar[data-tone='1'] { background: color-mix(in srgb, var(--hz-2, #0ea5e9) 22%, transparent); color: var(--hz-2, #0ea5e9); }
+.hr-root .hr-avatar[data-tone='2'] { background: color-mix(in srgb, var(--hz-3, #10b981) 22%, transparent); color: var(--hz-3, #10b981); }
+.hr-root .hr-avatar[data-tone='3'] { background: color-mix(in srgb, var(--hz-4, #f59e0b) 22%, transparent); color: var(--hz-4, #f59e0b); }
+.hr-root .hr-avatar[data-tone='4'] { background: color-mix(in srgb, var(--hz-5, #ec4899) 22%, transparent); color: var(--hz-5, #ec4899); }
+.hr-root .hr-avatar[data-tone='5'] { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+
+.hr-root .hr-avatar-lg {
+  width: 46px;
+  height: 46px;
+  font-size: 15px;
+}
+
+/* ONE loader for all of HR: a skeleton shaped like the real card so the grid does not jump when data
+   lands. `.hr-sk` already carries the sheen + reduced-motion handling; this only re-heights it. */
+.hr-root .hr-empc-grid .hr-sk {
+  height: 168px;
+}
+
+/* ── Employee detail modal ──────────────────────────────────────────────────── */
+.hr-root .hr-empd {
+  max-width: 620px;
+}
+.hr-root .hr-empd-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-empd-ident {
+  flex: 1;
+  min-width: 0;
+}
+.hr-root .hr-empd-ident h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empd-ident p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.hr-root .hr-empd-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.hr-root .hr-empd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+.hr-root .hr-empd-field {
+  padding: 11px 13px;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, var(--hz-pane));
+  min-width: 0;
+}
+.hr-root .hr-empd-field dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-empd-field dd {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  /* Values wrap rather than overflow the tile — an email is long and a name can be longer. */
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empd-field a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.hr-root .hr-empd-field a:hover {
+  text-decoration: underline;
+}
+
+/* An input with a fixed textual prefix (the Telegram '@'). The prefix is decoration, never part of the
+   value — so the column keeps one canonical bare handle. */
+.hr-root .hr-prefixed {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, var(--hz-pane));
+  overflow: hidden;
+  transition: border-color var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-prefixed:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hz-pane-bd));
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.hr-root .hr-prefixed > span {
+  padding: 0 2px 0 11px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.hr-root .hr-prefixed > input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 2px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.hr-root .hr-prefixed > input:focus {
+  outline: none;
+  box-shadow: none;
+}

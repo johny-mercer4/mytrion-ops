@@ -36,6 +36,7 @@ const SAMPLE = {
   activeCards: 85,
   moneyCode: '3680',
   dot: '2959232',
+  trucks: 1,
   isLocSuspended: false,
   computedIsActive: true,
   computedDebt: 60493.31,
@@ -146,8 +147,8 @@ describe('the trimmed projection never leaks Clients-tab fields', () => {
     expect(Object.keys(row).sort()).toEqual(
       [
         'activeCards',
-        // The TRACK basis: prev-month transacting cards, per the Loyalty Tiers v3 deck. A tier
-        // input, not a Clients-tab leak — the board cannot resolve a track without it.
+        // The MEMBERSHIP GATE: prev-month transacting cards, per the Loyalty Tiers v3 deck. Also the
+        // fallback bucketer when `trucks` is unknown. A tier input, not a Clients-tab leak.
         'activeCardsPrevMonth',
         'activeCardsThisMonth',
         'agentName',
@@ -157,6 +158,8 @@ describe('the trimmed projection never leaks Clients-tab fields', () => {
         'cycleGallons',
         'gallonsPrevMonth',
         'gallonsThisMonth',
+        // The TRACK basis since 2026-07-29: declared fleet size, where 1 truck = Owner-Operator.
+        'trucks',
       ].sort(),
     );
     // Absent: financial / PII columns that belong to Data Center → Clients, not the loyalty board.

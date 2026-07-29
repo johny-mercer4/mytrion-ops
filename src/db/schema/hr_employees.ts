@@ -52,9 +52,34 @@ export const hrEmployees = pgTable(
     /** ISO date YYYY-MM-DD when known. */
     dateOfJoining: text('date_of_joining'),
     mobile: text('mobile'),
+    /** Telegram handle, stored BARE — no leading '@', no t.me/ prefix. The UI renders the '@'. */
+    telegramUsername: text('telegram_username'),
     reportingTo: text('reporting_to'),
     reportingToZohoId: text('reporting_to_zoho_id'),
+    /**
+     * Zoho People's `Photo_downloadUrl`. OAuth-gated, so a browser `<img src>` gets a 401 — this is why
+     * avatars render broken. Kept for provenance; `photoFileId` is what the UI should use.
+     */
     photoUrl: text('photo_url'),
+    /** Our own re-hosted avatar → `file_assets.id`. Served as a presigned URL, which an `<img>` can load. */
+    photoFileId: text('photo_file_id'),
+    /**
+     * Zoho CRM user id of the person who signs in AS this employee — the anchor for HR RBAC.
+     *
+     * Two different Zoho products, two id spaces: `zohoRecordId` above is a Zoho PEOPLE record, while
+     * portal sign-in is Zoho CRM OAuth. Nothing links them, so this is resolved by matching work
+     * EMAIL (case-insensitive, trimmed) — the only field both sides carry. Null means "not resolved",
+     * which HR RBAC must treat as no access rather than as a wildcard.
+     *
+     * A link is only written when the email matches EXACTLY ONE CRM user and EXACTLY ONE employee;
+     * anything ambiguous is left null and reported, because a wrong link here shows one person another
+     * person's private record.
+     */
+    zohoUserId: text('zoho_user_id'),
+    /** How `zohoUserId` was set: `email_match` (automatic) | `manual` (an admin bound it). */
+    zohoUserIdSource: text('zoho_user_id_source'),
+    /** When the link was last (re)resolved — so a stale mapping is visible. */
+    zohoUserLinkedAt: timestamp('zoho_user_linked_at', { withTimezone: true }),
     /** `zoho_people` | `manual` */
     source: text('source').notNull().default('manual'),
     /** Full Zoho People field bag (or last sync snapshot). */
@@ -72,6 +97,17 @@ export const hrEmployees = pgTable(
       .on(table.tenantId, table.employeeId)
       .where(sql`${table.employeeId} IS NOT NULL`),
     emailIdx: index('hr_employees_tenant_email_idx').on(table.tenantId, table.email),
+    /** Plain, NOT unique — two people can legitimately share a handle blank, and duplicates are a
+     *  data-quality question for HR to resolve, not a reason to reject a save. */
+    telegramIdx: index('hr_employees_tenant_telegram_idx').on(table.tenantId, table.telegramUsername),
+    /**
+     * One CRM user maps to AT MOST one employee. Without this the mapping could fan out and two
+     * employee rows would both answer "who is this session", which is an RBAC hole rather than a
+     * data-quality nit.
+     */
+    zohoUserUk: uniqueIndex('hr_employees_tenant_zoho_user_uk')
+      .on(table.tenantId, table.zohoUserId)
+      .where(sql`${table.zohoUserId} IS NOT NULL`),
     deptIdIdx: index('hr_employees_tenant_dept_id_idx').on(table.tenantId, table.departmentId),
     deptZohoIdx: index('hr_employees_tenant_dept_zoho_idx').on(table.tenantId, table.departmentZohoId),
   }),

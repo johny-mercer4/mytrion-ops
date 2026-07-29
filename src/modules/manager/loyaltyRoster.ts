@@ -22,6 +22,8 @@ export interface LoyaltyClientRow {
   companyName: string;
   /** Current owning agent (`dim_company.agent`), '—' when the dim has none. */
   agentName: string;
+  /** Declared fleet size — the program's TRACK basis (1 truck = owner-operator). `null` = unknown. */
+  trucks: number | null;
   /** Total active cards on the account — context only; NOT the track (see _shared/loyalty.ts). */
   activeCards: number;
   /** Cards that actually transacted this calendar month. */
@@ -61,6 +63,7 @@ export async function fetchLoyaltyRoster(): Promise<LoyaltyRosterResult> {
       carrierId: r.carrierId,
       companyName: r.companyName,
       agentName: r.agentName,
+      trucks: r.trucks,
       activeCards: r.activeCards,
       activeCardsThisMonth: r.activeCardsThisMonth,
       activeCardsPrevMonth: r.activeCardsPrevMonth,

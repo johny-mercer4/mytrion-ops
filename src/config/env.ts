@@ -453,7 +453,7 @@ const EnvSchema = z.object({
    *  onboarded by Octane agents only; the roster (list/revoke) in the mini-app stays available. */
   FF_MINIAPP_MANAGER_INVITES_ENABLED: flag('0'),
   // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.
-  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().default(1000),
+  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().max(350).default(350),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
   // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
