@@ -103,6 +103,17 @@ export interface CardLimitsResult {
   message?: string;
 }
 
+export interface CardEfsInfoResult {
+  success?: boolean;
+  carrier_id?: number | string;
+  card_number?: string;
+  status?: string | null;
+  unit_number?: string | null;
+  driver_id?: string | null;
+  driver_name?: string | null;
+  efs_error?: string | null;
+}
+
 export interface EfsCardsResult {
   count?: number;
   data?: Array<{
@@ -507,6 +518,10 @@ export interface TouchpointMap {
   };
   'application.update': { params: { appId: string }; result: WexTasksResult };
   'wex.application': { params: { appId: string }; result: WexApplicationResult };
+  'dwh.card_efs': {
+    params: { carrierId: string; cardNumber: string };
+    result: CardEfsInfoResult;
+  };
   'wex.applications_search': {
     params: {
       appId?: string;

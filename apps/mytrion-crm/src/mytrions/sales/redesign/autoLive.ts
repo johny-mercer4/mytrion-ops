@@ -39,7 +39,14 @@ export interface Deal {
   /** Zoho CRM Deal id when known (Desk ticket creates need this). */
   dealId: string;
 }
-export interface Card { id: string; number: string; status: string; driver: string; unit: string; }
+export interface Card {
+  id: string;
+  number: string;
+  status: string;
+  driver: string;
+  driverId: string;
+  unit: string;
+}
 export interface CardLastUsedRow {
   cardNumber: string;
   status: string;
@@ -324,6 +331,7 @@ function mapCard(r: Record<string, unknown>, i: number): Card {
     number,
     status: normCardStatus(str(r.status)),
     driver: str(r.driver_name ?? r.driverName ?? r.driver),
+    driverId: str(r.driver_id ?? r.driverId),
     unit: str(r.unit_number ?? r.unitNumber ?? r.unit),
   };
 }

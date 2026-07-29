@@ -7618,3 +7618,24 @@ change cannot have moved a dashboard number either.
 Reordered `NAV_GROUPS` in `salesData.ts`: daily → sell (incl. live Retention) →
 measure → soon. Parked tabs (My Tasks, Tickets, Verification, Call Hub) now sit
 at the bottom of the Sales Mytrion sidebar instead of above Automations/Dashboard.
+
+## 2026-07-29 — Sales automations: live WEX guards and EFS card credentials
+
+Added fail-closed WEX state guards for C-27 BOCA, C-14 Close Application and
+C-2/C-19 Application Update — WEX Tasks. The source is servercrm's live WEX
+Salesforce endpoint (`GET /api/wex/application/:appId`), not an additional Zoho
+read. Expansion, Closed/Lost/Closed/Fraud, Disqualified and Cards Produced /
+Cards Sent applications are blocked. BOCA checks before enqueue and again in
+the worker; Close and Application Update check before their downstream work.
+
+Added a matching Sales modal eligibility notice and disabled action state. Added
+a direct single-card EFS read (`dwh.card_efs`) for C-1 activation, C-3
+deactivation and C-26 Unit/Driver Change. The modal now shows current live card
+status, driver name, driver ID and unit number; activation and unit/driver edit
+fields initialize from those live values. EFS verification failures disable the
+action rather than showing stale DWH values as current.
+
+Verification: backend lint (0 errors / 25 pre-existing warnings), typecheck and
+production build; 27 targeted guard/catalog tests; CRM typecheck and production
+build; 12 targeted CRM automation/mapper tests. Full suites still expose the
+branch's unrelated baseline failures (backend 11/1115; CRM 1/268).

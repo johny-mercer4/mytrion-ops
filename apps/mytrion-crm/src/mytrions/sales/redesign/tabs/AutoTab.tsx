@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
-import { callTouchpoint, logAutomation } from '@/api/touchpoints';
+import { logAutomation } from '@/api/touchpoints';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
@@ -11,7 +11,7 @@ import { deptStyle, iconBox, nyDaysAgo, nyToday } from '../salesData';
 import { useLoad, money } from '../live';
 import {
   AUTO_LIST, LIMITTYPES, LIMIT_CHANGE_MAX, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
-  autoIconColor, loadDeals, loadCards, loadMoneyCodePreview, str,
+  autoIconColor, loadDeals, loadCards, loadMoneyCodePreview,
   type Automation, type Deal, type Card, type InvRow,
   type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
@@ -21,7 +21,10 @@ import { AutoDealPicklist, AutoCardPicklist, AutoMacroLoader, cardStatusBadge } 
 import { AutoBocaCloseForm } from '../AutoBocaCloseForm';
 import { AutoDoneStep, hasWideAutoResult } from '../AutoDoneStep';
 import { AutoWexPanel } from '../AutoWexPanel';
-import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
+import { AutoWexEligibilityNotice, useWexActionContext } from '../AutoWexEligibility';
+import { AutoCardCredentialsPanel, useCardCredentials } from '../AutoCardCredentials';
+import { AutoReportFilters } from '../AutoReportFilters';
+import type { TxnReportState } from '../txnReport';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
@@ -31,18 +34,6 @@ const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:14px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:14px;color:var(--danger);line-height:1.5';
-const invRanges = [
-  { label: 'Last 7 Days', range: 'last_7' },
-  { label: 'Last 30 Days', range: 'last_30' },
-  { label: 'Last 90 Days', range: 'last_90' },
-  { label: 'Custom Range', range: 'custom' },
-];
-const invStatuses = [
-  { value: 'all', label: 'All Statuses' },
-  { value: 'PENDING', label: 'Pending' },
-  { value: 'PAID', label: 'Paid' },
-];
-const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label }));
 // Date defaults/bounds follow the NY calendar (the sales floor's day), not the viewer's/UTC —
 // toISOString() here used to show "tomorrow" for late-evening ET users.
 const todayIso = () => nyToday();
@@ -78,8 +69,6 @@ export function AutoTab() {
   const [autoAddr, setAutoAddr] = useState<Addr>({ address: '', city: '', state: '', zip: '' });
   const [autoDue, setAutoDue] = useState('');
   const [autoPriority, setAutoPriority] = useState<AutoPriority>('');
-  const [autoAssignedTo, setAutoAssignedTo] = useState('');
-  const [autoOwnerLoading, setAutoOwnerLoading] = useState(false);
   const [unitDriver, setUnitDriver] = useState<UnitDriverForm>(UD0);
   const [moneyForm, setMoneyForm] = useState<MoneyCodeForm>(MC0);
   const [mcPreview, setMcPreview] = useState<MoneyCodePreview | null>(null);
@@ -130,6 +119,12 @@ export function AutoTab() {
   const cardCarrier = autoModal?.kind === 'card' && autoDeal?.carrier ? autoDeal.carrier : '';
   const cardsLoad = useLoad(() => (cardCarrier ? loadCards(cardCarrier) : Promise.resolve<Card[]>([])), [cardCarrier]);
   const CARD_LIST = cardsLoad.data ?? [];
+  const wexContext = useWexActionContext(autoModal?.id, autoDeal?.app);
+  const cardCredentials = useCardCredentials(
+    autoModal?.id,
+    autoDeal?.carrier,
+    autoCard?.number,
+  );
 
   useEffect(() => {
     if (autoModal?.id !== 'money-code' || !autoDeal?.carrier) {
@@ -145,29 +140,21 @@ export function AutoTab() {
     return () => { off = true; };
   }, [autoModal?.id, autoDeal?.carrier]);
 
-  // BOCA / Close — lock Assigned To to the WEX SF application owner (widget fetchBocaOwner).
   useEffect(() => {
-    const needsOwner = autoModal?.id === 'boca-boe-link' || autoModal?.id === 'close-app';
-    const appId = autoDeal?.app?.trim();
-    if (!needsOwner || !appId || appId === '—') {
-      setAutoAssignedTo('');
-      setAutoOwnerLoading(false);
-      return;
-    }
-    let off = false;
-    setAutoOwnerLoading(true);
-    setAutoAssignedTo('');
-    callTouchpoint('wex.application', { appId })
-      .then((res) => {
-        if (off) return;
-        const app = (res.application ?? {}) as Record<string, unknown>;
-        const name = str(app.ownerName) || str(app['Owner.Name']) || '';
-        if (name) setAutoAssignedTo(name);
-      })
-      .catch(() => { /* non-blocking — field stays empty */ })
-      .finally(() => { if (!off) setAutoOwnerLoading(false); });
-    return () => { off = true; };
-  }, [autoModal?.id, autoDeal?.app]);
+    const current = cardCredentials.data;
+    if (!current || (autoModal?.id !== 'card-activation' && autoModal?.id !== 'unit-driver')) return;
+    setUnitDriver({
+      unitNumber: current.unitNumber,
+      driverId: current.driverId,
+      driverName: current.driverName,
+    });
+  }, [
+    autoModal?.id,
+    autoCard?.number,
+    cardCredentials.data?.unitNumber,
+    cardCredentials.data?.driverId,
+    cardCredentials.data?.driverName,
+  ]);
 
   const openAuto = (a: Automation): void => {
     if (a.soon) return;
@@ -178,7 +165,7 @@ export function AutoTab() {
     setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
     setInvRows([]); setTxnReport(null); setUnitDriver(UD0); setMoneyForm(MC0);
     setAutoAddr({ address: '', city: '', state: '', zip: '' });
-    setAutoDue(''); setAutoPriority(''); setAutoAssignedTo(''); setAutoOwnerLoading(false);
+    setAutoDue(''); setAutoPriority('');
     // WEX search state lives in <AutoWexPanel/>, which remounts per modal open.
   };
 
@@ -206,6 +193,7 @@ export function AutoTab() {
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
   const selectDeal = (d: Deal): void => {
     setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); setAutoCardQuery('');
+    setUnitDriver(UD0);
     // Card actions: open the card picklist so the micro-loader shows while cards fetch.
     setAutoShowCardDrop(autoModal?.kind === 'card');
   };
@@ -213,9 +201,9 @@ export function AutoTab() {
   const setCardQuery = (v: string): void => { setAutoCardQuery(v); setAutoShowCardDrop(true); };
   const selectCard = (c: Card): void => {
     setAutoCard(c); setAutoShowCardDrop(false); setAutoCardQuery('');
-    setUnitDriver({ unitNumber: c.unit || '', driverName: c.driver || '', driverId: '' });
+    setUnitDriver({ unitNumber: c.unit || '', driverName: c.driver || '', driverId: c.driverId || '' });
   };
-  const clearCard = (): void => setAutoCard(null);
+  const clearCard = (): void => { setAutoCard(null); setUnitDriver(UD0); };
   const setAddr = (k: keyof Addr, v: string): void => setAutoAddr((a) => ({ ...a, [k]: v }));
   const setUd = (k: keyof UnitDriverForm, v: string): void => setUnitDriver((f) => ({ ...f, [k]: v }));
   const setMc = (k: keyof MoneyCodeForm, v: string): void => setMoneyForm((f) => ({ ...f, [k]: v }));
@@ -255,7 +243,7 @@ export function AutoTab() {
       txnRange: autoTxnRange, txnFrom: autoTxnFrom, txnTo: autoTxnTo,
       limitId: autoLimitType, limitValue: autoLimitValue, limitDir: autoLimitDir,
       addr: autoAddr, note: '', due: autoDue,
-      assignedTo: autoAssignedTo, priority: autoPriority,
+      assignedTo: wexContext.data?.ownerName ?? '', priority: autoPriority,
       unitDriver, moneyCode: moneyForm,
       setInvRows, setTxnReport,
     })
@@ -304,7 +292,11 @@ export function AutoTab() {
   const addrReady = b?.id !== 'card-replacement' || [autoAddr.address, autoAddr.city, autoAddr.state, autoAddr.zip].every((v) => v.trim());
   const limitDelta = Number(autoLimitValue);
   const limitReady = Number.isFinite(limitDelta) && limitDelta > 0 && limitDelta <= LIMIT_CHANGE_MAX;
-  const canRun = !unavailable && (
+  const wexReady = !wexContext.required
+    || (!wexContext.loading && !wexContext.error && wexContext.data?.allowed === true);
+  const credentialsReady = !cardCredentials.required
+    || (!cardCredentials.loading && !cardCredentials.error && cardCredentials.data !== null);
+  const canRun = !unavailable && wexReady && credentialsReady && (
     kind === 'link' ? true
       : kind === 'invoices' || kind === 'transactions' || kind === 'simple' || kind === 'wex-tasks' ? hasDeal
         : kind === 'money' ? hasDeal && moneyReady
@@ -385,6 +377,14 @@ export function AutoTab() {
                     />
                   )}
 
+                  {wexContext.required && hasDeal && (
+                    <AutoWexEligibilityNotice
+                      loading={wexContext.loading}
+                      error={wexContext.error}
+                      context={wexContext.data}
+                    />
+                  )}
+
                   {needsCard && (
                     <AutoCardPicklist
                       card={autoCard}
@@ -401,6 +401,14 @@ export function AutoTab() {
                       onCloseDrop={() => setAutoShowCardDrop(false)}
                       onSelect={selectCard}
                       onClear={clearCard}
+                    />
+                  )}
+
+                  {cardCredentials.required && hasCard && (
+                    <AutoCardCredentialsPanel
+                      loading={cardCredentials.loading}
+                      error={cardCredentials.error}
+                      credentials={cardCredentials.data}
                     />
                   )}
 
@@ -429,47 +437,11 @@ export function AutoTab() {
                     </div>
                   )}
 
-                  {kind === 'invoices' && (
-                    <div style={s('display:flex;flex-direction:column;gap:12px')}>
-                      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                        <div>
-                          <Lbl t="Quick Date Range" />
-                          <select value={autoInvRange} onChange={(e) => setAutoInvRange(e.target.value)} className="ss-in" style={s(inp42)}>
-                            {invRanges.map((o) => <option key={o.range} value={o.label}>{o.label}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <Lbl t="Status" />
-                          <select value={autoInvStatus} onChange={(e) => setAutoInvStatus(e.target.value)} className="ss-in" style={s(inp42)}>
-                            {invStatuses.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      {autoInvRange === 'Custom Range' && (
-                        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="Start Date" /><input type="date" value={autoInvFrom} onChange={(e) => setAutoInvFrom(e.target.value)} className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="End Date" /><input type="date" value={autoInvTo} min={autoInvFrom} max={todayIso()} onChange={(e) => setAutoInvTo(e.target.value)} className="ss-in" style={s(inp42)} /></div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {kind === 'transactions' && (
-                    <div style={s('display:flex;flex-direction:column;gap:12px')}>
-                      <div>
-                        <Lbl t="Date Range" />
-                        <select value={autoTxnRange} onChange={(e) => setAutoTxnRange(e.target.value)} className="ss-in" style={s(inp42)}>
-                          {txnRanges.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                      {autoTxnRange === 'custom' && (
-                        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="Start Date" /><input type="date" value={autoTxnFrom} max={todayIso()} onChange={(e) => setAutoTxnFrom(e.target.value)} className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="End Date" /><input type="date" value={autoTxnTo} min={autoTxnFrom} max={todayIso()} onChange={(e) => setAutoTxnTo(e.target.value)} className="ss-in" style={s(inp42)} /></div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <AutoReportFilters
+                    kind={kind}
+                    invoice={{ range: autoInvRange, status: autoInvStatus, from: autoInvFrom, to: autoInvTo, onRange: setAutoInvRange, onStatus: setAutoInvStatus, onFrom: setAutoInvFrom, onTo: setAutoInvTo }}
+                    transactions={{ range: autoTxnRange, from: autoTxnFrom, to: autoTxnTo, onRange: setAutoTxnRange, onFrom: setAutoTxnFrom, onTo: setAutoTxnTo }}
+                  />
 
                   {kind === 'money' && hasDeal && (
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
@@ -504,8 +476,8 @@ export function AutoTab() {
                   {(b.id === 'boca-boe-link' || b.id === 'close-app') && hasDeal && (
                     <AutoBocaCloseForm
                       mode={b.id === 'boca-boe-link' ? 'boca' : 'close'}
-                      assignedTo={autoAssignedTo}
-                      assignedToLoading={autoOwnerLoading}
+                      assignedTo={wexContext.data?.ownerName ?? ''}
+                      assignedToLoading={wexContext.loading}
                       priority={autoPriority}
                       due={autoDue}
                       minDue={todayIso()}

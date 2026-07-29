@@ -7,6 +7,7 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
 import { createInboxMessage } from '../inbox/service.js';
 import { payloadToContext, salesBocaRequestJob } from '../jobs/catalog.js';
+import { assertWexApplicationActionAllowed } from '../sales/wexApplicationGuard.js';
 
 type BocaPayload = z.infer<typeof salesBocaRequestJob.schema>;
 
@@ -44,6 +45,9 @@ export async function runBocaRequest(payload: BocaPayload): Promise<Record<strin
   let outcome: Record<string, unknown>;
   let ok = false;
   try {
+    // Re-check at execution time: an application can become Closed/Lost,
+    // Expansion, or Cards Sent after the request was initially queued.
+    await assertWexApplicationActionAllowed(payload.appId, 'BOCA Link Request');
     const result = await browserAutomationRequest<unknown>('POST', path, {
       body: {
         assignedTo: payload.assignedTo,
@@ -88,6 +92,9 @@ export async function submitBocaRequest(
   ctx: TenantContext,
   input: Omit<BocaPayload, 'ctx' | 'requestKey'>,
 ): Promise<{ accepted: true; action: 'queued'; jobId: string | null }> {
+  // Reject synchronously so the agent sees the business guard before a job is
+  // accepted. The worker repeats this check immediately before automation.
+  await assertWexApplicationActionAllowed(input.appId, 'BOCA Link Request');
   const payload: BocaPayload = {
     ctx,
     requestKey: `boca-${ctx.requestId}-${input.appId}-${createId()}`,

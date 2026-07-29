@@ -23,6 +23,7 @@ const card: Card = {
   number: '7083050000001111',
   status: 'Active',
   driver: '',
+  driverId: '',
   unit: '',
 };
 
@@ -99,11 +100,23 @@ describe('live EFS card state', () => {
 
   it('loads the card picker from EFS before considering DWH', async () => {
     callTouchpointMock.mockResolvedValue({
-      data: [{ cardNumber: card.number, status: 'ACTIVE', driverName: 'Alice', unitNumber: 'U-1' }],
+      data: [{
+        cardNumber: card.number,
+        status: 'ACTIVE',
+        driverName: 'Alice',
+        driverId: 'D-7',
+        unitNumber: 'U-1',
+      }],
     });
 
     await expect(loadCards(deal.carrier)).resolves.toEqual([
-      expect.objectContaining({ number: card.number, status: 'active', driver: 'Alice', unit: 'U-1' }),
+      expect.objectContaining({
+        number: card.number,
+        status: 'active',
+        driver: 'Alice',
+        driverId: 'D-7',
+        unit: 'U-1',
+      }),
     ]);
     expect(callTouchpointMock).toHaveBeenCalledOnce();
     expect(callTouchpointMock).toHaveBeenCalledWith('efs.cards', { carrierId: deal.carrier });

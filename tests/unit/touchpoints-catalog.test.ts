@@ -42,8 +42,8 @@ describe('catalog shape', () => {
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
-    // Close Application remains synchronous Playwright; BOCA is a queued local handler.
-    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(1);
+    // BOCA and Close Application are guarded local handlers around Playwright.
+    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(0);
     expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
   });
 
