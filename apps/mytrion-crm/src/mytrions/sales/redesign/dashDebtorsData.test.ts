@@ -121,6 +121,7 @@ describe('filterDebtors', () => {
     );
     expect(debtorsSummary(list)).toEqual({
       totalRemaining: 300,
+      debtorCount: 2,
       pendingCount: 1,
       partialCount: 1,
       hardCount: 1,

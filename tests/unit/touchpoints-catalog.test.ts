@@ -41,7 +41,7 @@ describe('catalog shape', () => {
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
     // BOCA and Close Application are guarded local handlers around Playwright.
     expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(0);
     expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);

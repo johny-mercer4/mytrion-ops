@@ -359,10 +359,13 @@ window.MytrionPdfUtils = (function () {
 
         /* ── Stats row — denser pill row, no separate cover ──────────
            Was 22mm tall; landscape needs ~30% less wasted vertical room. */
+        // When showDiscount is off, Total Spent shows retail (funded + discount)
+        // and the Discount stat is dropped, matching the table totals below.
+        const statSpent = (summary.totalFundedAmount || 0) + (showDiscount ? 0 : (summary.totalDiscount || 0));
         const stats = [
             { label: "Transactions", value: String(summary.totalTransactions || transactions.length) },
-            { label: "Total Spent", value: fmtCurrency(summary.totalFundedAmount || 0) },
-            { label: "Discount", value: fmtCurrency(summary.totalDiscount || 0) },
+            { label: "Total Spent", value: fmtCurrency(statSpent) },
+            ...(showDiscount ? [{ label: "Discount", value: fmtCurrency(summary.totalDiscount || 0) }] : []),
             { label: "Cards", value: String(cardGroups.length) },
         ];
         if (summary.totalGallons != null) {

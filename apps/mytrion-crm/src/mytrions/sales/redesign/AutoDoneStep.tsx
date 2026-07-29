@@ -24,6 +24,8 @@ interface AutoDoneStepProps {
   error: string | null;
   result: DonePayload | null;
   invoiceRows: InvRow[];
+  /** Carrier the invoices were fetched for — scopes the download routes. */
+  invoiceCarrierId: string;
   txnReport: TxnReportState | null;
   runVerb: string;
   successMessage: string;
@@ -37,6 +39,7 @@ export function AutoDoneStep({
   error,
   result,
   invoiceRows,
+  invoiceCarrierId,
   txnReport,
   runVerb,
   successMessage,
@@ -121,7 +124,7 @@ export function AutoDoneStep({
       ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px'
       : 'display:flex;flex-direction:column;gap:14px')}
     >
-      {invoices && <AutoInvoicesPanel rows={invoiceRows} />}
+      {invoices && <AutoInvoicesPanel rows={invoiceRows} carrierId={invoiceCarrierId} />}
       {transactions && <AutoTransactionsPanel report={txnReport} splitLayout />}
       {tracking && (
         <AutoTrackingPanel
