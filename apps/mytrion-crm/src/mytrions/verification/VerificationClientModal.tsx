@@ -20,7 +20,15 @@ const dash = (v: string | number | null | undefined): string =>
   v === '' || v == null ? '—' : String(v);
 
 /** One tile in the 3-column Payment & Verification grid. */
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'danger' | 'accent' }) {
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'danger' | 'accent' | undefined;
+}) {
   return (
     <div className={`vf-stat${tone ? ` is-${tone}` : ''}`}>
       <span className="vf-stat-l">{label}</span>
@@ -144,7 +152,7 @@ function Field({
 }: {
   icon?: React.ReactNode;
   label: string;
-  value?: string | null;
+  value?: string | null | undefined;
   mono?: boolean;
 }) {
   const text = (value ?? '').trim();
