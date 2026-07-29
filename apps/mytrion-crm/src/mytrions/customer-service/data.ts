@@ -18,8 +18,12 @@ export interface Application {
   dot: string;
   phone: string;
   email: string;
+  /** Street line — the Deluge returns it as `Address`. Shown above City/State/ZIP so the row
+   *  carries the full address on file, not just the locality (QA feedback 2026-07-28). */
+  street: string;
   city: string;
   state: string;
+  zip: string;
   credit: number | null;
   trucks: number;
   cards: number;

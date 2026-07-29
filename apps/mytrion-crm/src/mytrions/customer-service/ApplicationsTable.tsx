@@ -244,13 +244,21 @@ export function AppCell({
 
     /* Address summary */
     case 'address': {
-      const short = [app.city, app.state].filter(Boolean).join(', ');
-      return short ? (
-        <span className="cs-app-row-text" title={short}>
-          {short}
-        </span>
-      ) : (
-        MUTED
+      /* Full address on file, not just the locality (QA feedback 2026-07-28). Street on top,
+         "City, ST ZIP" beneath — one line would be too wide for a nowrap column. Records with no
+         street fall back to the locality line alone, which is the old behaviour. */
+      const locality = [[app.city, app.state].filter(Boolean).join(', '), app.zip]
+        .filter(Boolean)
+        .join(' ');
+      if (!app.street && !locality) return MUTED;
+      const full = [app.street, locality].filter(Boolean).join(', ');
+      return (
+        <div className="cs-app-address" title={full}>
+          {app.street ? <div className="cs-app-address-street">{app.street}</div> : null}
+          {locality ? (
+            <div className={app.street ? 'cs-app-address-locality' : 'cs-app-row-text'}>{locality}</div>
+          ) : null}
+        </div>
       );
     }
 
