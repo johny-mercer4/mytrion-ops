@@ -326,6 +326,25 @@
     color: var(--text-primary);
 }
 
+/* Client Name cell: company leads, contact sits beneath it (QA feedback 2026-07-28). Tight line
+   spacing so a two-line cell doesn't change the row rhythm of the table. */
+.cs-root .cs-citi-cell-client {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    line-height: 1.25;
+}
+
+.cs-root .cs-citi-cell-company {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-citi-cell-contact {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 .cs-root .cs-citi-cell-text {
     font-size: 0.8125rem;
     color: var(--text-secondary);

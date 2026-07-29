@@ -44,6 +44,9 @@ export type CitiDecision = string;
 export interface CitiClient {
   id: string;
   name: string;
+  /** Account the record hangs off (Zoho `Company_Name` lookup). Shown above the contact name so a
+   *  row is identifiable at a glance — QA feedback, 2026-07-28. Empty when unlinked. */
+  company: string;
   appId: string;
   status: CitiStatus;
   request: CitiRequest;

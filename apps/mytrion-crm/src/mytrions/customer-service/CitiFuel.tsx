@@ -94,7 +94,14 @@ const CitiTableRow = memo(function CitiTableRow({
           ) : col.date ? (
             <span className="cs-citi-cell-date">{cellValue(row, col)}</span>
           ) : col.key === 'name' ? (
-            <div className="cs-citi-cell-name">{row.name || '—'}</div>
+            /* Company above, contact beneath — QA feedback: a row was hard to identify from a
+               contact name alone. Unlinked records still just show the contact. */
+            <div className="cs-citi-cell-client">
+              {row.company ? <div className="cs-citi-cell-company">{row.company}</div> : null}
+              <div className={row.company ? 'cs-citi-cell-contact' : 'cs-citi-cell-name'}>
+                {row.name || '—'}
+              </div>
+            </div>
           ) : (
             <span className="cs-citi-cell-text">{cellValue(row, col)}</span>
           )}
@@ -160,9 +167,13 @@ export function CitiFuel() {
   const sortedRows = useMemo(() => {
     if (!sortField) return rows;
     const dir = sortDir === 'asc' ? 1 : -1;
+    // The Client Name cell now leads with the company, so sort on what the eye reads first and fall
+    // back to the contact for unlinked records — otherwise the column sorts by an invisible key.
+    const keyOf = (r: CitiRow): string =>
+      (sortField === 'name' ? r.company || r.name : String(r[sortField] ?? '')).toLowerCase();
     return [...rows].sort((a, b) => {
-      const av = String(a[sortField] ?? '').toLowerCase();
-      const bv = String(b[sortField] ?? '').toLowerCase();
+      const av = keyOf(a);
+      const bv = keyOf(b);
       return av < bv ? -dir : av > bv ? dir : 0;
     });
   }, [rows, sortField, sortDir]);

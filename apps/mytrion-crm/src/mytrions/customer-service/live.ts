@@ -277,6 +277,7 @@ function mapCitiRow(r: Record<string, unknown>): CitiRow {
   return {
     id: str(r.id),
     name: str(r.Name),
+    company: lookupName(r.Company_Name),
     appId: str(r.App_ID),
     status: str(r.Status_of_App) as CitiClient['status'],
     request: str(r.Request) as CitiClient['request'],
