@@ -297,6 +297,7 @@ export function HrOrgStructure() {
           mode={deptModal}
           admin={admin}
           departments={departments.data?.items ?? ([] as HrDepartmentDto[])}
+          employees={directory.data?.items ?? []}
           headcount={
             deptModal.kind === 'edit'
               ? {
@@ -311,6 +312,12 @@ export function HrOrgStructure() {
           onSaved={() => {
             setDeptModal(null);
             invalidateHrDepartments();
+            org.reload();
+          }}
+          onDirectoryChanged={() => {
+            invalidateHrEmployees();
+            directory.reload();
+            org.reload();
           }}
         />
       ) : null}
@@ -333,6 +340,11 @@ export function HrOrgStructure() {
         <HrEmployeeDetail
           employee={empDetail}
           admin={admin}
+          departmentColor={
+            empDetail.departmentId
+              ? (deptById.get(empDetail.departmentId)?.iconColor ?? null)
+              : null
+          }
           onClose={() => setEmpDetail(null)}
           onEdit={(emp) => {
             setEmpDetail(null);

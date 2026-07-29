@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { ConflictError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
+import { NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   normalizeDepartmentIcon,
@@ -47,6 +47,7 @@ function toDto(row: HrDepartmentRow) {
     leadName: row.leadName,
     leadZohoId: row.leadZohoId,
     leadEmail: row.leadEmail,
+    leadEmployeeId: row.leadEmployeeId,
     parentName: row.parentName,
     parentZohoId: row.parentZohoId,
     parentId: row.parentId,
@@ -82,6 +83,8 @@ const writeBody = z.object({
   code: z.string().max(40).nullable().optional(),
   mailAlias: z.string().max(254).nullable().optional(),
   leadName: z.string().max(200).nullable().optional(),
+  /** Preferred lead write path — an hr_employees.id; denormalized name/email follow from the row. */
+  leadEmployeeId: z.string().max(80).nullable().optional(),
   parentName: z.string().max(200).nullable().optional(),
   description: z.string().max(4000).nullable().optional(),
   icon: z
@@ -131,6 +134,7 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
       ...(body.code !== undefined ? { code: body.code } : {}),
       ...(body.mailAlias !== undefined ? { mailAlias: body.mailAlias } : {}),
       ...(body.leadName !== undefined ? { leadName: body.leadName } : {}),
+      ...(body.leadEmployeeId !== undefined ? { leadEmployeeId: body.leadEmployeeId } : {}),
       ...(body.parentName !== undefined ? { parentName: body.parentName } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.icon !== undefined ? { icon: body.icon } : {}),
@@ -185,6 +189,7 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
       ...(body.code !== undefined ? { code: body.code } : {}),
       ...(body.mailAlias !== undefined ? { mailAlias: body.mailAlias } : {}),
       ...(body.leadName !== undefined ? { leadName: body.leadName } : {}),
+      ...(body.leadEmployeeId !== undefined ? { leadEmployeeId: body.leadEmployeeId } : {}),
       ...(body.parentName !== undefined ? { parentName: body.parentName } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.icon !== undefined ? { icon: body.icon } : {}),

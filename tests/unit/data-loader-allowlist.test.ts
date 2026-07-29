@@ -37,10 +37,13 @@ describe('Data Loader allowlist safety invariant', () => {
 
   it('revokes schema creation and never grants access-control or audit tables', () => {
     expect(roleSql).toContain('REVOKE CREATE ON SCHEMA public FROM mytrion_loader;');
+    expect(roleSql).toContain(
+      'GRANT REFERENCES ON ALL TABLES IN SCHEMA public TO mytrion_loader;',
+    );
+    expect(roleSql).not.toContain('GRANT SELECT ON ALL TABLES IN SCHEMA public');
     expect(roleSql).not.toMatch(/GRANT .*public\.audit_log TO mytrion_loader/);
     expect(roleSql).not.toMatch(/GRANT .*public\.worker_mytrion_access TO mytrion_loader/);
     expect(roleSql).not.toMatch(/GRANT .*public\.mytrion_profile_defaults TO mytrion_loader/);
     expect(roleSql).not.toMatch(/GRANT .*public\.mytrion_role_defaults TO mytrion_loader/);
   });
 });
-

@@ -5,14 +5,22 @@
  *
  * RBAC is layered. Layer 1 is entering the HR Mytrion at all (`canAccess` in resolveAccess, driven
  * by the access table in access/mytrions.config.ts). Layer 2 is `access(user)` per tab here. Both
- * only shape the UI — once these tabs get real endpoints, the endpoint is the security boundary
- * (HR → an `hr`-gated /v1/hr/*, mirroring Manager's `management` gate).
+ * only shape the UI — write endpoints still re-check Mytrion Admin (`isAdmin` / allDepartmentAccess).
  *
- * Attendance / Requests / Profile stay `soon`. Employees, Departments, and Org Structure
- * are live against `hr_employees` / `hr_departments` (no mock trees).
+ * Profile is NOT a tab: the signed-in username at the bottom of MytrionShell opens the account
+ * profile (picture upload + read-only details). Settings is admin-only (Zoho sync tooling).
  */
 import type { LucideIcon } from 'lucide-react';
-import { Building2, CalendarClock, Home, Inbox, Network, UserRound, Users } from 'lucide-react';
+import {
+  Building2,
+  CalendarClock,
+  Home,
+  Inbox,
+  Network,
+  Settings,
+  Users,
+} from 'lucide-react';
+import { isAdmin } from '../../access/resolveAccess';
 import type { UserContext } from '../../context/userContext';
 
 export type HrTabId =
@@ -22,7 +30,7 @@ export type HrTabId =
   | 'org'
   | 'attendance'
   | 'requests'
-  | 'profile';
+  | 'settings';
 
 export interface HrTab {
   id: HrTabId;
@@ -84,33 +92,31 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'attendance',
-    soon: true,
     label: 'Attendance',
     description: 'Check-ins, hours worked and absence, per employee and per day.',
     icon: CalendarClock,
     tone: 'var(--tone-emerald)',
-    keywords: ['time', 'check-in', 'hours', 'absence', 'shifts'],
+    keywords: ['time', 'check-in', 'hours', 'absence', 'shifts', 'faceid'],
     access: () => true,
   },
   {
     id: 'requests',
-    soon: true,
-    label: 'Requests',
-    description: 'Leave, time-off and other employee requests awaiting a decision.',
+    label: 'Time Off',
+    description: 'Leave balances, company holidays and two-stage approval decisions.',
     icon: Inbox,
     tone: 'var(--tone-amber)',
-    keywords: ['leave', 'time off', 'approvals', 'vacation', 'sick'],
+    keywords: ['leave', 'time off', 'approvals', 'vacation', 'sick', 'holidays', 'balance'],
     access: () => true,
   },
   {
-    id: 'profile',
-    soon: true,
-    label: 'Profile',
-    description: 'One employee record in full — personal, work and reporting details.',
-    icon: UserRound,
+    id: 'settings',
+    label: 'Settings',
+    description: 'Leave policy, holidays, attendance and admin-only HR operations.',
+    icon: Settings,
     tone: 'var(--tone-violet)',
-    keywords: ['record', 'personal', 'details', 'me'],
-    access: () => true,
+    keywords: ['sync', 'zoho', 'migrate', 'admin', 'import', 'leave defaults', 'holidays'],
+    /** Administrator / CEO / allDepartmentAccess — same gate as employee/department writes. */
+    access: (user) => isAdmin(user),
   },
 ];
 

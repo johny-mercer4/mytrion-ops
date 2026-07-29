@@ -8,6 +8,9 @@
  *
  * The icon and colour pickers write a NAME and a TOKEN, never a glyph or a hex value: see
  * `departmentAppearance.tsx` for why that is what makes them safe to render.
+ *
+ * Lead is an employee lookup (`leadEmployeeId`), not free text — the people list below is the same
+ * directory, so adding/removing members and picking a lead share one source of truth.
  */
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
 import { Check, Trash2, X } from 'lucide-react';
@@ -16,6 +19,7 @@ import {
   updateHrDepartment,
   type HrDepartmentDto,
   type HrDepartmentWriteInput,
+  type HrEmployeeDto,
 } from '../../api/hr';
 import { Markdown } from '../../features/chat/Markdown';
 import {
@@ -27,7 +31,9 @@ import {
   departmentTone,
 } from './departmentAppearance';
 import { HrBusy } from './HrBits';
+import { HrDepartmentMembers } from './HrDepartmentMembers';
 import { HrRichText } from './HrRichText';
+import { isActiveStatus } from './hrData';
 import { radioGroupKeyDown, rovingTabIndex, useModalFocus } from './useModalFocus';
 
 export type DepartmentModalMode =
@@ -37,7 +43,7 @@ export type DepartmentModalMode =
 const EMPTY: HrDepartmentWriteInput = {
   name: '',
   code: '',
-  leadName: '',
+  leadEmployeeId: '',
   parentName: '',
   description: '',
   icon: null,
@@ -48,7 +54,7 @@ function toForm(d: HrDepartmentDto): HrDepartmentWriteInput {
   return {
     name: d.name,
     code: d.code ?? '',
-    leadName: d.leadName ?? '',
+    leadEmployeeId: d.leadEmployeeId ?? '',
     parentName: d.parentName ?? '',
     description: d.description ?? '',
     icon: d.icon,
@@ -64,7 +70,7 @@ function normalize(form: HrDepartmentWriteInput): HrDepartmentWriteInput {
   return {
     name: form.name.trim(),
     code: trimOrNull(form.code),
-    leadName: trimOrNull(form.leadName),
+    leadEmployeeId: trimOrNull(form.leadEmployeeId),
     parentName: trimOrNull(form.parentName),
     description: trimOrNull(form.description),
     icon: trimOrNull(form.icon),
@@ -74,22 +80,30 @@ function normalize(form: HrDepartmentWriteInput): HrDepartmentWriteInput {
   };
 }
 
+const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`.trim();
+
 export function HrDepartmentModal({
   mode,
   admin,
   departments,
+  employees,
   headcount,
   onClose,
   onSaved,
+  onDirectoryChanged,
   onDelete,
 }: {
   mode: DepartmentModalMode;
   admin: boolean;
   /** Every department, for the parent picker (and to keep a department off its own parent list). */
   departments: readonly HrDepartmentDto[];
+  /** Directory — lead picker + members list. Already cached by the tab. */
+  employees: readonly HrEmployeeDto[];
   headcount: { total: number; active: number } | undefined;
   onClose: () => void;
   onSaved: () => void;
+  /** Members add/remove mutated employees — refresh the directory without closing the modal. */
+  onDirectoryChanged: () => void;
   onDelete?: (d: HrDepartmentDto) => void;
 }) {
   const [form, setForm] = useState<HrDepartmentWriteInput>(
@@ -138,6 +152,30 @@ export function HrDepartmentModal({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [departments, mode]);
 
+  const leadOptions = useMemo(
+    () =>
+      employees
+        .filter((e) => isActiveStatus(e.status))
+        .slice()
+        .sort((a, b) => displayName(a).localeCompare(displayName(b))),
+    [employees],
+  );
+
+  const leadLabel = useMemo(() => {
+    const id = (form.leadEmployeeId ?? '').trim();
+    if (id) {
+      const hit = employees.find((e) => e.id === id);
+      if (hit) return displayName(hit);
+    }
+    if (mode.kind === 'edit') return mode.department.leadName || '—';
+    return '—';
+  }, [form.leadEmployeeId, employees, mode]);
+
+  const unresolvedLead =
+    mode.kind === 'edit' &&
+    !(form.leadEmployeeId ?? '').trim() &&
+    Boolean(mode.department.leadName);
+
   const tone = departmentTone(form.iconColor);
   const Icon = departmentIcon(form.icon);
   const dialogRef = useModalFocus<HTMLDivElement>();
@@ -173,6 +211,17 @@ export function HrDepartmentModal({
   };
 
   const title = mode.kind === 'create' ? 'New department' : form.name || mode.department.name;
+
+  const membersBlock =
+    mode.kind === 'edit' ? (
+      <HrDepartmentMembers
+        departmentId={mode.department.id}
+        departmentName={form.name || mode.department.name}
+        employees={employees}
+        admin={admin}
+        onChanged={onDirectoryChanged}
+      />
+    ) : null;
 
   return (
     <div
@@ -234,8 +283,7 @@ export function HrDepartmentModal({
               <div className="hr-empd-field">
                 <dt>Lead</dt>
                 <dd>
-                  {form.leadName || '—'}
-                  {/* The old table showed this in its Lead column; the cards had dropped it entirely. */}
+                  {leadLabel}
                   {mode.kind === 'edit' && mode.department.leadEmail ? (
                     <div className="hr-mono hr-empd-sub">{mode.department.leadEmail}</div>
                   ) : null}
@@ -254,6 +302,7 @@ export function HrDepartmentModal({
                 <p className="hr-rt-empty">No description yet.</p>
               )}
             </section>
+            {membersBlock}
           </div>
         ) : (
           <form className={`hr-form${saving ? ' is-saving' : ''}`} onSubmit={(ev) => void onSave(ev)}>
@@ -269,10 +318,23 @@ export function HrDepartmentModal({
                 </label>
                 <label>
                   Lead
-                  <input
-                    value={form.leadName ?? ''}
-                    onChange={(e) => set('leadName', e.target.value)}
-                  />
+                  <select
+                    value={form.leadEmployeeId ?? ''}
+                    onChange={(e) => set('leadEmployeeId', e.target.value || null)}
+                  >
+                    <option value="">—</option>
+                    {unresolvedLead ? (
+                      <option value="" disabled>
+                        {`${mode.kind === 'edit' ? mode.department.leadName : ''} (not linked)`}
+                      </option>
+                    ) : null}
+                    {leadOptions.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {displayName(e)}
+                        {e.designation ? ` · ${e.designation}` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Parent department
@@ -369,6 +431,8 @@ export function HrDepartmentModal({
                 />
               </div>
             </fieldset>
+
+            {membersBlock}
 
             {error ? (
               <p className="hr-banner-error" role="alert">

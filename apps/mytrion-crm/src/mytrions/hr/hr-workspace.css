@@ -838,6 +838,85 @@
 .hr-root .hr-deptm-read .hr-empd-grid {
   margin-top: 0;
 }
+
+/* People assigned to this department — list + add picker inside the department modal. */
+.hr-root .hr-deptm-members {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-deptm-members h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.hr-root .hr-deptm-members-count {
+  font-family: var(--font-body, inherit);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.hr-root .hr-deptm-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.hr-root .hr-deptm-member-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dc, var(--accent)) 6%, transparent);
+}
+.hr-root .hr-deptm-member-list li.is-busy {
+  opacity: 0.55;
+}
+.hr-root .hr-deptm-member-ident {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.hr-root .hr-deptm-member-ident strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-deptm-member-ident span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-deptm-member-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hr-root .hr-deptm-member-add label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
 /* React Flow's own stylesheet already sizes its root to 100%; this pins it so a future container
    change cannot collapse the canvas to zero height without the rule being visible here. */
 .hr-root .hr-ocanvas-flow {
@@ -860,4 +939,37 @@
 /* Department-card skeletons match the department grid's card height. */
 .hr-root .hr-deptc-grid .hr-sk {
   height: 186px;
+}
+
+/* Admin Settings — Zoho sync card. */
+.hr-root .hr-settings-card {
+  margin-top: 8px;
+  padding: 18px 20px;
+  border-radius: var(--hr-r-md, 14px);
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  background: var(--hz-pane, var(--surface));
+  max-width: 640px;
+}
+.hr-root .hr-settings-card h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+}
+.hr-root .hr-settings-card > p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.hr-root .hr-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hr-root .hr-settings-ok {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--tone-emerald, var(--accent));
+  font-family: var(--font-mono, ui-monospace, monospace);
 }

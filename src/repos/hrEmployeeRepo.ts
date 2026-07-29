@@ -1,10 +1,10 @@
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { hrEmployees, type HrEmployee, type NewHrEmployee } from '../db/schema/index.js';
 import { resolveDepartmentId } from '../modules/hr/resolveDepartmentLink.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { hrDepartmentRepo } from './hrDepartmentRepo.js';
-import { firstOrThrow, firstOrUndefined, isUniqueViolation } from './util.js';
+import { firstOrThrow, firstOrUndefined } from './util.js';
 
 export interface HrEmployeeListOpts {
   q?: string;
@@ -30,6 +30,7 @@ export interface ManualEmployeeInput {
   role?: string | null;
   dateOfJoining?: string | null;
   mobile?: string | null;
+  faceId?: string | null;
   telegramUsername?: string | null;
   reportingTo?: string | null;
   /** The manager as an id — what the org canvas sets. `reportingTo` is kept in sync from it. */
@@ -64,6 +65,7 @@ const EMPLOYEE_COLUMNS = {
   role: hrEmployees.role,
   dateOfJoining: hrEmployees.dateOfJoining,
   mobile: hrEmployees.mobile,
+  faceId: hrEmployees.faceId,
   telegramUsername: hrEmployees.telegramUsername,
   reportingTo: hrEmployees.reportingTo,
   reportingToZohoId: hrEmployees.reportingToZohoId,
@@ -220,6 +222,59 @@ export const hrEmployeeRepo = {
     return firstOrUndefined(rows);
   },
 
+  /** Biometric / Hikvision Face ID → employee (exact trim match). */
+  async findByFaceId(ctx: TenantContext, faceId: string): Promise<HrEmployeeRow | undefined> {
+    const id = faceId.trim();
+    if (!id) return undefined;
+    const rows = await db
+      .select(EMPLOYEE_COLUMNS)
+      .from(hrEmployees)
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.faceId, id)))
+      .limit(1);
+    return firstOrUndefined(rows);
+  },
+
+  /** Direct reports — people whose manager FK points at `managerEmployeeId`. */
+  async listByReportingTo(
+    ctx: TenantContext,
+    managerEmployeeId: string,
+    opts: { status?: string; limit?: number } = {},
+  ): Promise<HrEmployeeRow[]> {
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 500);
+    const clauses = [
+      eq(hrEmployees.tenantId, ctx.tenantId),
+      eq(hrEmployees.reportingToEmployeeId, managerEmployeeId),
+    ];
+    if (opts.status?.trim()) clauses.push(eq(hrEmployees.status, opts.status.trim()));
+    return db
+      .select(EMPLOYEE_COLUMNS)
+      .from(hrEmployees)
+      .where(and(...clauses))
+      .orderBy(asc(hrEmployees.lastName), asc(hrEmployees.firstName))
+      .limit(limit);
+  },
+
+  /** Employees in any of the given departments (empty ids → []). */
+  async listByDepartmentIds(
+    ctx: TenantContext,
+    departmentIds: string[],
+    opts: { status?: string; limit?: number } = {},
+  ): Promise<HrEmployeeRow[]> {
+    if (departmentIds.length === 0) return [];
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 500);
+    const clauses = [
+      eq(hrEmployees.tenantId, ctx.tenantId),
+      inArray(hrEmployees.departmentId, departmentIds),
+    ];
+    if (opts.status?.trim()) clauses.push(eq(hrEmployees.status, opts.status.trim()));
+    return db
+      .select(EMPLOYEE_COLUMNS)
+      .from(hrEmployees)
+      .where(and(...clauses))
+      .orderBy(asc(hrEmployees.lastName), asc(hrEmployees.firstName))
+      .limit(limit);
+  },
+
   async count(
     ctx: TenantContext,
     opts: Omit<HrEmployeeListOpts, 'limit' | 'offset'> = {},
@@ -294,6 +349,7 @@ export const hrEmployeeRepo = {
        * MISSING: `telegramUsername` was on the input type and on the form, so the field looked saved
        * and silently wasn't — a create never wrote it and an edit never updated it.
        */
+      faceId: input.faceId?.trim() || null,
       telegramUsername: input.telegramUsername?.trim() || null,
       reportingTo: input.reportingTo?.trim() || null,
       reportingToEmployeeId: input.reportingToEmployeeId?.trim() || null,
@@ -331,6 +387,7 @@ export const hrEmployeeRepo = {
       updates.dateOfJoining = patch.dateOfJoining?.trim() || null;
     }
     if (patch.mobile !== undefined) updates.mobile = patch.mobile?.trim() || null;
+    if (patch.faceId !== undefined) updates.faceId = patch.faceId?.trim() || null;
     // See createManual: this branch was missing too, so editing a Telegram handle was a no-op.
     if (patch.telegramUsername !== undefined) {
       updates.telegramUsername = patch.telegramUsername?.trim() || null;

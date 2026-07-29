@@ -90,6 +90,12 @@ export function HrEmployees() {
 
   const deptOptions = departments.data?.items ?? [];
   const designationOptions = designations.data ?? [];
+  /** id → iconColor token — cards colour their department chip from this, not a fixed accent. */
+  const deptColorById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const d of deptOptions) map.set(d.id, d.iconColor);
+    return map;
+  }, [deptOptions]);
   const total = directory.data?.total ?? 0;
   const filtered = visible.length;
   const isFiltered = Boolean(q.trim() || status !== 'all' || departmentId || designation);
@@ -258,6 +264,9 @@ export function HrEmployees() {
               employee={e}
               admin={admin}
               busy={deletingId === e.id}
+              departmentColor={
+                e.departmentId ? (deptColorById.get(e.departmentId) ?? null) : null
+              }
               onOpen={setDetail}
               onEdit={(emp) => setFormMode({ kind: 'edit', employee: emp })}
               onDelete={(emp) => void onDelete(emp)}
@@ -270,6 +279,9 @@ export function HrEmployees() {
         <HrEmployeeDetail
           employee={detail}
           admin={admin}
+          departmentColor={
+            detail.departmentId ? (deptColorById.get(detail.departmentId) ?? null) : null
+          }
           onClose={() => setDetail(null)}
           onEdit={(emp) => {
             setDetail(null);

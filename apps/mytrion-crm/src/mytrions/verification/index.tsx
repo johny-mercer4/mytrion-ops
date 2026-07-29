@@ -1,17 +1,23 @@
 import { FileCheck2, Home, SlidersHorizontal, Users } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
+import { VerificationClients } from './tabs/VerificationClients';
+import './verification.css';
 
 /**
  * Verification Mytrion — credit and compliance decisioning.
  *
- * STRUCTURAL ONLY. The previous module rendered a full applications queue, an application modal, a
- * configuration screen and an inbox built on ~330 lines of invented fixtures (`data.ts`) — 7 fake
- * applications, 5 client requests, 8 notifications. All of it was deleted rather than carried
- * forward: a fabricated credit application is indistinguishable from a real one at a glance.
+ * Main / Applications / Configuration Ruleset are still STRUCTURAL ONLY — the previous module rendered
+ * a full applications queue, an application modal, a configuration screen and an inbox built on ~330
+ * lines of invented fixtures (`data.ts`), all deleted rather than carried forward: a fabricated credit
+ * application is indistinguishable from a real one at a glance. Approving/declining or editing a
+ * scoring rule is a write against someone's credit outcome, so those wait on an audited, role-gated
+ * endpoint — not a queue or a form that only looks real.
  *
- * There IS a real backend to wire to — `src/modules/verificationPipeline/service.ts` and
- * `routes/v1/verificationPipeline.routes.ts` already read the verification DB — so these tabs name
- * it as their source instead of guessing.
+ * Existing clients IS live — `src/modules/verification/verificationClients.ts` +
+ * `routes/v1/verificationClients.routes.ts` read `octane.dim_company` company-wide (read-only; the
+ * DWH can't be written), gated on the `verification` department. Distinct from the Sales redesign's
+ * own "Verification Pipeline" tab (`verificationPipeline.routes.ts`), which is the caller's own
+ * deal-clients plus a mock compliance-stage snapshot — different audience, different data, on purpose.
  */
 const TABS: ModuleTab[] = [
   {
@@ -51,15 +57,11 @@ const TABS: ModuleTab[] = [
   {
     id: 'clients',
     label: 'Existing clients',
-    description: 'Re-verification and compliance status for clients already on the books.',
+    description: 'Every carrier company-wide, with the payment and credit terms on file.',
     icon: Users,
     tone: 'var(--tone-emerald)',
-    keywords: ['existing', 're-verification', 'compliance', 'review', 'renewal'],
-    soon: {
-      title: 'Existing clients',
-      body: 'Periodic re-verification for clients already fuelling — who is due for review, and what changed since they were approved. Reads the same carrier spine Finance and Sales use, so the figures reconcile.',
-      sources: ['octane.dim_company', 'verification DB'],
-    },
+    keywords: ['existing', 're-verification', 'compliance', 'review', 'renewal', 'roster', 'clients'],
+    content: <VerificationClients />,
   },
 ];
 

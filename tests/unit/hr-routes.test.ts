@@ -110,6 +110,7 @@ function employeeRow(overrides: Partial<HrEmployee> = {}): HrEmployee {
     role: 'Staff',
     dateOfJoining: '2020-01-01',
     mobile: null,
+    faceId: null,
     reportingTo: null,
     reportingToZohoId: null,
     /** The id-based manager link + canvas position the org chart drags onto — unset by default. */

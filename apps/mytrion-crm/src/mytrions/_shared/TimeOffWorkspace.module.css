@@ -1,0 +1,600 @@
+.workspace {
+  --to-card: color-mix(in srgb, var(--surface, #fff) 92%, transparent);
+  --to-line: color-mix(in srgb, var(--border, #d9dfeb) 82%, transparent);
+  --to-muted: var(--text-muted, #687386);
+  --to-accent: #ee5f91;
+  color: var(--text-primary, #182033);
+  min-height: 0;
+  padding: 26px;
+  overflow: auto;
+}
+
+.embedded { min-height: calc(100vh - 92px); padding: 34px 42px 72px; }
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.header h2 {
+  margin: 4px 0 3px;
+  font-family: var(--font-display, inherit);
+  font-size: clamp(28px, 3vw, 39px);
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+
+.header p { margin: 0; color: var(--to-muted); font-size: 13px; }
+
+.eyebrow,
+.panelTitle > div > span,
+.sectionTitle span,
+.listHead span {
+  color: var(--to-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.headerActions,
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.primaryBtn,
+.secondaryBtn,
+.dangerBtn,
+.iconBtn {
+  border: 1px solid var(--to-line);
+  border-radius: 11px;
+  min-height: 40px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: inherit;
+  background: var(--to-card);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.primaryBtn {
+  color: white;
+  border-color: transparent;
+  background: linear-gradient(135deg, #ef5f91, #bf4fed);
+  box-shadow: 0 9px 22px rgba(223, 82, 152, .22);
+}
+
+.dangerBtn {
+  color: #df546a;
+  border-color: color-mix(in srgb, #df546a 35%, var(--to-line));
+}
+
+.primaryBtn:hover,
+.secondaryBtn:hover,
+.dangerBtn:hover,
+.iconBtn:hover {
+  transform: translateY(-1px);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled,
+.dangerBtn:disabled {
+  cursor: wait;
+  opacity: .58;
+  transform: none;
+}
+
+.iconBtn { width: 38px; min-height: 38px; padding: 0; }
+
+.yearPicker {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--to-line);
+  border-radius: 11px;
+  background: var(--to-card);
+}
+
+.yearPicker select {
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 22px;
+  padding: 5px;
+  border: 1px solid var(--to-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--to-card) 64%, transparent);
+  overflow-x: auto;
+}
+
+.tabs button {
+  min-height: 37px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 14px;
+  color: var(--to-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tabs button span {
+  margin-left: 5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 10px;
+}
+
+.tabs .tabActive {
+  color: var(--text-primary, #182033);
+  background: var(--to-card);
+  box-shadow: 0 4px 14px rgba(8, 16, 38, .08);
+}
+
+.summary { display: grid; gap: 18px; }
+
+.balanceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.balanceCard {
+  position: relative;
+  min-height: 206px;
+  padding: 18px;
+  border: 1px solid var(--to-line);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--leave-tone) 20%, transparent), transparent 48%),
+    var(--to-card);
+  overflow: hidden;
+}
+
+.tone_sick { --leave-tone: #ed668a; } .tone_annual_paid { --leave-tone: #55b6ff; } .tone_unpaid { --leave-tone: #a779f4; }
+
+.balanceTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.balanceIcon,
+.requestIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--leave-tone);
+  border: 1px solid color-mix(in srgb, var(--leave-tone) 36%, transparent);
+  background: color-mix(in srgb, var(--leave-tone) 12%, transparent);
+}
+
+.balanceIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+}
+
+.paidPill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--to-muted);
+  background: color-mix(in srgb, var(--to-muted) 9%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.balanceCard h3 { margin: 14px 0 8px; font-size: 13px; }
+
+.balanceValue {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.balanceValue strong {
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -.04em;
+}
+
+.balanceValue span,
+.balanceMeta,
+.muted {
+  color: var(--to-muted);
+  font-size: 10px;
+}
+
+.balanceTrack {
+  height: 5px;
+  margin: 16px 0 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--to-muted) 12%, transparent);
+  overflow: hidden;
+}
+
+.balanceTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--leave-tone);
+}
+
+.balanceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.holidays,
+.requestList,
+.formPanel,
+.detailPanel {
+  border: 1px solid var(--to-line);
+  border-radius: 17px;
+  background: var(--to-card);
+  box-shadow: 0 20px 45px rgba(5, 12, 31, .08);
+}
+
+.holidays {
+  padding: 18px;
+}
+
+.sectionTitle,
+.listHead,
+.panelTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sectionTitle h3,
+.listHead h3,
+.panelTitle h3 {
+  margin: 3px 0 0;
+  font-size: 17px;
+  letter-spacing: -.02em;
+}
+
+.sectionTitle > svg {
+  color: #e5a52f;
+}
+
+.holidayList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.holidayRow {
+  min-height: 52px;
+  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: 55px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--to-line) 70%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--to-card) 74%, transparent);
+}
+
+.holidayDate { color: #e5a52f; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+
+.holidayRow strong {
+  font-size: 12px;
+}
+
+.holidayRow > span:last-child {
+  color: var(--to-muted);
+  font-size: 10px;
+}
+
+.requestList {
+  overflow: hidden;
+}
+
+.listHead,
+.panelTitle {
+  padding: 17px 18px;
+  border-bottom: 1px solid var(--to-line);
+}
+
+.requestRow {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 17px;
+  display: grid;
+  grid-template-columns: 40px minmax(170px, 1fr) 52px 125px 18px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--to-line) 75%, transparent);
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.requestRow:hover {
+  background: color-mix(in srgb, var(--to-accent) 5%, transparent);
+}
+
+.requestIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+}
+
+.requestMain {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.requestMain strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestMain span,
+.requestDays,
+.detailHero small,
+.detailStatus span,
+.timelineItem small {
+  color: var(--to-muted);
+  font-size: 10px;
+}
+
+.requestDays {
+  font-weight: 800;
+}
+
+.status {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.statusPending { color: #c48219; background: rgba(226, 161, 48, .12); }
+.statusApproved { color: #1d9a73; background: rgba(49, 182, 136, .12); }
+.statusClosed { color: #b26675; background: rgba(194, 92, 112, .11); }
+.chevron { color: var(--to-muted); opacity: .65; }
+
+.empty,
+.loading {
+  min-height: 240px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.empty > span {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: var(--to-accent);
+  background: color-mix(in srgb, var(--to-accent) 10%, transparent);
+}
+
+.empty strong { font-size: 13px; }
+.empty p { max-width: 340px; margin: 6px 0; color: var(--to-muted); font-size: 11px; }
+.loading { gap: 10px; color: var(--to-muted); font-size: 12px; }
+
+.formPanel,
+.detailPanel {
+  max-width: 850px;
+  max-height: calc(92vh - 240px);
+  margin: 0 auto;
+  overflow: auto;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span,
+.reason > span {
+  color: var(--to-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.fieldWide { grid-column: 1 / -1; }
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--to-line);
+  border-radius: 10px;
+  outline: 0;
+  padding: 10px 11px;
+  color: inherit;
+  background: color-mix(in srgb, var(--to-card) 80%, transparent);
+  font: inherit;
+  font-size: 12px;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: color-mix(in srgb, var(--to-accent) 72%, var(--to-line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--to-accent) 10%, transparent);
+}
+
+.workflowHint,
+.detailStatus {
+  margin: 0 18px 16px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, #8c6df0 28%, var(--to-line));
+  border-radius: 11px;
+  color: #8c6df0;
+  background: color-mix(in srgb, #8c6df0 7%, transparent);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.formActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--to-line);
+  background: color-mix(in srgb, var(--to-card) 96%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.error {
+  margin: 12px 18px;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 80, 105, .25);
+  border-radius: 10px;
+  color: #d65069;
+  background: rgba(220, 80, 105, .08);
+  font-size: 11px;
+}
+
+.detailHero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px;
+}
+
+.detailHero > div {
+  padding: 13px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--to-line);
+  border-radius: 11px;
+}
+
+.detailHero span {
+  color: var(--to-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.detailHero strong { font-size: 13px; }
+.detailStatus > div { display: grid; gap: 2px; color: inherit; }
+.detailStatus strong { font-size: 11px; }
+
+.reason {
+  margin: 0 18px 16px;
+  padding: 12px;
+  border: 1px solid var(--to-line);
+  border-radius: 11px;
+}
+
+.reason p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.timeline {
+  margin: 0 18px 18px;
+  padding: 2px 0;
+}
+
+.timelineItem {
+  position: relative;
+  min-height: 45px;
+  padding-left: 25px;
+  display: grid;
+}
+
+.timelineItem:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: -4px;
+  left: 6px;
+  width: 1px;
+  background: var(--to-line);
+}
+
+.timelineDot {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--to-card);
+  border-radius: 50%;
+  background: var(--to-accent);
+}
+
+.timelineItem > div { display: grid; gap: 2px; }
+.timelineItem strong { font-size: 11px; text-transform: capitalize; }
+.timelineItem p { margin: 3px 0; color: var(--to-muted); font-size: 11px; }
+.detailPanel > .field { margin: 0 18px 16px; }
+
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .embedded { padding: 24px; }
+  .balanceGrid { grid-template-columns: 1fr; }
+  .holidayList { grid-template-columns: 1fr; }
+}
+@media (max-width: 650px) {
+  .workspace { padding: 18px; }
+  .header { align-items: stretch; flex-direction: column; }
+  .headerActions { justify-content: space-between; }
+  .formGrid, .detailHero { grid-template-columns: 1fr; }
+  .fieldWide { grid-column: auto; }
+  .requestRow { grid-template-columns: 38px 1fr auto; }
+  .requestDays, .status { display: none; }
+}

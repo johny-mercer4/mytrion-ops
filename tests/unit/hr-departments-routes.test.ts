@@ -85,6 +85,7 @@ function deptRow(overrides: Partial<HrDepartment> = {}): HrDepartment {
     leadName: null,
     leadZohoId: null,
     leadEmail: null,
+    leadEmployeeId: null,
     parentName: null,
     parentZohoId: null,
     parentId: null,

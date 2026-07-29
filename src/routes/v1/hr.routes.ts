@@ -56,6 +56,7 @@ function toDto(row: HrEmployeeRow) {
     role: row.role,
     dateOfJoining: row.dateOfJoining,
     mobile: row.mobile,
+    faceId: row.faceId,
     telegramUsername: row.telegramUsername,
     reportingTo: row.reportingTo,
     reportingToZohoId: row.reportingToZohoId,
@@ -93,6 +94,8 @@ const writeBody = z.object({
   role: z.string().max(200).nullable().optional(),
   dateOfJoining: z.string().max(40).nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
+  /** Zoho People `Face_ID` — biometric / access id. Text, not integer (zero-padded values). */
+  faceId: z.string().max(80).nullable().optional(),
   /**
    * Telegram handle. Stored BARE — a leading '@' and any t.me/ prefix are stripped on write so the
    * column holds one canonical form and the UI owns the presentation.
@@ -256,6 +259,21 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  /**
+   * The signed-in worker's own employee row (when linked via `zoho_user_id`).
+   * Read-only — used by the profile panel. Missing link → 404 (UI shows session fields only).
+   */
+  app.get('/hr/me', auth, async (request) => {
+    const ctx = requireHrInternal(request);
+    const zohoUserId = ctx.userId.startsWith('zoho:')
+      ? ctx.userId.replace(/^zoho:/, '')
+      : '';
+    if (!zohoUserId) throw new NotFoundError('No employee record linked to this sign-in');
+    const row = await hrEmployeeRepo.findByZohoUserId(ctx, zohoUserId);
+    if (!row) throw new NotFoundError('No employee record linked to this sign-in');
+    return toDto(row);
+  });
+
   app.get('/hr/employees', auth, async (request) => {
     const ctx = requireHrInternal(request);
     const q = listQuery.parse(request.query);
@@ -296,6 +314,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
       ...(body.role !== undefined ? { role: body.role } : {}),
       ...(body.dateOfJoining !== undefined ? { dateOfJoining: body.dateOfJoining } : {}),
       ...(body.mobile !== undefined ? { mobile: body.mobile } : {}),
+      ...(body.faceId !== undefined ? { faceId: body.faceId } : {}),
       // Was omitted here (and in the PATCH below), so the Telegram field on the form never reached
       // the repo — the handle appeared to save and did not.
       ...(body.telegramUsername !== undefined ? { telegramUsername: body.telegramUsername } : {}),
@@ -361,6 +380,7 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
       ...(body.role !== undefined ? { role: body.role } : {}),
       ...(body.dateOfJoining !== undefined ? { dateOfJoining: body.dateOfJoining } : {}),
       ...(body.mobile !== undefined ? { mobile: body.mobile } : {}),
+      ...(body.faceId !== undefined ? { faceId: body.faceId } : {}),
       ...(body.telegramUsername !== undefined ? { telegramUsername: body.telegramUsername } : {}),
       ...(body.reportingTo !== undefined ? { reportingTo: body.reportingTo } : {}),
       ...(body.reportingToEmployeeId !== undefined

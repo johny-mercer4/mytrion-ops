@@ -53,6 +53,11 @@ export const hrEmployees = pgTable(
     /** ISO date YYYY-MM-DD when known. */
     dateOfJoining: text('date_of_joining'),
     mobile: text('mobile'),
+    /**
+     * Zoho People `Face_ID` — biometric / access-control id used on site. Stored as text (values are
+     * zero-padded numerics like `00000390`, not integers we should parse).
+     */
+    faceId: text('face_id'),
     /** Telegram handle, stored BARE — no leading '@', no t.me/ prefix. The UI renders the '@'. */
     telegramUsername: text('telegram_username'),
     reportingTo: text('reporting_to'),
@@ -118,6 +123,7 @@ export const hrEmployees = pgTable(
     /** Plain, NOT unique — two people can legitimately share a handle blank, and duplicates are a
      *  data-quality question for HR to resolve, not a reason to reject a save. */
     telegramIdx: index('hr_employees_tenant_telegram_idx').on(table.tenantId, table.telegramUsername),
+    faceIdIdx: index('hr_employees_tenant_face_id_idx').on(table.tenantId, table.faceId),
     /**
      * One CRM user maps to AT MOST one employee. Without this the mapping could fan out and two
      * employee rows would both answer "who is this session", which is an RBAC hole rather than a

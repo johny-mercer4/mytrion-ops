@@ -6,7 +6,13 @@ import { useUserContext } from '../../../context/UserContextProvider';
 import { formatCachedAt } from '../../_shared/swrCache';
 import { HrDepartmentCard } from '../HrDepartmentCard';
 import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModal';
-import { invalidateHrDepartments, isActiveStatus, useHrDepartments, useHrDirectory } from '../hrData';
+import {
+  invalidateHrDepartments,
+  invalidateHrEmployees,
+  isActiveStatus,
+  useHrDepartments,
+  useHrDirectory,
+} from '../hrData';
 import {
   HrCardGridSkeleton,
   HrEmpty,
@@ -205,11 +211,16 @@ export function HrDepartments() {
           mode={modal}
           admin={admin}
           departments={items}
+          employees={directory.data?.items ?? []}
           headcount={modal.kind === 'edit' ? headcountFor(modal.department.id) : undefined}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);
             invalidateHrDepartments();
+          }}
+          onDirectoryChanged={() => {
+            invalidateHrEmployees();
+            directory.reload();
           }}
           onDelete={(dep) => void onDelete(dep)}
         />

@@ -31,6 +31,7 @@ export interface UpsertFromZohoInput {
   role?: string | null;
   dateOfJoining?: string | null;
   mobile?: string | null;
+  faceId?: string | null;
   reportingTo?: string | null;
   reportingToZohoId?: string | null;
   photoUrl?: string | null;
@@ -128,6 +129,7 @@ export const hrEmployeeSyncRepo = {
         role: input.role?.trim() || null,
         dateOfJoining: input.dateOfJoining?.trim() || null,
         mobile: input.mobile?.trim() || null,
+        faceId: input.faceId?.trim() || null,
         reportingTo: input.reportingTo?.trim() || null,
         reportingToZohoId: input.reportingToZohoId?.trim() || null,
         photoUrl: input.photoUrl?.trim() || null,
@@ -161,6 +163,7 @@ export const hrEmployeeSyncRepo = {
             role: sql`excluded.role`,
             dateOfJoining: sql`excluded.date_of_joining`,
             mobile: sql`excluded.mobile`,
+            faceId: sql`excluded.face_id`,
             reportingTo: sql`excluded.reporting_to`,
             reportingToZohoId: sql`excluded.reporting_to_zoho_id`,
             photoUrl: sql`excluded.photo_url`,
@@ -198,6 +201,7 @@ export const hrEmployeeSyncRepo = {
       role: input.role?.trim() || null,
       dateOfJoining: input.dateOfJoining?.trim() || null,
       mobile: input.mobile?.trim() || null,
+      faceId: input.faceId?.trim() || null,
       reportingTo: input.reportingTo?.trim() || null,
       reportingToZohoId: input.reportingToZohoId?.trim() || null,
       photoUrl: input.photoUrl?.trim() || null,

@@ -43,6 +43,7 @@ const EMPTY_FORM: HrEmployeeWriteInput = {
   role: '',
   dateOfJoining: '',
   mobile: '',
+  faceId: '',
   reportingToEmployeeId: '',
 };
 
@@ -62,6 +63,7 @@ function toForm(e: HrEmployeeDto): HrEmployeeWriteInput {
     role: e.role ?? '',
     dateOfJoining: e.dateOfJoining ?? '',
     mobile: e.mobile ?? '',
+    faceId: e.faceId ?? '',
     reportingToEmployeeId: e.reportingToEmployeeId ?? '',
   };
 }
@@ -98,6 +100,7 @@ function normalizeWrite(
     role: trimOrNull(form.role),
     dateOfJoining: trimOrNull(form.dateOfJoining),
     mobile: trimOrNull(form.mobile),
+    faceId: trimOrNull(form.faceId),
     // Only the id is sent (the backend resolves `reportingTo` from it), and only if it changed.
     ...((form.reportingToEmployeeId ?? '') !== initialManagerId
       ? { reportingToEmployeeId: trimOrNull(form.reportingToEmployeeId) }
@@ -348,6 +351,17 @@ export function HrEmployeeForm({
               <label>
                 Mobile
                 <input value={form.mobile ?? ''} onChange={(e) => set('mobile', e.target.value)} />
+              </label>
+              <label>
+                Face ID
+                <input
+                  value={form.faceId ?? ''}
+                  onChange={(e) => set('faceId', e.target.value)}
+                  placeholder="e.g. 00000390"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
               </label>
               <label>
                 Reporting to

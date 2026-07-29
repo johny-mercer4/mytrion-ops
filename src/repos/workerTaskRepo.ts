@@ -24,6 +24,8 @@ export interface CreateWorkerTaskInput {
   deadlineAt?: Date | null;
   priority?: WorkerTaskPriority;
   source: WorkerTaskSource;
+  /** Manager desk slug; defaults to `sales` for legacy callers. */
+  department?: string;
   externalId?: string | null;
   webhookKeyId?: string | null;
   idempotencyKey?: string | null;
@@ -64,6 +66,7 @@ export const workerTaskRepo = {
     filter: {
       assigneeZohoUserId?: string;
       status?: WorkerTaskStatus;
+      department?: string;
       limit?: number;
       offset?: number;
     } = {},
@@ -73,6 +76,9 @@ export const workerTaskRepo = {
       clauses.push(eq(mytrionWorkerTasks.assigneeZohoUserId, filter.assigneeZohoUserId));
     }
     if (filter.status) clauses.push(eq(mytrionWorkerTasks.status, filter.status));
+    if (filter.department?.trim()) {
+      clauses.push(eq(mytrionWorkerTasks.department, filter.department.trim()));
+    }
     return db
       .select()
       .from(mytrionWorkerTasks)
@@ -145,6 +151,7 @@ export const workerTaskRepo = {
           idempotencyKey: input.idempotencyKey ?? null,
           payloadHash: input.payloadHash ?? null,
           externalId: input.externalId ?? null,
+          department: input.department?.trim() || 'sales',
           taskType: input.taskType,
           subject: input.subject,
           description: input.description ?? null,

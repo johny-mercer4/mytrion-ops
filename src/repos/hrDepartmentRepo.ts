@@ -1,10 +1,56 @@
 import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { hrDepartments, type HrDepartment, type NewHrDepartment } from '../db/schema/index.js';
+import {
+  hrDepartments,
+  hrEmployees,
+  type HrDepartment,
+  type NewHrDepartment,
+} from '../db/schema/index.js';
 import { ConflictError } from '../lib/errors.js';
 import { resolveParentDepartmentId } from '../modules/hr/resolveDepartmentLink.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow, firstOrUndefined, isUniqueViolation } from './util.js';
+
+/**
+ * Resolve denormalized lead columns from an employee id.
+ *
+ * Queried here (not via hrEmployeeRepo) because that repo already imports this one for
+ * `setDepartment` / canvas moves — a reverse import would cycle.
+ */
+async function resolveLeadFromEmployee(
+  ctx: TenantContext,
+  leadEmployeeId: string | null,
+): Promise<{
+  leadEmployeeId: string | null;
+  leadName: string | null;
+  leadEmail: string | null;
+  leadZohoId: string | null;
+}> {
+  if (!leadEmployeeId) {
+    return { leadEmployeeId: null, leadName: null, leadEmail: null, leadZohoId: null };
+  }
+  const rows = await db
+    .select({
+      id: hrEmployees.id,
+      firstName: hrEmployees.firstName,
+      lastName: hrEmployees.lastName,
+      email: hrEmployees.email,
+      zohoRecordId: hrEmployees.zohoRecordId,
+    })
+    .from(hrEmployees)
+    .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, leadEmployeeId)))
+    .limit(1);
+  const emp = firstOrUndefined(rows);
+  if (!emp) {
+    return { leadEmployeeId: null, leadName: null, leadEmail: null, leadZohoId: null };
+  }
+  return {
+    leadEmployeeId: emp.id,
+    leadName: `${emp.firstName} ${emp.lastName}`.trim() || null,
+    leadEmail: emp.email,
+    leadZohoId: emp.zohoRecordId,
+  };
+}
 
 export interface HrDepartmentListOpts {
   q?: string;
@@ -30,6 +76,11 @@ export interface ManualDepartmentInput {
   code?: string | null;
   mailAlias?: string | null;
   leadName?: string | null;
+  /**
+   * FK → hr_employees.id. When set, `leadName` / `leadEmail` / `leadZohoId` are resolved from that
+   * row so the picker and the denormalized Zoho-era columns cannot drift apart.
+   */
+  leadEmployeeId?: string | null;
   parentName?: string | null;
   /** Rich-text (markdown) purpose of the department — what a card and the canvas node detail show. */
   description?: string | null;
@@ -56,6 +107,7 @@ const DEPT_COLUMNS = {
   leadName: hrDepartments.leadName,
   leadZohoId: hrDepartments.leadZohoId,
   leadEmail: hrDepartments.leadEmail,
+  leadEmployeeId: hrDepartments.leadEmployeeId,
   parentName: hrDepartments.parentName,
   parentZohoId: hrDepartments.parentZohoId,
   parentId: hrDepartments.parentId,
@@ -113,6 +165,17 @@ export const hrDepartmentRepo = {
     return firstOrUndefined(rows);
   },
 
+  /** Department ids where this employee is the lead (for attendance team scope). */
+  async listIdsLedBy(ctx: TenantContext, leadEmployeeId: string): Promise<string[]> {
+    const id = leadEmployeeId.trim();
+    if (!id) return [];
+    const rows = await db
+      .select({ id: hrDepartments.id })
+      .from(hrDepartments)
+      .where(and(eq(hrDepartments.tenantId, ctx.tenantId), eq(hrDepartments.leadEmployeeId, id)));
+    return rows.map((r) => r.id);
+  },
+
   async list(ctx: TenantContext, opts: HrDepartmentListOpts = {}): Promise<HrDepartmentRow[]> {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
     const offset = Math.max(opts.offset ?? 0, 0);
@@ -162,13 +225,25 @@ export const hrDepartmentRepo = {
     const parentId = parentName
       ? await resolveParentDepartmentId(ctx, { parentName })
       : null;
+    const lead =
+      input.leadEmployeeId !== undefined
+        ? await resolveLeadFromEmployee(ctx, input.leadEmployeeId?.trim() || null)
+        : {
+            leadEmployeeId: null as string | null,
+            leadName: input.leadName?.trim() || null,
+            leadEmail: null as string | null,
+            leadZohoId: null as string | null,
+          };
     const row: NewHrDepartment = {
       tenantId: ctx.tenantId,
       zohoRecordId: null,
       name: input.name.trim(),
       code: input.code?.trim() || null,
       mailAlias: input.mailAlias?.trim() || null,
-      leadName: input.leadName?.trim() || null,
+      leadName: lead.leadName,
+      leadEmail: lead.leadEmail,
+      leadZohoId: lead.leadZohoId,
+      leadEmployeeId: lead.leadEmployeeId,
       parentName,
       parentId,
       description: input.description?.trim() || null,
@@ -203,7 +278,19 @@ export const hrDepartmentRepo = {
     if (patch.name !== undefined) updates.name = patch.name.trim();
     if (patch.code !== undefined) updates.code = patch.code?.trim() || null;
     if (patch.mailAlias !== undefined) updates.mailAlias = patch.mailAlias?.trim() || null;
-    if (patch.leadName !== undefined) updates.leadName = patch.leadName?.trim() || null;
+    /**
+     * Prefer the employee lookup. A bare `leadName` patch is still accepted for Zoho-era tooling, but
+     * the admin modal writes `leadEmployeeId` so the person stays linked across renames.
+     */
+    if (patch.leadEmployeeId !== undefined) {
+      const lead = await resolveLeadFromEmployee(ctx, patch.leadEmployeeId?.trim() || null);
+      updates.leadEmployeeId = lead.leadEmployeeId;
+      updates.leadName = lead.leadName;
+      updates.leadEmail = lead.leadEmail;
+      updates.leadZohoId = lead.leadZohoId;
+    } else if (patch.leadName !== undefined) {
+      updates.leadName = patch.leadName?.trim() || null;
+    }
     if (patch.description !== undefined) updates.description = patch.description?.trim() || null;
     if (patch.icon !== undefined) updates.icon = patch.icon?.trim() || null;
     if (patch.iconColor !== undefined) updates.iconColor = patch.iconColor?.trim() || null;
@@ -349,6 +436,58 @@ export const hrDepartmentRepo = {
       }
       throw err;
     }
+  },
+
+  /**
+   * Re-resolve `lead_employee_id` from Zoho's Department_Lead.ID (then unique email).
+   *
+   * Run after a Zoho department sync — the sync overwrites lead_zoho_id / lead_name / lead_email but
+   * does not know our employee ids. Same uniqueness rule as the Face_ID / manager backfills: an
+   * ambiguous email resolves to nothing rather than a guess.
+   */
+  async relinkLeads(ctx: TenantContext): Promise<number> {
+    const byZoho = await db.execute(sql`
+      update hr_departments as d
+      set
+        lead_employee_id = e.id,
+        lead_name = btrim(e.first_name || ' ' || e.last_name),
+        lead_email = e.email,
+        updated_at = now()
+      from hr_employees as e
+      where d.tenant_id = ${ctx.tenantId}
+        and e.tenant_id = d.tenant_id
+        and d.lead_zoho_id is not null
+        and trim(d.lead_zoho_id) <> ''
+        and e.zoho_record_id = d.lead_zoho_id
+        and d.lead_employee_id is distinct from e.id
+      returning d.id
+    `);
+    const byEmail = await db.execute(sql`
+      update hr_departments as d
+      set
+        lead_employee_id = e.id,
+        lead_name = btrim(e.first_name || ' ' || e.last_name),
+        updated_at = now()
+      from hr_employees as e
+      where d.tenant_id = ${ctx.tenantId}
+        and e.tenant_id = d.tenant_id
+        and d.lead_employee_id is null
+        and d.lead_email is not null
+        and trim(d.lead_email) <> ''
+        and e.email is not null
+        and lower(btrim(e.email)) = lower(btrim(d.lead_email))
+        and (
+          select count(*)::int
+          from hr_employees e2
+          where e2.tenant_id = d.tenant_id
+            and e2.email is not null
+            and lower(btrim(e2.email)) = lower(btrim(d.lead_email))
+        ) = 1
+      returning d.id
+    `);
+    const a = Array.isArray(byZoho) ? byZoho.length : 0;
+    const b = Array.isArray(byEmail) ? byEmail.length : 0;
+    return a + b;
   },
 
   /** Re-resolve parent_id for every department (run after a full Zoho department migrate). */

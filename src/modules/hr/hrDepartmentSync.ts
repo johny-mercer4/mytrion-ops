@@ -39,6 +39,8 @@ export async function syncHrDepartmentsFromZoho(
 
   // Second pass: parents may have been inserted after children on the first pass.
   await hrDepartmentRepo.relinkParents(ctx);
+  // Third: Department_Lead.ID → hr_employees.id (employees may have synced earlier or later).
+  await hrDepartmentRepo.relinkLeads(ctx);
 
   return { fetched: records.length, inserted, updated, errors };
 }

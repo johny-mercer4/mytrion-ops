@@ -41,7 +41,22 @@ SELECT 'CREATE ROLE mytrion_loader LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER NOI
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mytrion_loader')
 \gexec
 
-ALTER ROLE mytrion_loader LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER NOINHERIT;
+DO $block$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'mytrion_loader'
+      AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+  ) THEN
+    RAISE EXCEPTION 'mytrion_loader has forbidden privileged attributes; remove them as a database superuser';
+  END IF;
+END
+$block$;
+
+-- NOSUPERUSER/NOREPLICATION/NOBYPASSRLS are verified above. Repeating those attributes in ALTER
+-- ROLE would itself require a superuser even when setting them to false.
+ALTER ROLE mytrion_loader LOGIN NOCREATEDB NOCREATEROLE NOINHERIT;
 SELECT format('ALTER ROLE mytrion_loader PASSWORD %L', :'loader_password')
 \gexec
 
@@ -61,6 +76,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.client_news TO mytrion_load
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.client_news_reads TO mytrion_loader;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.scope_risk_items TO mytrion_loader;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.mytrion_calls TO mytrion_loader;
+
+-- Metadata-only discovery for NocoDB's ERD. REFERENCES makes public tables visible through
+-- information_schema without granting SELECT or any row access. With CREATE revoked everywhere,
+-- the loader cannot use this privilege to add foreign keys or mutate schema.
+GRANT REFERENCES ON ALL TABLES IN SCHEMA public TO mytrion_loader;
 
 -- The trigger function is SECURITY DEFINER, but append-only INSERT is retained as an explicit
 -- capability from the approved handoff. The loader can neither read nor rewrite journal history.

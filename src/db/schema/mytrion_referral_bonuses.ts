@@ -22,9 +22,9 @@ import {
  *   'Gallons (Legacy)' → gallons_legacy   'Swipes (Legacy)' → swipes_legacy
  *   'Gallons (Parent)' → gallons_parent   'Gallons (Child)' → gallons_child
  *
- * Zoho's picklist is single-select, but the PDF describes types 1 and 2 as concurrent monthly
- * payouts — so a single child CAN accrue several types in the same month. That is why the ledger is
- * keyed per (child, type, month) rather than per (child, month).
+ * Zoho's picklist is single-select, so each configured relationship uses exactly one calculation
+ * type at a time. The ledger remains keyed per (child, type, month), preserving history if an admin
+ * later changes that configuration.
  */
 export type ReferralBonusType =
   | 'gallons_legacy'
@@ -41,11 +41,9 @@ export type ReferralBonusRecipient = 'parent' | 'child';
 /**
  * How the child referral was resolved to a carrier (and therefore to DWH transactions).
  *
- * The intended path is the Deal/Lead lookup: `Deals.Child_Referrer` → `Deals.Carrier_ID` (an integer
- * that joins `octane.mart_transaction_line_items.carrier_id` natively). As of 2026-07-27 NO Lead and
- * NO Deal in Zoho has `Child_Referrer` populated, so in practice every row currently lands on the
- * `carrier_id` fallback (`Child_Referrals.Carrier_ID`, a text field needing a cast). `unresolved`
- * rows are written with a zero amount rather than dropped, so the gap stays visible in the UI.
+ * The required path is referral relationship → related Deal → `Deals.Carrier_ID` (an integer that
+ * joins `octane.mart_transaction_line_items.carrier_id` natively). Referral-module Carrier_ID text
+ * is intentionally not accepted as a fallback because it bypasses the auditable Deal relationship.
  */
 export type ReferralBonusResolution = 'deal_lookup' | 'lead_lookup' | 'carrier_id' | 'unresolved';
 
@@ -108,7 +106,7 @@ export const mytrionReferralBonuses = pgTable(
     // --- Carrier / transaction linkage ---
     /** Resolved carrier — joins `octane.mart_transaction_line_items.carrier_id`. */
     carrierId: integer('carrier_id'),
-    /** The Deal we resolved through, when resolution came via the Deal/Lead lookup. */
+    /** The related Deal used to resolve the carrier. */
     zohoDealId: text('zoho_deal_id'),
     resolution: text('resolution').$type<ReferralBonusResolution>().notNull(),
 
@@ -145,6 +143,15 @@ export const mytrionReferralBonuses = pgTable(
     oneTimeUq: uniqueIndex('mytrion_referral_bonuses_one_time_uq')
       .on(table.tenantId, table.childReferralId, table.bonusType)
       .where(sql`${table.bonusType} in ('gallons_parent', 'gallons_child')`),
+    /**
+     * Economic duplicate guard. Zoho can hold several Child_Referral records for one carrier, but a
+     * one-time company threshold may pay only once for that carrier.
+     */
+    oneTimeCarrierUq: uniqueIndex('mytrion_referral_bonuses_one_time_carrier_uq')
+      .on(table.tenantId, table.carrierId, table.bonusType)
+      .where(
+        sql`${table.bonusType} in ('gallons_parent', 'gallons_child') and ${table.carrierId} is not null`,
+      ),
     /** The Manager card's primary listing: a month, optionally narrowed to one type. */
     periodIdx: index('mytrion_referral_bonuses_tenant_period_idx').on(
       table.tenantId,
@@ -175,8 +182,7 @@ export const mytrionReferralBonuses = pgTable(
 /**
  * mytrion_referral_calc_runs — one row per calculation run, for audit (CLAUDE.md rule 8) and for
  * showing "last calculated" in the Manager card. `unresolvedCount` is deliberately first-class:
- * while the Zoho Deal/Lead `Child_Referrer` lookups stay unpopulated it is the number that tells
- * you how much of the ledger is running on the carrier-id fallback.
+ * it exposes how many referral relationships still lack an unambiguous Deal and Carrier_ID.
  */
 export const mytrionReferralCalcRuns = pgTable(
   'mytrion_referral_calc_runs',

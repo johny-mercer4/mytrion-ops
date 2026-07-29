@@ -56,6 +56,13 @@ export interface ReferralBonusTotals {
   amountUsd: string;
 }
 
+export interface ReferralOneTimeClaim {
+  bonusType: ReferralBonusType;
+  carrierId: number | null;
+  childReferralId: string;
+  status: ReferralBonusStatus;
+}
+
 /** Statuses a recalculation is allowed to overwrite. Once money has moved, the row is frozen. */
 const RECALCULABLE_STATUSES: readonly ReferralBonusStatus[] = ['calculated'];
 
@@ -75,21 +82,20 @@ export const referralBonusRepo = {
    * Insert-or-update one computed row, keyed by (tenant, child, type, month).
    *
    * Recalculation is expected to be run repeatedly over the same month, so this is an upsert rather
-   * than an insert. `status` is deliberately NOT in the update set: a row already moved to
-   * approved/paid/void keeps its status and is refreshed only in its computed figures.
+   * than an insert. A row already moved to approved/paid/void is a successful no-op; neither its
+   * status nor its computed evidence may change.
    *
    * NOTE the one-time types (gallons_parent / gallons_child) additionally carry a partial unique
    * index on (tenant, child, type) with no month. If a recompute decides the threshold was crossed
    * in a DIFFERENT month than the stored row, this upsert's (…, period_month) conflict target will
-   * not match and the insert raises 23505 against the one-time index instead. That is intentional:
-   * paying the same one-time bonus under two months is exactly the failure the PDF asks us to
-   * prevent, so it surfaces loudly rather than being silently absorbed. Callers that legitimately
-   * need to re-date a one-time award must `deleteForRun`/void the old row first.
+   * not match and the insert raises 23505 against the one-time index. The engine prevents this by
+   * loading all prior one-time claims before calculation; the index is the final concurrency guard.
+   * Re-dating an award requires a deliberate administrative correction to the existing audit row.
    */
   async upsert(
     ctx: TenantContext,
     input: UpsertReferralBonusInput,
-  ): Promise<MytrionReferralBonus> {
+  ): Promise<MytrionReferralBonus | undefined> {
     // Null-normalized up front: under `exactOptionalPropertyTypes` an `X | undefined` value cannot
     // be handed to drizzle's update-set, so every optional lands as an explicit null here and both
     // the INSERT and the DO UPDATE branch reuse the exact same values.
@@ -132,7 +138,10 @@ export const referralBonusRepo = {
         setWhere: inArray(mytrionReferralBonuses.status, [...RECALCULABLE_STATUSES]),
       })
       .returning();
-    return firstOrThrow(rows, 'mytrion_referral_bonuses upsert returned no row');
+    // A frozen approved/paid/void row deliberately fails the `setWhere` condition and PostgreSQL
+    // returns no row. That is a successful no-op, not a server error: recalculation must leave money
+    // that already moved untouched.
+    return rows[0];
   },
 
   /** Filtered ledger page, newest period first. Always tenant-scoped. */
@@ -178,6 +187,30 @@ export const referralBonusRepo = {
     }));
   },
 
+  /**
+   * Every previously persisted one-time claim, without pagination.
+   *
+   * The engine loads this once before a run so a threshold reached in June cannot be proposed again
+   * in July. The carrier-level key also catches duplicate Child_Referral records pointing at the
+   * same economic company.
+   */
+  async listOneTimeClaims(ctx: TenantContext): Promise<ReferralOneTimeClaim[]> {
+    return db
+      .select({
+        bonusType: mytrionReferralBonuses.bonusType,
+        carrierId: mytrionReferralBonuses.carrierId,
+        childReferralId: mytrionReferralBonuses.childReferralId,
+        status: mytrionReferralBonuses.status,
+      })
+      .from(mytrionReferralBonuses)
+      .where(
+        and(
+          tenantScope(ctx),
+          inArray(mytrionReferralBonuses.bonusType, ['gallons_parent', 'gallons_child']),
+        ),
+      );
+  },
+
   /** Set the lifecycle status of specific rows (admin action: approve / mark paid / void). */
   async setStatus(
     ctx: TenantContext,
@@ -215,7 +248,11 @@ export const referralBonusRepo = {
   /** Open a run row (status 'running'); the engine finishes it via `finishRun`. */
   async startRun(
     ctx: TenantContext,
-    input: { periodMonth?: string | null; trigger: ReferralCalcRunTrigger; triggeredBy?: string | null },
+    input: {
+      periodMonth?: string | null;
+      trigger: ReferralCalcRunTrigger;
+      triggeredBy?: string | null;
+    },
   ): Promise<MytrionReferralCalcRun> {
     const row: NewMytrionReferralCalcRun = {
       tenantId: ctx.tenantId,
@@ -250,7 +287,10 @@ export const referralBonusRepo = {
         finishedAt: new Date(),
       })
       .where(
-        and(eq(mytrionReferralCalcRuns.tenantId, ctx.tenantId), eq(mytrionReferralCalcRuns.id, runId)),
+        and(
+          eq(mytrionReferralCalcRuns.tenantId, ctx.tenantId),
+          eq(mytrionReferralCalcRuns.id, runId),
+        ),
       )
       .returning();
     return rows[0];
