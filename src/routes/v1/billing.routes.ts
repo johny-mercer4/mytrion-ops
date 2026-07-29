@@ -23,6 +23,7 @@ import {
 } from '../../modules/billing/cmpWrites.js';
 import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
+import { assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
 import {
   getPrepayCompanies,
   getPrepayExternalsBatch,
@@ -169,8 +170,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/billing/returns/candidates', guard, async (request) => {
     requireBillingAccess(request);
     const q = candidatesQuery.parse(request.query);
-    const rows = await paymentTransactionRepo.findReturnCandidates(q);
-    return { status: 'success', records: rows.map(toCandidateWire), mode: 'search' };
+    // `mode` tells the picker which pass produced the list ('text' | 'suggest' | 'window') so its
+    // hint line matches reality — it used to be hardcoded, leaving both hints unreachable.
+    const { rows, mode } = await paymentTransactionRepo.findReturnCandidates(q);
+    return { status: 'success', records: rows.map(toCandidateWire), mode };
   });
 
   /** Learned company → carrier memory (fetched whole, widget parity). */
@@ -432,6 +435,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const tx = await paymentTransactionRepo.getById(b.transactionRecordId);
     if (!tx) throw new NotFoundError(`Transaction ${b.transactionRecordId} not found`);
 
+    // Refuses a second reversal of the same money (see returnsMatch.ts) — the server-side half of
+    // the rule the UI enforces by hiding the action; parity with the Deluge twin's guards.
+    assertReturnMatchable(ret, tx);
+
     let matchNote = 'not mapped — no CMP payment to reverse';
     let isReversed = false;
     if (tx.isInvoiceMapped) {
@@ -441,10 +448,16 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         carrierId: tx.carrierId,
         amount: tx.amount != null ? Number(tx.amount) : null,
         chargedDay: tx.occurredAt ? tx.occurredAt.toISOString().slice(0, 10) : null,
+        // The money bounced: if the row stores no ref (every mapped MX charge), look the payment up
+        // in CMP rather than reporting a silent success. A manual unmap deliberately does NOT.
+        resolveMissingRef: true,
+        mappingType: tx.mappingType,
       });
       if (rev.ok) {
         isReversed = rev.kind !== 'none';
-        if (isReversed) matchNote = 'Reversal(s) applied to CMP';
+        // Never reuse the "not mapped" note for a mapped payment — that read as "nothing owed back"
+        // and hid the case from the Reconcile CMP queue.
+        matchNote = isReversed ? 'Reversal(s) applied to CMP' : 'mapped, but CMP held no payment to reverse';
       } else {
         matchNote = `CMP reverse failed — reconcile manually: ${rev.message ?? ''}`;
       }
