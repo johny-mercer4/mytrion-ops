@@ -80,6 +80,14 @@ const listQuery = z.object({
   perPage: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+/** Report window — `YYYY-MM-DD` only, since these are interpolated into COQL date comparisons. */
+const windowQuery = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'from must be YYYY-MM-DD'),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'to must be YYYY-MM-DD'),
+  })
+  .refine((v) => v.from <= v.to, { message: 'from must be on or before to' });
+
 /** Lookup values arrive as {id} objects; scalars cover text/number/date/bool fields. */
 const fieldValue = z.union([
   z.string().max(2000),
@@ -192,6 +200,49 @@ export async function csCitifuelRoutes(app: FastifyInstance): Promise<void> {
       byStatus[status] = await count(`Status_of_App = ${coqlLiteral(status)}`);
     }
     return { total, byStatus };
+  });
+
+  /**
+   * Citi-vs-Octane split over a Date_of_Request window — QA feedback (2026-07-28): "pull a report
+   * on how many clients were sent to Citi vs how many remained with Octane over any selected
+   * period". One GROUP BY rather than the per-status N+1 the /stats route above does.
+   *
+   * COQL notes: a WHERE clause is mandatory, and AND is binary — the two date bounds are one
+   * parenthesised pair. Records with no Date_of_Request cannot fall in a window and are excluded,
+   * which is why `total` is the window's own sum and not the module total.
+   */
+  app.get('/cs/citifuel/decision-split', guard, async (request) => {
+    requireCsAccess(request);
+    const q = windowQuery.parse(request.query);
+    const res = await zohoCrm.runCoql(
+      `select Final_Decision, COUNT(id) from ${CITI_MODULE} ` +
+        `where (Date_of_Request >= ${coqlLiteral(q.from)} and Date_of_Request <= ${coqlLiteral(q.to)}) ` +
+        `group by Final_Decision`,
+    );
+    const byDecision = res.rows.map((r) => ({
+      decision: String(r['Final_Decision'] ?? '') || 'Undecided',
+      count: Number(r['COUNT(id)'] ?? r['count(id)'] ?? 0) || 0,
+    }));
+    // Bucket generously — a renamed picklist value should still land somewhere sensible rather
+    // than silently dropping out of the report.
+    let citifuel = 0;
+    let octane = 0;
+    let undecided = 0;
+    for (const d of byDecision) {
+      const s = d.decision.trim().toLowerCase();
+      if (s.includes('citi')) citifuel += d.count;
+      else if (s.includes('octane')) octane += d.count;
+      else undecided += d.count;
+    }
+    return {
+      from: q.from,
+      to: q.to,
+      total: citifuel + octane + undecided,
+      citifuel,
+      octane,
+      undecided,
+      byDecision,
+    };
   });
 
   /** Accounts typeahead for the Company_Name lookup. */
