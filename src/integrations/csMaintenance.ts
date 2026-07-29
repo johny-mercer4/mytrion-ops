@@ -20,7 +20,7 @@
  *    exactly why the CS Home tile read 0);
  *  - `AND` is BINARY: a flat `a and b and c` fails "near where", so conditions are nested pairwise.
  */
-import { runCoql } from './zohoCrm.js';
+import { runCoql, zohoCrm } from './zohoCrm.js';
 import { AppError } from '../lib/errors.js';
 
 export interface MaintenanceWindow {
@@ -43,7 +43,19 @@ export interface OwnerSlice {
   id: string;
   name: string;
   count: number;
+  /** Closed WITH a Case_Completion date. Earns the full per-case bonus. */
+  fullComplete: number;
+  /** Closed with no completion date on the record. Earns the half bonus. */
+  halfComplete: number;
+  /** fullComplete * BONUS_FULL_USD + halfComplete * BONUS_HALF_USD, computed server-side so the
+   *  rate lives in one place rather than in a component. */
+  bonusUsd: number;
 }
+
+/** Per-case agent bonus — QA feedback 2026-07-28: "$5 per fully closed case and $2.50 per
+ *  half-completion case". Kept adjacent to the buckets they multiply. */
+export const BONUS_FULL_USD = 5;
+export const BONUS_HALF_USD = 2.5;
 
 export interface MaintenanceAnalytics {
   totals: {
@@ -110,20 +122,74 @@ export function bucketStatus(raw: string): 'open' | 'closed' | 'cancelled' | 'ot
   return 'other';
 }
 
+/**
+ * Owner id -> full name, from the CRM user directory.
+ *
+ * COQL returns `Owner: {id, name}` where `name` is only the user's LAST name ("Garcia", "Mordale"),
+ * which is what the leaderboard was showing. The user directory carries the full name against the
+ * same id space, so resolve through it and fall back to the COQL name when a user is missing
+ * (deactivated, or an id outside the directory) — never leave a leaderboard row blank.
+ */
+async function fullNameByOwnerId(): Promise<Map<string, string>> {
+  const users = await zohoCrm.listActiveUsers().catch(() => []);
+  const byId = new Map<string, string>();
+  for (const u of users) {
+    const name = (u.name ?? '').trim();
+    if (u.zohoUserId && name) byId.set(String(u.zohoUserId), name);
+  }
+  return byId;
+}
+
 /** Every figure the Maintenance tab needs, in the shape the panel already consumes. */
 export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<MaintenanceAnalytics> {
   const cur = windowClause(w.from, w.to);
   const prev = windowClause(w.prevFrom, w.prevTo);
 
-  const [statusRes, caseTypeRes, dailyRes, ownerRes, previous, fullComplete] = await Promise.all([
-    runCoql(`SELECT Status, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Status`),
-    runCoql(`SELECT Case_Type, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Case_Type`),
-    runCoql(`SELECT Date, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Date ORDER BY Date ASC`),
-    runCoql(`SELECT Owner, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Owner`),
-    scalarCount(prev),
-    // Closed AND signed off with a completion date. Nested AND — flat would 400.
-    scalarCount(`(${cur} and Case_Completion is not null)`),
-  ]);
+  const [statusRes, caseTypeRes, dailyRes, ownerRes, ownerFullRes, previous, fullComplete, names] =
+    await Promise.all([
+      runCoql(`SELECT Status, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Status`),
+      runCoql(`SELECT Case_Type, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Case_Type`),
+      runCoql(`SELECT Date, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Date ORDER BY Date ASC`),
+      // Grouped by Owner AND Status, so a per-agent CLOSED count is available. Grouping by owner
+      // alone gave only their total, and half-completions derived from that counted an agent's
+      // open/cancelled cases as half-paid work (per-agent halves summed to 11 against an org
+      // total of 8). Bucketing in JS keeps this robust to a renamed status.
+      runCoql(`SELECT Owner, Status, COUNT(id) FROM Maintenance WHERE ${cur} GROUP BY Owner, Status`),
+      // Per-owner sign-offs, for the bonus. Same predicate as the org-wide fullComplete below, so
+      // the two can never disagree about what "fully complete" means. Nested AND — flat would 400.
+      runCoql(
+        `SELECT Owner, COUNT(id) FROM Maintenance WHERE (${cur} and Case_Completion is not null) GROUP BY Owner`,
+      ),
+      scalarCount(prev),
+      // Closed AND signed off with a completion date. Nested AND — flat would 400.
+      scalarCount(`(${cur} and Case_Completion is not null)`),
+      fullNameByOwnerId(),
+    ]);
+
+  const ownerId = (r: Record<string, unknown>): string =>
+    String((r['Owner'] as { id?: string } | null)?.id ?? '');
+  const fullByOwner = new Map<string, number>();
+  for (const r of ownerFullRes.rows) {
+    const id = ownerId(r);
+    if (id) fullByOwner.set(id, countOf(r));
+  }
+  // Fold the (Owner, Status) grid into per-owner totals and per-owner CLOSED counts.
+  interface OwnerAgg {
+    id: string;
+    name: string;
+    total: number;
+    closed: number;
+  }
+  const agg = new Map<string, OwnerAgg>();
+  for (const r of ownerRes.rows) {
+    const owner = r['Owner'] as { id?: string; name?: string } | null;
+    const id = String(owner?.id ?? 'unknown');
+    const n = countOf(r);
+    const row = agg.get(id) ?? { id, name: String(owner?.name ?? 'Unknown'), total: 0, closed: 0 };
+    row.total += n;
+    if (bucketStatus(String(r['Status'] ?? '')) === 'closed') row.closed += n;
+    agg.set(id, row);
+  }
 
   const byStatus: CountedSlice[] = statusRes.rows.map((r) => ({
     status: String(r['Status'] ?? 'Unknown') || 'Unknown',
@@ -140,6 +206,22 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
     else if (bucket === 'closed') closed += s.count;
   }
 
+  const byOwner: OwnerSlice[] = [...agg.values()].map((o) => {
+    const full = fullByOwner.get(o.id) ?? 0;
+    // Half = this agent's CLOSED cases minus their signed-off ones. Floored at 0: the sign-off
+    // predicate is not status-gated, so an agent holding a case that carries a Case_Completion date
+    // while still Open/Cancelled must not go negative and cannot owe back a bonus.
+    const half = Math.max(0, o.closed - full);
+    return {
+      id: o.id,
+      name: names.get(o.id) ?? o.name,
+      count: o.total,
+      fullComplete: full,
+      halfComplete: half,
+      bonusUsd: Number((full * BONUS_FULL_USD + half * BONUS_HALF_USD).toFixed(2)),
+    };
+  });
+
   return {
     totals: {
       current,
@@ -147,8 +229,17 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
       open,
       closed,
       fullComplete,
-      // Closed but with no completion date on the record — finished, not signed off.
-      halfComplete: Math.max(0, closed - fullComplete),
+      /*
+       * Closed but with no completion date — finished, not signed off.
+       *
+       * Summed from byOwner rather than computed as `closed - fullComplete`, so the headline figure
+       * and the leaderboard can never disagree. They CAN differ by construction: a case that is
+       * signed off while still Open/Cancelled makes one agent's subtraction negative, which the
+       * per-agent floor clamps to 0 but a single org-wide subtraction silently absorbs. The live org
+       * has exactly one such record today (org-wide subtraction says 8, per-agent sum says 9) — a
+       * data issue, not an arithmetic one, and the per-agent number is the one that gets paid.
+       */
+      halfComplete: byOwner.reduce((sum, o) => sum + o.halfComplete, 0),
     },
     byStatus,
     byCaseType: caseTypeRes.rows.map((r) => ({
@@ -156,14 +247,7 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
       count: countOf(r),
     })),
     daily: dailyRes.rows.map((r) => ({ day: String(r['Date'] ?? '').slice(0, 10), count: countOf(r) })),
-    byOwner: ownerRes.rows.map((r) => {
-      const owner = r['Owner'] as { id?: string; name?: string } | null;
-      return {
-        id: String(owner?.id ?? 'unknown'),
-        name: String(owner?.name ?? 'Unknown'),
-        count: countOf(r),
-      };
-    }),
+    byOwner,
   };
 }
 

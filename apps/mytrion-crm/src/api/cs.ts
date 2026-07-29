@@ -255,7 +255,16 @@ export interface MaintenanceAnalytics {
     byStatus: Array<{ status?: string; count?: number }>;
     byCaseType: Array<{ caseType?: string; count?: number }>;
     daily: Array<{ day?: string; count?: number }>;
-    byOwner: Array<{ id?: string; name?: string; count?: number }>;
+    byOwner: Array<{
+      id?: string;
+      name?: string;
+      count?: number;
+      /** Closed with a Case_Completion date — earns the full per-case bonus. */
+      fullComplete?: number;
+      halfComplete?: number;
+      /** Server-computed: $5 per fully complete + $2.50 per half (QA feedback 2026-07-28). */
+      bonusUsd?: number;
+    }>;
   };
 }
 

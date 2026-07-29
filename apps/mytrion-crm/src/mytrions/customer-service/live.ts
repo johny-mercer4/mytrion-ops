@@ -71,6 +71,14 @@ export function fmtDate(v: unknown): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** Whole dollars when round, cents when not — the bonus is a $2.50 multiple. */
+export function fmtUsd(n: number): string {
+  return `$${n.toLocaleString('en-US', {
+    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export function relTime(v: unknown): string {
   const s = str(v);
   if (!s) return '';
@@ -533,8 +541,15 @@ export async function loadAnalytics(
     }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
+  // col2 carries the agent's bonus as a formatted string — the backend owns the $5 / $2.50 rates
+  // (csMaintenance BONUS_FULL_USD / BONUS_HALF_USD) so they are not duplicated in the UI.
   const maintBoard: LeaderboardRow[] = (maint.data?.byOwner ?? [])
-    .map((o) => ({ agent: str(o.name) || str(o.id), col1: Number(o.count) || 0, col2: '—', col3: 0 }))
+    .map((o) => ({
+      agent: str(o.name) || str(o.id),
+      col1: Number(o.count) || 0,
+      col2: fmtUsd(Number(o.bonusUsd) || 0),
+      col3: Number(o.fullComplete) || 0,
+    }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
   void callsByEmail; // reserved for future merged-board parity
@@ -587,7 +602,7 @@ export async function loadAnalytics(
       ],
       volume: toVolume(maint.data?.daily),
       breakdown: toBreakdown(maint.data?.byStatus),
-      leaderboardCols: ['Cases', '', ''],
+      leaderboardCols: ['Cases', 'Bonus', 'Full'],
       leaderboard: maintBoard,
     },
   };
