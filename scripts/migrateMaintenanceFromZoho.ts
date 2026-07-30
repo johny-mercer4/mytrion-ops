@@ -151,9 +151,15 @@ async function main(): Promise<void> {
     console.log('\n  DRY RUN — nothing written. Sample of the first 2 mapped rows:\n');
     console.log(JSON.stringify(mapped.slice(0, 2), null, 2));
   } else {
-    const { written, chunks } = await maintenanceCaseRepo.upsertMany(mapped, { chunkSize: 200 });
+    const { written, skipped, chunks } = await maintenanceCaseRepo.upsertMany(mapped, {
+      chunkSize: 200,
+    });
     const after = await maintenanceCaseRepo.countAll();
     console.log(`  upserted ${written.toLocaleString()} row(s) in ${chunks} chunk(s)`);
+    if (skipped > 0) {
+      // Not a failure: these carry a Mytrion edit, and Zoho's frozen copy would be the stale one.
+      console.log(`  left ${skipped.toLocaleString()} row(s) alone — edited in Mytrion since import`);
+    }
     console.log(`  maintenance_cases now holds ${after.toLocaleString()} row(s)`);
   }
 

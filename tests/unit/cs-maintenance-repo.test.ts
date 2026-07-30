@@ -183,6 +183,23 @@ describe('upsertMany', () => {
     }
   });
 
+  it('skips a row an agent has edited in Mytrion instead of overwriting it from Zoho', () => {
+    // Keeping created_by/updated_by out of `set` is NOT sufficient. Without this predicate the audit
+    // columns survive while every business column is replaced by Zoho's frozen value — so the row
+    // reads as though the agent themselves reverted their own correction. Zoho is never synced, so
+    // its copy is the stale one by definition.
+    void maintenanceCaseRepo.upsertMany([row('1')]);
+    const conflict = calls.find((c) => c.method === 'onConflictDoUpdate')?.args[0] as {
+      setWhere?: unknown;
+    };
+    expect(conflict.setWhere).toBeDefined();
+    const { sql } = dialect.sqlToQuery(conflict.setWhere as never);
+    expect(sql).toMatch(/updated_by_user_id"?\s+is null/i);
+    // Unqualified — `excluded.updated_by_user_id` is the INCOMING row and is always null here, which
+    // would make the predicate vacuously true and the guard useless.
+    expect(sql).not.toMatch(/excluded/i);
+  });
+
   it('chunks the write instead of issuing one statement per row', async () => {
     const rows = Array.from({ length: 250 }, (_, i) => row(String(i)));
     const res = await maintenanceCaseRepo.upsertMany(rows, { chunkSize: 200 });
@@ -198,7 +215,7 @@ describe('upsertMany', () => {
 
   it('is a no-op on an empty batch', async () => {
     const res = await maintenanceCaseRepo.upsertMany([]);
-    expect(res).toEqual({ written: 0, chunks: 0 });
+    expect(res).toEqual({ written: 0, skipped: 0, chunks: 0 });
     expect(calls).toHaveLength(0);
   });
 });

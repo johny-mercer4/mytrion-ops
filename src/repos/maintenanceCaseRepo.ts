@@ -326,6 +326,18 @@ export const maintenanceCaseRepo = {
    * paymentTransactionRepo.upsertMany follows for its mapping columns). `id` is absent too — a
    * migrated row keeps the cuid2 it was first given.
    *
+   * Omitting those four columns from `set` was NOT enough to honour that rule. It preserved the
+   * *audit trail* of an agent's edit while overwriting the edit itself: every business column above
+   * still took `excluded.…`, so a re-import silently replaced an agent's corrected status or amount
+   * with Zoho's frozen value and left `updated_by_user_id` pointing at the agent, as if they had made
+   * the change. Zoho is not synced, so its value is by definition the stale one.
+   *
+   * Hence `setWhere`: a row that carries `updated_by_user_id` is owned by Mytrion and is skipped
+   * outright. In ON CONFLICT DO UPDATE, an unqualified target column reads the EXISTING row (as
+   * against `excluded.…` for the incoming one), which is what makes the test on the stored value work.
+   * Skipped rows are counted separately rather than silently — an import that reports
+   * `written < fetched` with no explanation looks like data loss.
+   *
    * Chunked because the alternative is unusable at this RTT: hrEmployeeRepo measured 213 records at
    * ~4 round-trips each against the hosted Postgres (~266 ms RTT) taking ~226 s and never finishing
    * inside a request. Multi-row upserts bring the same work to a handful of round-trips.
@@ -333,10 +345,11 @@ export const maintenanceCaseRepo = {
   async upsertMany(
     rows: NewMaintenanceCase[],
     opts: { chunkSize?: number } = {},
-  ): Promise<{ written: number; chunks: number }> {
-    if (!rows.length) return { written: 0, chunks: 0 };
+  ): Promise<{ written: number; skipped: number; chunks: number }> {
+    if (!rows.length) return { written: 0, skipped: 0, chunks: 0 };
     const chunkSize = Math.min(500, Math.max(1, opts.chunkSize ?? 200));
     let written = 0;
+    let skipped = 0;
     let chunks = 0;
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
@@ -383,12 +396,15 @@ export const maintenanceCaseRepo = {
             syncedAt: sql`now()`,
             updatedAt: sql`now()`,
           },
+          // Unqualified = the row already stored. Mytrion owns any row an agent has edited.
+          setWhere: sql`${maintenanceCases.updatedByUserId} is null`,
         })
         .returning({ id: maintenanceCases.id });
       written += res.length;
+      skipped += chunk.length - res.length;
       chunks += 1;
     }
-    return { written, chunks };
+    return { written, skipped, chunks };
   },
 
   /**
