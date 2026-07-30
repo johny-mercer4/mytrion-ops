@@ -6,9 +6,22 @@
  * Stripe + Zelle + Chase + Merchant; difference = loaded − payments):
  *   • DWH (direct): prepay companies (octane.dim_company) + loads/draws
  *     (public.cmp_billing_history, Central-TZ day bucketing).
- *   • Postgres (direct): Zelle/Chase/Merchant sums from payment_transactions.
- *   • servercrm (GET /api/billing/prepay-externals): EFS money codes + Zoho
- *     Maintenance + CMP Stripe — the pieces whose clients live server-side.
+ *   • Postgres (direct): Zelle/Chase/Merchant sums from payment_transactions,
+ *     and the MAINTENANCE term from maintenance_cases (see below).
+ *   • servercrm (GET /api/billing/prepay-externals): EFS money codes + CMP
+ *     Stripe — the pieces whose clients live server-side.
+ *
+ * MAINTENANCE comes from OUR Postgres, not from servercrm's reply. servercrm still
+ * computes it from Zoho, and we still call the same endpoint for money codes and
+ * Stripe, so its maintenance figure arrives and is deliberately DISCARDED and
+ * replaced (see overrideMaintenance). Two reasons:
+ *   • Zoho no longer has the whole picture — cases created or edited in the CS
+ *     Maintenance tab never reach it, so its number silently under-counts.
+ *   • servercrm's Zoho maintenance query cannot simply be deleted: the legacy
+ *     zoho-octane billing widget calls /api/billing/prepay-ledger DIRECTLY
+ *     (app/billing-mytrion/js/constants.js) and has no route to our database.
+ *     Overriding downstream keeps that widget working while making OUR numbers
+ *     correct.
  *
  * The per-carrier daily LEDGER (modal) and the EFS RMVE batch are proxied to
  * servercrm for now (their day-bucketing + EFS calls stay server-side); the app
@@ -19,6 +32,7 @@
  */
 import { dwh } from '../../integrations/dwh.js';
 import { serverCrmGet } from '../../integrations/serverCrm.js';
+import { maintenanceCaseRepo } from '../../repos/maintenanceCaseRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
 
 const round2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
@@ -199,16 +213,92 @@ export async function getPrepayCompanies(opts: {
  * `endDate` is EXCLUSIVE (widget convention). Returns servercrm's `{ externals, warnings }` reply.
  */
 export async function getPrepayExternalsBatch(startDate: string, endDate: string): Promise<ExternalsReply> {
-  return serverCrmGet<ExternalsReply>(
-    `/api/billing/prepay-externals?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-  );
+  // Both legs run concurrently — servercrm's is the slow one (CMP Stripe pagination), so the DB
+  // read costs nothing in wall time.
+  const [reply, maint] = await Promise.all([
+    serverCrmGet<ExternalsReply>(
+      `/api/billing/prepay-externals?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    ),
+    maintenanceCaseRepo.sumPrepayByCarrier(startDate, endDate),
+  ]);
+
+  const externals: NonNullable<ExternalsReply['externals']> = { ...(reply.externals ?? {}) };
+  // Zero every carrier servercrm reported, THEN write ours in. Without the zeroing pass a carrier
+  // whose only maintenance rows now live in our table would keep servercrm's stale Zoho figure.
+  for (const key of Object.keys(externals)) {
+    externals[key] = { ...externals[key], maintenance: 0 };
+  }
+  for (const [carrierId, amount] of maint) {
+    externals[carrierId] = { ...(externals[carrierId] ?? {}), maintenance: round2(amount) };
+  }
+  return { ...reply, externals, warnings: reply.warnings ?? [] };
 }
 
-/** Per-carrier daily ledger (modal) — proxied to servercrm for now. */
-export async function getPrepayLedgerProxy(carrierId: string, startDate: string, endDate: string): Promise<unknown> {
-  return serverCrmGet(
-    `/api/billing/prepay-ledger?carrierId=${encodeURIComponent(carrierId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-  );
+/** One daily ledger row as servercrm builds it (services/prepayLedger.js). */
+interface LedgerDay {
+  date: string;
+  top_up: number;
+  rmve: number;
+  money_code: number;
+  maintenance: number;
+  stripe: number;
+  zelle: number;
+  chase: number;
+  merchant: number;
+  delta: number;
+  difference: number;
+}
+interface LedgerReply {
+  rows?: LedgerDay[];
+  totals?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+/**
+ * Per-carrier daily ledger (modal) — proxied to servercrm, with the maintenance column replaced from
+ * our Postgres.
+ *
+ * `difference` is a RUNNING balance, so swapping a day's maintenance invalidates that day and every
+ * day after it. The delta formula below is servercrm's, copied verbatim from its row builder; if that
+ * formula ever changes there, this recomputation silently diverges — hence the assertion-by-comment.
+ */
+export async function getPrepayLedgerProxy(
+  carrierId: string,
+  startDate: string,
+  endDate: string,
+): Promise<unknown> {
+  const [reply, maint] = await Promise.all([
+    serverCrmGet<LedgerReply>(
+      `/api/billing/prepay-ledger?carrierId=${encodeURIComponent(carrierId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    ),
+    maintenanceCaseRepo.sumPrepayByDay(carrierId, startDate, endDate),
+  ]);
+  if (!Array.isArray(reply.rows)) return reply;
+
+  let running = 0;
+  let maintTotal = 0;
+  const rows = reply.rows.map((r) => {
+    const maintenance = round2(maint.get(String(r.date).slice(0, 10)) ?? 0);
+    maintTotal += maintenance;
+    // servercrm: delta = top_up - rmve + maintenance + money_code - stripe - zelle - chase - merchant
+    const delta =
+      (r.top_up ?? 0) -
+      (r.rmve ?? 0) +
+      maintenance +
+      (r.money_code ?? 0) -
+      (r.stripe ?? 0) -
+      (r.zelle ?? 0) -
+      (r.chase ?? 0) -
+      (r.merchant ?? 0);
+    running += delta;
+    return { ...r, maintenance, delta: round2(delta), difference: round2(running) };
+  });
+
+  return {
+    ...reply,
+    rows,
+    totals: { ...(reply.totals ?? {}), maintenance: round2(maintTotal), net: round2(running) },
+  };
 }
 
 /** EFS RMVE batch for the visible page — proxied to servercrm (EFS lives server-side). */

@@ -58,6 +58,7 @@ export default defineConfig({
     './src/db/schema/hr_attendance_shifts.ts',
     './src/db/schema/hr_attendance_shift_assignments.ts',
     './src/db/schema/hr_attendance_punches.ts',
+    './src/db/schema/maintenance_cases.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

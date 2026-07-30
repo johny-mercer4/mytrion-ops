@@ -6,6 +6,7 @@ export type CsSectionId =
   | 'open-pool'
   | 'citi-folder'
   | 'citi-fuel'
+  | 'maintenance'
   | 'analytics'
   | 'data-center'
   | 'inbox'

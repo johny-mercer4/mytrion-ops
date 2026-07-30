@@ -201,9 +201,11 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Maintenance analytics — native COQL (replaces the `cs.analytics.maintenance` Deluge, which
-   * paginated 5,000 records and mis-bucketed every status; see integrations/csMaintenance.ts).
-   * Org-wide, like the Deluge it replaces: Maintenance rows are not owned by the CS desk.
+   * Maintenance analytics — SQL over our own `maintenance_cases` table (see
+   * integrations/csMaintenance.ts). Two generations back this was the `cs.analytics.maintenance`
+   * Deluge, which paginated 5,000 records and mis-bucketed every status; that touchpoint has since
+   * been removed from the catalog entirely, so this route is the only way to these figures.
+   * Org-wide, like the Deluge it replaced: Maintenance rows are not owned by the CS desk.
    */
   app.get('/cs/analytics/maintenance', guard, async (request) => {
     requireCsAccess(request);

@@ -1,5 +1,5 @@
 /**
- * Touchpoint catalog invariants: key uniqueness, full coverage of the legacy widget's 21
+ * Touchpoint catalog invariants: key uniqueness, full coverage of the legacy widget's remaining
  * Deluge functions, schema accept/reject sanity, the exact destructive set, and the
  * identity/carrier scoping annotations every user-/carrier-keyed entry must carry.
  */
@@ -15,6 +15,12 @@ const all = listTouchpoints();
  *     mytriondbdebtorsinfo, mytrioncompanydashboard);
  *   - CRM-backed → src/integrations/salesCrmActions.ts (mytrionfetchannouncements, mytrionfetchinbox,
  *     mytriondeleteinboxmessage, mytrioncreatelead, mytrionapplicationupdate, mytriontruckingnumberrequest).
+ *
+ * Also absent, for a different reason — the data moved OUT of Zoho rather than the handler moving
+ * into TypeScript: `createmaintenance` and `mytrionGetMaintenanceAnalytics`. Maintenance lives in our
+ * `maintenance_cases` table, served by /cs/maintenance and /cs/analytics/maintenance, so no touchpoint
+ * may read or write it in Zoho. The Deluge functions themselves still exist in Zoho for the in-Zoho
+ * widgets that call them directly — they are simply not reachable through this catalog.
  */
 const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionCallback',
@@ -26,7 +32,6 @@ const WIDGET_DELUGE_FUNCTIONS = [
   'createticketincrm',
   'uploadticketattachment',
   'uploadescalationattachment',
-  'createmaintenance',
   'mytriondatacenterleads',
 ] as const;
 
@@ -39,7 +44,9 @@ describe('catalog shape', () => {
     // search, a CMP read via servercrm), moved off Deluge. Two waves of Sales touchpoints migrated
     // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
+    // Then Maintenance moved out of Zoho entirely: cs.analytics.maintenance and maintenance.create
+    // were removed once maintenance_cases became the source of truth → 17.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(17);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
     // BOCA and Close Application are guarded local handlers around Playwright.
