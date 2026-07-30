@@ -31,6 +31,7 @@ import {
   type LeaveTypeDto,
   type TimeOffOverviewDto,
 } from '../../api/hrTimeOff';
+import { HrPageLoader } from '../hr/HrBits';
 import styles from './TimeOffWorkspace.module.css';
 
 type View = 'summary' | 'mine' | 'inbox' | 'all';
@@ -321,31 +322,63 @@ export function TimeOffWorkspace({
   const [all, setAll] = useState<LeaveRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [personalUnavailable, setPersonalUnavailable] = useState('');
   const [applyOpen, setApplyOpen] = useState(false);
   const [detail, setDetail] = useState<{ item: LeaveRequestDto; actions: LeaveRequestActionDto[] } | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError('');
+    setPersonalUnavailable('');
     try {
-      const [nextOverview, nextTypes, nextMine, nextInbox, nextAll] = await Promise.all([
+      const [overviewResult, typesResult, mineResult, inboxResult, allResult] = await Promise.allSettled([
         getTimeOffOverview(year, signal),
         listLeaveTypes(signal),
         listLeaveRequests({ scope: 'mine', year, limit: 200 }, signal),
         listLeaveRequests({ scope: 'inbox', year, limit: 200 }, signal),
         includeAll ? listLeaveRequests({ scope: 'all', year, limit: 300 }, signal) : Promise.resolve([]),
       ]);
-      setOverview(nextOverview);
-      setTypes(nextTypes);
-      setMine(nextMine);
-      setInbox(nextInbox);
-      setAll(nextAll);
+      if (signal?.aborted) return;
+
+      if (typesResult.status === 'rejected') throw typesResult.reason;
+      if (allResult.status === 'rejected') throw allResult.reason;
+      setTypes(typesResult.value);
+      setAll(allResult.value);
+
+      const personalFailed =
+        overviewResult.status === 'rejected' ||
+        mineResult.status === 'rejected' ||
+        inboxResult.status === 'rejected';
+      if (personalFailed) {
+        setOverview(null);
+        setMine([]);
+        setInbox([]);
+        if (!includeAll) {
+          const reason =
+            overviewResult.status === 'rejected'
+              ? overviewResult.reason
+              : mineResult.status === 'rejected'
+                ? mineResult.reason
+                : inboxResult.status === 'rejected'
+                  ? inboxResult.reason
+                  : null;
+          throw reason;
+        }
+        setPersonalUnavailable(
+          'This administrator sign-in is not linked to an employee. You can review every request, but personal balances and leave applications require an employee link.',
+        );
+        setView('all');
+      } else {
+        setOverview(overviewResult.value);
+        setMine(mineResult.value);
+        setInbox(inboxResult.value);
+      }
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+      if (!signal?.aborted && !(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [includeAll, year]);
 
@@ -374,7 +407,7 @@ export function TimeOffWorkspace({
   );
 
   if (loading && !overview) {
-    return <div className={styles.loading}><Loader2 size={24} className={styles.spin} /><span>Preparing your leave calendar…</span></div>;
+    return <HrPageLoader label="Preparing your leave calendar…" />;
   }
 
   return (
@@ -387,16 +420,17 @@ export function TimeOffWorkspace({
         </div>
         <div className={styles.headerActions}>
           <label className={styles.yearPicker}><CalendarDays size={16} /><select value={year} onChange={(event) => setYear(Number(event.target.value))}><option value={currentYear - 1}>{currentYear - 1}</option><option value={currentYear}>{currentYear}</option><option value={currentYear + 1}>{currentYear + 1}</option></select></label>
-          <button type="button" className={styles.primaryBtn} onClick={() => { setDetail(null); setApplyOpen(true); }}><Plus size={17} />Apply leave</button>
+          {overview ? <button type="button" className={styles.primaryBtn} onClick={() => { setDetail(null); setApplyOpen(true); }}><Plus size={17} />Apply leave</button> : null}
         </div>
       </header>
       <nav className={styles.tabs} aria-label="Time off views">
-        <button type="button" className={view === 'summary' ? styles.tabActive : ''} onClick={() => setView('summary')}>Summary</button>
-        <button type="button" className={view === 'mine' ? styles.tabActive : ''} onClick={() => setView('mine')}>My requests <span>{mine.length}</span></button>
-        <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button>
+        {overview ? <button type="button" className={view === 'summary' ? styles.tabActive : ''} onClick={() => setView('summary')}>Summary</button> : null}
+        {overview ? <button type="button" className={view === 'mine' ? styles.tabActive : ''} onClick={() => setView('mine')}>My requests <span>{mine.length}</span></button> : null}
+        {overview ? <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button> : null}
         {includeAll ? <button type="button" className={view === 'all' ? styles.tabActive : ''} onClick={() => setView('all')}>All requests <span>{all.length}</span></button> : null}
       </nav>
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
+      {personalUnavailable ? <p className={styles.error} role="status">{personalUnavailable}</p> : null}
       {applyOpen ? <ApplyForm types={types} onCancel={() => setApplyOpen(false)} onSubmitted={changed} /> : null}
       {detail ? <DetailPanel item={detail.item} actions={detail.actions} canDecide={inbox.some((item) => item.id === detail.item.id)} onClose={() => setDetail(null)} onChanged={changed} /> : null}
       {!applyOpen && !detail && view === 'summary' && overview ? (

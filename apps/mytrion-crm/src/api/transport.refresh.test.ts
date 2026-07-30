@@ -18,12 +18,45 @@ afterEach(() => {
 
 describe('refreshBearer', () => {
   it('rotates the stored session on success', async () => {
-    seedSession();
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { accessToken: 'new', refreshToken: 'r2' })));
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        worker: {
+          zohoUserId: '1',
+          accessibleMytrions: ['hr'],
+          allDepartmentAccess: true,
+        },
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(200, {
+          accessToken: 'new',
+          refreshToken: 'r2',
+          worker: { zohoUserId: '1', userName: 'Admin' },
+        }),
+      ),
+    );
     expect(await refreshBearer()).toBe(true);
-    const stored = JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') as Record<string, string>;
+    const stored = JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') as {
+      accessToken: string;
+      refreshToken: string;
+      worker: {
+        accessibleMytrions: string[];
+        allDepartmentAccess: boolean;
+        userName: string;
+      };
+    };
     expect(stored['accessToken']).toBe('new');
     expect(stored['refreshToken']).toBe('r2');
+    expect(stored.worker).toMatchObject({
+      accessibleMytrions: ['hr'],
+      allDepartmentAccess: true,
+      userName: 'Admin',
+    });
   });
 
   it('dedupes concurrent refreshes into one fetch', async () => {

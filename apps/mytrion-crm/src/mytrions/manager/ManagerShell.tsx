@@ -18,6 +18,7 @@ import { ReferralsCard } from './cards/ReferralsCard';
 import './manager.css';
 import './managerWorkspace.css';
 import './managerLoyalty.css';
+import './managerPolish.css';
 
 /**
  * Manager hub shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell, chat dock disabled.

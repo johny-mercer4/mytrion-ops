@@ -34,7 +34,7 @@ function getRecords(moduleKey: 'parents' | 'children', limit?: number): Promise<
   }) as Promise<ReferralRecords>;
 }
 
-/** Default server-side fetch limit is 200; pass `limit` to override (COQL-capped at 2000). */
+/** Full raw-module drain by default; pass `limit` only for an intentionally bounded CRM view. */
 export const listParentReferrers = (limit?: number): Promise<ReferralRecords> =>
   getRecords('parents', limit);
 export const listChildReferrals = (limit?: number): Promise<ReferralRecords> =>
@@ -54,7 +54,7 @@ export interface ReferralAssociations {
   deals: LinkedRecords;
 }
 
-/** Leads + Deals that reference any referral, for grouping under each parent/child (default 200). */
+/** Leads + Deals that reference any referral, for grouping under each parent/child. */
 export const listReferralAssociations = (limit?: number): Promise<ReferralAssociations> =>
   request('GET', '/manager/referral-links', {
     query: limit != null ? { limit } : {},
@@ -121,8 +121,14 @@ export interface ReferralWorkspace {
 }
 
 /** One request for the full card grid, modal detail, and server-calculated MART preview. */
-export const getReferralWorkspace = (periodMonth?: string): Promise<ReferralWorkspace> =>
+export const getReferralWorkspace = (
+  periodMonth?: string,
+  options: { refresh?: boolean } = {},
+): Promise<ReferralWorkspace> =>
   request('GET', '/manager/referrals/workspace', {
-    query: periodMonth ? { period_month: periodMonth } : {},
+    query: {
+      ...(periodMonth ? { period_month: periodMonth } : {}),
+      ...(options.refresh ? { refresh: '1' } : {}),
+    },
     headers: MGR_HEADERS,
   }) as Promise<ReferralWorkspace>;

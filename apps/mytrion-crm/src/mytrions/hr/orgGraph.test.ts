@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { HrOrgDepartmentDto, HrOrgEmployeeDto, HrOrgStructureDto } from '../../api/hr';
-import { buildOrgGraph } from './orgGraph';
+import { buildOrgGraph, orgBranchIds } from './orgGraph';
 
 function dept(over: Partial<HrOrgDepartmentDto> & { id: string }): HrOrgDepartmentDto {
   return {
@@ -61,7 +61,10 @@ const NONE: ReadonlySet<string> = new Set();
 describe('buildOrgGraph — departments', () => {
   it('draws every department, nesting by parentId', () => {
     const g = buildOrgGraph(
-      payload([dept({ id: 'a' }), dept({ id: 'b', parentId: 'a' }), dept({ id: 'c', parentId: 'b' })], []),
+      payload(
+        [dept({ id: 'a' }), dept({ id: 'b', parentId: 'a' }), dept({ id: 'c', parentId: 'b' })],
+        [],
+      ),
       { expanded: NONE, includeTerminated: false },
     );
     expect(g.nodes.map((n) => n.id).sort()).toEqual(['a', 'b', 'c']);
@@ -89,6 +92,24 @@ describe('buildOrgGraph — departments', () => {
 });
 
 describe('buildOrgGraph — people', () => {
+  it('closes expanded managers and child departments with their parent department', () => {
+    const data = payload(
+      [dept({ id: 'root' }), dept({ id: 'child', parentId: 'root' })],
+      [
+        emp({ id: 'lead', departmentId: 'root' }),
+        emp({ id: 'report', departmentId: 'root', reportingToEmployeeId: 'lead' }),
+        emp({ id: 'childLead', departmentId: 'child' }),
+      ],
+    );
+    expect([...orgBranchIds(data, 'root')].sort()).toEqual([
+      'child',
+      'childLead',
+      'lead',
+      'report',
+      'root',
+    ]);
+  });
+
   it('hangs staff off their department only when it is expanded, and counts the rest as hidden', () => {
     const data = payload(
       [dept({ id: 'd1', employeeCount: 2, activeEmployeeCount: 2 })],
@@ -160,10 +181,14 @@ describe('buildOrgGraph — people', () => {
       [emp({ id: 'gone', departmentId: 'd1', status: 'Terminated' })],
     );
     expect(
-      buildOrgGraph(data, { expanded: ALL(['d1']), includeTerminated: false }).nodes.map((n) => n.id),
+      buildOrgGraph(data, { expanded: ALL(['d1']), includeTerminated: false }).nodes.map(
+        (n) => n.id,
+      ),
     ).toEqual(['d1']);
     expect(
-      buildOrgGraph(data, { expanded: ALL(['d1']), includeTerminated: true }).nodes.map((n) => n.id).sort(),
+      buildOrgGraph(data, { expanded: ALL(['d1']), includeTerminated: true })
+        .nodes.map((n) => n.id)
+        .sort(),
     ).toEqual(['d1', 'gone']);
   });
 

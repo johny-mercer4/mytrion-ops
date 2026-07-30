@@ -25,6 +25,7 @@ export type MytrionId =
   | 'manager'
   | 'analyst'
   | 'hr'
+  | 'recruit'
   | 'trailhead'
   | 'customer-service';
 
@@ -244,6 +245,21 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  recruit: {
+    id: 'recruit',
+    title: 'Recruit Mytrion',
+    tag: 'Recruit',
+    icon: 'recruit',
+    blurb: 'Hiring workspace — openings, candidate pipelines and controlled employee conversion.',
+    hue: 'purple',
+    department: 'recruit',
+    allDepartments: false,
+    allowedProfiles: ['Recruiter', 'HR'],
+    allowedRoles: ['Recruiter', 'HR'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
   trailhead: {
     id: 'trailhead',
     title: 'Trailhead',
@@ -277,6 +293,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'manager',
   'analyst',
   'hr',
+  'recruit',
   'trailhead',
 ];
 
@@ -332,6 +349,7 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   manager: 'managermytrion',
   analyst: 'analystmytrion',
   hr: 'hrmytrion',
+  recruit: 'recruitmytrion',
   trailhead: 'trailhead',
   'customer-service': 'csmytrion',
 };
@@ -380,5 +398,7 @@ export const AGENT_LABELS: Record<AgentKey, string> = {
 export function agentKeyFor(id: MytrionId): AgentKey | null {
   // `admin` routes through the orchestrator; `hr` and `trailhead` have no backend agent (neither is
   // in AGENT_KEYS), so they must NOT be cast. No Mytrion shows a chat dock anyway — see MytrionShell.
-  return id === 'admin' || id === 'hr' || id === 'trailhead' ? null : (id as AgentKey);
+  return id === 'admin' || id === 'hr' || id === 'recruit' || id === 'trailhead'
+    ? null
+    : (id as AgentKey);
 }

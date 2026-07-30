@@ -84,7 +84,7 @@ export const MANAGER_CARDS: ManagerCard[] = [
     label: 'Loyalty Program',
     tag: 'Tiers',
     description:
-      "Every carrier's loyalty tier — track from active cards, tier from this month's gallons. All agents, one board.",
+      "Every carrier's loyalty status — last month's transacting cards and ULSR + ULSD gallons, with this month's progress.",
     icon: Trophy,
     // Amber reads as the program's own signal (Gold/Bronze live on this scale) without colliding
     // with Referrals' pink or any department hue.

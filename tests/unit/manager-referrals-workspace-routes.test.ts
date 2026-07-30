@@ -92,6 +92,21 @@ describe('Manager referral workspace route', () => {
     expect(workspaceMock).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
       '2026-06-01',
+      { force: false },
+    );
+  });
+
+  it('forces a new calculation only when Refresh requests it', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/manager/referrals/workspace?period_month=2026-06-01&refresh=1',
+      headers: await bearer('Management'),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(workspaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      '2026-06-01',
+      { force: true },
     );
   });
 

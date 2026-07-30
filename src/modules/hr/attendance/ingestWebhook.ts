@@ -6,7 +6,12 @@ import { systemContext } from '../../auth/authService.js';
 import { hrAttendancePunchRepo } from '../../../repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../../repos/hrAttendanceShiftRepo.js';
 import { hrEmployeeRepo } from '../../../repos/hrEmployeeRepo.js';
-import { doorKind, parseUzbWallClock, workDateForPunch } from './uzbTime.js';
+import {
+  doorKind,
+  isAllowedAttendanceDoor,
+  parseUzbWallClock,
+  workDateForPunch,
+} from './uzbTime.js';
 
 export interface AttendanceWebhookEvent {
   empCode?: string;
@@ -49,6 +54,11 @@ export async function ingestAttendanceWebhook(
         stats.errors.push('Missing empCode, event_date_time, or door_name');
         continue;
       }
+      if (!isAllowedAttendanceDoor(doorName)) {
+        stats.skipped += 1;
+        stats.errors.push(`Ignored non-Ganga door: ${doorName}`);
+        continue;
+      }
       const kind = doorKind(doorName);
       if (!kind) {
         stats.skipped += 1;
@@ -57,6 +67,9 @@ export async function ingestAttendanceWebhook(
       }
       const punchedAt = parseUzbWallClock(rawTime);
       const employee = await hrEmployeeRepo.findByFaceId(ctx, faceId);
+      if (employee) {
+        await hrAttendancePunchRepo.linkUnmappedForEmployee(ctx, employee.id, faceId);
+      }
       let shift: { startLocal: string; endLocal: string } | null = null;
       if (employee) {
         const calDate = workDateForPunch(punchedAt, null);
@@ -83,7 +96,7 @@ export async function ingestAttendanceWebhook(
         doorName,
         rawEvent: event as Record<string, unknown>,
       });
-      if (outcome === 'duplicate') {
+      if (outcome === 'duplicate' || outcome === 'ignored') {
         stats.skipped += 1;
       } else {
         stats.success += 1;

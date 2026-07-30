@@ -9339,3 +9339,241 @@ Merged the latest `origin/build` into `feature/agent-gateway-multi-token-failove
 Preserved both append-only `WORKING_NOTES.md` histories. Build already owned migrations 0079–0081,
 so the support-bot knowledge migration was renumbered from 0079 to 0082 and the Drizzle journal was
 resolved with unique, sequential indexes and all four migration entries intact.
+
+## 2026-07-30 — HR navigation and presentation polish
+
+Removed the shared-shell Time Off shortcut and its modal so leave requests are available only from
+HR Mytrion's Time Off tab. The shared sidebar now gives its long navigation list its own scroll area,
+keeps the profile footer outside that scroll region, and uses slightly larger tab, section, and
+profile typography; this also resolves the Admin sidebar overlap.
+
+HR now scopes Space Grotesk across the complete module. Employees, Departments, and Org Structure
+use one labeled KPI tile system; Attendance totals use the same visual hierarchy, while Time Off
+retains its balance cards. All cold data loads now use the shared branded HR page loader, with small
+inline busy indicators reserved for saves and refreshes.
+
+Verification: frontend TypeScript, the production Vite build, and all 323 frontend tests pass;
+`git diff --check` is clean. Authenticated visual QA could not run in the isolated browser session
+because it opened at the Zoho sign-in screen.
+
+## 2026-07-30 — Recruit Mytrion and HR admin refinements
+
+Added the native Recruit Mytrion with persisted, tenant-scoped Job Openings, Candidates, and
+admin-owned conversion settings. Openings link directly to existing HR departments. Candidates
+move through a six-stage pipeline, and an admin can atomically convert an accepted candidate into
+an `hr_employees` record; the candidate claim and employee insert share one transaction so partial
+hires cannot be committed. Recruiter and HR access defaults were added, while conversion and
+settings remain admin-only.
+
+Built the Recruit Home, Job Openings, Candidates, and Settings screens with the shared Horizon
+shell, responsive cards, bordered modals, consistent loaders, and Space Grotesk typography.
+Settings is pinned above the signed-in profile. Recruit settings control employee-ID prefix,
+default location, and initial status.
+
+HR Settings is now a consistent control center with bordered policy blocks and clearer grouping for
+directory sync, attendance operations, and Time Off. The attendance webhook explainer was removed.
+The employee directory defaults to department grouping and adds order controls for newest, active,
+terminated, and name; the Face ID glyph is now a face-scan icon. Employee details also expose an
+admin-only Zoho CRM user link/unlink workflow so a new sign-in can be attached after conversion.
+
+Verification: backend and frontend typechecks pass; backend and frontend production builds pass;
+lint has 0 errors (24 existing warnings). Targeted Recruit/HR/access tests pass 57/57. The full
+backend suite reached 1,272 passing tests with 10 unrelated existing failures in touchpoints,
+stream adapter, tool-count, Zoho MCP, retention caps, and notification copy. Visual QA ran through
+the dev mock: Recruit Home, opening modal, HR Settings, sidebar pinning, and the employee order menu
+were inspected; a stacking issue on the order menu was found and fixed.
+
+## 2026-07-30 — Recruit runtime recovery and theme alignment
+
+Traced the Recruit Job Openings and Candidates 500 responses to an unapplied database migration:
+all three Recruit relations were absent from the active database. Applied migration
+`0079_recruit_workspace.sql` and confirmed the tenant-scoped job and candidate repository reads now
+complete with empty result sets instead of throwing. Registered all Recruit schema modules in
+`drizzle.config.ts` so schema generation and drift checks include the workspace going forward.
+
+Aligned Recruit with the parent Horizon visual system in both themes. The complete workspace now
+uses Space Grotesk, slightly larger navigation and content typography, shared glass pane/border/
+shadow tokens, theme-owned semantic accents, and clearer elevated modal treatment. Dark and light
+pages were inspected live at desktop size.
+
+Verification: backend and frontend typechecks pass; production frontend build passes; lint has zero
+errors and 24 existing warnings. Recruit/HR/access backend tests pass 40/40 and the frontend access
+suite passes 17/17. Direct repository smoke reads after migration returned zero jobs and zero
+candidates without an error.
+
+## 2026-07-30 — Oybek attendance production rollout
+
+Restricted Hikvision attendance ingestion to door names containing `Oybek`; non-Oybek events now
+stop before employee lookup or persistence. Device wall-clock timestamps are parsed as
+Asia/Tashkent and stored as UTC, while work dates, display times, week anchors, and overnight
+03:00 bucketing use the UZB calendar. Webhook batches are audit-logged with accepted, skipped, and
+failed counts.
+
+Face ID matching now safely normalizes numeric zero padding (`00000564` = `564`) while ambiguous
+matches fail closed. Stored unmapped Oybek punches reconcile automatically on a matching future
+punch, an employee Face ID edit, or an employee-directory sync. HR Team attendance shows an
+actionable unmatched-punch count for HR/Admin users.
+
+Worked time now pairs every entry with the next exit and sums completed office visits. Repeated
+entry scans do not inflate hours, unmatched scans are disclosed, and open sessions render as
+`Still inside`. My Data and Team details show Tashkent-local last activity, in/out state, individual
+sessions, and total in-office time in clearer bordered blocks.
+
+Applied `0080_hr_oybek_attendance.sql` to the active database. It created the active
+`UZB Tashkent · Oybek` 19:00–03:00 Asia/Tashkent shift and assigned 122 eligible active employees
+effective 2026-07-30. Fifteen active Canada employees were excluded; there is currently no US
+department. The live data currently has eight unmatched Oybek punches; Face ID `00000215` has no
+employee profile match yet, so it remains safely unmapped and visible to HR instead of being guessed.
+
+Verification: backend/frontend typechecks and the frontend production build pass; lint has zero
+errors and 24 existing warnings. Attendance unit/route tests pass 19/19, adjacent HR/Recruit route
+tests pass 19/19, and HR attendance UI/access tests pass 18/18. Repository smoke checks confirmed
+the shift, assignment count, exclusions, and zero-padding match behavior.
+
+## 2026-07-30 — Ganga attendance correction and manager shift assignment
+
+Corrected the authoritative attendance source from Oybek to Ganga. Hikvision events are now
+accepted only when `door_name` contains `Ganga` (case-insensitive); every Oybek and other-door
+event stops before employee lookup or persistence. Applied `0081_hr_ganga_attendance.sql`, which
+renamed the existing overnight shift to `UZB Tashkent · Ganga`, preserved its 122 employee
+assignments, removed the incorrectly ingested Oybek punch rows, reconciled unambiguous stored
+Ganga Face IDs, and re-bucketed mapped Ganga events on the Tashkent overnight work date.
+
+Department managers can now assign an active shift from an employee's Attendance Team detail.
+Authorization is enforced by the attendance route: admins and HR managers may assign any employee;
+a department manager may assign direct reports and employees in departments they lead, but cannot
+assign themselves or employees outside their managed scope. The entire requested target set is
+authorized before the first write, preventing partial batch assignment. Reassigning the same
+effective date updates the existing assignment instead of creating a conflict.
+
+Verification: attendance unit/route tests pass 21/21, adjacent HR/Recruit route tests pass 19/19,
+and HR attendance UI/access tests pass 18/18. Backend and frontend TypeScript checks and the
+frontend production build pass. Lint has zero errors and 24 existing warnings. Live repository
+verification confirmed the renamed 19:00–03:00 Asia/Tashkent shift and 122 preserved assignments;
+there were no stored Ganga punches at verification time.
+
+## 2026-07-31 — HR light mode + org canvas UX
+
+Light HR: softer coral accent, quieter page/pane/border tokens, calmer cards and
+inputs across tabs. Org chart: single-click opens department/employee modals;
+expand/collapse keeps existing node positions and parks new children under the
+parent (no full re-fit jump). Attendance no longer shows the unmapped Ganga
+punches banner.
+
+## 2026-07-31 — Manager typography, loyalty controls, and final tier audit
+
+Changed the complete Manager shell—including shared sidebar chrome, department tabs, Referrals,
+Loyalty, and portal modals—to Space Grotesk. Added a final Manager finish layer with quieter neutral
+glass surfaces, softer light-mode mesh/borders, restrained tier/referral tints, and single-border
+modal elevation. The Referrals month control is now a full clickable button that explicitly opens
+the native month picker; its native input no longer owns an invisible, unreliable hit area.
+
+Added tenant-scoped `loyalty_client_overrides` persistence and migration 0085. A Manager Loyalty card
+now opens a client-control modal where a full-access Manager user can select an Enterprise operating
+mode, set the manual Enterprise Gold ULSR+ULSD target, and enable/disable the six reward benefits as
+an explicit checklist. Saving and resetting are audited. Null rewards preserve automatic tier
+defaults; an empty checklist intentionally disables all benefits. Overrides are returned to both the
+company-wide Manager roster and owner-scoped Sales clients, so the displayed tier/rewards stay
+consistent between Mytrions.
+
+Re-audited the rules: previous-calendar-month distinct transacting cards determine the track;
+previous-month ULSR+ULSD gallons determine the active tier; total gallons and account active cards
+remain reference-only; exact thresholds/no grace still apply. Enterprise stays outside Bronze and
+Silver. A stored volume target grants Enterprise Gold only at full attainment, while Normal Billing
+never creates a gallon tier. The live read-only DWH check for the closed month confirmed ULSD
+6,042,502.01 gallons and ULSR 69,917.17 gallons as distinct categories; DEFD/FUEL/other categories
+remain excluded from tier gallons.
+
+Verification: backend typecheck passes; lint has zero errors and 23 existing warnings. Manager
+Loyalty/Data Center routes pass 42/42, focused loyalty/month-picker tests pass 20/20, and the complete
+frontend suite passes 320/320. Frontend TypeScript reaches only the pre-existing unrelated
+`HrAttendance.tsx` incomplete UserContext fixture, which was left untouched per the request to ignore
+HR changes.
+
+## 2026-07-31 — Manager performance and workspace release hardening
+
+Removed the principal Referral loading bottlenecks. MART fuel-code variants are now calculated in
+one bound query instead of repeatedly scanning the transaction history, and the month-independent
+Zoho parent/child/Deal relationship graph is cached separately from monthly volume calculations.
+Tenant/month snapshots have bounded TTL, in-flight request deduplication, manual force-refresh, and
+recent-snapshot fallback. A live cold calculation returned the 687-parent workspace in 5.7 seconds;
+switching month after the relationship graph was warm took 2.4 seconds, and a cached return was
+immediate.
+
+Replaced Manager Loyalty's reuse of the full Sales debt/PII roster with a dedicated company-wide
+tier projection that preserves the same closed-month ULSR+ULSD, transacting-card, and billing-cycle
+formulas. Both global and per-agent rosters now have bounded caches, concurrent-request sharing, and
+stale fallback. The optional client-override read degrades to automatic rewards when migration 0085
+is not yet available, while writes remain fail-closed. DWH outages now surface as a specific 502
+instead of an opaque 500. Live reads returned 8,097 Manager clients in 1.4 seconds and 374 scoped
+Sales clients in 0.7 seconds.
+
+Fixed HR Org Structure collapse so closing a department clears every expanded descendant department,
+manager, and employee instead of leaving nested people visible. Removed the double border from the
+Time Off year control and corrected the Attendance admin-access type guard. Recruit now uses the
+shared Horizon page loader, full Space Grotesk controls/modals, and calmer light/dark glass surfaces.
+Manager Sales is a polished Coming Soon workspace and is labelled accordingly on the Manager home.
+Removed two stray loyalty CSS declarations that produced production minifier warnings.
+
+Verification: backend and frontend typechecks pass; lint has zero errors and 23 existing warnings;
+the complete frontend suite passes 321/321; the frontend production build passes without CSS syntax
+warnings; focused Manager/Referral/Data Center tests pass 103/103. The full backend suite reaches 1,277 passing
+tests but is not repository-green: 37 unrelated baseline/environment tests fail across remote
+database DNS, sandboxed websocket binding, Customer Service/retention/touchpoint expectations, and
+older stream/tool mocks. Migration 0085 remains required before production users can persist Loyalty
+overrides, although roster reads now remain available before it is applied.
+
+## 2026-07-31 — Build merge for the HR/Recruit/Manager workspace (migration renumber)
+
+Merged `origin/build` (through PR #102, `5b3b935`) into `feature/hr-workspace-v2`. Three files
+conflicted: `WORKING_NOTES.md`, `drizzle.config.ts`, and the Drizzle journal. Both append-only
+histories are preserved and the Drizzle schema list is the union of both sides
+(`maintenance_cases` alongside the six HR leave tables and three Recruit tables).
+
+Build had taken 0079–0082, so this branch's six migrations were renumbered. Their **relative order
+is unchanged** — the Ganga correction still follows the Oybek seed, and the ingest guard still
+follows both — because reordering them would let the non-Ganga trigger predate the punches it is
+meant to clean up:
+
+| was | now |
+| --- | --- |
+| `0079_recruit_workspace` | `0083_recruit_workspace` |
+| `0080_hr_oybek_attendance` | `0084_hr_oybek_attendance` |
+| `0081_hr_ganga_attendance` | `0085_hr_ganga_attendance` |
+| `0083_hr_workspace_recovery` | `0086_hr_workspace_recovery` |
+| `0084_hr_ganga_ingest_guard` | `0087_hr_ganga_ingest_guard` |
+| `0085_loyalty_client_overrides` | `0088_loyalty_client_overrides` |
+
+The `when` stamps matter more than the filenames, and this branch had walked into exactly the trap
+the 2026-07-30 prod-migrate entry documents: our `0079_recruit_workspace` carried
+`1785405600000`, the **same millisecond** as build's `0082_support_bot_knowledge`. Because Drizzle
+reads its ceiling once and applies only on a strict `<`, whichever of the two reached a database
+first would have permanently silenced the other. The six entries are now stamped
+`1785409200000` … `1785427200000`, strictly above build's highest (`0082`, `1785405600000`), and
+the journal has no duplicate `when` value and no duplicate tag anywhere.
+
+Two things carried over from build rather than fixed here, both worth a separate decision:
+build's 0079–0081 sit *below* `0078_support_bot_memories` by design (they were stamped
+`prod_max + 1ms` while 0078 was still unmerged), so on any database already at 0078 they are
+skipped — prod got them by hand; and `.whois.tmp.mjs`, the migration-hashing scratch script from
+`495f886`, is still committed at the repo root.
+
+**The conflict Git did not report.** Both sides had rebuilt `apps/mytrion-crm/app`, and because Vite
+filenames are content-hashed, Git saw two disjoint sets of adds/renames and merged them without a
+murmur. The result was build's bundle verbatim: its `index.html` still pointed at
+`index-FBX2djQY.js`, and no chunk contained a single HR, Recruit, or Manager string. A clean
+`pnpm lint && typecheck && test` would have signed off on a merge that shipped none of this
+branch's UI. Rebuilt with `pnpm build:widget` and re-staged; the new entry is `index-DPxzEfi_.js`,
+all 54 chunks are reachable from it with zero orphans, and "Job Opening", "Recruit", "Time Off"
+(this branch) and "Maintenance" (build) all resolve to reachable chunks.
+
+Verification: backend and frontend typechecks pass; lint is 0 errors / 23 pre-existing warnings;
+frontend 52 files / 342 tests pass. Backend is 11 failed / 1,430 passed across 7 files — the same
+baseline set build recorded (`boot-db-transient`, `notification-templates`, `retention-cs-caps`,
+`stream-adapter`, `tools`, `touchpoints-routes`, `zoho-crm`), none of them HR, Recruit, Manager,
+Loyalty, or Maintenance. Migrations were run against a throwaway `merge_verify` database rather
+than reasoned about: 89 entries applied, 87 tables, and `maintenance_cases`,
+`support_bot_knowledge_articles`, `support_bot_operations`, the three `recruit_*` tables, the
+`hr_leave_*` tables, `loyalty_client_overrides`, and the `hr_attendance_ganga_only_trg` trigger all
+verified present.
+

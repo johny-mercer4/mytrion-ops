@@ -5,7 +5,7 @@
    matches Admin / CS / Billing without repeating their values. Everything below reads from the block
    of --mg-* constants first: change a rhythm or a radius once, here.
 
-   Typography matches Sales Mytrion: Inter for UI body + headings (mono kept for kickers/metrics).
+   Typography is Space Grotesk throughout the Manager shell and every workspace.
 
    The language, identical to every other skinned module:
      surface   frosted pane (--hz-pane) + 1px --hz-pane-bd + --hz-shadow-rest + inset sheen
@@ -18,8 +18,6 @@
    sharing one structure. It always falls back to --accent.
    ===================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 .mg-root {
   /* ── The standardized system ── */
   --mg-measure: var(--hz-measure);
@@ -31,8 +29,9 @@
   --mg-r-lg: 16px;
   --mg-r-pill: 999px;
   --mg-tone-fallback: var(--accent);
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-head: 'Inter', system-ui, sans-serif;
+  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --font-head: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'Space Grotesk', system-ui, sans-serif;
   --mytrion-nav-search-size: 14px;
   --mytrion-nav-section-size: 11.5px;
   --mytrion-nav-empty-size: 13px;
@@ -42,7 +41,7 @@
   height: 100%;
   overflow: auto;
   color: var(--text-primary);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
 }
@@ -56,14 +55,15 @@
 
 /* The shell owns the navigation, so expose Manager's larger type scale on its shared frame too. */
 [data-mytrion='manager'] {
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-head: 'Inter', system-ui, sans-serif;
+  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --font-head: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'Space Grotesk', system-ui, sans-serif;
   --mytrion-nav-search-size: 14px;
   --mytrion-nav-section-size: 11.5px;
   --mytrion-nav-empty-size: 13px;
   --mytrion-nav-sub-size: 13.5px;
   --mytrion-nav-label-size: 15px;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

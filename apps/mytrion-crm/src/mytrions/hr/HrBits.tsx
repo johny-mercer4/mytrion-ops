@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { MytrionPageLoader } from '../_shared/MytrionPageLoader';
 import { findHrTab, type HrTabId } from './hrNav';
 
 /**
@@ -32,6 +33,49 @@ export function HrSection({ title, children }: { title: string; children: ReactN
         <span className="hr-section-line" />
       </div>
       {children}
+    </section>
+  );
+}
+
+export interface HrSummaryItem {
+  label: string;
+  value: string | number;
+  detail: string;
+  icon: ReactNode;
+  tone?: string;
+}
+
+/**
+ * One readable KPI treatment for the data-heavy HR tabs.
+ *
+ * The short label says what is counted, the large value supports scanning, and `detail` explains
+ * the number without making the user infer it from neighboring filters.
+ */
+export function HrSummaryTiles({
+  items,
+  label = 'Workspace summary',
+}: {
+  items: HrSummaryItem[];
+  label?: string;
+}) {
+  return (
+    <section className="hr-summary-tiles" aria-label={label}>
+      {items.map((item) => (
+        <article
+          key={item.label}
+          className="hr-summary-tile"
+          style={item.tone ? { ['--hr-summary-tone' as string]: item.tone } : undefined}
+        >
+          <span className="hr-summary-icon" aria-hidden="true">
+            {item.icon}
+          </span>
+          <span className="hr-summary-copy">
+            <span className="hr-summary-label">{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </span>
+        </article>
+      ))}
     </section>
   );
 }
@@ -74,79 +118,26 @@ export function HrEmpty({ icon, title, body }: { icon: ReactNode; title: string;
   );
 }
 
-/**
- * The toolbar, as a skeleton.
- *
- * The header used to be the one part of the page that lied while loading: the filter bar rendered
- * fully-formed with live-looking controls and an authoritative "213 employees" the moment the tab
- * opened, above a grid of shimmering placeholders. Every one of those was inert — the dropdowns had no
- * options and the count was whatever the previous render left. Shaping it like the real bar keeps the
- * page from reflowing when data lands, and keeps it from claiming things it does not know yet.
- *
- * `slots` mirrors the real toolbar's control count so the two line up.
- */
-export function HrToolbarSkeleton({ slots = 4 }: { slots?: number }) {
-  return (
-    <div className="hr-toolbar is-loading" aria-hidden="true">
-      <span className="hr-sk-bar hr-sk-search" />
-      {Array.from({ length: slots }, (_, i) => (
-        <span key={i} className="hr-sk-bar hr-sk-control" />
-      ))}
-      <span className="hr-sk-bar hr-sk-count" />
-    </div>
-  );
-}
-
-/** The page-head action buttons, as skeletons — same height and gap as the real ones. */
-export function HrHeadActionsSkeleton({ buttons = 2 }: { buttons?: number }) {
-  return (
-    <div className="hr-head-actions" aria-hidden="true">
-      {Array.from({ length: buttons }, (_, i) => (
-        <span key={i} className="hr-sk-bar hr-sk-btn" />
-      ))}
-    </div>
-  );
-}
-
-/**
- * The card-shaped grid skeleton — HR's ONE loader.
- *
- * Kept here rather than inlined per tab so every grid uses the same count and shape, and so no tab
- * grows a spinner beside it. `aria-busy` + a label is what a screen reader gets; the shimmer is
- * decoration and is hidden from the tree.
- */
-export function HrCardGridSkeleton({
-  count = 8,
-  label,
-  /** The real grid's class, so the skeleton has the SAME column geometry and the page cannot jump. */
-  gridClass = 'hr-empc-grid',
-}: {
-  count?: number;
-  label: string;
-  gridClass?: string;
-}) {
-  return (
-    /* role="status" so the label is actually announced — aria-label on a plain div is not. */
-    <div className={gridClass} role="status" aria-busy="true" aria-label={label}>
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="hr-sk" />
-      ))}
-    </div>
-  );
+/** The single full-surface loading state used when an HR tab has no cached content yet. */
+export function HrPageLoader({ label }: { label: string }) {
+  return <MytrionPageLoader label={label} detail="Preparing the latest HR workspace data" />;
 }
 
 /**
  * A small inline spinner for a WRITE in flight.
  *
- * Distinct from the skeletons on purpose: a skeleton stands in for content that does not exist yet,
- * whereas a save has content on screen already and needs to say "working" without replacing it. Used
- * inside buttons and on the card whose row is being saved.
+ * Distinct from the page loader on purpose: a save has content on screen already and needs to say
+ * "working" without replacing it. Used inside buttons and on the card whose row is being saved.
  */
 export function HrBusy({ label }: { label?: string }) {
   return (
     <span className="hr-busy" role="status" aria-live="polite">
       <span className="hr-busy-ring" aria-hidden="true" />
-      {label ? <span className="hr-busy-label">{label}</span> : <span className="hr-sr">Working…</span>}
+      {label ? (
+        <span className="hr-busy-label">{label}</span>
+      ) : (
+        <span className="hr-sr">Working…</span>
+      )}
     </span>
   );
 }

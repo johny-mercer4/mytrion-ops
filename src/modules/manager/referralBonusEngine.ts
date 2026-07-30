@@ -160,7 +160,8 @@ function usd(n: number): string {
  * Compute + persist one month of referral bonuses.
  *
  * `periodMonth` is 'YYYY-MM-01'. Safe to re-run: monthly rows upsert in place, while prior one-time
- * claims are skipped before any DWH award is written.
+ * claims are skipped before any DWH award is written. This path is retained for deliberate manual
+ * backfills; the Manager workspace calculates the selected month live without invoking it.
  */
 export async function runReferralBonusCalculation(
   ctx: TenantContext,
@@ -265,7 +266,9 @@ export async function runReferralBonusCalculation(
         claimedChildren.add(childClaimKey);
       }
       summary.rowsWritten += 1;
-      total += computed.payableAmount;
+      // The ledger is the accounting source of truth and stores cents. Summing the unrounded
+      // per-gallon floats here can make a run header disagree with the sum of its saved rows.
+      total += Number(saved.amountUsd);
     }
 
     summary.amountTotalUsd = usd(total);

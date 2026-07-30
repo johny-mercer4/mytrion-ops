@@ -111,8 +111,10 @@ export function ManagerHome({
                     <span className="mg-dept-desc">{dept.description}</span>
                   </span>
                   <span className="mg-dept-soon">
-                    <ListTodo size={11} strokeWidth={2.4} aria-hidden />
-                    Tasks
+                    {dept.id === 'sales' ? null : (
+                      <ListTodo size={11} strokeWidth={2.4} aria-hidden />
+                    )}
+                    {dept.id === 'sales' ? 'Coming soon' : 'Tasks'}
                   </span>
                 </button>
               );

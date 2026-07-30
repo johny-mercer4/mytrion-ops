@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql, sum } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, sql, sum } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionReferralBonuses,
@@ -58,6 +58,7 @@ export interface ReferralBonusTotals {
 
 export interface ReferralOneTimeClaim {
   bonusType: ReferralBonusType;
+  periodMonth: string;
   carrierId: number | null;
   childReferralId: string;
   status: ReferralBonusStatus;
@@ -68,6 +69,29 @@ const RECALCULABLE_STATUSES: readonly ReferralBonusStatus[] = ['calculated'];
 
 function tenantScope(ctx: TenantContext) {
   return eq(mytrionReferralBonuses.tenantId, ctx.tenantId);
+}
+
+function bonusRow(ctx: TenantContext, input: UpsertReferralBonusInput): NewMytrionReferralBonus {
+  return {
+    tenantId: ctx.tenantId,
+    bonusType: input.bonusType,
+    periodMonth: input.periodMonth,
+    childReferralId: input.childReferralId,
+    parentReferrerId: input.parentReferrerId ?? null,
+    childName: input.childName ?? null,
+    parentName: input.parentName ?? null,
+    carrierId: input.carrierId ?? null,
+    zohoDealId: input.zohoDealId ?? null,
+    resolution: input.resolution,
+    recipientKind: input.recipientKind,
+    recipientName: input.recipientName ?? null,
+    qtyGallons: input.qtyGallons ?? null,
+    qtyNewCards: input.qtyNewCards ?? null,
+    cumulativeGallons: input.cumulativeGallons ?? null,
+    rate: input.rate ?? null,
+    amountUsd: input.amountUsd,
+    calcRunId: input.calcRunId ?? null,
+  };
 }
 
 /**
@@ -115,13 +139,7 @@ export const referralBonusRepo = {
       amountUsd: input.amountUsd,
       calcRunId: input.calcRunId ?? null,
     };
-    const row: NewMytrionReferralBonus = {
-      tenantId: ctx.tenantId,
-      bonusType: input.bonusType,
-      periodMonth: input.periodMonth,
-      childReferralId: input.childReferralId,
-      ...mutable,
-    };
+    const row = bonusRow(ctx, input);
     const now = new Date();
     const rows = await db
       .insert(mytrionReferralBonuses)
@@ -188,27 +206,34 @@ export const referralBonusRepo = {
   },
 
   /**
-   * Every previously persisted one-time claim, without pagination.
+   * Previously persisted one-time claims, without pagination.
    *
    * The engine loads this once before a run so a threshold reached in June cannot be proposed again
-   * in July. The carrier-level key also catches duplicate Child_Referral records pointing at the
-   * same economic company.
+   * in July. A live historical preview passes `throughPeriodMonth`, so an award recorded in a later
+   * month cannot suppress what the earlier month would have earned. The carrier-level key also
+   * catches duplicate Child_Referral records pointing at the same economic company.
    */
-  async listOneTimeClaims(ctx: TenantContext): Promise<ReferralOneTimeClaim[]> {
+  async listOneTimeClaims(
+    ctx: TenantContext,
+    throughPeriodMonth?: string,
+  ): Promise<ReferralOneTimeClaim[]> {
+    const filters = [
+      tenantScope(ctx),
+      inArray(mytrionReferralBonuses.bonusType, ['gallons_parent', 'gallons_child']),
+    ];
+    if (throughPeriodMonth) {
+      filters.push(lte(mytrionReferralBonuses.periodMonth, throughPeriodMonth));
+    }
     return db
       .select({
         bonusType: mytrionReferralBonuses.bonusType,
+        periodMonth: mytrionReferralBonuses.periodMonth,
         carrierId: mytrionReferralBonuses.carrierId,
         childReferralId: mytrionReferralBonuses.childReferralId,
         status: mytrionReferralBonuses.status,
       })
       .from(mytrionReferralBonuses)
-      .where(
-        and(
-          tenantScope(ctx),
-          inArray(mytrionReferralBonuses.bonusType, ['gallons_parent', 'gallons_child']),
-        ),
-      );
+      .where(and(...filters));
   },
 
   /** Set the lifecycle status of specific rows (admin action: approve / mark paid / void). */

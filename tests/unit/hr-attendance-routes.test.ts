@@ -27,7 +27,17 @@ vi.mock('../../src/repos/hrAttendanceShiftRepo.js', () => ({
     delete: vi.fn(),
     assign: vi.fn(),
     assignmentForDate: vi.fn(),
+    assignmentsForEmployeesDate: vi.fn(async () => new Map()),
     listAssignmentsForShift: vi.fn(async () => []),
+  },
+}));
+
+vi.mock('../../src/repos/hrAttendancePunchRepo.js', () => ({
+  hrAttendancePunchRepo: {
+    listRange: vi.fn(async () => []),
+    listForEmployeesRange: vi.fn(async () => []),
+    lastForEmployees: vi.fn(async () => new Map()),
+    countUnmappedRange: vi.fn(async () => 0),
   },
 }));
 
@@ -180,17 +190,120 @@ describe('HR attendance shifts', () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it('allows a department manager to assign a shift to a direct report', async () => {
+    const self = {
+      id: 'hre_manager',
+      tenantId: DEFAULT_TENANT_ID,
+      firstName: 'Department',
+      lastName: 'Manager',
+    };
+    const target = {
+      id: 'hre_report',
+      tenantId: DEFAULT_TENANT_ID,
+      firstName: 'Direct',
+      lastName: 'Report',
+    };
+    employees.findByZohoUserId.mockResolvedValueOnce(self as never);
+    employees.getById.mockResolvedValueOnce(target as never);
+    employees.listByReportingTo.mockResolvedValueOnce([target] as never);
+    employees.listByDepartmentIds.mockResolvedValueOnce([]);
+    shifts.getById.mockResolvedValueOnce({
+      id: 'hrs_ganga',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'UZB Tashkent · Ganga',
+      timezone: 'Asia/Tashkent',
+      startLocal: '19:00',
+      endLocal: '03:00',
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    shifts.assign.mockResolvedValueOnce({ id: 'hrsa_1' } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/shifts/hrs_ganga/assign',
+      headers: bearer(await workerToken('HR Staff')),
+      payload: {
+        employeeIds: ['hre_report'],
+        effectiveFrom: '2026-07-30',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ assigned: ['hre_report'] });
+    expect(shifts.assign).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ shiftId: 'hrs_ganga', employeeId: 'hre_report' }),
+    );
+  });
+
+  it('refuses a department manager assigning someone outside their team', async () => {
+    employees.findByZohoUserId.mockResolvedValueOnce({
+      id: 'hre_manager',
+      tenantId: DEFAULT_TENANT_ID,
+    } as never);
+    employees.getById.mockResolvedValueOnce({
+      id: 'hre_outsider',
+      tenantId: DEFAULT_TENANT_ID,
+    } as never);
+    employees.listByReportingTo.mockResolvedValueOnce([]);
+    employees.listByDepartmentIds.mockResolvedValueOnce([]);
+    shifts.getById.mockResolvedValueOnce({
+      id: 'hrs_ganga',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'UZB Tashkent · Ganga',
+      timezone: 'Asia/Tashkent',
+      startLocal: '19:00',
+      endLocal: '03:00',
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/shifts/hrs_ganga/assign',
+      headers: bearer(await workerToken('HR Staff')),
+      payload: {
+        employeeIds: ['hre_outsider'],
+        effectiveFrom: '2026-07-30',
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(shifts.assign).not.toHaveBeenCalled();
+  });
 });
 
 describe('HR attendance team visibility', () => {
-  it('GET team requires a linked employee', async () => {
+  it('GET team requires a linked employee for a regular HR reader', async () => {
     employees.findByZohoUserId.mockResolvedValueOnce(undefined);
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/attendance/team?weekOf=2026-07-27&scope=direct',
-      headers: bearer(await workerToken('HR Manager')),
+      headers: bearer(await workerToken('HR Staff')),
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('lets an unlinked HR Manager open the organization attendance directory', async () => {
+    employees.findByZohoUserId.mockResolvedValueOnce(undefined);
+    employees.listByReportingTo.mockResolvedValueOnce([]);
+    employees.listByDepartmentIds.mockResolvedValueOnce([]);
+    employees.list.mockResolvedValueOnce([]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/team?weekOf=2026-07-27&scope=all',
+      headers: bearer(await workerToken('HR Manager')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      scope: 'all',
+      canViewAll: true,
+      items: [],
+    });
   });
 
   it('GET summary refuses outsider for a non-HR-Manager', async () => {
@@ -219,4 +332,3 @@ describe('HR attendance team visibility', () => {
     expect(res.statusCode).toBe(403);
   });
 });
-

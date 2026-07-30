@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   BadgeDollarSign,
@@ -9,6 +9,8 @@ import {
   ChevronRight,
   CircleCheck,
   CreditCard,
+  FileSpreadsheet,
+  FileText,
   Fuel,
   Link2,
   RefreshCw,
@@ -18,8 +20,10 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { getReferralWorkspace } from '../../../api/referrals';
+import { MytrionPageLoader } from '../../_shared/MytrionPageLoader';
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
 import { ReferralDetailModal } from './ReferralDetailModal';
+import { downloadReferralCsv, downloadReferralExcel } from './referralExport';
 import { buildReferralCards, cardMatchesFilter, type ReferralCardModel } from './referralModel';
 import './referrals.css';
 
@@ -68,8 +72,33 @@ function currentPeriod(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
+function periodLabel(periodMonth: string): string {
+  return new Date(`${periodMonth}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 function money(value: number | string): string {
   return Number(value || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+function quantity(value: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function paginationItems(page: number, count: number): Array<number | string> {
+  if (count <= 7) return Array.from({ length: count }, (_, index) => index + 1);
+  const pages = new Set([1, count, page - 1, page, page + 1]);
+  const sorted = [...pages].filter((value) => value > 0 && value <= count).sort((a, b) => a - b);
+  const items: Array<number | string> = [];
+  sorted.forEach((value, index) => {
+    const previous = sorted[index - 1];
+    if (previous !== undefined && value - previous > 1) items.push(`ellipsis-${previous}`);
+    items.push(value);
+  });
+  return items;
 }
 
 function setupCopy(card: ReferralCardModel): string {
@@ -92,6 +121,23 @@ function ReferralCard({
   const paid = card.previews.some((item) => item.state === 'paid');
   const earned = card.previews.some((item) => item.state === 'earned');
   const carriers = new Set(card.previews.map((item) => item.carrierId)).size;
+  const calculatedBonus = card.previews.reduce((sum, item) => sum + Number(item.amountUsd), 0);
+  const activity = card.previews.reduce(
+    (sum, item) =>
+      sum +
+      (item.bonusType === 'swipes_legacy'
+        ? item.periodSwipes
+        : item.recurring
+          ? item.periodGallons
+          : item.cumulativeGallons),
+    0,
+  );
+  const activityLabel =
+    preview?.bonusType === 'swipes_legacy'
+      ? 'Unique cards'
+      : preview?.recurring
+        ? 'Eligible gallons'
+        : 'Cumulative gallons';
   return (
     <button
       type="button"
@@ -121,18 +167,25 @@ function ReferralCard({
 
       {card.setupState === 'ready' ? (
         <>
-          <div className="mg-rf-card-amount">
-            <span>{preview?.recurring ? 'This month' : 'Milestone award'}</span>
-            <strong>
-              {money(card.previews.reduce((sum, item) => sum + Number(item.amountUsd), 0))}
-            </strong>
-            <small>
+          <div className="mg-rf-card-metrics">
+            <div>
+              <span>{activityLabel}</span>
+              <strong>{quantity(activity)}</strong>
+            </div>
+            <div>
+              <span>Calculated bonus</span>
+              <strong>{money(calculatedBonus)}</strong>
+            </div>
+          </div>
+          <div className="mg-rf-card-payout">
+            <span>
               {paid
                 ? 'Previously paid'
                 : earned
                   ? `${money(card.payableAmount)} payable`
                   : 'In progress'}
-            </small>
+            </span>
+            <strong>{preview?.recurring ? 'Monthly' : 'One-time'}</strong>
           </div>
           {!preview?.recurring && preview ? (
             <div className="mg-rf-card-progress">
@@ -170,31 +223,24 @@ function ReferralCard({
   );
 }
 
-function SkeletonGrid() {
-  return (
-    <div className="mg-rf-grid" aria-label="Loading referral cards">
-      {Array.from({ length: 8 }, (_, index) => (
-        <div className="mg-rf-card mg-rf-card-skeleton" key={index}>
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   const [periodMonth, setPeriodMonth] = useState(currentPeriod);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<ReferralCardModel | null>(null);
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
+  const [exportError, setExportError] = useState('');
+  const monthInputRef = useRef<HTMLInputElement>(null);
+  const forceRefreshRef = useRef(false);
 
   const { data, loading, revalidating, error, reload, cachedAt } = useCachedLoad(
     `manager:referrals:workspace:${periodMonth}`,
-    () => getReferralWorkspace(periodMonth),
+    () => {
+      const refresh = forceRefreshRef.current;
+      forceRefreshRef.current = false;
+      return getReferralWorkspace(periodMonth, { refresh });
+    },
     { staleMs: 120_000 },
   );
   const model = useMemo(() => (data ? buildReferralCards(data) : null), [data]);
@@ -210,6 +256,10 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const rangeStart = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const rangeEnd = Math.min(page * PAGE_SIZE, filtered.length);
+  const exportReady =
+    Boolean(data && model && data.periodMonth === periodMonth) && !loading && !revalidating;
 
   useEffect(() => setPage(1), [filter, normalizedQuery, periodMonth]);
   useEffect(() => {
@@ -225,6 +275,20 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       ]),
     );
   }, [model]);
+
+  const exportData = async (format: 'csv' | 'xlsx'): Promise<void> => {
+    if (!model || !exportReady) return;
+    setExporting(format);
+    setExportError('');
+    try {
+      if (format === 'csv') downloadReferralCsv(model.cards, periodMonth);
+      else await downloadReferralExcel(model.cards, periodMonth);
+    } catch (reason) {
+      setExportError(reason instanceof Error ? reason.message : 'Could not create the export.');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <div className="mg-page mg-rf-page">
@@ -242,7 +306,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           ) : null}
           <div>
             <div className="mg-kicker">Partner growth</div>
-            <h1 className="mg-page-title">Referral intelligence</h1>
+            <h1 className="mg-page-title">Referrals</h1>
             <p className="mg-page-sub">
               Zoho relationships, Deal carrier IDs, and MART fuel activity brought into one
               auditable calculation workspace.
@@ -257,28 +321,92 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
                 ? `Updated ${formatCachedAt(cachedAt)}`
                 : '\u00a0'}
           </span>
-          <label className="mg-rf-month">
-            <CalendarDays size={14} />
+          {data && data.periodMonth === periodMonth ? (
+            <span className="mg-rf-live-badge">
+              <Calculator size={13} />
+              {revalidating ? 'Calculating…' : 'Live calculation'}
+            </span>
+          ) : null}
+          <div className="mg-rf-month" data-focus-shell>
+            <button
+              type="button"
+              onClick={() => {
+                const input = monthInputRef.current;
+                if (!input) return;
+                try {
+                  input.showPicker();
+                } catch {
+                  input.focus();
+                  input.click();
+                }
+              }}
+              aria-label={`Choose calculation month, currently ${periodLabel(periodMonth)}`}
+              aria-haspopup="dialog"
+            >
+              <CalendarDays size={15} />
+              <span className="mg-rf-month-copy">
+                <small>Month</small>
+                <strong>{periodLabel(periodMonth)}</strong>
+              </span>
+              <ChevronRight className="mg-rf-month-chevron" size={14} aria-hidden="true" />
+            </button>
             <input
+              ref={monthInputRef}
               type="month"
               value={periodMonth.slice(0, 7)}
+              max={currentPeriod().slice(0, 7)}
               onChange={(event) =>
                 setPeriodMonth(event.target.value ? `${event.target.value}-01` : currentPeriod())
               }
               aria-label="Calculation month"
+              tabIndex={-1}
             />
-          </label>
+          </div>
           <button
             type="button"
             className="mg-btn"
-            onClick={reload}
+            onClick={() => {
+              forceRefreshRef.current = true;
+              reload();
+            }}
             disabled={loading || revalidating}
           >
             <RefreshCw size={15} className={revalidating && !loading ? 'mg-spin' : ''} />
             Refresh
           </button>
+          <div className="mg-rf-export" aria-label="Export complete calculation">
+            <button
+              type="button"
+              className="mg-btn"
+              onClick={() => void exportData('xlsx')}
+              disabled={!exportReady || exporting !== null}
+              title={
+                exportReady
+                  ? 'Export every referral calculation to Excel'
+                  : 'Available after calculation'
+              }
+            >
+              <FileSpreadsheet size={15} />
+              {exporting === 'xlsx' ? 'Preparing…' : 'Excel'}
+            </button>
+            <button
+              type="button"
+              className="mg-btn"
+              onClick={() => void exportData('csv')}
+              disabled={!exportReady || exporting !== null}
+              title={
+                exportReady
+                  ? 'Export every referral calculation to CSV'
+                  : 'Available after calculation'
+              }
+            >
+              <FileText size={15} />
+              {exporting === 'csv' ? 'Preparing…' : 'CSV'}
+            </button>
+          </div>
         </div>
       </header>
+      {exportError ? <div className="mg-rf-export-error">{exportError}</div> : null}
 
       {data ? (
         <section className="mg-rf-kpis" aria-label="Referral summary">
@@ -302,7 +430,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
             <span className="is-emerald">
               <BadgeDollarSign size={17} />
             </span>
-            <small>Payable this run</small>
+            <small>Payable selected month</small>
             <strong>{money(data.summary.payableAmountUsd)}</strong>
             <em>{data.summary.earned} earned awards</em>
           </div>
@@ -344,7 +472,10 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       </section>
 
       {loading ? (
-        <SkeletonGrid />
+        <MytrionPageLoader
+          label="Calculating referral workspace…"
+          detail="Connecting Zoho relationships with MART transaction history"
+        />
       ) : error && !data ? (
         <div className="mg-error">
           <p>{error}</p>
@@ -356,8 +487,11 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
         <>
           <div className="mg-rf-result-meta">
             <span>
-              Showing <strong>{visible.length}</strong> of <strong>{filtered.length}</strong>{' '}
-              referrals
+              Showing{' '}
+              <strong>
+                {rangeStart}–{rangeEnd}
+              </strong>{' '}
+              of <strong>{filtered.length}</strong> referrals
             </span>
             {model?.orphanChildren.length ? (
               <span className="is-warning">
@@ -377,18 +511,35 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
                 type="button"
                 onClick={() => setPage((value) => value - 1)}
                 disabled={page === 1}
+                aria-label="Previous referral page"
               >
-                <ChevronLeft size={15} /> Previous
+                <ChevronLeft size={15} />
               </button>
-              <span>
-                Page <strong>{page}</strong> of {pageCount}
-              </span>
+              {paginationItems(page, pageCount).map((item) =>
+                typeof item === 'number' ? (
+                  <button
+                    key={item}
+                    type="button"
+                    className={item === page ? 'is-current' : ''}
+                    aria-current={item === page ? 'page' : undefined}
+                    aria-label={`Referral page ${item}`}
+                    onClick={() => setPage(item)}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span key={item} aria-hidden="true">
+                    …
+                  </span>
+                ),
+              )}
               <button
                 type="button"
                 onClick={() => setPage((value) => value + 1)}
                 disabled={page === pageCount}
+                aria-label="Next referral page"
               >
-                Next <ChevronRight size={15} />
+                <ChevronRight size={15} />
               </button>
             </nav>
           ) : null}

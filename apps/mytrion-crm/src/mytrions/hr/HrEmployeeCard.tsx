@@ -80,11 +80,6 @@ export function HrEmployeeCard({
 
         <span className="hr-empc-meta">
           {employee.department ? <span className="hr-empc-dept">{employee.department}</span> : null}
-          {employee.faceId ? (
-            <span className="hr-empc-faceid" title="Face ID">
-              FACEID · {employee.faceId}
-            </span>
-          ) : null}
           {employee.email ? <span className="hr-empc-mail">{employee.email}</span> : null}
           {handle ? (
             <span className="hr-empc-tg" title={`Telegram @${handle}`}>

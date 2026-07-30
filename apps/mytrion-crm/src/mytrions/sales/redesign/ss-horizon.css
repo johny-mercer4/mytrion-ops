@@ -283,11 +283,15 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-/* ── Focus — one ring, keyboard only ─────────────────────────────────────── */
-.ss-root :focus-visible {
+/* ── Focus — one ring, keyboard only (never on bare form fields) ─────────── */
+.ss-root :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.28);
   border-radius: var(--radius-sm);
+}
+.ss-root :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

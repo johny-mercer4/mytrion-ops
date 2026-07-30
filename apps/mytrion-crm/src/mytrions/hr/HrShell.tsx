@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
+import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
 import { useUserContext } from '../../context/UserContextProvider';
 import { accessibleHrTabs, canOpenHrTab, type HrTabId } from './hrNav';
 import { HrAttendance } from './tabs/HrAttendance';
@@ -13,6 +13,8 @@ import './hr.css';
 import './hr-workspace.css';
 import './hr-attendance.css';
 import './hr-leave-settings.css';
+import './hr-polish.css';
+import './hr-settings-v2.css';
 
 /**
  * HR Mytrion shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell.
@@ -30,6 +32,8 @@ export function HrShell() {
   const user = useUserContext();
   const [view, setView] = useState<HrTabId>('home');
   const tabs = accessibleHrTabs(user);
+  const settingsTab = tabs.find((tab) => tab.id === 'settings');
+  const mainTabs = tabs.filter((tab) => tab.id !== 'settings');
 
   const open = (id: HrTabId): void => {
     if (canOpenHrTab(user, id)) setView(id);
@@ -39,7 +43,7 @@ export function HrShell() {
     {
       id: 'people',
       label: 'People',
-      items: tabs.map((tab) => ({
+      items: mainTabs.map((tab) => ({
         key: tab.id,
         label: tab.soon ? `${tab.label} · Soon` : tab.label,
         icon: <tab.icon size={19} />,
@@ -50,9 +54,20 @@ export function HrShell() {
       })),
     },
   ];
+  const footerNav: NavItem[] = settingsTab
+    ? [{
+        key: settingsTab.id,
+        label: settingsTab.label,
+        icon: <settingsTab.icon size={19} />,
+        tone: settingsTab.tone,
+        active: view === settingsTab.id,
+        onClick: () => open(settingsTab.id),
+        keywords: settingsTab.keywords,
+      }]
+    : [];
 
   return (
-    <MytrionShell id="hr" navSections={navSections} enableNavSearch>
+    <MytrionShell id="hr" navSections={navSections} footerNav={footerNav} enableNavSearch>
       <div className="hr-root">
         {view === 'home' ? <HrHome onOpen={open} /> : null}
         {view === 'employees' ? <HrEmployees /> : null}

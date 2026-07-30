@@ -40,6 +40,7 @@ import { getImpersonation } from '@/api/impersonation';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
+import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 import { RejectionDetailModal } from '../RejectionDetailModal';
 
@@ -142,22 +143,28 @@ interface RecordVM {
   cards: number;
   gallons: string;
   gallonsMonth: string;
+  previousInNetworkGallons: number;
+  currentInNetworkGallons: number;
+  previousTotalGallons: number;
+  currentTotalGallons: number;
+  previousCards: number;
+  currentCards: number;
   owed: number;
   tier: TierResult;
   onClick: () => void;
 }
 
 /** Display order for the bar + filter. Mirrors the sort: best tier first, "no cards" last. */
-const TIER_ORDER: TierBucket[] = ['gold', 'silver', 'bronze', 'building', 'idle'];
+const TIER_ORDER: TierBucket[] = [
+  'enterprise',
+  'gold',
+  'silver',
+  'bronze',
+  'building',
+  'idle',
+];
 
-/**
- * Loyalty-tier distribution AND the tier filter, in one control.
- *
- * The counts were already here and already sat directly above the grid, so making each legend entry
- * a toggle is the whole filter — no extra chrome, and the number you click is the number of cards you
- * get. Clicking the active bucket clears it. Counts always describe the agent's FULL book, never the
- * filtered slice, so the denominator doesn't move under you as you filter.
- */
+/** Loyalty distribution and filter; counts always describe the agent's full book. */
 function TierDistribution({
   counts,
   total,
@@ -322,6 +329,12 @@ export function RecordsTab() {
         cards: c.cards,
         gallons: c.gallons,
         gallonsMonth: numFmt(c.gallonsThisMonth),
+        previousInNetworkGallons: c.inNetworkGallonsPrevMonth,
+        currentInNetworkGallons: c.inNetworkGallonsThisMonth,
+        previousTotalGallons: c.gallonsPrevMonth,
+        currentTotalGallons: c.gallonsThisMonth,
+        previousCards: c.activeCardsPrevMonth,
+        currentCards: c.activeCardsThisMonth,
         owed: c.computedDebt,
         tier,
         onClick: () => openClient({
@@ -330,7 +343,11 @@ export function RecordsTab() {
           status: c.status, mc: c.mc, dot: c.dot, owed: c.computedDebt,
           gallonsThisMonth: c.gallonsThisMonth, activeCardsThisMonth: c.activeCardsThisMonth,
           transactionsThisMonth: c.transactionsThisMonth, gallonsPrevMonth: c.gallonsPrevMonth,
+          inNetworkGallonsThisMonth: c.inNetworkGallonsThisMonth,
           activeCardsPrevMonth: c.activeCardsPrevMonth,
+          inNetworkGallonsPrevMonth: c.inNetworkGallonsPrevMonth,
+          lastTierName: c.lastTierName,
+          loyaltyOverride: c.loyaltyOverride ?? null,
         }),
       };
     })
@@ -338,7 +355,14 @@ export function RecordsTab() {
     .sort(compareClients);
 
   // Loyalty-tier distribution across the agent's whole book (not search-filtered).
-  const tierCounts: Record<TierBucket, number> = { gold: 0, silver: 0, bronze: 0, building: 0, idle: 0 };
+  const tierCounts: Record<TierBucket, number> = {
+    enterprise: 0,
+    gold: 0,
+    silver: 0,
+    bronze: 0,
+    building: 0,
+    idle: 0,
+  };
   for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTierForRow(c))] += 1;
   const clientTotal = (recsLoad.data ?? []).length;
 
@@ -466,7 +490,7 @@ export function RecordsTab() {
           <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg={q ? 'No clients match your search.' : 'No clients in this book yet.'} skeleton={<DcCardGridSkeleton label="clients" />}>
           {/* .dc-lty scopes the tier palette; each card carries its bucket class so the shell (edge,
               wash, rail, glow) reads as the tier while the figures below keep their own semantics. */}
-          <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
+          <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px')}>
             {clients.map((c) => (
               <div key={c.id} onClick={c.onClick} className={`dc-lty-c is-${tierBucketOf(c.tier)}`}>
                 <div style={s('display:flex;align-items:center;gap:12px')}>
@@ -482,16 +506,15 @@ export function RecordsTab() {
                     // One badge per bucket, each with its own silhouette — a star on all four made
                     // Gold/Silver/Bronze read as the same badge in different tints.
                     const bk = tierBucketOf(c.tier);
-                    // Tiers are relative to FLEET SIZE, so a grid legitimately shows a 1-card client
-                    // at Gold next to a 12-card client at Silver. Spell out the track + the bar they
-                    // were measured against, otherwise the board reads as broken.
+                    // The current badge is earned from the closed previous month. Spell out the track
+                    // and exact bars so the card is auditable without opening the detail modal.
                     const th = c.tier.thresholds;
                     const tip = th
                       ? `${trackCaption(c.tier)} — ${tierBucketLabel(bk)}. ` +
-                        `Bronze ${numFmt(th.bronze)} / Silver ${numFmt(th.silver)} / Gold ${numFmt(th.gold)} gal this month; ` +
-                        `this client: ${numFmt(Math.round(c.tier.gallons))} gal` +
+                        `Bronze ${numFmt(th.bronze)} / Silver ${numFmt(th.silver)} / Gold ${numFmt(th.gold)} ULSR + ULSD gal; ` +
+                        `closed month: ${numFmt(Math.round(c.tier.gallons))} gal` +
                         (c.tier.nextLevel ? ` (${numFmt(Math.round(c.tier.gallonsToNext))} to ${c.tier.nextLevel})` : '')
-                      : 'No active cards this month — not in the program.';
+                      : trackCaption(c.tier);
                     return (
                       <span title={tip} style={s(badge(tierBucketLabel(bk), tierBucketColor(bk)).style + `;color:${tierBucketTextColor(bk)};display:inline-flex;align-items:center;gap:5px;flex-shrink:0;cursor:help`)}>
                         <Icon name={tierBucketIcon(bk)} size={12} />{tierBucketLabel(bk)}{c.tier.grace ? ' •' : ''}
@@ -499,26 +522,16 @@ export function RecordsTab() {
                     );
                   })()}
                 </div>
-                <div style={s('display:flex;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border2)')}>
-                  <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600")}>{c.active}<span style={s('color:var(--muted);font-size:13px')}>/{c.cards}</span></div>
-                    <div style={s('font-size:12px;color:var(--muted)')}>Active cards</div>
-                  </div>
-                  <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--text)")}>{c.gallons}</div>
-                    <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--violet)')} />Gallons · Cycle</div>
-                  </div>
-                  <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--text)")}>{c.gallonsMonth}</div>
-                    <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--accent)')} />Gallons · Month</div>
-                  </div>
-                  {c.owed >= 1 && (
-                    <div>
-                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--danger)")}>{`$${Math.round(c.owed).toLocaleString('en-US')}`}</div>
-                      <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--danger)')} />Owed</div>
-                    </div>
-                  )}
-                </div>
+                <ClientLoyaltyComparison
+                  previousInNetworkGallons={c.previousInNetworkGallons}
+                  currentInNetworkGallons={c.currentInNetworkGallons}
+                  previousTotalGallons={c.previousTotalGallons}
+                  currentTotalGallons={c.currentTotalGallons}
+                  previousCards={c.previousCards}
+                  currentCards={c.currentCards}
+                  accountActiveCards={c.active}
+                  owed={c.owed}
+                />
               </div>
             ))}
           </div>
