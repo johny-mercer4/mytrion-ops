@@ -442,6 +442,26 @@ const EnvSchema = z.object({
   // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
   PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
 
+  // --- Realtime WebSocket (GET /v1/realtime + GET /v1/carrier/mini-app/realtime) ---
+  // Server-side protocol-ping interval, which is also the reap deadline: a socket that has not
+  // answered the PREVIOUS sweep's ping is terminated on the next one (so a dead socket is
+  // dropped within 2 intervals). The browser's WebSocket API answers `pong` at the protocol
+  // level with no JS involvement, so this is how a dead CLIENT is noticed server-side and its
+  // hub subscriptions are freed. Render imposes no fixed WS timeout, but a CDN in front (e.g.
+  // Cloudflare) caps WS at 100s — 25s stays under 75% of that so adding one needs no retune.
+  REALTIME_PING_INTERVAL_MS: z.coerce.number().int().min(1_000).default(25_000),
+  // --- Agent presence (drives ticket round-robin: only an available ONLINE agent is assignable) ---
+  // Ships dark. When off, sockets are not tracked and nothing is written to
+  // mytrion_agent_presence — so the table can land, and the heartbeat can run, well before ticket
+  // assignment exists. Turn on together with the comms ticketing surface.
+  FF_COMMS_PRESENCE: flag('0'),
+  // How often a lease's last_seen_at is refreshed when nothing changed. Must be >= the ping
+  // interval so each refresh follows at least one liveness check.
+  PRESENCE_REFRESH_MS: z.coerce.number().int().min(1_000).default(30_000),
+  // How old a lease may be and still count as online. Must be > 2x PRESENCE_REFRESH_MS or agents
+  // flicker offline between refreshes — enforced as a boot assertion below, not left to a comment.
+  PRESENCE_STALE_MS: z.coerce.number().int().min(3_000).default(90_000),
+
   // --- Browser automation: Browserbase (legacy direct stubs — superseded by Composio toolkits) ---
   BROWSERBASE_API_KEY: z.string().default(''),
   BROWSERBASE_PROJECT_ID: z.string().default(''),
@@ -680,6 +700,21 @@ export function assertRuntimeSecrets(): void {
     if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');
     if (!env.S3_SECRET_ACCESS_KEY) missing.push('S3_SECRET_ACCESS_KEY');
     if (!env.S3_BUCKET) missing.push('S3_BUCKET');
+  }
+
+  // Presence timing is a CORRECTNESS invariant, not a missing secret, so it throws in every
+  // environment rather than warning in dev. If the staleness window is not comfortably wider than
+  // the refresh cadence, leases expire between refreshes and connected agents flicker offline —
+  // which silently stops tickets being auto-assigned to anyone. Fail at boot, not at 3am.
+  if (env.PRESENCE_STALE_MS <= 2 * env.PRESENCE_REFRESH_MS) {
+    throw new Error(
+      `PRESENCE_STALE_MS (${env.PRESENCE_STALE_MS}) must be greater than 2x PRESENCE_REFRESH_MS (${env.PRESENCE_REFRESH_MS})`,
+    );
+  }
+  if (env.PRESENCE_REFRESH_MS < env.REALTIME_PING_INTERVAL_MS) {
+    throw new Error(
+      `PRESENCE_REFRESH_MS (${env.PRESENCE_REFRESH_MS}) must be >= REALTIME_PING_INTERVAL_MS (${env.REALTIME_PING_INTERVAL_MS}) so every lease refresh follows a liveness check`,
+    );
   }
 
   if (missing.length === 0) return;

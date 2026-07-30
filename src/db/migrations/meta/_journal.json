@@ -554,6 +554,34 @@
       "when": 1785402000000,
       "tag": "0078_support_bot_memories",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785405600000,
+      "tag": "0085_comms_presence",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785409200000,
+      "tag": "0086_comms_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785412800000,
+      "tag": "0087_comms_c_level_pool",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1785416400000,
+      "tag": "0088_comms_catalog_seed",
+      "breakpoints": true
     }
   ]
 }

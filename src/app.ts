@@ -18,6 +18,8 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { wsHeartbeatPlugin } from './plugins/wsHeartbeat.js';
+import { registerCommsRealtime } from './modules/comms/bootstrap.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
@@ -213,6 +215,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Native WebSocket support (GET /v1/realtime — inbox pub/sub). Registered at the root so
   // the versioned scope's websocket routes can attach; 1 MiB frame cap.
   await app.register(websocket, { options: { maxPayload: 1_048_576 } });
+  // Protocol ping + reaper for both WS endpoints. Must come after the websocket registration
+  // (it reads app.websocketServer) and before any route that attaches sockets.
+  wsHeartbeatPlugin(app);
+  // Hand the hub its row-level thread authorizer. Registered here rather than imported by the hub so
+  // the hub keeps depending only on logger + types; the authorizer reuses the REST reader filter.
+  registerCommsRealtime();
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {

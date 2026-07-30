@@ -14,6 +14,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
@@ -22,6 +23,7 @@ import {
   publishInboxEvent,
   realtimeHub,
 } from '../../modules/realtime/hub.js';
+import { recordConnect, recordDisconnect } from '../../modules/realtime/presence.js';
 import { inboxEventRepo, type InboxEventDto } from '../../repos/inboxEventRepo.js';
 import type { InboxOwnerKind } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -167,8 +169,24 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       send({ kind: 'error', message: `Unknown action '${action}'` });
     });
 
-    socket.on('close', () => realtimeHub.dropSocket(socket));
-    socket.on('error', () => realtimeHub.dropSocket(socket));
+    // Presence is tracked per connection, not per subscription: ticket round-robin only assigns
+    // to an agent who is actually reachable. Counting is in-memory and cheap; the batched flush
+    // to Postgres happens on the heartbeat sweep. Gated as one unit with the flush — tracking
+    // without flushing would grow the in-memory map with settled zero entries forever.
+    const trackPresence = env.FF_COMMS_PRESENCE;
+    if (trackPresence) recordConnect(ctx);
+
+    // Guarded so 'close' after 'error' cannot decrement the same socket twice and make an agent
+    // look offline while another tab is still connected.
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      realtimeHub.dropSocket(socket);
+      if (trackPresence) recordDisconnect(ctx);
+    };
+    socket.on('close', release);
+    socket.on('error', release);
   });
 
   /** Create an inbox event: persist first, then push live to the owner's topic. */
