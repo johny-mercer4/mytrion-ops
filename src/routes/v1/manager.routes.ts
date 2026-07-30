@@ -8,7 +8,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { RBACError, ValidationError } from '../../lib/errors.js';
+import { AppError, errorMessage, RBACError, ValidationError } from '../../lib/errors.js';
 import {
   LOYALTY_REWARD_IDS,
   type LoyaltyEnterpriseMode,
@@ -87,9 +87,12 @@ export async function managerRoutes(app: FastifyInstance): Promise<void> {
           .string()
           .regex(/^\d{4}-\d{2}-01$/)
           .optional(),
+        refresh: z.enum(['1']).optional(),
       })
       .parse(request.query);
-    return fetchReferralWorkspace(ctx, query.period_month ?? monthStart(new Date()));
+    return fetchReferralWorkspace(ctx, query.period_month ?? monthStart(new Date()), {
+      force: query.refresh === '1',
+    });
   });
 
   // Referrals card — full-field records of a referral module via COQL. `:module` is a safe token
@@ -120,7 +123,17 @@ export async function managerRoutes(app: FastifyInstance): Promise<void> {
   // never disagree on a client's tier. Not owner-scoped, hence manager-gated like every route here.
   app.get('/manager/loyalty/clients', guard, async (request) => {
     const ctx = requireManagerAccess(request);
-    return fetchLoyaltyRoster(ctx);
+    const query = z.object({ refresh: z.enum(['1']).optional() }).parse(request.query);
+    try {
+      return await fetchLoyaltyRoster(ctx, { force: query.refresh === '1' });
+    } catch (error) {
+      throw new AppError(`Loyalty data is temporarily unavailable: ${errorMessage(error)}`, {
+        statusCode: 502,
+        code: 'LOYALTY_DATA_UNAVAILABLE',
+        expose: true,
+        cause: error,
+      });
+    }
   });
 
   app.patch('/manager/loyalty/clients/:carrierId/rewards', guard, async (request) => {

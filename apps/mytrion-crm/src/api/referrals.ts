@@ -121,8 +121,14 @@ export interface ReferralWorkspace {
 }
 
 /** One request for the full card grid, modal detail, and server-calculated MART preview. */
-export const getReferralWorkspace = (periodMonth?: string): Promise<ReferralWorkspace> =>
+export const getReferralWorkspace = (
+  periodMonth?: string,
+  options: { refresh?: boolean } = {},
+): Promise<ReferralWorkspace> =>
   request('GET', '/manager/referrals/workspace', {
-    query: periodMonth ? { period_month: periodMonth } : {},
+    query: {
+      ...(periodMonth ? { period_month: periodMonth } : {}),
+      ...(options.refresh ? { refresh: '1' } : {}),
+    },
     headers: MGR_HEADERS,
   }) as Promise<ReferralWorkspace>;

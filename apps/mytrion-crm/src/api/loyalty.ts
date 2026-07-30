@@ -67,9 +67,10 @@ export interface LoyaltyRoster {
 const MGR_HEADERS = { 'x-department-access': 'management' } as const;
 
 /** Every carrier's tier inputs, heaviest this-month volume first (server-ordered). */
-export function listLoyaltyClients(): Promise<LoyaltyRoster> {
+export function listLoyaltyClients(options: { refresh?: boolean } = {}): Promise<LoyaltyRoster> {
   return request('GET', '/manager/loyalty/clients', {
     headers: MGR_HEADERS,
+    query: options.refresh ? { refresh: '1' } : {},
   }) as Promise<LoyaltyRoster>;
 }
 

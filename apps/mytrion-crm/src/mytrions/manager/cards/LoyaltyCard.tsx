@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
   Award,
@@ -342,6 +342,7 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
   const [localOverrides, setLocalOverrides] = useState<Map<string, LoyaltyClientOverride | null>>(
     () => new Map(),
   );
+  const forceRefreshRef = useRef(false);
 
   // The roster is one heavy DWH read (~8k carriers, ~2.5s), so it caches for 5 minutes.
   const {
@@ -351,7 +352,15 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
     error,
     cachedAt,
     reload,
-  } = useCachedLoad('mgr:loyalty:clients', listLoyaltyClients, { staleMs: 300_000 });
+  } = useCachedLoad(
+    'mgr:loyalty:clients',
+    () => {
+      const refresh = forceRefreshRef.current;
+      forceRefreshRef.current = false;
+      return listLoyaltyClients({ refresh });
+    },
+    { staleMs: 300_000 },
+  );
 
   /** Resolve every carrier's tier once — filters and the distribution both read this. */
   const scored = useMemo<Scored[]>(
@@ -445,7 +454,15 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
           {cachedAt ? (
             <span className="mg-cachedat">Updated {formatCachedAt(cachedAt)}</span>
           ) : null}
-          <button type="button" className="mg-btn" onClick={reload} disabled={busy}>
+          <button
+            type="button"
+            className="mg-btn"
+            onClick={() => {
+              forceRefreshRef.current = true;
+              reload();
+            }}
+            disabled={busy}
+          >
             <RefreshCw size={15} className={busy ? 'mg-spin' : ''} />
             Refresh
           </button>

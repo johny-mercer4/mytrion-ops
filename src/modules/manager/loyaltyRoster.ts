@@ -2,9 +2,10 @@
  * Manager Mytrion → Loyalty Program: the ALL-CLIENTS roster that backs the tier board.
  *
  * Sales Mytrion's Data Center → Clients shows the same program scoped to ONE agent's book
- * (`fetchAgentClients`); this is the company-wide view, so it reuses the exact same DWH query via
- * `fetchAllClients()` — same gallons basis, same active-card counts, same billing cycle. If the two
- * diverged, a client's tier would differ depending on which Mytrion you opened it in.
+ * (`fetchAgentClients`); this is the company-wide view. `fetchAllClients()` uses a smaller
+ * company-wide projection, but deliberately preserves the same gallon windows, active-card counts,
+ * and billing cycle. If those formulas diverged, a client's tier would differ depending on which
+ * Mytrion you opened it in.
  *
  * Why a TRIMMED row shape: the raw roster is ~8,000 carriers × ~20 fields ≈ 3.3 MB of JSON. Tier
  * only needs the projected track, gallon, status, and reward-control fields, so we drop
@@ -65,8 +66,14 @@ export interface LoyaltyRosterResult {
  * incrementally, and an alphabetical order would bury all 621 tiered clients behind thousands of
  * zero-gallon carriers.
  */
-export async function fetchLoyaltyRoster(ctx: TenantContext): Promise<LoyaltyRosterResult> {
-  const [rows, overrideRows] = await Promise.all([fetchAllClients(), loyaltyOverrides(ctx)]);
+export async function fetchLoyaltyRoster(
+  ctx: TenantContext,
+  options: { force?: boolean } = {},
+): Promise<LoyaltyRosterResult> {
+  const [rows, overrideRows] = await Promise.all([
+    fetchAllClients(options),
+    loyaltyOverrides(ctx),
+  ]);
   const clients: LoyaltyClientRow[] = rows
     .map((r) => ({
       carrierId: r.carrierId,

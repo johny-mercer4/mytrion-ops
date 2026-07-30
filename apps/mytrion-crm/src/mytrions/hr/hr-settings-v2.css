@@ -151,6 +151,17 @@
   box-shadow: none;
 }
 
+/* The year control owns the one visible outline. The generic settings select rule above otherwise
+   paints a second bordered select inside its bordered calendar shell. */
+.hr-settings-leave-wrap .hr-leave-year select {
+  min-height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 20px 0 2px;
+  box-shadow: none;
+}
+
 .hr-root .hr-settings-form-grid input:focus,
 .hr-root .hr-settings-form-grid input:focus-visible,
 .hr-root .hr-settings-form-grid select:focus,

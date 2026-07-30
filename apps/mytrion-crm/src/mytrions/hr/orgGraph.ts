@@ -77,6 +77,58 @@ interface Built {
   hiddenCount: number;
 }
 
+/**
+ * Every expandable id that belongs to one visible org branch.
+ *
+ * Collapsing a department must also clear expanded child departments and managers. Leaving those ids
+ * open meant their employee nodes could remain visible (or spring back immediately) beneath a folded
+ * parent. Departments remain drawn by buildOrgGraph; only their people branches are closed.
+ */
+export function orgBranchIds(data: HrOrgStructureDto, rootId: string): ReadonlySet<string> {
+  const ids = new Set<string>([rootId]);
+  const childDepartments = new Map<string, string[]>();
+  const reports = new Map<string, string[]>();
+  for (const department of data.departments) {
+    if (!department.parentId) continue;
+    const children = childDepartments.get(department.parentId) ?? [];
+    children.push(department.id);
+    childDepartments.set(department.parentId, children);
+  }
+  for (const employee of data.employees) {
+    if (!employee.reportingToEmployeeId) continue;
+    const children = reports.get(employee.reportingToEmployeeId) ?? [];
+    children.push(employee.id);
+    reports.set(employee.reportingToEmployeeId, children);
+  }
+
+  const addReports = (employeeId: string): void => {
+    for (const reportId of reports.get(employeeId) ?? []) {
+      if (ids.has(reportId)) continue;
+      ids.add(reportId);
+      addReports(reportId);
+    }
+  };
+
+  if (data.departments.some((department) => department.id === rootId)) {
+    const departmentIds = new Set<string>();
+    const addDepartment = (departmentId: string): void => {
+      if (departmentIds.has(departmentId)) return;
+      departmentIds.add(departmentId);
+      ids.add(departmentId);
+      for (const childId of childDepartments.get(departmentId) ?? []) addDepartment(childId);
+    };
+    addDepartment(rootId);
+    for (const employee of data.employees) {
+      if (!employee.departmentId || !departmentIds.has(employee.departmentId)) continue;
+      ids.add(employee.id);
+      addReports(employee.id);
+    }
+  } else {
+    addReports(rootId);
+  }
+  return ids;
+}
+
 /** Children of each department / manager, resolved once. */
 function index(data: HrOrgStructureDto, includeTerminated: boolean) {
   const employees = includeTerminated
@@ -133,7 +185,10 @@ function index(data: HrOrgStructureDto, includeTerminated: boolean) {
 }
 
 export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Built {
-  const { employees, childDepts, deptStaff, reports, floating } = index(data, opts.includeTerminated);
+  const { employees, childDepts, deptStaff, reports, floating } = index(
+    data,
+    opts.includeTerminated,
+  );
   const nodes: Node<OrgNodeData>[] = [];
   const edges: Edge[] = [];
   /**
@@ -361,9 +416,7 @@ function layout(nodes: Node<OrgNodeData>[], edges: Edge[], pinned: ReadonlySet<s
    * not a full constraint solver: a single non-cascading nudge is predictable, cannot loop, and the user
    * can always drag again. Pinned nodes are never moved — they are the explicit instruction.
    */
-  const pinnedBoxes = nodes
-    .filter((n) => pinned.has(n.id))
-    .map((n) => ({ ...box(n), id: n.id }));
+  const pinnedBoxes = nodes.filter((n) => pinned.has(n.id)).map((n) => ({ ...box(n), id: n.id }));
   if (pinnedBoxes.length === 0) return;
   for (const n of nodes) {
     if (pinned.has(n.id)) continue;

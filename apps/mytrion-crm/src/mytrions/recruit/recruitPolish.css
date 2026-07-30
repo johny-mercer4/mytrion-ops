@@ -1,0 +1,98 @@
+/* Recruit production polish — shared typography, loader and restrained Horizon glass language. */
+
+[data-mytrion='recruit'],
+[data-mytrion='recruit'] :where(button, input, select, textarea),
+.recruit-modal-backdrop {
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+}
+
+[data-mytrion='recruit'] {
+  --recruit-border: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --recruit-surface: color-mix(in srgb, var(--hz-pane) 96%, var(--bg-primary));
+}
+
+.recruit-root {
+  background:
+    radial-gradient(
+      circle at 92% 5%,
+      color-mix(in srgb, var(--accent) 5%, transparent),
+      transparent 30rem
+    ),
+    transparent;
+}
+
+.recruit-metric,
+.recruit-panel,
+.recruit-job-card,
+.recruit-filterbar,
+.recruit-candidate,
+.recruit-modal {
+  border-color: var(--recruit-border);
+  background: var(--recruit-surface);
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 0.09),
+    inset 0 1px rgb(255 255 255 / 0.035);
+}
+
+.recruit-metric::after {
+  opacity: 0.46;
+}
+
+.recruit-panel:hover,
+.recruit-job-card:hover,
+.recruit-candidate:hover {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--recruit-border));
+  box-shadow:
+    0 16px 42px rgb(0 0 0 / 0.12),
+    inset 0 1px rgb(255 255 255 / 0.045);
+}
+
+.recruit-btn-primary {
+  background: color-mix(in srgb, var(--accent) 84%, #111827);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.recruit-filterbar input:focus-visible,
+.recruit-filterbar select:focus-visible,
+.recruit-field input:focus-visible,
+.recruit-field select:focus-visible,
+.recruit-field textarea:focus-visible,
+.recruit-setting-row input:focus-visible,
+.recruit-setting-row select:focus-visible,
+.recruit-candidate-actions select:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--recruit-border));
+  outline: 2px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+[data-theme='light'] [data-mytrion='recruit'] {
+  --recruit-border: rgb(71 85 105 / 0.17);
+  --recruit-surface: rgb(255 255 255 / 0.76);
+}
+
+[data-theme='light'] .recruit-root {
+  background:
+    radial-gradient(circle at 96% 2%, rgb(148 163 184 / 0.11), transparent 34rem),
+    transparent;
+}
+
+[data-theme='light'] .recruit-metric,
+[data-theme='light'] .recruit-panel,
+[data-theme='light'] .recruit-job-card,
+[data-theme='light'] .recruit-filterbar,
+[data-theme='light'] .recruit-candidate,
+[data-theme='light'] .recruit-modal {
+  box-shadow:
+    0 12px 34px rgb(15 23 42 / 0.055),
+    inset 0 1px rgb(255 255 255 / 0.72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recruit-panel,
+  .recruit-job-card,
+  .recruit-candidate,
+  .recruit-btn {
+    transition: none;
+  }
+}

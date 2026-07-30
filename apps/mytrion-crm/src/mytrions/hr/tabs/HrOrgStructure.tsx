@@ -18,6 +18,7 @@ import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModa
 import { HrEmployeeDetail } from '../HrEmployeeDetail';
 import { HrEmployeeForm, type EmployeeFormMode } from '../HrEmployeeForm';
 import { HrOrgCanvas, type OrgCanvasHandlers } from '../HrOrgCanvas';
+import { orgBranchIds } from '../orgGraph';
 import {
   invalidateHrDepartments,
   invalidateHrEmployees,
@@ -26,12 +27,7 @@ import {
   useHrDirectory,
   useHrOrgStructure,
 } from '../hrData';
-import {
-  HrEmpty,
-  HrPageLoader,
-  HrPageHead,
-  HrSummaryTiles,
-} from '../HrBits';
+import { HrEmpty, HrPageLoader, HrPageHead, HrSummaryTiles } from '../HrBits';
 
 /**
  * HR → Org Structure. A React Flow canvas, top-to-bottom, built from `hr_departments.parent_id`,
@@ -72,14 +68,31 @@ export function HrOrgStructure() {
     [directory.data],
   );
 
-  const onToggle = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const onToggle = useCallback(
+    (id: string): void => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          for (const branchId of orgBranchIds(
+            org.data ?? {
+              departments: [],
+              employees: [],
+              departmentCount: 0,
+              employeeLinkedCount: 0,
+              employeeUnlinkedCount: 0,
+            },
+            id,
+          )) {
+            next.delete(branchId);
+          }
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [org.data],
+  );
 
   /** Every id that COULD hold children — what "Expand all" opens. */
   const expandableIds = useMemo(() => {
@@ -320,10 +333,12 @@ export function HrOrgStructure() {
           headcount={
             deptModal.kind === 'edit'
               ? {
-                  total: org.data?.departments.find((d) => d.id === deptModal.department.id)
-                    ?.employeeCount ?? 0,
-                  active: org.data?.departments.find((d) => d.id === deptModal.department.id)
-                    ?.activeEmployeeCount ?? 0,
+                  total:
+                    org.data?.departments.find((d) => d.id === deptModal.department.id)
+                      ?.employeeCount ?? 0,
+                  active:
+                    org.data?.departments.find((d) => d.id === deptModal.department.id)
+                      ?.activeEmployeeCount ?? 0,
                 }
               : undefined
           }

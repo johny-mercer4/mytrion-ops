@@ -11,6 +11,7 @@
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { AppError, errorMessage } from '../../lib/errors.js';
+import { logger } from '../../lib/logger.js';
 
 /** Referral modules the card exposes, keyed by a SAFE url token — raw module names never leave here. */
 export const REFERRAL_MODULES = {
@@ -86,7 +87,13 @@ const NOISE_API_NAMES = new Set([
   'Unsubscribed_Time',
 ]);
 /** Non-scalar field types COQL / the browser can't render cleanly. */
-const NOISE_TYPES = new Set(['subform', 'multiselectlookup', 'profileimage', 'RRULE', 'event_reminder']);
+const NOISE_TYPES = new Set([
+  'subform',
+  'multiselectlookup',
+  'profileimage',
+  'RRULE',
+  'event_reminder',
+]);
 
 /** Zoho caps a COQL SELECT around 50 columns — stay under it. */
 const MAX_FIELDS = 48;
@@ -277,7 +284,7 @@ async function fetchCalculationModule(
  * 2,000-row page with today's roster, avoiding the wide metadata + multi-page reads used by the CRM
  * detail browser.
  */
-export async function fetchReferralCalculationRecords(): Promise<ReferralCalculationRecords> {
+async function computeReferralCalculationRecords(): Promise<ReferralCalculationRecords> {
   try {
     const [parents, children, deals] = await Promise.all([
       fetchCalculationModule('parents', PARENT_CALC_FIELDS),
@@ -309,6 +316,61 @@ export async function fetchReferralCalculationRecords(): Promise<ReferralCalcula
   }
 }
 
+interface CalculationRecordsCache {
+  value: ReferralCalculationRecords;
+  expiresAt: number;
+  staleUntil: number;
+}
+
+const CALCULATION_RECORDS_TTL_MS = 10 * 60_000;
+const CALCULATION_RECORDS_STALE_MS = 30 * 60_000;
+let calculationRecordsCache: CalculationRecordsCache | null = null;
+let calculationRecordsInFlight: Promise<ReferralCalculationRecords> | null = null;
+
+/**
+ * Month-independent Zoho relationship graph.
+ *
+ * Selecting another calculation month must not download the same parent/child/deal records again.
+ * The MART volume remains live per month; only this CRM graph is shared for ten minutes.
+ */
+export async function fetchReferralCalculationRecords(
+  options: { force?: boolean } = {},
+): Promise<ReferralCalculationRecords> {
+  const cached = calculationRecordsCache;
+  if (!options.force && cached && cached.expiresAt > Date.now()) return cached.value;
+  if (calculationRecordsInFlight) return calculationRecordsInFlight;
+
+  calculationRecordsInFlight = computeReferralCalculationRecords()
+    .then((value) => {
+      const now = Date.now();
+      calculationRecordsCache = {
+        value,
+        expiresAt: now + CALCULATION_RECORDS_TTL_MS,
+        staleUntil: now + CALCULATION_RECORDS_STALE_MS,
+      };
+      return value;
+    })
+    .catch((error: unknown) => {
+      if (cached && cached.staleUntil > Date.now()) {
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error) },
+          'referral CRM refresh failed — serving recent relationship graph',
+        );
+        return cached.value;
+      }
+      throw error;
+    })
+    .finally(() => {
+      calculationRecordsInFlight = null;
+    });
+  return calculationRecordsInFlight;
+}
+
+export function resetReferralCalculationRecordsCache(): void {
+  calculationRecordsCache = null;
+  calculationRecordsInFlight = null;
+}
+
 async function fetchLinked(
   module: string,
   display: ReferralField[],
@@ -324,7 +386,14 @@ async function fetchLinked(
       ...(maxRows !== undefined ? { maxRows } : {}),
     },
   );
-  return { module, fields: display, rows: res.rows, total: res.rows.length, truncated: res.truncated, pages: res.pages };
+  return {
+    module,
+    fields: display,
+    rows: res.rows,
+    total: res.rows.length,
+    truncated: res.truncated,
+    pages: res.pages,
+  };
 }
 
 /**

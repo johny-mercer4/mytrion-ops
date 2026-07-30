@@ -11,9 +11,10 @@ import type {
   ReferralBonusType,
 } from '../../db/schema/index.js';
 import {
-  fetchReferralVolume,
+  fetchReferralVolumeSets,
   type ReferralCarrierVolume,
 } from '../../integrations/dwhReferralVolume.js';
+import { logger } from '../../lib/logger.js';
 import { referralBonusRepo } from '../../repos/referralBonusRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
@@ -148,22 +149,21 @@ async function loadVolumeBySpec(
     const key = specKey(spec);
     if (!specs.has(key)) specs.set(key, spec);
   }
-  const entries = await Promise.all(
-    [...specs.entries()].map(async ([key, spec]) => {
-      const volume = await fetchReferralVolume(carrierIds, periodMonth, spec.fuelCodes);
-      return [key, volume] as const;
-    }),
+  return fetchReferralVolumeSets(
+    carrierIds,
+    periodMonth,
+    [...specs.entries()].map(([key, spec]) => ({ key, fuelCodes: spec.fuelCodes })),
   );
-  return new Map(entries);
 }
 
 /** Build the complete card + modal payload for one calendar month. Read-only. */
-export async function fetchReferralWorkspace(
+async function computeReferralWorkspace(
   ctx: TenantContext,
   periodMonth: string,
+  forceSources: boolean,
 ): Promise<ReferralWorkspaceResult> {
   const [records, priorClaims] = await Promise.all([
-    fetchReferralCalculationRecords(),
+    fetchReferralCalculationRecords({ force: forceSources }),
     referralBonusRepo.listOneTimeClaims(ctx, periodMonth),
   ]);
   const { parents, children, associations } = records;
@@ -267,4 +267,84 @@ export async function fetchReferralWorkspace(
       payableAmountUsd: payableAmount.toFixed(2),
     },
   };
+}
+
+interface ReferralWorkspaceCacheEntry {
+  value: ReferralWorkspaceResult;
+  expiresAt: number;
+  staleUntil: number;
+}
+
+const REFERRAL_WORKSPACE_TTL_MS = 5 * 60_000;
+const REFERRAL_WORKSPACE_STALE_MS = 30 * 60_000;
+const REFERRAL_WORKSPACE_CACHE_MAX = 12;
+const workspaceCache = new Map<string, ReferralWorkspaceCacheEntry>();
+const workspaceInFlight = new Map<string, Promise<ReferralWorkspaceResult>>();
+
+function workspaceKey(ctx: TenantContext, periodMonth: string): string {
+  return `${ctx.tenantId}:${periodMonth}`;
+}
+
+function writeWorkspaceCache(key: string, value: ReferralWorkspaceResult): void {
+  if (workspaceCache.has(key)) workspaceCache.delete(key);
+  const now = Date.now();
+  workspaceCache.set(key, {
+    value,
+    expiresAt: now + REFERRAL_WORKSPACE_TTL_MS,
+    staleUntil: now + REFERRAL_WORKSPACE_STALE_MS,
+  });
+  while (workspaceCache.size > REFERRAL_WORKSPACE_CACHE_MAX) {
+    const oldest = workspaceCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    workspaceCache.delete(oldest);
+  }
+}
+
+/**
+ * Cached workspace read with in-flight de-duplication and a bounded stale fallback.
+ *
+ * The Zoho relationship roster changes far less often than managers revisit the screen. Sharing one
+ * five-minute calculation turns reloads, React StrictMode, and concurrent managers into an immediate
+ * response while `force` still gives the Refresh button a real recompute.
+ */
+export async function fetchReferralWorkspace(
+  ctx: TenantContext,
+  periodMonth: string,
+  options: { force?: boolean } = {},
+): Promise<ReferralWorkspaceResult> {
+  const key = workspaceKey(ctx, periodMonth);
+  const cached = workspaceCache.get(key);
+  if (!options.force && cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const running = workspaceInFlight.get(key);
+  if (running) return running;
+
+  const computation = computeReferralWorkspace(ctx, periodMonth, options.force === true)
+    .then((value) => {
+      writeWorkspaceCache(key, value);
+      return value;
+    })
+    .catch((error: unknown) => {
+      if (cached && cached.staleUntil > Date.now()) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            tenantId: ctx.tenantId,
+            periodMonth,
+          },
+          'referral workspace refresh failed — serving recent snapshot',
+        );
+        return cached.value;
+      }
+      throw error;
+    })
+    .finally(() => workspaceInFlight.delete(key));
+  workspaceInFlight.set(key, computation);
+  return computation;
+}
+
+/** Test/shutdown helper — the cache contains no durable state. */
+export function resetReferralWorkspaceCache(): void {
+  workspaceCache.clear();
+  workspaceInFlight.clear();
 }

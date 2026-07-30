@@ -131,8 +131,39 @@ describe('loyalty roster is management-gated', () => {
     expect(body.total).toBe(1);
     expect(typeof body.fetchedAt).toBe('string');
     expect(rosterMock).toHaveBeenCalledTimes(1);
-    // fetchAllClients takes NO arguments — there is no caller-controlled scope to tamper with.
-    expect(rosterMock).toHaveBeenCalledWith();
+    // The only argument is an internal cache-refresh flag — there is no owner scope to tamper with.
+    expect(rosterMock).toHaveBeenCalledWith({ force: false });
+  });
+
+  it('forces the cached DWH snapshot only for an explicit Refresh', async () => {
+    rosterMock.mockResolvedValue([SAMPLE]);
+    const token = await workerToken('Management');
+    const res = await app.inject({
+      method: 'GET',
+      url: `${LOYALTY_URL}?refresh=1`,
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(rosterMock).toHaveBeenCalledWith({ force: true });
+  });
+
+  it('reports a DWH failure as a retryable 502 instead of a generic 500', async () => {
+    rosterMock.mockRejectedValueOnce(new Error('statement timeout'));
+    const token = await workerToken('Management');
+    const res = await app.inject({ method: 'GET', url: LOYALTY_URL, headers: bearer(token) });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: { code: 'LOYALTY_DATA_UNAVAILABLE' } });
+  });
+
+  it('keeps the automatic loyalty roster available when override storage is unavailable', async () => {
+    rosterMock.mockResolvedValue([SAMPLE]);
+    overrideListMock.mockRejectedValueOnce(new Error('relation does not exist'));
+    const token = await workerToken('Management');
+    const res = await app.inject({ method: 'GET', url: LOYALTY_URL, headers: bearer(token) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      clients: [{ carrierId: SAMPLE.carrierId, loyaltyOverride: null }],
+    });
   });
 });
 

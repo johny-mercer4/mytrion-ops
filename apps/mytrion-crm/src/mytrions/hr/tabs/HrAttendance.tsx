@@ -10,6 +10,7 @@ import {
 } from '../../../api/hr';
 import { isAdmin } from '../../../access/resolveAccess';
 import { useUserContext } from '../../../context/UserContextProvider';
+import type { UserContext } from '../../../context/userContext';
 import { HrAttendanceTeam } from '../HrAttendanceTeam';
 import { HrAttendanceWeek } from '../HrAttendanceWeek';
 import { HrEmpty, HrPageLoader, HrPageHead } from '../HrBits';
@@ -24,10 +25,7 @@ function addDays(iso: string, delta: number): string {
 
 type AttPane = 'me' | 'team' | 'all';
 
-function canViewOrgAttendance(user: {
-  profile: string;
-  role: string;
-}): boolean {
+function canViewOrgAttendance(user: UserContext): boolean {
   return (
     isAdmin(user) ||
     user.profile.toLowerCase().includes('hr manager') ||
@@ -39,9 +37,7 @@ export function HrAttendance() {
   const user = useUserContext();
   const canViewOrganization = canViewOrgAttendance(user);
   const today = useMemo(() => tashkentToday(), []);
-  const [pane, setPane] = useState<AttPane>(() =>
-    canViewOrganization ? 'all' : 'me',
-  );
+  const [pane, setPane] = useState<AttPane>(() => (canViewOrganization ? 'all' : 'me'));
   const [weekOf, setWeekOf] = useState(today);
   const [data, setData] = useState<AttendanceSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);

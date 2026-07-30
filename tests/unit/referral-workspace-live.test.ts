@@ -66,7 +66,7 @@ vi.mock('../../src/modules/manager/referralRecords.js', () => ({
 }));
 
 vi.mock('../../src/integrations/dwhReferralVolume.js', () => ({
-  fetchReferralVolume: volumeMock,
+  fetchReferralVolumeSets: volumeMock,
 }));
 
 vi.mock('../../src/repos/referralBonusRepo.js', () => ({
@@ -92,11 +92,14 @@ beforeEach(() => {
   claimsMock.mockReset();
   claimsMock.mockResolvedValue([]);
   volumeMock.mockReset();
-  volumeMock.mockImplementation(async (_carriers, periodMonth: string) => {
+  volumeMock.mockImplementation(async (_carriers, periodMonth: string, sets) => {
     const gallons = periodMonth === '2026-05-01' ? 100 : 999;
-    return new Map([
-      [123, { carrierId: 123, gallons, swipes: 4, cumulativeGallons: gallons }],
-    ]);
+    return new Map(
+      sets.map((set: { key: string }) => [
+        set.key,
+        new Map([[123, { carrierId: 123, gallons, swipes: 4, cumulativeGallons: gallons }]]),
+      ]),
+    );
   });
 });
 
@@ -107,13 +110,7 @@ describe('selected-month referral calculation', () => {
 
     expect(may.previews[0]).toMatchObject({ periodGallons: 100, amountUsd: '1.00' });
     expect(june.previews[0]).toMatchObject({ periodGallons: 999, amountUsd: '9.99' });
-    expect(volumeMock.mock.calls.map((call) => call[1])).toEqual([
-      '2026-05-01',
-      '2026-06-01',
-    ]);
-    expect(claimsMock.mock.calls.map((call) => call[1])).toEqual([
-      '2026-05-01',
-      '2026-06-01',
-    ]);
+    expect(volumeMock.mock.calls.map((call) => call[1])).toEqual(['2026-05-01', '2026-06-01']);
+    expect(claimsMock.mock.calls.map((call) => call[1])).toEqual(['2026-05-01', '2026-06-01']);
   });
 });

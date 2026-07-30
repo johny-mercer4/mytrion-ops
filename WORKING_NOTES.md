@@ -8863,3 +8863,36 @@ Loyalty/Data Center routes pass 42/42, focused loyalty/month-picker tests pass 2
 frontend suite passes 320/320. Frontend TypeScript reaches only the pre-existing unrelated
 `HrAttendance.tsx` incomplete UserContext fixture, which was left untouched per the request to ignore
 HR changes.
+
+## 2026-07-31 — Manager performance and workspace release hardening
+
+Removed the principal Referral loading bottlenecks. MART fuel-code variants are now calculated in
+one bound query instead of repeatedly scanning the transaction history, and the month-independent
+Zoho parent/child/Deal relationship graph is cached separately from monthly volume calculations.
+Tenant/month snapshots have bounded TTL, in-flight request deduplication, manual force-refresh, and
+recent-snapshot fallback. A live cold calculation returned the 687-parent workspace in 5.7 seconds;
+switching month after the relationship graph was warm took 2.4 seconds, and a cached return was
+immediate.
+
+Replaced Manager Loyalty's reuse of the full Sales debt/PII roster with a dedicated company-wide
+tier projection that preserves the same closed-month ULSR+ULSD, transacting-card, and billing-cycle
+formulas. Both global and per-agent rosters now have bounded caches, concurrent-request sharing, and
+stale fallback. The optional client-override read degrades to automatic rewards when migration 0085
+is not yet available, while writes remain fail-closed. DWH outages now surface as a specific 502
+instead of an opaque 500. Live reads returned 8,097 Manager clients in 1.4 seconds and 374 scoped
+Sales clients in 0.7 seconds.
+
+Fixed HR Org Structure collapse so closing a department clears every expanded descendant department,
+manager, and employee instead of leaving nested people visible. Removed the double border from the
+Time Off year control and corrected the Attendance admin-access type guard. Recruit now uses the
+shared Horizon page loader, full Space Grotesk controls/modals, and calmer light/dark glass surfaces.
+Manager Sales is a polished Coming Soon workspace and is labelled accordingly on the Manager home.
+Removed two stray loyalty CSS declarations that produced production minifier warnings.
+
+Verification: backend and frontend typechecks pass; lint has zero errors and 23 existing warnings;
+the complete frontend suite passes 321/321; the frontend production build passes without CSS syntax
+warnings; focused Manager/Referral/Data Center tests pass 103/103. The full backend suite reaches 1,277 passing
+tests but is not repository-green: 37 unrelated baseline/environment tests fail across remote
+database DNS, sandboxed websocket binding, Customer Service/retention/touchpoint expectations, and
+older stream/tool mocks. Migration 0085 remains required before production users can persist Loyalty
+overrides, although roster reads now remain available before it is applied.

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type DrainResult = {
   rows: Array<Record<string, unknown>>;
@@ -18,7 +18,16 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', () => ({
   zohoCrmRecords: { getModuleFields: getModuleFieldsMock },
 }));
 
-import { fetchReferralCalculationRecords } from '../../src/modules/manager/referralRecords.js';
+import {
+  fetchReferralCalculationRecords,
+  resetReferralCalculationRecordsCache,
+} from '../../src/modules/manager/referralRecords.js';
+
+beforeEach(() => {
+  resetReferralCalculationRecordsCache();
+  runCoqlAllMock.mockReset();
+  getModuleFieldsMock.mockReset();
+});
 
 describe('referral calculation source fetch', () => {
   it('starts three narrow, 2,000-row Zoho drains concurrently', async () => {
@@ -51,5 +60,16 @@ describe('referral calculation source fetch', () => {
     expect(result.children.pages).toBe(1);
     expect(result.associations.deals.pages).toBe(1);
     expect(result.associations.leads.pages).toBe(0);
+  });
+
+  it('reuses the month-independent relationship graph until Refresh forces it', async () => {
+    runCoqlAllMock.mockResolvedValue({ rows: [], truncated: false, pages: 1 });
+
+    await fetchReferralCalculationRecords();
+    await fetchReferralCalculationRecords();
+    expect(runCoqlAllMock).toHaveBeenCalledTimes(3);
+
+    await fetchReferralCalculationRecords({ force: true });
+    expect(runCoqlAllMock).toHaveBeenCalledTimes(6);
   });
 });

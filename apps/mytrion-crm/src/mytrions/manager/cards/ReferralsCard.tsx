@@ -232,10 +232,15 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
   const [exportError, setExportError] = useState('');
   const monthInputRef = useRef<HTMLInputElement>(null);
+  const forceRefreshRef = useRef(false);
 
   const { data, loading, revalidating, error, reload, cachedAt } = useCachedLoad(
     `manager:referrals:workspace:${periodMonth}`,
-    () => getReferralWorkspace(periodMonth),
+    () => {
+      const refresh = forceRefreshRef.current;
+      forceRefreshRef.current = false;
+      return getReferralWorkspace(periodMonth, { refresh });
+    },
     { staleMs: 120_000 },
   );
   const model = useMemo(() => (data ? buildReferralCards(data) : null), [data]);
@@ -360,7 +365,10 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           <button
             type="button"
             className="mg-btn"
-            onClick={reload}
+            onClick={() => {
+              forceRefreshRef.current = true;
+              reload();
+            }}
             disabled={loading || revalidating}
           >
             <RefreshCw size={15} className={revalidating && !loading ? 'mg-spin' : ''} />

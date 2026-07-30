@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { LoaderCircle, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { MytrionPageLoader } from '../_shared/MytrionPageLoader';
 
 export function RecruitHead({
   eyebrow,
@@ -26,11 +27,7 @@ export function RecruitHead({
 
 export function RecruitLoader({ label }: { label: string }) {
   return (
-    <div className="recruit-loader" role="status">
-      <LoaderCircle aria-hidden="true" />
-      <strong>{label}</strong>
-      <small>Preparing the latest recruiting workspace data</small>
-    </div>
+    <MytrionPageLoader label={label} detail="Preparing the latest recruiting workspace data" />
   );
 }
 
