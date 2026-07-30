@@ -22,6 +22,22 @@ import {
   maxConcurrentTurns,
   releaseTurnSlot,
 } from './turnConcurrency.js';
+import {
+  filterEnabledTools,
+  isServiceEnabled,
+  serviceUnavailableText,
+} from './serviceRegistry.js';
+import {
+  enqueueSupportMemoryCommit,
+  recallSupportMemory,
+} from './supportMemory.js';
+import {
+  filterToolsForRole,
+  isToolAllowedForRole,
+  roleDeniedText,
+  type GatewayRole,
+} from './skillRegistry.js';
+import { zeroTokenOutcome } from './turnOutcome.js';
 
 export { maxConcurrentTurns } from './turnConcurrency.js';
 
@@ -243,6 +259,7 @@ export function enqueueTurn(
   chatId: number,
   userId: number,
   carrierId: string,
+  role: GatewayRole,
   userPrompt: TurnContent,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
@@ -273,6 +290,7 @@ export function enqueueTurn(
         chatId,
         key,
         carrierId,
+        role,
         userPrompt,
         lifecycle,
         measuredReply,
@@ -308,6 +326,7 @@ async function runTurn(
   chatId: number,
   key: SessionKey,
   carrierId: string,
+  role: GatewayRole,
   userPrompt: TurnContent,
   lifecycle: TurnLifecycle,
   onReply: (text: string) => Promise<void>,
@@ -318,7 +337,7 @@ async function runTurn(
   const stopTyping = startTypingKeepAlive(chatId);
   try {
     const prompt = typeof userPrompt === 'string' ? userPrompt : JSON.stringify(userPrompt);
-    const outcome = await runModelLoop(chatId, key, carrierId, prompt);
+    const outcome = await runModelLoop(chatId, key, carrierId, role, prompt);
     const text = outcome.finalText.trim();
     if (text && text !== 'SILENT') await onReply(text.slice(0, 4000));
     saveTurn(key, prompt, text || 'SILENT');
@@ -341,20 +360,60 @@ async function runModelLoop(
   chatId: number,
   key: SessionKey,
   carrierId: string,
+  role: GatewayRole,
   prompt: string,
 ): Promise<{ finalText: string; stats: TurnStats }> {
   const startedAt = Date.now();
   const askerId = verifiedAskerId(prompt);
   const history = historyFor(key);
-  const allManifests = [
+  const serviceManifests = filterEnabledTools([
     ...buildOctaneTools(chatId, carrierId, askerId),
     ...buildTelegramTools(chatId, askerId),
-  ];
-  const plan = selectToolPlanForTurn(allManifests, prompt, history);
-  const manifests = plan.tools;
-  const requiredSequence = [...plan.requiredSequence];
+  ]);
+  const plan = selectToolPlanForTurn(
+    serviceManifests,
+    prompt,
+    history,
+    undefined,
+    role,
+  );
+  if (plan.unavailableService) {
+    incrementCounter('service_disabled_total');
+    return zeroTokenOutcome(
+      startedAt,
+      serviceUnavailableText(plan.unavailableService, prompt),
+    );
+  }
+  if (plan.roleDeniedTool) {
+    incrementCounter('role_tool_denied_total');
+    return zeroTokenOutcome(startedAt, roleDeniedText(role, prompt));
+  }
+  const deniedRequiredTool = plan.requiredSequence.find(
+    (toolName) => !isToolAllowedForRole(toolName, role),
+  );
+  if (deniedRequiredTool) {
+    incrementCounter('role_tool_denied_total');
+    return zeroTokenOutcome(startedAt, roleDeniedText(role, prompt));
+  }
+  const memoryScope = { chatId, carrierId, telegramUserId: askerId };
+  const memory = role !== 'guest' && isServiceEnabled('memory')
+    ? await recallSupportMemory(memoryScope, prompt)
+    : '';
+  const manifests = filterToolsForRole(plan.tools, role);
+  const requiredSequence = plan.requiredSequence.filter((toolName) =>
+    manifests.some((manifest) => manifest.name === toolName),
+  );
   const messages: ModelMessage[] = [
-    { role: 'system', content: systemPrompt() },
+    {
+      role: 'system',
+      content: systemPrompt(
+        role,
+        manifests.map((manifest) => manifest.name),
+      ),
+    },
+    ...(memory
+      ? [{ role: 'system' as const, content: memory }]
+      : []),
     ...history.map(
       (message): ModelMessage => ({ role: message.role, content: message.content }),
     ),
@@ -397,7 +456,7 @@ async function runModelLoop(
 
     for (const call of toolCalls) {
       const parsed = parseToolArguments(call.arguments);
-      const auditContext = { chatId, carrierId };
+      const auditContext = { chatId, carrierId, role };
       let result: string;
       if (parsed.ok) {
         result = await toolDispatcher(
@@ -431,6 +490,9 @@ async function runModelLoop(
 
   if (!finalText && modelSteps >= MAX_MODEL_STEPS) {
     throw new Error(`Model exceeded the ${MAX_MODEL_STEPS}-step tool limit`);
+  }
+  if (role !== 'guest' && isServiceEnabled('memory') && finalText) {
+    enqueueSupportMemoryCommit(memoryScope, prompt, finalText);
   }
 
   return {

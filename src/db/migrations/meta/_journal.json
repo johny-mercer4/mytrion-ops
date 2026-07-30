@@ -547,6 +547,13 @@
       "when": 1785398400000,
       "tag": "0077_support_bot_chat_tenant_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1785402000000,
+      "tag": "0078_support_bot_memories",
+      "breakpoints": true
     }
   ]
 }

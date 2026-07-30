@@ -15,7 +15,18 @@ export type CounterName =
   | 'tg_poll_fail_total'
   | 'backend_error_total'
   | 'tool_unknown_total'
+  | 'tool_disabled_total'
   | 'tool_invalid_args_total'
+  | 'service_disabled_total'
+  | 'memory_recall_total'
+  | 'memory_recall_hit_total'
+  | 'memory_commit_total'
+  | 'memory_commit_dropped_total'
+  | 'memory_error_total'
+  | 'role_resolution_total'
+  | 'role_resolution_error_total'
+  | 'role_guest_total'
+  | 'role_tool_denied_total'
   | 'vision_turns_total';
 
 const COUNTERS: CounterName[] = [
@@ -29,7 +40,18 @@ const COUNTERS: CounterName[] = [
   'tg_poll_fail_total',
   'backend_error_total',
   'tool_unknown_total',
+  'tool_disabled_total',
   'tool_invalid_args_total',
+  'service_disabled_total',
+  'memory_recall_total',
+  'memory_recall_hit_total',
+  'memory_commit_total',
+  'memory_commit_dropped_total',
+  'memory_error_total',
+  'role_resolution_total',
+  'role_resolution_error_total',
+  'role_guest_total',
+  'role_tool_denied_total',
   'vision_turns_total',
 ];
 

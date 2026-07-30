@@ -130,6 +130,12 @@ const EnvSchema = z.object({
   // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
   AGENT_MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(30),
   AGENT_MEMORY_MAX_PER_KEY: z.coerce.number().int().positive().default(500),
+  // Telegram support-bot semantic turn history. Dedicated table and strict
+  // tenant+carrier+chat+telegram-user scope; off until migration 0078 is applied.
+  SUPPORT_BOT_MEMORY_TTL_DAYS: z.coerce.number().int().positive().max(365).default(30),
+  SUPPORT_BOT_MEMORY_MAX_PER_USER: z.coerce.number().int().positive().max(2000).default(200),
+  SUPPORT_BOT_MEMORY_TOP_K: z.coerce.number().int().positive().max(8).default(3),
+  SUPPORT_BOT_MEMORY_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.35),
   // Context paging (PagedPostgresSaver): char budget for mid-history before eviction (~tokens×4).
   AGENT_CONTEXT_PAGE_CHARS: z.coerce.number().int().positive().default(32_000),
   // Keep this many trailing messages when paging (plus the first message).
@@ -556,6 +562,8 @@ const EnvSchema = z.object({
   FF_WRITE_APPROVALS: flag('0'),
   // Long-term agent memory: end-of-run distillation + UNTRUSTED recall in scoped RAG.
   FF_AGENT_MEMORY: flag('0'),
+  // Per-user Telegram semantic history. Requires support_bot_memories (migration 0078).
+  FF_SUPPORT_BOT_MEMORY: flag('0'),
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
   // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.

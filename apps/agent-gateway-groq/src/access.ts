@@ -14,11 +14,23 @@
  *    from REFRESH_MS so a short refresh window doesn't shorten outage tolerance.
  */
 import { config } from './config.js';
+import { incrementCounter } from './metrics.js';
+import type { GatewayRole } from './skillRegistry.js';
 
 const REFRESH_MS = 30_000; // near-instant: a new registration is visible within ~30s
 const STALE_GRACE_MS = 30 * 60_000; // backend-down tolerance before fail-closed
-const caches = new Map<string, { at: number; users: Set<string> }>();
+type RegisteredRole = Exclude<GatewayRole, 'guest'>;
+const caches = new Map<
+  string,
+  { at: number; users: Map<string, RegisteredRole> }
+>();
 const refreshes = new Map<string, Promise<void>>();
+
+function normalizeRole(profile: unknown): RegisteredRole | null {
+  if (profile === 'driver') return 'driver';
+  if (profile === 'owner' || profile === 'manager') return 'owner';
+  return null;
+}
 
 async function refreshCarrier(carrierId: string, now: number): Promise<void> {
   const existing = refreshes.get(carrierId);
@@ -30,13 +42,21 @@ async function refreshCarrier(carrierId: string, now: number): Promise<void> {
         { headers: { Authorization: `Bearer ${config.octaneKey}` }, signal: AbortSignal.timeout(15_000) },
       );
       if (res.ok) {
-        const data = (await res.json()) as { users?: Array<{ telegramUserId: string }> };
+        const data = (await res.json()) as {
+          users?: Array<{ telegramUserId: string; profile?: unknown }>;
+        };
+        const users = new Map<string, RegisteredRole>();
+        for (const user of data.users ?? []) {
+          const role = normalizeRole(user.profile);
+          if (role) users.set(user.telegramUserId, role);
+        }
         caches.set(carrierId, {
           at: now,
-          users: new Set((data.users ?? []).map((user) => user.telegramUserId)),
+          users,
         });
       }
     } catch {
+      incrementCounter('role_resolution_error_total');
       /* backend blip — keep serving the stale cache until STALE_GRACE_MS */
     }
   })().finally(() => refreshes.delete(carrierId));
@@ -44,14 +64,28 @@ async function refreshCarrier(carrierId: string, now: number): Promise<void> {
   return refresh;
 }
 
-export async function isRegistered(carrierId: string, userId: number): Promise<boolean> {
+export async function registeredRole(
+  carrierId: string,
+  userId: number,
+): Promise<RegisteredRole | null> {
   const now = Date.now();
   let cache = caches.get(carrierId) ?? null;
   if (!cache || now - cache.at > REFRESH_MS) {
     await refreshCarrier(carrierId, now);
     cache = caches.get(carrierId) ?? cache;
   }
-  if (!cache) return false;
-  if (Date.now() - cache.at > STALE_GRACE_MS) return false; // stale beyond grace → fail closed
-  return cache.users.has(String(userId));
+  if (!cache || Date.now() - cache.at > STALE_GRACE_MS) {
+    incrementCounter('role_guest_total');
+    return null;
+  }
+  const role = cache.users.get(String(userId)) ?? null;
+  incrementCounter(role ? 'role_resolution_total' : 'role_guest_total');
+  return role;
+}
+
+export async function isRegistered(
+  carrierId: string,
+  userId: number,
+): Promise<boolean> {
+  return (await registeredRole(carrierId, userId)) !== null;
 }
