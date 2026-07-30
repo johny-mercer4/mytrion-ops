@@ -1,0 +1,11 @@
+# Secrets + runtime — never committed. Source, prompts, .claude/skills and configs ARE tracked.
+.env
+.env.*
+!.env.example
+node_modules/
+data/
+dist/
+coverage/
+*.tsbuildinfo
+stress-report.json
+*.log

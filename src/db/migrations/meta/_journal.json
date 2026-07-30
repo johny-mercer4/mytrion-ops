@@ -533,6 +533,20 @@
       "when": 1785391200000,
       "tag": "0075_worker_task_department",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785394800000,
+      "tag": "0076_support_bot_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785398400000,
+      "tag": "0077_support_bot_chat_tenant_scope",
+      "breakpoints": true
     }
   ]
 }

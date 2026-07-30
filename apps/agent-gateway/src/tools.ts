@@ -11,6 +11,15 @@ import { config } from './config.js';
 import { searchKb } from './kb/search.js';
 import { sendButtons, sendMessage, setReaction } from './telegram.js';
 import { logMessage } from './messageLog.js';
+import { noteButtonOwner } from './buttonOwnership.js';
+import {
+  gatewayOperationKey,
+  gatewaySessionKeyHash,
+} from './operationIdentity.js';
+import {
+  incrementCounter,
+  noteBackendError,
+} from './metrics.js';
 
 /** chatId → (userId → last-seen ms). Filled by the poll loop for every inbound message. */
 export const recentSenders = new Map<number, Map<number, number>>();
@@ -27,15 +36,43 @@ function senderOk(chatId: number, userId: number): boolean {
   return ts != null && Date.now() - ts <= RECENT_MS;
 }
 
-async function backend(path: string, payload: Record<string, unknown>, carrierId: string) {
-  const res = await fetch(`${config.octaneBase}/v1${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${config.octaneKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ carrierId, ...payload }),
-    signal: AbortSignal.timeout(30_000),
-  });
+async function backend(
+  path: string,
+  payload: Record<string, unknown>,
+  carrierId: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  let res: Response;
+  try {
+    res = await fetch(`${config.octaneBase}/v1${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.octaneKey}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      },
+      body: JSON.stringify({ carrierId, ...payload }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    noteBackendError(0, 'BACKEND_TRANSPORT_ERROR');
+    throw error;
+  }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) return { error: true, status: res.status, message: String(data.message ?? '') };
+  if (!res.ok) {
+    const detail =
+      data['error'] && typeof data['error'] === 'object'
+        ? (data['error'] as Record<string, unknown>)
+        : data;
+    const code = String(detail['code'] ?? '');
+    noteBackendError(res.status, code);
+    return {
+      error: true,
+      status: res.status,
+      code,
+      message: String(detail['message'] ?? ''),
+    };
+  }
   return data;
 }
 
@@ -43,14 +80,76 @@ const asker = {
   telegram_user_id: z.number().describe('Telegram id of the MESSAGE SENDER who asked — never anyone else'),
 };
 
-/** One server per chat: carrierId is closed over — the model has no carrier parameter at all. */
-export function buildOctaneServer(chatId: number, carrierId: string) {
-  const guard = (userId: number): string | null =>
-    senderOk(chatId, userId) ? null : 'refused: that user has not sent a recent message in this chat';
-  const run = async (path: string, userId: number, extra: Record<string, unknown> = {}) => {
-    const g = guard(userId);
-    if (g) return { content: [{ type: 'text' as const, text: g }], isError: true };
-    const data = await backend(path, { telegramUserId: String(userId), ...extra }, carrierId);
+/**
+ * One server per (chat, USER): carrierId AND the session's real Telegram user id are closed over.
+ * Per-user sessions (one session = one asker) let us BIND the actor here instead of trusting the
+ * model to pass the right `telegram_user_id`. The model still fills that param (schema unchanged),
+ * but `run` IGNORES it and always acts as `boundUserId` — so a prompt-injected "[from Owner id X]"
+ * line can't make the bot act as anyone but the person whose session this is. A mismatch is logged
+ * (injection signal) but never obeyed.
+ */
+export function buildOctaneServer(
+  chatId: number,
+  carrierId: string,
+  boundUserId: number,
+  turnId: string,
+) {
+  const sessionKeyHash = gatewaySessionKeyHash(
+    config.environment,
+    config.botUsername,
+    chatId,
+    boundUserId,
+  );
+  let fencePromise: Promise<number | null> | null = null;
+  let writeOccurrence = 0;
+  const sessionFence = (): Promise<number | null> => {
+    fencePromise ??= backend(
+      '/support-bot/session-fence',
+      { sessionKeyHash },
+      carrierId,
+    ).then((result) =>
+      result['enabled'] === true ? Number(result['fencingToken']) : null,
+    );
+    return fencePromise;
+  };
+  const run = async (path: string, claimedUserId: number, extra: Record<string, unknown> = {}) => {
+    if (claimedUserId !== boundUserId) {
+      console.warn(`[octane] ${path}: tool claimed uid ${claimedUserId} but session is ${boundUserId} — forcing session uid (possible spoof)`);
+    }
+    // Bind to the SESSION's user, never the model-supplied one. senderOk is a belt-and-suspenders
+    // recency check on that bound id (the poll loop noted it on the very message that opened the turn).
+    if (!senderOk(chatId, boundUserId)) {
+      return { content: [{ type: 'text' as const, text: 'refused: no recent message from this user in this chat' }], isError: true };
+    }
+    const payload = { telegramUserId: String(boundUserId), ...extra };
+    let headers: Record<string, string> = {};
+    if (path === '/support-bot/card-action') {
+      const fencingToken = await sessionFence();
+      if (fencingToken != null) {
+        const occurrence = writeOccurrence++;
+        headers = {
+          'Idempotency-Key': gatewayOperationKey({
+            environment: config.environment,
+            botIdentity: config.botUsername,
+            turnId,
+            writeOccurrence: occurrence,
+            tenantId: config.tenantId,
+            carrierId,
+            telegramUserId: boundUserId,
+            operationType: 'card_action',
+            arguments: payload,
+          }),
+          'X-Support-Bot-Turn-Id': turnId,
+          'X-Support-Bot-Write-Occurrence': String(occurrence),
+          'X-Support-Bot-Session-Key': sessionKeyHash,
+          'X-Support-Bot-Fencing-Token': String(fencingToken),
+        };
+      }
+    }
+    const data = await backend(path, payload, carrierId, headers);
+    if (data['replayed'] === true) {
+      incrementCounter('write_replayed_total');
+    }
     return { content: [{ type: 'text' as const, text: JSON.stringify(data) }], isError: Boolean((data as { error?: boolean }).error) };
   };
 
@@ -174,7 +273,9 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
           reply_to_message_id: z.number().optional(),
         },
         async ({ text, buttons, reply_to_message_id }) => {
-          await sendButtons(chatId, text, buttons, reply_to_message_id);
+          const sentId = await sendButtons(chatId, text, buttons, reply_to_message_id);
+          // Bind the button message to THIS session's user so only they can tap it (index.ts gate).
+          if (sentId != null) noteButtonOwner(chatId, sentId, boundUserId);
           return { content: [{ type: 'text' as const, text: 'buttons sent — now output SILENT and wait for the tap' }] };
         },
       ),
@@ -187,7 +288,7 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
           return { content: [{ type: 'text' as const, text: 'reacted' }] };
         },
       ),
-      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id)),
+      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id, { requestId: turnId })),
     ],
   });
 }
