@@ -8624,6 +8624,66 @@ calendar/service/route tests pass 12/12. Browser QA covered summary, request for
 approver queue/detail with persistent decision controls, the HR register, policy, and holidays.
 The full backend suite has 1,195 passing with 10 unrelated failures; frontend has 309 passing with
 one unrelated Sales debtors-summary expectation failure.
+
+## 2026-07-30 — Agent gateway dynamic service switches
+
+Added a fail-closed capability registry to `apps/agent-gateway-groq`. Deployments can override
+safe defaults with `AGENT_SERVICE_FLAGS=service=on|off`; model exposure, deterministic routing,
+prompt capabilities, and dispatcher execution now share the same registry. Unknown gateway tools
+are hidden, disabled tools are rejected again at dispatch, and a direct disabled-service request
+returns a zero-token language-matched unavailable response.
+
+Money Code quote and draw remain catalogued but are disabled by default. They are absent from
+OpenAI tool definitions and cannot be restored by a stale confirmation callback; a deliberate
+`money_code=on` override restores the complete quote/confirm/draw route. Core Telegram progress,
+buttons, and reactions cannot be disabled.
+
+Verification: agent-gateway ESLint clean, TypeScript clean, Vitest 43/43, and `git diff --check`
+clean.
+
+## 2026-07-30 — Support bot per-user pgvector memory
+
+Added an opt-in long-term memory path for `apps/agent-gateway-groq`. The gateway recalls and
+commits through authenticated backend endpoints; it never connects directly to Postgres. Every
+memory query is scoped by tenant, carrier, Telegram chat, and Telegram user. Stored turn summaries
+are redacted before embedding, expire after 30 days by default, have a bounded per-user cap, and
+are injected as untrusted context that cannot replace live card, balance, limit, invoice, or RBAC
+tool checks. Commit work uses a bounded background queue so Telegram replies are not delayed
+during bursts.
+
+Migration `0078_support_bot_memories.sql` creates the isolated table and HNSW cosine index. It was
+applied directly to the local database only, without advancing Drizzle's journal past unrelated
+pending migrations. Local switches enable `memory` and keep `money_code` disabled; committed
+examples remain off by default.
+
+Verification: backend typecheck/build clean; changed-file ESLint clean; gateway typecheck and
+Vitest 45/45; memory/RBAC targeted tests 34/34. Full backend suite has 1,271 passing and 11
+unrelated existing failures. The required live agent eval completed at $0.390 with 32/43 passing;
+existing routing/grounding failures and transient OpenAI 429/connection errors kept it below its
+thresholds. Local table/index smoke check passed with four indexes and zero synthetic rows.
+
+## 2026-07-30 — OpenAI gateway role-aware skill runtime
+
+Added a strict `Service → Skill → Tool` runtime to `apps/agent-gateway-groq`. Fifteen OpenAI-native
+skill packs now live under `skills/*/SKILL.md`; `skillRegistry.ts` requires every gateway tool to
+belong to exactly one service-compatible skill and declares its allowed roles. Only instructions
+for the selected, role-allowed tools enter the prompt.
+
+Role resolution reuses the existing per-carrier `/support-bot/access` single-flight cache instead
+of adding a per-turn `/whoami` call. Access rows now carry `driver` or owner-equivalent
+`owner/manager`; missing and unknown profiles fail closed before a model turn. Required
+role-forbidden actions return a deterministic zero-token response. The model tool catalog is
+filtered by role, and `toolDispatcher` independently refuses a stale or fabricated forbidden call
+before execution. Backend registration/carrier RBAC remains the final authority.
+
+Verification: changed-file ESLint clean; gateway TypeScript clean and Vitest 53/53; backend
+typecheck/build clean; targeted backend memory/RBAC tests 34/34. The 300-request/100-user stress
+run stayed at the configured 8-turn cap with no same-user overlap, reordering, or leaked queue
+state. Docker build `octane-agent-gateway-openai:skill-runtime` passed and includes the Markdown
+skill directory. Local access smoke-check returned two users with manager/owner profiles; backend
+and gateway health checks passed after restart. Live eval spent $0.420: RBAC 3/3, tool selection
+5/5, grounding 7/8, refusal 5/5; the existing routing and web-navigation thresholds still failed,
+with transient OpenAI 429/connection errors and a multi-turn 20-tool budget hit.
 ## 2026-07-29 (3) — QA automations round 3 follow-up review (`fix/qa-automations-round3`)
 
 Reviewed the invoice-download and card-refresh fixes after the branch was rebased onto `build`.

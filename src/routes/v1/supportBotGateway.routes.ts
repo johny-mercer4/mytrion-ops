@@ -1,8 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveSupportBotDmAccess } from '../../modules/carrier/supportBotDmAccess.js';
+import {
+  commitSupportBotMemory,
+  recallSupportBotMemory,
+} from '../../modules/carrier/supportBotMemory.js';
+import {
+  resolveSupportBotCaller,
+  supportBotCallerSchema,
+} from '../../modules/carrier/supportBotCaller.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { supportBotGatewayRepo } from '../../repos/supportBotGatewayRepo.js';
 import { requireContext } from './helpers.js';
@@ -25,6 +34,10 @@ const messagesBatchSchema = z.object({
     )
     .min(1)
     .max(200),
+});
+
+const memoryScopeSchema = supportBotCallerSchema.extend({
+  chatId: z.union([z.string(), z.number()]).transform(String),
 });
 
 /** Gateway control-plane routes: access, chat mapping, message ingest and monitor proxy. */
@@ -62,6 +75,65 @@ export async function supportBotGatewayRoutes(
       })),
     );
     return reply.code(201).send({ inserted });
+  });
+
+  app.post('/support-bot/memory/recall', guard, async (request) => {
+    const body = memoryScopeSchema
+      .extend({
+        query: z.string().trim().min(1).max(4000),
+        limit: z.coerce.number().int().positive().max(8).optional(),
+      })
+      .parse(request.body);
+    const ctx = requireContext(request);
+    await resolveSupportBotCaller(ctx, body.carrierId, body.telegramUserId);
+    if (!env.FF_SUPPORT_BOT_MEMORY) return { memories: [] };
+    const memories = await recallSupportBotMemory(
+      ctx,
+      {
+        carrierId: body.carrierId,
+        chatId: body.chatId,
+        telegramUserId: body.telegramUserId,
+      },
+      body.query,
+      body.limit,
+    );
+    return { memories };
+  });
+
+  app.post('/support-bot/memory/commit', guard, async (request, reply) => {
+    const body = memoryScopeSchema
+      .extend({
+        question: z.string().min(1).max(6000),
+        answer: z.string().min(1).max(6000),
+      })
+      .parse(request.body);
+    const ctx = requireContext(request);
+    await resolveSupportBotCaller(ctx, body.carrierId, body.telegramUserId);
+    if (!env.FF_SUPPORT_BOT_MEMORY) return reply.code(202).send({ stored: false });
+    const stored = await commitSupportBotMemory(
+      ctx,
+      {
+        carrierId: body.carrierId,
+        chatId: body.chatId,
+        telegramUserId: body.telegramUserId,
+      },
+      body.question,
+      body.answer,
+    );
+    if (stored) {
+      await auditFromContext(ctx, {
+        action: 'support_bot.memory.commit',
+        status: 'ok',
+        resourceType: 'support_bot_memory',
+        resourceId: `${body.carrierId}:${body.chatId}:${body.telegramUserId}`,
+        detail: {
+          carrierId: body.carrierId,
+          chatId: body.chatId,
+          telegramUserId: body.telegramUserId,
+        },
+      });
+    }
+    return reply.code(202).send({ stored });
   });
 
   const monitorUpstream = `http://localhost:${process.env['MONITOR_PORT'] ?? '8787'}`;

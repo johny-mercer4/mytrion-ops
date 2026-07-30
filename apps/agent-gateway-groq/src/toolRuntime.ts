@@ -1,6 +1,11 @@
 import { z, type ZodRawShape } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { incrementCounter } from './metrics.js';
+import { isToolEnabled, serviceForTool } from './serviceRegistry.js';
+import {
+  isToolAllowedForRole,
+  type GatewayRole,
+} from './skillRegistry.js';
 
 export type RiskClass = 'read' | 'write';
 
@@ -21,6 +26,7 @@ export interface ToolManifest {
 export interface ToolAuditContext {
   chatId: number;
   carrierId: string;
+  role: GatewayRole;
 }
 
 type ToolHandler<TShape extends ZodRawShape> = (
@@ -105,6 +111,18 @@ export async function toolDispatcher(
   context: ToolAuditContext,
 ): Promise<string> {
   const startedAt = Date.now();
+  const serviceId = serviceForTool(name);
+  const isGatewayTool = name.startsWith('octane_') || name.startsWith('telegram_');
+  if ((serviceId && !isToolEnabled(name)) || (isGatewayTool && !serviceId)) {
+    incrementCounter('tool_disabled_total');
+    audit(name, 'unknown', false, startedAt, context);
+    return `error: tool "${name}" is disabled`;
+  }
+  if (!isToolAllowedForRole(name, context.role)) {
+    incrementCounter('role_tool_denied_total');
+    audit(name, 'unknown', false, startedAt, context);
+    return `error: tool "${name}" is not allowed for role "${context.role}"`;
+  }
   const manifest = manifests.find((candidate) => candidate.name === name);
   if (!manifest) {
     incrementCounter('tool_unknown_total');
@@ -145,6 +163,7 @@ function audit(
       durationMs: Date.now() - startedAt,
       chatId: context.chatId,
       carrierId: context.carrierId,
+      role: context.role,
     }),
   );
 }

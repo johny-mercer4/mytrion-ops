@@ -17,6 +17,7 @@ export default defineConfig({
     './src/db/schema/support_bot_chats.ts',
     './src/db/schema/support_bot_operations.ts',
     './src/db/schema/support_bot_messages.ts',
+    './src/db/schema/support_bot_memories.ts',
     './src/db/schema/conversations.ts',
     './src/db/schema/messages.ts',
     './src/db/schema/tool_calls.ts',
