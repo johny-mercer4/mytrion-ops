@@ -538,14 +538,35 @@
       "idx": 76,
       "version": "7",
       "when": 1785394800000,
-      "tag": "0076_maintenance_cases",
+      "tag": "0076_support_bot_operations",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
       "when": 1785398400000,
-      "tag": "0077_maintenance_cases_sort_idx",
+      "tag": "0077_support_bot_chat_tenant_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785398400001,
+      "tag": "0079_maintenance_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785398400002,
+      "tag": "0080_maintenance_cases_sort_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785398400003,
+      "tag": "0081_support_bot_operations_repair",
       "breakpoints": true
     }
   ]

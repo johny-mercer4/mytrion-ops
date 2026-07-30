@@ -5055,6 +5055,379 @@ lower `max` (8), `connectionTimeoutMillis` 15s, `statement_timeout=30s`,
 Ops probe: `scripts/probeDwhLockJam.ts`. If it recurs: terminate the Mashup
 root blocker (or restart Mashup), then restart ServerCRM to flush stuck clients.
 
+---
+
+## 2026-07-25 — agent-gateway: OAuth token pool (multi-token failover)
+
+Problem: every parallel turn drew on ONE `CLAUDE_CODE_OAUTH_TOKEN`. With several groups active,
+the subscription 5h/7d window exhausts and the whole bot goes dark. (Turns were already parallel
+across chats via `sessions.ts` `chains` map — concurrency was never the blocker; shared quota was.)
+
+Added `src/authPool.ts`: token pool with round-robin SPREAD + cooldown FAILOVER.
+- Config (merged, de-duped): `CLAUDE_CODE_OAUTH_TOKENS` (comma/newline list) | `..._1.._10` |
+  single `CLAUDE_CODE_OAUTH_TOKEN` (legacy = no rotation). `AUTH_COOLDOWN_MS` fallback (1h).
+- `pickToken(tried)` round-robins healthy tokens so N concurrent group turns land on N accounts;
+  best-effort returns a cooling token if all are down; null once all tried this turn.
+- `markLimited(token, resetsAt)` cools a token (normalizes unix-seconds→ms); `soonestRecovery()`.
+
+`sessions.ts`:
+- `runQuery` now takes `authToken`, pins it via `options.env` (spreads `process.env` — that option
+  REPLACES the subprocess env). Detects rate-limit in-stream: rejected `rate_limit_event`
+  (+resetsAt), assistant `error:'rate_limit'`, result `api_error_status===429` — only acted on when
+  the turn produced NO text.
+- New `runWithRotation` wraps it: on `rateLimited`, cool the token + retry SAME turn RESUMING the
+  SAME session id on the next token (transcript is on disk under `$HOME/.claude`, account-agnostic,
+  so the conversation continues). Also folds in the existing dead-resume heal (retry fresh, same
+  token). Throws `AllTokensLimitedError(retryAt)` only when every token is exhausted →
+  enqueue's catch sends a bilingual "try again in N min" fallback.
+
+Boot log now prints `tokens=N`. Verified authPool logic standalone (8/8: dedupe, spread, failover,
+cooldown, all-exhausted). `pnpm typecheck` green. Live-run TODO: confirm a mid-session token swap
+resumes cleanly (the one thing disk-transcript resume can't be unit-tested for).
+
+### MAX_CONCURRENT_TURNS cap (same session)
+
+Added global concurrency semaphore in `sessions.ts`: `MAX_CONCURRENT_TURNS` (default 6, ≥1). Per-chat
+chains still serialise a single chat; the semaphore bounds total turns EXECUTING across all chats so
+a busy hour can't spawn dozens of CLI subprocesses and OOM the container. Acquired in `runTurn`
+BEFORE the typing keep-alive (a queued turn doesn't flash "writing…" while waiting); released in
+`finally`. Slot handed directly to the next waiter on release (active count only drops when nobody
+waits). Boot log now prints `maxConcurrent=N`. Fuzzed the semaphore algo (500 concurrent, 4/4:
+peak==cap, never breaches, all drain, zero leaked slots). `pnpm typecheck` green.
+
+### Per-USER sessions (no same-group head-of-line wait)
+
+Decision (owner): a user who writes must NEVER wait because the bot is busy on someone else — the
+worst failure mode of the agent. Two changes:
+1. `MAX_CONCURRENT_TURNS` default flipped to UNLIMITED (0/unset). The cap I added earlier was itself
+   starving fresh chats; kept as an opt-in safety valve only. Boot log prints `maxConcurrent=∞`.
+2. Session + queue key changed `chatId` → `chatId:userId` (`sessions.ts`). Turns now serial WITHIN a
+   user's thread, parallel ACROSS users — so in a busy group driver B is answered while driver A's
+   turn still runs. `enqueueTurn(chatId, userId, …)`; both call sites in `index.ts` updated. `chains`
+   map pruned on settle (was bounded by #chats, now would grow per unique asker).
+
+Why safe (checked, not assumed): the tool layer already authorises by (chatId, userId) — `tools.ts`
+`recentSenders` is `chatId→(userId→ts)` (no clobbered "current sender"), and `telegramTools.ts`
+`telegram_read_image` refuses a photo whose `entry.userId` ≠ asker. Per-user context also means one
+user's session only ever holds their own id, so it can't act as another user. Known minor: only ONE
+latest photo per chat — if A posts then B posts, A must resend (guard refuses, no leak).
+
+Concurrency reality with a single resumable session id: it can't run two turns at once (SDK resume
+not concurrent-safe), which is exactly why per-USER keying (not a bigger per-chat lock) is the fix.
+
+Verified: queue keying (same-user serial / cross-user parallel / prune 3/3), semaphore fuzz (4/4),
+authPool (8/8). `pnpm typecheck` green.
+
+### Hardening pass (adversarial review fixes)
+
+Reviewed the multi-token / per-user work for failure modes. Fixed the code-side ones:
+
+- **Double tool-execution on rotation** (`sessions.ts` runWithRotation): on rate-limit, carry the
+  session id the failed attempt established (`init` stores it even when the turn then limits) into
+  the retry, so the next token RESUMES the transcript instead of re-running the user prompt — a write
+  tool that already fired on token A won't fire again on B.
+- **All-tokens-exhausted amplification** (`sessions.ts`): fast-fail a turn when every token is cooling
+  and the soonest reset is > `ALL_LIMITED_FASTFAIL_MS` (30s), instead of best-effort-spawning a doomed
+  CLI per token per queued turn (100 queued × 3 tokens = 300 pointless spawns hammering a limited API).
+- **Cooldown re-extension** (`authPool.ts` markLimited): authoritative `resetsAt` always wins; a
+  no-reset limit only STARTS a cooldown on a currently-healthy token — repeat probes no longer push a
+  cooling token's recovery farther out.
+- **Telegram Bot-API 429** (`telegram.ts`): global outbound send throttle. `queued()` spaces
+  replies/buttons/reactions/acks ≥ `TELEGRAM_MIN_GAP_MS` (40ms ≈25/s), FIFO, a rejecting send never
+  stalls the queue. `sendTyping` uses `bestEffort()` — skipped if within the gap so cosmetic pulses
+  never delay a real reply. Polling + file downloads unthrottled (separate limits).
+
+Verified: throttle (gap/FIFO/reject-resilience/best-effort-skip 5/5), markLimited no-re-extend +
+authoritative-override (2/2). `pnpm typecheck` green.
+
+DEFERRED (need product/live decision, NOT fixed in code):
+- **Tokens MUST be separate Anthropic accounts.** 3 setup-tokens off ONE subscription share ONE quota
+  → they limit together → rotation is a no-op. Confirm 3 distinct Max/Pro seats before relying on it.
+- **Cross-token resume UNVERIFIED.** "Continue conversation on the next token" assumes resuming a
+  session created under account A works when authed as account B (transcript is on the shared disk
+  volume, so plausibly yes). The double-write fix depends on this. Live-test a forced mid-turn swap.
+- **Shared `~/.claude.json` under high concurrency**: downgraded — the CLI writes it atomically
+  (temp+rename, see data/claude-home/backups/*.backup), so concurrent writers get last-write-wins,
+  not corruption. Left shared on purpose: per-token config dirs would isolate the transcript store
+  and break cross-token resume.
+- **Per-group Telegram limit (~20 msg/min/group)** still applies — a single group with a burst of
+  users can't be replied to faster than Telegram allows, regardless of our global gap. Per-chat
+  bucket is a possible follow-up.
+- **Group context**: per-user sessions mean the bot no longer sees other users' messages as context
+  (accepted trade for no head-of-line wait).
+
+### Verification harnesses (#1 accounts, #4 cross-token resume)
+
+Added two on-demand diagnostics (hit real API, cost a tiny turn each):
+- `scripts/checkTokens.mts` — one haiku turn per token, reads the `rate_limit_event` window
+  (`resetsAt` five-hour + `overageResetsAt` seven-day). Two tokens sharing a 5h reset timestamp =
+  SAME account → flags 🔴 "rotation won't help". Independent windows = 🟢. (accountInfo has no email
+  for OAuth tokens, and the /usage control method returned empty/unscoped, so the window timestamp
+  from the message stream is the reliable discriminator.)
+- `scripts/testCrossTokenResume.mts` — phase 1 token A stores codeword TANGERINE-42, phase 2 token B
+  RESUMES that session id and must recall it. PASS ⇒ context survives a token swap.
+
+Ran both with the single configured token:
+- checkTokens: works (status=allowed, 5h window resets 2026-07-24T23:10Z). Only 1 token → nothing to
+  compare; waiting on the real pool.
+- resume test (degenerates to same-token): 🟢 PASS — resume plumbing itself is sound.
+
+STILL NEEDS the real 3-token pool (owner to set CLAUDE_CODE_OAUTH_TOKENS) to close #1 + true #4.
+Note: runWithRotation ALREADY handles a cross-account resume REJECTION gracefully — the catch drops
+the session and retries fresh on the new token. Residual if that path fires: the rare mid-turn
+double-write returns (write tool re-run on the fresh retry). So the cross-account resume result
+determines whether #2's fix is fully effective or we lean on the fallback.
+
+## 2026-07-28 — audit fixes on multi-token failover + stack restart
+
+Audited d19620f, fixed 4 findings (typecheck green, root test failures pre-exist on tip):
+1. **Signal handlers now exit** (`sessions.ts`) — SIGTERM/SIGINT flush then `process.exit(0)`;
+   before, `docker stop` hung its full grace period until SIGKILL, Ctrl+C needed two presses.
+2. **Write-replay guard** (`sessions.ts`) — stream watches `tool_use` for WRITE_RISK_TOOLS
+   (money_code, manual_code, override, card_action, service_request). If one fired before a
+   rate-limit failover, the retry sends a continue-nudge, NOT the original prompt (double money
+   code risk). If the resume then DIES post-write, refuse the blind fresh retry — fail the turn
+   (closes the residual noted 2026-07-25).
+3. **Error RESULT ≠ silence** (`sessions.ts`) — `error_max_turns`/`error_during_execution` end with
+   no text and no throw; runTurnInner now sends the bilingual fallback + errMsg to the monitor.
+4. **Telegram 429 honored** (`telegram.ts`) — must-deliver lane (tgSend) parses `retry_after`,
+   stamps a global `blockedUntil`, retries once; non-ok responses logged. Typing lane unchanged.
+
+Separately: whole local stack found DOWN (gateway container gone, :3001 down, :5433 down) —
+"can't access money code" report was this, not the code. Restarted per CLAUDE.md run stack.
+
+## 2026-07-28 — review of agent-gateway multi-token branch
+
+Reviewed `build...feature/agent-gateway-multi-token-failover` without changing implementation.
+Open findings:
+
+1. `telegram_read_image` still trusts the model-supplied Telegram user id instead of binding the
+   per-user session id, so a prompt-injected id can read another recent sender's cached group photo.
+2. Write replay protection is incomplete: `octane_card_limits` and `octane_card_info` are absent
+   from `WRITE_RISK_TOOLS`, and a thrown resumed stream loses the attempt-local write marker before
+   the fresh-session replay path.
+3. The image transcription sub-query does not receive the token selected by `authPool`; a pool
+   configured only through the documented plural/numbered variables has no singular token for that
+   nested SDK call, while a legacy singular token bypasses rotation and can remain rate-limited.
+4. Button ownership is keyed only by Telegram `message_id` (which is chat-scoped), is fail-open
+   after restart/cap eviction, and does not consume a confirmation after its first tap.
+5. No committed unit tests exercise auth cooldown/rotation, write replay, button ownership, or
+   bound image identity; the two added scripts are live diagnostics and are excluded from the
+   gateway `tsconfig`.
+
+Verification: gateway typecheck passed; root lint and typecheck passed; cross-tenant RBAC suite
+passed. Full root tests: 882 passed / 38 failed across unrelated existing areas plus sandbox-local
+network restrictions; this branch changes no root implementation or root tests.
+
+## 2026-07-28 — owner/manager private agent chat + gateway safety
+
+Implemented the first agent-gateway upgrade slice:
+
+- Added `GET /v1/support-bot/dm-access`, resolved exclusively from the ACTIVE mini-app registration
+  through `registeredMiniAppCompanyRepo`. Only `owner` and `manager` return a carrier; drivers and
+  missing/revoked registrations fail closed.
+- Gateway private chats now resolve `(telegram user → carrier)` through that endpoint. Telegram's
+  private-chat `chat.id === from.id` invariant is enforced, every verified DM message engages
+  without an `@mention`, and group behavior remains mention/reply/follow-up gated.
+- Prompts now distinguish `GROUP_CHAT` from verified `PRIVATE_DM`: owner-authorized figures may be
+  discussed in DM, while money-code values, full card numbers and PINs remain tool-delivered only.
+- Bound `telegram_read_image` to the session user rather than its model-supplied id; its nested
+  vision query now uses the token selected for that attempt, so multi-token failover also applies.
+- Replaced global/fail-open button ownership with `(chatId,messageId,userId)` ownership, 10-minute
+  expiry, single-use consumption and fail-closed restart/eviction behavior.
+- Follow-up UX: button authorization returns `allowed | foreign | unavailable`. Expired, replayed,
+  evicted and restart-unknown taps get a visible bilingual Telegram alert asking the user to request
+  the action again; foreign-user taps are silently acknowledged with no ownership leak.
+- Completed write-replay classification for card limit/info writes. A streamed exception now
+  carries the attempt's write marker and refuses a fresh retry after any emitted write tool.
+- Refreshed the gateway README and added 13 focused tests for DM authorization/client behavior,
+  engagement, button isolation/replay/expiry and retry-safety classification.
+
+Verification: gateway + root typecheck green; root lint 0 errors (18 existing warnings); 35 focused
+gateway/RBAC tests green. Full suite: 895 passed / the same 38 unrelated failures as the pre-change
+run, plus the existing detached mini-app mock rejection. No deployment or live Telegram/API call
+was performed.
+
+## 2026-07-28 — offline real-time agent-gateway stress harness
+
+- Added `apps/agent-gateway/scripts/stressGateway.mts` and the `stress:offline` package command.
+- The harness simulates parallel `(chat,user)` turns with per-user ordering and a global concurrency
+  cap, while reporting completed/queued/active turns, throughput, elapsed time and RSS in real time.
+- It exercises the real button-ownership and write-risk helpers plus auth-pool rotation with exactly
+  three fake tokens. All numbered/singular token environment slots are cleared inside the process.
+- Network is denied in-process by replacing `globalThis.fetch`; no real Telegram, Mytrion, EFS,
+  Claude, or client request is made. Runs are capped at 1,000,000 synthetic turns to avoid OOM.
+- Added JSON output for CI and documented both live and JSON commands in the gateway README.
+- Verification: 1,000-turn live run passed (12/12 max concurrency, zero same-user overlap and
+  out-of-order completion); JSON run passed; standalone strict script typecheck, gateway/root
+  typecheck and 14 focused gateway tests passed; lint has 0 errors and the same 18 warnings.
+  Full suite remains red only outside this slice: 896 passed / 38 failed plus one existing detached
+  mini-app mock rejection; all three agent-gateway test files passed in the full run.
+
+## 2026-07-28 — Redis coordination/idempotency/staging plan
+
+- Added `docs/agent-gateway-redis-idempotency-staging-plan.md` with the detailed staging matrix in
+  `docs/agent-gateway-staging-load-test-matrix.md`; the split keeps both files below the repo limit.
+- The plan defines a Redis Streams ingress/worker model with per-session leases and fencing,
+  Postgres-backed idempotency for support-bot writes, failure-state semantics for external provider
+  uncertainty, staging load/failure scenarios, release gates, and a controlled rollout/rollback.
+- Planning only: no Redis dependency, database migration, runtime behavior, deployment, or external
+  request was added in this step.
+
+## 2026-07-28 — idempotency/fencing implementation started
+
+- Folded the agreed fence atomicity, turn replay, occurrence-slot, ingress failover, button,
+  stub/real-model, and token-failover refinements into the plan and staging matrix.
+- Added migration `0076_support_bot_operations.sql` (renumbered from 0058 during the build merge):
+  a global Postgres fencing sequence,
+  tenant/session fence registry, and tenant-scoped operation ledger with unique idempotency and
+  `(tenant, turn, write occurrence)` slots.
+- Added `supportBotOperationRepo`: fence verification and operation claim share one transaction
+  with the fence row locked; expired pre-external claims can be reclaimed, while any operation past
+  the external boundary routes to reconciliation.
+- Added deterministic canonical request/session/operation identity helpers and an executor that
+  returns sanitized replay results, blocks stale/conflicting/in-progress/unknown attempts, and marks
+  ambiguous provider failures unknown.
+- Moved support-bot caller lookup onto `registeredMiniAppCompanyRepo`, making caller resolution
+  request-tenant scoped instead of a direct route query.
+- Extracted `/support-bot/card-action` into its own route module. With
+  `FF_SUPPORT_BOT_IDEMPOTENCY=0` it preserves the legacy path; when enabled it requires gateway
+  operation metadata, issues a Postgres fence, and executes through the ledger.
+- Gateway turns now carry the Telegram update ID (`tg:<update_id>`). The card-action tool lazily
+  acquires a fence and supplies a gateway-generated idempotency key, persisted occurrence, session
+  hash, and fencing token; the model controls none of these values.
+- Added 18 focused operation/route/gateway-identity tests. Cross-tenant/RBAC baseline was 52/52;
+  the final combined focused run, including the existing gateway safety tests, was 64/64.
+- Root and gateway typechecks passed; lint remained 0 errors with only pre-existing warnings after
+  removing the one new assertion warning. `drizzle-kit check` remains blocked by the existing
+  0022/0023 snapshot-parent collision; migration 0058 was not applied. Feature flag stays OFF and no
+  deployment, Telegram, EFS, ServerCRM, or other external request was performed.
+- Full suite finished at 914 passed / 38 failed. The 38 failures match the existing unrelated
+  baseline areas; every new idempotency, fencing, card-action, and gateway test passed. The existing
+  detached mini-app mock rejection also remains.
+- Remaining prerequisite debt: `supportBot.routes.ts` was reduced but is still above the 600-line
+  cap. Continue Phase 0 route extraction before enabling the feature or starting Redis workers.
+
+## 2026-07-28 — support-bot Phase 0 route/repository cleanup
+
+- Split the 1,079-line `supportBot.routes.ts` into gateway control-plane, document delivery and
+  private-value route modules. The original route is now 523 lines; every support-bot route module
+  is below the 580-line target.
+- Removed every direct database query/import from support-bot routes. Message ingest and chat-map
+  persistence now go through `supportBotGatewayRepo`; registration access-list reads go through
+  `registeredMiniAppCompanyRepo`.
+- Made chat mapping tenant-safe at both query and uniqueness levels. Migration
+  `0077_support_bot_chat_tenant_scope.sql` (renumbered from 0059 during the build merge) replaces
+  the global `chat_id` unique index with
+  `(tenant_id, chat_id)`, and auto-bind locks/claims the tenant-scoped row without re-pointing an
+  already enabled mapping.
+- Fixed the existing `findByTelegramUserId` lookup so `tenant_id` is part of the SQL predicate
+  before `LIMIT 1`, rather than filtering one arbitrary global result in application code.
+- Replaced override receipt notification's ineffective `Date.now()` dedupe key with the stable,
+  gateway-supplied Telegram turn/request ID. The model cannot supply or alter this value.
+- Added cross-tenant gateway-route tests covering chat-map reads, access-list lookup and rejected
+  auto-bind when no registration exists in the authenticated tenant.
+- Verification: root and gateway typechecks passed; lint has 0 errors and the same 17 existing
+  warnings; focused gateway/security suite passed 71/71. Full suite finished at 917 passed /
+  the same 38 unrelated baseline failures, plus the existing detached mini-app mock rejection.
+  Support-bot migrations 0076/0077 remain unapplied, idempotency remains feature-flagged OFF, and no deployment
+  or external Telegram/EFS/ServerCRM request was performed.
+
+## 2026-07-28 — Phase 0 committed + pre-Redis baseline instrumentation
+
+- Registered the support-bot migrations (now 0076 and 0077) in Drizzle's journal. A fresh
+  throwaway Postgres migrated through all then-current journal entries, the second migrator run
+  was a no-op, and both support-bot SQL files
+  each executed twice successfully to verify statement-level idempotency. The throwaway DB was
+  removed afterward.
+- Applied the journaled migrations to the local Docker `octane_assistant` app database only.
+  Production, DWH and MySQL were not touched; `FF_SUPPORT_BOT_IDEMPOTENCY` remains OFF.
+- Added in-memory gateway baseline metrics: measured queue/total/SDK/send latency rings; active
+  turn, vision and subprocess gauges; RSS/heap/event-loop samplers; Telegram, provider, backend,
+  replay, reconciliation and stale-fence counters. Main Claude attempts and image-vision attempts
+  both contribute to subprocess pressure.
+- Turn lifecycle now spans enqueue through normal or fallback Telegram delivery. Per-user queue
+  wait is measured after the optional global slot is acquired, and turn errors are counted once at
+  the outer promise settlement. `sessions.ts` remains below target at 571 lines after moving the
+  concurrency semaphore into `turnConcurrency.ts`.
+- Extended the monitor with `/api/metrics` and incremental `/api/turns?since=` output. New turn
+  rows carry stable `turnId`, completion cursors, measured total/send times and truncation metadata;
+  old JSONL rows remain readable and are excluded from new total/wait percentile calculations.
+- Card-action replay responses now expose only the safe `replayed: true` execution metadata so the
+  gateway can count result replays; fresh response bodies are unchanged.
+- Added `baseline:capture`, which polls metrics and turns incrementally, aborts on truncation or a
+  process restart by default, segments explicitly allowed restart epochs, and writes a repo-root
+  evaluation report. A localhost fake-monitor dry run produced a valid report; the fake artifact
+  was removed.
+- Verification: lint 0 errors / the same 17 existing warnings; root and gateway typechecks, build,
+  standalone capture-script typecheck, 65 focused tests and a 100-turn offline stress run passed.
+  Full suite: 925 passed / the same 38 unrelated baseline failures plus the existing detached
+  mini-app mock rejection. Local backend smoke returned 200 for `/v1/health` and the extracted
+  `/v1/support-bot/chat-map`; no gateway was started against a real bot token and no external
+  Telegram, Claude, EFS or ServerCRM request was made.
+
+## 2026-07-28 — independent Phase 0 and metrics audit follow-up
+
+- Audited the committed Phase 0 route/repository, migration, idempotency, monitor and baseline
+  capture paths. Direct database access remains absent from support-bot routes, all touched source
+  files remain below the line caps, support-bot migration journal entries 0076/0077 are present, and
+  `FF_SUPPORT_BOT_IDEMPOTENCY` still defaults OFF.
+- Fixed four metrics edge cases: backend transport/timeout failures are now counted, a second
+  Telegram 429 after retry is counted, baseline capture preserves URL path prefixes and includes
+  its deadline sample, and captured turn latency is bounded to the same server-clock window as
+  counter deltas.
+- Added regression coverage for backend safety/status error classification and the proxied monitor
+  metrics route, including preservation of `token` and `since` query parameters.
+- Verified the monitor locally: unauthenticated `/api/metrics` returned 403, authenticated access
+  returned 200, and a synthetic turn settled with one completed turn, one histogram sample and no
+  leaked active gauge. The baseline script was dry-run against a prefixed fake monitor and aligned
+  two measured turns with a two-turn counter delta.
+- Confirmed the local app database contains the operation/fence tables and the tenant-scoped unique
+  chat index; a repeated local migration run completed cleanly. Production, DWH and MySQL were not
+  touched.
+- Verification: lint has 0 errors and the same 17 existing warnings; root, gateway and standalone
+  capture-script typechecks passed; focused tests passed 19/19; offline stress passed 100/100 with
+  zero same-user overlap or ordering violations. Full suite finished at 927 passed / the same 38
+  unrelated baseline failures plus the existing detached mini-app mock rejection.
+- A real Telegram gateway was deliberately not started because the bot token must have only one
+  long-polling consumer. No deployment or external Telegram, Claude, EFS or ServerCRM request was
+  performed.
+
+## 2026-07-30 — OpenAI gateway burst-handling implementation
+
+- Reviewed the multi-request patterns on `feature/agent-gateway-multi-token-failover` and applied
+  the reusable concurrency controls to the standalone OpenAI-only gateway. Claude OAuth token
+  rotation, Groq fallback, subprocess resume/replay and subscription-token behavior were not
+  copied.
+- Added a configurable FIFO global turn semaphore (`MAX_CONCURRENT_TURNS`, default 8), bounded
+  global and per-user admission, strict per-user turn ordering, automatic queue-key cleanup and
+  per-user chat history isolation.
+- Parallelized Telegram update ingestion in bounded batches while retaining per-user ordering.
+  Added a global Telegram send throttle, per-chat message spacing, one retry for Telegram
+  `retry_after`, shared typing keep-alives and send timeouts so one busy group does not block all
+  other groups.
+- Added single-flight access/chat-map refreshes, stale-cache cleanup, asynchronous atomic session
+  persistence and bounded buffered JSONL logging. Dashboard sync now avoids replacing newer
+  in-memory turns while log writes are still buffered.
+- Added runtime counters, gauges and latency histograms for queueing, OpenAI, Telegram, backend,
+  tools, vision, memory and event-loop behavior, exposed through the authenticated monitor
+  `/api/metrics` endpoint.
+- Added concurrency, metrics, buffered-writer and single-flight regression tests plus an offline
+  concurrency stress harness. Verification passed: gateway typecheck; 33/33 gateway tests;
+  22/22 mandatory cross-tenant RBAC tests; and 300 queued turns across 100 users with max active
+  exactly 8, zero same-user overlap, zero ordering violations, zero leaked queue keys, 15.29 ms
+  maximum sampled event-loop lag and 2.7 MB RSS growth.
+- This phase is intentionally single-process. Horizontal replicas still require a shared queue,
+  distributed rate limits and Telegram webhook ownership before scaling past one gateway process.
+- Merged the latest `origin/build` into the feature branch. The build branch already owned
+  migrations 0058–0075, so the support-bot migrations were safely renumbered to 0076/0077;
+  both schema entries and both branches' session notes were preserved.
+- Post-merge verification: root typecheck and production build passed; lint had 0 errors and 24
+  existing warnings; 22/22 mandatory cross-tenant RBAC tests and 33/33 OpenAI gateway tests passed.
+  The 300-turn gateway stress run again had zero per-user overlap/order violations and no leaked
+  queue entries. The full root suite finished at 1,263 passed / 11 failures in unrelated legacy
+  fixtures and mocks. `drizzle-kit check` remains blocked by the pre-existing 0022/0023 snapshot
+  parent collision; the migration journal itself has 78 unique entries with every SQL file matched.
 ## 2026-07-25 — Retention post-call force stage modal + snappy save
 
 After a Retention **New** case call ends, stage selection opens as a forced

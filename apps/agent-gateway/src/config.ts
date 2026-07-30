@@ -20,6 +20,8 @@ export const config = {
   model: process.env.GATEWAY_MODEL ?? 'claude-sonnet-4-5',
   octaneBase: req('OCTANE_API_BASE').replace(/\/+$/, ''),
   octaneKey: req('OCTANE_INTERNAL_API_KEY'),
+  tenantId: process.env.OCTANE_TENANT_ID ?? 'octane',
+  environment: process.env.NODE_ENV ?? 'development',
   /** MVP single-group mode; multi-chat resolves via mytrion /support-bot/chat-map. */
   botUsername: process.env.TELEGRAM_BOT_USERNAME ?? '',
   groupChatId: process.env.OCTANE_GROUP_CHAT_ID ?? '',

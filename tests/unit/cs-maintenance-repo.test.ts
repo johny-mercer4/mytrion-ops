@@ -3,7 +3,7 @@
  *
  * Two of these assertions guard silent failures rather than crashes:
  *   - the unit-number predicate must stay character-identical to the expression index in
- *     0076_maintenance_cases.sql, or the index quietly stops being used and search degrades to a
+ *     0079_maintenance_cases.sql, or the index quietly stops being used and search degrades to a
  *     seq scan as the table grows;
  *   - every ORDER BY must end in `id`, or offset paging skips and duplicates rows whenever cases
  *     share a date — the failure that cost the referral drain 680 of 687 records.
@@ -71,7 +71,7 @@ beforeEach(() => {
 
 describe('search predicate', () => {
   it('normalizes the unit number with the EXACT expression the index is built on', () => {
-    // 0076_maintenance_cases.sql:
+    // 0079_maintenance_cases.sql:
     //   CREATE INDEX maintenance_cases_unit_norm_idx
     //     ON maintenance_cases (lower(regexp_replace("unit_number", '[^a-zA-Z0-9]', '', 'g')));
     // Any drift here (a different character class, a missing 'g') makes the index unusable.

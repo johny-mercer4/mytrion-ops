@@ -11,18 +11,29 @@
 -- every migration from 0025 on is hand-authored. Kept fully idempotent with IF NOT EXISTS so a
 -- hand-edited baseline applies cleanly to both a fresh and an existing database.
 --
--- NUMBERED 0076, NOT 0068. Because the journal is hand-maintained, the next free number is NOT
--- "one past the highest file on build" — two things bite:
---   * 0068 THROUGH 0075 were already taken. `build` only showed up to 0067; `main` was six commits
---     ahead and carried 0068-0075 (feature/hr-workspace-v2 and others), all already applied to prod.
---     This file was numbered 0070 against `build`, and merging `main` collided with its 0070 too —
---     so check `origin/main`, not `origin/build`, and check EVERY remote branch;
---   * drizzle's migrator applies an entry only when `lastAppliedOnThisDb.created_at < entry.when`.
---     It reads that ceiling ONCE, before the loop. The prod DB's newest applied stamp was
---     1785391200000 — well past anything in this branch's journal — so an entry with a lower `when`
---     is silently SKIPPED, no error, no table. Hence when = 1785394800000.
--- Before adding a migration here: check every remote branch for the next free number, and check the
--- target DB's `max(created_at)` in drizzle.__drizzle_migrations before choosing `when`.
+-- NUMBERED 0079 — the FOURTH number this file has carried (0068 → 0070 → 0076 → 0079). Because the
+-- journal is hand-maintained, the next free number is NOT "one past the highest file on build", and
+-- the `when` stamp is NOT free-choice. Both bite, and both bit here:
+--   * NUMBER. 0068-0075 were taken by `main` (six commits ahead of `build`), then `main` advanced
+--     again and took 0076/0077 for support-bot work, and 0078 is claimed by 0078_support_bot_memories
+--     on a still-unmerged branch. So: check EVERY remote branch, not `origin/build`, not just `main`.
+--   * STAMP. Drizzle's migrator applies an entry only when `lastAppliedOnThisDb.created_at <
+--     entry.when`, and it reads that ceiling ONCE before the loop. An entry at or below it is
+--     silently SKIPPED — no error, no table.
+--
+-- That skip is not hypothetical. This file was first stamped 1785394800000, which is the SAME
+-- millisecond `main` stamped 0076_support_bot_operations. This one reached prod first, so main's was
+-- skipped and `support_bot_operations` / `support_bot_session_fences` were missing from prod while the
+-- journal claimed otherwise. 0081_support_bot_operations_repair repairs that.
+--
+-- Hence `when` here is 1785398400001 — exactly 1 ms past prod's ceiling, NOT the next hour slot. The
+-- hour slots are the repo convention but 1785402000000 already belongs to 0078_support_bot_memories;
+-- stamping above it would push THAT migration below the deployed ceiling and skip it in turn.
+-- Re-running this file is harmless (every statement is IF NOT EXISTS), so re-stamping it above the
+-- ceiling costs nothing and lets any database that missed it self-heal.
+--
+-- Before adding a migration here: check every remote branch for the next free number, read the target
+-- DB's `max(created_at)` from drizzle.__drizzle_migrations, and stamp just above it.
 
 CREATE TABLE IF NOT EXISTS "maintenance_cases" (
   "id" text PRIMARY KEY NOT NULL,

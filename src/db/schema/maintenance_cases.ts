@@ -128,7 +128,7 @@ export const maintenanceCases = pgTable(
     caseDateIdx: index('maintenance_cases_case_date_idx').on(table.caseDate, table.id),
     /** The DEFAULT list order, matched exactly. A backward scan of the ascending index above cannot
      *  serve it: DESC implies NULLS FIRST, so `DESC NULLS LAST` fell back to a seq scan + top-N sort
-     *  on every page and every search (see 0077_maintenance_cases_sort_idx.sql). */
+     *  on every page and every search (see 0080_maintenance_cases_sort_idx.sql). */
     caseDateDescIdx: index('maintenance_cases_case_date_desc_idx').on(
       sql`${table.caseDate} DESC NULLS LAST`,
       sql`${table.id} DESC`,

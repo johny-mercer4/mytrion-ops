@@ -15,6 +15,7 @@ export default defineConfig({
     './src/db/schema/mini_app_notifications.ts',
     './src/db/schema/client_news.ts',
     './src/db/schema/support_bot_chats.ts',
+    './src/db/schema/support_bot_operations.ts',
     './src/db/schema/support_bot_messages.ts',
     './src/db/schema/conversations.ts',
     './src/db/schema/messages.ts',

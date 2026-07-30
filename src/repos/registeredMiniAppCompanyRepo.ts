@@ -70,6 +70,26 @@ function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
 }
 
 export const registeredMiniAppCompanyRepo = {
+  /** Active registration resolved from Telegram identity for trusted support-bot entrypoints. */
+  async findActiveByTelegramUserId(
+    ctx: TenantContext,
+    telegramUserId: string,
+    client: DbClient = db,
+  ): Promise<RegisteredMiniAppCompany | undefined> {
+    const rows = await client
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.telegramUserId, telegramUserId),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  },
+
   async findByTelegramUserId(
     ctx: TenantContext,
     telegramUserId: string,
@@ -78,9 +98,14 @@ export const registeredMiniAppCompanyRepo = {
     const rows = await client
       .select()
       .from(registeredMiniAppCompanies)
-      .where(eq(registeredMiniAppCompanies.telegramUserId, telegramUserId))
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.telegramUserId, telegramUserId),
+        ),
+      )
       .limit(1);
-    return rows.find((r) => r.tenantId === ctx.tenantId);
+    return rows[0];
   },
 
   /** Every registration for this tenant, newest first — the admin tree groups these by carrierId. */
@@ -111,6 +136,23 @@ export const registeredMiniAppCompanyRepo = {
       )
       .limit(1);
     return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
+  /** Active support-bot users for one tenant/carrier access-list refresh. */
+  async listActiveByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+  ): Promise<RegisteredMiniAppCompany[]> {
+    return db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      );
   },
 
   /**

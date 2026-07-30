@@ -65,7 +65,7 @@ export interface OwnerFacet {
 /**
  * Unit numbers arrive as '012', '#123', 'T-123', so a raw equality never matches what an agent
  * types. This expression MUST stay character-identical to `maintenance_cases_unit_norm_idx` in
- * 0076_maintenance_cases.sql — if the two drift, the index silently stops being used and the
+ * 0079_maintenance_cases.sql — if the two drift, the index silently stops being used and the
  * predicate falls back to a seq scan.
  */
 const UNIT_NORM = sql`lower(regexp_replace(${maintenanceCases.unitNumber}, '[^a-zA-Z0-9]', '', 'g'))`;

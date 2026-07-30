@@ -13,17 +13,27 @@
  */
 import { createServer, type ServerResponse } from 'node:http';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import {
+  metricsSnapshot,
+  percentile,
+  turnAggregates,
+} from './metrics.js';
 
 export interface TurnLog {
   ts: string;
+  /** Completion cursor for incremental capture; old JSONL rows fall back to ts. */
+  completedAt?: string;
   chatId: number;
   userId: number;
   name: string;
   kind: 'message' | 'button';
+  turnId?: string;
   question: string;
   reply: string;
   waitMs: number;
   execMs: number;
+  totalMs?: number;
+  sendMs?: number;
   numTurns: number;
   inTok: number;
   outTok: number;
@@ -70,25 +80,25 @@ export function recordTurn(e: TurnLog): void {
   }
 }
 
-function pct(arr: number[], p: number): number {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))] ?? 0;
-}
-
 function aggregates() {
   const dayAgo = Date.now() - 24 * 3600_000;
   const day = recent.filter((r) => Date.parse(r.ts) >= dayAgo);
   const sum = (rows: TurnLog[], f: (r: TurnLog) => number) => rows.reduce((s, r) => s + f(r), 0);
   const execs = day.map((r) => r.execMs);
+  const measured = turnAggregates(day);
   const cacheRead = sum(day, (r) => r.cacheRead);
   const rawIn = sum(day, (r) => r.inTok) + sum(day, (r) => r.cacheWrite);
   return {
     turns24h: day.length,
     errors24h: day.filter((r) => r.isError).length,
-    execP50Ms: pct(execs, 50),
-    execP90Ms: pct(execs, 90),
-    waitMaxMs: pct(day.map((r) => r.waitMs), 100),
+    execP50Ms: percentile(execs, 50),
+    execP90Ms: percentile(execs, 90),
+    waitMaxMs: percentile(day.map((r) => r.waitMs), 100),
+    waitP50Ms: measured.waitP50Ms,
+    waitP95Ms: measured.waitP95Ms,
+    totalP50Ms: measured.totalP50Ms,
+    totalP95Ms: measured.totalP95Ms,
+    errorRatePct: measured.errorRatePct,
     inTok: sum(day, (r) => r.inTok),
     outTok: sum(day, (r) => r.outTok),
     cacheRead,
@@ -162,7 +172,37 @@ export function startMonitor(): void {
     }
     if (url.pathname === '/api/turns') {
       syncFromFile(); // reflect any turns appended to the file since the last read
-      json(res, { turns: [...recent].slice(-200).reverse(), agg: aggregates() });
+      const since = url.searchParams.get('since');
+      const sinceMs = since ? Date.parse(since) : Number.NaN;
+      const hasSince = Number.isFinite(sinceMs);
+      const turns = hasSince
+        ? recent.filter(
+            (row) => Date.parse(row.completedAt ?? row.ts) > sinceMs,
+          )
+        : [...recent].slice(-200).reverse();
+      const oldestAvailableTs = recent[0]
+        ? recent[0].completedAt ?? recent[0].ts
+        : null;
+      const newest = recent.at(-1);
+      const newestAvailableTs = newest
+        ? newest.completedAt ?? newest.ts
+        : null;
+      json(res, {
+        turns,
+        agg: aggregates(),
+        truncated:
+          hasSince &&
+          recent.length >= MAX_MEM &&
+          oldestAvailableTs != null &&
+          Date.parse(oldestAvailableTs) > sinceMs,
+        oldestAvailableTs,
+        newestAvailableTs,
+      });
+      return;
+    }
+    if (url.pathname === '/api/metrics') {
+      syncFromFile();
+      json(res, { ...metricsSnapshot(), window24h: aggregates() });
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

@@ -9,8 +9,14 @@
 -- Only ~3 ms today at 2,715 rows, which is why it was invisible; the cost grows with every row and
 -- the sort happens on EVERY page and EVERY search. This index matches the ORDER BY exactly.
 --
--- NUMBERED 0077 and stamped ABOVE the target DB's newest applied migration — see the header of
--- 0076_maintenance_cases.sql for why both of those are load-bearing and how to pick them.
+-- NUMBERED 0080 and stamped ABOVE the target DB's newest applied migration — see the header of
+-- 0079_maintenance_cases.sql for why both of those are load-bearing and how to pick them.
+--
+-- This file is the cautionary tale in that header. As 0077 it collided with main's
+-- 0077_support_bot_chat_tenant_scope on BOTH the number and the `when` (1785398400000). Main's copy
+-- reached prod first, so prod's ceiling came to EQUAL this entry's stamp — and `<` is strict, so
+-- `pnpm db:migrate` reported success and created nothing, for days. The index below was absent from
+-- prod the entire time while the journal implied it was there.
 --
 -- `NULLS LAST` is kept rather than dropped from the query on purpose: exactly one case carries no
 -- date today, and a dateless case belongs at the BOTTOM of a newest-first list, not the top.
