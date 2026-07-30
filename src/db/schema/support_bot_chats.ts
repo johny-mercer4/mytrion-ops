@@ -26,7 +26,7 @@ export const supportBotChats = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    chatUq: uniqueIndex('support_bot_chats_chat_uq').on(table.chatId),
+    chatUq: uniqueIndex('support_bot_chats_tenant_chat_uq').on(table.tenantId, table.chatId),
     carrierIdx: index('support_bot_chats_carrier_idx').on(table.tenantId, table.carrierId),
   }),
 );

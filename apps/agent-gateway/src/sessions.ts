@@ -1,15 +1,40 @@
 /**
- * Per-chat Claude sessions — the whole point of v2. Each group chat gets its own SDK
- * session (context = that chat only); turns are serial WITHIN a chat and parallel ACROSS
- * chats. Session ids persist to disk so a gateway restart resumes conversations.
+ * Per-USER Claude sessions. Each (chat, user) pair gets its own SDK session (context = that one
+ * person's exchange) and its own serial queue: turns are serial WITHIN a user's thread and parallel
+ * ACROSS users — so in a busy group, driver B is answered immediately while driver A's turn is still
+ * running, and neither waits on the other. Session ids persist to disk so a restart resumes threads.
+ *
+ * Why per-user and not per-chat: a single resumable session id cannot run two turns at once (SDK
+ * resume is not concurrent-safe), so a per-chat key would force everyone in a group to queue behind
+ * whoever spoke first. Keying by user removes that head-of-line wait. Cross-user isolation is a
+ * bonus — a user's context holds only their own messages, and the tool layer already authorises by
+ * (chatId, userId), so one user's session can never act as another.
  */
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { config } from './config.js';
 import { buildOctaneServer } from './tools.js';
 import { buildTelegramServer } from './telegramTools.js';
 import { systemPrompt } from './prompt.js';
-import { sendTyping } from './telegram.js';
+import { startTypingKeepAlive } from './telegram.js';
+import { markLimited, pickToken, soonestRecovery, tokenCount } from './authPool.js';
+import {
+  incrementCounter,
+  subprocessStarted,
+  turnEnqueued,
+  type TurnLifecycle,
+} from './metrics.js';
+import {
+  CONTINUE_AFTER_WRITE_PROMPT,
+  QueryStreamError,
+  WRITE_RISK_TOOLS,
+} from './retrySafety.js';
+import {
+  acquireTurnSlot,
+  releaseTurnSlot,
+} from './turnConcurrency.js';
+
+export { maxConcurrentTurns } from './turnConcurrency.js';
 
 const SESSIONS_FILE = 'data/sessions.json';
 
@@ -33,6 +58,9 @@ const MAX_AGE_MS = Number(process.env['SESSION_MAX_AGE_H'] ?? '24') * 3600_000;
 // ~85k per turn — so the threshold must sit WELL ABOVE that, or every quiet moment rotates.
 const ROTATE_CACHE_TOKENS = Number(process.env['SESSION_ROTATE_CACHE_TOKENS'] ?? '150000');
 const QUIET_GAP_MS = 10 * 60_000;
+/** When ALL tokens are cooling down and the soonest reset is farther than this, fail a turn instantly
+ *  instead of best-effort-spawning a CLI that will just re-hit the limit. */
+const ALL_LIMITED_FASTFAIL_MS = Number(process.env['ALL_LIMITED_FASTFAIL_MS'] ?? '30000');
 
 interface SessMeta {
   id: string;
@@ -41,40 +69,107 @@ interface SessMeta {
   turns: number;
   lastCacheRead: number;
 }
-const sessions = new Map<number, SessMeta>();
+/** Composite session/queue key: one thread per (chat, user). */
+type SessionKey = string;
+const sessKey = (chatId: number, userId: number): SessionKey => `${chatId}:${userId}`;
+
+const sessions = new Map<SessionKey, SessMeta>();
 try {
   const raw = JSON.parse(readFileSync(SESSIONS_FILE, 'utf8')) as Record<string, unknown>;
   for (const [k, v] of Object.entries(raw)) {
-    // Migrate the v1 format (plain "chatId": "sessionId" strings) in place.
+    // Keys are now "chatId:userId"; a bare-numeric key is a pre-per-user (v2) entry — keep it as-is
+    // (it just won't match any per-user lookup, so those threads start fresh once, harmless). v1
+    // plain-string "sessionId" values are still migrated in place.
     if (typeof v === 'string') {
-      sessions.set(Number(k), { id: v, startedAt: Date.now(), lastAt: Date.now(), turns: 0, lastCacheRead: 0 });
+      sessions.set(k, { id: v, startedAt: Date.now(), lastAt: Date.now(), turns: 0, lastCacheRead: 0 });
     } else if (v && typeof v === 'object' && typeof (v as SessMeta).id === 'string') {
-      sessions.set(Number(k), v as SessMeta);
+      sessions.set(k, v as SessMeta);
     }
   }
 } catch {
   /* first boot */
 }
-const persist = () => writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 1));
+/**
+ * Persist is DEBOUNCED + ATOMIC. Debounced: a burst of concurrent turns (per-user parallelism can
+ * fire many `init`/bookkeeping writes at once) collapses into one disk write instead of dozens of
+ * blocking sync writes stalling the event loop. Atomic: write a temp file then rename over the real
+ * one, so a crash mid-write can't truncate sessions.json into unparseable JSON (which would lose
+ * every session on the next boot). A trailing flush ≤ PERSIST_DEBOUNCE_MS after the last change.
+ */
+const PERSIST_DEBOUNCE_MS = 500;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistDirty = false;
+function flushPersist(): void {
+  persistTimer = null;
+  if (!persistDirty) return;
+  persistDirty = false;
+  try {
+    const tmp = `${SESSIONS_FILE}.tmp`;
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(sessions), null, 1));
+    renameSync(tmp, SESSIONS_FILE);
+  } catch (e) {
+    console.error('[sessions] persist failed', e instanceof Error ? e.message : e);
+  }
+}
+function persist(): void {
+  persistDirty = true;
+  if (!persistTimer) persistTimer = setTimeout(flushPersist, PERSIST_DEBOUNCE_MS);
+}
+// Flush on shutdown so an in-window change isn't lost to the debounce. Signal handlers must
+// exit explicitly — installing one cancels Node's default terminate, so a bare flush would leave
+// `docker stop` hanging its full grace period until SIGKILL (and Ctrl+C needing a second press).
+process.once('beforeExit', flushPersist);
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(sig, () => {
+    flushPersist();
+    process.exit(0);
+  });
+}
+
+/**
+ * Stale sweep — bounds unbounded growth. The key is now per-USER, so `sessions` gains an entry for
+ * every unique asker and (unlike the old per-chat key) is NOT self-limiting: `resumableSession` only
+ * retires an entry when that same user speaks AGAIN, so a one-off asker's meta would linger forever.
+ * Drop anything idle past MAX_AGE_MS on boot and hourly thereafter. A live thread (recent lastAt) is
+ * never touched; a swept user simply starts fresh next time — exactly what rotation would do anyway.
+ */
+const SESSION_SWEEP_MS = 3600_000;
+function sweepStale(): void {
+  const now = Date.now();
+  let removed = 0;
+  for (const [k, m] of sessions) {
+    if (now - m.lastAt > MAX_AGE_MS) {
+      sessions.delete(k);
+      removed++;
+    }
+  }
+  if (removed) {
+    console.log(`[sessions] swept ${removed} stale thread(s); ${sessions.size} remain`);
+    persist();
+  }
+}
+sweepStale();
+setInterval(sweepStale, SESSION_SWEEP_MS).unref();
 
 /** Decide fresh-vs-resume for the NEXT turn. Returns the session id to resume, or undefined. */
-function resumableSession(chatId: number): string | undefined {
-  const m = sessions.get(chatId);
+function resumableSession(key: SessionKey): string | undefined {
+  const m = sessions.get(key);
   if (!m) return undefined;
   const now = Date.now();
   const due = m.turns >= MAX_TURNS || now - m.startedAt > MAX_AGE_MS || m.lastCacheRead > ROTATE_CACHE_TOKENS;
   const midConversation = now - m.lastAt < QUIET_GAP_MS;
   if (due && !midConversation) {
-    console.log(`[chat ${chatId}] session rotated (turns=${m.turns}, ageH=${((now - m.startedAt) / 3600_000).toFixed(1)}, cacheRead=${m.lastCacheRead})`);
-    sessions.delete(chatId);
+    console.log(`[${key}] session rotated (turns=${m.turns}, ageH=${((now - m.startedAt) / 3600_000).toFixed(1)}, cacheRead=${m.lastCacheRead})`);
+    sessions.delete(key);
     persist();
     return undefined;
   }
   return m.id;
 }
 
-/** Per-chat serial queue: a chat's turns never overlap; different chats run in parallel. */
-const chains = new Map<number, Promise<void>>();
+/** Per-USER serial queue: one user's turns never overlap; different users (even in one chat) run in
+ *  parallel. Entries are pruned on settle so a group with many one-off askers doesn't leak keys. */
+const chains = new Map<SessionKey, Promise<void>>();
 
 export type TurnContent = string | Array<Record<string, unknown>>;
 
@@ -98,74 +193,140 @@ export interface TurnStats {
   numTurns: number;
   usage: Record<string, unknown> | null;
   isError: boolean;
+  queueWaitMs?: number;
+  totalMs?: number;
+  sendMs?: number;
   /** On a failed turn: the caught error's message — surfaced in the web monitor so a prod
    * failure is diagnosable from the dashboard, not only from Render logs. */
   errMsg?: string;
 }
 
+/** One `runQuery` attempt's result: the reply text, accounting, and whether the token was rejected. */
+interface QueryOutcome {
+  finalText: string;
+  stats: TurnStats;
+  /** The token hit its subscription limit and produced no answer — the caller should rotate. */
+  rateLimited: boolean;
+  /** ms-epoch (or unix-seconds) the limit resets, when the SDK reported it. */
+  resetsAt?: number;
+  /** A state-changing tool (money code, override, card action…) fired during THIS attempt. */
+  usedWriteTool: boolean;
+}
+
+/** Thrown when every configured token is exhausted for this turn — enqueue's catch sends a fallback. */
+class AllTokensLimitedError extends Error {
+  constructor(public readonly retryAt: number | null) {
+    super('all auth tokens rate-limited');
+    this.name = 'AllTokensLimitedError';
+    incrementCounter('provider_all_limited_total');
+  }
+}
+
+/** Bilingual fallback for a failed turn. The all-tokens-limited case names the wait; anything else
+ *  keeps the generic "try again shortly" line. */
+function allTokensLimitedText(err: unknown): string {
+  if (err instanceof AllTokensLimitedError && err.retryAt && err.retryAt > Date.now()) {
+    const mins = Math.max(1, Math.round((err.retryAt - Date.now()) / 60_000));
+    return (
+      `⚠️ Hozir yuklama yuqori — taxminan ${mins} daqiqadan so‘ng qayta urinib ko‘ring. / ` +
+      `High demand right now — please try again in about ${mins} min.`
+    );
+  }
+  return (
+    '⚠️ Hozir javob bera olmadim — birozdan keyin qayta urinib ko‘ring. / ' +
+    "Couldn't answer just now — please try again shortly."
+  );
+}
+
 export function enqueueTurn(
   chatId: number,
+  userId: number,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): void {
-  const prev = chains.get(chatId) ?? Promise.resolve();
+  const lifecycle = turnEnqueued();
+  const measuredReply = lifecycle.wrapReply(onReply);
+  const measuredStats = lifecycle.wrapStats(onStats);
+  const key = sessKey(chatId, userId);
+  const prev = chains.get(key) ?? Promise.resolve();
   const next = prev
-    .then(() => runTurn(chatId, carrierId, userPrompt, onReply, onStats))
+    .then(() =>
+      runTurn(
+        chatId,
+        userId,
+        key,
+        carrierId,
+        userPrompt,
+        turnId,
+        lifecycle,
+        measuredReply,
+        measuredStats,
+      ),
+    )
     .catch(async (err) => {
-      console.error(`[chat ${chatId}] turn failed`, err);
-      onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true, errMsg: err instanceof Error ? err.message : String(err) });
+      console.error(`[${key}] turn failed`, err);
       // A terminal error (e.g. SDK auth/init failure) used to leave the tagged user with total
       // silence, which reads as "the bot is dead" — worst for exactly the person who engaged.
       // Send one short bilingual fallback so a broken turn is visible, not invisible. Best-effort:
       // if even the send fails, swallow it (the queue must keep draining for the next turn).
+      // When EVERY token is exhausted, name the wait so the user knows it's capacity, not a bug.
       try {
-        await onReply(
-          '⚠️ Hozir javob bera olmadim — birozdan keyin qayta urinib ko‘ring. / ' +
-            "Couldn't answer just now — please try again shortly.",
-        );
+        await measuredReply(allTokensLimitedText(err));
       } catch {
         /* send failed too — nothing more to do */
       }
+      measuredStats({
+        durationMs: 0,
+        numTurns: 0,
+        usage: null,
+        isError: true,
+        errMsg: err instanceof Error ? err.message : String(err),
+      });
+    })
+    .finally(() => {
+      lifecycle.settle();
+      // Prune the queue entry once this was the last turn in the thread — otherwise the map grows
+      // one entry per unique asker forever. If a newer turn already chained on, leave it.
+      if (chains.get(key) === next) chains.delete(key);
     });
-  chains.set(chatId, next);
+  chains.set(key, next);
 }
 
-/**
- * Telegram's "typing…" status auto-expires after ~5s, so a single sendTyping flashes for a moment
- * and then goes dark while a 20-40s turn (LLM + tools) keeps running — the client looks idle even
- * though the bot is working. Re-send the action every ~4s so a CONTINUOUS "writing…" shows until
- * the reply lands; the returned stop() clears the loop (the reply message itself also ends it).
- * Best-effort — a failed keep-alive tick never throws into the turn.
- */
-const TYPING_REFRESH_MS = 4000;
-function startTypingKeepAlive(chatId: number): () => void {
-  void sendTyping(chatId).catch(() => undefined);
-  const timer = setInterval(() => void sendTyping(chatId).catch(() => undefined), TYPING_REFRESH_MS);
-  return () => clearInterval(timer);
-}
-
-/** Keep the "typing…" indicator alive for the whole turn, then stop it once the reply is sent. */
+/** Keep the "typing…" indicator alive for the whole turn, then stop it once the reply is sent.
+ *  Gated by the global concurrency semaphore — acquired BEFORE the typing loop so a turn that is
+ *  merely queued for a slot doesn't flash "writing…" while it waits. */
 async function runTurn(
   chatId: number,
+  userId: number,
+  key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
+  lifecycle: TurnLifecycle,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): Promise<void> {
+  await acquireTurnSlot();
+  lifecycle.started();
   const stopTyping = startTypingKeepAlive(chatId);
   try {
-    await runTurnInner(chatId, carrierId, userPrompt, onReply, onStats);
+    await runTurnInner(chatId, userId, key, carrierId, userPrompt, turnId, onReply, onStats);
   } finally {
     stopTyping();
+    releaseTurnSlot();
   }
 }
 
 async function runTurnInner(
   chatId: number,
+  userId: number,
+  key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): Promise<void> {
@@ -178,23 +339,21 @@ async function runTurnInner(
   // former and keeps the latter, so the first turn after a rebuild resumes an id that no longer
   // exists and the query throws instantly (live incident 2026-07-22 22:37: every turn died with
   // execMs=0, bot went silent). One retry with a FRESH session heals it.
-  const firstResume = resumableSession(chatId);
-  let outcome: { finalText: string; stats: TurnStats };
-  try {
-    outcome = await runQuery(chatId, carrierId, userPrompt, firstResume);
-  } catch (err) {
-    if (!firstResume) throw err;
-    console.error(`[chat ${chatId}] resume of ${firstResume} failed — retrying with a fresh session:`, err instanceof Error ? err.message : err);
-    sessions.delete(chatId);
-    persist();
-    outcome = await runQuery(chatId, carrierId, userPrompt, undefined);
-  }
+  const outcome = await runWithRotation(chatId, userId, key, carrierId, userPrompt, turnId, resumableSession(key));
   const { finalText, stats } = outcome;
   const text = finalText.trim();
   // SILENCE is a valid outcome (anti-spam rules) — only deliver real replies.
-  if (text && text !== 'SILENT') await onReply(text.slice(0, 4000));
+  if (text && text !== 'SILENT') {
+    await onReply(text.slice(0, 4000));
+  } else if (stats.isError) {
+    // A terminal error RESULT (error_max_turns, error_during_execution) ends the stream with no
+    // text and no throw — without this the tagged user gets dead silence. Same one-line fallback
+    // the throw path sends; best-effort so a failed send can't fail the turn's bookkeeping.
+    console.error(`[${key}] turn ended in error result (${stats.errMsg ?? 'unknown'}) — sending fallback`);
+    await onReply(allTokensLimitedText(null)).catch(() => undefined);
+  }
   // Rotation bookkeeping: turn count + the context-size signal (cache_read of this turn).
-  const meta = sessions.get(chatId);
+  const meta = sessions.get(key);
   if (meta) {
     meta.turns += 1;
     meta.lastAt = Date.now();
@@ -204,18 +363,113 @@ async function runTurnInner(
   onStats?.(stats);
 }
 
-async function runQuery(
+/**
+ * Run one turn, rotating across the token pool on rate-limit and healing a dead resume.
+ *
+ * Two independent failure paths are woven together here:
+ *   - RATE LIMIT (token quota exhausted): the attempt returns `rateLimited` with no text. Cooldown
+ *     that token, add it to `tried`, and re-run the SAME turn — resuming the SAME session id — on
+ *     the next token. Because the transcript is on disk, the conversation continues uninterrupted.
+ *   - DEAD RESUME (session id gone after a rebuild): the attempt THROWS. Heal once by dropping the
+ *     stored id and retrying fresh on the SAME token (not counted against the pool).
+ * Gives up (throws AllTokensLimitedError) only when every token has been tried and limited.
+ */
+async function runWithRotation(
   chatId: number,
+  userId: number,
+  key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   resume: string | undefined,
-): Promise<{ finalText: string; stats: TurnStats }> {
+): Promise<QueryOutcome> {
+  const tried = new Set<string>();
+  let useResume = resume;
+  let prompt = userPrompt;
+  for (;;) {
+    // Fast-fail the whole-pool-exhausted case: if EVERY token is cooling down and the soonest reset
+    // is still far off, don't spawn a doomed CLI (a burst of queued turns would otherwise fire N
+    // failed queries each, hammering an already-limited API). A near reset still gets a best-effort
+    // attempt — the subscription window may have cleared early.
+    const soon = soonestRecovery();
+    if (soon !== null && soon - Date.now() > ALL_LIMITED_FASTFAIL_MS) throw new AllTokensLimitedError(soon);
+    const t = pickToken(tried);
+    if (!t) throw new AllTokensLimitedError(soonestRecovery());
+    try {
+      const res = await runQuery(chatId, userId, key, carrierId, prompt, turnId, useResume, t.token);
+      if (res.rateLimited) {
+        incrementCounter('provider_rate_limited_total');
+        markLimited(t.token, res.resetsAt);
+        tried.add(t.token);
+        // Resume whatever session THIS attempt established (init stores it even when the turn then
+        // rate-limits) so the next token CONTINUES the transcript instead of re-running from the
+        // user prompt. Falls back to the incoming resume for the degenerate no-init case.
+        useResume = sessions.get(key)?.id ?? useResume;
+        // Replay guard: if a state-changing tool already fired, the retry must not re-issue the
+        // user's request — the transcript already holds it AND its executed tool call. Swap in the
+        // continue-nudge so the next attempt reports what happened instead of doing it again.
+        if (res.usedWriteTool) {
+          incrementCounter('write_continue_nudge_total');
+          console.warn(`[${key}] write tool fired before the limit — retrying with continue-nudge, not the original prompt`);
+          prompt = CONTINUE_AFTER_WRITE_PROMPT;
+        }
+        if (tokenCount() > 1) console.log(`[${key}] ${t.label} limited — rotating token`);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      // `runQuery` can throw after a tool has already executed. Its normal QueryOutcome never
+      // returns in that case, so carry the write marker on the error and refuse every replay.
+      if (err instanceof QueryStreamError && err.usedWriteTool) {
+        incrementCounter('write_retry_refused_total');
+        console.error(
+          `[${key}] stream failed after a write tool was emitted — refusing retry`,
+        );
+        throw err;
+      }
+      if (useResume) {
+        // Replay guard, resume-death edition: if a write tool already executed (prompt was swapped
+        // to the continue-nudge) and the transcript proving it is now unreachable, a fresh retry
+        // would re-run the original request blind — fail the turn instead (user gets the fallback
+        // line; the write's receipt still lands via its own delivery channel).
+        if (prompt === CONTINUE_AFTER_WRITE_PROMPT) {
+          incrementCounter('write_retry_refused_total');
+          console.error(`[${key}] resume died AFTER a write fired — refusing blind fresh retry`);
+          throw err;
+        }
+        console.error(`[${key}] resume of ${useResume} failed — retrying fresh:`, err instanceof Error ? err.message : err);
+        sessions.delete(key);
+        persist();
+        useResume = undefined;
+        continue; // same token, fresh session — not a token failure
+      }
+      throw err;
+    }
+  }
+}
+
+async function runQuery(
+  chatId: number,
+  userId: number,
+  key: SessionKey,
+  carrierId: string,
+  userPrompt: TurnContent,
+  turnId: string,
+  resume: string | undefined,
+  authToken: string,
+): Promise<QueryOutcome> {
   const q = query({
     prompt: typeof userPrompt === 'string' ? userPrompt : asUserMessage(userPrompt),
     options: {
+      // options.env REPLACES the subprocess env entirely — spread process.env so PATH/HOME/IS_SANDBOX
+      // survive, then pin THIS turn's token. That is how one gateway drives several subscriptions.
+      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
       model: config.model,
       systemPrompt: systemPrompt(),
-      mcpServers: { octane: buildOctaneServer(chatId, carrierId), telegram: buildTelegramServer(chatId) },
+      mcpServers: {
+        octane: buildOctaneServer(chatId, carrierId, userId, turnId),
+        telegram: buildTelegramServer(chatId, userId, authToken),
+      },
       allowedTools: [
         'mcp__octane__telegram_progress',
         'mcp__octane__octane_whoami',
@@ -255,26 +509,63 @@ async function runQuery(
   });
   let finalText = '';
   let stats: TurnStats = { durationMs: 0, numTurns: 0, usage: null, isError: false };
-  for await (const msg of q) {
-    if (msg.type === 'system' && msg.subtype === 'init') {
-      const prev = sessions.get(chatId);
-      if (prev && prev.id === msg.session_id) {
-        prev.lastAt = Date.now();
-      } else {
-        sessions.set(chatId, { id: msg.session_id, startedAt: Date.now(), lastAt: Date.now(), turns: 0, lastCacheRead: 0 });
+  // Rate-limit signals collected across the stream. The rejected `rate_limit_event` is the
+  // definitive "quota exhausted" (it also carries resetsAt); an assistant `error: 'rate_limit'`
+  // is the fallback signal. Only acted on when the turn produced no text — a mid-turn retry that
+  // then SUCCEEDS should deliver its answer, not rotate.
+  let sawRateLimit = false;
+  let resetsAt: number | undefined;
+  let usedWriteTool = false;
+  const settleSubprocess = subprocessStarted();
+  try {
+    for await (const msg of q) {
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        const prev = sessions.get(key);
+        if (prev && prev.id === msg.session_id) {
+          prev.lastAt = Date.now();
+        } else {
+          sessions.set(key, {
+            id: msg.session_id,
+            startedAt: Date.now(),
+            lastAt: Date.now(),
+            turns: 0,
+            lastCacheRead: 0,
+          });
+        }
+        persist();
       }
-      persist();
+      if (msg.type === 'rate_limit_event' && msg.rate_limit_info.status === 'rejected') {
+        sawRateLimit = true;
+        resetsAt = msg.rate_limit_info.resetsAt ?? resetsAt;
+      }
+      if (msg.type === 'assistant') {
+        if (msg.error === 'rate_limit') sawRateLimit = true;
+        for (const block of msg.message.content) {
+          if (block.type === 'tool_use' && WRITE_RISK_TOOLS.has(block.name)) {
+            usedWriteTool = true;
+          }
+        }
+      }
+      if (msg.type === 'result') {
+        finalText = msg.subtype === 'success' ? msg.result : '';
+        if (msg.subtype !== 'success') {
+          incrementCounter('provider_error_result_total');
+        }
+        const r = msg as unknown as Record<string, unknown>;
+        if (Number(r['api_error_status'] ?? 0) === 429) sawRateLimit = true;
+        stats = {
+          durationMs: Number(r['duration_ms'] ?? 0) || 0,
+          numTurns: Number(r['num_turns'] ?? 0) || 0,
+          usage: (r['usage'] as Record<string, unknown> | undefined) ?? null,
+          isError: msg.subtype !== 'success',
+          ...(msg.subtype !== 'success' ? { errMsg: `result: ${msg.subtype}` } : {}),
+        };
+      }
     }
-    if (msg.type === 'result') {
-      finalText = msg.subtype === 'success' ? msg.result : '';
-      const r = msg as unknown as Record<string, unknown>;
-      stats = {
-        durationMs: Number(r['duration_ms'] ?? 0) || 0,
-        numTurns: Number(r['num_turns'] ?? 0) || 0,
-        usage: (r['usage'] as Record<string, unknown> | undefined) ?? null,
-        isError: msg.subtype !== 'success',
-      };
-    }
+  } catch (err) {
+    throw new QueryStreamError(err, usedWriteTool);
+  } finally {
+    settleSubprocess();
   }
-  return { finalText, stats };
+  return { finalText, stats, rateLimited: sawRateLimit && !finalText.trim(), resetsAt, usedWriteTool };
 }

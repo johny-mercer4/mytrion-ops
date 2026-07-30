@@ -21,6 +21,9 @@ export function noteEngaged(chatId: number, userId: number): void {
 }
 
 export function shouldEngage(m: TgMessage, botUsername: string): boolean {
+  // A verified owner/manager DM is already an explicit conversation with the bot; requiring an
+  // @mention there is unnatural. Carrier/role verification happens before this gate in index.ts.
+  if (m.chat.type === 'private') return true;
   const text = (m.text ?? m.caption ?? '').trim();
   if (botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`)) return true;
   if (m.reply_to_message?.from?.username?.toLowerCase() === botUsername.toLowerCase()) return true;
