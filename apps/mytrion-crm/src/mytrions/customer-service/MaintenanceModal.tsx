@@ -72,6 +72,18 @@ const MONEY_FIELDS = new Set<Field>([
 
 const s = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
+/**
+ * Kept in step with COMPENSATION_DEFAULTS in the backend's maintenanceRules.ts. Hardcoded rather than
+ * read from /cs/maintenance/meta on purpose: the form must not render blank compensation fields while
+ * a fetch is in flight, and the server applies these regardless, so a stale copy here can only ever
+ * be cosmetic — never wrong data.
+ */
+const COMPENSATION_DEFAULTS = {
+  completionCompensation: '5.00',
+  halfCompletionCompensation: '2.50',
+  leadCompensation: '10.00',
+} as const;
+
 /** Existing values → form state. Dates are already YYYY-MM-DD; money is a NUMERIC string. */
 function initialValues(r: MaintenanceRecord | null, myUserId: string, myName: string): Record<Field, string> {
   const out = {} as Record<Field, string>;
@@ -81,6 +93,13 @@ function initialValues(r: MaintenanceRecord | null, myUserId: string, myName: st
     out.ownerZohoUserId = myUserId;
     out.ownerName = myUserId ? myName : '';
     out.status = 'In Process';
+    // The compensation the server applies anyway, shown up front. These mirror Zoho's "Compensation
+    // Prepopulation" workflow rule, which stamped them on save — so agents were used to seeing the
+    // numbers appear only afterwards. The server still fills them if cleared; these are editable, and
+    // unlike in Zoho an override now survives (see modules/customerService/maintenanceRules.ts).
+    out.completionCompensation = COMPENSATION_DEFAULTS.completionCompensation;
+    out.halfCompletionCompensation = COMPENSATION_DEFAULTS.halfCompletionCompensation;
+    out.leadCompensation = COMPENSATION_DEFAULTS.leadCompensation;
     return out;
   }
   out.name = s(r.name);

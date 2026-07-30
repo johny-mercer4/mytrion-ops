@@ -29,6 +29,7 @@ import { and, gte, isNotNull, lte, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { maintenanceCases } from '../db/schema/index.js';
 import { AppError } from '../lib/errors.js';
+import { COMPENSATION_DEFAULTS } from '../modules/customerService/maintenanceRules.js';
 
 export interface MaintenanceWindow {
   from: string;
@@ -59,10 +60,17 @@ export interface OwnerSlice {
   bonusUsd: number;
 }
 
-/** Per-case agent bonus — QA feedback 2026-07-28: "$5 per fully closed case and $2.50 per
- *  half-completion case". Kept adjacent to the buckets they multiply. */
-export const BONUS_FULL_USD = 5;
-export const BONUS_HALF_USD = 2.5;
+/**
+ * Per-case agent bonus — QA feedback 2026-07-28: "$5 per fully closed case and $2.50 per
+ * half-completion case".
+ *
+ * Derived from `COMPENSATION_DEFAULTS` rather than restated. Those are the same two rates from the
+ * other direction: the values Zoho's "Compensation Prepopulation" workflow rule wrote onto each
+ * record, which this module then multiplies. Two literals would let the payout rate and the stored
+ * per-case fee drift apart with nothing to catch it.
+ */
+export const BONUS_FULL_USD = Number(COMPENSATION_DEFAULTS.completionCompensation);
+export const BONUS_HALF_USD = Number(COMPENSATION_DEFAULTS.halfCompletionCompensation);
 
 export interface MaintenanceAnalytics {
   totals: {

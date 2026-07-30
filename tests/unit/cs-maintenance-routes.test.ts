@@ -298,6 +298,60 @@ describe('create', () => {
     );
   });
 
+  it('applies both Zoho workflow rules on the way in', async () => {
+    // The rule functions have their own unit tests; this pins the WIRING. Without it the route can
+    // stop calling them and every suite still passes while new cases save with empty compensation —
+    // no error, just bonus columns that never fill.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/maintenance',
+      headers: auth(await csAgent()),
+      // No company and no compensation — the two gaps the rules exist to close.
+      payload: { name: 'ACME HAULING LLC', unitNumber: 'T-1042' },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const written = repo.insert.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Rule 1 — "Compensation Prepopulation": 5 / 10 / 2.5 at NUMERIC scale.
+    expect(written.completionCompensation).toBe('5.00');
+    expect(written.leadCompensation).toBe('10.00');
+    expect(written.halfCompletionCompensation).toBe('2.50');
+    // Rule 2 — "UpdateCompanyForMaintenance": company from the name, carrier id from the exact DWH
+    // match, and NO Zoho account created (the Deluge made one; we must not).
+    expect(written.companyName).toBe('ACME HAULING LLC');
+    expect(written.carrierId).toBe('5000001');
+    expect(written.companyZohoId).toBeUndefined();
+    expect(zohoCallCount()).toBe(0);
+  });
+
+  it('an explicit compensation survives the create rule', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/maintenance',
+      headers: auth(await csAgent()),
+      payload: { name: 'ACME HAULING LLC', completionCompensation: 7 },
+    });
+    expect(res.statusCode).toBe(201);
+    const written = repo.insert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(written.completionCompensation).toBe('7.00');
+    // …and the other two still get their defaults, unlike Zoho where one blank reset all three.
+    expect(written.leadCompensation).toBe('10.00');
+  });
+
+  it('refills a compensation that an EDIT clears', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/cs/maintenance/mtc_abc123',
+      headers: auth(await csAgent()),
+      payload: { completionCompensation: '' },
+    });
+    expect(res.statusCode).toBe(200);
+    const patch = repo.update.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(patch.completionCompensation).toBe('5.00');
+    // An untouched compensation must not be resurrected on an unrelated edit.
+    expect(patch).not.toHaveProperty('leadCompensation');
+  });
+
   it('400s a create with no company name', async () => {
     const res = await app.inject({
       method: 'POST',

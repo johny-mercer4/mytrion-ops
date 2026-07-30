@@ -111,3 +111,68 @@ EFS balance.
   folklore, not a live constraint here.
 - At 2,714 rows the whole module drains in 3 pages of 1,000. No `Created_Time` windowing needed
   (the `MAX_COQL_OFFSET` = 100k ceiling is nowhere near) and no trigram indexes needed in Postgres.
+
+## Workflow rules (captured 2026-07-30)
+
+Two active workflow rules sat on this module and were still firing when the data moved to Postgres
+(`last_executed_time` 2026-07-30 on both). Workflow rules run on Zoho **records**, so neither applied
+to a case created in Mytrion — silently, since a rule that never runs raises nothing.
+
+Reimplemented in `src/modules/customerService/maintenanceRules.ts`. Recover them again any time with
+`pnpm tsx scripts/inspectMaintenanceAutomation.ts` (read-only, ~6 API credits).
+
+### 1. Compensation Prepopulation
+
+| | |
+| --- | --- |
+| id | `6227679000072235559` |
+| trigger | `create_or_edit`, `repeat: true` |
+| criteria | `Completion_Compensation` = EMPTY **OR** `Lead_Compensation` = EMPTY **OR** `Half_Completion_Compensation` = EMPTY |
+| actions | three `static` field updates |
+
+| field | value |
+| --- | --- |
+| `Completion_Compensation` | `5` |
+| `Lead_Compensation` | `10` |
+| `Half_Completion_Compensation` | `2.5` |
+
+These are the same rates the analytics leaderboard multiplies, so `BONUS_FULL_USD` /
+`BONUS_HALF_USD` in `integrations/csMaintenance.ts` now derive from `COMPENSATION_DEFAULTS` instead of
+restating them.
+
+**Divergence in the Mytrion port.** Zoho ORs the three criteria while firing all three actions
+unconditionally, so in Zoho one empty field resets the other two — a hand-set `7.00` completion fee
+reverts to `5.00` as soon as any other compensation is blank. That is an artifact of expressing three
+independent defaults as a single rule, not stated intent, so Mytrion applies each default
+**independently and only where the value is empty**. An override entered in Mytrion sticks. Nothing in
+the live data depended on the clobber: all 2,718 imported rows hold exactly 5.00 / 10.00 / 2.50.
+
+### 2. UpdateCompanyForMaintenance
+
+| | |
+| --- | --- |
+| id | `6227679000073523285` |
+| trigger | `create` only, no criteria |
+| action | Deluge function `updatecompanyformaintenance` (`6227679000072877039`, arg `id:Int`) |
+
+```
+if Company is null:
+    Accounts where Account_Name equals <this record's Name>   (page 0, 1 row)
+    found     -> Company = that account id
+    not found -> create Accounts { Account_Name: Name, Phone: Phone }; Company = new id
+    updateRecord("Maintenance", id, { Company })
+```
+
+Note the net effect: matched or created, the linked Account's name always ends up equal to the case's
+`Name`. So the observable outcome is "company name = case name".
+
+**Divergence in the Mytrion port.** It creates nothing in Zoho — writing an Account back would break
+the freeze the migration rests on. Instead `companyName` is filled from `name`, and the DWH
+(`octane.dim_company`) is consulted for a canonical name plus the **carrier id**, which the Zoho rule
+never supplied. Only an exact case-insensitive name match may adopt a carrier id; a fuzzy hit would
+attach a case and its money to the wrong carrier. `companyZohoId` stays null on a Mytrion-created case
+by design — there is no Zoho Account to point at.
+
+**214 imported rows have no company at all** — cases this rule never managed to link (it was added
+2025-07-14, after the oldest cases). They are left as-is; backfilling them is a data decision, not a
+code one.

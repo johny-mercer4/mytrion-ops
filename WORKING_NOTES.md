@@ -9035,3 +9035,78 @@ base, so the merge left the bundle coherent. Verified by BFS over the chunk grap
 
 Test baseline unchanged: 11 failures in 7 files, byte-identical set to `origin/main` (confirmed by
 running those files in a detached `origin/main` worktree). All 5 maintenance suites green (96 tests).
+
+## 2026-07-30 (later) — The module's two workflow rules came across too
+
+The data migration moved fields and rows. It did not move BEHAVIOUR: Zoho workflow rules fire on Zoho
+records, so both rules on the Maintenance module stopped applying the moment cases started being
+created in Postgres. Nothing errored — a rule that never runs just leaves a column empty forever.
+
+Recovered read-only from the live org with a new `scripts/inspectMaintenanceAutomation.ts` (~6 credits)
+rather than inferred from field names. The endpoint shapes are worth recording because the documented
+ones 404 on this org's API version:
+
+    /settings/automation/workflow_rules?module=Maintenance   works (list; per-rule GET has the criteria)
+    /settings/automation/field_updates?module=Maintenance     works  <-- NOT /settings/actions/...
+    /settings/functions            +  /settings/functions/{id}/code   works (Deluge source)
+
+Both rules were still firing when captured (`last_executed_time` today on each).
+
+### Rule 1 — "Compensation Prepopulation" (create_or_edit, repeat)
+
+Three static field updates: Completion 5, Lead 10, Half-Completion 2.5. Every one of the 2,718
+imported rows already holds 5.00 / 10.00 / 2.50 **because the Zoho rule filled them** — which is
+exactly why the gap was invisible: the tab looked correct on migrated data and would only have shown
+empty compensation on the first case somebody created here.
+
+These are the same rates the analytics leaderboard multiplies, so `BONUS_FULL_USD` / `BONUS_HALF_USD`
+now DERIVE from `COMPENSATION_DEFAULTS` instead of restating 5 and 2.5 as separate literals. Two
+copies would have let the payout rate drift from the fee stored on each case, with both sides
+internally consistent and disagreeing.
+
+**Deliberate divergence.** Zoho ORs the three criteria while firing all three actions unconditionally,
+so in Zoho one empty field resets the other two — a hand-set 7.00 completion fee reverts to 5.00 as
+soon as any other compensation is blank. That is an artifact of expressing three independent defaults
+as one rule, not intent anybody would state out loud, so Mytrion applies each default independently
+and only where the value is empty. An override entered here sticks. A test pins this and would fail
+against a faithful port, on purpose.
+
+### Rule 2 — "UpdateCompanyForMaintenance" (create only)
+
+Deluge: if the Company lookup is empty, find an Account whose `Account_Name` equals the case's `Name`;
+if none exists, CREATE that Account and link it. Net effect either way: the linked company name always
+equals the case name.
+
+**Deliberate divergence.** It creates nothing in Zoho — writing an Account back would break the freeze
+this whole migration rests on. `companyName` is filled from `name`, then the DWH `octane.dim_company`
+supplies a canonical name plus the **carrier id**, which the Zoho rule never did. Only an exact
+case-insensitive name match may adopt a carrier id: a fuzzy hit would attach a case and its money to
+the wrong carrier, which is much worse than a blank field. `companyZohoId` stays null on a
+Mytrion-created case by design.
+
+**214 imported rows have no company at all** — cases this rule never linked (it was added 2025-07-14,
+after the oldest cases). Left as-is; backfilling is a data decision, not a code one.
+
+### Verification, and a false one I nearly reported
+
+Applied by the route on create and edit, so every path gets them, not just the form. The create modal
+also prefills the three amounts, so an agent sees the numbers before saving rather than after — Zoho
+stamped them on save.
+
+End-to-end against a real Postgres (local DB, rows cleaned up after): a create with no company and no
+compensation came back with all three amounts and the company set; an explicit 7.00 survived while the
+other two still defaulted; clearing an amount on edit put the default back; and a real DWH company
+name adopted the right carrier id with `companyZohoId` still null.
+
+**The near-miss worth remembering:** the first end-to-end attempt showed the rules NOT firing. The
+cause was not the code — a 16-hour-old `tsx watch` server already owned the port, my instance died with
+EADDRINUSE, and both my health check and my create were answered by the stale process. `curl /health`
+succeeding proves a server is there, not that it is YOURS. The discriminator that settled it was asking
+`/cs/maintenance/meta` for a key only the new code returns (`compensationDefaults`). Do that before
+trusting any local verification. The user's own long-running servers on :3001/:3002 were left alone and
+a free port used instead.
+
+Suite back to the `origin/main` baseline: 11 failures / 7 files, identical set. One run in between
+reported 94 failures across 21 files — the same load-dependent flake seen before (route suites using
+`app.inject` time out under contention); a clean re-run returned to 11. Web 49 files / 344 tests green.
+Vendored bundle rebuilt and the new constants confirmed present in a chunk reachable from the entry.

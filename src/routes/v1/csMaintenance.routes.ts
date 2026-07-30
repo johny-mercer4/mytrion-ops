@@ -22,6 +22,12 @@ import {
   MAINTENANCE_PICKLISTS,
   money,
 } from '../../modules/customerService/maintenanceFields.js';
+import {
+  COMPENSATION_DEFAULTS,
+  withCompensationDefaults,
+  withCompensationRefill,
+  withResolvedCompany,
+} from '../../modules/customerService/maintenanceRules.js';
 import { maintenanceCaseRepo, type MaintenanceFilters } from '../../repos/maintenanceCaseRepo.js';
 import type { NewMaintenanceCase } from '../../db/schema/maintenance_cases.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -182,6 +188,10 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
       paymentStatusOptions: unionOptions(MAINTENANCE_PICKLISTS.paymentStatus, paymentStatus),
       owners,
       editableFields: [...MAINTENANCE_EDITABLE],
+      // So the create form can show the compensation the server will apply anyway. Zoho filled these
+      // on save, which meant the agent only saw them after the fact; prefilling is the same rule made
+      // visible before the click.
+      compensationDefaults: COMPENSATION_DEFAULTS,
     };
   });
 
@@ -225,8 +235,11 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
         expose: true,
       });
     }
+    // The two Zoho workflow rules this module used to rely on, applied server-side so they hold for
+    // every create path (tab, API, a future widget) rather than only where a form remembered to.
+    const withCompany = await withResolvedCompany(data);
     const row = await maintenanceCaseRepo.insert({
-      ...data,
+      ...withCompensationDefaults(withCompany),
       source: 'mytrion',
       createdByUserId: ctx.userId,
       ...(ctx.userName !== undefined ? { createdByName: ctx.userName } : {}),
@@ -251,7 +264,8 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParam.parse(request.params);
     const data = pickEditable(writeBody.parse(request.body));
     const row = await maintenanceCaseRepo.update(id, {
-      ...data,
+      // Zoho's rule also re-fired on edit: clearing a compensation put the default back.
+      ...withCompensationRefill(data),
       updatedByUserId: ctx.userId,
       ...(ctx.userName !== undefined ? { updatedByName: ctx.userName } : {}),
     });
