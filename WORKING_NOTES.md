@@ -8957,3 +8957,81 @@ Vitest does not typecheck; running tsc separately is what caught it.
 
 Backend suite back to the exact `origin/main` baseline (7 files / 11 tests, pre-existing flake) with
 1,285 passing. Web 49 files / 344 tests green.
+
+## 2026-07-30 — Prod migrate + re-import: a timestamp collision had been silently eating migrations
+
+Ran the two outstanding prod steps. Both were blocked by the same root cause, and finding it turned up
+a defect in `main`'s work, not just mine.
+
+### The migrator had been reporting success and doing nothing
+
+Pre-flight (read-only) against prod showed the sort index absent while the journal implied it was
+applied. Identifying the applied rows by hashing every historical blob — `created_at` alone cannot
+identify a row, because two branches can stamp the same millisecond — gave the picture:
+
+    id=141  created_at 1785394800000  hash 6d53da0e685f  = this branch's 0076_maintenance_cases
+    id=142  created_at 1785398400000  hash c1e6097ecf59  = main's 0077_support_bot_chat_tenant_scope
+
+`main` had advanced 14 commits and taken 0076/0077 with `when` stamps **identical** to this branch's:
+1785394800000 and 1785398400000. Drizzle applies an entry only when
+`lastApplied.created_at < entry.when` and reads that ceiling ONCE before the loop, so of two entries
+sharing a millisecond only the first to reach a database ever runs. Consequences, both verified against
+prod rather than reasoned about:
+
+- **main's `0076_support_bot_operations` never ran on prod.** `support_bot_operations`,
+  `support_bot_session_fences`, their five indexes and the `support_bot_fencing_seq` sequence were all
+  absent, while the journal implied otherwise. Deployed support-bot code touching those tables was
+  failing at runtime. This branch's migration reached prod first and blocked it.
+- **The maintenance sort index had been skipped for days.** main's 0077 landing made prod's ceiling
+  *equal* this branch's 0077 stamp, and `<` is strict.
+
+Resolution: main keeps 0076/0077 verbatim; the maintenance migrations become **0079** and **0080**
+(0078 belongs to `0078_support_bot_memories` on an unmerged branch), stamped `prod_max + 1ms / + 2ms`
+rather than the next hour slot — the next slot is already that branch's, and stamping above it would
+push *their* migration below the deployed ceiling and skip it in turn. No duplicate `when` values
+remain anywhere in the journal.
+
+`0081_support_bot_operations_repair.sql` re-applies main's 0076 verbatim. The migrator cannot be made
+to revisit that entry — its stamp sits permanently below prod's ceiling — so a fresh entry above the
+ceiling is the only thing that can repair the database. All statements are IF NOT EXISTS, so it no-ops
+wherever 0076 did apply.
+
+**The lesson worth carrying:** a green `pnpm db:migrate` proves nothing. Verify the objects.
+
+### A re-import would have overwritten an agent's edit
+
+`upsertMany` kept created_by/updated_by out of the conflict `set` and its comment claimed that meant a
+re-run never clobbers an agent's work. It did not: the audit columns survived while every business
+column still took `excluded.…`, so the row would have shown Zoho's stale value with
+`updated_by_user_id` still naming the agent — as though they had reverted their own correction. Prod
+had exactly one such row. Fixed with `setWhere: updated_by_user_id is null`, plus a returned `skipped`
+count so the importer explains a `written < fetched` gap instead of looking like data loss.
+
+### Results on prod
+
+- Migrations applied and **verified by querying for the objects**: both support_bot tables, all five
+  indexes, the fencing sequence, and `maintenance_cases_case_date_desc_idx`.
+- Default list order now plans as `Index Only Scan … maintenance_cases_case_date_desc_idx`,
+  Heap Fetches 0, 0.058 ms — it was a Seq Scan + top-N sort.
+- Import: 2,717 drained, 2,716 upserted, **1 left alone** (the Mytrion-edited row; guard confirmed to
+  have held — its `synced_at` and `updated_at` both predate the run).
+- **`owner_name` NULL: 766 rows → 0.** All 16 owners resolve to real names; the four deactivated users
+  now come back through `getUserById`.
+- No duplicate `zoho_record_id`.
+
+### Two things the numbers surface, both consequences of the no-sync decision
+
+- Table holds **2,718** against Zoho's **2,717**. The extra row is `mtc_myqq5lpwxgtllulpcpxko361`
+  (In Process, case_date 2026-07-29): confirmed via `getRecord` to have been **deleted in Zoho** after
+  the first import. We keep it, because Postgres is the source of truth and there is no delete path —
+  `Status = Cancelled` is the soft path if it should go. Not touched unilaterally.
+- Zoho gained 2 records between the two imports, presumably from the carrier-facing self-service
+  widget, which still writes maintenance tickets straight into Zoho. Until that widget is repointed at
+  `POST /cs/maintenance`, "everyone uses mytrion-ops" stays a convention rather than something enforced.
+
+Vendored bundle checked, not rebuilt: main made **zero** frontend src or `app/` changes since the merge
+base, so the merge left the bundle coherent. Verified by BFS over the chunk graph from the entry
+`index.html` points at — the Maintenance JS and CSS are both reachable.
+
+Test baseline unchanged: 11 failures in 7 files, byte-identical set to `origin/main` (confirmed by
+running those files in a detached `origin/main` worktree). All 5 maintenance suites green (96 tests).
