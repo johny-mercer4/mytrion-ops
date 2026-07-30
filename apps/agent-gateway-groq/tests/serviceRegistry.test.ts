@@ -74,10 +74,10 @@ describe('gateway service registry', () => {
       'Money Code xizmati hozircha o‘chirilgan',
     );
     expect(
-      serviceUnavailableText('money_code', 'Can I get a money code?'),
+      serviceUnavailableText('money_code', 'en'),
     ).toContain('Money Code is currently unavailable');
     expect(
-      serviceUnavailableText('money_code', 'Можно получить денежный код?'),
+      serviceUnavailableText('money_code', 'ru'),
     ).toContain('сейчас отключён');
   });
 });

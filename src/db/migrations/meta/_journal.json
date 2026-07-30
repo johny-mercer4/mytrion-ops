@@ -558,43 +558,71 @@
     {
       "idx": 79,
       "version": "7",
-      "when": 1785405600000,
-      "tag": "0079_recruit_workspace",
+      "when": 1785398400001,
+      "tag": "0079_maintenance_cases",
       "breakpoints": true
     },
     {
       "idx": 80,
       "version": "7",
-      "when": 1785409200000,
-      "tag": "0080_hr_oybek_attendance",
+      "when": 1785398400002,
+      "tag": "0080_maintenance_cases_sort_idx",
       "breakpoints": true
     },
     {
       "idx": 81,
       "version": "7",
-      "when": 1785412800000,
-      "tag": "0081_hr_ganga_attendance",
+      "when": 1785398400003,
+      "tag": "0081_support_bot_operations_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1785405600000,
+      "tag": "0082_support_bot_knowledge",
       "breakpoints": true
     },
     {
       "idx": 83,
       "version": "7",
-      "when": 1785420000000,
-      "tag": "0083_hr_workspace_recovery",
+      "when": 1785409200000,
+      "tag": "0083_recruit_workspace",
       "breakpoints": true
     },
     {
       "idx": 84,
       "version": "7",
-      "when": 1785423600000,
-      "tag": "0084_hr_ganga_ingest_guard",
+      "when": 1785412800000,
+      "tag": "0084_hr_oybek_attendance",
       "breakpoints": true
     },
     {
       "idx": 85,
       "version": "7",
+      "when": 1785416400000,
+      "tag": "0085_hr_ganga_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1785420000000,
+      "tag": "0086_hr_workspace_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1785423600000,
+      "tag": "0087_hr_ganga_ingest_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
       "when": 1785427200000,
-      "tag": "0085_loyalty_client_overrides",
+      "tag": "0088_loyalty_client_overrides",
       "breakpoints": true
     }
   ]

@@ -43,6 +43,7 @@ import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
 import { managerRoutes } from './routes/v1/manager.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
+import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
@@ -304,6 +305,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(verificationClientsRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
+      await v1.register(csMaintenanceRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
       await v1.register(financeRoutes);

@@ -68,6 +68,7 @@ export default defineConfig({
     './src/db/schema/recruit_job_openings.ts',
     './src/db/schema/recruit_candidates.ts',
     './src/db/schema/recruit_settings.ts',
+    './src/db/schema/maintenance_cases.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

@@ -19,6 +19,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed.ts",
+    "seed:support-kb": "tsx scripts/seed-support-bot-knowledge.ts",
+    "smoke:support-kb": "tsx scripts/smoke-support-bot-knowledge.ts",
     "seed:scope-risks": "tsx scripts/seed-scope-risks.ts",
     "meta:zoho-crm": "tsx metadataScripts/zohoCrmAnalyzer.ts",
     "meta:zoho-desk": "tsx metadataScripts/zohoDeskAnalyzer.ts",

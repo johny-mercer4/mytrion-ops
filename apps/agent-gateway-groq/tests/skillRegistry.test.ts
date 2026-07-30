@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  capabilitySummaryText,
   filterToolsForRole,
   isToolAllowedForRole,
   rolePromptPolicy,
@@ -7,7 +8,10 @@ import {
   skillInstructionsFor,
   skillForTool,
 } from '../src/skillRegistry.js';
-import { SERVICE_CATALOG } from '../src/serviceRegistry.js';
+import {
+  parseServiceFlags,
+  SERVICE_CATALOG,
+} from '../src/serviceRegistry.js';
 import type { ToolManifest } from '../src/toolRuntime.js';
 
 const serviceTools = Object.values(SERVICE_CATALOG).flatMap((service) => [
@@ -25,6 +29,25 @@ const manifests: ToolManifest[] = serviceTools.map((name) => ({
 }));
 
 describe('runtime skill registry', () => {
+  it('summarizes only role-allowed enabled services', () => {
+    const availability = parseServiceFlags('money_code=off,billing=on');
+    const owner = capabilitySummaryText(
+      'owner',
+      'uz',
+      availability,
+    );
+    expect(owner).toContain('invoice');
+    expect(owner).not.toContain('Money Code');
+
+    const driver = capabilitySummaryText(
+      'driver',
+      'en',
+      availability,
+    );
+    expect(driver).toContain('transactions and reports');
+    expect(driver).not.toContain('billing');
+  });
+
   it('maps every gateway tool to exactly one Markdown-backed skill', () => {
     expect(Object.keys(SKILL_CATALOG).length).toBeGreaterThan(10);
     for (const toolName of serviceTools) {

@@ -8,6 +8,7 @@ import {
   commitSupportBotMemory,
   recallSupportBotMemory,
 } from '../../modules/carrier/supportBotMemory.js';
+import { searchSupportBotKnowledge } from '../../modules/carrier/supportBotKnowledge.js';
 import {
   resolveSupportBotCaller,
   supportBotCallerSchema,
@@ -38,6 +39,16 @@ const messagesBatchSchema = z.object({
 
 const memoryScopeSchema = supportBotCallerSchema.extend({
   chatId: z.union([z.string(), z.number()]).transform(String),
+});
+
+const supportKnowledgeSearchSchema = z.object({
+  carrierId: z.string().min(1).max(40),
+  query: z.string().trim().min(2).max(400),
+  enabledServices: z
+    .array(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u))
+    .max(32)
+    .default([]),
+  limit: z.coerce.number().int().positive().max(5).optional(),
 });
 
 /** Gateway control-plane routes: access, chat mapping, message ingest and monitor proxy. */
@@ -134,6 +145,32 @@ export async function supportBotGatewayRoutes(
       });
     }
     return reply.code(202).send({ stored });
+  });
+
+  app.post('/support-bot/knowledge/search', guard, async (request) => {
+    const body = supportKnowledgeSearchSchema.parse(request.body);
+    const ctx = requireContext(request);
+    const articles = await searchSupportBotKnowledge(
+      ctx,
+      {
+        carrierId: body.carrierId,
+        enabledServices: body.enabledServices,
+      },
+      body.query,
+      body.limit,
+    );
+    await auditFromContext(ctx, {
+      action: 'support_bot.knowledge.search',
+      status: 'ok',
+      resourceType: 'support_bot_knowledge',
+      resourceId: body.carrierId,
+      detail: {
+        carrierId: body.carrierId,
+        enabledServices: body.enabledServices,
+        hitIds: articles.map((article) => article.id),
+      },
+    });
+    return { articles };
   });
 
   const monitorUpstream = `http://localhost:${process.env['MONITOR_PORT'] ?? '8787'}`;
