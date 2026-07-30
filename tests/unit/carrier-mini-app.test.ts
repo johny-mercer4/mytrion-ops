@@ -19,6 +19,7 @@ vi.mock('../../src/integrations/dwhCards.js', () => ({
   // Read scoping uses AnyStatus (inactive cards still resolve); writes stay on active-only above.
   findDwhCardByIdAnyStatus: vi.fn(async () => null),
   isActiveCardOfCarrier: vi.fn(async () => false),
+  getCardEfsIdentity: vi.fn(async () => ({ unit: null, driverName: null })),
 }));
 
 vi.mock('../../src/integrations/dwhTransactions.js', () => ({
@@ -120,7 +121,7 @@ import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { AppError } from '../../src/lib/errors.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo, type RegisteredMiniAppCompanyDto } from '../../src/repos/registeredMiniAppCompanyRepo.js';
-import { listDwhCards, findDwhCardById, findDwhCardByIdAnyStatus, findDwhCardByNumber, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
+import { listDwhCards, findDwhCardById, findDwhCardByIdAnyStatus, findDwhCardByNumber, getCardEfsIdentity, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTelegramInitData, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
@@ -171,6 +172,10 @@ beforeEach(() => {
     vi.mocked(findDwhCardById)(carrier, cardId),
   );
   vi.mocked(isActiveCardOfCarrier).mockResolvedValue(false);
+  vi.mocked(getCardEfsIdentity).mockResolvedValue({
+    unit: null,
+    driverName: null,
+  });
   crm.getCarrierOverview.mockResolvedValue({ company_name: 'Acme Transport LLC', is_active: true });
   registrationRepo.list.mockResolvedValue([]);
   registrationRepo.listDriversByCarrier.mockResolvedValue([]);
@@ -1314,7 +1319,7 @@ describe('service requests file real Desk tickets', () => {
     });
   }
 
-  for (const key of ['override-card', 'money-code'] as const) {
+  for (const key of ['override-card', 'money-code', 'maintenance-roadside', 'callback', 'general-support'] as const) {
     it(`allows a driver at "${key}" — the card in their hand`, async () => {
       withResolvableCard();
 
@@ -1329,6 +1334,45 @@ describe('service requests file real Desk tickets', () => {
       expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.cf?.cf_card_number).toBe(OWN_CARD);
     });
   }
+
+  it('routes a general handoff to Customer Service', async () => {
+    withResolvableCard();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        initData: 'signed',
+        service: 'general-support',
+        comment: 'Need a human to review an unsupported operational question',
+      },
+    });
+
+    const ticket = vi.mocked(createDeskTicket).mock.calls[0]?.[0];
+    expect(ticket?.departmentId).toBe('1057080000000323033');
+    expect(ticket?.cf?.cf_ticket_type).toBe('Customer Service');
+  });
+
+  it('routes maintenance and roadside requests to the Maintenance department', async () => {
+    withResolvableCard();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        initData: 'signed',
+        service: 'maintenance-roadside',
+        comment: 'Unit 504, tire failure near Dallas, shop quote $780',
+      },
+    });
+
+    const ticket = vi.mocked(createDeskTicket).mock.calls[0]?.[0];
+    expect(ticket?.departmentId).toBe('1057080000006966104');
+    expect(ticket?.description).toContain('Unit 504');
+    expect(ticket?.cf?.cf_ticket_type).toBe('Maintenance');
+  });
 
   it('routes the billing form to Billing, not Customer Service', async () => {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());

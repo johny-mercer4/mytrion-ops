@@ -27,11 +27,18 @@ export const KB_ARTICLES: KbArticle[] = [
   {
     id: 'KB-01',
     title: 'Supported truck stops (in-network)',
-    tags: ['stations', 'discounts', 'in-network', 'truck stop', 'pilot'],
-    triggers: ['which stations', 'qayerda ishlaydi', 'Pilot?', 'where does the card work', 'in network stops'],
-    en: `Octane cards work in-network at TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway, Maverick, Kum&Go, Circle K, and SC Fuels (100+ stations). Irving: only Irving Fairfield #515289 and Irving Kittery #503256. AmBest network: AmBest locations and participating Sunoco sites. Best discounts are at TA/Petro and Love's.`,
-    uz: `Octane kartalari tarmoq ichida ishlaydi: TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway, Maverick, Kum&Go, Circle K, SC Fuels (100+ shaxobcha). Irving: faqat Fairfield #515289 va Kittery #503256. Eng yaxshi chegirmalar — TA/Petro va Love's.`,
-    ru: `Карты работают в сети: TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway, Maverick, Kum&Go, Circle K, SC Fuels. Irving — только №515289 и №503256. Лучшие скидки — TA/Petro и Love's.`,
+    tags: ['stations', 'in-network', 'out-of-network', 'truck stop', 'pilot'],
+    triggers: [
+      'which stations',
+      'qayerda ishlaydi',
+      'Pilot?',
+      'where does the card work',
+      'in network stops',
+      'unsupported stations',
+    ],
+    en: `Supported: TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway, and Maverick. Irving is supported only at Irving Fairfield #515289 and Irving Kittery #503256. The AmBest-covered network includes AmBest, participating Sunoco/7-Eleven, Onvo, Enmarket, Twice Daily, Stripes/7-Eleven, Toot'n Totum, Weigel's, Casey's General Store, Pump & Pantry, AC&T, and Break Time. Unsupported: Pilot/Flying J, Sheetz, McDonald's Fuel Stop, One9, and QuikTrip (Quick Trip).`,
+    uz: `Qo‘llab-quvvatlanadi: TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway va Maverick. Irving’dan faqat Fairfield #515289 va Kittery #503256 ishlaydi. AmBest tarmog‘i: AmBest, qatnashuvchi Sunoco/7-Eleven, Onvo, Enmarket, Twice Daily, Stripes/7-Eleven, Toot'n Totum, Weigel's, Casey's General Store, Pump & Pantry, AC&T va Break Time. Qo‘llab-quvvatlanmaydi: Pilot/Flying J, Sheetz, McDonald's Fuel Stop, One9 va QuikTrip (Quick Trip).`,
+    ru: `Поддерживаются: TA/Petro, Love's, Casey's, Sapp Brothers, Speedway, 7-Eleven, SEI Fuels, RaceTrac, Raceway и Maverick. Irving — только Fairfield №515289 и Kittery №503256. Сеть AmBest включает AmBest, участвующие Sunoco/7-Eleven, Onvo, Enmarket, Twice Daily, Stripes/7-Eleven, Toot'n Totum, Weigel's, Casey's General Store, Pump & Pantry, AC&T и Break Time. Не поддерживаются: Pilot/Flying J, Sheetz, McDonald's Fuel Stop, One9 и QuikTrip (Quick Trip).`,
   },
   {
     id: 'KB-02',

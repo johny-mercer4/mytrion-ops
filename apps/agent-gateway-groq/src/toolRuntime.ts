@@ -19,6 +19,10 @@ export interface ToolManifest {
   description: string;
   parameters: Record<string, unknown>;
   riskClass: RiskClass;
+  /** State-changing tools remain hidden until Telegram supplies a trusted confirmation tap. */
+  confirmationMode?: 'trusted_button';
+  /** UX hints may be called automatically, but must never invalidate completed business work. */
+  requirementMode?: 'must' | 'best_effort';
   authorize?: (input: Record<string, unknown>) => string | null;
   execute: (input: Record<string, unknown>) => Promise<ToolResult>;
 }

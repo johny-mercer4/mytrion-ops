@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   resolveCaller: vi.fn(),
   recallMemory: vi.fn(),
   commitMemory: vi.fn(),
+  searchKnowledge: vi.fn(),
 }));
 
 vi.mock('../../src/modules/audit/auditLogger.js', () => ({
@@ -45,6 +46,9 @@ vi.mock('../../src/modules/carrier/supportBotCaller.js', async () => {
 vi.mock('../../src/modules/carrier/supportBotMemory.js', () => ({
   recallSupportBotMemory: mocks.recallMemory,
   commitSupportBotMemory: mocks.commitMemory,
+}));
+vi.mock('../../src/modules/carrier/supportBotKnowledge.js', () => ({
+  searchSupportBotKnowledge: mocks.searchKnowledge,
 }));
 vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
   registeredMiniAppCompanyRepo: {
@@ -117,6 +121,7 @@ describe('support-bot gateway routes tenant isolation', () => {
     mocks.resolveCaller.mockResolvedValue({ registration: {}, role: 'owner' });
     mocks.recallMemory.mockResolvedValue([]);
     mocks.commitMemory.mockResolvedValue(true);
+    mocks.searchKnowledge.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -248,6 +253,54 @@ describe('support-bot gateway routes tenant isolation', () => {
     } finally {
       env.FF_SUPPORT_BOT_MEMORY = previous;
     }
+  });
+
+  it('searches knowledge with authenticated tenant and exact carrier scope', async () => {
+    mocks.searchKnowledge.mockResolvedValue([
+      {
+        id: 'kb-a',
+        slug: 'report-help',
+        title: 'Report help',
+        content: 'Use the report tool.',
+        translations: {},
+        serviceId: 'transactions',
+        knowledgeType: 'tool_pointer',
+        riskClass: 'read',
+        source: 'test',
+        version: 1,
+        score: 0.9,
+      },
+    ]);
+    const server = await app();
+    const response = await server.inject({
+      method: 'POST',
+      url: '/support-bot/knowledge/search',
+      payload: {
+        carrierId: 'carrier-a',
+        query: 'report qanday olaman',
+        enabledServices: ['knowledge', 'transactions'],
+        limit: 3,
+      },
+    });
+    await server.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(mocks.searchKnowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      {
+        carrierId: 'carrier-a',
+        enabledServices: ['knowledge', 'transactions'],
+      },
+      'report qanday olaman',
+      3,
+    );
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      expect.objectContaining({
+        action: 'support_bot.knowledge.search',
+        resourceId: 'carrier-a',
+      }),
+    );
   });
 
   it('does not query another user memory when caller verification fails', async () => {

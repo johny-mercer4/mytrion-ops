@@ -191,20 +191,16 @@ export function filterEnabledTools(
   });
 }
 
-export function serviceUnavailableText(serviceId: ServiceId, prompt = ''): string {
+export function serviceUnavailableText(serviceId: ServiceId, language = 'uz'): string {
   const label = SERVICE_CATALOG[serviceId].label;
-  const body = prompt.toLocaleLowerCase();
-  if (/\p{Script=Cyrillic}/u.test(body)) {
+  const locale = language.toLocaleLowerCase();
+  if (locale.startsWith('ru')) {
     return `⚠️ Сервис ${label} сейчас отключён. Обратитесь к вашему агенту Octane.`;
   }
-  if (/\b(puedo|código|dinero|cuánto|necesito|quiero|disponible)\b/u.test(body)) {
+  if (locale.startsWith('es')) {
     return `⚠️ El servicio ${label} está desactivado por ahora. Contacte a su agente de Octane.`;
   }
-  if (
-    /\b(can|could|please|how|what|need|want|available|issue|create|get)\b/u.test(
-      body,
-    )
-  ) {
+  if (locale.startsWith('en')) {
     return `⚠️ ${label} is currently unavailable. Please contact your Octane agent.`;
   }
   return `⚠️ ${label} xizmati hozircha o‘chirilgan. Octane agentingizga murojaat qiling.`;
