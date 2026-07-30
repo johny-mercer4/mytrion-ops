@@ -1084,7 +1084,7 @@ Q-2 payment info; department codes C/Q/V/M) and servercrm (/api/clients/by-agent
 - **Live-tested (sales agent Frank Harrison, real servercrm)**: named client → resolve → REAL balance
   (ALI CARGO INC: EFS $1,000, limit $3,000, used $303.09, remaining $2,696.91); ambiguous "ALI" → REAL
   server-built picklist (ALI CARGO INC/5816381, ALI FAMILY TRUCKING/5759008, ALITRANS LLC/5772232, …);
-  foreign carrier 5794015 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
+  foreign carrier 5000027 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
 - Bugs caught + fixed by live testing: empty-string optional params abort LangChain pre-handler
   validation (relaxed schemas); servercrm booleans-as-numbers broke output validation (toBool coerce);
   model hand-copying 70 options → hallucinated picklist (switched to server-built crm.pick_my_client).
@@ -2260,7 +2260,7 @@ returned 510/510 (68 KB, 450 ms).
 
 **This also produced the first end-to-end proof that driver scoping filters.** Every carrier with a
 registered driver had one card, or all its transactions on the driver's card — scoping was
-indistinguishable from a passthrough. On carrier 5794015 (7599 line items across 95 cards, 230 active
+indistinguishable from a passthrough. On carrier 5000027 (7599 line items across 95 cards, 230 active
 cards) the driver's reads return 315 rows on 1 card.
 
 ### Test-suite trap (cost two debugging cycles)
@@ -4315,7 +4315,7 @@ Deal `Stage=Closed Lost` (same as CITI exclusion from future retention).
 ## 2026-07-22 — Admin grants for Retention RoundRobin pool
 
 Per-user `worker_mytrion_access` overrides for CS Mytrion (home CS) on:
-Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Layla Mei, Charlotte Birmingham,
+Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Jo Fischer, Dana Example,
 Isaac Leo. Standard profile default remains empty (no CS auto-grant).
 Cache invalidated per user after upsert.
 
@@ -8280,3 +8280,307 @@ web typechecks pass; lint has 0 errors / 25 pre-existing warnings; all web tests
 invoice route tests pass (17/17); catalog shape test passes. The full backend run remains at 38
 failures across 12 unrelated suites (including sandbox-blocked localhost/Postgres tests and stale
 session/tool-count expectations); none are in the new invoice suite.
+
+---
+
+## 2026-07-30 — CS Maintenance tab on a Postgres-owned `maintenance_cases` table
+
+Zoho CRM's `Maintenance` module had no UI in Mytrion — it was only read for the Analytics →
+Maintenance sub-tab and (via servercrm) the Prepay ledger's maintenance-fee column. Agents went
+into Zoho to look at or edit a case. This moves the whole queue into Mytrion.
+
+**Decisions taken with the requester, and their consequences:**
+
+- **Postgres is the source of truth.** Zoho was drained once (2,714 records) and is not read again.
+  No sync job, no `Modified_Time` watermark, no write-back — deliberately.
+- **No delete.** `total_amount` on these rows is real money feeding prepay math, so removal is not an
+  agent action. `status = 'Cancelled'` is the reversible path and the route has no DELETE at all.
+- Two paths still touch Zoho and will therefore drift. Both are out of this change's scope and were
+  flagged: (1) servercrm's `services/prepayLedger.js` still sums `Total_Amount` from ZOHO for
+  `Payment_Method = 'Prepay / EFS'`, so cases created in Mytrion are missing from a carrier's
+  `loaded` balance until that column is repointed at this table; (2) the carrier-facing self-service
+  widget still creates cases through the `createmaintenance` Deluge, straight into Zoho, so those do
+  not appear in the tab. `scripts/migrateMaintenanceFromZoho.ts` is idempotent, so a manual
+  re-import remains available with no new code.
+
+### Field discovery came first
+
+`scripts/inspectMaintenanceModule.ts` (new, read-only, ~5 API credits) prints the field catalog,
+per-year volume, one raw record and the blueprint state. Preferred over `pnpm meta:zoho-crm`, which
+walks every module and dumps org-wide PII to a gitignored file. Findings are in
+`docs/crm-maintenance-module.md`; three things no repo knew: the unit-number field is `Unit_Number`,
+the company lookup is `Company` (→ Accounts), and `Case_Type` has 9 values (only 3 are in use).
+`Status` is NOT blueprint-gated. `Created_By` / `Modified_By` do not exist on this module — selecting
+them would 400.
+
+### Notable implementation points
+
+- **`drizzle-kit generate` has been unusable in this repo since 0024** (68 journal entries, 25
+  snapshots; it aborts on a 0022/0023 parent-snapshot collision), so `0076_maintenance_cases.sql` is
+  hand-authored with `IF NOT EXISTS` throughout — the same way every migration from 0025 on was
+  written. The journal entry was appended by hand. Verified by running the full 69-migration chain
+  against a fresh throwaway DB.
+- **`zoho_record_id` is nullable with a PARTIAL unique index**, `hr_employees` style: every
+  Mytrion-created row has none, and a plain unique index would collide on the second one. The primary
+  key is our own cuid2 (`mtc_`), not `bigserial`, because we now create rows ourselves.
+- **`unit_number` and `carrier_id` are TEXT.** Unit numbers arrive zero-padded (`'012'`); an integer
+  column would silently destroy them and the agent searching "012" would find nothing.
+- **The unit-number search predicate is character-identical to its expression index**
+  (`lower(regexp_replace(unit_number, '[^a-zA-Z0-9]', '', 'g'))`) and a test asserts that, because a
+  drift there doesn't break anything — it just quietly stops using the index. `pg_trgm` is NOT
+  installed in this DB (only `vector`), and at 2,714 rows `text_pattern_ops` btrees are enough;
+  revisit above ~50k rows.
+- **Facets drop the filter they drive.** Status counts are computed without the selected status, so
+  the tabs keep showing how many cases every other status holds instead of collapsing to zero.
+- **`owner_name` holds the FULL name.** COQL returns `Owner.name` as the last name only
+  (`"Rivera"` → `"Alex Rivera"`), resolved through the user directory at migration time — the same
+  fix `csMaintenance.ts` already carries for the leaderboard.
+- **A bug the browser pass caught:** the modal's company box was typeahead-query-only and committed
+  the typed text to `name` on *blur*, deferred 150 ms so a dropdown mousedown could land. Type a
+  company, click "Create Case" without tabbing away, and the form rejected the save as "Company is
+  required" while visibly holding text. Now every keystroke commits, which removes the race instead
+  of shortening it.
+
+### Shape note from the data
+
+2,701 of the 2,714 migrated cases are `Completed`; only 13 are live. So the default view is
+unfiltered-newest-first (a Completed-heavy list IS the archive an agent searches) and the status tabs
+are how they reach the active few.
+
+### Verified
+
+Migration chain green on a fresh DB (all 12 indexes, partial unique included); import 2,714/2,714
+with 0 errors and idempotent on re-run; both search indexes confirmed in use via EXPLAIN; 63 new unit
+tests pass; suite is 1176 passed with the same 7 files / 11 tests failing as `origin/build` (that
+suite is pre-existing flaky). Browser pass against the real 2,714 rows: search by carrier ID, company
+and zero-padded unit number; status tabs; filter rail; create and edit persisted end to end; light +
+dark; mobile single-column with no horizontal overflow; zero console errors. Vendored bundle rebuilt
+and the CS chunk confirmed *reachable* from the entry JS, not merely present.
+
+### Switchover — every Maintenance reader moved off Zoho (same day)
+
+With `maintenance_cases` populated on prod, the remaining Zoho readers were repointed. Parity was
+proven against Zoho BEFORE committing, not assumed.
+
+**CS analytics (`src/integrations/csMaintenance.ts`) — COQL → SQL.** Same exported shapes, so
+`csAnalytics.routes.ts` and the frontend are untouched. This closes a divergence the tab itself
+created: analytics counted Zoho rows while the tab showed Postgres rows, so any agent edit made the
+two disagree. Two Zoho-era workarounds are gone rather than ported — the `listActiveUsers()` lookup
+that repaired COQL's last-name-only `Owner.name` (it's denormalized on the row now) and COQL's
+mandatory-WHERE / binary-AND contortions. The generous `bucketStatus()` matching stays, because the
+original Deluge bug was hard-matching words the data never contained.
+
+Parity run against prod, window 2026-07-01→30: every metric identical — current 269, previous 295,
+open 7, closed 261, fullComplete 253, halfComplete 9, 3 status buckets, 4 case types, 29 daily points,
+10 owners, and per-owner full/half/bonus matching for every agent.
+
+One row differed on the first attempt (268 vs 269) and it is worth recording WHY, because it is the
+no-sync decision showing its cost rather than a bug: we already had the row, but our copy had
+`case_date = null` — someone set `Date` in Zoho at 21:21:45Z, three minutes AFTER the import finished
+at 21:18:44Z. Re-running the (idempotent) importer took it to full parity. Note the re-import
+refreshes Zoho-sourced facts, so once agents are editing cases in the tab a blind re-run would revert
+their edits; it was safe here only because the tab is not deployed yet.
+
+**Prepay maintenance — from our Postgres, servercrm's Zoho figure discarded.** New
+`maintenanceCaseRepo.sumPrepayByCarrier` / `sumPrepayByDay`, with servercrm's semantics copied exactly
+(`Payment_Method = 'Prepay / EFS'` only, fee = `total_amount`, bucketed on `case_date`, `endDate`
+EXCLUSIVE). `getPrepayExternalsBatch` and `getPrepayLedgerProxy` now override the maintenance term.
+
+Two non-obvious bits:
+- The override ZEROES every carrier servercrm reported before writing ours in. Without that pass, a
+  carrier whose maintenance now lives only in our table keeps servercrm's stale Zoho number.
+- `difference` in the daily ledger is a RUNNING balance, so replacing one day's maintenance
+  invalidates that day and every day after it. The recompute reuses servercrm's exact delta formula
+  (`top_up - rmve + maintenance + money_code - stripe - zelle - chase - merchant`) and re-derives
+  `totals.net`. If that formula changes in servercrm this silently diverges — flagged in the comment.
+
+**servercrm's Zoho maintenance query is deliberately LEFT IN PLACE.** It cannot simply be deleted:
+the legacy `zoho-octane/app/billing-mytrion` widget calls `/api/billing/prepay-ledger` DIRECTLY
+(`js/constants.js`) and has no route to our database. Overriding downstream keeps that widget working
+while making our numbers correct. It does mean servercrm still spends Zoho credits on a figure we
+throw away — worth removing once the legacy widget is retired.
+
+Prepay parity against servercrm/Zoho for 2026-07-01→08-01: 5 carriers with maintenance on both sides,
+every amount matching to the cent, total the window total.
+
+**Left alone, with reasons:** the legacy `zoho-octane` CS analytics widget still calls the
+`mytrionGetMaintenanceAnalytics` Deluge (superseded by the React tab), and `app/maintenanceInvoice/`
+reads a Maintenance record through `ZOHO.CRM.API` because it IS a Zoho context-menu widget on that
+module — there is nothing to repoint.
+
+28 new tests (16 analytics + 12 prepay). The 9 test files touching this change pass deterministically
+twice over; whole-suite failures fluctuate 11–13 on `origin/build` and on this branch alike.
+
+### Fix — the update toast reported the wrong thing, and never left on time
+
+Reported as "notification after updating something is not working correct". Reproduced in the browser
+with a MutationObserver (the toast auto-dismisses in 3.5s, so a plain DOM read after the fact finds
+nothing, and timer-based polling is unusable while the preview pane is hidden — the browser throttles
+timers there). Observed text on an edit:
+
+    Case updated · $1,000.00
+
+Two separate bugs behind it.
+
+**1. Wrong content.** The message reported the case's TOTAL AMOUNT — not what the agent changed (a
+Payment Status, in the repro), and not a confirmation of anything. On the 9 cases that carry no amount
+it rendered `Case updated · —`, which reads as broken. Now it names the case, symmetric with create:
+`Case created for X` / `Case updated for X`. Naming the record is the useful part, since cards look
+alike and an agent's real question is "did I just edit the right one".
+
+**2. The 3.5s countdown restarted on every parent re-render** (`Toast.tsx`). Every caller passes an
+inline `onDismiss={() => setToast(null)}`, so the handler is a new function each render, and it was in
+the effect's dependency list — so each re-render cleared the pending timeout and started a fresh one.
+This matters because of WHEN toasts are raised: `save → notify() → refreshAll()` fires three reloads
+that land underneath the toast over the next second or two, each re-rendering the panel and pushing
+dismissal back (measured ~10s instead of 3.5s). Worse, a toast raised while an agent is typing in the
+search box never dismissed at all. Fixed by holding the handler in a ref so the effect depends on
+`toast.id` alone.
+
+This is a SHARED component, so the same bug was live in Citifuel, Applications and Retention — all of
+them get the correct 3.5s now.
+
+`Toast.test.tsx` (7 tests) pins it, including the case that actually regressed: re-render with a new
+handler identity must still dismiss at 3.5s. Verified the test genuinely catches it by re-introducing
+the old dependency array — that one case fails, the other six pass.
+
+Web suite 43 files / 279 tests green; backend unchanged at the `origin/build` baseline (7 files / 11
+tests, pre-existing flake). Vendored bundle rebuilt — `Case updated for` is in the CS chunk, the old
+`Case updated · ` is gone, and the chunk is reachable from the entry JS.
+
+### Optimization + create-form and owner-filter fixes
+
+**Measured before changing anything.** The important correction: the ~263ms-per-query latency in a
+local run is my laptop→Oregon, NOT what a user pays — in prod the API sits next to the DB. So the
+optimization targets what users actually pay for.
+
+- **41% of the list response was the `raw` jsonb column** (21KB of 52KB for one page of 24), read by
+  nothing in the UI. The repo now selects an explicit `CARD_COLUMNS` list; `raw` stays on
+  `GET /cs/maintenance/:id` for provenance. Measured: **51,578 → 26,087 bytes, a 49% cut**, on every
+  list load and every search keystroke.
+- **Rows + total are now ONE query** via `count(*) OVER ()` instead of a `Promise.all` pair.
+- **The default sort was not using any index.** `EXPLAIN` showed `Seq Scan` + top-N `Sort` on all
+  2,715 rows: the index is `(case_date, id)` ASC while the list orders by `case_date DESC NULLS LAST,
+  id DESC`, and a backward scan cannot serve `NULLS LAST` because DESC implies NULLS FIRST. Only ~3ms
+  today, which is why nobody noticed, but it is paid on every page and every search and grows with the
+  table. `0077_maintenance_cases_sort_idx.sql` adds the matching index; verified on a 5,715-row local
+  copy that the plan becomes a bare `Index Scan` with no Sort (0.07ms).
+
+**Create form: company now comes from the DWH, and carrier ID is derived.** `octane.dim_company` is
+the authoritative company ↔ carrier map (8,075 rows, every one has a carrier_id, all unique), so
+picking a company FILLS the carrier id. The Zoho Accounts typeahead it replaces knew nothing about
+carrier ids at all. Two details that shaped the API: `carrier_id` is BIGINT there vs TEXT here so it
+is cast, and **49 company names map to more than one carrier id** — so options are rows, not names,
+and the dropdown renders the carrier id beside the name or the pick would be ambiguous.
+
+Carrier ID is **read-only, not removed**. Removing it was the other option; it stays visible because
+it is the tab's primary search key and appears on every card, so a modal that hid it could not show
+what the agent searched by. Changing the company clears both the carrier id and any `company_zoho_id`
+— a stale carrier id is worse than none, and the Zoho Accounts link on a migrated record described the
+OLD company.
+
+**Owner filter — "not showing all owners" was a real bug, not just ergonomics.** 4 of the 16 owners
+rendered as raw 19-digit Zoho ids, covering **766 cases (28%)**. Cause: they are DEACTIVATED users, so
+`listActiveUsers()` (127 users) omits them AND COQL returns `Owner: {id, name: null}` for them — the
+mapper's last-name fallback had nothing to fall back to, `owner_name` landed null, and
+`distinctOwners()` substituted the id for display. `getUserById` resolves all four (names deliberately
+not recorded here), so the importer now collects ids the active roster missed and fetches just those —
+a handful of extra calls, not one per record. **The prod backfill still needs a
+re-import to take effect.**
+
+The filter itself is now a searchable select (`SearchableSelect.tsx`, client-side over the roster that
+already arrives with `/meta`), with prefix matches ranked above mid-string ones, keyboard nav, and an
+Escape that closes the panel WITHOUT bubbling to the surrounding rail.
+
+Verified in the browser end to end: owner search filters 16 → 2 with `Alex Rivera` above
+`Tamara Diaz`; company search returns options with carrier ids; picking one fills `5000001`; typing
+`9999999` into the read-only carrier field leaves it unchanged; the created case persisted carrier
+`5000001` and zero-padded unit `077`. 14 SearchableSelect tests + 3 route tests added.
+
+Suite note: the backend suite's failure count is genuinely non-deterministic — 11, then 92, then 11
+twice in a row on identical code. Two consecutive runs land on the `origin/build` baseline of 7 files /
+11 tests, with 1,208 passing (up from 1,113), and the 5 files touching this work pass 95/95 twice.
+
+### Fix — owner dropdown painted under the cards, and one radius for every CS control
+
+**The dropdown was not a z-index VALUE problem.** It already set `position: absolute; z-index: 300`
+and was still painted under the card grid. `.cs-mt-filters` receives `backdrop-filter: blur(20px)` from
+the Horizon pane recipe, and **backdrop-filter creates a stacking context** — with the pane's own
+`z-index` left at `auto`, everything inside it (300 included) is sealed in, and the card grid is a
+LATER SIBLING, so the cards win on DOM order regardless. Diagnosed by walking the ancestor chain for
+stacking-context triggers and confirming with `document.elementFromPoint`, which returned
+`button.cs-mt-card` at a point inside the dropdown.
+
+Fixed by raising the PANE (`position: relative; z-index: 20`), which lifts its whole subtree. 20 clears
+the grid and stays far below the modal layer — verified the modal backdrop (9990) still wins over it.
+The dropdown's background was already fully opaque (`rgb(23,29,40)`), so "not fully readable" was
+entirely the cards painting over it, not transparency. Same trap as the RingCentral card versus
+`.cs-root { isolation: isolate }` — commented in place so nobody "tidies" the z-index away.
+
+**Control radii had drifted into four values in the same row.** Measured: buttons 12px, the owner
+combobox 8px, every native `<select>` and date input 6px, and the search bars **0px**. The cause is two
+token scales coexisting — the legacy widget's `--radius-*` collapses xs/sm/md/lg all to **6px**, while
+Horizon's `--r-*` is the real 8/12/16/22 ramp, so anything still reaching for `--radius-md` renders
+square next to a 12px button. Every control now takes `--r-md`, matching the buttons.
+
+Two specificity traps hit on the way, both the same shape as the earlier doubled-focus-ring bug — a
+per-panel rule outranking a module-level one, where import order cannot help:
+- `.cs-root .cs-an-rc-field input[type="date"]` (two classes + an attribute) beat a plain two-class
+  selector, so the date inputs stayed 6px.
+- `.cs-root .cs-an-range-select` (two classes) beat `.cs-root select` (one class + one element), so the
+  Analytics period select stayed 6px.
+Both are now named explicitly with the reason recorded next to them.
+
+Verified by measuring every control across four mounted tabs: **11 controls, all 12px, zero
+holdouts** — Maintenance filters, the Citifuel search bar, modal `.cs-form-input`s, the Analytics
+period select and custom-range date fields. Web suite 49 files / 344 tests green.
+
+Also visible in the verification screenshots and worth restating: two owner rows still render as raw
+Zoho ids in the local snapshot. That is the deactivated-user bug — the importer fix is in, but the
+**prod re-import has not been run**, so the backfill has not taken effect anywhere yet.
+
+### mytrion-ops is now fully off Zoho for Maintenance
+
+Audited every reference rather than trusting the earlier passes, and found two Zoho paths still live in
+mytrion-ops that the read-side migration had not touched — both in the touchpoint catalog, which
+`GET|POST /v1/touchpoints/:key` executes for ANY entry, so both were reachable by API callers and by
+agents even though no frontend used either:
+
+- **`maintenance.create`** (carrierDeluge) — `riskClass: 'write'`, called the `createmaintenance`
+  Deluge. This was the real find: a WRITE that created a case in Zoho, which Mytrion then cannot see,
+  because reads all come from Postgres and there is deliberately no sync back. Removed. Cases are
+  created through `POST /cs/maintenance`, which writes the table everything else reads.
+- **`cs.analytics.maintenance`** (csDeluge) — called `mytrionGetMaintenanceAnalytics`. Superseded by
+  the SQL route; leaving it in meant a caller could still get Zoho figures that disagree with the tab.
+  Removed.
+
+**The Zoho CRM widgets are unaffected, and this was verified before deleting anything:** zoho-octane has
+ZERO references to `/touchpoints` — its widgets call `ZOHO.CRM.FUNCTIONS.execute("createmaintenance")`
+and `("mytrionGetMaintenanceAnalytics")` directly inside Zoho (6 and 2 call sites). Nothing in servercrm
+or the mini-app references either key either. So only mytrion-ops' catalog entries were removed; the
+Deluge functions themselves are untouched in Zoho and the widgets keep working exactly as before.
+
+Confirmed at runtime, not just by grep: `getTouchpoint()` returns undefined for both keys, no catalog
+entry names a Maintenance Deluge function, and catalog size went 105 → 103.
+
+Final audit of `src/`: exactly ONE file still contains Zoho code for Maintenance —
+`integrations/csMaintenanceRecords.ts`, the COQL drain, imported by nothing except
+`scripts/migrateMaintenanceFromZoho.ts`. Every other hit is a comment.
+
+Three stale assertions/comments the removal exposed, all fixed rather than suppressed:
+- `cs-routes.test.ts` asserted the four cs.* entries → now three, plus a new test that pins BOTH keys
+  as absent and that no touchpoint may call a Maintenance Deluge.
+- `touchpoints-catalog.test.ts` pinned the deluge count at 19 → 17, and listed `createmaintenance`
+  among the functions the catalog must cover → removed from that list with the reason recorded (the
+  data moved out of Zoho, unlike the others which moved into TypeScript handlers).
+- `touchpoints-routes.test.ts` pinned the catalog total at 105 → 103. Its comment had said 106 against
+  an assertion of 105, so that drift is corrected too.
+- Also dropped the orphaned `CsMaintenanceAnalytics` frontend type and its touchpoint-map entry, and
+  fixed the `csAnalytics.routes.ts` comment that still described the route as "native COQL".
+
+Worth noting on process: the two new tests PASSED under vitest while `tsc` failed — `functionNames`
+exists only on the 'deluge' variant of the Touchpoint union, so the assertion needed a `kind` narrow.
+Vitest does not typecheck; running tsc separately is what caught it.
+
+Backend suite back to the exact `origin/main` baseline (7 files / 11 tests, pre-existing flake) with
+1,285 passing. Web 49 files / 344 tests green.
