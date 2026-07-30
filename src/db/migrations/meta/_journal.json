@@ -554,6 +554,27 @@
       "when": 1785402000000,
       "tag": "0078_support_bot_memories",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785398400001,
+      "tag": "0079_maintenance_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785398400002,
+      "tag": "0080_maintenance_cases_sort_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785398400003,
+      "tag": "0081_support_bot_operations_repair",
+      "breakpoints": true
     }
   ]
 }

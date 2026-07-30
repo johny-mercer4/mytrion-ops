@@ -1,0 +1,524 @@
+/* =====================================================
+   Customer Service — Maintenance cases panel
+
+   Structure + rhythm only. The frosted surface, the hover lift, the accent-tinted border and the
+   focus ring all come from the Horizon layer (cs-horizon.css / cs-horizon-panels.css), which is
+   imported AFTER this sheet and so wins at equal specificity — `.cs-mt-card` and `.cs-mt-stat-card`
+   are registered in its pane + hover selector lists. Anything visual that this file sets and Horizon
+   also sets will lose, deliberately.
+   ===================================================== */
+
+/* ── Summary tiles ───────────────────────────────────────────────────────── */
+/* Same auto-fill recipe as .cs-citi-summary so the two tabs' header strips line up. */
+.cs-root .cs-mt-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.875rem;
+    margin: 0.5rem 0 0.25rem;
+}
+
+.cs-root .cs-mt-stat-card {
+    border-radius: var(--r-md);
+    padding: 0.875rem 1rem;
+    text-align: center;
+}
+
+.cs-root .cs-mt-stat-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+}
+
+.cs-root .cs-mt-stat-label {
+    margin-top: 0.2rem;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+/* ── Toolbar: search + status tabs ───────────────────────────────────────── */
+.cs-root .cs-mt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0 0.25rem;
+}
+
+.cs-root .cs-mt-search {
+    position: relative;
+    flex: 1 1 320px;
+    min-width: 240px;
+}
+
+.cs-root .cs-mt-search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 140ms ease, background 140ms ease;
+}
+.cs-root .cs-mt-search-clear:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+}
+
+/* Count badge on the Filters button — only rendered when a filter is actually on. */
+.cs-root .cs-mt-filter-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--cs-accent);
+    color: var(--cs-on-accent, #fff);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+/* ── Filter rail ─────────────────────────────────────────────────────────── */
+/*
+ * `z-index` here is LOAD-BEARING — do not "tidy" it away as redundant.
+ *
+ * The owner dropdown sets `position: absolute; z-index: 300` and was still painted UNDER the cards.
+ * The value was never the problem: this pane receives `backdrop-filter: blur(...)` from the Horizon
+ * pane recipe in cs-horizon-panels.css, and backdrop-filter CREATES A STACKING CONTEXT. With this
+ * element's own z-index left at `auto`, everything inside it — 300 included — is sealed in, and the
+ * card grid is a LATER SIBLING, so the cards win on DOM order no matter what the dropdown asks for.
+ *
+ * Raising the PANE lifts its whole subtree, dropdown included. 20 clears the grid while staying far
+ * below the modal layer. (Same trap as the RingCentral card versus `.cs-root { isolation: isolate }`.)
+ */
+.cs-root .cs-mt-filters {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin: 0.75rem 0 0.25rem;
+    padding: 0.875rem 1rem;
+    border-radius: var(--r-md);
+}
+
+.cs-root .cs-mt-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 150px;
+}
+
+.cs-root .cs-mt-filter > span {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-mt-filter select {
+    height: 32px;
+    padding: 0 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.cs-root .cs-mt-filter-date {
+    min-width: 132px;
+}
+
+.cs-root .cs-mt-dir-btn,
+.cs-root .cs-mt-clear-btn {
+    height: 32px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary, var(--text-muted));
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.cs-root .cs-mt-dir-btn:hover,
+.cs-root .cs-mt-clear-btn:hover {
+    color: var(--cs-accent);
+    border-color: color-mix(in srgb, var(--cs-accent) 40%, var(--border));
+}
+.cs-root .cs-mt-clear-btn {
+    color: var(--cs-danger, #ef4444);
+}
+.cs-root .cs-mt-clear-btn:hover {
+    color: var(--cs-danger, #ef4444);
+    border-color: color-mix(in srgb, var(--cs-danger, #ef4444) 45%, var(--border));
+}
+
+/* ── The card grid ───────────────────────────────────────────────────────── */
+/* auto-fill + minmax reflows from 1 to 4 columns on its own — no media queries, and it stays
+   correct inside the collapsed-sidebar layout where the content pane is wider. */
+.cs-root .cs-mt-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin-top: 1rem;
+}
+
+.cs-root .cs-mt-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    border-radius: 14px;
+    text-align: left;
+    font-family: inherit;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+/* Fixed-slot header: the company can wrap to two lines, the badge never moves. */
+.cs-root .cs-mt-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.cs-root .cs-mt-card-titles {
+    min-width: 0;
+}
+
+.cs-root .cs-mt-card-company {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.08rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    /* Two lines then ellipsis — a long legal name must not push the card taller than its siblings. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.cs-root .cs-mt-card-subname {
+    margin-top: 1px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-root .cs-mt-card-type {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 20px;
+}
+
+.cs-root .cs-mt-chip-type,
+.cs-root .cs-mt-chip-new {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.cs-root .cs-mt-chip-type {
+    background: var(--cs-accent-softer, color-mix(in srgb, var(--cs-accent) 10%, transparent));
+    color: var(--cs-accent);
+    border: 1px solid color-mix(in srgb, var(--cs-accent) 22%, transparent);
+}
+
+/* Marks a case with no Zoho counterpart — useful while the migration is still recent. */
+.cs-root .cs-mt-chip-new {
+    background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+    color: var(--accent-2);
+    border: 1px solid color-mix(in srgb, var(--accent-2) 26%, transparent);
+}
+
+/* The search keys, mono so they read as identifiers rather than prose. */
+.cs-root .cs-mt-card-ids {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cs-root .cs-mt-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text-secondary, var(--text-muted));
+}
+.cs-root .cs-mt-id svg {
+    color: var(--cs-accent);
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-mt-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.cs-root .cs-mt-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.cs-root .cs-mt-meta-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.cs-root .cs-mt-meta-value {
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* "Not signed off" is a state, not a value — read it as muted rather than as data. */
+.cs-root .cs-mt-meta-value.is-open {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-style: italic;
+}
+
+.cs-root .cs-mt-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.cs-root .cs-mt-amount-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.cs-root .cs-mt-amount {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-mt-owner {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cs-root .cs-mt-owner svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+/* Small badge variant for the payment status chip on the card foot. */
+.cs-root .cs-badge.cs-badge-sm {
+    height: 19px;
+    padding: 0 7px;
+    font-size: 9.5px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.cs-root .cs-mt-empty {
+    margin-top: 1rem;
+    padding: 3rem 1.5rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-md);
+    text-align: center;
+}
+
+.cs-root .cs-mt-empty-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-mt-empty-hint {
+    margin-top: 0.35rem;
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+/* ── Searchable select (owner filter) ────────────────────────────────────── */
+/* Sits inside .cs-mt-filter, so it must fill the column rather than size to its text. */
+.cs-root .cs-mt-filter-owner {
+    min-width: 190px;
+}
+.cs-root .cs-ss-wrap {
+    width: 100%;
+}
+.cs-root .cs-ss-input {
+    height: 32px;
+    font-size: 12.5px;
+    cursor: text;
+}
+
+/* Taller than the plain lookup dropdown: this one lists a whole roster, and scrolling 16 owners in a
+   150px window is worse than the native select it replaced. */
+.cs-root .cs-ss-list {
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.cs-root .cs-ss-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+/* Keyboard highlight and mouse hover share one look, so arrowing and pointing feel like one control. */
+.cs-root .cs-ss-item.is-active {
+    background: var(--cs-accent-softer, color-mix(in srgb, var(--cs-accent) 10%, transparent));
+}
+.cs-root .cs-ss-item.is-selected .cs-ss-item-label {
+    font-weight: 700;
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-ss-item-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-root .cs-ss-item-hint {
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-ss-empty {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ── Modal-only bits ─────────────────────────────────────────────────────── */
+.cs-root .cs-mt-form-hint {
+    margin-top: 3px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+/* A DERIVED field: filled from another choice and not editable. Reads as data, not as an input an
+   agent has failed to fill in — hence muted text on a recessed ground, and no focus affordance. */
+.cs-root .cs-mt-derived {
+    background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+    color: var(--text-secondary, var(--text-muted));
+    font-family: 'JetBrains Mono', monospace;
+    cursor: default;
+}
+.cs-root .cs-mt-derived:focus,
+.cs-root .cs-mt-derived:focus-visible {
+    outline: none;
+    box-shadow: none;
+    border-color: var(--border);
+}
+
+/* Company option: name left, carrier id right. The id is not decoration — 49 company names map to
+   more than one carrier, so it is how an agent tells two identical names apart. */
+.cs-root .cs-mt-company-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cs-root .cs-mt-company-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cs-root .cs-mt-company-cid {
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--cs-accent);
+}
+.cs-root .cs-mt-company-off {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .cs-root .cs-mt-grid {
+        grid-template-columns: 1fr;
+    }
+    .cs-root .cs-mt-filter,
+    .cs-root .cs-mt-filter-date {
+        min-width: 0;
+        flex: 1 1 140px;
+    }
+}
