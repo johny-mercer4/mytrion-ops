@@ -7,13 +7,14 @@
  *    'status' (validates and returns the WHOLE payload).
  *  - mytrionGetHomeMetrics has no reliable success wrapper; the widget only rejects an
  *    explicit status:'error' → 'cardAction'.
- *  - mytrionGetMaintenanceAnalytics returns {success, data, error?} → 'successFlag'.
  * Writes (Applications save, Citifuel CRUD, Data Center deal edits) are NOT touchpoints —
- * they run through the /cs/* routes with field-casing resolution and auditing.
+ * they run through the /cs/* routes with field-casing resolution and auditing. Maintenance is not
+ * here at all any more: it lives in our own `maintenance_cases` table, served by /cs/maintenance and
+ * /cs/analytics/maintenance.
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { idString, limit, ymdDate } from './common.js';
+import { idString, limit } from './common.js';
 
 const CS_DEPARTMENTS = ['customer-service'] as const;
 
@@ -46,21 +47,17 @@ export const csDelugeTouchpoints: Touchpoint[] = [
       perPage: limit(2000, 2000).transform(String),
     }),
   },
-  {
-    kind: 'deluge',
-    key: 'cs.analytics.maintenance',
-    title: 'Maintenance analytics (CRM Maintenance module, period vs period)',
-    riskClass: 'read',
-    departments: CS_DEPARTMENTS,
-    functionNames: ['mytrionGetMaintenanceAnalytics'],
-    unwrap: 'successFlag',
-    paramsSchema: z.object({
-      fromDate: ymdDate,
-      toDate: ymdDate,
-      prevFromDate: ymdDate,
-      prevToDate: ymdDate,
-    }),
-  },
+  /*
+   * `cs.analytics.maintenance` was REMOVED here. Maintenance lives in our own
+   * `maintenance_cases` table now, and this entry called the `mytrionGetMaintenanceAnalytics`
+   * Deluge — so leaving it in the catalog meant `POST /v1/touchpoints/cs.analytics.maintenance`
+   * could still hand back Zoho's numbers, which no longer match the tab. Superseded by
+   * `GET /cs/analytics/maintenance` (SQL, integrations/csMaintenance.ts).
+   *
+   * The Deluge function itself is untouched in Zoho: the legacy
+   * zoho-octane/app/mytrion-customer-service widget calls it directly through
+   * ZOHO.CRM.FUNCTIONS.execute and never goes via this catalog, so it keeps working.
+   */
   {
     kind: 'deluge',
     key: 'cs.datacenter.deals',
