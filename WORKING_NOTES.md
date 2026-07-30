@@ -5347,3 +5347,30 @@ was performed.
 - A real Telegram gateway was deliberately not started because the bot token must have only one
   long-polling consumer. No deployment or external Telegram, Claude, EFS or ServerCRM request was
   performed.
+
+## 2026-07-30 — OpenAI gateway burst-handling implementation
+
+- Reviewed the multi-request patterns on `feature/agent-gateway-multi-token-failover` and applied
+  the reusable concurrency controls to the standalone OpenAI-only gateway. Claude OAuth token
+  rotation, Groq fallback, subprocess resume/replay and subscription-token behavior were not
+  copied.
+- Added a configurable FIFO global turn semaphore (`MAX_CONCURRENT_TURNS`, default 8), bounded
+  global and per-user admission, strict per-user turn ordering, automatic queue-key cleanup and
+  per-user chat history isolation.
+- Parallelized Telegram update ingestion in bounded batches while retaining per-user ordering.
+  Added a global Telegram send throttle, per-chat message spacing, one retry for Telegram
+  `retry_after`, shared typing keep-alives and send timeouts so one busy group does not block all
+  other groups.
+- Added single-flight access/chat-map refreshes, stale-cache cleanup, asynchronous atomic session
+  persistence and bounded buffered JSONL logging. Dashboard sync now avoids replacing newer
+  in-memory turns while log writes are still buffered.
+- Added runtime counters, gauges and latency histograms for queueing, OpenAI, Telegram, backend,
+  tools, vision, memory and event-loop behavior, exposed through the authenticated monitor
+  `/api/metrics` endpoint.
+- Added concurrency, metrics, buffered-writer and single-flight regression tests plus an offline
+  concurrency stress harness. Verification passed: gateway typecheck; 33/33 gateway tests;
+  22/22 mandatory cross-tenant RBAC tests; and 300 queued turns across 100 users with max active
+  exactly 8, zero same-user overlap, zero ordering violations, zero leaked queue keys, 15.29 ms
+  maximum sampled event-loop lag and 2.7 MB RSS growth.
+- This phase is intentionally single-process. Horizontal replicas still require a shared queue,
+  distributed rate limits and Telegram webhook ownership before scaling past one gateway process.

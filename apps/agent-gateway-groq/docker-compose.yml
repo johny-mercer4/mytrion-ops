@@ -1,0 +1,16 @@
+services:
+  openai-gateway:
+    build: .
+    container_name: octane-agent-gateway-openai
+    env_file: .env
+    environment:
+      # The Mytrion backend runs on the host during local Docker development.
+      OCTANE_API_BASE: http://host.docker.internal:3001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    ports:
+      # Separate from the Claude gateway monitor.
+      - "8788:8787"
+    volumes:
+      - ./data:/app/data
