@@ -125,7 +125,6 @@ Reimplemented in `src/modules/customerService/maintenanceRules.ts`. Recover them
 
 | | |
 | --- | --- |
-| id | `6227679000072235559` |
 | trigger | `create_or_edit`, `repeat: true` |
 | criteria | `Completion_Compensation` = EMPTY **OR** `Lead_Compensation` = EMPTY **OR** `Half_Completion_Compensation` = EMPTY |
 | actions | three `static` field updates |
@@ -151,9 +150,8 @@ the live data depended on the clobber: all 2,718 imported rows hold exactly 5.00
 
 | | |
 | --- | --- |
-| id | `6227679000073523285` |
 | trigger | `create` only, no criteria |
-| action | Deluge function `updatecompanyformaintenance` (`6227679000072877039`, arg `id:Int`) |
+| action | Deluge function `updatecompanyformaintenance` (arg `id:Int`) |
 
 ```
 if Company is null:
