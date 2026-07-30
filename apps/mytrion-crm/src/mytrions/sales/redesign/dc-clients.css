@@ -33,6 +33,7 @@
  */
 
 .ss-root .dc-lty {
+  --lty-enterprise: #38bdf8;
   --lty-gold: #eab308;
   --lty-silver: #b8c6d9;
   /* Deep, browner copper — deliberately far from --lty-building's vivid orange. */
@@ -42,6 +43,7 @@
 
   /* Label text needs its own ramp: the silver/idle fills are too light to read as type on the dark
      pane, and in light mode every fill must darken to stay AA-legible. */
+  --lty-enterprise-text: #67d2ff;
   --lty-gold-text: #f0b429;
   --lty-silver-text: #cbd6e3;
   --lty-bronze-text: #d98b4a;
@@ -50,6 +52,7 @@
 }
 
 .ss-root.light .dc-lty {
+  --lty-enterprise: #087ca8;
   --lty-gold: #d99e0b;
   --lty-silver: #7d90a8;
   --lty-bronze: #8a4a1d;
@@ -79,6 +82,15 @@
   --sheen: linear-gradient(112deg, transparent 24%, color-mix(in srgb, #fff2c0 26%, transparent) 44%, transparent 64%);
   --halo: 46%;
   --edge: 34%;
+  --rail: 100%;
+}
+.ss-root .dc-lty .is-enterprise {
+  --t: var(--lty-enterprise);
+  --tint: 20%;
+  --wash: linear-gradient(152deg, color-mix(in srgb, var(--t) var(--tint), transparent) 0%, transparent 62%);
+  --sheen: linear-gradient(95deg, transparent 25%, color-mix(in srgb, #ffffff 20%, transparent) 48%, transparent 68%);
+  --halo: 18%;
+  --edge: 38%;
   --rail: 100%;
 }
 .ss-root .dc-lty .is-silver {
@@ -189,3 +201,4 @@
     transform: none;
   }
 }
+  --lty-enterprise-text: #075d7d;

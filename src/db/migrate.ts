@@ -39,6 +39,9 @@ export const TRANSIENT_BOOT_DB_CODES = new Set([
   'ECONNRESET',
   'ETIMEDOUT',
   'EAI_AGAIN', // DNS not resolving yet — normal mid-failover
+  // postgres.js when Render drops the TLS socket mid-handshake / mid-restart
+  'CONNECTION_CLOSED',
+  'CONNECT_TIMEOUT',
 ]);
 
 export function isTransientBootDbError(err: unknown): boolean {

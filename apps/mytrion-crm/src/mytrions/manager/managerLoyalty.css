@@ -9,6 +9,7 @@
    Scoped to --lty-* rather than overriding --tier-* so Sales' Clients tab is untouched.
    ===================================================== */
 .mg-root .mg-lty {
+  --lty-enterprise: #38bdf8;
   --lty-gold: #eaa32c;
   /* Cool and bright — a real silver. Kept well away from --lty-idle's neutral grey, because at low
      tint a slate-blue silver and a slate-blue "no cards" were indistinguishable. */
@@ -19,6 +20,7 @@
   /* Not in the program at all (zero active cards) — a flat, hueless grey that recedes. */
   --lty-idle: #6e7681;
   /* Text variants — the fills above are tuned for dark; these keep labels AA-legible. */
+  --lty-enterprise-text: #67d2ff;
   --lty-gold-text: #eaa32c;
   --lty-silver-text: #cbd6e3;
   --lty-bronze-text: #d69356;
@@ -26,6 +28,8 @@
   --lty-idle-text: #868d98;
 }
 [data-theme='light'] .mg-root .mg-lty {
+  --lty-enterprise: #087ca8;
+  --lty-enterprise-text: #075d7d;
   /* Light theme needs darker FILLS too, not just text — a #c3cfdd border vanishes on white. */
   --lty-silver: #8496ad;
   --lty-idle: #9ba1aa;
@@ -48,6 +52,10 @@
 .mg-root .mg-lty .is-gold {
   --tint: 18%;
   --sheen: color-mix(in srgb, var(--lty-gold) 22%, transparent);
+}
+.mg-root .mg-lty .is-enterprise {
+  --tint: 15%;
+  --sheen: color-mix(in srgb, #ffffff 20%, transparent);
 }
 .mg-root .mg-lty .is-silver {
   --tint: 17%;
@@ -186,7 +194,7 @@
 /* ── Client grid: the card IS the tier ───────────────────────────────────────── */
 .mg-root .mg-lty-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 12px;
 }
 .mg-root .mg-lty-c {
@@ -259,7 +267,7 @@
 .mg-root .mg-lty-c-name {
   min-width: 0;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.35;
   color: var(--text-primary);
   overflow: hidden;
@@ -299,6 +307,90 @@
   background: color-mix(in srgb, var(--t) 17%, transparent);
   border: 1px solid color-mix(in srgb, var(--t) 42%, transparent);
   color: var(--tt);
+}
+
+/* Closed month determines the active tier; current month is a separate progress panel. */
+.mg-root .mg-lty-periods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.mg-root .mg-lty-period {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: color-mix(in srgb, var(--t) 4%, var(--hz-pane-alt));
+}
+.mg-root .mg-lty-period.is-closed {
+  border-color: color-mix(in srgb, var(--t) 30%, var(--hz-pane-bd));
+}
+.mg-root .mg-lty-period header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mg-root .mg-lty-period header span {
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.mg-root .mg-lty-period header strong {
+  color: var(--text-muted);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mg-root .mg-lty-period-main > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mg-root .mg-lty-period-main > strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-primary);
+  font: 750 22px/1.15 var(--font-head);
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-lty-period dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--hz-pane-bd);
+}
+.mg-root .mg-lty-period dt {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-root .mg-lty-period dd {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font: 650 13px/1.2 var(--font-mono);
+}
+.mg-root .mg-lty-account {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mg-root .mg-lty-account strong {
+  color: var(--text-primary);
+  font: 650 13px/1 var(--font-mono);
 }
 
 /* ── Per-card figures ───────────────────────────────────────────────────────── */
@@ -418,7 +510,7 @@
 
 /* ── Skeleton — one shimmer, no double loader ───────────────────────────────── */
 .mg-root .mg-lty-sk {
-  height: 158px;
+  height: 304px;
   border-radius: var(--mg-r-md);
   border: 1px solid var(--hz-pane-bd);
   /* Two COMMA-separated layers: the sheen over the pane. --hz-pane is itself a gradient, so it can
@@ -432,6 +524,14 @@
     auto;
   background-repeat: no-repeat, no-repeat;
   animation: mgLtySheen 1.25s var(--hz-ease) infinite;
+}
+@media (max-width: 520px) {
+  .mg-root .mg-lty-grid {
+    grid-template-columns: 1fr;
+  }
+  .mg-root .mg-lty-periods {
+    grid-template-columns: 1fr;
+  }
 }
 /* Per-layer positions — the sheen travels, the pane underneath stays put. */
 @keyframes mgLtySheen {
@@ -455,3 +555,4 @@
     transform: none;
   }
 }
+  --lty-enterprise-text: #075d7d;

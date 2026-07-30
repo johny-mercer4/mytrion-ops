@@ -7,26 +7,53 @@
  */
 import { request } from './transport';
 
+export const LOYALTY_REWARD_IDS = [
+  'transaction_fee_waiver',
+  'credit_score_check',
+  'money_code_limit',
+  'monthly_fee_waiver',
+  'ta_petro_rebate',
+  'loves_rebate',
+] as const;
+export type LoyaltyRewardId = (typeof LOYALTY_REWARD_IDS)[number];
+export type LoyaltyEnterpriseMode = 'normal_billing' | 'volume_target';
+
+export interface LoyaltyClientOverride {
+  carrierId: string;
+  enterpriseMode: LoyaltyEnterpriseMode | null;
+  enterpriseGoldTargetGallons: number | null;
+  /** null = tier defaults; [] = deliberately no rewards. */
+  enabledRewardIds: LoyaltyRewardId[] | null;
+  note: string | null;
+  updatedBy: string;
+  updatedAt: string;
+}
+
 /** One carrier on the loyalty board — mirrors the backend `LoyaltyClientRow`. */
 export interface LoyaltyClient {
   carrierId: string;
   companyName: string;
   /** Current owning agent, '—' when the warehouse has none. */
   agentName: string;
-  /** Declared fleet size — the loyalty TRACK basis (1 truck = Owner-Operator). `null` = unknown, in
-   * which case the tier falls back to the transacting-card proxy. */
+  /** Declared fleet size — reference only; loyalty tracks use monthly transacting cards. */
   trucks: number | null;
-  /** Total active cards on the account — context only; the TRACK uses `trucks`. */
+  /** Total active cards on the account — account context, not the closed-month track. */
   activeCards: number;
+  lastTierName: string;
   activeCardsThisMonth: number;
   /** Cards that transacted LAST month — the program's track basis (see _shared/loyalty.ts). */
   activeCardsPrevMonth: number;
-  /** This-calendar-month gallons — the program's tier basis. */
+  /** This-calendar-month total gallons — reference only. */
   gallonsThisMonth: number;
-  /** Billing-cycle (26th→25th) gallons — the fallback basis before any pumps land this month. */
+  /** This-month ULSR + ULSD gallons — next evaluation progress. */
+  inNetworkGallonsThisMonth: number;
+  /** Billing-cycle (26th→25th) total gallons — reference only. */
   cycleGallons: number;
   gallonsPrevMonth: number;
+  /** Closed previous-month ULSR + ULSD gallons — current tier basis. */
+  inNetworkGallonsPrevMonth: number;
   computedIsActive: boolean;
+  loyaltyOverride: LoyaltyClientOverride | null;
 }
 
 export interface LoyaltyRoster {
@@ -41,10 +68,36 @@ const MGR_HEADERS = { 'x-department-access': 'management' } as const;
 
 /** Every carrier's tier inputs, heaviest this-month volume first (server-ordered). */
 export function listLoyaltyClients(): Promise<LoyaltyRoster> {
-  return request('GET', '/manager/loyalty/clients', { headers: MGR_HEADERS }) as Promise<LoyaltyRoster>;
+  return request('GET', '/manager/loyalty/clients', {
+    headers: MGR_HEADERS,
+  }) as Promise<LoyaltyRoster>;
 }
 
-/** The gallons figure the program resolves a tier from: this month, falling back to the cycle. */
-export function loyaltyGallons(c: Pick<LoyaltyClient, 'gallonsThisMonth' | 'cycleGallons'>): number {
-  return c.gallonsThisMonth > 0 ? c.gallonsThisMonth : c.cycleGallons;
+export interface SaveLoyaltyOverrideInput {
+  companyName: string;
+  enterpriseMode: LoyaltyEnterpriseMode | null;
+  enterpriseGoldTargetGallons: number | null;
+  enabledRewardIds: LoyaltyRewardId[] | null;
+  note: string | null;
+}
+
+export function saveLoyaltyOverride(
+  carrierId: string,
+  input: SaveLoyaltyOverrideInput,
+): Promise<{ override: LoyaltyClientOverride }> {
+  return request('PATCH', `/manager/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
+    body: input,
+    headers: MGR_HEADERS,
+  }) as Promise<{ override: LoyaltyClientOverride }>;
+}
+
+export function resetLoyaltyOverride(carrierId: string): Promise<{ removed: boolean }> {
+  return request('DELETE', `/manager/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
+    headers: MGR_HEADERS,
+  }) as Promise<{ removed: boolean }>;
+}
+
+/** Closed-month in-network gallons used to resolve the tier active now. */
+export function loyaltyGallons(c: Pick<LoyaltyClient, 'inNetworkGallonsPrevMonth'>): number {
+  return c.inNetworkGallonsPrevMonth;
 }

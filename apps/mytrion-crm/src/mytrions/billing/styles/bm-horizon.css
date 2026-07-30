@@ -440,13 +440,15 @@
 }
 
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
-/* Billing had no :focus-visible rule of its own, so the app-wide `outline: 2px solid` in
-   styles/global.css was landing here as a hard offset ring — it reads as a rendering artifact
-   rather than a focus state. Same soft accent ring as every other module. */
-.bm-root :focus-visible {
+/* Soft accent ring on buttons/links — never on bare form fields (search shells own focus). */
+.bm-root :focus-visible:not(input):not(textarea):not(select) {
     outline: none;
     box-shadow: 0 0 0 3px var(--billing-accent-glow);
     border-radius: var(--radius-sm);
+}
+.bm-root :is(input, textarea, select):focus-visible {
+    outline: none;
+    box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

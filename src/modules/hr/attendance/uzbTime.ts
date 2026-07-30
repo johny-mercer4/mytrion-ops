@@ -151,10 +151,19 @@ export function formatUzbHhMmSs(utc: Date): string {
   return `${h}:${mi}:${s}`;
 }
 
+export function formatUzbDateTime(utc: Date): string {
+  return `${uzbDateString(utc)} ${formatUzbHhMmSs(utc)}`;
+}
+
 export function formatDurationHours(ms: number): string {
   if (ms <= 0 || !Number.isFinite(ms)) return '00:00';
   const totalMin = Math.floor(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Only the Ganga office readers are authoritative for Mytrion HR attendance. */
+export function isAllowedAttendanceDoor(doorName: string): boolean {
+  return doorName.trim().toLocaleLowerCase('en-US').includes('ganga');
 }

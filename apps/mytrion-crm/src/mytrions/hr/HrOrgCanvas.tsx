@@ -7,7 +7,7 @@
  *   drag handle → handle      → the same reparent, for people who prefer drawing the edge
  *   chevron                   → expand / collapse, client-side only
  *   "+"                       → create a child under this node
- *   double-click              → open the record
+ *   click                     → open the record (department or employee modal)
  *
  * DROP-TO-REPARENT IS OPT-IN PER GESTURE. React Flow has no built-in "dropped on a node" event, so the
  * target is resolved from the pointer position at drag end via `getIntersectingNodes`. A drag that ends
@@ -17,7 +17,14 @@
  * Positions are optimistic: the node stays where it was dropped and only a failed request moves it back.
  * Re-parents are NOT optimistic — the server rejects cycles, so the graph is rebuilt from the reload.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -86,6 +93,7 @@ function CanvasInner({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<OrgNodeData>>(built.nodes);
   const [edges, setEdges] = useState<Edge[]>(built.edges);
   const { fitView } = useReactFlow<Node<OrgNodeData>, Edge>();
+  const didFit = useRef(false);
 
   /**
    * Positions dragged in THIS session, applied on top of every rebuild.
@@ -97,21 +105,73 @@ function CanvasInner({
    */
   const localPos = useRef(new Map<string, { x: number; y: number }>());
 
-  const applyLocal = useCallback((list: Node<OrgNodeData>[]): Node<OrgNodeData>[] => {
-    if (localPos.current.size === 0) return list;
-    return list.map((n) => {
-      const at = localPos.current.get(n.id);
-      return at ? { ...n, position: at } : n;
-    });
-  }, []);
+  /**
+   * Merge a rebuilt graph onto the live canvas without reshuffling what the user is looking at.
+   *
+   * Expand/collapse used to re-run dagre for every unpinned node and `fitView` on every change, so
+   * collapsing a department jumped siblings around and expanding sprayed children across the far side
+   * of the chart. Keep every already-visible node where it is; park brand-new children in a row under
+   * their parent.
+   */
+  const mergeGraph = useCallback(
+    (
+      next: Node<OrgNodeData>[],
+      nextEdges: Edge[],
+      prev: Node<OrgNodeData>[],
+    ): Node<OrgNodeData>[] => {
+      const prevPos = new Map(prev.map((n) => [n.id, n.position]));
+      const parentOf = new Map(nextEdges.map((e) => [e.target, e.source]));
+      const merged = next.map((n) => {
+        const at = localPos.current.get(n.id) ?? prevPos.get(n.id);
+        return at ? { ...n, position: { ...at } } : { ...n };
+      });
+      const byId = new Map(merged.map((n) => [n.id, n]));
+      const newcomers = merged.filter(
+        (n) => !prevPos.has(n.id) && !localPos.current.has(n.id),
+      );
+      const groups = new Map<string, Node<OrgNodeData>[]>();
+      for (const n of newcomers) {
+        const parentId = parentOf.get(n.id);
+        if (!parentId) continue;
+        const list = groups.get(parentId) ?? [];
+        list.push(n);
+        groups.set(parentId, list);
+      }
+      for (const [parentId, kids] of groups) {
+        const parent = byId.get(parentId);
+        if (!parent) continue;
+        const parentH = parent.data.kind === 'department' ? DEPT_H : EMP_H;
+        const baseX = parent.position.x;
+        const baseY = parent.position.y + parentH + 36;
+        kids.forEach((kid, index) => {
+          const w = kid.data.kind === 'department' ? DEPT_W : EMP_W;
+          const at = { x: Math.round(baseX + index * (w + 20)), y: Math.round(baseY) };
+          kid.position = at;
+          localPos.current.set(kid.id, at);
+        });
+      }
+      return merged;
+    },
+    [],
+  );
 
   // Adopt a rebuilt graph (data reloaded, or a subtree toggled). Nodes and edges are set TOGETHER —
   // edges taken straight from `built` would be one painted frame ahead of the nodes they connect, and
   // React Flow drops an edge whose endpoint is not yet present.
   useEffect(() => {
-    setNodes(applyLocal(built.nodes));
+    setNodes((prev) => mergeGraph(built.nodes, built.edges, prev));
     setEdges(built.edges);
-  }, [built.nodes, built.edges, setNodes, applyLocal]);
+  }, [built.nodes, built.edges, setNodes, mergeGraph]);
+
+  // Fit once when the first non-empty graph lands — never on expand/collapse.
+  useEffect(() => {
+    if (didFit.current || built.nodes.length === 0) return;
+    didFit.current = true;
+    const id = window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, maxZoom: 0.95, duration: 220 });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [built.nodes.length, fitView]);
 
   // Node views call back into the tab. Re-registered when a handler identity changes.
   useEffect(() => {
@@ -302,23 +362,30 @@ function CanvasInner({
     [onNodesChange],
   );
 
+  /** Single click opens the department / employee modal (chevron and "+" stopPropagation). */
+  const onNodeClick = useCallback(
+    (_ev: ReactMouseEvent, node: Node<OrgNodeData>): void => {
+      if (node.data.kind === 'department') handlers.onOpenDepartment(node.id);
+      else handlers.onOpenEmployee(node.id);
+    },
+    [handlers],
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       onNodesChange={handleNodesChange}
+      onNodeClick={onNodeClick}
       onNodeDragStop={onNodeDragStop}
       onConnect={onConnect}
       nodeTypes={ORG_NODE_TYPES}
-      fitView
-      fitViewOptions={{ padding: 0.18, maxZoom: 1 }}
       minZoom={0.15}
       maxZoom={1.6}
+      defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
       nodesDraggable={admin}
       nodesConnectable={admin}
       elementsSelectable
-      /* A double-click on a node opens the record; leaving React Flow's default on meant it also zoomed
-         the canvas underneath, so every open jumped the viewport. */
       zoomOnDoubleClick={false}
       /* Deleting an org node is a real HR action with consequences; it belongs in the record, not on a
          keystroke over a canvas. */

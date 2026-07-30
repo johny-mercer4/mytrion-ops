@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   Check,
-  Loader2,
   Plus,
   RotateCcw,
   Save,
@@ -21,6 +20,7 @@ import {
   type LeaveTypeDto,
   type TimeOffSettingsDto,
 } from '../../api/hrTimeOff';
+import { HrBusy, HrPageLoader } from './HrBits';
 
 function dayValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -163,9 +163,9 @@ export function HrLeaveSettings() {
       <header className="hr-leave-settings-head">
         <div className="hr-leave-settings-icon"><Settings2 size={22} /></div>
         <div>
-          <span>Native Mytrion policy</span>
-          <h3>Time Off settings</h3>
-          <p>Control yearly allowances, the final HR approver, and the company holiday calendar.</p>
+          <span>Time Off policy</span>
+          <h3>Allowances &amp; holidays</h3>
+          <p>Yearly balances, final HR approver, and the company holiday calendar.</p>
         </div>
         <label className="hr-leave-year">
           <CalendarDays size={15} />
@@ -178,7 +178,7 @@ export function HrLeaveSettings() {
       </header>
 
       {busy === 'load' && !data ? (
-        <div className="hr-leave-settings-loading"><Loader2 className="hr-spin" size={20} />Loading Time Off policy…</div>
+        <HrPageLoader label="Loading Time Off policy…" />
       ) : null}
 
       {data ? (
@@ -200,16 +200,31 @@ export function HrLeaveSettings() {
               </label>
               <div className="hr-leave-defaults">
                 {data.types.map((type: LeaveTypeDto) => (
-                  <label key={type.id} className={`hr-leave-default hr-leave-default-${type.code}`}>
+                  <label key={type.id} className="hr-leave-default">
                     <span>{type.name}</span>
-                    <div><input type="number" min="0" max="366" step="0.5" value={defaults[type.id] ?? ''} onChange={(event) => setDefaults((current) => ({ ...current, [type.id]: event.target.value }))} /><strong>days / year</strong></div>
+                    <div>
+                      <input
+                        type="number"
+                        min="0"
+                        max="366"
+                        step="0.5"
+                        value={defaults[type.id] ?? ''}
+                        onChange={(event) =>
+                          setDefaults((current) => ({
+                            ...current,
+                            [type.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <strong>days / year</strong>
+                    </div>
                     <small>{type.isPaid ? 'Paid allowance' : 'Unpaid allowance'}</small>
                   </label>
                 ))}
               </div>
               <div className="hr-leave-policy-actions">
                 <button type="button" className="hr-btn" disabled={Boolean(busy)} onClick={() => void resetYear()}><RotateCcw size={14} />Apply defaults to {year}</button>
-                <button type="button" className="hr-btn hr-btn-primary" disabled={Boolean(busy)} onClick={() => void savePolicy()}>{busy === 'policy' ? <Loader2 className="hr-spin" size={14} /> : <Save size={14} />}Save policy</button>
+                <button type="button" className="hr-btn hr-btn-primary" disabled={Boolean(busy)} onClick={() => void savePolicy()}>{busy === 'policy' ? <HrBusy /> : <Save size={14} />}Save policy</button>
               </div>
             </div>
             <aside className="hr-leave-escalation">
@@ -239,7 +254,7 @@ export function HrLeaveSettings() {
                   <span>{new Date(`${holiday.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric', timeZone: 'UTC' })}</span>
                   <strong>{holiday.name}</strong>
                   <small>{holiday.isHalfDay ? `${holiday.session} half-day` : holiday.location}</small>
-                  <button type="button" aria-label={`Delete ${holiday.name}`} disabled={Boolean(busy)} onClick={() => void removeHoliday(holiday)}>{busy === holiday.id ? <Loader2 className="hr-spin" size={14} /> : <Trash2 size={14} />}</button>
+                  <button type="button" aria-label={`Delete ${holiday.name}`} disabled={Boolean(busy)} onClick={() => void removeHoliday(holiday)}>{busy === holiday.id ? <HrBusy /> : <Trash2 size={14} />}</button>
                 </div>
               ))}
               {data.holidays.length === 0 ? <p className="hr-leave-settings-empty">No holidays configured for {year}.</p> : null}

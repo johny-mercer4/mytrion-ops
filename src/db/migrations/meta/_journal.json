@@ -554,6 +554,48 @@
       "when": 1785402000000,
       "tag": "0078_support_bot_memories",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785405600000,
+      "tag": "0079_recruit_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785409200000,
+      "tag": "0080_hr_oybek_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785412800000,
+      "tag": "0081_hr_ganga_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1785420000000,
+      "tag": "0083_hr_workspace_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1785423600000,
+      "tag": "0084_hr_ganga_ingest_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1785427200000,
+      "tag": "0085_loyalty_client_overrides",
+      "breakpoints": true
     }
   ]
 }

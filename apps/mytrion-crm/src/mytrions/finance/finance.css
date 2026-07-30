@@ -897,11 +897,16 @@ table.fi-table {
   }
 }
 
-.fi-root :focus-visible,
-.fi-scope :focus-visible {
+.fi-root :focus-visible:not(input):not(textarea):not(select),
+.fi-scope :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
   border-radius: var(--fi-r-sm, 8px);
+}
+.fi-root :is(input, textarea, select):focus-visible,
+.fi-scope :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

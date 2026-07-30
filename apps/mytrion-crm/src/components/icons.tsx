@@ -37,6 +37,7 @@ import {
   Sun,
   TriangleAlert,
   User,
+  UserSearch,
   Users,
   X,
   Wallet,
@@ -138,6 +139,7 @@ const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   manager: Users,
   analyst: LineChart,
   hr: Briefcase,
+  recruit: UserSearch,
   trailhead: GraduationCap,
 };
 

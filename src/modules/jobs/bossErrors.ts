@@ -17,6 +17,8 @@ const TRANSIENT_DB_ERROR_PATTERNS = [
   'timeout exceeded when trying to connect',
   'connection terminated',
   'connection ended unexpectedly',
+  'connection_closed',
+  'connect_timeout',
   'econnreset',
   'econnrefused',
   'etimedout',
@@ -25,6 +27,7 @@ const TRANSIENT_DB_ERROR_PATTERNS = [
   'eai_again',
   'socket hang up',
   'terminating connection due to administrator command',
+  'ssl connection has been closed unexpectedly',
 ];
 
 /** pg-boss emits plain objects as well as Errors, so read the message defensively. */

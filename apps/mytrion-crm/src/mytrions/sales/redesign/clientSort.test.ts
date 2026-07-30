@@ -2,7 +2,7 @@
  * Data Center → Clients ordering: debtors first, then Gold → Silver → Bronze → Building → No cards.
  */
 import { describe, expect, it } from 'vitest';
-import { resolveTier } from '../../_shared/loyalty';
+import { resolveTier, resolveTierForRow } from '../../_shared/loyalty';
 import { compareClients, type SortableClient } from './clientSort';
 
 /** A client whose tier resolves to `bucket`, using real thresholds rather than a faked TierResult. */
@@ -10,8 +10,15 @@ function client(name: string, bucket: string, owed = 0): SortableClient {
   // T1 (1 card) thresholds: bronze 1100, silver 1500, gold 2000.
   const gallons =
     bucket === 'gold' ? 2500 : bucket === 'silver' ? 1600 : bucket === 'bronze' ? 1200 : 200;
-  const cards = bucket === 'idle' ? 0 : 1;
-  return { name, owed, tier: resolveTier(cards, gallons) };
+  const tier =
+    bucket === 'building'
+      ? resolveTierForRow({
+          activeCardsPrevMonth: 0,
+          activeCardsThisMonth: 1,
+          inNetworkGallonsThisMonth: gallons,
+        })
+      : resolveTier(1, gallons);
+  return { name, owed, tier };
 }
 
 const order = (cs: SortableClient[]) => [...cs].sort(compareClients).map((c) => c.name);

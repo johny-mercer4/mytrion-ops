@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
-import { getSession } from '../api/session';
+import { getSession, SESSION_CHANGED_EVENT } from '../api/session';
 import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
@@ -103,6 +103,19 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, [state.phase]);
+
+  // A definitively rejected refresh token clears the stored session. React previously kept the
+  // stale in-memory user alive, so every HR panel continued issuing 401 requests until a manual
+  // reload. Follow same-tab session changes and cross-tab storage changes back to the login gate.
+  useEffect(() => {
+    const syncSession = (): void => setState(syncBootState());
+    window.addEventListener(SESSION_CHANGED_EVENT, syncSession);
+    window.addEventListener('storage', syncSession);
+    return () => {
+      window.removeEventListener(SESSION_CHANGED_EVENT, syncSession);
+      window.removeEventListener('storage', syncSession);
+    };
+  }, []);
 
   const reloadFromSession = useCallback((): void => {
     setState(syncBootState());

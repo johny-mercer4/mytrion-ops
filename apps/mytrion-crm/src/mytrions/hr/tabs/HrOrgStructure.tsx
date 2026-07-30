@@ -1,5 +1,16 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Building2, Maximize2, Minimize2, Network, RefreshCw, UserPlus, X } from 'lucide-react';
+import {
+  Building2,
+  EyeOff,
+  Maximize2,
+  Minimize2,
+  Network,
+  RefreshCw,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
 import type { HrDepartmentDto, HrEmployeeDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
@@ -15,7 +26,12 @@ import {
   useHrDirectory,
   useHrOrgStructure,
 } from '../hrData';
-import { HrBusy, HrEmpty, HrHeadActionsSkeleton, HrPageHead, HrToolbarSkeleton } from '../HrBits';
+import {
+  HrEmpty,
+  HrPageLoader,
+  HrPageHead,
+  HrSummaryTiles,
+} from '../HrBits';
 
 /**
  * HR → Org Structure. A React Flow canvas, top-to-bottom, built from `hr_departments.parent_id`,
@@ -138,11 +154,8 @@ export function HrOrgStructure() {
       <HrPageHead
         tab="org"
         actions={
-          firstLoad ? (
-            <HrHeadActionsSkeleton buttons={2} />
-          ) : (
+          firstLoad ? null : (
             <>
-              {org.revalidating ? <HrBusy label="Refreshing" /> : null}
               <button
                 type="button"
                 className="hr-btn"
@@ -165,21 +178,8 @@ export function HrOrgStructure() {
         }
       />
 
-      {firstLoad ? (
-        <HrToolbarSkeleton slots={2} />
-      ) : (
+      {!firstLoad ? (
         <div className="hr-toolbar">
-          <div className="hr-summary">
-            <strong>{org.data?.departmentCount ?? 0}</strong> departments ·{' '}
-            <strong>{org.data?.employeeLinkedCount ?? 0}</strong> linked ·{' '}
-            <strong>{org.data?.employeeUnlinkedCount ?? 0}</strong> unassigned
-            {hiddenCount > 0 ? (
-              <>
-                {' · '}
-                <strong>{hiddenCount}</strong> collapsed
-              </>
-            ) : null}
-          </div>
           <div className="hr-chips" role="group" aria-label="Canvas options">
             <button
               type="button"
@@ -192,11 +192,47 @@ export function HrOrgStructure() {
           </div>
           <p className="hr-hint">
             {admin
-              ? 'Drag a node onto another to re-parent it · drag from the bottom handle to link · “+” adds under a node · double-click to open'
-              : 'Double-click a node to open it. Changing the structure needs Mytrion Admin.'}
+              ? 'Click a node to open it · drag onto another to re-parent · “+” adds under a node · chevron expands staff'
+              : 'Click a node to open details. Changing the structure needs Mytrion Admin.'}
           </p>
         </div>
-      )}
+      ) : null}
+
+      {!firstLoad ? (
+        <HrSummaryTiles
+          label="Organization structure summary"
+          items={[
+            {
+              label: 'Departments',
+              value: org.data?.departmentCount ?? 0,
+              detail: 'Organizational units in the chart',
+              icon: <Building2 size={19} />,
+              tone: 'var(--tone-violet)',
+            },
+            {
+              label: 'Linked employees',
+              value: org.data?.employeeLinkedCount ?? 0,
+              detail: 'Placed in the reporting structure',
+              icon: <Users size={19} />,
+              tone: 'var(--success)',
+            },
+            {
+              label: 'Needs assignment',
+              value: org.data?.employeeUnlinkedCount ?? 0,
+              detail: 'Not connected to the chart',
+              icon: <UserMinus size={19} />,
+              tone: 'var(--warning)',
+            },
+            {
+              label: 'Collapsed people',
+              value: hiddenCount,
+              detail: 'Hidden under folded nodes',
+              icon: <EyeOff size={19} />,
+              tone: 'var(--tone-blue)',
+            },
+          ]}
+        />
+      ) : null}
 
       {error || org.error ? (
         <p className="hr-banner-error" role="alert">
@@ -205,24 +241,7 @@ export function HrOrgStructure() {
       ) : null}
 
       {firstLoad ? (
-        <div className="hr-ocanvas hr-ocanvas-loading" aria-busy="true" aria-label="Loading org chart">
-          {/* One loader: a canvas-shaped pane with node-shaped placeholders, so the chart does not
-              appear to jump into existence from a spinner. */}
-          <div className="hr-osk-row">
-            <span className="hr-sk hr-osk-dept" />
-          </div>
-          <div className="hr-osk-row">
-            <span className="hr-sk hr-osk-dept" />
-            <span className="hr-sk hr-osk-dept" />
-            <span className="hr-sk hr-osk-dept" />
-          </div>
-          <div className="hr-osk-row">
-            <span className="hr-sk hr-osk-emp" />
-            <span className="hr-sk hr-osk-emp" />
-            <span className="hr-sk hr-osk-emp" />
-            <span className="hr-sk hr-osk-emp" />
-          </div>
-        </div>
+        <HrPageLoader label="Building organization chart…" />
       ) : !org.data || !hasGraph ? (
         <HrEmpty
           icon={<Network size={26} />}

@@ -91,7 +91,9 @@ export async function refreshBearer(): Promise<boolean> {
       setSession({
         accessToken: json.accessToken,
         refreshToken: json.refreshToken,
-        worker: json.worker ?? s.worker,
+        // Refresh responses intentionally carry only the verified Zoho identity. Preserve the
+        // DB-resolved access fields already held by the session until /auth/me refreshes them.
+        worker: json.worker ? { ...s.worker, ...json.worker } : s.worker,
       });
       return true;
     } catch {

@@ -51,12 +51,15 @@ export async function resolveAttendanceTeam(
   const canViewAll = canViewAllAttendance(ctx);
   const query = q.trim().toLowerCase();
 
-  const directs = await hrEmployeeRepo.listByReportingTo(ctx, selfEmployeeId, {
-    status: 'Active',
-  });
+  // Elevated viewers may have no linked employee row — skip reportee / lead lookups.
+  const directs = selfEmployeeId
+    ? await hrEmployeeRepo.listByReportingTo(ctx, selfEmployeeId, { status: 'Active' })
+    : [];
   const directIds = new Set(directs.map((e) => e.id));
 
-  const ledDeptIds = await hrDepartmentRepo.listIdsLedBy(ctx, selfEmployeeId);
+  const ledDeptIds = selfEmployeeId
+    ? await hrDepartmentRepo.listIdsLedBy(ctx, selfEmployeeId)
+    : [];
   const deptMembers = await hrEmployeeRepo.listByDepartmentIds(ctx, ledDeptIds, {
     status: 'Active',
   });
@@ -118,4 +121,25 @@ export async function assertCanViewEmployeeAttendance(
   const team = await resolveAttendanceTeam(ctx, selfEmployeeId, 'all');
   if (team.items.some((m) => m.employee.id === targetEmployeeId)) return;
   throw new RBACError('You can only view attendance for your team');
+}
+
+/**
+ * Shift assignment scope.
+ *
+ * HR Manager/Admin may assign anyone. A regular department manager may assign direct reports and
+ * members of departments they lead, but not themselves or an unrelated employee. Kept separate
+ * from the view assertion so a manager cannot turn "My Data" access into a self-assignment write.
+ */
+export async function assertCanAssignEmployeeShift(
+  ctx: TenantContext,
+  selfEmployeeId: string,
+  targetEmployeeId: string,
+): Promise<void> {
+  if (canViewAllAttendance(ctx)) return;
+  if (targetEmployeeId === selfEmployeeId) {
+    throw new RBACError('Department managers cannot assign their own shift');
+  }
+  const team = await resolveAttendanceTeam(ctx, selfEmployeeId, 'all');
+  if (team.items.some((member) => member.employee.id === targetEmployeeId)) return;
+  throw new RBACError('You can only assign shifts to employees in your managed team');
 }

@@ -18,13 +18,29 @@ vi.mock('../../src/integrations/dwhClientRoster.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/dwhClientRoster.js')>();
   return { ...mod, fetchAllClients: vi.fn(async () => []) };
 });
+vi.mock('../../src/repos/loyaltyClientOverrideRepo.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/repos/loyaltyClientOverrideRepo.js')>();
+  return {
+    ...mod,
+    loyaltyClientOverrideRepo: {
+      ...mod.loyaltyClientOverrideRepo,
+      list: vi.fn(async () => []),
+      upsert: vi.fn(),
+      remove: vi.fn(async () => false),
+    },
+  };
+});
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { fetchAllClients } from '../../src/integrations/dwhClientRoster.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { loyaltyClientOverrideRepo } from '../../src/repos/loyaltyClientOverrideRepo.js';
 
 const rosterMock = vi.mocked(fetchAllClients);
+const overrideListMock = vi.mocked(loyaltyClientOverrideRepo.list);
+const overrideUpsertMock = vi.mocked(loyaltyClientOverrideRepo.upsert);
+const overrideRemoveMock = vi.mocked(loyaltyClientOverrideRepo.remove);
 
 const SAMPLE = {
   carrierId: '5794015',
@@ -34,6 +50,7 @@ const SAMPLE = {
   phone: '3033195965',
   producedCards: 230,
   activeCards: 85,
+  lastTierName: 'Gold',
   moneyCode: '3680',
   dot: '2959232',
   trucks: 1,
@@ -43,9 +60,11 @@ const SAMPLE = {
   computedDebtDays: 98,
   cycleGallons: 2712.5,
   gallonsThisMonth: 93171.08,
+  inNetworkGallonsThisMonth: 90000,
   activeCardsThisMonth: 70,
   transactionsThisMonth: 902,
   gallonsPrevMonth: 117186.96,
+  inNetworkGallonsPrevMonth: 112000,
   activeCardsPrevMonth: 67,
 };
 
@@ -60,6 +79,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   rosterMock.mockResolvedValue([]);
+  overrideListMock.mockResolvedValue([]);
 });
 
 /** A verified worker session. `profile` drives the department grant (substring match). */
@@ -103,7 +123,11 @@ describe('loyalty roster is management-gated', () => {
     const token = await workerToken('Management');
     const res = await app.inject({ method: 'GET', url: LOYALTY_URL, headers: bearer(token) });
     expect(res.statusCode).toBe(200);
-    const body = res.json() as { total: number; fetchedAt: string; clients: Record<string, unknown>[] };
+    const body = res.json() as {
+      total: number;
+      fetchedAt: string;
+      clients: Record<string, unknown>[];
+    };
     expect(body.total).toBe(1);
     expect(typeof body.fetchedAt).toBe('string');
     expect(rosterMock).toHaveBeenCalledTimes(1);
@@ -116,10 +140,7 @@ describe('header elevation cannot open the loyalty roster', () => {
   const attacks: Array<[string, Record<string, string>]> = [
     ['x-department-access: management', { 'x-department-access': 'management' }],
     ['x-all-departments: true', { 'x-all-departments': 'true' }],
-    [
-      'both headers at once',
-      { 'x-department-access': 'management', 'x-all-departments': 'true' },
-    ],
+    ['both headers at once', { 'x-department-access': 'management', 'x-all-departments': 'true' }],
   ];
 
   for (const [label, headers] of attacks) {
@@ -158,26 +179,112 @@ describe('the trimmed projection never leaks Clients-tab fields', () => {
         'cycleGallons',
         'gallonsPrevMonth',
         'gallonsThisMonth',
-        // The TRACK basis since 2026-07-29: declared fleet size, where 1 truck = Owner-Operator.
+        'inNetworkGallonsPrevMonth',
+        'inNetworkGallonsThisMonth',
+        'lastTierName',
+        'loyaltyOverride',
+        // Declared trucks remain reference context; the track uses closed-month transacting cards.
         'trucks',
       ].sort(),
     );
     // Absent: financial / PII columns that belong to Data Center → Clients, not the loyalty board.
-    for (const leaked of ['computedDebt', 'computedDebtDays', 'phone', 'dot', 'moneyCode', 'contact']) {
+    for (const leaked of [
+      'computedDebt',
+      'computedDebtDays',
+      'phone',
+      'dot',
+      'moneyCode',
+      'contact',
+    ]) {
       expect(row).not.toHaveProperty(leaked);
     }
   });
 
-  it('orders by the tier gallons basis, heaviest first', async () => {
+  it('orders by closed-month in-network tier gallons, heaviest first', async () => {
     rosterMock.mockResolvedValue([
-      { ...SAMPLE, carrierId: 'a', companyName: 'Small', gallonsThisMonth: 100, cycleGallons: 0 },
-      { ...SAMPLE, carrierId: 'b', companyName: 'Biggest', gallonsThisMonth: 9000, cycleGallons: 0 },
-      // No pumps this month → the cycle figure is the basis, so this sorts between the two.
-      { ...SAMPLE, carrierId: 'c', companyName: 'Cycle only', gallonsThisMonth: 0, cycleGallons: 4000 },
+      { ...SAMPLE, carrierId: 'a', companyName: 'Small', inNetworkGallonsPrevMonth: 100 },
+      { ...SAMPLE, carrierId: 'b', companyName: 'Biggest', inNetworkGallonsPrevMonth: 9000 },
+      { ...SAMPLE, carrierId: 'c', companyName: 'Medium', inNetworkGallonsPrevMonth: 4000 },
     ]);
     const token = await workerToken('Management');
     const res = await app.inject({ method: 'GET', url: LOYALTY_URL, headers: bearer(token) });
     const rows = (res.json() as { clients: { carrierId: string }[] }).clients;
     expect(rows.map((r) => r.carrierId)).toEqual(['b', 'c', 'a']);
+  });
+});
+
+describe('per-client loyalty controls', () => {
+  const URL = '/v1/manager/loyalty/clients/5794015/rewards';
+
+  it('saves an audited reward checklist and Enterprise target for a management user', async () => {
+    const updatedAt = new Date('2026-07-31T12:00:00Z');
+    overrideUpsertMock.mockResolvedValue({
+      id: 'lco_test',
+      tenantId: DEFAULT_TENANT_ID,
+      carrierId: '5794015',
+      companyName: 'KBUFF TRUCKING LTD',
+      enterpriseMode: 'volume_target',
+      enterpriseGoldTargetGallons: '23000.00',
+      enabledRewardIds: ['transaction_fee_waiver', 'loves_rebate'],
+      note: 'Contract exception',
+      updatedBy: 'Robiya',
+      createdAt: updatedAt,
+      updatedAt,
+    });
+    const token = await workerToken('Management');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: URL,
+      headers: bearer(token),
+      payload: {
+        companyName: 'KBUFF TRUCKING LTD',
+        enterpriseMode: 'volume_target',
+        enterpriseGoldTargetGallons: 23000,
+        enabledRewardIds: ['transaction_fee_waiver', 'loves_rebate'],
+        note: 'Contract exception',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(overrideUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      expect.objectContaining({
+        carrierId: '5794015',
+        enterpriseGoldTargetGallons: '23000.00',
+        enabledRewardIds: ['transaction_fee_waiver', 'loves_rebate'],
+      }),
+    );
+    expect(res.json()).toMatchObject({
+      override: {
+        carrierId: '5794015',
+        enterpriseGoldTargetGallons: 23000,
+        enabledRewardIds: ['transaction_fee_waiver', 'loves_rebate'],
+      },
+    });
+  });
+
+  it('resets the carrier to the automatic program', async () => {
+    overrideRemoveMock.mockResolvedValue(true);
+    const token = await workerToken('Management');
+    const res = await app.inject({ method: 'DELETE', url: URL, headers: bearer(token) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ removed: true });
+  });
+
+  it('rejects a volume target without a positive gallon target', async () => {
+    const token = await workerToken('Management');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: URL,
+      headers: bearer(token),
+      payload: {
+        companyName: 'KBUFF TRUCKING LTD',
+        enterpriseMode: 'volume_target',
+        enterpriseGoldTargetGallons: null,
+        enabledRewardIds: null,
+        note: null,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(overrideUpsertMock).not.toHaveBeenCalled();
   });
 });

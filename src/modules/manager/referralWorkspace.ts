@@ -19,8 +19,7 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
 import { REFERRAL_BONUS_SPEC_BY_TYPE, type ReferralBonusSpec } from './referralBonusTypes.js';
 import {
-  fetchReferralAssociations,
-  fetchReferralRecords,
+  fetchReferralCalculationRecords,
   type ReferralAssociations,
   type ReferralRecordsResult,
 } from './referralRecords.js';
@@ -141,16 +140,21 @@ async function loadVolumeBySpec(
   targets: ReturnType<typeof resolveReferralTargets>['targets'],
   periodMonth: string,
 ): Promise<Map<string, Map<number, ReferralCarrierVolume>>> {
-  const bySpec = new Map<string, Map<number, ReferralCarrierVolume>>();
   const carrierIds = [...new Set(targets.map((target) => target.carrierId))];
   const types = new Set(targets.map((target) => target.bonusType));
+  const specs = new Map<string, ReferralBonusSpec>();
   for (const type of types) {
     const spec = REFERRAL_BONUS_SPEC_BY_TYPE[type];
     const key = specKey(spec);
-    if (bySpec.has(key)) continue;
-    bySpec.set(key, await fetchReferralVolume(carrierIds, periodMonth, spec.fuelCodes));
+    if (!specs.has(key)) specs.set(key, spec);
   }
-  return bySpec;
+  const entries = await Promise.all(
+    [...specs.entries()].map(async ([key, spec]) => {
+      const volume = await fetchReferralVolume(carrierIds, periodMonth, spec.fuelCodes);
+      return [key, volume] as const;
+    }),
+  );
+  return new Map(entries);
 }
 
 /** Build the complete card + modal payload for one calendar month. Read-only. */
@@ -158,12 +162,11 @@ export async function fetchReferralWorkspace(
   ctx: TenantContext,
   periodMonth: string,
 ): Promise<ReferralWorkspaceResult> {
-  const [parents, children, associations, priorClaims] = await Promise.all([
-    fetchReferralRecords('parents'),
-    fetchReferralRecords('children'),
-    fetchReferralAssociations(),
-    referralBonusRepo.listOneTimeClaims(ctx),
+  const [records, priorClaims] = await Promise.all([
+    fetchReferralCalculationRecords(),
+    referralBonusRepo.listOneTimeClaims(ctx, periodMonth),
   ]);
+  const { parents, children, associations } = records;
   const parentSources = parents.rows.map(parentSource);
   const childSources = children.rows.map(childSource);
   const dealSources = associations.deals.rows.map(dealSource);
@@ -180,7 +183,6 @@ export async function fetchReferralWorkspace(
       .filter((claim) => isClaimedStatus(claim.status))
       .map((claim) => [`${claim.childReferralId}:${claim.bonusType}`, claim]),
   );
-
   const previews: ReferralCalculationPreview[] = resolution.targets.map((target) => {
     const spec = REFERRAL_BONUS_SPEC_BY_TYPE[target.bonusType];
     const volume = volumeBySpec.get(specKey(spec))?.get(target.carrierId) ?? {

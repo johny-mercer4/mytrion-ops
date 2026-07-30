@@ -2,7 +2,9 @@
  * Build team attendance list rows (week totals per visible employee).
  */
 import type { TenantContext } from '../../../types/tenantContext.js';
-import { buildAttendanceSummary } from './summary.js';
+import { hrAttendancePunchRepo } from '../../../repos/hrAttendancePunchRepo.js';
+import { hrAttendanceShiftRepo } from '../../../repos/hrAttendanceShiftRepo.js';
+import { buildAttendanceSummaryFromRecords } from './summary.js';
 import {
   resolveAttendanceTeam,
   type AttendanceTeamRelation,
@@ -30,12 +32,15 @@ export interface AttendanceTeamListItem {
     present: number;
     weekend: number;
     absent: number;
+    unscheduled: number;
   };
   lastPunch: {
     kind: string;
     punchedAt: string;
+    localDateTime: string;
     doorName: string | null;
   } | null;
+  currentState: 'in_office' | 'out_of_office' | 'no_activity';
 }
 
 export interface AttendanceTeamList {
@@ -44,6 +49,7 @@ export interface AttendanceTeamList {
   scope: AttendanceTeamScope;
   canViewAll: boolean;
   counts: { direct: number; all: number };
+  unmappedPunches: number;
   items: AttendanceTeamListItem[];
 }
 
@@ -57,11 +63,30 @@ export async function buildAttendanceTeamList(
 ): Promise<AttendanceTeamList> {
   const team = await resolveAttendanceTeam(ctx, selfEmployeeId, scope, q);
   const items: AttendanceTeamListItem[] = [];
+  const employeeIds = team.items.map((member) => member.employee.id);
+  const [rangePunches, assignments, latestPunches] = await Promise.all([
+    hrAttendancePunchRepo.listForEmployeesRange(ctx, employeeIds, from, to),
+    hrAttendanceShiftRepo.assignmentsForEmployeesDate(ctx, employeeIds, to),
+    hrAttendancePunchRepo.lastForEmployees(ctx, employeeIds),
+  ]);
+  const punchesByEmployee = new Map<string, typeof rangePunches>();
+  for (const punch of rangePunches) {
+    if (!punch.employeeId) continue;
+    const employeePunches = punchesByEmployee.get(punch.employeeId) ?? [];
+    employeePunches.push(punch);
+    punchesByEmployee.set(punch.employeeId, employeePunches);
+  }
 
-  // Sequential on purpose — keeps DB load predictable for directory-sized teams.
   for (const member of team.items) {
-    const summary = await buildAttendanceSummary(ctx, member.employee.id, from, to);
     const e = member.employee;
+    const summary = buildAttendanceSummaryFromRecords(
+      e.id,
+      from,
+      to,
+      punchesByEmployee.get(e.id) ?? [],
+      assignments.get(e.id),
+      latestPunches.get(e.id),
+    );
     items.push({
       employeeId: e.id,
       employeeCode: e.employeeId,
@@ -77,10 +102,16 @@ export async function buildAttendanceTeamList(
         present: summary.totals.present,
         weekend: summary.totals.weekend,
         absent: summary.totals.absent,
+        unscheduled: summary.totals.unscheduled,
       },
       lastPunch: summary.lastPunch,
+      currentState: summary.currentState,
     });
   }
+
+  const unmappedPunches = team.canViewAll
+    ? await hrAttendancePunchRepo.countUnmappedRange(ctx, from, to)
+    : 0;
 
   return {
     from,
@@ -88,6 +119,7 @@ export async function buildAttendanceTeamList(
     scope,
     canViewAll: team.canViewAll,
     counts: { direct: team.directCount, all: team.allCount },
+    unmappedPunches,
     items,
   };
 }

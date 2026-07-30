@@ -628,10 +628,14 @@
   }
 }
 
-.an-root :focus-visible {
+.an-root :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
   border-radius: var(--an-r-sm);
+}
+.an-root :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 /* ── Dashboard filter bar (agent / date params) ───────────────────────────── */

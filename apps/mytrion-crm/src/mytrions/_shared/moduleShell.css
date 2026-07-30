@@ -327,10 +327,14 @@
   cursor: not-allowed;
 }
 
-.ms-root :focus-visible {
+.ms-root :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
   border-radius: var(--ms-r-sm);
+}
+.ms-root :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -19,6 +19,7 @@ export const MYTRION_IDS = [
   'manager',
   'analyst',
   'hr',
+  'recruit',
   'trailhead',
   'customer-service',
 ] as const;
@@ -55,6 +56,7 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   manager: 'management',
   analyst: 'analytics',
   hr: 'hr',
+  recruit: 'recruit',
   trailhead: 'trailhead',
   'customer-service': 'customer-service',
 };
@@ -105,6 +107,8 @@ export const DEFAULT_PROFILE_SEED: ProfileDefaultSeed[] = [
   { profileName: 'Sales Assistant', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Referral Standard Plus', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Standard Plus', allowedMytrions: ['sales', 'billing'], homeMytrion: 'sales', allDepartmentAccess: false },
+  { profileName: 'HR', allowedMytrions: ['hr', 'recruit'], homeMytrion: 'hr', allDepartmentAccess: false },
+  { profileName: 'Recruiter', allowedMytrions: ['recruit'], homeMytrion: 'recruit', allDepartmentAccess: false },
   // CS Mytrion is Admin-grant only (Profile Defaults / per-user override) — not role substring.
   // Customer Retention is the intentional CS-facing profile default; edit in Admin as needed.
   {

@@ -9,21 +9,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type OneTimeClaim = {
   bonusType: 'gallons_parent' | 'gallons_child';
+  periodMonth?: string;
   carrierId: number | null;
   childReferralId: string;
   status: 'calculated' | 'approved' | 'paid' | 'void';
 };
 
-const { coqlMock, volumeMock, upsertMock, startRunMock, finishRunMock, claimsMock } = vi.hoisted(
-  () => ({
+const { coqlMock, volumeMock, upsertMock, startRunMock, finishRunMock, claimsMock } =
+  vi.hoisted(() => ({
     coqlMock: vi.fn(),
     volumeMock: vi.fn(),
     upsertMock: vi.fn(async (_ctx: unknown, input: Record<string, unknown>) => input),
     startRunMock: vi.fn(async () => ({ id: 'run_1' })),
     finishRunMock: vi.fn(async () => undefined),
     claimsMock: vi.fn(async (): Promise<OneTimeClaim[]> => []),
-  }),
-);
+  }));
 
 vi.mock('../../src/integrations/zohoCrm.js', () => ({
   zohoCrm: {
@@ -237,6 +237,29 @@ describe('the four logics', () => {
     });
     expect(s.rowsWritten).toBe(1);
     expect(s.amountTotalUsd).toBe('25.00');
+  });
+
+  it('run total equals the sum of the saved cent-rounded ledger rows', async () => {
+    zoho(
+      [PARENT],
+      [
+        child({ id: 'C1', Calculation: 'Gallons (Legacy)' }),
+        child({ id: 'C2', Calculation: 'Gallons (Legacy)', Carrier_ID: '5799525' }),
+      ],
+    );
+    volume({
+      5799524: { gallons: 100.555, swipes: 0, cumulativeGallons: 100.555 },
+      5799525: { gallons: 100.555, swipes: 0, cumulativeGallons: 100.555 },
+    });
+
+    const summary = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
+
+    expect(upsertMock).toHaveBeenCalledTimes(2);
+    expect(upsertMock.mock.calls.map(([, input]) => input.amountUsd)).toEqual([
+      '1.01',
+      '1.01',
+    ]);
+    expect(summary.amountTotalUsd).toBe('2.02');
   });
 
   it('drives the logic from the PARENT when the child has no Calculation of its own', async () => {

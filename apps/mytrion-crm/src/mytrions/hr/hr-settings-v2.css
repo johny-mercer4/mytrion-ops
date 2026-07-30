@@ -1,0 +1,275 @@
+/* HR Settings — tabbed operator workspace. Same accent / type / input language as the rest of HR. */
+
+.hr-root .hr-settings-page {
+  width: min(1180px, 100%);
+  margin-inline: auto;
+  gap: 16px;
+}
+
+.hr-settings-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hr-settings-lede {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: 42rem;
+}
+
+.hr-settings-panes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+}
+
+.hr-settings-pane {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.hr-settings-pane.is-on {
+  background: var(--hz-pane, var(--surface));
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 12%, transparent);
+}
+
+.hr-settings-pane.is-on svg {
+  color: var(--accent);
+}
+
+.hr-root .hr-settings-card,
+.hr-settings-leave-wrap .hr-leave-settings {
+  max-width: none;
+  margin: 0;
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  border-radius: 14px;
+  background: var(--hz-pane, var(--surface));
+  box-shadow: none;
+  padding: 16px 18px;
+}
+
+.hr-settings-card-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.hr-settings-card-stack > .hr-settings-card {
+  margin: 0;
+}
+
+.hr-settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hr-settings-card-head span {
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hr-settings-card-head h3,
+.hr-root .hr-settings-card > h3 {
+  margin: 3px 0 0;
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hr-settings-card-head > svg {
+  color: var(--accent);
+}
+
+.hr-root .hr-settings-card > p {
+  max-width: 720px;
+  margin: 8px 0 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hr-root .hr-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hr-root .hr-settings-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin: 10px 0 12px;
+  border-top: 1px solid var(--hz-pane-bd, var(--border));
+  padding-top: 12px;
+}
+
+.hr-root .hr-settings-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.hr-root .hr-settings-form-grid input,
+.hr-root .hr-settings-form-grid select,
+.hr-settings-leave-wrap input:not([type='checkbox']),
+.hr-settings-leave-wrap select {
+  min-height: 36px;
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  border-radius: 9px;
+  background: var(--bg-primary, var(--surface));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  box-shadow: none;
+}
+
+.hr-root .hr-settings-form-grid input:focus,
+.hr-root .hr-settings-form-grid input:focus-visible,
+.hr-root .hr-settings-form-grid select:focus,
+.hr-root .hr-settings-form-grid select:focus-visible,
+.hr-settings-leave-wrap input:focus,
+.hr-settings-leave-wrap input:focus-visible,
+.hr-settings-leave-wrap select:focus,
+.hr-settings-leave-wrap select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: none;
+}
+
+.hr-root .hr-settings-ok {
+  margin: 10px 0 0;
+  color: var(--tone-emerald, var(--success));
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.hr-settings-leave-wrap {
+  min-width: 0;
+}
+
+.hr-zoho-link {
+  margin: 14px 0 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--hz-pane-bd, var(--border)));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--hz-pane-alt, transparent));
+  padding: 12px;
+}
+
+.hr-zoho-link-head,
+.hr-zoho-current,
+.hr-zoho-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hr-zoho-link-head > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.hr-zoho-link-head > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.hr-zoho-link strong,
+.hr-zoho-link small {
+  display: block;
+}
+
+.hr-zoho-link small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.hr-zoho-link-head em {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tone-emerald, var(--success));
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.hr-zoho-current,
+.hr-zoho-picker {
+  margin-top: 11px;
+  border-top: 1px solid var(--hz-pane-bd, var(--border));
+  padding-top: 11px;
+}
+
+.hr-zoho-current > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.hr-zoho-picker select {
+  min-width: 0;
+  flex: 1;
+  min-height: 36px;
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  border-radius: 9px;
+  background: var(--bg-primary, var(--surface));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  padding-inline: 10px;
+  outline: none;
+  box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .hr-settings-chrome {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hr-settings-panes {
+    width: 100%;
+  }
+
+  .hr-settings-pane {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .hr-root .hr-settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

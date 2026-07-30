@@ -7,7 +7,7 @@
  * (`admin/scope/Blueprint.tsx`).
  *
  * A node has three affordances, and they must not collide:
- *   the body      → opens the record (click)
+ *   the body      → opens the record (single click — handled on the canvas via onNodeClick)
  *   the chevron   → expands / collapses this subtree
  *   the "+"       → adds a child under this node
  * The last two `stopPropagation`, or expanding a department would also open its modal.
@@ -85,12 +85,7 @@ function AddButton({ id, kind }: { id: string; kind: 'department' | 'employee' }
   );
 }
 
-/**
- * Open-on-Enter, so a record is reachable without a mouse.
- *
- * React Flow already makes nodes focusable, but double-click was the ONLY way to open one — which is no
- * way at all for a keyboard or screen-reader user. Space is left alone: it pans the canvas.
- */
+/** Enter opens the record (canvas click is the mouse path). Space still pans. */
 function openKeyHandler(id: string, kind: 'department' | 'employee') {
   return (ev: React.KeyboardEvent): void => {
     if (ev.key !== 'Enter') return;
@@ -105,7 +100,6 @@ export function OrgDepartmentNode({ id, data, selected }: NodeProps<OrgDeptNode>
     <div
       className={`hr-onode is-dept${selected ? ' is-selected' : ''}`}
       style={{ ['--dc' as string]: departmentTone(data.tone) } as CSSProperties}
-      onDoubleClick={() => callbacks.onOpen(id, 'department')}
       onKeyDown={openKeyHandler(id, 'department')}
       role="group"
       aria-label={`${data.label} department, ${data.active} active. Enter to open.`}
@@ -147,7 +141,6 @@ export function OrgEmployeeNode({ id, data, selected }: NodeProps<OrgEmpNode>) {
   return (
     <div
       className={`hr-onode is-emp${selected ? ' is-selected' : ''}${terminated ? ' is-terminated' : ''}`}
-      onDoubleClick={() => callbacks.onOpen(id, 'employee')}
       onKeyDown={openKeyHandler(id, 'employee')}
       role="group"
       aria-label={`${data.label}${data.designation ? `, ${data.designation}` : ''}. Enter to open.`}

@@ -1,12 +1,19 @@
 /**
- * HR → Attendance: My Data (self) + Team (managers / HR Manager / Admin).
+ * HR → Attendance: My Data, Team (managers), and All (HR Manager / Admin).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { getMyAttendance, type AttendanceSummaryDto } from '../../../api/hr';
+import {
+  getMyAttendance,
+  type AttendanceSummaryDto,
+  type AttendanceTeamScope,
+} from '../../../api/hr';
+import { isAdmin } from '../../../access/resolveAccess';
+import { useUserContext } from '../../../context/UserContextProvider';
 import { HrAttendanceTeam } from '../HrAttendanceTeam';
 import { HrAttendanceWeek } from '../HrAttendanceWeek';
-import { HrBusy, HrEmpty, HrPageHead } from '../HrBits';
+import { HrEmpty, HrPageLoader, HrPageHead } from '../HrBits';
+import { tashkentToday, weekRangeContaining } from '../attendanceTime';
 
 function addDays(iso: string, delta: number): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -15,16 +22,34 @@ function addDays(iso: string, delta: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-type AttPane = 'me' | 'team';
+type AttPane = 'me' | 'team' | 'all';
+
+function canViewOrgAttendance(user: {
+  profile: string;
+  role: string;
+}): boolean {
+  return (
+    isAdmin(user) ||
+    user.profile.toLowerCase().includes('hr manager') ||
+    user.role.toLowerCase().includes('hr manager')
+  );
+}
 
 export function HrAttendance() {
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [pane, setPane] = useState<AttPane>('me');
+  const user = useUserContext();
+  const canViewOrganization = canViewOrgAttendance(user);
+  const today = useMemo(() => tashkentToday(), []);
+  const [pane, setPane] = useState<AttPane>(() =>
+    canViewOrganization ? 'all' : 'me',
+  );
   const [weekOf, setWeekOf] = useState(today);
   const [data, setData] = useState<AttendanceSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [teamKey, setTeamKey] = useState(0);
+
+  const teamScope: AttendanceTeamScope =
+    pane === 'all' || (!canViewOrganization && pane === 'team') ? 'all' : 'direct';
 
   const loadMe = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -45,7 +70,9 @@ export function HrAttendance() {
     void loadMe();
   }, [pane, loadMe]);
 
-  const rangeLabel = data ? `${data.from} — ${data.to}` : weekOf;
+  const weekRange = useMemo(() => weekRangeContaining(weekOf), [weekOf]);
+  const rangeLabel =
+    data && pane === 'me' ? `${data.from} — ${data.to}` : `${weekRange.from} — ${weekRange.to}`;
 
   return (
     <div className="hr-page">
@@ -67,51 +94,63 @@ export function HrAttendance() {
         }
       />
 
-      <div className="hr-att-panes" role="tablist" aria-label="Attendance views">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={pane === 'me'}
-          className={`hr-att-pane${pane === 'me' ? ' is-on' : ''}`}
-          onClick={() => setPane('me')}
-        >
-          My Data
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={pane === 'team'}
-          className={`hr-att-pane${pane === 'team' ? ' is-on' : ''}`}
-          onClick={() => setPane('team')}
-        >
-          Team
-        </button>
+      <div className="hr-att-chrome">
+        <div className="hr-att-panes" role="tablist" aria-label="Attendance views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pane === 'me'}
+            className={`hr-att-pane${pane === 'me' ? ' is-on' : ''}`}
+            onClick={() => setPane('me')}
+          >
+            My Data
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pane === 'team'}
+            className={`hr-att-pane${pane === 'team' ? ' is-on' : ''}`}
+            onClick={() => setPane('team')}
+          >
+            Team
+          </button>
+          {canViewOrganization ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={pane === 'all'}
+              className={`hr-att-pane${pane === 'all' ? ' is-on' : ''}`}
+              onClick={() => setPane('all')}
+            >
+              All
+            </button>
+          ) : null}
+        </div>
+
+        <div className="hr-att-weeknav">
+          <button
+            type="button"
+            className="hr-icon-btn"
+            aria-label="Previous week"
+            onClick={() => setWeekOf((w) => addDays(w, -7))}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="hr-att-weeklabel">{rangeLabel}</span>
+          <button
+            type="button"
+            className="hr-icon-btn"
+            aria-label="Next week"
+            onClick={() => setWeekOf((w) => addDays(w, 7))}
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
 
-      {pane === 'team' ? (
-        <HrAttendanceTeam key={teamKey} />
-      ) : (
+      {pane === 'me' ? (
         <>
-          <div className="hr-att-toolbar">
-            <div className="hr-att-weeknav">
-              <button
-                type="button"
-                className="hr-icon-btn"
-                aria-label="Previous week"
-                onClick={() => setWeekOf((w) => addDays(w, -7))}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="hr-att-weeklabel">{rangeLabel}</span>
-              <button
-                type="button"
-                className="hr-icon-btn"
-                aria-label="Next week"
-                onClick={() => setWeekOf((w) => addDays(w, 7))}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+          <div className="hr-att-toolbar hr-att-toolbar-me">
             {data?.shift ? (
               <div className="hr-att-shiftchip">
                 {data.shift.name}{' '}
@@ -131,17 +170,24 @@ export function HrAttendance() {
           ) : null}
 
           {loading && !data ? (
-            <HrBusy label="Loading attendance…" />
+            <HrPageLoader label="Loading attendance…" />
           ) : !data ? (
             <HrEmpty
               icon={<CalendarClock size={26} />}
               title="No attendance data"
-              body="Link your Zoho sign-in to an employee record (zoho user id), and ensure punches arrive via the FaceID webhook."
+              body="Link your Zoho sign-in to an employee record, and ensure Ganga punches are mapped to your profile."
             />
           ) : (
             <HrAttendanceWeek data={data} today={today} />
           )}
         </>
+      ) : (
+        <HrAttendanceTeam
+          key={`${pane}-${teamKey}`}
+          scope={teamScope}
+          weekOf={weekOf}
+          orgWide={pane === 'all'}
+        />
       )}
     </div>
   );

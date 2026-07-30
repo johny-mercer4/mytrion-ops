@@ -63,12 +63,13 @@ export interface AgentClientRow {
   phone: string;
   producedCards: number;
   activeCards: number;
+  /** Last persisted loyalty status from the warehouse, used only while a company is dormant. */
+  lastTierName: string;
   moneyCode: string;
   dot: string;
   /**
-   * Declared fleet size (`dim_company.trucks`, from the Zoho Deal "Trucks" field). `null` = UNKNOWN —
-   * the column is null for ~184 carriers and no carrier legitimately reports 0. This is the loyalty
-   * TRACK basis: 1 truck = Owner-Operator (see _shared/loyalty.ts).
+   * Declared fleet size (`dim_company.trucks`, from the Zoho Deal "Trucks" field). Reference context
+   * only: the loyalty track is determined by closed-month transacting cards.
    */
   trucks: number | null;
   isLocSuspended: boolean;
@@ -78,9 +79,13 @@ export interface AgentClientRow {
   /** This billing-cycle (26th→25th) gallons — the "Gallons · Cycle" figure. */
   cycleGallons: number;
   gallonsThisMonth: number;
+  /** This-month ULSR + ULSD gallons — progress toward next month's tier. */
+  inNetworkGallonsThisMonth: number;
   activeCardsThisMonth: number;
   transactionsThisMonth: number;
   gallonsPrevMonth: number;
+  /** Previous-month ULSR + ULSD gallons — the current tier's only volume basis. */
+  inNetworkGallonsPrevMonth: number;
   activeCardsPrevMonth: number;
 }
 
@@ -94,6 +99,7 @@ interface ClientDbRow {
   contact_phone: string | null;
   total_produced_cards: number | string | null;
   total_active_cards: number | string | null;
+  tier_name: string | null;
   deal_money_code: string | null;
   comdata_id: string | number | null;
   dot: string | number | null;
@@ -104,9 +110,11 @@ interface ClientDbRow {
   computed_debt_days: string | number | null;
   cycle_gallons: string | number | null;
   gallons_this_month: string | number | null;
+  in_network_gallons_this_month: string | number | null;
   active_cards_this_month: string | number | null;
   transactions_this_month: string | number | null;
   gallons_prev_month: string | number | null;
+  in_network_gallons_prev_month: string | number | null;
   active_cards_prev_month: string | number | null;
 }
 
@@ -144,7 +152,8 @@ const byName = (n: number): string => `lower(c.agent) = lower($${n})`;
 
 /** The dim_company columns the roster surfaces — selected identically in every owner-resolution arm. */
 const OWNED_COLS = `carrier_id, company_name, deal_full_name, agent, deal_phone, contact_phone,
-              total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, trucks, is_loc_suspended`;
+              total_produced_cards, total_active_cards, tier_name, deal_money_code, comdata_id, dot,
+              trucks, is_loc_suspended`;
 
 /** One owner-resolution arm: the newest dim row per carrier matching `pred`, selecting `cols`. */
 const ownedArm = (pred: string, cols: string = OWNED_COLS): string =>
@@ -221,12 +230,20 @@ async function runClientsQuery(ownedCteSql: string, binds: string[]): Promise<Cl
                 where t.transaction_date >= (select cycle_start from cyc)), 0) as cycle_gallons,
               coalesce(sum(t.line_item_fuel_quantity) filter (
                 where date_trunc('month', t.transaction_date) = date_trunc('month', current_date)), 0) as gallons_this_month,
+              coalesce(sum(t.line_item_fuel_quantity) filter (
+                where date_trunc('month', t.transaction_date) = date_trunc('month', current_date)
+                  and upper(trim(t.line_item_category)) in ('ULSD', 'ULSR')
+              ), 0) as in_network_gallons_this_month,
               count(distinct t.card_number) filter (
                 where date_trunc('month', t.transaction_date) = date_trunc('month', current_date)) as active_cards_this_month,
               count(distinct t.transaction_id) filter (
                 where date_trunc('month', t.transaction_date) = date_trunc('month', current_date)) as transactions_this_month,
               coalesce(sum(t.line_item_fuel_quantity) filter (
                 where date_trunc('month', t.transaction_date) = date_trunc('month', current_date - interval '1 month')), 0) as gallons_prev_month,
+              coalesce(sum(t.line_item_fuel_quantity) filter (
+                where date_trunc('month', t.transaction_date) = date_trunc('month', current_date - interval '1 month')
+                  and upper(trim(t.line_item_category)) in ('ULSD', 'ULSR')
+              ), 0) as in_network_gallons_prev_month,
               count(distinct t.card_number) filter (
                 where date_trunc('month', t.transaction_date) = date_trunc('month', current_date - interval '1 month')) as active_cards_prev_month
          from octane.mart_transaction_line_items t
@@ -237,16 +254,18 @@ async function runClientsQuery(ownedCteSql: string, binds: string[]): Promise<Cl
         group by t.carrier_id
      )
      select o.carrier_id, o.company_name, o.deal_full_name, o.agent, o.deal_phone, o.contact_phone,
-            o.total_produced_cards, o.total_active_cards, o.deal_money_code, o.comdata_id, o.dot,
+            o.total_produced_cards, o.total_active_cards, o.tier_name, o.deal_money_code, o.comdata_id, o.dot,
             o.trucks, o.is_loc_suspended,
             coalesce(g.last_tx >= now() - interval '${ACTIVE_DAYS} days', false) as computed_is_active,
             coalesce(d.debt, 0) as computed_debt,
             d.debt_days as computed_debt_days,
             coalesce(g.cycle_gallons, 0) as cycle_gallons,
             coalesce(g.gallons_this_month, 0) as gallons_this_month,
+            coalesce(g.in_network_gallons_this_month, 0) as in_network_gallons_this_month,
             coalesce(g.active_cards_this_month, 0) as active_cards_this_month,
             coalesce(g.transactions_this_month, 0) as transactions_this_month,
             coalesce(g.gallons_prev_month, 0) as gallons_prev_month,
+            coalesce(g.in_network_gallons_prev_month, 0) as in_network_gallons_prev_month,
             coalesce(g.active_cards_prev_month, 0) as active_cards_prev_month
        from owned o
        left join debt_cte d on d.carrier_id = o.carrier_id
@@ -268,6 +287,7 @@ function toClient(r: ClientDbRow): AgentClientRow {
     phone: dash(str(r.deal_phone) || str(r.contact_phone)),
     producedCards: num(r.total_produced_cards ?? r.total_active_cards),
     activeCards: num(r.total_active_cards),
+    lastTierName: str(r.tier_name),
     moneyCode: dash(str(r.deal_money_code) || str(r.comdata_id)),
     dot: dash(str(r.dot)),
     trucks: intOrNull(r.trucks),
@@ -277,9 +297,11 @@ function toClient(r: ClientDbRow): AgentClientRow {
     computedDebtDays: num(r.computed_debt_days),
     cycleGallons: num(r.cycle_gallons),
     gallonsThisMonth: num(r.gallons_this_month),
+    inNetworkGallonsThisMonth: num(r.in_network_gallons_this_month),
     activeCardsThisMonth: num(r.active_cards_this_month),
     transactionsThisMonth: num(r.transactions_this_month),
     gallonsPrevMonth: num(r.gallons_prev_month),
+    inNetworkGallonsPrevMonth: num(r.in_network_gallons_prev_month),
     activeCardsPrevMonth: num(r.active_cards_prev_month),
   };
 }
