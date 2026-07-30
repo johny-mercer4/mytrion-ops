@@ -2,14 +2,21 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { env } from '../../config/env.js';
-import { AppError, NotFoundError } from '../../lib/errors.js';
-import { audit } from '../../modules/audit/auditLogger.js';
+import { AppError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
+import { audit, auditFromContext } from '../../modules/audit/auditLogger.js';
 import { authService, toPublicUser } from '../../modules/auth/authService.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
+import { workerProfileRepo } from '../../repos/workerProfileRepo.js';
 import { requireContext } from './helpers.js';
+
+/** Client-resized profile pictures — keep the column small (no S3 dependency). */
+const AVATAR_DATA_URL = z
+  .string()
+  .max(400_000)
+  .regex(/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/]+=*$/i, 'Invalid image data URL');
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -158,19 +165,24 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     // but it's a users-table principal — it falls through to the userRepo lookup below.
     if (ctx.sessionVerified && ctx.userId.startsWith('zoho:')) {
       const zohoUserId = ctx.userId.replace(/^zoho:/, '');
-      const access = await mytrionAccessService.resolveWorkerAccess({
-        tenantId: ctx.tenantId,
-        zohoUserId,
-        profileName: ctx.profiles?.[0] ?? null,
-        zohoRole: ctx.callerRole ?? null,
-        userName: ctx.userName ?? null,
-      });
+      const [access, profile] = await Promise.all([
+        mytrionAccessService.resolveWorkerAccess({
+          tenantId: ctx.tenantId,
+          zohoUserId,
+          profileName: ctx.profiles?.[0] ?? null,
+          zohoRole: ctx.callerRole ?? null,
+          userName: ctx.userName ?? null,
+        }),
+        workerProfileRepo.getByZohoUserId(ctx, zohoUserId),
+      ]);
       return {
         worker: {
           zohoUserId,
           userName: ctx.userName ?? null,
+          email: ctx.email ?? null,
           profile: ctx.profiles?.[0] ?? null,
           role: ctx.callerRole ?? null,
+          avatarUrl: profile?.avatarDataUrl ?? null,
           allDepartmentAccess: access.allDepartmentAccess,
           accessibleMytrions: access.accessibleMytrions,
           homeMytrion: access.homeMytrion,
@@ -183,5 +195,37 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const user = await userRepo.findById(ctx, ctx.userId);
     if (!user) throw new NotFoundError('User not found');
     return { user: toPublicUser(user) };
+  });
+
+  /**
+   * Upload / clear the signed-in worker's profile picture.
+   *
+   * Body is a client-resized data-URL (not multipart) so we do not depend on FF_FILES / S3 for a
+   * small avatar. Only the session owner can write their own row — no admin override path here.
+   */
+  app.post('/auth/me/avatar', { onRequest: [app.authenticate] }, async (request) => {
+    const ctx = requireContext(request);
+    if (!ctx.sessionVerified || !ctx.userId.startsWith('zoho:')) {
+      throw new RBACError('Only Zoho-signed-in workers can set a profile picture');
+    }
+    const zohoUserId = ctx.userId.replace(/^zoho:/, '');
+    const body = z
+      .object({
+        /** Pass null to clear. */
+        dataUrl: AVATAR_DATA_URL.nullable(),
+      })
+      .parse(request.body ?? {});
+    if (body.dataUrl != null && body.dataUrl.length < 32) {
+      throw new ValidationError('Avatar data is too short');
+    }
+    const row = await workerProfileRepo.setAvatar(ctx, zohoUserId, body.dataUrl);
+    await auditFromContext(ctx, {
+      action: 'auth.avatar.update',
+      status: 'ok',
+      resourceType: 'worker_profile',
+      resourceId: row.id,
+      detail: { cleared: body.dataUrl == null },
+    });
+    return { avatarUrl: row.avatarDataUrl ?? null };
   });
 }

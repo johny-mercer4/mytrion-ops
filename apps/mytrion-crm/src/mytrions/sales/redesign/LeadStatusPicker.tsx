@@ -34,7 +34,7 @@ export function LeadStatusPicker({
               `display:flex;align-items:center;gap:9px;text-align:left;padding:10px 12px;border-radius:var(--radius-md);` +
                 `border:1px solid ${active ? color : 'var(--border)'};` +
                 `background:${active ? `color-mix(in srgb, ${color} 13%, var(--alt))` : 'var(--alt)'};` +
-                `color:${active ? color : 'var(--text)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`,
+                `color:${active ? color : 'var(--text)'};font-size:13px;font-weight:700;cursor:pointer;transition:all .14s`,
             )}
           >
             <span style={s(`display:flex;flex-shrink:0;color:${color}`)}>

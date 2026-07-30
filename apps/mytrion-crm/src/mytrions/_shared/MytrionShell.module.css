@@ -13,6 +13,51 @@
   min-height: 0;
 }
 
+/* ── Horizon skin ──────────────────────────────────────────────────────────────
+   Everything below is gated on [data-horizon='on'] (set per-module by horizonSkin.ts), so a module
+   that hasn't opted in renders exactly as it did before. The glass chrome needs the page itself to
+   be the dark/light Horizon field, otherwise translucent panels have nothing to blur. */
+
+.ambience {
+  display: none;
+}
+
+.shell[data-horizon='on'] {
+  position: relative; /* containing block for .ambience */
+  background: var(--hz-page);
+  isolation: isolate;
+}
+
+.shell[data-horizon='on'] .ambience {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--hz-mesh);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.shell[data-horizon='on'] .ambience::before,
+.shell[data-horizon='on'] .ambience::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.shell[data-horizon='on'] .ambience::before {
+  background-image: var(--hz-grid);
+  background-size: var(--hz-grid-size);
+}
+.shell[data-horizon='on'] .ambience::after {
+  background: var(--hz-vignette);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* The frame sits above the ambience; `position: relative` is what gives it a stacking context. */
+.shell[data-horizon='on'] .body {
+  position: relative;
+  z-index: 1;
+}
+
 /* left labeled sidebar: module items on top, Chat pinned to the bottom */
 .sidebar {
   width: 248px;
@@ -48,8 +93,14 @@
 }
 .navSearch:focus-within {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: none;
   color: var(--text-primary);
+}
+/* The wrapper above owns the focus treatment — the bare field must not paint its own ring on top.
+   See the exclusion block in styles/global.css. */
+.navSearch input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .navSearch input {
   flex: 1;
@@ -60,7 +111,7 @@
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: var(--text-sm);
+  font-size: var(--mytrion-nav-search-size, var(--text-sm));
 }
 .navSearch input::placeholder {
   color: var(--text-muted);
@@ -69,6 +120,76 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.navFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.userBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.userBtn:hover {
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+.userBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.userAvatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.userAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.userMeta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.userName {
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.userRole {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .navSection {
   display: flex;
@@ -82,7 +203,7 @@
 }
 .navSectionLabel {
   padding: 0 var(--space-3) var(--space-1);
-  font-size: 10px;
+  font-size: var(--mytrion-nav-section-size, 10px);
   font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -90,7 +211,7 @@
 }
 .navEmpty {
   padding: var(--space-3);
-  font-size: var(--text-xs);
+  font-size: var(--mytrion-nav-empty-size, var(--text-xs));
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -152,7 +273,7 @@
   height: 32px;
 }
 .navSubBtn .navLabel {
-  font-size: var(--text-xs);
+  font-size: var(--mytrion-nav-sub-size, var(--text-xs));
 }
 
 /* the selected sub-item — the one row in the sidebar that reads as current */
@@ -182,9 +303,23 @@
   justify-content: center;
   width: 20px;
   flex: none;
+  /* Per-item hue when the item declares `tone` (see NavItem); inherits otherwise, so modules that
+     don't set tones are unchanged. */
+  color: var(--nav-tone, currentColor);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+/* At rest the tint is held back so the column reads as one list; it comes up on hover and full on
+   the selected row. A sidebar of fifteen fully-saturated glyphs is a fruit salad. */
+.navBtn .navIcon {
+  opacity: 0.72;
+}
+.navBtn:hover .navIcon,
+.navActive .navIcon,
+.navOpen .navIcon {
+  opacity: 1;
 }
 .navLabel {
-  font-size: var(--text-sm);
+  font-size: var(--mytrion-nav-label-size, var(--text-sm));
   font-weight: var(--fw-medium);
   white-space: nowrap;
   overflow: hidden;
@@ -198,8 +333,118 @@
   overflow-y: auto;
   min-width: 0;
   background:
-    radial-gradient(900px 420px at 100% -8%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    radial-gradient(
+      900px 420px at 100% -8%,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 60%
+    ),
     var(--bg-primary);
+}
+
+/* ── Horizon skin: sidebar + tabs ─────────────────────────────────────────────
+   The sidebar becomes a frosted pane over the ambience, and the selected tab is the one place in
+   the frame that carries the full Horizon gradient. */
+
+.shell[data-horizon='on'] .sidebar {
+  background: var(--hz-glass);
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  border-right: 1px solid var(--hz-glass-bd);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease);
+}
+
+.shell[data-horizon='on'] .center {
+  /* Transparent so the ambience shows through; the panels themselves supply the surfaces. */
+  background: none;
+}
+
+/* Chat-as-view honours the same measure as the module's panels — it was the one tab that ran full
+   bleed, and over-long chat lines are harder to read, not easier. */
+.shell[data-horizon='on'] .chatView {
+  width: 100%;
+  max-width: var(--hz-measure);
+  margin: 0 auto;
+}
+
+.shell[data-horizon='on'] .navSearch {
+  background: var(--hz-glass);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  border-color: var(--hz-glass-bd);
+  transition:
+    border-color var(--dur-base) var(--hz-ease),
+    box-shadow var(--dur-base) var(--hz-ease),
+    background var(--dur-base) var(--hz-ease);
+}
+.shell[data-horizon='on'] .navSearch:focus-within {
+  background: var(--hz-glass-hover);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: none;
+}
+
+.shell[data-horizon='on'] .navBtn {
+  border: 1px solid transparent;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.shell[data-horizon='on'] .navBtn:hover {
+  background: var(--hz-glass-hover);
+  border-color: var(--hz-glass-bd-hover);
+  box-shadow: var(--hz-glass-inset);
+  transform: translateX(2px);
+}
+
+/* Selected tab: the Horizon ramp as a 2px rail plus the soft brand wash behind the row. The rail is
+   a ::after rather than an inset box-shadow because a gradient can't be a box-shadow colour. */
+.shell[data-horizon='on'] .navActive,
+.shell[data-horizon='on'] .navActive:hover {
+  background: var(--hz-gradient-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  box-shadow:
+    0 2px 14px -4px var(--accent-glow),
+    var(--hz-glass-inset);
+  transform: none;
+  overflow: hidden;
+}
+.shell[data-horizon='on'] .navActive::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+/* The glyph in the selected row glows in the accent, matching the picker's lit icon chip. */
+.shell[data-horizon='on'] .navActive .navIcon {
+  /* Glow in the item's own tone when it has one, so the halo matches the glyph. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--nav-tone, var(--accent)) 55%, transparent));
+}
+
+.shell[data-horizon='on'] .navSub {
+  border-left-color: var(--hz-glass-bd);
+}
+.shell[data-horizon='on'] .navSubActive,
+.shell[data-horizon='on'] .navSubActive:hover {
+  background: var(--hz-gradient-soft);
+  color: var(--accent);
+  transform: none;
+}
+.shell[data-horizon='on'] .navSubActive::before {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+
+.shell[data-horizon='on'] .navSection + .navSection {
+  border-top-color: var(--hz-glass-bd);
 }
 
 /* Chat-as-view: fill the center and neutralize the ChatPanel dock's fixed width + left border. */
@@ -261,6 +506,19 @@
   .navActive,
   .navActive:hover {
     box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  /* Horizontal tab strip on narrow screens — the gradient rail moves to the bottom edge. */
+  .shell[data-horizon='on'] .navBtn:hover {
+    transform: translateY(-1px);
+  }
+  .shell[data-horizon='on'] .navActive::after {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
   }
   .center {
     flex: none;

@@ -10,8 +10,14 @@ description: Zoho People API reference — OAuth/scopes, the three coexisting AP
 - **Base URL:** `zoho.baseUrl('zoho_people')` → env `ZOHO_PEOPLE_BASE_URL` (default `https://people.zoho.com/api`).
 - **Scopes:** `ZOHO_PEOPLE_REFRESH_TOKEN` minted with the People scopes in §1 (e.g. `ZOHOPEOPLE.forms.ALL`, `ZOHOPEOPLE.employee.ALL`, leave/attendance scopes).
 - **⚠️ Read §0 first:** Zoho People is **not one clean versioned API** — three styles coexist (legacy `forms/…`, `v2/…`, new `v3/…`) with different success envelopes (`status:0` vs `status:1` vs `"status":"success"`). Pick per-endpoint; this skill flags which.
-- **Our org's live forms/fields:** `pnpm meta:zoho-people` → `metadataScripts/output/zoho-people.{json,md}` (git-ignored).
+- **Metadata scripts** (forms = modules; field **apiName** = `labelname`, **dataType** = `comptype`):
+  - All modules + fields: `pnpm meta:zoho-people`
+  - One / many by name: `pnpm meta:zoho-people -- --module=employee` or `--module=employee,department`
+  - Names only: `pnpm meta:zoho-people -- --list`
+  - Bulk records (paginate `getRecords`): `pnpm meta:zoho-people-records -- --module=employee`
+  - Outputs under `metadataScripts/output/` (git-ignored).
 - **Wiring:** expose as `ToolManifest` tools → `toolDispatcher` (RBAC + department/`Administrator` gating).
+- **Live wrapper today:** [src/integrations/zohoPeople.ts](../../../src/integrations/zohoPeople.ts) — employee `getRecords` search only.
 
 ---
 

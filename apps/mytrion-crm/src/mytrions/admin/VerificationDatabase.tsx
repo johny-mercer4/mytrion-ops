@@ -9,6 +9,7 @@ export function VerificationDatabase() {
       title="Verification DB"
       subtitle="Live, read-only schema of the credit_platform Postgres — tables, columns, data types, keys and row estimates, for referencing the Sales Mytrion verification pipeline. Structure only; no row data is read. “Last updated” reflects the most recent vacuum/analyze (a proxy for recent writes — Postgres has no per-table write time)."
       load={getVerificationSchema}
+      errorHint="The credit_platform Postgres is a read-only replica. Check its connection URL and that the host is reachable from this machine."
       headerIcon={<DatabaseIcon size={14} />}
     />
   );

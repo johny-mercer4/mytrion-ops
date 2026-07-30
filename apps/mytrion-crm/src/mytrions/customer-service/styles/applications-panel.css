@@ -108,7 +108,7 @@
 
 .cs-root .cs-app-search:focus-within {
     border-color: var(--cs-accent);
-    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    box-shadow: none;
 }
 
 .cs-root .cs-app-search-icon {
@@ -503,7 +503,7 @@
 
 .cs-root .cs-form-input:focus {
     border-color: var(--cs-accent);
-    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    box-shadow: none;
 }
 
 .cs-root select.cs-form-input {
@@ -676,4 +676,24 @@
     .cs-root .cs-app-search { min-width: 0; flex: 1; width: 100%; }
     .cs-root .cs-app-toolbar { flex-direction: column; align-items: stretch; }
     .cs-root .cs-app-tab { flex: 1; margin-right: 0; }
+}
+
+/* ── Address cell — street above "City, ST ZIP" (QA feedback 2026-07-28) ─────
+   Two lines because the column is nowrap and a single full-address line ran too wide. Tight
+   leading keeps the row height unchanged. */
+.cs-root .cs-app-address {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    line-height: 1.25;
+}
+
+.cs-root .cs-app-address-street {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-app-address-locality {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
 }

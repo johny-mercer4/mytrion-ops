@@ -29,7 +29,18 @@ vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
 });
 vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoCrmRecords.js')>();
-  return { ...mod, zohoCrmRecords: { ...mod.zohoCrmRecords, updateRecord: vi.fn(async () => ({})) } };
+  // `zohoCrmRecords` is a CLASS INSTANCE — object-spreading it copies only own enumerable props, so
+  // every prototype method (getBlueprintTransitions, executeBlueprintTransition, getRecord, …) would
+  // become `undefined`. Calling one then throws a *synchronous* TypeError that the route's
+  // `.catch(() => [])` can never attach to, turning the post-call Status write into a bogus 500.
+  // Object.create keeps the real prototype chain; we shadow only what each test drives.
+  const stub = Object.create(mod.zohoCrmRecords) as typeof mod.zohoCrmRecords;
+  stub.updateRecord = vi.fn(async () => '555'); // resolves to the written record id
+  // Default: the lead is in no Blueprint, so Status goes through a plain updateRecord. Tests that
+  // exercise the Blueprint branch override this per-case.
+  stub.getBlueprintTransitions = vi.fn(async () => []);
+  stub.executeBlueprintTransition = vi.fn(async () => undefined);
+  return { ...mod, zohoCrmRecords: stub };
 });
 vi.mock('../../src/modules/customerService/fieldResolver.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/customerService/fieldResolver.js')>();
@@ -200,11 +211,14 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     carrierId: '123',
     companyName: 'Acme Trucking',
     contact: 'Jane Doe',
+    agentName: 'Robiya',
     phone: '555-0100',
     producedCards: 6,
     activeCards: 4,
     moneyCode: 'MC-1',
     dot: '12345',
+    // The loyalty TRACK basis (dim_company.trucks) — 1 truck = Owner-Operator.
+    trucks: 4,
     isLocSuspended: false,
     computedIsActive: true,
     computedDebt: 0,
@@ -381,6 +395,58 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(updateRecordMock).not.toHaveBeenCalled();
   });
 
+  // The branch that actually runs in prod: Sales leads ARE Blueprint-controlled, so `Status` cannot
+  // be written with a plain updateRecord — it must move through a Blueprint transition. Neither arm
+  // had coverage before (the class-instance mock made getBlueprintTransitions undefined).
+  it('a Blueprint-controlled lead moves Status via the transition, not updateRecord', async () => {
+    const transitionsMock = vi.mocked(zohoCrmRecords.getBlueprintTransitions);
+    const executeMock = vi.mocked(zohoCrmRecords.executeBlueprintTransition);
+    transitionsMock.mockResolvedValueOnce([
+      { id: 'tr-1', nextValue: 'Unqualified' },
+      { id: 'tr-2', nextValue: 'Follow-up' },
+    ] as Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintTransitions>>);
+
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Unqualified', Unqualified_Reason: 'No response' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // The reason picklist rides along as the transition's data …
+    expect(executeMock).toHaveBeenCalledWith(
+      'Leads',
+      '555',
+      'tr-1',
+      expect.objectContaining({ Unqualified_Reason: 'No response' }),
+    );
+    // … and Status is never pushed through a plain update (Zoho rejects that under a Blueprint).
+    for (const call of updateRecordMock.mock.calls) {
+      expect(call[2]).not.toHaveProperty('Status');
+    }
+  });
+
+  it('a Status the Blueprint does not currently allow → 422, naming the allowed moves', async () => {
+    vi.mocked(zohoCrmRecords.getBlueprintTransitions).mockResolvedValueOnce([
+      { id: 'tr-2', nextValue: 'Follow-up' },
+    ] as Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintTransitions>>);
+
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Unqualified' },
+    });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error?.code ?? res.json().code).toBe('BLUEPRINT_TRANSITION_INVALID');
+    expect(res.body).toContain('Follow-up');
+    expect(vi.mocked(zohoCrmRecords.executeBlueprintTransition)).not.toHaveBeenCalled();
+  });
+
   it('a non-numeric record id is rejected (400)', async () => {
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
@@ -515,6 +581,7 @@ describe('ringcentral embed-config — OAuth sign-in without a shared JWT', () =
     expect(res.statusCode).toBe(200);
     expect(res.json().enabled).toBe(true);
     expect(res.json().adapterUrl).toContain('clientId=rc-client-id');
+    expect(res.json().adapterUrl).toContain('multipleTabsSupport=1');
     expect(res.body).not.toContain('clientSecret=');
     expect(res.body).not.toContain('jwt=');
   });

@@ -1,11 +1,22 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
+import { horizonSkin } from './horizonSkin';
+import { UserProfileModal } from './UserProfileModal';
+import { UserTimeOffModal } from './UserTimeOffModal';
 import styles from './MytrionShell.module.css';
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
 
 export interface NavItem {
   key: string;
@@ -18,6 +29,12 @@ export interface NavItem {
   children?: NavItem[];
   /** Optional keywords for sidebar search (label is always searched). */
   keywords?: string[];
+  /**
+   * Optional per-item icon colour. A long categorised sidebar is much faster to scan when each
+   * destination has its own hue than when fifteen identical grey glyphs sit in a column. Applied as
+   * the `--nav-tone` custom property; the label stays on the text scale so only the glyph is tinted.
+   */
+  tone?: string;
 }
 
 export interface NavSection {
@@ -67,6 +84,7 @@ function NavItemButton({
         className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
           open && !chatView ? styles.navOpen : ''
         }`}
+        {...(item.tone ? { style: { '--nav-tone': item.tone } as CSSProperties } : {})}
         onClick={() => onSelect(item)}
       >
         <span className={styles.navIcon}>{item.icon}</span>
@@ -99,11 +117,18 @@ function NavItemButton({
 }
 
 /**
- * The Mytrion frame: TopBar + a body of [labeled sidebar | center content]. The department's scoped
- * AI chat is a sidebar item ("Chat") that takes over the center when selected — no longer a permanent
- * dock. `children` is the center content (the department's panels); `nav` is the module's items
- * (defaults to a single active Home item). Pass `navSections` for categorized Admin-style nav;
- * `enableNavSearch` adds a filter field above the list.
+ * The Mytrion frame: TopBar + a body of [labeled sidebar | center content]. `children` is the center
+ * content (the department's panels); `nav` is the module's items (defaults to a single active Home
+ * item). Pass `navSections` for categorized Admin-style nav; `enableNavSearch` adds a filter field
+ * above the list.
+ *
+ * CHAT LIVES IN ADMIN ONLY. The sidebar "Chat" item is opt-IN via `enableDockChat` and nothing opts
+ * in today, so no department Mytrion shows it. Admin's chat is not this dock at all — it renders
+ * `<ChatPanel variant="full" />` as its own page (mytrions/admin/index.tsx).
+ *
+ * The flag is inverted (opt-in) rather than a `disableDockChat` sprinkled across nine modules: with
+ * an opt-out default, every new Mytrion silently ships a chat dock unless its author remembers to
+ * turn it off, which is how it ended up on Analytics.
  */
 export function MytrionShell({
   id,
@@ -111,7 +136,7 @@ export function MytrionShell({
   nav,
   navSections,
   enableNavSearch = false,
-  disableDockChat = false,
+  enableDockChat = false,
 }: {
   id: MytrionId;
   children: ReactNode;
@@ -120,7 +145,11 @@ export function MytrionShell({
   navSections?: NavSection[];
   /** Show a search field that filters sidebar items by label / keywords. */
   enableNavSearch?: boolean;
-  disableDockChat?: boolean;
+  /**
+   * Opt IN to the sidebar chat item. Default off — see the note above. Turning this on for a
+   * department Mytrion re-exposes that department's scoped agent in the sidebar.
+   */
+  enableDockChat?: boolean;
 }) {
   const user = useUserContext();
   const m = MYTRIONS[id];
@@ -128,6 +157,8 @@ export function MytrionShell({
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [timeOffOpen, setTimeOffOpen] = useState(false);
   const flatFallback: NavItem[] = nav ?? [
     { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
   ];
@@ -137,6 +168,8 @@ export function MytrionShell({
   const q = navQuery.trim().toLowerCase();
   const visibleSections = filterSections(sections, q);
   const showSearch = enableNavSearch || Boolean(navSections?.length);
+  const displayName = user.userName.trim() || 'Account';
+  const roleLine = [user.profile, user.role].filter(Boolean).join(' · ');
 
   const select = (item: NavItem) => {
     setChatView(false);
@@ -144,8 +177,11 @@ export function MytrionShell({
   };
 
   return (
-    <div className={styles.shell} data-mytrion={id}>
+    <div className={styles.shell} data-mytrion={id} data-horizon={horizonSkin(id)}>
       <TopBar contextBadge={m.tag} showSwitch />
+      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
+          modules that haven't opted into the skin (see horizonSkin.ts). */}
+      <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
         <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
           <div className={styles.navTop}>
@@ -184,8 +220,23 @@ export function MytrionShell({
             </div>
           </div>
 
-          <div className={styles.navGroup}>
-            {!disableDockChat && (
+          <div className={styles.navFooter}>
+            <button
+              type="button"
+              title="My time off"
+              aria-label="Open My time off"
+              className={styles.navBtn}
+              onClick={() => {
+                setChatView(false);
+                setTimeOffOpen(true);
+              }}
+            >
+              <span className={styles.navIcon}>
+                <CalendarDays size={19} />
+              </span>
+              <span className={styles.navLabel}>Time Off</span>
+            </button>
+            {enableDockChat && (
               <button
                 type="button"
                 title="Chat"
@@ -199,6 +250,28 @@ export function MytrionShell({
                 <span className={styles.navLabel}>Chat</span>
               </button>
             )}
+            <button
+              type="button"
+              className={styles.userBtn}
+              title={`Open profile · ${displayName}`}
+              aria-label={`Open profile for ${displayName}`}
+              onClick={() => {
+                setChatView(false);
+                setProfileOpen(true);
+              }}
+            >
+              <span className={styles.userAvatar} aria-hidden="true">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" />
+                ) : (
+                  initials(displayName)
+                )}
+              </span>
+              <span className={styles.userMeta}>
+                <span className={styles.userName}>{displayName}</span>
+                {roleLine ? <span className={styles.userRole}>{roleLine}</span> : null}
+              </span>
+            </button>
           </div>
         </nav>
 
@@ -215,6 +288,8 @@ export function MytrionShell({
           )}
         </div>
       </div>
+      {profileOpen ? <UserProfileModal onClose={() => setProfileOpen(false)} /> : null}
+      {timeOffOpen ? <UserTimeOffModal onClose={() => setTimeOffOpen(false)} /> : null}
     </div>
   );
 }

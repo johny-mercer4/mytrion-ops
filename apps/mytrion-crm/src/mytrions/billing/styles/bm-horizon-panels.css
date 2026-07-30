@@ -1,0 +1,413 @@
+/* =====================================================
+   Billing Mytrion — Horizon glass: modals, detail level, and per-tab surfaces
+   bm-horizon.css defines the language; this maps the five panels' own classes onto it so Data
+   Center / Transactions / Debtors / Prepay / Returns are one system rather than five.
+
+   SAFETY: paint-only, same as bm-horizon.css. The one exception is `position: relative` added to
+   two elements that need a ::before rail — that does not reflow a block, and in both cases the
+   replaced border keeps its 3px so the box geometry is byte-identical.
+   ===================================================== */
+
+/* =====================================================
+   MODALS + DETAIL LEVEL
+   ===================================================== */
+.bm-root .bm-modal-backdrop {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.bm-root .bm-modal-box {
+    /* Required by the chromatic-edge ::after at the bottom of this file: without it the absolutely
+       positioned ring resolves against the fixed backdrop and covers the whole screen. */
+    position: relative;
+    /* Ramp along the top edge, as a background layer so it survives the body's internal scroll. */
+    background:
+        linear-gradient(90deg, var(--billing-accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
+        var(--hz-pane-lift);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border: 1px solid var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+}
+
+.bm-root .bm-modal-header {
+    border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+.bm-root .bm-modal-footer {
+    border-top: 1px solid var(--hz-pane-bd);
+    background: var(--hz-pane-alt);
+}
+
+.bm-root .bm-modal-close {
+    border-radius: var(--radius-sm);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-modal-close:hover {
+    background: var(--hz-glass-hover);
+    box-shadow: var(--hz-glass-inset);
+}
+
+.bm-root .bm-field-row {
+    border-bottom: 1px solid var(--hz-pane-bd);
+    transition: background var(--hz-dur-wash) var(--hz-ease);
+}
+/* A long key/value list is much easier to track with a row hover. */
+.bm-root .bm-field-row:hover {
+    background: var(--hz-glass-hover);
+}
+
+/* ── Transaction modal: source-tinted header keeps its hue, gains the glass treatment ── */
+.bm-root .tx-modal-accent-hdr {
+    border-bottom: 1px solid var(--hz-pane-bd);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Section titles: the 3px solid bar becomes the module ramp ──
+   border-left stays 3px (transparent) so the box geometry is unchanged; the ::before paints over it. */
+.bm-root .tx-detail-section-title,
+.bm-root .bm-section-title {
+    position: relative;
+}
+.bm-root .tx-detail-section-title {
+    border-left-color: transparent;
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--billing-accent) 12%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 5%, transparent) 100%
+    );
+    border-bottom-color: var(--hz-pane-bd);
+}
+.bm-root .tx-detail-section-title::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+}
+
+/* ── Cards inside modals ── */
+.bm-root .tx-invoice-card,
+.bm-root .dc-detail-invoice-card,
+.bm-root .db-invoice-card,
+.bm-root .tx-carrier-field-group,
+.bm-root .tx-split-section {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Proposed carrier chips: clickable, so they get the full interactive language ── */
+.bm-root .tx-proposed-chip {
+    border-radius: var(--radius-full);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .tx-proposed-chip:hover {
+    box-shadow: 0 4px 14px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Modal inputs ── */
+.bm-root .tx-carrier-input,
+.bm-root .chase-input,
+.bm-root .dc-edit-input {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .tx-carrier-input:focus,
+.bm-root .chase-input:focus,
+.bm-root .dc-edit-input:focus {
+    outline: none;
+    background: var(--hz-pane-lift);
+    border-color: var(--billing-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Modal action buttons ── */
+.bm-root .tx-topup-btn,
+.bm-root .tx-unmap-btn,
+.bm-root .tx-load-more-btn,
+.bm-root .db-export-btn,
+.bm-root .db-page-btn {
+    border-radius: var(--radius-md);
+    transition:
+        filter var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .tx-topup-btn:hover:not(:disabled),
+.bm-root .tx-load-more-btn:hover:not(:disabled),
+.bm-root .db-page-btn:hover:not(:disabled) {
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+.bm-root .db-export-btn:hover:not(:disabled) {
+    filter: saturate(1.08) brightness(1.05);
+    box-shadow:
+        0 8px 24px -6px color-mix(in srgb, var(--billing-success) 40%, transparent),
+        var(--hz-glass-inset-strong);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* =====================================================
+   PER-TAB SURFACES
+   ===================================================== */
+
+/* Every readable pane across the five panels. */
+.bm-root .dc-deals-table,
+.bm-root .db-kpi-card,
+.bm-root .db-danger-card,
+.bm-root .db-list-header,
+.bm-root .rt-kpi,
+.bm-root .rt-toolbar,
+.bm-root .pp-toolbar,
+.bm-root .tx-toolbar,
+.bm-root .dc-panel > .bm-table-wrap {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-md));
+    -webkit-backdrop-filter: blur(var(--hz-blur-md));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease),
+        transform var(--hz-dur-lift) var(--hz-ease);
+}
+
+/* KPI tiles lift; containers stay put. */
+.bm-root .db-kpi-card:hover,
+.bm-root .db-danger-card:hover,
+.bm-root .rt-kpi:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--billing-accent) 32%, var(--hz-pane-bd));
+    box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* The Returns KPI doubles as a filter, so its selected state is the ramp. */
+.bm-root .rt-kpi-active,
+.bm-root .rt-kpi-active:hover {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--billing-accent) 15%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--billing-accent) 42%, transparent);
+    box-shadow: 0 6px 20px -8px var(--billing-accent-glow), var(--hz-glass-inset);
+}
+
+/* ── Rows: one hover across every list in the module ─────────────────────── */
+.bm-root .dc-deal-row,
+.bm-root .tx-row,
+.bm-root .db-row-item,
+.bm-root .rt-row {
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .dc-deal-row:hover,
+.bm-root .tx-row:hover,
+.bm-root .db-row-item:hover,
+.bm-root .rt-row:hover {
+    background: var(--hz-glass-hover);
+}
+
+/* Stage progress bars take the ramp — a filling bar reads as travel toward the sunset. */
+.bm-root .dc-stage-bar > span,
+.bm-root .dc-stage-bar i,
+.bm-root .db-age-bar > span,
+.bm-root .db-age-bar i {
+    box-shadow: 0 0 10px -2px var(--billing-accent-glow);
+}
+
+/* ── Pills across panels ─────────────────────────────────────────────────── */
+.bm-root .rt-pill,
+.bm-root .db-status-badge,
+.bm-root .db-kpi-badge {
+    border-radius: var(--radius-full);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Returns: Match is the primary action on the row ─────────────────────── */
+.bm-root .rt-match-btn,
+.bm-root .rt-match-btn--lg {
+    border-radius: var(--radius-md);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        filter var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .rt-match-btn:hover:not(:disabled),
+.bm-root .rt-match-btn--lg:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--billing-accent) 50%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+.bm-root .rt-match-btn--solid {
+    background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+    color: var(--on-accent-solid);
+    border-color: transparent;
+    box-shadow: var(--hz-glass-inset-strong);
+}
+.bm-root .rt-match-btn--solid:hover:not(:disabled) {
+    filter: saturate(1.1) brightness(1.06);
+    box-shadow:
+        0 8px 24px -6px color-mix(in srgb, var(--billing-accent) 45%, transparent),
+        var(--hz-glass-inset-strong);
+}
+
+/* ── Filter tabs / chips across panels ───────────────────────────────────── */
+.bm-root .db-filter-select,
+.bm-root .pp-daterange input[type='date'] {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .db-filter-select:focus,
+.bm-root .pp-daterange input[type='date']:focus {
+    outline: none;
+    background: var(--hz-pane-lift);
+    border-color: var(--billing-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+.bm-root .db-search-wrap {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .db-search-wrap:focus-within {
+    background: var(--hz-pane-lift);
+    border-color: var(--billing-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Empty / error states ────────────────────────────────────────────────── */
+.bm-root .db-empty-state,
+.bm-root .db-error-state,
+.bm-root .tx-end-row {
+    background: var(--hz-pane);
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Skeletons ───────────────────────────────────────────────────────────── */
+.bm-root .dc-skeleton-narrow {
+    background: linear-gradient(
+        90deg,
+        var(--hz-pane-alt) 25%,
+        color-mix(in srgb, var(--billing-accent) 10%, var(--hz-pane-alt)) 37%,
+        var(--hz-pane-alt) 63%
+    );
+    background-size: 900px 100%;
+}
+
+/* ── AI Copilot: same glass as the rest of the module ────────────────────── */
+.bm-root .bm-copilot-panel {
+    background: var(--hz-pane-lift);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-color: var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+}
+.bm-root .bm-copilot-fab {
+    background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+    color: var(--on-accent-solid);
+    box-shadow: 0 8px 24px -6px var(--billing-accent-glow), var(--hz-glass-inset-strong);
+    transition:
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-copilot-fab:hover {
+    box-shadow: 0 12px 32px -8px color-mix(in srgb, var(--billing-accent) 50%, transparent);
+    transform: var(--hz-hover-lift-sm);
+}
+.bm-root .bm-copilot-input {
+    background: var(--hz-pane-alt);
+    border-color: var(--hz-pane-bd);
+}
+.bm-root .bm-copilot-chip {
+    background: var(--hz-pane);
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-copilot-chip:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--billing-accent) 40%, var(--hz-pane-bd));
+    transform: var(--hz-hover-lift-sm);
+}
+
+
+/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
+   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
+   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
+   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
+.bm-root .bm-modal-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}

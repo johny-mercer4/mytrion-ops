@@ -91,19 +91,19 @@ function DealCallWizard({
               <Icon name="calls" size={16} />
             </span>
             <div style={s('flex:1;min-width:0')}>
-              <div style={s('font-size:15px;font-weight:700')}>Call ended — note for {title}</div>
-              <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+              <div style={s('font-size:16px;font-weight:700')}>Call ended — note for {title}</div>
+              <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
                 {call.peer} · {fmtDuration(call.durationMs)}{call.result ? ` · ${call.result}` : ''}
               </div>
             </div>
           </div>
-          <div style={s('font-size:11px;color:var(--muted);margin-top:10px')}>
+          <div style={s('font-size:12px;color:var(--muted);margin-top:10px')}>
             Add a note about this call. Required before you continue.
           </div>
         </div>
 
         <div style={s('padding:18px 22px')}>
-          <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Call note — required</div>
+          <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Call note — required</div>
           <textarea
             value={note}
             onChange={(e) => setNote(e.currentTarget.value)}
@@ -111,7 +111,7 @@ function DealCallWizard({
             autoFocus
             placeholder="What happened on the call…"
             className="ss-in"
-            style={s('width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box')}
+            style={s('width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;resize:vertical;box-sizing:border-box')}
           />
         </div>
 
@@ -119,7 +119,7 @@ function DealCallWizard({
           <button
             onClick={() => void submit()}
             disabled={!valid || busy}
-            style={s(`display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:13px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
+            style={s(`display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:14px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
           >
             {busy && <Icon name="spinner" size={15} style={{ animation: 'ss-spin .7s linear infinite' }} />}
             {busy ? 'Saving…' : 'Save note'}
@@ -143,6 +143,8 @@ export function DealCallWizardHost({ pushToast }: { pushToast: (title: string, m
     return subscribeRingCentral((ev) => {
       if (ev.kind !== 'ended') return;
       if (ev.direction && ev.direction !== 'Outbound') return;
+      // Retention cases own their in-modal stage picker — never open DC deal validation.
+      if (ev.retentionCaseId) return;
       const dealId = ev.dealId;
       if (!dealId) return; // only deal calls open this wizard (leads have their own)
       const actAsId = getImpersonation()?.zohoUserId;

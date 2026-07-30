@@ -115,8 +115,8 @@ function LeadCallWizard({
               <Icon name="calls" size={16} />
             </span>
             <div style={s('flex:1;min-width:0')}>
-              <div style={s('font-size:15px;font-weight:700')}>Call ended — update {title}</div>
-              <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+              <div style={s('font-size:16px;font-weight:700')}>Call ended — update {title}</div>
+              <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
                 {call.peer} · {fmtDuration(call.durationMs)}{call.result ? ` · ${call.result}` : ''}
               </div>
             </div>
@@ -132,7 +132,7 @@ function LeadCallWizard({
               <Icon name="close" size={15} />
             </button>
           </div>
-          <div style={s('font-size:11px;color:var(--muted);margin-top:10px')}>
+          <div style={s('font-size:12px;color:var(--muted);margin-top:10px')}>
             Set the lead status to log this call — or close to skip.
           </div>
         </div>
@@ -140,7 +140,7 @@ function LeadCallWizard({
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:18px 22px;display:flex;flex-direction:column;gap:14px')}>
           {/* Status picker — blueprint-allowed statuses from the lead's current status */}
           <div>
-            <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Lead status</div>
+            <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Lead status</div>
             <LeadStatusPicker
               options={OUTCOME_OPTIONS}
               value={status}
@@ -154,7 +154,7 @@ function LeadCallWizard({
           {/* Dependent reason (only for Unqualified / Not Interested) */}
           {reasonSpec && (
             <div>
-              <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:8px')}>
+              <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:8px')}>
                 {status === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
               </div>
               <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
@@ -167,7 +167,7 @@ function LeadCallWizard({
                       role="radio"
                       aria-checked={active}
                       onClick={() => setReason(r)}
-                      style={s(`text-align:left;padding:9px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:12.5px;font-weight:700;cursor:pointer`)}
+                      style={s(`text-align:left;padding:9px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:13px;font-weight:700;cursor:pointer`)}
                     >
                       {r}
                     </button>
@@ -179,14 +179,14 @@ function LeadCallWizard({
 
           {/* Optional note */}
           <div>
-            <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Note (optional)</div>
+            <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Note (optional)</div>
             <textarea
               value={note}
               onChange={(e) => setNote(e.currentTarget.value)}
               rows={3}
               placeholder="Anything worth recording on the lead…"
               className="ss-in"
-              style={s('width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box')}
+              style={s('width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;resize:vertical;box-sizing:border-box')}
             />
           </div>
         </div>
@@ -195,7 +195,7 @@ function LeadCallWizard({
           <button
             onClick={() => void submit()}
             disabled={!valid || busy}
-            style={s(`display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:13px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
+            style={s(`display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:14px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
           >
             {busy && <Icon name="spinner" size={15} style={{ animation: 'ss-spin .7s linear infinite' }} />}
             {busy ? 'Saving…' : 'Save status'}
@@ -220,6 +220,8 @@ export function LeadCallWizardHost({ pushToast }: { pushToast: (title: string, m
     return subscribeRingCentral((ev) => {
       if (ev.kind !== 'ended') return;
       if (ev.direction && ev.direction !== 'Outbound') return;
+      // Retention cases own their in-modal stage picker — never open DC lead status wizard.
+      if (ev.retentionCaseId) return;
       const leadId = ev.leadId;
       if (!leadId) return; // only lead calls open the wizard (deals only log)
       const actAsId = getImpersonation()?.zohoUserId;

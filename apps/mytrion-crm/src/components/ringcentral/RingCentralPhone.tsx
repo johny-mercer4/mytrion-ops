@@ -7,14 +7,20 @@ import {
   type MytrionId,
 } from '@/access/mytrions.config';
 import { installRcConsoleFilter } from './rcConsoleFilter';
-import { RC_ADAPTER_SCRIPT_ID } from './ringcentralDial';
+import {
+  RC_ADAPTER_SCRIPT_ID,
+  dockRingCentralWidget,
+  revealRingCentralWidget,
+} from './ringcentralDial';
 import { ringcentralStylesDataUri } from './ringcentralEmbedStyles';
 import {
   resetRingCentralLoginState,
+  ringCentralLoginState,
   subscribeRingCentral,
   type RingCentralCallEvent,
 } from './ringcentralEvents';
-import { X, AlertCircle } from 'lucide-react';
+import { nextSignInPrompt } from './signInPrompt';
+import { X, AlertCircle, Phone } from 'lucide-react';
 import './ringcentralHost.css';
 
 // Install as soon as this module loads — Embeddable can emit AGW-401 before the mount effect
@@ -27,6 +33,22 @@ const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service']);
 /** Ignore brief logged-out blips while Embeddable restores a persisted session. */
 const LOGOUT_TOAST_GRACE_MS = 2500;
 
+/**
+ * How long the widget must CONTINUOUSLY report signed-out before we say so.
+ *
+ * The vendor restores a persisted session asynchronously and reports `loggedIn:false` first, so
+ * anything shorter than this flashes a false "sign in" prompt on every page load. Never shorten it
+ * below the vendor's restore window.
+ */
+const SIGNED_OUT_CONFIRM_MS = 6000;
+
+/** How often the sign-in card is re-evaluated against the widget's reported state. */
+const SIGNED_OUT_POLL_MS = 1500;
+
+/** How long to wait for the vendor iframe after injecting adapter.js. */
+const FRAME_WAIT_MS = 12_000;
+const FRAME_POLL_MS = 200;
+
 type ToastType = 'error';
 interface ToastMsg {
   id: number;
@@ -37,6 +59,16 @@ interface ToastMsg {
 
 let toastId = 0;
 let pendingLogoutToast: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * "Stop telling me" — module-level on purpose, so it survives a remount.
+ *
+ * `allowed` flips every time the agent hops out of Sales/CS, which re-runs the mount effect and used
+ * to reset a per-component dismissal, so the card returned on every navigation no matter how many
+ * times it was closed. Cleared the moment a signed-in state is observed, so a genuine later logout
+ * still gets to prompt.
+ */
+let signInCardMuted = false;
 
 function clearPendingLogoutToast(): void {
   if (pendingLogoutToast !== null) {
@@ -70,11 +102,87 @@ function forceRcFrameCursor(frame: HTMLElement): void {
   frame.style.setProperty('cursor', 'pointer', 'important');
 }
 
+function rcFrame(): HTMLElement | null {
+  return document.getElementById('rc-widget-adapter-frame');
+}
+
 function teardownAdapter(): void {
   clearPendingLogoutToast();
   resetRingCentralLoginState();
   document.getElementById(RC_ADAPTER_SCRIPT_ID)?.remove();
-  document.getElementById('rc-widget-adapter-frame')?.remove();
+  rcFrame()?.remove();
+}
+
+function waitForRcFrame(timeoutMs: number): Promise<HTMLElement | null> {
+  const existing = rcFrame();
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = (): void => {
+      const frame = rcFrame();
+      if (frame) {
+        resolve(frame);
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        resolve(null);
+        return;
+      }
+      window.setTimeout(tick, FRAME_POLL_MS);
+    };
+    tick();
+  });
+}
+
+/**
+ * Inject (or remount) the Embeddable adapter. Remounts when the script tag is present but the
+ * iframe is gone — that stuck state is why prod sometimes needs a hard refresh to show Sign in.
+ */
+async function mountAdapter(
+  adapterUrl: string,
+  opts: { cancelled: () => boolean; onLoadError: () => void },
+): Promise<void> {
+  const nextSrc = withStylesUri(adapterUrl);
+  const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
+  const frame = rcFrame();
+
+  if (existing && frame && existing.src.includes('stylesUri=data')) {
+    forceRcFrameCursor(frame);
+    dockRingCentralWidget();
+    return;
+  }
+
+  // Script without iframe (or stale stylesUri) → tear down and inject fresh.
+  if (existing || frame) teardownAdapter();
+  if (opts.cancelled()) return;
+
+  installRcConsoleFilter();
+
+  await new Promise<void>((resolve) => {
+    const script = document.createElement('script');
+    script.id = RC_ADAPTER_SCRIPT_ID;
+    script.src = nextSrc;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      console.warn('[ringcentral] Embeddable adapter failed to load');
+      script.remove();
+      opts.onLoadError();
+      resolve();
+    };
+    document.body.appendChild(script);
+  });
+
+  if (opts.cancelled()) return;
+
+  const ready = await waitForRcFrame(FRAME_WAIT_MS);
+  if (opts.cancelled()) return;
+  if (ready) {
+    forceRcFrameCursor(ready);
+    dockRingCentralWidget();
+  } else {
+    console.warn('[ringcentral] Embeddable iframe did not appear after adapter inject');
+  }
 }
 
 /**
@@ -89,6 +197,16 @@ export function RingCentralPhone() {
   })();
 
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  /**
+   * Whether to show the "phone not signed in" prompt.
+   *
+   * This exists because the softphone boots MINIMISED to a small vendor pill, and until now nothing
+   * in our own UI ever surfaced the signed-out state — `ringCentralLoginState()` was read by nobody.
+   * An agent who did not know to click that pill simply never saw a sign-in screen, which is exactly
+   * the "RingCentral doesn't show the sign in page" report. Every feature tied to the phone (Data
+   * Center Leads/Deals, Retention calls) silently does nothing in that state, so it has to be loud.
+   */
+  const [showSignIn, setShowSignIn] = useState(false);
 
   const addToast = (type: ToastType, title: string, message: string) => {
     const id = ++toastId;
@@ -105,68 +223,102 @@ export function RingCentralPhone() {
   useEffect(() => {
     if (!allowed) {
       teardownAdapter();
+      // The component lives in WorkerLayout, so it renders on every worker route — only the WIDGET is
+      // route-gated. Without this the card followed the agent onto Billing / Finance / Admin / the
+      // picker, prompting them to sign into a softphone that is not even mounted there.
+      setShowSignIn(false);
       return;
     }
 
     let cancelled = false;
+    const isCancelled = (): boolean => cancelled;
+    let cachedAdapterUrl: string | null = null;
 
-    // Keep host iframe cursor on pointer (vendor re-applies grab/move on the docked pill).
-    const lockCursor = (): void => {
-      const frame = document.getElementById('rc-widget-adapter-frame');
-      if (frame) forceRcFrameCursor(frame);
+    const boot = async (reason: string): Promise<void> => {
+      try {
+        if (!cachedAdapterUrl) {
+          const cfg = await fetchRingCentralEmbedConfig();
+          if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
+          cachedAdapterUrl = cfg.adapterUrl;
+        }
+        if (cancelled || !cachedAdapterUrl) return;
+        await mountAdapter(cachedAdapterUrl, {
+          cancelled: isCancelled,
+          onLoadError: () => {
+            if (!cancelled) {
+              addToast(
+                'error',
+                'RingCentral failed to load',
+                'Refresh the page or check your network, then try again.',
+              );
+            }
+          },
+        });
+        if (!cancelled) {
+          // Nudge after vendor init settles — ensure the widget is a visible DOCK, not popped open.
+          window.setTimeout(() => {
+            if (!cancelled) dockRingCentralWidget();
+          }, 800);
+        }
+      } catch (err) {
+        // Widget unavailable (RC disabled / not configured) — fail silently.
+        if (reason === 'visibility' || reason === 'pageshow') {
+          console.warn('[ringcentral] recover failed', err);
+        }
+      }
     };
 
-    void (async () => {
-      try {
-        const cfg = await fetchRingCentralEmbedConfig();
-        if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
+    void boot('mount');
 
-        const nextSrc = withStylesUri(cfg.adapterUrl);
-        const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
-        // Remount when cursor CSS (stylesUri) is missing from an older adapter inject.
-        if (existing) {
-          if (existing.src.includes('stylesUri=data')) {
-            lockCursor();
-            return;
-          }
-          teardownAdapter();
-        }
-
-        installRcConsoleFilter();
-
-        const script = document.createElement('script');
-        script.id = RC_ADAPTER_SCRIPT_ID;
-        script.src = nextSrc;
-        script.async = true;
-        script.onerror = () => {
-          console.warn('[ringcentral] Embeddable adapter failed to load');
-          script.remove();
-          if (!cancelled) {
-            addToast(
-              'error',
-              'RingCentral failed to load',
-              'Refresh the page or check your network, then try again.',
-            );
-          }
-        };
-        document.body.appendChild(script);
-      } catch {
-        // Widget unavailable (RC disabled / not configured) — fail silently.
-      }
-    })();
+    /**
+     * Continuous, not one-shot.
+     *
+     * The old check sampled the login state ONCE, 7s after mount, and treated "unknown" as
+     * signed-out — but the adapter alone is allowed 12s to produce its iframe (FRAME_WAIT_MS), and a
+     * route hop wipes the cached state, so a slow boot showed "Phone not signed in" to an agent who
+     * was signed in the whole time and nothing ever re-checked it. Now only a state that is KNOWN
+     * false and STAYS false prompts, and the card retracts itself as soon as the widget reports a
+     * session.
+     */
+    let signedOutSince: number | null = null;
+    const evaluateSignIn = (): void => {
+      if (cancelled) return;
+      const next = nextSignInPrompt({
+        state: ringCentralLoginState(),
+        signedOutSince,
+        muted: signInCardMuted,
+        now: Date.now(),
+        confirmMs: SIGNED_OUT_CONFIRM_MS,
+      });
+      signedOutSince = next.signedOutSince;
+      signInCardMuted = next.muted;
+      setShowSignIn(next.show);
+    };
+    evaluateSignIn();
+    const signedOutTimer = window.setInterval(evaluateSignIn, SIGNED_OUT_POLL_MS);
 
     const unsubscribe = subscribeRingCentral((event: RingCentralCallEvent) => {
       if (cancelled) return;
       if (event.kind === 'login') {
+        signedOutSince = null;
+        // A fresh session re-arms the prompt for a future genuine logout.
+        signInCardMuted = false;
+        setShowSignIn(false);
+        // Don't pop the widget open on login — leave it docked; the agent opens it when they want.
         clearPendingLogoutToast();
         return;
       }
       if (event.kind !== 'logout') return;
-      // Debounce: Embeddable can flap logged-out during session restore after refresh.
+      // Deliberately does NOT show the card: Embeddable flaps logged-out during session restore
+      // (exactly why the toast below is debounced), and reacting to the raw event is what put
+      // "Phone not signed in" in front of signed-in agents. evaluateSignIn() prompts if it holds.
       clearPendingLogoutToast();
       pendingLogoutToast = setTimeout(() => {
         pendingLogoutToast = null;
         if (cancelled) return;
+        // The flap resolved and the session is back — there is nothing to report.
+        if (ringCentralLoginState() === true) return;
+        // Toast only — do NOT auto-expand the widget; the agent opens it to sign in again.
         addToast(
           'error',
           'RingCentral session ended',
@@ -175,31 +327,64 @@ export function RingCentralPhone() {
       }, LOGOUT_TOAST_GRACE_MS);
     });
 
+    const lockCursor = (): void => {
+      const frame = rcFrame();
+      if (frame) forceRcFrameCursor(frame);
+    };
     lockCursor();
     const cursorTimer = window.setInterval(lockCursor, 800);
     const cursorObs = new MutationObserver((mutations) => {
       for (const m of mutations) {
         if (m.type === 'childList') {
           for (const n of m.addedNodes) {
-            if (n instanceof HTMLElement && (n.id === 'rc-widget-adapter-frame' || n.querySelector?.('#rc-widget-adapter-frame'))) {
+            if (
+              n instanceof HTMLElement &&
+              (n.id === 'rc-widget-adapter-frame' || n.querySelector?.('#rc-widget-adapter-frame'))
+            ) {
               lockCursor();
+              dockRingCentralWidget();
               return;
             }
           }
         }
-        if (m.type === 'attributes' && m.target instanceof HTMLElement && m.target.id === 'rc-widget-adapter-frame') {
+        if (
+          m.type === 'attributes' &&
+          m.target instanceof HTMLElement &&
+          m.target.id === 'rc-widget-adapter-frame'
+        ) {
           lockCursor();
         }
       }
     });
-    cursorObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    cursorObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+
+    /** Prod Zoho: tab blur / bfcache / CRM soft-nav can drop the iframe while the script stays. */
+    const onVisible = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      // Re-boot only if the iframe was dropped. If it's still there, leave the widget exactly as the
+      // agent left it — never auto-expand on tab focus (that was the main "keeps popping" cause).
+      if (!rcFrame()) void boot('visibility');
+    };
+    const onPageShow = (e: PageTransitionEvent): void => {
+      if (e.persisted || !rcFrame()) void boot('pageshow');
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
 
     return () => {
       cancelled = true;
+      window.clearInterval(signedOutTimer);
       clearPendingLogoutToast();
       unsubscribe();
       window.clearInterval(cursorTimer);
       cursorObs.disconnect();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
       // Softphone stays mounted across Sales ↔ CS (allowed stays true).
     };
   }, [allowed]);
@@ -207,20 +392,115 @@ export function RingCentralPhone() {
   // Full unmount (logout / leave worker portal) always tears down the vendor iframe.
   useEffect(() => () => teardownAdapter(), []);
 
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 && !showSignIn) return null;
 
   return (
     <div
+      className="rc-phone-stack"
+      /*
+       * Right edge, not left: bottom-left sat on top of the Mytrion sidebar's footer (the "View as"
+       * button and the user card) and the first column of every wide table.
+       *
+       * `bottom: 96px` clears the 56px Copilot FAB that CS docks at bottom-right, and the vendor
+       * RingCentral pill, which also docks bottom-right.
+       *
+       * z-index sits BELOW the modal layer (CS backdrops are 9990/9995) so an open dialog paints
+       * over the card instead of the card burying that dialog's footer buttons — at 999999 it did
+       * exactly that. It stays above the Copilot FAB/panel (90/95); the panel is the one surface it
+       * can still overlap, which is what the dismiss control below is for.
+       */
       style={{
         position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        zIndex: 999999,
+        bottom: '96px',
+        right: '24px',
+        zIndex: 200,
         display: 'flex',
         flexDirection: 'column',
+        alignItems: 'flex-end',
         gap: '10px',
       }}
     >
+      {showSignIn && (
+        /* Persistent on purpose — not a toast. Every phone-backed feature is inert until the agent
+           signs in, so this stays put until they do. Clicking EXPANDS the vendor widget, which is the
+           only place the RingCentral login screen can render. */
+        <div
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '12px 14px',
+            minWidth: '280px',
+            maxWidth: '340px',
+            borderRadius: 'var(--radius-md, 12px)',
+            background: 'var(--hz-modal-surface, var(--surface))',
+            border: '1px solid color-mix(in srgb, var(--warn, #f59e0b) 40%, transparent)',
+            borderLeft: '4px solid var(--warn, #f59e0b)',
+            boxShadow: 'var(--shadow, 0 18px 48px -18px rgba(0,0,0,.6))',
+            color: 'var(--text)',
+          }}
+        >
+          <Phone size={18} color="var(--warn, #f59e0b)" />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <div style={{ fontWeight: 600, fontSize: '14px' }}>Phone not signed in</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--muted)', lineHeight: 1.45 }}>
+              Calling, call logging and the post-call wizard stay off until you sign in.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              revealRingCentralWidget();
+              // Mute until the widget actually reports a session. Without this the poll — which
+              // already holds a confirmed signed-out state — puts the card straight back a second
+              // after the click, on top of the login screen it just opened.
+              signInCardMuted = true;
+              setShowSignIn(false);
+            }}
+            style={{
+              flexShrink: 0,
+              height: '32px',
+              padding: '0 14px',
+              borderRadius: 'var(--radius-md, 10px)',
+              border: 'none',
+              background: 'var(--accent)',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Sign in
+          </button>
+          {/* Persistent, but not immovable: the card shares the bottom-right corner with the CS
+              Copilot panel, so an agent who isn't using the phone can get it out of the way. */}
+          <button
+            type="button"
+            onClick={() => {
+              // Sticks for the rest of the session (cleared on the next sign-in) — closing it used
+              // to last only until the next route hop.
+              signInCardMuted = true;
+              setShowSignIn(false);
+            }}
+            aria-label="Dismiss"
+            title="Dismiss"
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
       {toasts.map((t) => (
         <div
           key={t.id}

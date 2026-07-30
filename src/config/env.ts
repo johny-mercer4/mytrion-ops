@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   MYTRION_OPS_DATABASE_URL: z.string().default(''),
   DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  // Admin Data Loader launch target. NocoDB owns its own auth and runs outside this process.
+  NOCODB_BASE_URL: z.string().default(''),
 
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
@@ -204,6 +206,13 @@ const EnvSchema = z.object({
   // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
   // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.
   DB_MIGRATE_ON_BOOT: z.string().default(''),
+  /**
+   * How long boot migrations may wait out a database that is still coming up (Postgres 57P03 /
+   * connection refused) before giving up. A deploy that races a Render Postgres restart used to die
+   * outright — see the incident note in db/migrate.ts. Only transient codes are retried; bad SQL
+   * still aborts boot immediately. 0 disables waiting entirely.
+   */
+  DB_BOOT_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(90),
 
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
@@ -383,6 +392,23 @@ const EnvSchema = z.object({
   //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
   INBOX_WEBHOOK_SECRET: z.string().default(''),
 
+  // --- HR attendance webhook (Hikvision / servercrm → hr_attendance_punches). Header
+  //     `x-attendance-webhook-secret`. Blank → route answers 503 (boot still succeeds). ---
+  HR_ATTENDANCE_WEBHOOK_SECRET: z.string().default(''),
+
+  // --- Rejection-report webhook (Zoho Desk Deluge → mytrion_rejection_reports). A dedicated shared
+  //     secret in the `x-rejection-secret` header, scoped to just that endpoint (NOT the full
+  //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
+  REJECTION_WEBHOOK_SECRET: z.string().default(''),
+
+  // --- Sales KPI collection + external worker-task intake ---
+  // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
+  FF_KPI_COLLECTION_ENABLED: flag('0'),
+  KPI_REPORTING_TZ: z.string().default('America/New_York'),
+  // One rotatable, task-create-only HMAC credential for trusted external automations.
+  MYTRION_TASK_WEBHOOK_KEY_ID: z.string().default('external-automation'),
+  MYTRION_TASK_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),
@@ -443,7 +469,7 @@ const EnvSchema = z.object({
    *  onboarded by Octane agents only; the roster (list/revoke) in the mini-app stays available. */
   FF_MINIAPP_MANAGER_INVITES_ENABLED: flag('0'),
   // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.
-  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().default(1000),
+  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().max(350).default(350),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
   // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
@@ -470,6 +496,13 @@ const EnvSchema = z.object({
   // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
   // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
   FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
+  // Dev-only: the Zoho user id the static API_KEY session should present as. The API_KEY context
+  // has no Zoho identity (userId: 'system'), so every owner-scoped read — CS Home tiles, retention
+  // desk quota — fails closed locally with "No Zoho user id on the request for owner-scoped data".
+  // A real Zoho login sets `zoho:<id>` and is unaffected. Blank = off, and it is IGNORED in
+  // production regardless (see systemContext) — same reasoning as FF_DEV_MOCK_TELEGRAM_ENABLED:
+  // NODE_ENV alone is not a sufficient gate, so this must also be set explicitly.
+  DEV_MOCK_ZOHO_USER_ID: z.string().default(''),
   // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
   // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
   FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),
@@ -531,9 +564,10 @@ const EnvSchema = z.object({
   RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
   // Reserved for Zapier / ops identity — not used by app Zoho send_mail (disabled).
   RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
-  // Comma-separated Zoho CRM user ids for Phase 2 Retention RoundRobin (prefer Isonline).
+  // Phase 2 Retention CS assignee — first Zoho user id wins (no RoundRobin). Gated off until
+  // RETENTION_AUTO_ASSIGN_ENABLED is flipped in csRoundRobin.ts.
   RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
-  // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
+  // Spanish Retention desk assignee (bypasses fixed assignee when is_spanish_desk).
   RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
   // Pilot switch: when ON, auto-create Retention cases only for listed Sales agents
   // (Zoho CRM user ids). Off = generate for all agents (production). Clear flag to reset.
@@ -554,6 +588,24 @@ const EnvSchema = z.object({
   // Batch size for the agent-run queue worker (how many agent runs execute concurrently).
   JOBS_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
   JOBS_CRON_TZ: z.string().default('America/Chicago'),
+  /**
+   * pg-boss's OWN pool, separate from DATABASE_POOL_MAX (the app pool).
+   *
+   * v12 runs several independent internal loops — queue-cache refresh, supervision, the cron
+   * timekeeper, the job navigator, maintenance — on top of one poller per registered worker (~20
+   * queues here). At the old value of 3 those loops queued behind each other, so a single slow or
+   * dropped connection made every waiter miss pg-boss's 10s acquire deadline at the same instant and
+   * emit "timeout exceeded when trying to connect" in a burst. Keep it comfortably above the number
+   * of concurrent internal loops, and mind the server budget: this is per process, and prod + local
+   * share one Render instance (~100 max_connections).
+   */
+  PGBOSS_POOL_MAX: z.coerce.number().int().positive().max(20).default(8),
+  /**
+   * How long pg-boss may wait for a pooled connection (its own default is 10s). A managed DB reached
+   * over the public internet needs more headroom than one on localhost — a fresh TLS handshake to
+   * Render from a dev laptop alone measures over a second.
+   */
+  PGBOSS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

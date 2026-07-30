@@ -1,0 +1,460 @@
+/* =====================================================
+   Billing Mytrion — Horizon glass layer
+   Imported LAST from index.css so equal-specificity rules win over the panel sheets.
+
+   SAFETY: Billing is in daily production use. Every rule below touches PAINT only — background,
+   border-color, box-shadow, backdrop-filter, color, border-radius, transition, transform-on-hover.
+   No display / position / width / padding / margin / grid / flex changes, so nothing can reflow.
+
+   The language (identical to Admin and CS, in Billing's sky→blue slice of the ramp):
+     surface   frosted pane (--hz-pane) + 1px --hz-pane-bd + --hz-shadow-rest + inset sheen
+     hover     brighten to --hz-pane-lift, accent-tinted border, --hz-shadow-lift, -2px lift
+     selected  the module gradient (--billing-accent → --accent-2), never a flat fill
+     motion    --hz-ease with --hz-dur-wash (state) / --hz-dur-tone (tone) / --hz-dur-lift (move)
+     focus     3px accent glow ring, no hard outline
+   ===================================================== */
+
+/* ── Ambient field ───────────────────────────────────────────────────────── */
+.bm-root {
+    position: relative;
+    background: var(--hz-page);
+    isolation: isolate;
+}
+
+.bm-root .bm-ambience {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--hz-mesh);
+    transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.bm-root .bm-ambience::before,
+.bm-root .bm-ambience::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+}
+.bm-root .bm-ambience::before {
+    background-image: var(--hz-grid);
+    background-size: var(--hz-grid-size);
+}
+.bm-root .bm-ambience::after {
+    background: var(--hz-vignette);
+    transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* Both sit above the ambient backdrop (z-index 0). The header must ALSO outrank the body: they are
+   siblings, so an equal z-index let the later-in-DOM body paint over the header — burying the
+   "View as" dropdown under the panel's KPI cards. Keep the header's shared-base rank (100). */
+.bm-root .bm-body {
+    position: relative;
+    z-index: 1;
+}
+.bm-root .bm-header {
+    position: relative;
+    z-index: 100;
+}
+
+/* ── Masthead ────────────────────────────────────────────────────────────── */
+.bm-root .bm-header {
+    background: color-mix(in srgb, var(--hz-page) 78%, transparent);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-bottom: 1px solid var(--hz-glass-bd);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease);
+}
+/* A hairline of the module ramp under the masthead — the brand signature on every screen. */
+.bm-root .bm-header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+    opacity: 0.5;
+}
+
+/* The platform lockup, identical to Admin's BrandMark (components/BrandMark.module.css): Space
+   Grotesk, uppercase, 0.08em tracking, MYTRION in ink and HORIZON on the Horizon ramp. The module
+   name lives in the badge beside it, so every Mytrion reads the same in the masthead. */
+.bm-root .bm-header-title {
+    font-family: var(--font-head);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+.bm-root .bm-header-title span {
+    background: var(--hz-gradient-r);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.bm-root .bm-header-badge {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--billing-accent) 14%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 8%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--billing-accent) 34%, transparent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+.bm-root .bm-header-theme {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-header-theme:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* Labelled sibling of the theme toggle — same glass chrome, but sized for TEXT.
+   `.bm-header-theme` is a fixed 32x32 icon square, so reusing it for "Switch Mytrion" crushed the
+   label into the box. Matches the header's 32px rhythm and the badge's 3px radius. */
+.bm-root .bm-header-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 11px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    border: 1px solid var(--hz-pane-bd);
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-header-switch:hover {
+    background: var(--hz-pane-lift);
+    color: var(--billing-accent);
+    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* The identity chip is the one solid piece of gradient in the chrome. */
+.bm-root .bm-header-avatar {
+    background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+    color: var(--on-accent-solid);
+    border-color: transparent;
+    box-shadow: 0 0 12px var(--billing-accent-glow), var(--hz-glass-inset-strong);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.bm-root .bm-sidebar {
+    background: var(--hz-glass);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-right: 1px solid var(--hz-glass-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease);
+}
+
+.bm-root .bm-nav-item {
+    border: 1px solid transparent;
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-nav-item:hover:not(:disabled) {
+    background: var(--hz-glass-hover);
+    border-color: var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-glass-inset);
+    transform: translateX(2px);
+}
+
+/* Selected tab: the ramp as a wash + the existing ::before rail turned into a gradient. */
+.bm-root .bm-nav-item.active,
+.bm-root .bm-nav-item.active:hover {
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--billing-accent) 14%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--billing-accent) 28%, transparent);
+    box-shadow: 0 2px 14px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: none;
+}
+.bm-root .bm-nav-item.active::before {
+    background: linear-gradient(180deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+}
+.bm-root .bm-nav-item.active .nav-icon {
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--billing-accent) 55%, transparent));
+}
+.bm-root .bm-nav-item.bm-nav-disabled:hover,
+.bm-root .bm-nav-item:disabled:hover {
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+    transform: none;
+}
+
+.bm-root .bm-sidebar-footer {
+    border-top: 1px solid var(--hz-glass-bd);
+}
+
+/* ── Content ─────────────────────────────────────────────────────────────── */
+.bm-root .bm-content {
+    background: none;
+}
+
+/* ── KPI / summary cards ─────────────────────────────────────────────────── */
+/* NOTE: .bm-summary-item already owns a ::before 2px accent bar in shared-base.css. It is left
+   alone here and only re-tinted below, so the per-card semantic colour still reads. */
+.bm-root .bm-summary-item {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-md));
+    -webkit-backdrop-filter: blur(var(--hz-blur-md));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease),
+        transform var(--hz-dur-lift) var(--hz-ease);
+}
+.bm-root .bm-summary-item:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--billing-accent) 32%, var(--hz-pane-bd));
+    box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.bm-root .bm-table-wrap {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.bm-root .bm-table thead tr,
+.bm-root .bm-table thead th {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-bottom: 1px solid var(--hz-pane-bd);
+}
+/* One hairline of the ramp under the header row, not a heavy divider. */
+.bm-root .bm-table thead tr {
+    box-shadow: 0 1px 0 0 color-mix(in srgb, var(--billing-accent) 16%, transparent);
+}
+.bm-root .bm-table tbody tr {
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-table tbody tr:hover {
+    background: var(--hz-glass-hover);
+}
+
+/* ── Search + selects ────────────────────────────────────────────────────── */
+.bm-root .bm-search-bar,
+.bm-root .bm-select {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-search-bar:hover:not(:focus-within),
+.bm-root .bm-select:hover:not(:focus) {
+    border-color: color-mix(in srgb, var(--billing-accent) 28%, var(--hz-pane-bd));
+}
+.bm-root .bm-search-bar:focus-within,
+.bm-root .bm-select:focus {
+    background: var(--hz-pane-lift);
+    border-color: var(--billing-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+/* `transition: all` in shared-base.css interpolates filter/backdrop-filter and flickers. */
+.bm-root .bm-btn,
+.bm-root .bm-refresh-btn {
+    transition:
+        filter var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform 0.08s var(--hz-ease);
+}
+
+.bm-root .bm-btn-primary {
+    background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
+    color: var(--on-accent-solid);
+    border-color: transparent;
+    box-shadow: var(--hz-glass-inset-strong);
+}
+.bm-root .bm-btn-primary:hover:not(:disabled) {
+    filter: saturate(1.1) brightness(1.06);
+    box-shadow:
+        0 8px 26px -6px color-mix(in srgb, var(--billing-accent) 45%, transparent),
+        var(--hz-glass-inset-strong);
+    transform: var(--hz-hover-lift-sm);
+}
+
+.bm-root .bm-btn-ghost,
+.bm-root .bm-refresh-btn {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+.bm-root .bm-btn-ghost:hover:not(:disabled),
+.bm-root .bm-refresh-btn:hover:not(:disabled) {
+    background: var(--hz-pane-lift);
+    color: var(--billing-accent);
+    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* Disabled reads as inert neutral — never a faded gradient, which just looks muddy. */
+.bm-root .bm-btn:disabled,
+.bm-root .bm-btn:disabled:hover,
+.bm-root .bm-refresh-btn:disabled,
+.bm-root .bm-refresh-btn:disabled:hover {
+    background: var(--hz-pane-alt);
+    border-color: var(--hz-pane-bd);
+    color: var(--text-muted);
+    box-shadow: none;
+    filter: none;
+    transform: none;
+    cursor: not-allowed;
+}
+
+/* ── Badges become pills ─────────────────────────────────────────────────── */
+/* .bm-badge hardcodes `border-radius: 3px`, so --radius-full can't reach it. */
+.bm-root .bm-badge {
+    border-radius: var(--radius-full);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+.bm-root .bm-badge-info {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--billing-accent) 16%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 10%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--billing-accent) 32%, transparent);
+}
+
+/* ── Loading — ONE loader per surface, accent-ringed ─────────────────────── */
+.bm-root .bm-skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--hz-pane-alt) 25%,
+        color-mix(in srgb, var(--billing-accent) 10%, var(--hz-pane-alt)) 37%,
+        var(--hz-pane-alt) 63%
+    );
+    background-size: 900px 100%;
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+.bm-root .bm-loader-ring {
+    border-color: color-mix(in srgb, var(--billing-accent) 22%, transparent);
+    border-top-color: var(--billing-accent);
+    box-shadow: 0 0 14px -2px var(--billing-accent-glow);
+}
+.bm-root .bm-initial-loader {
+    background: color-mix(in srgb, var(--hz-page) 72%, transparent);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+}
+
+/* ── Notices + toasts ────────────────────────────────────────────────────── */
+.bm-root .bm-notice {
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+.bm-root .bm-toast {
+    background: var(--hz-pane-lift);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border: 1px solid var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+}
+
+/* ── Empty states ────────────────────────────────────────────────────────── */
+.bm-root .bm-empty {
+    background: var(--hz-pane);
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Mobile bottom nav ───────────────────────────────────────────────────── */
+.bm-root .bm-bottom-nav {
+    background: color-mix(in srgb, var(--hz-page) 82%, transparent);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-top: 1px solid var(--hz-glass-bd);
+}
+
+/* ── Focus rings ─────────────────────────────────────────────────────────── */
+/* Billing had no :focus-visible rule of its own, so the app-wide `outline: 2px solid` in
+   styles/global.css was landing here as a hard offset ring — it reads as a rendering artifact
+   rather than a focus state. Same soft accent ring as every other module. */
+.bm-root :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--billing-accent-glow);
+    border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bm-root .bm-nav-item:hover,
+    .bm-root .bm-btn:hover,
+    .bm-root .bm-refresh-btn:hover,
+    .bm-root .bm-summary-item:hover,
+    .bm-root .bm-header-theme:hover {
+        transform: none;
+    }
+}

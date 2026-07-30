@@ -11,11 +11,40 @@ import { ZohoWrapper } from './zohoBase.js';
 
 /** COQL hard limits (Zoho CRM v8): max 2000 rows per call, offset ≤ 100k. */
 const MAX_COQL_ROWS = 2000;
+/**
+ * Total rows reachable by offset pagination on ONE set of criteria (Zoho CRM v8). Past this, Zoho
+ * wants keyset (`id > {last}`) or Bulk Read. This repo has already hit the wall in prod on a 90-day
+ * Calls drain, so the paginator treats it as a hard stop and reports it rather than looping into an
+ * error. See .claude/skills/zoho-crm-api/SKILL.md §5.
+ */
+const MAX_COQL_OFFSET = 100_000;
 
 export interface CoqlResult {
   rows: Array<Record<string, unknown>>;
   count: number;
   moreRecords: boolean;
+}
+
+/** Knobs for {@link ZohoCrmWrapper.runCoqlAll}. */
+export interface CoqlDrainOptions {
+  /** Rows per page. Clamped to Zoho's 2000 page cap. Credits are tiered: ≤200 → 1, ≤1000 → 2, ≤2000 → 3. */
+  pageSize?: number;
+  /** Optional row budget for a caller that must not hold everything in memory. Undefined = drain it all. */
+  maxRows?: number;
+  /** Wall-clock budget. Prevents a deep drain from outliving the HTTP request that triggered it. */
+  budgetMs?: number;
+}
+
+export interface CoqlDrainResult {
+  rows: Array<Record<string, unknown>>;
+  /**
+   * True ONLY when a guard stopped the drain with rows still available upstream (row budget, time
+   * budget, or the 100k offset ceiling) — never merely because the last page was short. A caller can
+   * therefore trust `rows.length` as a complete total whenever this is false.
+   */
+  truncated: boolean;
+  /** COQL calls spent, for cost/latency reasoning. */
+  pages: number;
 }
 
 interface CoqlResponse {
@@ -103,6 +132,55 @@ export class ZohoCrmWrapper extends ZohoWrapper {
       count: typeof json.info?.count === 'number' ? json.info.count : rows.length,
       moreRecords: json.info?.more_records === true,
     };
+  }
+
+  /**
+   * Run a COQL SELECT to EXHAUSTION, one page at a time, and return every row.
+   *
+   * `baseQuery` must NOT carry its own `limit` clause — this appends `limit <offset>, <pageSize>`, so
+   * any trailing `order by` has to already be in place (COQL wants LIMIT last).
+   *
+   * Termination needs BOTH conditions, not either alone:
+   *   - `more_records` can be absent entirely (an offset past the end returns HTTP 200 `{"data":[]}`
+   *     with no `info` block at all), and
+   *   - a short page is the reliable end-of-set signal, but on its own it costs one wasted call and
+   *     misreads a 204.
+   *
+   * ORDER STABILITY IS THE CALLER'S JOB. Offset paging over a non-total order silently duplicates and
+   * skips rows: the referral modules had 680 of 687 records sharing one Created_Time, so every page
+   * boundary fell inside one tie group. Always end `order by` with a unique key — `id` works on every
+   * module.
+   */
+  async runCoqlAll(baseQuery: string, opts: CoqlDrainOptions = {}): Promise<CoqlDrainResult> {
+    const base = baseQuery.trim();
+    if (/\blimit\b/i.test(base)) {
+      throw new Error('[zoho-crm] runCoqlAll owns the LIMIT clause — pass a query without one.');
+    }
+    const pageSize = Math.max(1, Math.min(Math.floor(opts.pageSize ?? MAX_COQL_ROWS), MAX_COQL_ROWS));
+    const startedAt = Date.now();
+    const rows: Array<Record<string, unknown>> = [];
+    let pages = 0;
+
+    for (let offset = 0; offset < MAX_COQL_OFFSET; offset += pageSize) {
+      const page = await this.runCoql(`${base} limit ${offset}, ${pageSize}`);
+      pages += 1;
+      rows.push(...page.rows);
+
+      if (!page.moreRecords || page.rows.length < pageSize) {
+        return { rows, truncated: false, pages };
+      }
+      // Guards below all mean "more rows exist but we stopped" → truncated.
+      if (opts.maxRows !== undefined && rows.length >= opts.maxRows) {
+        return { rows: rows.slice(0, opts.maxRows), truncated: true, pages };
+      }
+      if (opts.budgetMs !== undefined && Date.now() - startedAt >= opts.budgetMs) {
+        return { rows, truncated: true, pages };
+      }
+      if (offset + pageSize >= MAX_COQL_OFFSET) {
+        return { rows, truncated: true, pages };
+      }
+    }
+    return { rows, truncated: true, pages };
   }
 
   /**
@@ -282,4 +360,4 @@ export const attachFileToRecord = (
 /** @deprecated Import { zohoCrm } and call the method — kept as a facade during migration. */
 export const getOrg = (): Promise<OrgInfo> => zohoCrm.getOrg();
 
-export { MAX_COQL_ROWS };
+export { MAX_COQL_ROWS, MAX_COQL_OFFSET };

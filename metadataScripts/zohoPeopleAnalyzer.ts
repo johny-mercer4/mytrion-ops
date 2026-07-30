@@ -1,134 +1,150 @@
 /**
- * Zoho People metadata analyzer.
+ * Zoho People metadata analyzer — forms (= modules) + field apiName + data type.
  *
- * People organizes records into "forms" (Employee, Department, Leave, etc.), each with
- * its own fields. ZOHO_PEOPLE_BASE_URL is the full root (e.g. https://people.zoho.com/api):
- *   - GET {base}/forms                              (list forms)
- *   - GET {base}/forms/{formLinkName}/components    (fields, best-effort)
+ * Endpoints (ZOHO_PEOPLE_BASE_URL, default https://people.zoho.com/api):
+ *   GET {base}/forms
+ *   GET {base}/forms/{formLinkName}/components
  *
- * The People API surface varies by edition; calls are best-effort and whatever metadata
- * returns is written. Requires a refresh token with People read scopes
- * (e.g. `ZOHOPEOPLE.forms.READ`). Run: `pnpm meta:zoho-people`.
+ * Usage:
+ *   pnpm meta:zoho-people
+ *   pnpm meta:zoho-people -- --module=employee
+ *   pnpm meta:zoho-people -- --module=employee,department --list
+ *
+ * Requires ZOHOPEOPLE.forms.READ (or .ALL). See .claude/skills/zoho-people-api/SKILL.md.
  */
 import 'dotenv/config';
 import { env } from '../src/config/env.js';
-import { tryGetJson } from './lib/http.js';
 import { nowIso, runAnalyzer, writeMetadata, type WrittenPaths } from './lib/output.js';
+import { parsePeopleCliArgs, peopleCliHelp } from './lib/peopleArgs.js';
+import {
+  fetchFormFields,
+  filterForms,
+  formApiName,
+  listPeopleForms,
+  toFormMeta,
+  type PeopleFormMeta,
+} from './lib/peopleForms.js';
 import { fetchZohoAccessToken, resolveZohoConfig, zohoAuthHeader } from './lib/zohoAuth.js';
-
-interface PeopleForm {
-  formLinkName?: string;
-  displayName?: string;
-  formName?: string;
-  componentName?: string;
-}
-
-interface PeopleComponent {
-  labelName?: string;
-  displayName?: string;
-  apiName?: string;
-  componentName?: string;
-  type?: string;
-  mandatory?: boolean | string;
-  /** Picklist-type components expose their choices under one of these (edition-dependent). */
-  options?: Array<string | { value?: string; name?: string }>;
-  pickListValues?: Array<string | { value?: string; name?: string }>;
-}
 
 const MAX_PICKLIST_IN_MD = 25;
 
-function formApiName(f: PeopleForm): string {
-  return f.formLinkName ?? f.componentName ?? f.formName ?? '';
-}
-
-/** Pull picklist choices from whichever shape this People edition uses. */
-function componentOptions(c: PeopleComponent): string[] {
-  const raw = c.options ?? c.pickListValues ?? [];
-  return raw.map((o) => (typeof o === 'string' ? o : (o.value ?? o.name ?? ''))).filter((v) => v !== '');
-}
-
 async function main(): Promise<WrittenPaths> {
+  const args = parsePeopleCliArgs();
+  if (args.help) {
+    console.log(peopleCliHelp('meta'));
+    process.exit(0);
+  }
+
   const cfg = resolveZohoConfig('people');
   const token = await fetchZohoAccessToken(cfg);
   const headers = zohoAuthHeader(token);
   const base = env.ZOHO_PEOPLE_BASE_URL.replace(/\/+$/, '');
 
   console.log(`[zoho-people] listing forms from ${base}`);
-  const formsRes = await tryGetJson<{ response?: { result?: PeopleForm[] }; forms?: PeopleForm[] }>(
-    `${base}/forms`,
-    headers,
+  const allForms = await listPeopleForms(base, headers);
+  const forms = filterForms(allForms, args.modules);
+  console.log(
+    `[zoho-people] ${forms.length}/${allForms.length} form(s)` +
+      (args.modules.length ? ` matching ${args.modules.join(',')}` : ''),
   );
-  if (!formsRes.ok) {
-    throw new Error(`[zoho-people] forms list failed: ${formsRes.error}`);
-  }
-  // People wraps results inconsistently across editions — accept either shape.
-  const forms = formsRes.data.forms ?? formsRes.data.response?.result ?? [];
 
-  const result: Array<{
-    form: string;
-    displayName: string;
-    fieldCount: number;
-    fields: Array<{ apiName: string; label: string; type: string; mandatory: boolean; options?: string[] }>;
-    error?: string;
-  }> = [];
+  const result: PeopleFormMeta[] = [];
 
   for (const form of forms) {
     const linkName = formApiName(form);
-    const displayName = form.displayName ?? form.formName ?? linkName;
     if (!linkName) continue;
-    const compRes = await tryGetJson<{ response?: { result?: PeopleComponent[] }; components?: PeopleComponent[] }>(
-      `${base}/forms/${encodeURIComponent(linkName)}/components`,
-      headers,
-    );
-    if (!compRes.ok) {
-      console.warn(`[zoho-people] components for ${linkName} skipped: ${compRes.error}`);
-      result.push({ form: linkName, displayName, fieldCount: 0, fields: [], error: compRes.error });
+
+    if (args.listOnly) {
+      result.push(toFormMeta(form, []));
+      console.log(`[zoho-people]   ${linkName} — ${form.displayName ?? linkName}`);
       continue;
     }
-    const components = compRes.data.components ?? compRes.data.response?.result ?? [];
-    const fields = components.map((c) => {
-      const field: { apiName: string; label: string; type: string; mandatory: boolean; options?: string[] } = {
-        apiName: c.apiName ?? c.componentName ?? c.labelName ?? '',
-        label: c.displayName ?? c.labelName ?? '',
-        type: c.type ?? 'unknown',
-        mandatory: c.mandatory === true || c.mandatory === 'true',
-      };
-      const options = componentOptions(c);
-      if (options.length > 0) field.options = options;
-      return field;
-    });
-    result.push({ form: linkName, displayName, fieldCount: fields.length, fields });
+
+    const { fields, error } = await fetchFormFields(base, headers, linkName);
+    if (error) {
+      console.warn(`[zoho-people] components for ${linkName} skipped: ${error}`);
+      result.push(toFormMeta(form, [], error));
+      continue;
+    }
+    result.push(toFormMeta(form, fields));
     console.log(`[zoho-people]   ${linkName}: ${fields.length} fields`);
   }
 
-  const json = { service: 'zoho-people', generatedAt: nowIso(), base, formCount: result.length, forms: result };
+  const outName =
+    args.modules.length === 1 && args.modules[0]
+      ? `zoho-people-${args.modules[0].replace(/[^\w.-]+/g, '_')}`
+      : 'zoho-people';
+
+  const json = {
+    service: 'zoho-people',
+    generatedAt: nowIso(),
+    base,
+    filter: args.modules.length ? args.modules : null,
+    listOnly: args.listOnly,
+    formCount: result.length,
+    forms: result.map((f) => ({
+      apiName: f.apiName,
+      displayName: f.displayName,
+      isCustom: f.isCustom,
+      viewName: f.viewName ?? null,
+      fieldCount: f.fieldCount,
+      fields: f.fields.map((field) => ({
+        apiName: field.apiName,
+        label: field.label,
+        dataType: field.dataType,
+        mandatory: field.mandatory,
+        ...(field.componentId ? { componentId: field.componentId } : {}),
+        ...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {}),
+        ...(field.options ? { options: field.options } : {}),
+      })),
+      ...(f.error ? { error: f.error } : {}),
+    })),
+  };
 
   const lines: string[] = [
     '# Zoho People metadata',
     '',
     `Generated: ${json.generatedAt}`,
     `Base: ${base}`,
-    `Forms: ${result.length}`,
+    `Forms: ${result.length}` +
+      (args.modules.length ? ` (filter: ${args.modules.join(', ')})` : '') +
+      (args.listOnly ? ' — list only' : ''),
+    '',
+    'Each form is a People "module". Field **apiName** = `labelname`; **dataType** = `comptype`.',
     '',
   ];
+
   for (const f of result) {
-    lines.push(`## ${f.displayName} — \`${f.form}\``);
+    lines.push(`## ${f.displayName} — \`${f.apiName}\``);
+    if (f.viewName) lines.push('', `Default view: \`${f.viewName}\``);
     if (f.error) {
       lines.push('', `> fields unavailable: ${f.error}`, '');
       continue;
     }
-    lines.push('', '| Field API name | Label | Type | Mandatory | Options |', '| --- | --- | --- | --- | --- |');
+    if (args.listOnly) {
+      lines.push('', `_Use without --list to fetch fields._`, '');
+      continue;
+    }
+    lines.push(
+      '',
+      '| Field API name | Label | Data type | Mandatory | Options |',
+      '| --- | --- | --- | --- | --- |',
+    );
     for (const field of f.fields) {
       const opts = field.options
         ? field.options.slice(0, MAX_PICKLIST_IN_MD).join(', ') +
-          (field.options.length > MAX_PICKLIST_IN_MD ? `, …(+${field.options.length - MAX_PICKLIST_IN_MD})` : '')
+          (field.options.length > MAX_PICKLIST_IN_MD
+            ? `, …(+${field.options.length - MAX_PICKLIST_IN_MD})`
+            : '')
         : '';
-      lines.push(`| \`${field.apiName}\` | ${field.label} | ${field.type} | ${field.mandatory ? 'yes' : ''} | ${opts} |`);
+      lines.push(
+        `| \`${field.apiName}\` | ${field.label} | ${field.dataType} | ${field.mandatory ? 'yes' : ''} | ${opts} |`,
+      );
     }
     lines.push('');
   }
 
-  return writeMetadata('zoho-people', json, lines.join('\n'));
+  return writeMetadata(outName, json, lines.join('\n'));
 }
 
 runAnalyzer('zoho-people', main);

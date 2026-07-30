@@ -334,7 +334,7 @@ export function TicketsTab() {
             </div>
             <div ref={listRef} className="ss-scroll ss-tk-list-body" onScroll={onListScroll}>
               {feed.error && (
-                <div style={s('padding:36px 14px;text-align:center;color:var(--danger);font-size:13px')}>{feed.error}</div>
+                <div style={s('padding:36px 14px;text-align:center;color:var(--danger);font-size:14px')}>{feed.error}</div>
               )}
               {feed.loading && allTickets.length === 0 && !feed.error ? (
                 <div className="ss-tk-list-loading" role="status" aria-live="polite">
@@ -380,7 +380,7 @@ export function TicketsTab() {
                 );
               })}
               {ticketListEmpty && !feed.loading && !feed.error && (
-                <div style={s('padding:36px 14px;text-align:center;color:var(--muted);font-size:13px')}>No tickets match your filters.</div>
+                <div style={s('padding:36px 14px;text-align:center;color:var(--muted);font-size:14px')}>No tickets match your filters.</div>
               )}
             </div>
             <div className="ss-tk-list-ft">
@@ -440,7 +440,7 @@ export function TicketsTab() {
                       );
                     })}
                   {msgsLoad.error && (
-                    <div style={s('text-align:center;color:var(--danger);font-size:13px;padding:20px')}>{msgsLoad.error}</div>
+                    <div style={s('text-align:center;color:var(--danger);font-size:14px;padding:20px')}>{msgsLoad.error}</div>
                   )}
                   {threadMsgs.map((m, i) => {
                     const me = m.from === 'me';
@@ -497,7 +497,7 @@ export function TicketsTab() {
                           type="button"
                           onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
                           aria-label="Remove attachment"
-                          style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:11px;font-weight:700;cursor:pointer')}
+                          style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:12px;font-weight:700;cursor:pointer')}
                         >
                           ✕
                         </button>

@@ -16,8 +16,28 @@ import {
 } from './autoCatalogOrder';
 import { AutoEmptyState } from './AutoActionResult';
 
+/**
+ * Catalog card style.
+ *
+ * Three things here are deliberate, because together they were making the card's CONTENT vanish
+ * while hovering and scrolling the grid:
+ *
+ *  - `transform` is emitted ONLY while dragging. A permanent `scale(1)` is not a no-op: it promotes
+ *    the card to its own composited layer and makes it a containing block for its children. Stacked
+ *    on the `backdrop-filter: blur(20px)` that `.ss-card-h` puts on every one of these cards, a
+ *    scroll that changes what the filter samples could leave the promoted layer un-repainted — the
+ *    children were still there, just not painted.
+ *  - `overflow: hidden` is gone. Nothing in the card overflows (icon box, SOON pill, drag handle,
+ *    title, code chips, description are all normal flow), so it bought nothing and gave that stale
+ *    layer something to clip against.
+ *  - `transition: all` is now an explicit property list. `all` re-runs the transition machinery for
+ *    every changed property — including ones that force the blur layer to re-rasterise — and it was
+ *    also overriding the narrower transition `.ss-card-h` sets in ss-horizon.css.
+ *
+ * Rest appearance is unchanged; the drag scale still animates (from `none`, which interpolates).
+ */
 const catalogCard = (soon: boolean, dragging: boolean): string =>
-  `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
+  `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};${dragging ? 'transform:scale(1.02);' : ''}position:relative;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:box-shadow .2s cubic-bezier(0.2,0,0,1),border-color .2s cubic-bezier(0.2,0,0,1),transform .2s cubic-bezier(0.2,0,0,1),opacity .2s cubic-bezier(0.2,0,0,1)`;
 
 function CategoryHeader({ category, count }: { category: AutoCategory; count: number }) {
   return (
@@ -29,7 +49,7 @@ function CategoryHeader({ category, count }: { category: AutoCategory; count: nu
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
           {category.label}
         </div>
-        <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
           {count} action{count === 1 ? '' : 's'}
         </div>
       </div>
@@ -90,7 +110,7 @@ export function AutoCatalog({
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:22px')}>
-      <div style={s('font-size:12px;color:var(--muted)')}>
+      <div style={s('font-size:13px;color:var(--muted)')}>
         Drag blocks to set your preferred order — saved on this device.
       </div>
       {sections.map(({ category, items: sectionItems }) => (
@@ -121,7 +141,7 @@ export function AutoCatalog({
                     </div>
                     <div style={s('display:flex;align-items:center;gap:6px')}>
                       {a.soon && (
-                        <span style={s('font-size:9px;font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted)')}>
+                        <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted)')}>
                           SOON
                         </span>
                       )}
@@ -129,7 +149,7 @@ export function AutoCatalog({
                         <span
                           aria-hidden
                           title="Drag to reorder"
-                          style={s('font-size:14px;color:var(--muted);line-height:1;cursor:grab;user-select:none')}
+                          style={s('font-size:15px;color:var(--muted);line-height:1;cursor:grab;user-select:none')}
                         >
                           ⋮⋮
                         </span>
@@ -137,13 +157,13 @@ export function AutoCatalog({
                     </div>
                   </div>
                   <div>
-                    <div style={s('font-size:14px;font-weight:700')}>{a.title}</div>
+                    <div style={s('font-size:15px;font-weight:700')}>{a.title}</div>
                     <div style={s('display:flex;gap:5px;margin-top:6px;flex-wrap:wrap')}>
                       {a.codes.map((c) => (
                         <span key={c} style={s(deptStyle(c, autoIconColor(a)))}>{c}</span>
                       ))}
                     </div>
-                    <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
+                    <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
                   </div>
                 </button>
               );

@@ -54,11 +54,23 @@ export interface AgentClientRow {
   carrierId: string;
   companyName: string;
   contact: string;
+  /**
+   * The carrier's CURRENT owning agent (`dim_company.agent`). Already selected by every owner arm;
+   * surfaced because the Manager all-clients roster spans agents and must show who owns each row.
+   * For the agent-scoped roster this is just the caller's own name.
+   */
+  agentName: string;
   phone: string;
   producedCards: number;
   activeCards: number;
   moneyCode: string;
   dot: string;
+  /**
+   * Declared fleet size (`dim_company.trucks`, from the Zoho Deal "Trucks" field). `null` = UNKNOWN —
+   * the column is null for ~184 carriers and no carrier legitimately reports 0. This is the loyalty
+   * TRACK basis: 1 truck = Owner-Operator (see _shared/loyalty.ts).
+   */
+  trucks: number | null;
   isLocSuspended: boolean;
   computedIsActive: boolean;
   computedDebt: number;
@@ -85,6 +97,7 @@ interface ClientDbRow {
   deal_money_code: string | null;
   comdata_id: string | number | null;
   dot: string | number | null;
+  trucks: number | string | null;
   is_loc_suspended: boolean | null;
   computed_is_active: boolean | null;
   computed_debt: string | number | null;
@@ -101,6 +114,17 @@ interface ClientDbRow {
 function num(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * A declared count, or null when it is absent/unusable. Deliberately NOT `num()`: that coerces null to
+ * 0, which would turn "fleet size unknown" into "zero trucks" for ~184 carriers — 19 of which hold a
+ * live loyalty track today. 0 is rejected too: no dim row has trucks = 0, while the upstream Zoho deal
+ * field carries 0 as an unfilled blank, so a 0 after a sync means unknown.
+ */
+function intOrNull(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v ?? NaN);
+  return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
 /** Trim to a non-empty string, or '' when null/blank. */
@@ -120,7 +144,7 @@ const byName = (n: number): string => `lower(c.agent) = lower($${n})`;
 
 /** The dim_company columns the roster surfaces — selected identically in every owner-resolution arm. */
 const OWNED_COLS = `carrier_id, company_name, deal_full_name, agent, deal_phone, contact_phone,
-              total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, is_loc_suspended`;
+              total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, trucks, is_loc_suspended`;
 
 /** One owner-resolution arm: the newest dim row per carrier matching `pred`, selecting `cols`. */
 const ownedArm = (pred: string, cols: string = OWNED_COLS): string =>
@@ -214,7 +238,7 @@ async function runClientsQuery(ownedCteSql: string, binds: string[]): Promise<Cl
      )
      select o.carrier_id, o.company_name, o.deal_full_name, o.agent, o.deal_phone, o.contact_phone,
             o.total_produced_cards, o.total_active_cards, o.deal_money_code, o.comdata_id, o.dot,
-            o.is_loc_suspended,
+            o.trucks, o.is_loc_suspended,
             coalesce(g.last_tx >= now() - interval '${ACTIVE_DAYS} days', false) as computed_is_active,
             coalesce(d.debt, 0) as computed_debt,
             d.debt_days as computed_debt_days,
@@ -240,11 +264,13 @@ function toClient(r: ClientDbRow): AgentClientRow {
     companyName: str(r.company_name) || '(unnamed)',
     // deal contact name, falling back to the owning agent's name (there is no contact_name on the dim).
     contact: dash(str(r.deal_full_name) || str(r.agent)),
+    agentName: dash(str(r.agent)),
     phone: dash(str(r.deal_phone) || str(r.contact_phone)),
     producedCards: num(r.total_produced_cards ?? r.total_active_cards),
     activeCards: num(r.total_active_cards),
     moneyCode: dash(str(r.deal_money_code) || str(r.comdata_id)),
     dot: dash(str(r.dot)),
+    trucks: intOrNull(r.trucks),
     isLocSuspended: r.is_loc_suspended === true,
     computedIsActive: r.computed_is_active === true,
     computedDebt: num(r.computed_debt),
@@ -271,6 +297,23 @@ export async function fetchAgentClients(
   const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
   if (idBindIdx === null && nameBindIdx === null) return [];
   const rows = await runClientsQuery(buildOwnedCte(idBindIdx, nameBindIdx), binds);
+  return rows.map(toClient);
+}
+
+/**
+ * EVERY carrier in the warehouse, agent-agnostic — the Manager Mytrion → Loyalty Program roster.
+ *
+ * Deliberately runs the SAME `runClientsQuery` + `toClient` as the agent-scoped roster, with the only
+ * difference being an `owned` CTE that drops the owner predicate (`ownedArm('true')` still keeps the
+ * `carrier_id is not null` guard and the newest-dim-row-per-carrier dedupe). Reusing one query is the
+ * point: loyalty tier is derived from `activeCards` + monthly gallons, so if Manager computed those
+ * differently from Data Center → Clients the two surfaces would disagree about a client's tier.
+ *
+ * NOT owner-filtered, so this is a MANAGER-ONLY read — the route must be `management`-gated. There
+ * are no binds at all (the predicate is a fixed literal), so nothing here is caller-controlled.
+ */
+export async function fetchAllClients(): Promise<AgentClientRow[]> {
+  const rows = await runClientsQuery(`owned as (${ownedArm('true')})`, []);
   return rows.map(toClient);
 }
 
@@ -320,4 +363,62 @@ export async function isCarrierOwned(
     binds,
   );
   return rows.length > 0;
+}
+
+/** A carrier's owning Sales agent, as resolved for inbound events that only carry a carrier id. */
+export interface CarrierOwner {
+  carrierId: string;
+  companyName: string | null;
+  /** Zoho user id from the warehouse. May be null even when a name is known. */
+  agentZohoUserId: string | null;
+  /** Display name (`dim_company.agent`) — carried because reads match id-OR-name (see below). */
+  agentName: string | null;
+  source: 'dim_company' | 'zoho_deal';
+}
+
+/**
+ * Resolve which Sales agent owns a carrier — the REVERSE of the roster's owner scoping.
+ *
+ * The roster answers "which carriers belong to this session?"; this answers "who owns this carrier?",
+ * which is what an inbound webhook needs when all it has is a `carrier_id` (rejection reports).
+ * It lives here, next to `buildOwnedCte`, because this file is the single ownership authority — a
+ * second, divergent one is how the "Clients modal 403s for every non-admin" P0 happened.
+ *
+ * Returns BOTH the id and the name on purpose. Storing only the id would be wrong for the read path:
+ * a worker's session Zoho id and `dim_company.agent_zoho_user_id` carry different org prefixes, which
+ * is exactly why `buildOwnedCte` matches on the last 12 digits and falls back to the display name.
+ * Callers persist both and match id-or-name later.
+ *
+ * `dim_company` is preferred; when it has no agent for the carrier the Zoho deal owner is used as a
+ * second arm. Never resolve by company name — names are not unique across carriers.
+ */
+export async function findCarrierOwner(carrierId: string | number): Promise<CarrierOwner | null> {
+  const id = String(carrierId).trim();
+  if (!id) return null;
+  const rows = await dwhQuery<{
+    carrier_id: string;
+    company_name: string | null;
+    agent_zoho_user_id: string | null;
+    agent: string | null;
+  }>(
+    `select distinct on (carrier_id)
+            carrier_id::text as carrier_id,
+            company_name,
+            nullif(trim(agent_zoho_user_id::text), '') as agent_zoho_user_id,
+            nullif(trim(agent), '')                    as agent
+       from octane.dim_company
+      where carrier_id::text = $1
+      order by carrier_id, update_date desc nulls last
+      limit 1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    carrierId: row.carrier_id,
+    companyName: row.company_name?.trim() || null,
+    agentZohoUserId: row.agent_zoho_user_id,
+    agentName: row.agent,
+    source: 'dim_company',
+  };
 }

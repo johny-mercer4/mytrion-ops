@@ -67,7 +67,7 @@ function LeadAction(props: {
         disabled={disabled || busy}
         className={!disabled && !busy ? 'ss-btn-p' : undefined}
         style={s(
-          `height:34px;padding:0 14px;border-radius:var(--radius-md);border:none;font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:8px;${
+          `height:34px;padding:0 14px;border-radius:var(--radius-md);border:none;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:8px;${
             busy || disabled
               ? 'background:var(--raised);color:var(--faint);cursor:not-allowed'
               : 'background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);cursor:pointer'
@@ -96,7 +96,7 @@ function LeadAction(props: {
         target="_blank"
         rel="noopener noreferrer"
         style={s(
-          'display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--ok) 40%,var(--border));background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok);font-weight:700;font-size:12px;text-decoration:none',
+          'display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--ok) 40%,var(--border));background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok);font-weight:700;font-size:13px;text-decoration:none',
         )}
       >
         Lead #{leadShortId(result.leadId)} ↗
@@ -111,7 +111,7 @@ function LeadAction(props: {
         rel="noopener noreferrer"
         title="Lead already exists — click to open"
         style={s(
-          'display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--orange) 45%,var(--border));background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--orange);font-weight:700;font-size:12px;text-decoration:none',
+          'display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--orange) 45%,var(--border));background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--orange);font-weight:700;font-size:13px;text-decoration:none',
         )}
       >
         Already exists ↗
@@ -126,7 +126,7 @@ function LeadAction(props: {
       disabled={busy}
       title={`${result.message} — click to retry`}
       style={s(
-        `display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'}`,
+        `display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'}`,
       )}
     >
       {busy ? 'Retrying…' : 'Failed — retry'}
@@ -246,12 +246,12 @@ export function CarriersTab() {
       <div style={s('margin-bottom:16px')}>
         <div
           style={s(
-            'font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase',
+            'font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase',
           )}
         >
           Carrier Lookup
         </div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
+        <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>
           Search by DOT number, company name, or phone — then create a lead when it’s a fit.
         </div>
       </div>
@@ -280,7 +280,7 @@ export function CarriersTab() {
           placeholder="e.g. 98765 · Great Way Inc · 5551234567"
           className="ss-in"
           style={s(
-            'width:100%;height:48px;padding:0 120px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)',
+            'width:100%;height:48px;padding:0 120px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)',
           )}
         />
         <button
@@ -289,7 +289,7 @@ export function CarriersTab() {
           disabled={carrierSearching || !carrierQuery.trim()}
           className="ss-btn-p"
           style={s(
-            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer',
+            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer',
           )}
         >
           {carrierSearching ? 'Searching…' : 'Search'}
@@ -308,7 +308,7 @@ export function CarriersTab() {
         </div>
       )}
       {error && (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:13px')}>{error}</div>
+        <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>{error}</div>
       )}
       {carrierIdle && (
         <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
@@ -319,11 +319,11 @@ export function CarriersTab() {
           >
             <Icon name="carriers" size={30} strokeWidth={1.6} />
           </div>
-          <div style={s('font-size:13px')}>Search for a carrier to see their account at a glance.</div>
+          <div style={s('font-size:14px')}>Search for a carrier to see their account at a glance.</div>
         </div>
       )}
       {carrierEmpty && (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:13px')}>
+        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:14px')}>
           No carriers found for “{carrierQuery.trim()}”.
         </div>
       )}
@@ -341,13 +341,13 @@ export function CarriersTab() {
                   setPage(1);
                 }}
                 style={s(
-                  `display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer`,
+                  `display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer`,
                 )}
               >
                 {f.label}
                 <span
                   style={s(
-                    `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:${on ? 'var(--accent)' : 'var(--faint)'}`,
+                    `font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${on ? 'var(--accent)' : 'var(--faint)'}`,
                   )}
                 >
                   {counts[f.id] ?? 0}
@@ -357,7 +357,7 @@ export function CarriersTab() {
           })}
           <label
             style={s(
-              'display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none',
+              'display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none',
             )}
           >
             <input
@@ -371,7 +371,7 @@ export function CarriersTab() {
             Has phone / email
           </label>
           <div style={s('display:flex;align-items:center;gap:7px')}>
-            <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Min units</span>
+            <span style={s('font-size:12px;color:var(--muted);font-weight:600')}>Min units</span>
             <input
               type="number"
               min={0}
@@ -383,12 +383,12 @@ export function CarriersTab() {
               placeholder="0"
               className="ss-in"
               style={s(
-                'width:72px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px',
+                'width:72px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px',
               )}
             />
           </div>
           <div style={s('display:flex;align-items:center;gap:7px')}>
-            <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Fetch</span>
+            <span style={s('font-size:12px;color:var(--muted);font-weight:600')}>Fetch</span>
             <select
               value={fetchLimit}
               onChange={(e) => onFetchLimitChange(Number(e.currentTarget.value))}
@@ -396,7 +396,7 @@ export function CarriersTab() {
               className="ss-in"
               title="How many matches to load from the server (200 or 500)"
               style={s(
-                'height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;cursor:pointer',
+                'height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;cursor:pointer',
               )}
             >
               {FETCH_LIMITS.map((l) => (
@@ -411,13 +411,13 @@ export function CarriersTab() {
               type="button"
               onClick={clearFilters}
               style={s(
-                'padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer',
+                'padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer',
               )}
             >
               Clear
             </button>
           )}
-          <span style={s('margin-left:auto;font-size:11px;color:var(--faint);text-align:right')}>
+          <span style={s('margin-left:auto;font-size:12px;color:var(--faint);text-align:right')}>
             {filtered.length === 0
               ? '0 carriers'
               : `Showing ${pageStart + 1}–${Math.min(pageStart + pageSize, filtered.length)} of ${filtered.length}`}
@@ -430,12 +430,12 @@ export function CarriersTab() {
       )}
 
       {carrierHas && filtered.length === 0 && (
-        <div style={s('text-align:center;padding:44px 20px;color:var(--muted);font-size:13px')}>
+        <div style={s('text-align:center;padding:44px 20px;color:var(--muted);font-size:14px')}>
           No carriers match the current filters.{' '}
           <button
             type="button"
             onClick={clearFilters}
-            style={s('border:none;background:transparent;color:var(--accent);font-weight:700;cursor:pointer;font-size:13px')}
+            style={s('border:none;background:transparent;color:var(--accent);font-weight:700;cursor:pointer;font-size:14px')}
           >
             Clear filters
           </button>
@@ -463,10 +463,10 @@ export function CarriersTab() {
                     <Icon name="carriers" size={24} strokeWidth={1.8} />
                   </div>
                   <div style={s('flex:1;min-width:0')}>
-                    <div style={s('font-size:16px;font-weight:700')}>{c.owner}</div>
+                    <div style={s('font-size:17px;font-weight:700')}>{c.owner}</div>
                     <div
                       style={s(
-                        "font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
+                        "font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
                       )}
                     >
                       {c.address || '—'}
@@ -482,23 +482,23 @@ export function CarriersTab() {
                 </div>
                 <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600")}>{c.dot}</div>
-                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>DOT #</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600")}>{c.dot}</div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>DOT #</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--ok)")}>{c.units}</div>
-                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Power Units</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;color:var(--ok)")}>{c.units}</div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Power Units</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--violet)")}>{c.phone}</div>
-                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Phone</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;color:var(--violet)")}>{c.phone}</div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Phone</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s(`font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:${statusColor(c.status)}`)}>{c.status}</div>
-                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Status</div>
+                    <div style={s(`font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:${statusColor(c.status)}`)}>{c.status}</div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Status</div>
                   </div>
                 </div>
-                <div style={s('margin-top:16px;font-size:13px;color:var(--muted)')}>
+                <div style={s('margin-top:16px;font-size:14px;color:var(--muted)')}>
                   Email: <strong style={s('color:var(--text2)')}>{c.email}</strong>
                 </div>
               </div>
@@ -514,12 +514,12 @@ export function CarriersTab() {
             disabled={safePage <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             style={s(
-              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;${safePage <= 1 ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
+              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;${safePage <= 1 ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
             )}
           >
             Prev
           </button>
-          <span style={s('font-size:12px;color:var(--muted)')}>
+          <span style={s('font-size:13px;color:var(--muted)')}>
             Page <strong style={s('color:var(--text)')}>{safePage}</strong> of {totalPages}
           </span>
           <button
@@ -527,7 +527,7 @@ export function CarriersTab() {
             disabled={safePage >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             style={s(
-              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;${safePage >= totalPages ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
+              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;${safePage >= totalPages ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
             )}
           >
             Next
@@ -540,7 +540,7 @@ export function CarriersTab() {
             }}
             className="ss-in"
             style={s(
-              'height:34px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12px;cursor:pointer',
+              'height:34px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;cursor:pointer',
             )}
           >
             {PAGE_SIZES.map((n) => (

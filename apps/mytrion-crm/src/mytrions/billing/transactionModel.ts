@@ -150,6 +150,48 @@ export function rebuildHaystack(t: TxRow): string {
   return buildHaystack(t);
 }
 
+/* ── Search matching ───────────────────────────────────────────────────────── */
+
+/**
+ * A parsed search box query. Amount queries are recognised explicitly because the haystack holds
+ * the raw number (`500`, not `500.00`), so "$1,234.56" / "500.00" would never match as text — and
+ * a digits-only query used to mean "carrier id" ONLY, which made amount search impossible.
+ * Kept in sync with `parseAmountQuery` in src/repos/paymentTransactionRepo.ts (server search).
+ */
+export interface TxSearchQuery {
+  /** Lower-cased, trimmed query (the haystack term). */
+  text: string;
+  /** Digits-only query → an exact carrier-id match (widget parity: no text noise). */
+  carrierId: string | null;
+  /** Money-ish query → the amount it names; `exact: false` = whole dollars, cents range. */
+  amount: { value: number; exact: boolean } | null;
+}
+
+export function parseTxSearch(raw: string): TxSearchQuery {
+  const text = (raw || '').trim().toLowerCase();
+  const money = text.replace(/^\$\s*/, '').replace(/,/g, '');
+  const isMoney = /^\d{1,12}(\.\d{1,2})?$/.test(money);
+  const value = isMoney ? Number(money) : NaN;
+  return {
+    text,
+    carrierId: /^\d+$/.test(text) ? text : null,
+    amount: Number.isFinite(value) ? { value, exact: money.includes('.') } : null,
+  };
+}
+
+/** abs() compare so returns/refunds stored as negatives still match the amount typed. */
+function amountMatches(amount: number, q: { value: number; exact: boolean }): boolean {
+  const a = Math.abs(amount);
+  return q.exact ? Math.abs(a - q.value) < 0.005 : a >= q.value && a < q.value + 1;
+}
+
+/** Does a loaded row match the search box? (amount OR exact carrier id OR text haystack) */
+export function txMatchesSearch(t: TxRow, q: TxSearchQuery): boolean {
+  if (q.amount && amountMatches(t.amount, q.amount)) return true;
+  if (q.carrierId) return (t.carrierId ?? '') === q.carrierId;
+  return t.haystack.includes(q.text);
+}
+
 /** Extract the record array from the paged/search payload (transactions | records). */
 export function extractRecords(data: { transactions?: Raw[]; records?: Raw[] }): Raw[] {
   return data.transactions ?? data.records ?? [];

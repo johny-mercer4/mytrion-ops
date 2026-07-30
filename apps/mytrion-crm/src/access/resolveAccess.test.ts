@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { UserContext } from '../context/userContext';
-import { resolveAccessibleMytrions, canAccess, isAdmin } from './resolveAccess';
+import { resolveAccessibleMytrions, canAccess, isAdmin, ruleAllows } from './resolveAccess';
+import { COMING_SOON_MYTRION_IDS, MYTRIONS } from './mytrions.config';
 
 function ctx(over: Partial<UserContext>): UserContext {
   return { userId: 'u', profile: '', role: '', userName: '', trusted: false, ...over };
@@ -29,24 +30,33 @@ describe('resolveAccessibleMytrions', () => {
     expect(admin).toBe(true);
     expect(accessible).toContain('sales');
     expect(accessible.length).toBeGreaterThan(1);
-    // Coming-soon Mytrions stay on the picker grid but are not enterable.
-    expect(accessible).not.toContain('collection');
-    expect(accessible).not.toContain('verification');
-    expect(accessible).not.toContain('manager');
-    expect(accessible).not.toContain('analyst');
+    // Whatever is parked is never enterable — asserted against the constant, so this test stays
+    // correct as Mytrions launch instead of needing an edit each time one does.
+    for (const parked of COMING_SOON_MYTRION_IDS) expect(accessible).not.toContain(parked);
+    // The launched department Mytrions an admin should see.
+    for (const live of ['manager', 'hr', 'analyst', 'collection', 'verification', 'trailhead']) {
+      expect(accessible).toContain(live);
+    }
+    // Finance's rule sets adminBypass:false — the 'Administrator' PROFILE is what grants it here,
+    // not the admin bypass.
+    expect(accessible).toContain('finance');
   });
 
-  it('coming-soon Mytrions are never enterable (even when server-granted)', () => {
+  it('parking a Mytrion blocks it even when the server granted it', () => {
     const granted = ctx({
       profile: 'Administrator',
-      accessibleMytrions: ['sales', 'collection', 'verification', 'manager', 'analyst'],
+      accessibleMytrions: ['sales', 'collection', 'finance', 'verification', 'analyst'],
       allDepartmentAccess: true,
     });
-    expect(resolveAccessibleMytrions(granted).accessible).toEqual(['sales']);
-    expect(canAccess(granted, 'collection')).toBe(false);
-    expect(canAccess(granted, 'verification')).toBe(false);
-    expect(canAccess(granted, 'manager')).toBe(false);
-    expect(canAccess(granted, 'analyst')).toBe(false);
+    const { accessible } = resolveAccessibleMytrions(granted);
+
+    // Nothing is parked today, so every server grant resolves. Driving both sides off the constant
+    // keeps this honest whichever way the list moves.
+    for (const id of ['sales', 'collection', 'finance', 'verification', 'analyst'] as const) {
+      const parked = COMING_SOON_MYTRION_IDS.includes(id);
+      expect(canAccess(granted, id)).toBe(!parked);
+      expect(accessible.includes(id)).toBe(!parked);
+    }
   });
 
   it('an unknown profile is forbidden (0 accessible)', () => {
@@ -60,20 +70,24 @@ describe('resolveAccessibleMytrions', () => {
     expect(isAdmin(ctx({ profile: 'Sales Agent' }))).toBe(false);
   });
 
-  it('grants finance to Administrator profile', () => {
+  // Finance is parked coming-soon, so canAccess('finance') is false for everyone. These assert the
+  // underlying access RULE via ruleAllows so the grant logic stays covered until finance re-launches.
+  it('finance access rule grants the Administrator profile, and finance has launched', () => {
+    expect(ruleAllows(ctx({ profile: 'Administrator' }), MYTRIONS.finance)).toBe(true);
+    // No longer parked — Home (EFS parent balance) + Clients are live, so it is enterable.
     expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(true);
   });
 
-  it('grants finance when userName contains Azimov or Mirjalol', () => {
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'John Azimov' }), 'finance')).toBe(true);
-    expect(canAccess(ctx({ profile: 'Billing', userName: 'Mirjalol Karimov' }), 'finance')).toBe(true);
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'azimov.ops' }), 'finance')).toBe(true);
+  it('finance access rule grants a userName containing Azimov or Mirjalol', () => {
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'John Azimov' }), MYTRIONS.finance)).toBe(true);
+    expect(ruleAllows(ctx({ profile: 'Billing', userName: 'Mirjalol Karimov' }), MYTRIONS.finance)).toBe(true);
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'azimov.ops' }), MYTRIONS.finance)).toBe(true);
   });
 
-  it('denies finance to unrelated users (no adminBypass)', () => {
-    expect(canAccess(ctx({ profile: 'Finance' }), 'finance')).toBe(false);
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'Random User' }), 'finance')).toBe(false);
-    expect(canAccess(ctx({ role: 'CEO', profile: 'Sales Agent' }), 'finance')).toBe(false);
+  it('finance access rule denies unrelated users (no adminBypass)', () => {
+    expect(ruleAllows(ctx({ profile: 'Finance' }), MYTRIONS.finance)).toBe(false);
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'Random User' }), MYTRIONS.finance)).toBe(false);
+    expect(ruleAllows(ctx({ role: 'CEO', profile: 'Sales Agent' }), MYTRIONS.finance)).toBe(false);
   });
 });
 

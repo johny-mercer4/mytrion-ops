@@ -75,6 +75,19 @@ pnpm pg:inspect -- --schema octane --table intm_zoho_deals
 pnpm pg:inspect -- --target ops --table users
 ```
 
+Dedicated Mytrion database inspector (full catalog by default; API names are the SQL column names):
+
+```bash
+pnpm mytrion:inspect
+pnpm mytrion:inspect -- --search kpi
+pnpm mytrion:inspect -- --table kpi_workers
+pnpm mytrion:inspect -- --schema public --table users --json
+```
+
+The unfiltered command writes `output/mytrion-database.json` and
+`output/mytrion-database.md`. It reads metadata and PostgreSQL statistics only, never application
+row contents.
+
 Activity is inferred from `pg_stat_user_tables` (insert/update/delete counts since stats reset,
 recent autovacuum/analyze). Tables/columns whose Postgres comment contains `deprecated`, `legacy`,
 `obsolete`, etc. are flagged as deprecated.

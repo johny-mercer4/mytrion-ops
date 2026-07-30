@@ -13,9 +13,10 @@
   align-items: center;
   gap: var(--space-1_5);
   padding: var(--space-1) var(--space-2_5);
-  border: 1px solid var(--border);
+  border: 1px solid var(--hz-pane-bd);
   border-radius: var(--radius-full);
-  background: var(--surface-alt);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -33,9 +34,12 @@
 .schemaSelect {
   height: 34px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--hz-pane-bd);
   border-radius: var(--radius-md);
-  background: var(--surface-alt);
+  background: var(--hz-pane-alt);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: var(--hz-glass-inset);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--text-sm);
@@ -50,11 +54,18 @@
   border-bottom: none;
 }
 
+.frequencyPill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Per-row schema qualifier badge, shown before the table name for multi-schema sources. */
 .schemaBadge {
   padding: 1px var(--space-1_5);
   border-radius: var(--radius-sm);
-  background: var(--accent-soft);
+  background: var(--hz-gradient-soft);
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -78,7 +89,7 @@
   margin-left: var(--space-2);
   padding: 0 var(--space-1_5);
   border-radius: var(--radius-full);
-  background: var(--accent-soft);
+  background: var(--hz-gradient-soft);
   color: var(--accent);
   font-size: var(--text-2xs);
   font-weight: var(--fw-semibold);
@@ -87,7 +98,7 @@
 
 /* Nested column grid, inset under an expanded table row. */
 .colWrap {
-  background: var(--surface-alt);
+  background: var(--hz-pane-alt);
   border-top: 1px solid var(--border-light);
   padding: var(--space-1) 0 var(--space-2);
 }

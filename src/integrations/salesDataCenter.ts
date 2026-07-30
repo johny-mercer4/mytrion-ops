@@ -15,13 +15,13 @@ const LEAD_FIELDS =
   'id, Company, Full_Name, Designation, Phone, Cell, Email, Annual_Revenue, Trucks, Lead_Source, ' +
   'Status, Unqualified_Reason, Not_Interested_Reason, Rating, MC, DOT, Referral_Source, Referred_By, ' +
   'Registration_Time, Web_Registration_Date, ' +
-  'Last_Activity_Time, Modified_Time, Created_Time, utm_source, Converted__s, Description';
+  'Last_Activity_Time, Modified_Time, Created_Time, utm_source, Converted__s, Description, Mytrion_Call_Attempts';
 
 /** Selected Deal fields (validated queryable). Account_Name/Contact_Name are lookups (`{name,id}`). */
 const DEAL_FIELDS =
   'id, Deal_Name, Account_Name, Amount, Credit_Line_Approved, Cards_Requested, Stage, Probability, ' +
   'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Email, Secondary_Email, Application_ID, Carrier_ID, ' +
-  'Application_Date, Created_Time, utm_source, Modified_Time, Description';
+  'Application_Date, Created_Time, utm_source, Modified_Time, Description, Mytrion_Call_Attempts';
 
 export type CrmRow = Record<string, unknown>;
 

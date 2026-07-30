@@ -6,11 +6,16 @@
 import {
   csTouchpoint,
   getCallsAnalytics,
+  getCitifuelDecisionSplit,
   getCitifuelStats,
   getCsContext,
   getDeskRoster,
+  getMaintenanceAnalytics,
+  getMaintenanceCount,
   getTeamOpenTickets,
+  type CitiDecisionSplit,
   type CsOpenTicket,
+  type MaintenanceAnalytics,
   getTicketsAnalytics,
   type AnalyticsWindow,
   type CsContext,
@@ -30,6 +35,7 @@ import type {
 
 export { useLoad, type Loaded } from '../_shared/useLoad';
 export { getCsContext, type CsContext };
+export type { CitiDecisionSplit };
 
 // ---- shared coercions ----
 
@@ -63,6 +69,14 @@ export function fmtDate(v: unknown): string {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return s;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Whole dollars when round, cents when not — the bonus is a $2.50 multiple. */
+export function fmtUsd(n: number): string {
+  return `$${n.toLocaleString('en-US', {
+    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function relTime(v: unknown): string {
@@ -111,8 +125,10 @@ function mapAppRow(r: CsApplicationRow): Application {
     dot: str(r.DOT),
     phone: str(r.Phone),
     email: str(r.Email),
+    street: str(r.Address),
     city: str(r.City),
     state: str(r.State),
+    zip: str(r.Zip_Code),
     credit: num(r.Credit_Score),
     trucks: num(r.Number_of_Trucks) ?? 0,
     cards: num(pick(r, 'Cards_Requested', 'Cards_Ordered')) ?? 0,
@@ -208,7 +224,7 @@ export async function loadHome(): Promise<HomeData> {
   const thisMonth = monthWindow(0);
   const lastMonth = monthWindow(-1);
   // Independent sources fail independently (widget parity: CRM metrics may load while DWH is down).
-  const [metricsR, teamOpenR, myTicketsR] = await Promise.allSettled([
+  const [metricsR, teamOpenR, myTicketsR, maintR] = await Promise.allSettled([
     csTouchpoint('cs.home.metrics', {}),
     getTeamOpenTickets(thisMonth.from, thisMonth.to),
     getTicketsAnalytics({
@@ -217,8 +233,13 @@ export async function loadHome(): Promise<HomeData> {
       prevFrom: lastMonth.from,
       prevTo: lastMonth.to,
     }),
+    // Native COQL. The Deluge's `maintenanceCases` is always 0 — its query has no WHERE clause,
+    // which COQL rejects, and the failure is swallowed. This also makes the tile match its
+    // "This month" label; the Deluge counted all time.
+    getMaintenanceCount(localYmd(thisMonth.from), localYmd(thisMonth.to)),
   ]);
   const metrics = metricsR.status === 'fulfilled' ? metricsR.value : {};
+  const maintCount = maintR.status === 'fulfilled' ? maintR.value.count : null;
   const teamOpen = teamOpenR.status === 'fulfilled' ? teamOpenR.value : null;
   const myTickets = myTicketsR.status === 'fulfilled' ? myTicketsR.value : null;
   const myTotals = myTickets && !myTickets.unmatched ? myTickets.data?.totals : undefined;
@@ -244,7 +265,7 @@ export async function loadHome(): Promise<HomeData> {
       openTickets: teamOpen ? String(teamOpen.openTickets) : '—',
       pendingApps: stat(metrics.pendingApps),
       activeClients: stat(metrics.activeClients),
-      maintenance: stat(metrics.maintenanceCases),
+      maintenance: maintCount === null ? '—' : String(maintCount),
     },
     my: {
       pendingApps: stat(metrics.myPendingApps),
@@ -269,6 +290,7 @@ function mapCitiRow(r: Record<string, unknown>): CitiRow {
   return {
     id: str(r.id),
     name: str(r.Name),
+    company: lookupName(r.Company_Name),
     appId: str(r.App_ID),
     status: str(r.Status_of_App) as CitiClient['status'],
     request: str(r.Request) as CitiClient['request'],
@@ -300,33 +322,86 @@ export async function loadCitiStats(): Promise<{ total: number; byStatus: Record
   return getCitifuelStats();
 }
 
+/** Citi-vs-Octane report for a window of Date_of_Request (QA feedback 2026-07-28). */
+export async function loadCitiDecisionSplit(from: string, to: string): Promise<CitiDecisionSplit> {
+  return getCitifuelDecisionSplit(from, to);
+}
+
 // ---- Analytics ----
 
-export type RangeId = 'this_month' | 'last_month' | 'last_30' | 'this_quarter';
+export type RangeId = 'this_month' | 'last_month' | 'last_30' | 'this_quarter' | 'custom';
 
 export const RANGE_LABELS: Record<RangeId, string> = {
   this_month: 'This Month',
   last_month: 'Last Month',
   last_30: 'Last 30 Days',
   this_quarter: 'This Quarter',
+  custom: 'Custom Range…',
 };
 
-/** The widget's _computeWindow, verbatim semantics. */
-export function computeWindow(range: RangeId): AnalyticsWindow {
+/** An applied custom window: two INCLUSIVE local calendar days, each `YYYY-MM-DD`. */
+export interface CustomRange {
+  start: string;
+  end: string;
+}
+
+/** `YYYY-MM-DD` → local midnight. `new Date('2026-07-01')` is parsed as UTC, which lands on
+ *  Jun 30 in every western timezone — the wrong day for an `<input type="date">` value. */
+function parseYmd(ymd: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * LOCAL calendar `YYYY-MM-DD` for an instant, optionally shifted by whole days.
+ *
+ * The Maintenance COQL window is date-only and INCLUSIVE, and the windows here are built from local
+ * midnights — so slicing their UTC ISO string ('2026-06-30T19:00:00Z'.slice(0, 10)) named the day
+ * BEFORE the window actually starts in every timezone ahead of UTC. That silently widened every
+ * Maintenance figure by a day (the Home "This month" tile counted from Jun 30).
+ */
+export function localYmd(at: Date | string, shiftDays = 0): string {
+  const d = at instanceof Date ? new Date(at.getTime()) : new Date(at);
+  if (shiftDays) d.setDate(d.getDate() + shiftDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Inclusive day count of a `YYYY-MM-DD` pair (1 for the same day); null if either date is bad. */
+export function rangeDays(start: string, end: string): number | null {
+  const a = parseYmd(start);
+  const b = parseYmd(end);
+  if (!a || !b) return null;
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000) + 1;
+}
+
+/**
+ * The widget's _computeWindow, verbatim semantics — plus 'custom', which the widget never had.
+ * An incomplete/invalid custom pick falls back to This Month rather than an empty window.
+ */
+export function computeWindow(range: RangeId, custom?: CustomRange | null): AnalyticsWindow {
   const now = new Date();
   let from: Date;
   let to: Date;
-  if (range === 'this_month') {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    to = now;
+  const cFrom = range === 'custom' ? parseYmd(custom?.start ?? '') : null;
+  const cTo = range === 'custom' ? parseYmd(custom?.end ?? '') : null;
+  if (cFrom && cTo) {
+    // Both chosen days count in full — local 00:00 → local 23:59:59.999 — so picking one day
+    // ("Jul 1 → Jul 1") is a real day and not a zero-length window.
+    from = cFrom;
+    to = new Date(cTo.getFullYear(), cTo.getMonth(), cTo.getDate(), 23, 59, 59, 999);
   } else if (range === 'last_month') {
     from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     to = new Date(now.getFullYear(), now.getMonth(), 1);
   } else if (range === 'last_30') {
     to = now;
     from = new Date(now.getTime() - 30 * 86_400_000);
-  } else {
+  } else if (range === 'this_quarter') {
     from = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    to = now;
+  } else {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
     to = now;
   }
   const len = to.getTime() - from.getTime();
@@ -338,6 +413,19 @@ export function computeWindow(range: RangeId): AnalyticsWindow {
   };
 }
 
+/** The header chip: a preset's name, or the actual dates once a custom window is applied. */
+export function rangeLabel(range: RangeId, custom?: CustomRange | null): string {
+  const a = range === 'custom' ? parseYmd(custom?.start ?? '') : null;
+  const b = range === 'custom' ? parseYmd(custom?.end ?? '') : null;
+  if (!a || !b) return RANGE_LABELS[range];
+  const md = (d: Date): string => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const full = (d: Date): string =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (a.getTime() === b.getTime()) return full(a);
+  // Same year ⇒ print it once, on the end date.
+  return a.getFullYear() === b.getFullYear() ? `${md(a)} – ${full(b)}` : `${full(a)} – ${full(b)}`;
+}
+
 function fmtDuration(secs: number): string {
   if (!Number.isFinite(secs) || secs <= 0) return '—';
   const h = secs / 3600;
@@ -347,11 +435,16 @@ function fmtDuration(secs: number): string {
 
 const BREAKDOWN_TONES: BreakdownItem['tone'][] = ['sky', 'good', 'purple', 'warn', 'amber', 'bad', 'teal', 'info', 'neutral'];
 
+/** Oldest → newest. The three sources don't agree on order — tickets/calls come back ascending from
+ *  our own routes, maintenance descending from its Deluge touchpoint — which drew the Maintenance
+ *  trend backwards (axis read "Jul 27 → Jun 30"). Sort here so every chart reads left-to-right. */
 function toVolume(daily: Array<{ day?: string; count?: number }> | undefined): VolumeDay[] {
-  return (daily ?? []).map((d) => ({
-    label: fmtDate(d.day).replace(/, \d{4}$/, ''),
-    value: Number(d.count) || 0,
-  }));
+  return [...(daily ?? [])]
+    .sort((a, b) => String(a.day ?? '').localeCompare(String(b.day ?? '')))
+    .map((d) => ({
+      label: fmtDate(d.day).replace(/, \d{4}$/, ''),
+      value: Number(d.count) || 0,
+    }));
 }
 
 function toBreakdown(
@@ -373,25 +466,33 @@ export interface AnalyticsData {
   maintenance: AnalyticsBlock;
 }
 
-export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Promise<AnalyticsData> {
-  const w = computeWindow(range);
-  const ymd = (iso: string): string => iso.slice(0, 10);
+export async function loadAnalytics(
+  range: RangeId,
+  ctx: CsContext | null,
+  custom?: CustomRange | null,
+): Promise<AnalyticsData> {
+  const w = computeWindow(range, custom);
   const isManager = ctx?.isManager === true;
 
   const [ticketsR, callsR, maintR, rosterR] = await Promise.allSettled([
     getTicketsAnalytics(w),
     getCallsAnalytics(w),
-    csTouchpoint('cs.analytics.maintenance', {
-      fromDate: ymd(w.from),
-      toDate: ymd(w.to),
-      prevFromDate: ymd(w.prevFrom),
-      prevToDate: ymd(w.prevTo),
+    // Native COQL (was the cs.analytics.maintenance Deluge, which paginated 5k records and
+    // reported open/closed as 0 — see integrations/csMaintenance.ts).
+    getMaintenanceAnalytics({
+      from: localYmd(w.from),
+      to: localYmd(w.to),
+      prevFrom: localYmd(w.prevFrom),
+      // `prevTo` is the datetime window's EXCLUSIVE end (it equals `from`), but the COQL window is
+      // inclusive — step back a day or the boundary day is counted in BOTH periods.
+      prevTo: localYmd(w.prevTo, -1),
     }),
     isManager ? getDeskRoster() : Promise.resolve({ agents: [] }),
   ]);
   const tickets = ticketsR.status === 'fulfilled' ? ticketsR.value : {};
   const calls = callsR.status === 'fulfilled' ? callsR.value : {};
-  const maint = maintR.status === 'fulfilled' ? maintR.value : {};
+  // Typed (unlike the old untyped Deluge result), so the failure fallback needs the same shape.
+  const maint: Partial<MaintenanceAnalytics> = maintR.status === 'fulfilled' ? maintR.value : {};
   const roster = rosterR.status === 'fulfilled' ? rosterR.value.agents : [];
 
   const tAgents = tickets.data?.agents ?? [];
@@ -409,7 +510,7 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
   }
   const tTotals = tickets.data?.totals ?? {};
   const cTotals = calls.data?.totals ?? {};
-  const mTotals = maint.data?.totals ?? {};
+  const mTotals: Partial<MaintenanceAnalytics['data']['totals']> = maint.data?.totals ?? {};
 
   // Manager leaderboard: tickets keyed by Desk id, calls by CRM email — join on email (widget parity).
   const rosterById = new Map(roster.map((r) => [r.id, r]));
@@ -440,8 +541,15 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
     }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
+  // col2 carries the agent's bonus as a formatted string — the backend owns the $5 / $2.50 rates
+  // (csMaintenance BONUS_FULL_USD / BONUS_HALF_USD) so they are not duplicated in the UI.
   const maintBoard: LeaderboardRow[] = (maint.data?.byOwner ?? [])
-    .map((o) => ({ agent: str(o.name) || str(o.id), col1: Number(o.count) || 0, col2: '—', col3: 0 }))
+    .map((o) => ({
+      agent: str(o.name) || str(o.id),
+      col1: Number(o.count) || 0,
+      col2: fmtUsd(Number(o.bonusUsd) || 0),
+      col3: Number(o.fullComplete) || 0,
+    }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
   void callsByEmail; // reserved for future merged-board parity
@@ -494,7 +602,7 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
       ],
       volume: toVolume(maint.data?.daily),
       breakdown: toBreakdown(maint.data?.byStatus),
-      leaderboardCols: ['Cases', '', ''],
+      leaderboardCols: ['Cases', 'Bonus', 'Full'],
       leaderboard: maintBoard,
     },
   };

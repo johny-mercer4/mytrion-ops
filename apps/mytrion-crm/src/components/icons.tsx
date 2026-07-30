@@ -1,24 +1,21 @@
 import type { CSSProperties } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ArrowLeftRight,
   ArrowRight,
   BadgeCheck,
   Ban,
-  BarChart3,
   BookOpen,
+  GraduationCap,
   Briefcase,
   Building,
   Check,
   ChevronLeft,
   ChevronRight,
-  CircleDollarSign,
   CloudUpload,
   Copy,
   Database,
   Eye,
   FileText,
-  Handshake,
   Hash,
   Headset,
   Heart,
@@ -42,9 +39,7 @@ import {
   User,
   Users,
   X,
-  Rocket,
   Wallet,
-  Activity,
   LineChart,
   LayoutGrid,
   Timer,
@@ -133,7 +128,7 @@ export const Sparkle = ({ size = 16, className, style }: IconProps) => (
 /** Lucide glyphs for each Mytrion module — picker tiles and anywhere a department icon is needed. */
 const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   admin: Shield,
-  sales: Rocket,
+  sales: LineChart,
   billing: Wallet,
   collection: Receipt,
   finance: Landmark,
@@ -143,6 +138,7 @@ const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   manager: Users,
   analyst: LineChart,
   hr: Briefcase,
+  trailhead: GraduationCap,
 };
 
 /** Per-Mytrion glyph for the wizard picker (Lucide, consistent with the rest of the shell). */

@@ -2,7 +2,7 @@
  * Transactions Report exports — PDF / Excel / CSV / Text.
  * Column layout mirrors EFS Transaction Report (self-service automation-modal.js).
  */
-import { deliverBlob, ensureTxnExportLibs } from './txnExportLibs';
+import { deliverBlob, ensureTxnPdfLibs } from './txnExportLibs';
 import {
   ensureTxnInvoices,
   groupTransactions,
@@ -251,19 +251,55 @@ function safeFilePart(s: string): string {
 
 function buildGroupedAoa(list: TxnGrouped[], opts: TxnExportOptions): unknown[][] {
   const aoa: unknown[][] = [];
-  aoa.push(efsColumns(opts).map((c) => c.h));
-  const groups = groupTransactions(list, opts.groupBy);
-  groups.forEach((g, gi) => {
-    efsDetailRows(g.transactions, opts).forEach((r) => aoa.push(r));
-    aoa.push([]);
-    const label = g.isCard ? maskCard(g.cardNumber, opts.showEntireCardNumber) : g.label;
-    aoa.push([`Group ${gi + 1}: ${label}`]);
-    efsSummaryBlock(g.transactions, opts.showDiscount).forEach((r) => aoa.push(r));
-    aoa.push([]);
-  });
+  if (!opts.grandTotalOnly) {
+    if (!opts.removeDetails) aoa.push(efsColumns(opts).map((c) => c.h));
+    const groups = groupTransactions(list, opts.groupBy);
+    groups.forEach((g, gi) => {
+      if (!opts.removeDetails) {
+        efsDetailRows(g.transactions, opts).forEach((r) => aoa.push(r));
+        aoa.push([]);
+      }
+      if (!opts.removeGroupSummary) {
+        const label = g.isCard ? maskCard(g.cardNumber, opts.showEntireCardNumber) : g.label;
+        aoa.push([`Group ${gi + 1}: ${label}`]);
+        efsSummaryBlock(g.transactions, opts.showDiscount).forEach((r) => aoa.push(r));
+        aoa.push([]);
+      }
+    });
+  }
   aoa.push(['GRAND TOTALS']);
   efsSummaryBlock(list, opts.showDiscount).forEach((r) => aoa.push(r));
   return aoa;
+}
+
+async function downloadExcel(
+  rows: unknown[][],
+  filename: string,
+  widths: number[],
+): Promise<void> {
+  const { default: ExcelJS } = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transactions', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
+  sheet.addRows(rows);
+  sheet.columns = widths.map((width) => ({ width: Math.min(Math.max(width, 8), 34) }));
+  const first = sheet.getRow(1);
+  first.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  first.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF19324D' } };
+  first.alignment = { vertical: 'middle' };
+  sheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.alignment = { ...cell.alignment, vertical: 'middle' };
+    });
+  });
+  const buffer = await workbook.xlsx.writeBuffer();
+  deliverBlob(
+    new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    filename,
+  );
 }
 
 export async function downloadTxnReport(
@@ -274,11 +310,11 @@ export async function downloadTxnReport(
   const list = processTransactions(withInv.transactions, opts);
   if (!list.length) throw new Error('No transaction data available to export.');
 
-  await ensureTxnExportLibs();
   const carrierId = withInv.carrierId || 'carrier';
   const filenameBase = `transactions_${safeFilePart(carrierId)}_${safeFilePart(withInv.from)}_${safeFilePart(withInv.to)}`;
 
   if (opts.format === 'pdf') {
+    await ensureTxnPdfLibs();
     await window.MytrionPdfUtils!.generateTransactionsPdf({
       carrierId,
       startDate: withInv.from,
@@ -314,7 +350,7 @@ export async function downloadTxnReport(
   }
 
   if (opts.format === 'excel') {
-    await window.MytrionExcelUtils!.aoaToXlsx(
+    await downloadExcel(
       buildGroupedAoa(list, opts),
       `${filenameBase}.xlsx`,
       efsColumns(opts).map((c) => c.w),
@@ -338,38 +374,42 @@ export async function downloadTxnReport(
   out.push(withInv.summary.dateRange || '');
   out.push(`Group by: ${opts.groupBy}`);
   out.push('');
-  const groups = groupTransactions(list, opts.groupBy);
-  groups.forEach((g, gi) => {
-    const label = g.isCard ? maskCard(g.cardNumber, opts.showEntireCardNumber) : g.label;
-    out.push(`Group ${gi + 1}: ${label}  (${g.transactions.length} txn${g.transactions.length !== 1 ? 's' : ''})`);
-    if (!opts.removeDetails) {
-      g.transactions.forEach((tx) => {
-        const date = dateOnly(tx.transactionDate);
-        const time = opts.showTransactionTime ? ` ${timeOnly(tx.transactionDate)}` : '';
-        const items = tx.lineItems.length
-          ? tx.lineItems
-          : [{ category: '—', quantity: tx.fuelQuantity, amount: tx.fundedTotal, discAmount: tx.discAmount, discTypeCode: '', ppu: null, retailPPU: null, discPerUnit: null, discType: '' }];
-        items.forEach((li, i) => {
-          const head =
-            i === 0
-              ? `${date}${time}  inv ${tx.invoiceRef || '—'}  unit ${tx.unitNumber || '—'}  ${tx.driverName || '—'}  ${tx.locationName || tx.location || '—'}, ${tx.locationCity || ''} ${tx.locationState || ''}`
-              : `${' '.repeat(10)}`;
-          const qty = Number(li.quantity) || 0;
-          const discPart =
-            opts.showDiscount && Number(li.discAmount) > 0 ? `  disc ${Number(li.discAmount).toFixed(2)}` : '';
-          const lineAmt = (Number(li.amount) || 0) + (opts.showDiscount ? 0 : Number(li.discAmount) || 0);
-          out.push(
-            `  ${head}  ${li.category || '—'}  qty ${qty ? qty.toFixed(2) : '0'}  $${lineAmt.toFixed(2)}  ${efsDiscCode(li.discTypeCode)}${discPart}`,
-          );
+  if (!opts.grandTotalOnly) {
+    const groups = groupTransactions(list, opts.groupBy);
+    groups.forEach((g, gi) => {
+      const label = g.isCard ? maskCard(g.cardNumber, opts.showEntireCardNumber) : g.label;
+      out.push(`Group ${gi + 1}: ${label}  (${g.transactions.length} txn${g.transactions.length !== 1 ? 's' : ''})`);
+      if (!opts.removeDetails) {
+        g.transactions.forEach((tx) => {
+          const date = dateOnly(tx.transactionDate);
+          const time = opts.showTransactionTime ? ` ${timeOnly(tx.transactionDate)}` : '';
+          const items = tx.lineItems.length
+            ? tx.lineItems
+            : [{ category: '—', quantity: tx.fuelQuantity, amount: tx.fundedTotal, discAmount: tx.discAmount, discTypeCode: '', ppu: null, retailPPU: null, discPerUnit: null, discType: '' }];
+          items.forEach((li, i) => {
+            const head =
+              i === 0
+                ? `${date}${time}  inv ${tx.invoiceRef || '—'}  unit ${tx.unitNumber || '—'}  ${tx.driverName || '—'}  ${tx.locationName || tx.location || '—'}, ${tx.locationCity || ''} ${tx.locationState || ''}`
+                : `${' '.repeat(10)}`;
+            const qty = Number(li.quantity) || 0;
+            const discPart =
+              opts.showDiscount && Number(li.discAmount) > 0 ? `  disc ${Number(li.discAmount).toFixed(2)}` : '';
+            const lineAmt = (Number(li.amount) || 0) + (opts.showDiscount ? 0 : Number(li.discAmount) || 0);
+            out.push(
+              `  ${head}  ${li.category || '—'}  qty ${qty ? qty.toFixed(2) : '0'}  $${lineAmt.toFixed(2)}  ${efsDiscCode(li.discTypeCode)}${discPart}`,
+            );
+          });
         });
-      });
-    }
-    out.push('');
-    efsSummaryBlock(g.transactions, opts.showDiscount).forEach((row) => {
-      out.push(`  ${row.map((c) => String(c ?? '')).join('  ')}`);
+      }
+      if (!opts.removeGroupSummary) {
+        out.push('');
+        efsSummaryBlock(g.transactions, opts.showDiscount).forEach((row) => {
+          out.push(`  ${row.map((c) => String(c ?? '')).join('  ')}`);
+        });
+      }
+      out.push('');
     });
-    out.push('');
-  });
+  }
   out.push('GRAND TOTALS');
   efsSummaryBlock(list, opts.showDiscount).forEach((row) => {
     out.push(row.map((c) => String(c ?? '')).join('  '));

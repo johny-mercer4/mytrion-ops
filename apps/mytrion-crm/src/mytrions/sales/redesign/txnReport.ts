@@ -284,7 +284,7 @@ export async function fetchTxnReport(
     (pg.total != null && rows.length < Number(pg.total)) ||
     summary.totalTransactions > transactions.length;
 
-  return {
+  return ensureTxnInvoices({
     carrierId,
     range: rp.range,
     from,
@@ -293,7 +293,7 @@ export async function fetchTxnReport(
     summary,
     moreRecords,
     invoicesLoaded: false,
-  };
+  });
 }
 
 export async function ensureTxnInvoices(state: TxnReportState): Promise<TxnReportState> {

@@ -25,23 +25,34 @@ import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { dataLoaderRoutes } from './routes/v1/dataLoader.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
 import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
+import { mytrionSchemaRoutes } from './routes/v1/mytrionSchema.routes.js';
 import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.js';
 import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
+import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
+import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
+import { managerRoutes } from './routes/v1/manager.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
+import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
+import { hrRoutes } from './routes/v1/hr.routes.js';
+import { hrDepartmentsRoutes } from './routes/v1/hrDepartments.routes.js';
+import { hrAttendanceRoutes } from './routes/v1/hrAttendance.routes.js';
+import { hrLeaveRoutes } from './routes/v1/hrLeave.routes.js';
+import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -61,6 +72,9 @@ import { filesRoutes } from './routes/v1/files.routes.js';
 import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
+import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
+import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
 // serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
@@ -70,6 +84,8 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-api-key"]',
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
+  'req.headers["x-rejection-secret"]',
+  'req.headers["x-webhook-signature"]',
 ];
 
 function loggerOption() {
@@ -155,7 +171,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   combinedAuthPlugin(app);
   rbacPlugin(app);
 
-  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    // helmet's default is COOP: same-origin, which puts any window.open() popup in a SEPARATE
+    // browsing context group and makes `window.opener` null inside it. That silently breaks every
+    // OAuth-popup sign-in we host — most visibly the RingCentral softphone: Embeddable opens the RC
+    // login popup, RC redirects it to its own redirect.html, and redirect.js hands the code back via
+    // `window.opener.oAuthCallback(...)` / `window.opener.postMessage({callbackUri}, ...)` then
+    // window.close(). With the opener severed that throws, so the popup never closes and the agent
+    // sits on redirect.html's literal "Loading..." forever. Dev never saw it because the Vite dev
+    // server sends no COOP at all. `same-origin-allow-popups` keeps this document protected from a
+    // cross-origin opener while letting popups WE open keep their opener reference.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  });
   await app.register(cors, {
     // Reflect the caller's Origin when allowed (exact match or allowed suffix, e.g.
     // *.zappsusercontent.com) — never a bare "*", since we send a custom x-api-key header.
@@ -174,6 +202,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-act-as-user-name',
       'x-act-as-profile',
       'x-act-as-role',
+      'x-webhook-key-id',
+      'x-webhook-timestamp',
+      'x-webhook-signature',
+      'idempotency-key',
     ],
     credentials: true,
   });
@@ -244,8 +276,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(dataLoaderRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
+      await v1.register(mytrionSchemaRoutes);
       await v1.register(verificationSchemaRoutes);
       await v1.register(mytrionAccessRoutes);
       await v1.register(clientNewsRoutes);
@@ -257,13 +291,23 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
       await v1.register(dataCenterRoutes);
+      await v1.register(salesInvoicesRoutes);
+      await v1.register(managerRoutes);
       await v1.register(verificationPipelineRoutes);
+      await v1.register(verificationClientsRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
+      await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
+      await v1.register(hrRoutes);
+      await v1.register(hrDepartmentsRoutes);
+      await v1.register(hrAttendanceRoutes);
+      await v1.register(hrLeaveRoutes);
+      // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
+      await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);
@@ -271,6 +315,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(integrationsRoutes);
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
+      await v1.register(salesKpiRoutes);
+      await v1.register(managerTasksRoutes);
+      await v1.register(kpiAdminRoutes);
     },
     { prefix: API_PREFIX },
   );

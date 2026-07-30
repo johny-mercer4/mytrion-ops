@@ -39,7 +39,30 @@ export interface Deal {
   /** Zoho CRM Deal id when known (Desk ticket creates need this). */
   dealId: string;
 }
-export interface Card { id: string; number: string; status: string; driver: string; unit: string; }
+export interface Card {
+  id: string;
+  number: string;
+  status: string;
+  driver: string;
+  driverId: string;
+  unit: string;
+}
+export interface CardLastUsedRow {
+  cardNumber: string;
+  status: string;
+  lastUsed: string | null;
+  daysSinceLastUse: number | null;
+  transactions: number | null;
+  source: 'efs' | 'dwh' | 'none';
+}
+export interface LimitUpdateResult {
+  cardNumber: string;
+  limitId: string;
+  previousLimit: number;
+  newLimit: number;
+  delta: number;
+  direction: 'increase' | 'decrease';
+}
 export interface WexResult { company: string; appId: string; contact: string; status: string; group: string; }
 export interface InvRow { id: string; inv: string; date: string; amount: string; status: string; }
 /** Lightweight on-screen txn list row (full report lives in TxnReportState). */
@@ -77,6 +100,8 @@ export type DonePayload =
   | { kind: 'transactions' }
   | { kind: 'message'; message: string }
   | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
+  | { kind: 'card-last-used'; rows: CardLastUsedRow[] }
+  | { kind: 'limit-update'; result: LimitUpdateResult }
   | { kind: 'link'; label: string; url: string }
   | { kind: 'tracking'; carrierId: string; fedexTracking: string; entries: TrackingEntry[] }
   | { kind: 'wex-tasks'; appId: string; summary: string; tasks: WexTaskEntry[] }
@@ -153,12 +178,42 @@ export const LIMITTYPES = [
   { value: 'RFR', label: 'RFR — Reefer' },
   { value: 'DSL', label: 'DSL — Diesel' },
 ] as const;
+export const LIMIT_CHANGE_MAX = 350;
 
+/**
+ * Draw reasons for a money code — the business's canonical B-codes.
+ *
+ * These are NOT free labels. servercrm validates the submitted string against this exact set and
+ * rejects anything else with 400 `moneycode_reason is required and must be one of: …`, so the four
+ * invented placeholders that used to live here ('Driver stranded — fuel needed', 'Emergency cash
+ * advance', 'Breakdown / roadside', 'Other') made EVERY draw from Sales Mytrion fail.
+ *
+ * The `B-n ` prefix is the load-bearing part: at issue time servercrm takes the first token
+ * (`"B-2 For Fuel"` → `"B-2"`) and puts it in the EFS money-code `notes` field as
+ * `req{id} B-2 U{unit}`, hard-truncated to 30 chars. EFS never sees the label text.
+ *
+ * ⚠ Character-exact, including the ONE lowercase label: 'B-12 For lumper fee'. The business kept that
+ * casing deliberately and servercrm's Set is case-sensitive — 'For Lumper Fee' would 400.
+ *
+ * This list is only a FALLBACK. The money-code preview returns the authoritative list as
+ * `moneycode_reasons`, which the form prefers, so the vocabulary can change server-side without a
+ * frontend deploy (mirrors the Zoho self-service widget's behaviour).
+ */
 export const MONEY_CODE_REASONS = [
-  'Driver stranded — fuel needed',
-  'Emergency cash advance',
-  'Breakdown / roadside',
-  'Other',
+  'B-1 For Truck Service',
+  'B-2 For Fuel',
+  'B-3 For Personal Expenses',
+  'B-4 For Towing',
+  'B-5 For Cash Advance',
+  'B-6 For Salary',
+  'B-7 For Parking',
+  'B-8 For Truck Wash',
+  'B-9 For Truck Scale',
+  'B-10 For Shower',
+  'B-11 For Trailer',
+  'B-12 For lumper fee',
+  'B-13 For Straps',
+  'B-14 For Company Charge',
 ] as const;
 
 export const EFS_LOGIN_URL = 'https://www.wexdrive.com/otr/pdf/EFS_eMgr-CredGuide.pdf';
@@ -276,16 +331,19 @@ function mapCard(r: Record<string, unknown>, i: number): Card {
     number,
     status: normCardStatus(str(r.status)),
     driver: str(r.driver_name ?? r.driverName ?? r.driver),
+    driverId: str(r.driver_id ?? r.driverId),
     unit: str(r.unit_number ?? r.unitNumber ?? r.unit),
   };
 }
 export async function loadCards(carrierId: string): Promise<Card[]> {
   let data: Array<Record<string, unknown>> = [];
   try {
-    const res = await callTouchpoint('dwh.cards', { carrierId });
+    // Status-changing actions must read the same live EFS source they write. DWH is a fallback
+    // only, so C-3 immediately sees a card activated through C-1.
+    const res = await callTouchpoint('efs.cards', { carrierId });
     data = (res.data ?? []) as Array<Record<string, unknown>>;
   } catch {
-    const res = await callTouchpoint('efs.cards', { carrierId });
+    const res = await callTouchpoint('dwh.cards', { carrierId });
     data = (res.data ?? []) as Array<Record<string, unknown>>;
   }
   return data.map((c, i) => mapCard(c, i));

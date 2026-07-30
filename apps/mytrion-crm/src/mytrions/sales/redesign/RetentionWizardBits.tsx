@@ -23,10 +23,10 @@ export function DissatisfiedForm(props: {
       )}
     >
       <div>
-        <div style={s('font-size:13px;font-weight:800;color:var(--text)')}>
+        <div style={s('font-size:14px;font-weight:800;color:var(--text)')}>
           Why are they dissatisfied?
         </div>
-        <div style={s('font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4')}>
+        <div style={s('font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4')}>
           Pick the main reason — this goes to the Retention team with the case.
         </div>
       </div>
@@ -51,12 +51,12 @@ export function DissatisfiedForm(props: {
             >
               <div
                 style={s(
-                  `font-size:12px;font-weight:800;color:${active ? 'var(--danger)' : 'var(--text)'}`,
+                  `font-size:13px;font-weight:800;color:${active ? 'var(--danger)' : 'var(--text)'}`,
                 )}
               >
                 {r.label}
               </div>
-              <div style={s('font-size:11px;color:var(--muted);margin-top:2px;line-height:1.35')}>
+              <div style={s('font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35')}>
                 {r.hint}
               </div>
             </button>
@@ -75,17 +75,17 @@ export function DissatisfiedForm(props: {
         rows={2}
         className="ss-in"
         style={s(
-          'padding:8px 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12px;resize:vertical',
+          'padding:8px 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical',
         )}
       />
       <button
         type="submit"
         disabled={props.busy || !props.reason}
         style={s(
-          `height:40px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger);font-weight:700;font-size:13px;cursor:${props.busy || !props.reason ? 'not-allowed' : 'pointer'};opacity:${!props.reason ? 0.55 : 1}`,
+          `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:var(--danger);color:#04131c;font-weight:800;font-size:15px;cursor:${props.busy || !props.reason ? 'not-allowed' : 'pointer'};opacity:${!props.reason ? 0.55 : 1};box-shadow:0 8px 22px color-mix(in srgb,var(--danger) 35%,transparent)`,
         )}
       >
-        Hand off to Retention & close
+        {props.busy ? 'Saving…' : 'Save Dissatisfied →'}
       </button>
     </form>
   );
@@ -114,7 +114,7 @@ export function ScreenshotField(props: {
         <div style={s('min-width:0;flex:1')}>
           <div
             style={s(
-              'font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+              'font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
             )}
           >
             {props.fileName ?? 'Screenshot ready'}
@@ -124,7 +124,7 @@ export function ScreenshotField(props: {
           type="button"
           onClick={() => props.onPick(null)}
           style={s(
-            'border:none;background:transparent;color:var(--danger);font-size:12px;font-weight:700;cursor:pointer',
+            'border:none;background:transparent;color:var(--danger);font-size:13px;font-weight:700;cursor:pointer',
           )}
         >
           Remove
@@ -141,7 +141,7 @@ export function ScreenshotField(props: {
         )}
       >
         <Icon name="upload" size={18} color="var(--accent)" strokeWidth={1.8} />
-        <div style={s('font-size:12px;color:var(--text2)')}>
+        <div style={s('font-size:13px;color:var(--text2)')}>
           <span style={s('color:var(--accent);font-weight:700')}>Screenshot</span> (optional if you
           add a note)
         </div>

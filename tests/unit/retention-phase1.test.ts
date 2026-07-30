@@ -1,9 +1,17 @@
 /**
  * Phase 1 retention workflow — pure transition guards + business-day helper.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import type { RetentionCase } from '../../src/db/schema/index.js';
+
+/** Exercise full escalation paths — production kill-switches are off. */
+vi.mock('../../src/modules/retention/killSwitches.js', () => ({
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED: true,
+  RETENTION_PHASE2_ESCALATION_ENABLED: true,
+  RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED: true,
+}));
+
 import {
   addBusinessDays,
   COMMS_ATTEMPT_DEADLINE_TYPE,

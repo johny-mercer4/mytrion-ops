@@ -18,6 +18,16 @@ export interface DbColumn {
   comment: string;
 }
 
+export interface DbWriteActivity {
+  inserts: number;
+  updates: number;
+  deletes: number;
+  totalWrites: number;
+  statsResetAt: string | null;
+  writesPerDay: number | null;
+  frequency: 'Every minute' | 'Hourly' | 'Daily' | 'Weekly' | 'Occasional' | 'No writes' | 'Unknown';
+}
+
 export interface DbTable {
   /** Present for multi-schema sources (DWH); absent for single-database sources (CMP). */
   schema?: string | null;
@@ -29,6 +39,8 @@ export interface DbTable {
   updateTime: string | null;
   createTime: string | null;
   comment: string;
+  /** Present for PostgreSQL base tables; absent/null for views and older schema sources. */
+  writeActivity?: DbWriteActivity | null;
   columns: DbColumn[];
 }
 

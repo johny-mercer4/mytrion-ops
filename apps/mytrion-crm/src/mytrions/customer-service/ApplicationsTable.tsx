@@ -4,7 +4,7 @@
  * Columns whose CRM field the live view-model doesn't carry (Oldest_Open_Date,
  * Billing_Form_Y_N, Verification_Notes, Tracking_Number) render '—'.
  */
-import type { CSSProperties, ReactElement } from 'react';
+import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
 import type { OnboardingField } from '@/api/cs';
 import { dotStyle } from './colors';
@@ -90,12 +90,11 @@ const APPS_COLUMNS: AppColumn[] = [
   { key: 'picklist', label: 'Business Type', field: 'Type_of_Business', thStyle: { minWidth: 150 } },
   { key: 'stage', label: 'Stage', thStyle: { minWidth: 150 } },
   { key: 'wex_status', label: 'WEX Status', thStyle: { minWidth: 160 } },
-  { key: 'contact', label: 'Contact', thStyle: { minWidth: 140 } },
   { key: 'generic', label: 'MC', field: 'emc', thStyle: { minWidth: 100 } },
   { key: 'generic', label: 'DOT', field: 'DOT', thStyle: { minWidth: 100 } },
   { key: 'phone', label: 'Phone', thStyle: { minWidth: 130 } },
   { key: 'generic', label: 'Email', field: 'Email', thStyle: { minWidth: 180 } },
-  { key: 'address', label: 'Address', thStyle: { minWidth: 200 } },
+  { key: 'address', label: 'Address', thStyle: { minWidth: 260 } },
   { key: 'generic', label: 'Credit Score', field: 'Credit_Score', thStyle: { minWidth: 90 } },
   { key: 'date', label: 'Oldest Open', field: 'Oldest_Open_Date', thStyle: { minWidth: 110 } },
   { key: 'generic', label: 'Trucks', field: 'Number_of_Trucks', thStyle: { minWidth: 80 } },
@@ -107,13 +106,10 @@ const APPS_COLUMNS: AppColumn[] = [
   { key: 'boolean', label: 'Billing Form', field: 'Billing_Form_Y_N', thStyle: { minWidth: 110 } },
   { key: 'verified', label: 'VRF', thStyle: { minWidth: 50 } },
   { key: 'notes', label: 'Verif. Notes', field: 'Verification_Notes', thStyle: { minWidth: 180 } },
-  /* Onboarding checklist — mirrors the CS tracking sheet (tick directly in the row) */
-  { key: 'check', label: 'Email to TA', field: 'Email_to_TA', thStyle: { minWidth: 82, textAlign: CENTER } },
-  { key: 'check', label: 'TA / EFS', field: 'TA_EFS_Added', thStyle: { minWidth: 72, textAlign: CENTER } },
-  { key: 'check', label: 'Limits', field: 'Limits_added', thStyle: { minWidth: 64, textAlign: CENTER } },
-  { key: 'check', label: 'Mobile App', field: 'Mobile_Driver_App', thStyle: { minWidth: 84, textAlign: CENTER } },
-  { key: 'check', label: 'Chain Policy', field: 'Chain_policy', thStyle: { minWidth: 90, textAlign: CENTER } },
-  { key: 'generic', label: 'Tracking #', field: 'Tracking_Number', thStyle: { minWidth: 120 } },
+  /* QA feedback (Dina Carter, 2026-07-28): 'Contact' dropped — unused, and the space is better
+     spent on Address. The onboarding tick boxes (Email to TA / TA-EFS / Limits / Mobile App /
+     Chain Policy) and 'Tracking #' were dropped for the same reason; they remain on the CLIENTS
+     tab (CLIENT_COLUMNS), which is where onboarding is actually worked. */
 ];
 
 export function columnsFor(tab: SubTab): AppColumn[] {
@@ -168,12 +164,14 @@ export function AppCell({
   col,
   app,
   subTab,
-  pendingToggle,
+  busyField,
 }: {
   col: AppColumn;
   app: Application;
   subTab: SubTab;
-  pendingToggle: string | null;
+  /** The onboarding field saving on THIS row, or null. Row-scoped so a toggle can't mark the same
+   *  column busy on all 200 rows — and so an unaffected row's props never change (see AppRow). */
+  busyField: string | null;
 }): ReactElement {
   switch (col.key) {
     /* Company name */
@@ -246,13 +244,21 @@ export function AppCell({
 
     /* Address summary */
     case 'address': {
-      const short = [app.city, app.state].filter(Boolean).join(', ');
-      return short ? (
-        <span className="cs-app-row-text" title={short}>
-          {short}
-        </span>
-      ) : (
-        MUTED
+      /* Full address on file, not just the locality (QA feedback 2026-07-28). Street on top,
+         "City, ST ZIP" beneath — one line would be too wide for a nowrap column. Records with no
+         street fall back to the locality line alone, which is the old behaviour. */
+      const locality = [[app.city, app.state].filter(Boolean).join(', '), app.zip]
+        .filter(Boolean)
+        .join(' ');
+      if (!app.street && !locality) return MUTED;
+      const full = [app.street, locality].filter(Boolean).join(', ');
+      return (
+        <div className="cs-app-address" title={full}>
+          {app.street ? <div className="cs-app-address-street">{app.street}</div> : null}
+          {locality ? (
+            <div className={app.street ? 'cs-app-address-locality' : 'cs-app-row-text'}>{locality}</div>
+          ) : null}
+        </div>
       );
     }
 
@@ -278,7 +284,7 @@ export function AppCell({
     case 'check': {
       if (!isOnboardingField(col.field)) return MUTED;
       const on = app[CHECK_PROP[col.field]] === 1;
-      const busy = pendingToggle === col.field;
+      const busy = busyField === col.field;
       return (
         <span
           className={`cs-cell-check${on ? ' is-on' : ''}${busy ? ' is-busy' : ''}`}
@@ -307,3 +313,54 @@ export function AppCell({
     }
   }
 }
+
+/**
+ * One table row, memoised.
+ *
+ * The panel renders up to 200 rows x 28 columns = ~5,600 cells. Search state lives in the panel, so
+ * before this every keystroke re-rendered all of them — measured at ~105ms per character, i.e. six
+ * dropped frames while typing. `memo` lets an untouched row bail out on the identity of its props,
+ * which is why the panel must hand it stable ones: a memoised `columns`, useCallback'd handlers, and
+ * a row-scoped `busyField` that stays null for every row except the one being saved.
+ */
+export const AppRow = memo(function AppRow({
+  app,
+  columns,
+  subTab,
+  busyField,
+  onCellClick,
+  onOpen,
+}: {
+  app: Application;
+  columns: AppColumn[];
+  subTab: SubTab;
+  busyField: string | null;
+  onCellClick: (col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) => void;
+  onOpen: (app: Application) => void;
+}) {
+  return (
+    <tr
+      className="cs-app-row"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onOpen(app);
+        }
+      }}
+    >
+      {columns.map((col, i) => (
+        <td
+          key={i}
+          className={col.key === 'id' || col.key === 'app_id' ? 'cs-app-cell-copyable' : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCellClick(col, app, e);
+          }}
+        >
+          <AppCell col={col} app={app} subTab={subTab} busyField={busyField} />
+        </td>
+      ))}
+    </tr>
+  );
+});

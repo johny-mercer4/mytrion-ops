@@ -7,6 +7,7 @@
  * other tabs own their own skeletons (no shell-level boot splash).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
@@ -14,6 +15,7 @@ import { ClientModal, type ClientModalTab } from './ClientModal';
 import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
+import { MytrionSwitchLink } from '@/components/MytrionSwitchLink';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
 import { DealCallWizardHost } from './DealCallWizard';
@@ -28,6 +30,9 @@ import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
 import { useTheme } from '@/hooks/useTheme';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
+import './ss-horizon.css';
+// After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
+import './dc-clients.css';
 
 import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
@@ -40,19 +45,31 @@ import { AutoTab } from './tabs/AutoTab';
 import { DashTab } from './tabs/DashTab';
 import { CarriersTab } from './tabs/CarriersTab';
 import { ComingSoonPanel } from './tabs/ComingSoonPanel';
+import { TasksTab } from './tabs/TasksTab';
+import { soonHue } from './soonTabs';
+import { emitKpiActivity, useKpiPresence } from './kpiTelemetry';
 
-/** Colorful SOON chip hues per parked nav id. */
-const SOON_HUE: Record<string, string> = {
-  retention: 'var(--orange)',
-  verification: 'var(--violet)',
-  tickets: 'var(--accent)',
-  callHub: 'var(--ok)',
+/** Wayfinding hue per nav id — the shared --tone-* scale (theme-aware; see styles/horizon.css). */
+const NAV_TONE: Record<string, string> = {
+  home: 'var(--tone-sky)',
+  inbox: 'var(--tone-cyan)',
+  tasks: 'var(--tone-emerald)',
+  records: 'var(--tone-blue)',
+  create: 'var(--tone-emerald)',
+  carriers: 'var(--tone-teal)',
+  retention: 'var(--tone-orange)',
+  tickets: 'var(--tone-amber)',
+  verification: 'var(--tone-violet)',
+  callHub: 'var(--tone-pink)',
+  auto: 'var(--tone-indigo)',
+  dash: 'var(--tone-rose)',
 };
 
 /** Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper. */
 const FULL_BLEED = new Set(['tickets']);
 
 export function SalesRedesign() {
+  useKpiPresence();
   const user = useSessionUser();
   const userCtx = useUserContext();
   const admin = isAdmin(userCtx);
@@ -132,6 +149,10 @@ export function SalesRedesign() {
   const go = useCallback((next: string) => {
     setSection(next);
     setDetail(null);
+    emitKpiActivity('navigation.tab_open', {
+      entityType: 'tab',
+      entityId: next,
+    });
   }, []);
   const openDash = useCallback((sub?: 'sales' | 'company' | 'debtors' | 'powerbi') => {
     setFocusDashSub(sub ?? 'sales');
@@ -169,8 +190,14 @@ export function SalesRedesign() {
       pushToast,
       openDetail: setDetail,
       openClient,
-      openLead: setLead,
-      openDeal: setDeal,
+      openLead: (nextLead) => {
+        emitKpiActivity('crm.lead_open', { entityType: 'lead', entityId: nextLead.id });
+        setLead(nextLead);
+      },
+      openDeal: (nextDeal) => {
+        emitKpiActivity('crm.deal_open', { entityType: 'deal', entityId: nextDeal.id });
+        setDeal(nextDeal);
+      },
       go,
       openDash,
       focusDashSub,
@@ -216,21 +243,26 @@ export function SalesRedesign() {
     <SalesContext.Provider value={ctx}>
       <div
         className={`ss-root ${theme === 'light' ? 'light' : ''}`}
-        style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
+        style={s('height:100vh;display:flex;flex-direction:row;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:15px;overflow:hidden;position:relative')}
       >
+        {/* Ambient Horizon backdrop — the shared mesh + 64px grid + vignette, replacing the two
+            bespoke radial gradients that used to live on the root's inline background. z-index:-1
+            (with `isolation:isolate` on .ss-root) keeps it above the root's own background and below
+            all in-flow content, so it can never cover a panel. */}
+        <div className="ss-ambience" aria-hidden="true" style={{ zIndex: -1 }} />
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
           <div style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
             {!navCollapsed && (
               <>
                 <div style={s('line-height:1.05;min-width:0;flex:1')}>
-                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
+                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
                     MY<span style={s('color:var(--accent-text)')}>TRION</span>
                   </div>
                   <div
                     className="ss-brand-sub"
                     style={s(
-                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
+                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:13px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
                     )}
                   >
                     Sales
@@ -258,7 +290,7 @@ export function SalesRedesign() {
                   onChange={(e) => setNavQuery(e.target.value)}
                   placeholder="Search tabs…"
                   aria-label="Search tabs"
-                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:13px;font-weight:600')}
+                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:14px;font-weight:600')}
                 />
                 {navQuery ? (
                   <button
@@ -276,7 +308,7 @@ export function SalesRedesign() {
           )}
           <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:2px')}>
             {navFiltered.length === 0 && !navCollapsed && (
-              <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No tabs match.</div>
+              <div style={s('padding:10px 12px;font-size:13px;color:var(--muted)')}>No tabs match.</div>
             )}
             {navFiltered.map((group, gi) => (
               <div key={group.id} style={s('display:flex;flex-direction:column;gap:2px')}>
@@ -286,30 +318,32 @@ export function SalesRedesign() {
                 {group.items.map((n) => {
                   const active = section === n.id;
                   const soon = n.comingSoon === true;
-                  const soonHue = SOON_HUE[n.id] ?? 'var(--warn)';
-                  const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:pointer;opacity:${soon && !active ? '.72' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s,opacity .14s`;
+                  const chipHue = soonHue(n.id);
+                  // Active background / colour / rail now live in ss-horizon.css (.ss-tab-x.is-active)
+                  // so the rail can be a gradient — an inline inset box-shadow cannot be.
+                  const style = `display:flex;align-items:center;gap:11px;padding:11px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};width:100%;background:transparent;color:var(--muted);font-size:14px;font-weight:${active ? 700 : 600};cursor:pointer;opacity:${soon && !active ? '.72' : '1'};border-radius:var(--radius-md);overflow:hidden`;
                   return (
                     <button
                       key={n.id}
                       onClick={() => go(n.id)}
                       title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
-                      className="ss-tab-x"
-                      style={s(style)}
+                      className={`ss-tab-x${active ? ' is-active' : ''}`}
+                      style={{ ...s(style), ['--ss-tone' as string]: NAV_TONE[n.id] ?? 'var(--accent)' }}
                     >
-                      <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
+                      <span className="ss-tab-ico" style={s('position:relative;flex-shrink:0;display:inline-flex')}>
                         <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
                         {navCollapsed && soon ? (
-                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${soonHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${soonHue} 40%, transparent)`)} />
+                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${chipHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${chipHue} 40%, transparent)`)} />
                         ) : null}
                         {navCollapsed && !soon && badgeCounts[n.id] ? (
-                          <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:8px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
+                          <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
                         ) : null}
                       </span>
                       {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
                       {!navCollapsed && soon ? (
-                        <span style={s(`font-size:8.5px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:99px;color:#fff;background:linear-gradient(135deg, color-mix(in srgb, ${soonHue} 92%, #fff), color-mix(in srgb, ${soonHue} 55%, var(--accent)));box-shadow:0 2px 8px color-mix(in srgb, ${soonHue} 40%, transparent)`)}>SOON</span>
+                        <span className="ss-soon-chip" style={{ ['--ss-soon-hue' as string]: chipHue }}>SOON</span>
                       ) : !navCollapsed && badgeCounts[n.id] ? (
-                        <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
+                        <span style={s('background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                       ) : null}
                     </button>
                   );
@@ -318,16 +352,24 @@ export function SalesRedesign() {
             ))}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
+            {/* Route back to the Mytrion picker. Sales agents now hold more than one Mytrion, and the
+                sidebar was a dead end — the only exit was the top bar, which the full-bleed tabs cover.
+                Hidden automatically for anyone with a single Mytrion (see MytrionSwitchLink). */}
+            <MytrionSwitchLink
+              className="ss-ico-btn"
+              label={navCollapsed ? '' : 'Switch Mytrion'}
+              style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}
+            />
+            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
               <Icon name={theme === 'light' ? 'moon' : 'sun'} size={16} style={{ flexShrink: 0 }} />
               {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
             </button>
             <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)`)}>
-              <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
+              <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0')}>{initials}</div>
               {!navCollapsed && (
                 <div style={s('line-height:1.2;min-width:0')}>
-                  <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
-                  <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
+                  <div style={s('font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
+                  <div style={s('font-size:11px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
                 </div>
               )}
             </div>
@@ -338,25 +380,29 @@ export function SalesRedesign() {
         <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
           <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
             <div style={s('display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden')}>
-              <span style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{activeLabel || NAVLABEL[section] || ''}</span>
+              <span style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{activeLabel || NAVLABEL[section] || ''}</span>
               {activeLabel && NAVLABEL[section] && NAVLABEL[section] !== activeLabel && (
-                <span style={s('font-size:12px;color:var(--muted);font-weight:500;white-space:nowrap;flex-shrink:0')}>{NAVLABEL[section]}</span>
+                <span style={s('font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap;flex-shrink:0')}>{NAVLABEL[section]}</span>
               )}
             </div>
             {admin && <ViewAsPicker />}
-            <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>
           <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
-            <div id="ss-panels" key={actAsKey} style={s(fullBleed && !sectionComingSoon ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+            {/* A Coming-soon placeholder is chrome, not reading content, so it takes the FULL panel
+                width rather than the 1180px measure — clamped, it read as a small card floating in a
+                large empty page. */}
+            <div id="ss-panels" key={actAsKey} style={s((fullBleed || sectionComingSoon) ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {sectionComingSoon ? (
                 <ComingSoonPanel sectionId={section} />
               ) : (
                 <>
                   {section === 'home' && <HomeTab />}
                   {section === 'inbox' && <InboxTab />}
+                  {section === 'tasks' && <TasksTab />}
                   {section === 'tickets' && <TicketsTab />}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}
@@ -378,7 +424,7 @@ export function SalesRedesign() {
               <div style={s('display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:16px;font-weight:700;line-height:1.3')}>{detail.title}</div>
+                  <div style={s('font-size:17px;font-weight:700;line-height:1.3')}>{detail.title}</div>
                   <div style={s('display:flex;gap:6px;margin-top:8px;flex-wrap:wrap')}>
                     {detail.badges.map((b, i) => <span key={i} style={s(b.style)}>{b.text}</span>)}
                   </div>
@@ -388,13 +434,13 @@ export function SalesRedesign() {
                 </button>
               </div>
               <div style={s('padding:20px 22px;max-height:52vh;overflow-y:auto')}>
-                <p style={s('font-size:13.5px;line-height:1.7;color:var(--text2);white-space:pre-wrap;margin:0')}>{detail.body}</p>
-                <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)')}>
+                <p style={s('font-size:14px;line-height:1.7;color:var(--text2);white-space:pre-wrap;margin:0')}>{detail.body}</p>
+                <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)')}>
                   <strong style={s('color:var(--text2)')}>{detail.metaLabel}</strong> {detail.meta}
                 </div>
               </div>
               <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
-                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}>Close</button>
+                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
               </div>
             </div>
           </div>
@@ -418,6 +464,7 @@ export function SalesRedesign() {
             lead={lead}
             onClose={() => setLead(null)}
             onCall={(phone) => {
+              emitKpiActivity('crm.call_click', { entityType: 'lead', entityId: lead.id, outcome: 'attempted' });
               // Dial silently when RC isn't ready — no "Phone / backend" error toasts.
               setDialContext({ leadId: lead.id });
               clickToDial(phone);
@@ -430,6 +477,7 @@ export function SalesRedesign() {
             deal={deal}
             onClose={() => setDeal(null)}
             onCall={(phone) => {
+              emitKpiActivity('crm.call_click', { entityType: 'deal', entityId: deal.id, outcome: 'attempted' });
               setDialContext({ dealId: deal.id });
               clickToDial(phone);
             }}
@@ -442,25 +490,34 @@ export function SalesRedesign() {
         {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
         <DealCallWizardHost pushToast={pushToast} />
 
-        {/* TOAST */}
-        {toast && (
-          <div
-            role="status"
-            style={s(`position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:140;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 35%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 35%,var(--border))' : 'var(--border)'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`)}
-          >
-            <span style={s(`width:28px;height:28px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 16%,transparent)' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 16%,transparent)' : 'color-mix(in srgb,var(--ok) 16%,transparent)'};color:${toast.tone === 'err' ? 'var(--danger)' : toast.tone === 'warn' ? 'var(--warn)' : 'var(--ok)'}`)}>
-              <Icon
-                name={toast.tone === 'err' ? 'alert' : toast.tone === 'warn' ? 'warn' : 'check'}
-                size={16}
-                strokeWidth={2.4}
-              />
-            </span>
-            <div style={s('min-width:0')}>
-              <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>
-              <div style={s('font-size:12px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
-            </div>
-          </div>
-        )}
+        {/* TOAST — portaled under .ss-root, above force modals (z 160). */}
+        {toast &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              role="status"
+              style={s(
+                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
+              )}
+            >
+              <span
+                style={s(
+                  `width:28px;height:28px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 16%,transparent)' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 16%,transparent)' : 'color-mix(in srgb,var(--ok) 16%,transparent)'};color:${toast.tone === 'err' ? 'var(--danger)' : toast.tone === 'warn' ? 'var(--warn)' : 'var(--ok)'}`,
+                )}
+              >
+                <Icon
+                  name={toast.tone === 'err' ? 'alert' : toast.tone === 'warn' ? 'warn' : 'check'}
+                  size={16}
+                  strokeWidth={2.4}
+                />
+              </span>
+              <div style={s('min-width:0')}>
+                <div style={s('font-size:14px;font-weight:700;color:var(--text)')}>{toast.title}</div>
+                <div style={s('font-size:13px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
+              </div>
+            </div>,
+            document.querySelector('.ss-root') ?? document.body,
+          )}
       </div>
     </SalesContext.Provider>
   );

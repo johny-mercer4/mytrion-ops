@@ -412,14 +412,140 @@
       "idx": 58,
       "version": "7",
       "when": 1784740800000,
-      "tag": "0058_support_bot_operations",
+      "tag": "0058_mytrion_referral_bonuses",
       "breakpoints": true
     },
     {
       "idx": 59,
       "version": "7",
       "when": 1784744400000,
-      "tag": "0059_support_bot_chat_tenant_scope",
+      "tag": "0059_mytrion_rejection_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784910000000,
+      "tag": "0060_hr_employees",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1785258000000,
+      "tag": "0061_sales_kpi_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1785261600000,
+      "tag": "0062_sales_kpi_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1785265200000,
+      "tag": "0063_hr_departments",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1785268800000,
+      "tag": "0064_hr_org_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1785272400000,
+      "tag": "0065_kpi_unresolved_worker_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1785276000000,
+      "tag": "0066_hr_employee_zoho_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1785279600000,
+      "tag": "0067_hr_local_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0068_hr_org_canvas_employee",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785286800000,
+      "tag": "0069_data_loader_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1785290400000,
+      "tag": "0070_referral_bonus_carrier_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785294000000,
+      "tag": "0071_hr_faceid_and_lead_employee",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785297600000,
+      "tag": "0072_worker_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785301200000,
+      "tag": "0073_hr_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785387600000,
+      "tag": "0074_hr_time_off",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785391200000,
+      "tag": "0075_worker_task_department",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785394800000,
+      "tag": "0076_support_bot_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785398400000,
+      "tag": "0077_support_bot_chat_tenant_scope",
       "breakpoints": true
     }
   ]

@@ -1,4 +1,5 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { env, isProduction } from '../../config/env.js';
 import type { User } from '../../db/schema/index.js';
 import { AppError, AuthError } from '../../lib/errors.js';
 import { normalizeDepartments } from '../../lib/department.js';
@@ -152,11 +153,18 @@ export async function contextFromClaims(
  * The single hardcoded identity used when a request authenticates with the static
  * API_KEY (no users / multi-tenancy). Full tool scopes; department access is least-
  * privilege and supplied per request by the caller (see withDepartmentAccess).
+ *
+ * `userId` is 'system' — it carries NO Zoho identity, so owner-scoped reads (CS Home tiles,
+ * retention desk quota) fail closed with "No Zoho user id on the request for owner-scoped data".
+ * That is correct for a machine key. For LOCAL DEV ONLY, DEV_MOCK_ZOHO_USER_ID lends the session a
+ * Zoho id so those panels behave as they do behind a real Zoho login. Double-gated — the env var
+ * must be set AND the process must not be production — so it can never soften prod.
  */
 export function systemContext(requestId: string): TenantContext {
+  const devZohoId = !isProduction ? env.DEV_MOCK_ZOHO_USER_ID.trim() : '';
   return {
     tenantId: DEFAULT_TENANT_ID,
-    userId: 'system',
+    userId: devZohoId ? `zoho:${devZohoId}` : 'system',
     audience: 'internal',
     role: 'admin',
     scopes: scopesForRole('admin'),

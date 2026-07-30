@@ -1,0 +1,1284 @@
+/* =====================================================
+   HR Mytrion — scoped under .hr-root (never leaks to the rest of the app).
+
+   Built on the shared Horizon tokens (styles/horizon.css), same language as Manager
+   (mytrions/manager/manager.css) so HR reads as part of one product rather than a bolt-on:
+
+     surface   frosted pane (--hz-pane) + 1px --hz-pane-bd + --hz-shadow-rest + inset sheen
+     hover     brighten to --hz-pane-lift, tone-tinted border, -2px lift
+     selected  the module gradient, never a flat fill
+     motion    --hz-ease with --hz-dur-wash / --hz-dur-tone / --hz-dur-lift
+     focus     3px accent glow ring, no hard outline
+
+   `--hr-tone` is set per tab (see hrNav.ts) so each surface carries its own hue while sharing one
+   structure. It always falls back to --accent (HR's red, set by [data-mytrion='hr'] in global.css).
+
+   NOTE: --hz-pane is a GRADIENT, not a colour. Any multi-layer `background` must be
+   COMMA-separated with the pane in an <image> slot — space-separating it as a <bg-color>
+   invalidates the whole declaration.
+   ===================================================== */
+
+.hr-root {
+  /* ── The standardized system ── */
+  --hr-measure: var(--hz-measure);
+  --hr-gap: 18px;
+  --hr-gap-lg: 28px;
+  --hr-pad: clamp(20px, 3vw, 34px);
+  --hr-r-sm: 8px;
+  --hr-r-md: 12px;
+  --hr-r-lg: 16px;
+  --hr-r-pill: 999px;
+  --hr-tone-fallback: var(--accent);
+
+  height: 100%;
+  overflow: auto;
+  color: var(--text-primary);
+}
+
+/* Every page in the module shares one measure and one padding, so the tabs line up. */
+.hr-root .hr-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hr-gap-lg);
+  width: 100%;
+  max-width: var(--hr-measure);
+  padding: var(--hr-pad);
+  box-sizing: border-box;
+  animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+}
+
+@keyframes hrIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────────── */
+.hr-root .hr-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.hr-root .hr-hero-title,
+.hr-root .hr-title {
+  margin: 6px 0 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+.hr-root .hr-hero-title {
+  font-size: clamp(26px, 3.4vw, 34px);
+}
+.hr-root .hr-title {
+  font-size: clamp(22px, 2.6vw, 27px);
+}
+.hr-root .hr-hero-title span {
+  background: linear-gradient(90deg, var(--hz-5) 0%, var(--hz-sun-deep) 55%, var(--hz-4) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hr-root .hr-sub {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ── Page head ──────────────────────────────────────────────────────────────── */
+.hr-root .hr-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hr-root .hr-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Hero (Home) ────────────────────────────────────────────────────────────── */
+.hr-root .hr-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(22px, 3vw, 32px);
+  border-radius: var(--hr-r-lg);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.hr-root .hr-hero-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 88% 12%,
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    transparent 66%
+  );
+}
+.hr-root .hr-hero-inner {
+  position: relative;
+}
+
+/* ── Section head ───────────────────────────────────────────────────────────── */
+.hr-root .hr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hr-gap);
+}
+.hr-root .hr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hr-root .hr-section-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.hr-root .hr-section-line {
+  flex: 1;
+  height: 1px;
+  background: var(--hz-pane-bd);
+}
+
+/* ── Preview banner — this module is UI-only until Zoho People is wired ─────── */
+.hr-root .hr-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 15px;
+  border-radius: var(--hr-r-md);
+  border: 1px dashed color-mix(in srgb, var(--warning) 42%, transparent);
+  background: var(--tint-warn-bg);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.hr-root .hr-banner svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.hr-root .hr-banner strong {
+  color: var(--text-primary);
+}
+
+/* ── Stat tiles ─────────────────────────────────────────────────────────────── */
+.hr-root .hr-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 12px;
+}
+.hr-root .hr-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 15px 16px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 22%, var(--hz-pane-bd));
+  background:
+    linear-gradient(
+      152deg,
+      color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 12%, transparent),
+      transparent 62%
+    ),
+    var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-stat-l {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-stat-l svg {
+  color: var(--hr-tone, var(--hr-tone-fallback));
+}
+.hr-root .hr-stat-n {
+  font-family: var(--font-head);
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.hr-root .hr-stat-s {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* ── Quick-jump cards (Home) ────────────────────────────────────────────────── */
+.hr-root .hr-jump-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: var(--hr-gap);
+}
+.hr-root .hr-jump {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 148px;
+  padding: 18px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--hr-r-lg);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.hr-root .hr-jump:hover {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 45%, var(--hz-pane-bd));
+  box-shadow:
+    0 16px 40px -12px color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 30%, transparent),
+    var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-jump-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  background: var(--hz-shimmer);
+  opacity: 0;
+  transition: opacity 0.32s var(--hz-ease);
+}
+.hr-root .hr-jump:hover .hr-jump-shimmer {
+  opacity: 1;
+}
+.hr-root .hr-jump-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: auto;
+}
+.hr-root .hr-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 30%, transparent);
+  color: var(--hr-tone, var(--hr-tone-fallback));
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-jump:hover .hr-glyph {
+  background: color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 22%, transparent);
+  box-shadow:
+    0 4px 18px -4px color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 45%, transparent),
+    var(--hz-glass-inset);
+}
+.hr-root .hr-jump-arrow {
+  flex: none;
+  margin-top: 4px;
+  color: var(--text-muted);
+  opacity: 0.35;
+  transition:
+    opacity var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-jump:hover .hr-jump-arrow {
+  opacity: 1;
+  transform: translateX(3px);
+}
+.hr-root .hr-jump-title {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.hr-root .hr-jump-desc {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── Toolbar / search / chips ───────────────────────────────────────────────── */
+.hr-root .hr-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.hr-root .hr-summary {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.hr-root .hr-summary strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  min-width: min(100%, 260px);
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-search:focus-within {
+  background: var(--hz-pane-lift);
+  border-color: var(--accent);
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.hr-root .hr-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.hr-root .hr-chip {
+  padding: 4px 11px;
+  border-radius: var(--hr-r-pill);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-chip:hover {
+  color: var(--text-primary);
+  background: var(--hz-pane-lift);
+}
+.hr-root .hr-chip[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.hr-root .hr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-btn:hover:not(:disabled) {
+  background: var(--hz-pane-lift);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+  box-shadow: 0 4px 16px -4px var(--accent-glow), var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-btn:disabled {
+  background: var(--hz-pane-alt);
+  border-color: var(--hz-pane-bd);
+  color: var(--text-muted);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+.hr-root .hr-btn-primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 16%, var(--hz-pane));
+  color: var(--accent);
+}
+.hr-root .hr-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--hz-pane-lift));
+  color: var(--accent);
+}
+.hr-root .hr-select {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-select select {
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  max-width: min(42vw, 220px);
+}
+.hr-root .hr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.hr-root .hr-sync-note {
+  color: var(--text-secondary);
+}
+.hr-root .hr-banner-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--tint-danger-bd, color-mix(in srgb, var(--danger) 40%, transparent));
+  background: var(--tint-danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
+  color: var(--danger);
+  font-size: 12.5px;
+}
+.hr-root .hr-emp-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hr-root .hr-emp-inline-text {
+  min-width: 0;
+}
+.hr-root .hr-right {
+  text-align: right;
+}
+.hr-root .hr-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.hr-root .hr-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-icon-btn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.hr-root .hr-icon-danger:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.hr-root .hr-spin {
+  animation: hrSpin 0.8s linear infinite;
+}
+@keyframes hrSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hr-root .hr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg, #0b0d12) 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-modal {
+  width: min(100%, 560px);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  border-radius: var(--hr-r-lg);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-lift, var(--hz-pane));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  padding: 18px 18px 16px;
+}
+.hr-root .hr-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.hr-root .hr-modal-head h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.hr-root .hr-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.hr-root .hr-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-form-grid input,
+.hr-root .hr-form-grid select {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.hr-root .hr-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+@media (max-width: 560px) {
+  .hr-root .hr-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The first-generation employee card (.hr-emp, .hr-emp-grid, .hr-emp-top, .hr-emp-meta, .hr-emp-cell,
+   .hr-emp-name, .hr-emp-id, .hr-emp-inline, .hr-row-actions) is gone — the directory renders .hr-empc*
+   glass cards, defined further down. `.hr-avatar` and `.hr-avatar-sm` survive because HrAvatar still
+   uses them. */
+.hr-root .hr-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 11px;
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--accent);
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 11px;
+  object-fit: cover;
+}
+
+/* ── Status pills — one recipe, tone via --p ───────────────────────────────── */
+.hr-root .hr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: var(--hr-r-pill);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--p, var(--accent)) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--p, var(--accent)) 38%, transparent);
+  color: var(--p, var(--accent));
+}
+
+/* ── Simple data table ─────────────────────────────────────────────────────────
+   No tab renders this today — Departments moved to cards. KEPT deliberately: Attendance is a planned tab
+   (hrNav marks it `soon`) and it is a table by nature, so deleting the recipe would only mean rewriting
+   it. Delete this block if Attendance ships as something else. */
+.hr-root .hr-table-wrap {
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  overflow: hidden;
+}
+.hr-root .hr-table-scroll {
+  overflow-x: auto;
+}
+.hr-root table.hr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 640px;
+}
+.hr-root .hr-table th {
+  text-align: left;
+  padding: 11px 14px;
+  font-family: var(--font-head);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--hz-pane-alt);
+  border-bottom: 1px solid var(--hz-pane-bd);
+  white-space: nowrap;
+}
+.hr-root .hr-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  color: var(--text-secondary);
+}
+.hr-root .hr-table tr:last-child td {
+  border-bottom: none;
+}
+.hr-root .hr-table tr:hover td {
+  background: var(--hz-glass-hover);
+}
+.hr-root .hr-table td.hr-strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.hr-root .hr-table td.hr-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-table .hr-pill {
+  margin-left: 0;
+}
+
+/* ── Request rows ──────────────────────────────────────────────────────────── */
+.hr-root .hr-req-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hr-root .hr-req {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 15px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-req:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--hz-pane-bd));
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-req-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.hr-root .hr-req-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.hr-root .hr-req-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Profile ───────────────────────────────────────────────────────────────── */
+.hr-root .hr-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 20px 22px;
+  border-radius: var(--hr-r-lg);
+  border: 1px solid var(--hz-pane-bd);
+  background:
+    linear-gradient(152deg, color-mix(in srgb, var(--accent) 11%, transparent), transparent 60%),
+    var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.hr-root .hr-profile-head .hr-avatar {
+  width: 66px;
+  height: 66px;
+  border-radius: 18px;
+  font-size: 21px;
+}
+.hr-root .hr-profile-name {
+  font-family: var(--font-head);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+}
+.hr-root .hr-profile-role {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.hr-root .hr-dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-dl dt {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-dl dd {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* ── Empty / skeleton ──────────────────────────────────────────────────────── */
+.hr-root .hr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 52px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-radius: var(--hr-r-md);
+  border: 1px dashed var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+.hr-root .hr-empty svg {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.hr-root .hr-empty-title {
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.hr-root .hr-empty-body {
+  max-width: 46ch;
+  line-height: 1.6;
+}
+
+/* Comma-separated layers: --hz-pane is a gradient and cannot sit in the <bg-color> slot. */
+.hr-root .hr-sk {
+  height: 92px;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background:
+    linear-gradient(100deg, transparent 20%, var(--hz-glass-hover) 45%, transparent 70%),
+    var(--hz-pane);
+  background-size: 220% 100%, auto;
+  background-repeat: no-repeat, no-repeat;
+  animation: hrSheen 1.25s var(--hz-ease) infinite;
+}
+@keyframes hrSheen {
+  from {
+    background-position:
+      130% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -30% 0,
+      0 0;
+  }
+}
+
+/* ── Focus — one ring, keyboard only ──────────────────────────────────────── */
+.hr-root :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-radius: var(--hr-r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-page {
+    animation: none;
+  }
+  .hr-root .hr-sk {
+    animation: none;
+  }
+  .hr-root .hr-jump:hover,
+  .hr-root .hr-emp:hover,
+  .hr-root .hr-req:hover,
+  .hr-root .hr-btn:hover {
+    transform: none;
+  }
+}
+
+/* The org-structure TREE styles that used to live here are gone: that tab is now a React Flow canvas
+   (see hr-workspace.css → "Org canvas"). Nothing referenced .hr-org-tree / -row / -children / -spacer /
+   -main / -title / -code / -meta any more. */
+
+/* "Soon" chip inside a workspace card title. */
+.hr-root .hr-soon {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--hr-r-pill);
+  font-family: var(--font-head);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  background: var(--tint-warn-bg);
+  border: 1px solid var(--tint-warn-bd);
+  color: var(--warning);
+}
+
+/* ── Employee cards ─────────────────────────────────────────────────────────────
+   The directory renders as cards rather than table rows: a person is an entity with a face, a role and
+   a handle, and a 6-column table made all of that equally grey.
+
+   Everything below reuses the module's existing tokens (--hr-r-*, --hz-pane*, --hz-ease, --hz-dur-*)
+   so it inherits the same glass, hover-lift and focus ring as the rest of Mytrion. No new easings, no
+   new radii, no hard-coded colours. */
+.hr-root .hr-empc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 14px;
+}
+
+.hr-root .hr-empc {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  color: var(--text-primary);
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+/* Hit target fills the card; admin actions sit outside it (bottom-right) so hover never fights them. */
+.hr-root .hr-empc-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 16px;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+}
+.hr-root .hr-empc-hit:disabled {
+  cursor: wait;
+}
+.hr-root .hr-empc:hover,
+.hr-root .hr-empc:focus-within {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--dc, var(--accent)) 42%, var(--hz-pane-bd));
+  box-shadow:
+    0 16px 40px -14px color-mix(in srgb, var(--dc, var(--accent)) 26%, transparent),
+    var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+.hr-root .hr-empc.is-admin .hr-empc-hit {
+  /* Leave room for the bottom-right action cluster so meta text never sits under the icons. */
+  padding-bottom: 44px;
+}
+
+/* 1px specular hairline that wipes in on hover — the same language the jump cards use. */
+.hr-root .hr-empc-shimmer {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: var(--hz-shimmer);
+  opacity: 0;
+  transition: opacity 0.3s var(--hz-ease);
+}
+.hr-root .hr-empc:hover .hr-empc-shimmer {
+  opacity: 1;
+}
+
+/* Terminated reads as terminated at a glance: a danger rail plus a desaturated face, legible even in
+   greyscale rather than relying on the badge colour alone. */
+.hr-root .hr-empc.is-terminated {
+  border-left: 3px solid var(--danger);
+}
+.hr-root .hr-empc.is-terminated .hr-avatar {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.hr-root .hr-empc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.hr-root .hr-empc-id {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hr-root .hr-empc-name {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  /* Long names are common here — wrap to two lines instead of ellipsing a person. */
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empc-role {
+  font-size: 12.5px;
+  color: var(--dc, var(--accent));
+  font-weight: 600;
+}
+
+.hr-root .hr-empc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hz-pane-bd);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.hr-root .hr-empc-dept {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  /* `--dc` is the department tone (set on the card / detail from `iconColor`). */
+  background: color-mix(in srgb, var(--dc, var(--accent)) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc, var(--accent)) 22%, transparent);
+  color: var(--dc, var(--accent));
+  font-weight: 600;
+  font-size: 11px;
+}
+.hr-root .hr-empc-faceid,
+.hr-root .hr-empc-mail,
+.hr-root .hr-empc-tg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11.5px;
+  /* Emails and handles are the one place truncation is right — identifiers, not prose. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-empc-faceid {
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.hr-root .hr-empc-tg {
+  color: var(--hz-4, var(--accent-2, var(--accent)));
+}
+
+/* Actions sit bottom-right (not over status/ID). Stay quiet until hover/focus — 213×2 icons is noise. */
+.hr-root .hr-empc-actions {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-empc:hover .hr-empc-actions,
+.hr-root .hr-empc:focus-within .hr-empc-actions {
+  opacity: 1;
+  transform: none;
+}
+/* Keyboard users must never lose the controls. */
+.hr-root .hr-empc-actions:focus-within {
+  opacity: 1;
+  transform: none;
+}
+
+/* Deterministic per-person tones for the initials fallback. */
+.hr-root .hr-avatar[data-tone='0'] { background: color-mix(in srgb, var(--hz-1, #6366f1) 22%, transparent); color: var(--hz-1, #6366f1); }
+.hr-root .hr-avatar[data-tone='1'] { background: color-mix(in srgb, var(--hz-2, #0ea5e9) 22%, transparent); color: var(--hz-2, #0ea5e9); }
+.hr-root .hr-avatar[data-tone='2'] { background: color-mix(in srgb, var(--hz-3, #10b981) 22%, transparent); color: var(--hz-3, #10b981); }
+.hr-root .hr-avatar[data-tone='3'] { background: color-mix(in srgb, var(--hz-4, #f59e0b) 22%, transparent); color: var(--hz-4, #f59e0b); }
+.hr-root .hr-avatar[data-tone='4'] { background: color-mix(in srgb, var(--hz-5, #ec4899) 22%, transparent); color: var(--hz-5, #ec4899); }
+.hr-root .hr-avatar[data-tone='5'] { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+
+.hr-root .hr-avatar-lg {
+  width: 46px;
+  height: 46px;
+  font-size: 15px;
+}
+
+/* ONE loader for all of HR: a skeleton shaped like the real card so the grid does not jump when data
+   lands. `.hr-sk` already carries the sheen + reduced-motion handling; this only re-heights it. */
+.hr-root .hr-empc-grid .hr-sk {
+  height: 168px;
+}
+
+/* ── Employee detail modal ──────────────────────────────────────────────────── */
+.hr-root .hr-empd {
+  max-width: 620px;
+}
+.hr-root .hr-empd-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-empd-ident {
+  flex: 1;
+  min-width: 0;
+}
+.hr-root .hr-empd-ident h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empd-ident p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.hr-root .hr-empd-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.hr-root .hr-empd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+.hr-root .hr-empd-field {
+  padding: 11px 13px;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, var(--hz-pane));
+  min-width: 0;
+}
+.hr-root .hr-empd-field dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-empd-field dd {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  /* Values wrap rather than overflow the tile — an email is long and a name can be longer. */
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-empd-field a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.hr-root .hr-empd-field a:hover {
+  text-decoration: underline;
+}
+
+/* An input with a fixed textual prefix (the Telegram '@'). The prefix is decoration, never part of the
+   value — so the column keeps one canonical bare handle. */
+.hr-root .hr-prefixed {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, var(--hz-pane));
+  overflow: hidden;
+  transition: border-color var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-prefixed:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hz-pane-bd));
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.hr-root .hr-prefixed > span {
+  padding: 0 2px 0 11px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.hr-root .hr-prefixed > input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 2px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.hr-root .hr-prefixed > input:focus {
+  outline: none;
+  box-shadow: none;
+}

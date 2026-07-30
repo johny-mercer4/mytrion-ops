@@ -168,7 +168,7 @@ Properties:
 Add:
 
 - `src/db/schema/support_bot_operations.ts`
-- `src/db/migrations/0058_support_bot_operations.sql`
+- `src/db/migrations/0076_support_bot_operations.sql`
 - `src/repos/supportBotOperationRepo.ts`
 - Export from `src/db/schema/index.ts`
 - Add the schema file to `drizzle.config.ts`

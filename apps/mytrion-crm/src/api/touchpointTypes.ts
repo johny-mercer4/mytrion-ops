@@ -103,9 +103,28 @@ export interface CardLimitsResult {
   message?: string;
 }
 
+export interface CardEfsInfoResult {
+  success?: boolean;
+  carrier_id?: number | string;
+  card_number?: string;
+  status?: string | null;
+  unit_number?: string | null;
+  driver_id?: string | null;
+  driver_name?: string | null;
+  efs_error?: string | null;
+}
+
 export interface EfsCardsResult {
   count?: number;
-  data?: Array<{ card_number?: string; status?: string; [k: string]: unknown }>;
+  data?: Array<{
+    card_number?: string;
+    cardNumber?: string;
+    status?: string;
+    last_used_date?: string | null;
+    lastUsedDate?: string | null;
+    lastTransaction?: string | null;
+    [k: string]: unknown;
+  }>;
 }
 
 export interface BillingFormResult {
@@ -115,6 +134,11 @@ export interface BillingFormResult {
 }
 
 export interface MoneyCodePreview {
+  /**
+   * The authoritative draw-reason vocabulary, straight from servercrm's own validator. Preferred over
+   * the frontend fallback so the list cannot drift out of sync with what the backend will accept.
+   */
+  moneycode_reasons?: string[];
   company_name?: string;
   available?: number | string;
   eligible?: boolean;
@@ -175,11 +199,6 @@ export interface MoneyCodeVoidResult {
   record?: MoneyCodeRequestRow;
   message?: string;
   efs?: { amount?: number | string; numUses?: number | string };
-}
-
-export interface SignedUrlResult {
-  url?: string;
-  expiresIn?: number;
 }
 
 // ---- panel result shapes (user-keyed touchpoints; identity is server-injected) ----
@@ -467,6 +486,20 @@ export interface TouchpointMap {
     };
     result: Record<string, unknown>;
   };
+  'efs.card_status': {
+    params: { carrierId: string; cardNumber: string; action: 'ACTIVATE' | 'DEACTIVATE' };
+    result: CardActionResult;
+  };
+  'efs.card_limits': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      limitId: string;
+      value: number;
+      action: 'INCREASE' | 'DECREASE';
+    };
+    result: CardLimitsResult;
+  };
   'efs.card_override': { params: { carrierId: string; cardNumber: string }; result: CardActionResult };
   'fraud.hold_release': {
     params: {
@@ -480,6 +513,10 @@ export interface TouchpointMap {
   };
   'application.update': { params: { appId: string }; result: WexTasksResult };
   'wex.application': { params: { appId: string }; result: WexApplicationResult };
+  'dwh.card_efs': {
+    params: { carrierId: string; cardNumber: string };
+    result: CardEfsInfoResult;
+  };
   'wex.applications_search': {
     params: {
       appId?: string;
@@ -544,10 +581,6 @@ export interface TouchpointMap {
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
     result: SalesInvoicesResult;
-  };
-  'sales_mytrion.invoice_signed_url': {
-    params: { invoiceId: string; type?: 'pdf' | 'excel' };
-    result: SignedUrlResult;
   };
   // ---- panel touchpoints (identity server-injected; params are empty or filters only) ----
   'dashboard.home_snapshot': { params: Record<string, never>; result: HomeSnapshotResult };
@@ -783,6 +816,35 @@ export interface TouchpointMap {
     params: { carrierId: string; limit?: number };
     result: Record<string, unknown>;
   };
+  /**
+   * Latest EFS parent balance snapshot. Verified live 2026-07-27:
+   * { status, record_id, name: 'SNAP000', balance: '715765.14',
+   *   captured_at: '2026-07-26T18:30:04-04:00', mode: 'COMFORT',
+   *   record_name: 'OCTANE_PARENT_SNAPSHOT' }
+   * `balance` arrives as a STRING — never render it without coercing.
+   */
+  'finance.parent_snapshot': {
+    params: Record<string, never>;
+    result: FinanceParentSnapshot;
+  };
+  /** Fire-and-forget: triggers a fresh balance run, then re-fetch the snapshot. */
+  'finance.balance_run': {
+    params: Record<string, never>;
+    result: Record<string, unknown>;
+  };
+}
+
+/** EFS parent balance snapshot (finance.parent_snapshot). */
+export interface FinanceParentSnapshot {
+  status?: string;
+  record_id?: string;
+  name?: string;
+  /** Dollars, as a string from Deluge. */
+  balance?: string | number;
+  captured_at?: string;
+  /** Smart-Balance posture, e.g. 'COMFORT'. */
+  mode?: string;
+  record_name?: string;
 }
 
 // ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----

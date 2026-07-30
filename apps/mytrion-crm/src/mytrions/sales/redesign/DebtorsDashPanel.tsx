@@ -63,8 +63,8 @@ function DebtorRow({
     >
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:16px')}>
         <div style={s('min-width:0;flex:1')}>
-          <div style={s('font-size:15.5px;font-weight:700')}>{title}</div>
-          <div style={s('display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;font-size:12px;color:var(--muted)')}>
+          <div style={s('font-size:16px;font-weight:700')}>{title}</div>
+          <div style={s('display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;font-size:13px;color:var(--muted)')}>
             {debtor.companyName && debtor.dealName && debtor.companyName !== debtor.dealName ? (
               <span>{debtor.dealName}</span>
             ) : null}
@@ -77,7 +77,7 @@ function DebtorRow({
             {debtor.isHardDebtor ? (
               <span
                 style={s(
-                  'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:11px;font-weight:800',
+                  'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:12px;font-weight:800',
                 )}
               >
                 Hard · {debtor.maxDebtDays}d
@@ -85,7 +85,7 @@ function DebtorRow({
             ) : debtor.maxDebtDays > 0 ? (
               <span
                 style={s(
-                  'padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:700',
+                  'padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:12px;font-weight:700',
                 )}
               >
                 {debtor.maxDebtDays}d overdue
@@ -93,7 +93,7 @@ function DebtorRow({
             ) : null}
             <span
               style={s(
-                `padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${statusTone(debtor.worstStatus)} 14%,transparent);color:${statusTone(debtor.worstStatus)};font-size:11px;font-weight:700`,
+                `padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${statusTone(debtor.worstStatus)} 14%,transparent);color:${statusTone(debtor.worstStatus)};font-size:12px;font-weight:700`,
               )}
             >
               {dbtFormatStatus(debtor.worstStatus)}
@@ -103,15 +103,15 @@ function DebtorRow({
         <div style={s('text-align:right;flex-shrink:0')}>
           <div
             style={s(
-              `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:22px;color:${debtor.isHardDebtor ? 'var(--danger)' : 'var(--text)'}`,
+              `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;color:${debtor.isHardDebtor ? 'var(--danger)' : 'var(--text)'}`,
             )}
           >
             {dbtFormatMoney(debtor.totalRemaining)}
           </div>
-          <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:2px')}>
+          <div style={s('font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:2px')}>
             Owed today
           </div>
-          <div style={s('font-size:11px;color:var(--faint);margin-top:4px')}>
+          <div style={s('font-size:12px;color:var(--faint);margin-top:4px')}>
             {dbtFormatMoney(debtor.totalPaid)} paid · {dbtFormatMoney(debtor.totalOwed)} total
           </div>
         </div>
@@ -122,7 +122,7 @@ function DebtorRow({
         onClick={onToggle}
         aria-expanded={open}
         style={s(
-          'margin-top:14px;width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;transition:background .14s,border-color .14s',
+          'margin-top:14px;width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;transition:background .14s,border-color .14s',
         )}
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, var(--border2))';
@@ -155,13 +155,13 @@ function DebtorRow({
               )}
             >
               <div style={s('display:flex;flex-direction:column;gap:2px;min-width:0')}>
-                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px")}>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px")}>
                   #{inv.invoiceId || '—'}
                 </span>
-                <span style={s('font-size:12px;color:var(--muted)')}>
+                <span style={s('font-size:13px;color:var(--muted)')}>
                   {dbtFormatPeriod(inv.dateFrom, inv.dateTo)}
                 </span>
-                <span style={s('font-size:11px;color:var(--faint)')}>
+                <span style={s('font-size:12px;color:var(--faint)')}>
                   Created {dbtFormatDate(inv.createDate)}
                 </span>
               </div>
@@ -169,7 +169,7 @@ function DebtorRow({
                 {inv.debtDays > 0 ? (
                   <span
                     style={s(
-                      `font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${inv.debtDays >= HARD_DEBT_DAYS ? 'var(--danger)' : 'var(--orange)'}`,
+                      `font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:${inv.debtDays >= HARD_DEBT_DAYS ? 'var(--danger)' : 'var(--orange)'}`,
                     )}
                   >
                     {inv.debtDays}d
@@ -177,15 +177,15 @@ function DebtorRow({
                 ) : null}
                 <span
                   style={s(
-                    `padding:2px 7px;border-radius:99px;font-size:11px;font-weight:700;color:${statusTone(inv.status)};background:color-mix(in srgb,${statusTone(inv.status)} 12%,transparent)`,
+                    `padding:2px 7px;border-radius:99px;font-size:12px;font-weight:700;color:${statusTone(inv.status)};background:color-mix(in srgb,${statusTone(inv.status)} 12%,transparent)`,
                   )}
                 >
                   {dbtFormatStatus(inv.status)}
                 </span>
-                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px")}>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px")}>
                   {dbtFormatMoney(inv.remaining)}
                 </span>
-                <span style={s('font-size:11px;color:var(--faint)')}>of {dbtFormatMoney(inv.total)}</span>
+                <span style={s('font-size:12px;color:var(--faint)')}>of {dbtFormatMoney(inv.total)}</span>
               </div>
             </div>
           ))}
@@ -243,7 +243,7 @@ export function DebtorsDashPanel() {
   if (loading && !data) return <DebtorsSkeleton />;
   if (error && !data) {
     return (
-      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:13px')}>
+      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>
         {error}
         <div style={s('margin-top:12px')}>
           <button
@@ -265,8 +265,8 @@ export function DebtorsDashPanel() {
     <div className="ss-fu" style={s('display:flex;flex-direction:column;gap:14px')}>
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div>
-          <div style={s('font-size:15px;font-weight:800')}>Your debtors</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+          <div style={s('font-size:16px;font-weight:800')}>Your debtors</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
             Pending / partial invoices · {DEBT_MIN_DAYS}+ days overdue · Hard at {HARD_DEBT_DAYS}d
             {cachedLabel ? (
               <span style={s('margin-left:8px;color:var(--faint)')}>
@@ -280,7 +280,7 @@ export function DebtorsDashPanel() {
           onClick={() => void fetch(true)}
           disabled={refreshing}
           style={s(
-            `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:${refreshing ? 'wait' : 'pointer'};color:var(--text2);opacity:${refreshing ? 0.7 : 1};transition:opacity .14s,border-color .14s`,
+            `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;cursor:${refreshing ? 'wait' : 'pointer'};color:var(--text2);opacity:${refreshing ? 0.7 : 1};transition:opacity .14s,border-color .14s`,
           )}
         >
           {refreshing ? 'Refreshing…' : 'Refresh'}
@@ -296,7 +296,7 @@ export function DebtorsDashPanel() {
             className="ss-in"
             aria-label="Search debtors"
             style={s(
-              'width:100%;height:38px;padding:0 36px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px',
+              'width:100%;height:38px;padding:0 36px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px',
             )}
           />
           {search ? (
@@ -347,11 +347,11 @@ export function DebtorsDashPanel() {
                       : 'transparent'
                   };color:${
                     on ? (chip.id === 'hard' ? 'var(--danger)' : 'var(--accent)') : 'var(--muted)'
-                  };font-size:12px;font-weight:800;cursor:pointer;transition:background .14s,color .14s,border-color .14s`,
+                  };font-size:13px;font-weight:800;cursor:pointer;transition:background .14s,color .14s,border-color .14s`,
                 )}
               >
                 {chip.label}
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:10.5px;opacity:.85")}>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.85")}>
                   {count}
                 </span>
               </button>
@@ -385,15 +385,15 @@ export function DebtorsDashPanel() {
             'text-align:center;padding:48px 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
           )}
         >
-          <div style={s('font-size:14px;font-weight:700;color:var(--ok)')}>No outstanding balances</div>
-          <div style={s('font-size:13px;margin-top:4px;color:var(--muted)')}>
+          <div style={s('font-size:15px;font-weight:700;color:var(--ok)')}>No outstanding balances</div>
+          <div style={s('font-size:14px;margin-top:4px;color:var(--muted)')}>
             None of your clients have invoices {DEBT_MIN_DAYS}+ days overdue.
           </div>
         </div>
       ) : null}
 
       {baseList.length > 0 && visible.length === 0 ? (
-        <div style={s('text-align:center;padding:40px 20px;color:var(--muted);font-size:13px')}>
+        <div style={s('text-align:center;padding:40px 20px;color:var(--muted);font-size:14px')}>
           {search
             ? 'No debtors match this search.'
             : status === 'hard'
@@ -421,13 +421,13 @@ export function DebtorsDashPanel() {
           )}
         >
           <div style={s('text-align:center')}>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px")}>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:21px")}>
               {visible.length}
               {visible.length !== baseList.length ? (
-                <span style={s('font-size:13px;color:var(--muted);font-weight:600')}> / {baseList.length}</span>
+                <span style={s('font-size:14px;color:var(--muted);font-weight:600')}> / {baseList.length}</span>
               ) : null}
             </div>
-            <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
+            <div style={s('font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
               Showing
             </div>
           </div>
@@ -435,12 +435,12 @@ export function DebtorsDashPanel() {
           <div style={s('text-align:center')}>
             <div
               style={s(
-                `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:${summary.largestDebt > 0 ? 'var(--danger)' : 'var(--text)'}`,
+                `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:21px;color:${summary.largestDebt > 0 ? 'var(--danger)' : 'var(--text)'}`,
               )}
             >
               {dbtFormatMoney(summary.largestDebt)}
             </div>
-            <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
+            <div style={s('font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
               Largest debt
             </div>
           </div>

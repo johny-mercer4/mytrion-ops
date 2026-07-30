@@ -1,0 +1,411 @@
+/* =====================================================
+   Customer Service — Open Pool
+   Metrics strip + toolbar + sortable glass table + sticky timeline drawer.
+   Shared primitives (table shell, chips, buttons, skeleton sheen) come from cs-horizon.css;
+   this file is only what is specific to the pool desk.
+   ===================================================== */
+
+/* ── Metrics ─────────────────────────────────────────────────────────────── */
+.cs-root .cs-pool-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+@media (max-width: 1080px) {
+    .cs-root .cs-pool-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.cs-root .cs-pool-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 15px 17px;
+    border-radius: var(--r-lg);
+}
+
+.cs-root .cs-pool-metric > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.cs-root .cs-pool-metric > span svg {
+    color: var(--cs-accent);
+    flex: none;
+}
+
+.cs-root .cs-pool-metric strong {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-pool-metric em {
+    font-style: normal;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Quiet-time tile takes the tone of the value it reports. */
+.cs-root .cs-pool-metric.is-warn strong {
+    color: var(--cs-warning);
+}
+.cs-root .cs-pool-metric.is-danger strong {
+    color: var(--cs-danger);
+}
+.cs-root .cs-pool-metric.is-danger {
+    border-color: color-mix(in srgb, var(--cs-danger) 30%, var(--hz-pane-bd));
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.cs-root .cs-pool-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-pool-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: min(100%, 260px);
+    max-width: 380px;
+}
+.cs-root .cs-pool-search svg {
+    position: absolute;
+    left: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+.cs-root .cs-pool-search .cs-form-input {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px 0 34px;
+    border-radius: var(--r-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.cs-root .cs-pool-filters {
+    display: inline-flex;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+.cs-root .cs-pool-filters .cs-chip {
+    padding: 7px 13px;
+    font-size: 12.5px;
+}
+
+.cs-root .cs-pool-count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ── Layout: table + sticky drawer ───────────────────────────────────────── */
+.cs-root .cs-pool-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
+    gap: 18px;
+    align-items: start;
+}
+
+@media (max-width: 1180px) {
+    .cs-root .cs-pool-layout {
+        grid-template-columns: 1fr;
+    }
+    .cs-root .cs-pool-drawer {
+        position: static;
+    }
+}
+
+.cs-root .cs-pool-main {
+    min-width: 0;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.cs-root .cs-pool-table-wrap {
+    overflow-x: auto;
+}
+
+.cs-root .cs-pool-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+}
+
+.cs-root .cs-pool-table th {
+    padding: 0;
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.cs-root .cs-pool-table th.is-num,
+.cs-root .cs-pool-table td.is-num {
+    text-align: right;
+}
+
+/* Sort control fills the header cell so the whole cell is the target. */
+.cs-root .cs-pool-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    padding: 11px 14px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-pool-table th.is-num .cs-pool-sort {
+    justify-content: flex-end;
+}
+.cs-root .cs-pool-sort:hover {
+    color: var(--text-primary);
+}
+.cs-root .cs-pool-sort.active {
+    color: var(--cs-accent);
+}
+.cs-root .cs-pool-sort-arrow {
+    font-size: 8px;
+    opacity: 0.5;
+    transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-pool-sort.active .cs-pool-sort-arrow {
+    opacity: 1;
+}
+
+.cs-root .cs-pool-table td {
+    padding: 12px 14px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--table-row-divider);
+    vertical-align: middle;
+}
+.cs-root .cs-pool-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.cs-root .cs-pool-row {
+    cursor: pointer;
+}
+/* Selected row: the module's ramp as a rail, matching the sidebar's selected tab. */
+.cs-root .cs-pool-row.active,
+.cs-root .cs-pool-row.active:hover {
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--cs-accent) 13%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 6%, transparent) 100%
+    );
+}
+.cs-root .cs-pool-row.active td:first-child {
+    box-shadow: inset 3px 0 0 0 var(--cs-accent);
+}
+.cs-root .cs-pool-row:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cs-accent) 55%, transparent);
+}
+
+.cs-root .cs-pool-company {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.cs-root .cs-pool-company svg {
+    color: var(--cs-accent);
+    flex: none;
+}
+
+.cs-root .cs-pool-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cs-root .cs-pool-quiet {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+.cs-root .cs-pool-quiet.is-ok {
+    background: var(--cs-success-soft);
+    border-color: color-mix(in srgb, var(--cs-success) 28%, transparent);
+    color: var(--cs-success);
+}
+.cs-root .cs-pool-quiet.is-warn {
+    background: var(--cs-warning-soft);
+    border-color: color-mix(in srgb, var(--cs-warning) 30%, transparent);
+    color: var(--cs-warning);
+}
+.cs-root .cs-pool-quiet.is-danger {
+    background: var(--cs-danger-soft);
+    border-color: color-mix(in srgb, var(--cs-danger) 32%, transparent);
+    color: var(--cs-danger);
+}
+
+.cs-root .cs-pool-window {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.cs-root .cs-pool-window svg {
+    color: var(--text-muted);
+    flex: none;
+}
+
+/* ── Drawer ──────────────────────────────────────────────────────────────── */
+.cs-root .cs-pool-drawer {
+    position: sticky;
+    top: 0;
+    border-radius: var(--r-lg);
+    padding: 18px;
+    background:
+        linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
+        var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+
+.cs-root .cs-pool-drawer-head h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+.cs-root .cs-pool-drawer-head h3 svg {
+    color: var(--cs-accent);
+    flex: none;
+}
+
+.cs-root .cs-pool-drawer-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.cs-root .cs-pool-drawer-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    margin: 16px 0 0;
+}
+.cs-root .cs-pool-drawer-meta dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.cs-root .cs-pool-drawer-meta dt svg {
+    color: var(--cs-accent);
+    opacity: 0.8;
+    flex: none;
+}
+.cs-root .cs-pool-drawer-meta dd {
+    margin: 3px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-pool-drawer-section {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hz-pane-bd);
+}
+
+/* ── Skeleton ────────────────────────────────────────────────────────────── */
+.cs-root .cs-pool-skel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.cs-root .cs-pool-skel-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--r-md);
+    background: var(--hz-pane);
+    border: 1px solid var(--hz-pane-bd);
+    animation: fadeIn 260ms var(--hz-ease) backwards;
+}
+.cs-root .cs-pool-skel-cell {
+    height: 11px;
+    border-radius: 999px;
+    border: none;
+    box-shadow: none;
+}
+.cs-root .cs-pool-skel-cell.w-10 { width: 10%; }
+.cs-root .cs-pool-skel-cell.w-12 { width: 12%; }
+.cs-root .cs-pool-skel-cell.w-16 { width: 16%; }
+.cs-root .cs-pool-skel-cell.w-30 { width: 30%; }
+.cs-root .cs-pool-skel-cell.w-70 { width: 70%; }
+
+/* ── Empty / error ───────────────────────────────────────────────────────── */
+.cs-root .cs-pool-empty.is-error .cs-pool-empty-ico.is-danger {
+    background: var(--cs-danger-soft);
+    border-color: color-mix(in srgb, var(--cs-danger) 30%, transparent);
+    color: var(--cs-danger);
+}
+
+/* Visually hidden but read aloud — the table's <caption>. */
+.cs-root .cs-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}

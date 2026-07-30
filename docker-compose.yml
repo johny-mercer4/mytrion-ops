@@ -1,5 +1,20 @@
-# Local dev infrastructure: Postgres 16 (with pgvector) + MinIO (S3-compatible file storage).
+# Local dev infrastructure: app Postgres, MinIO, and an internal-only NocoDB Data Loader stack.
 # Usage: docker compose up -d
+x-nocodb-env: &nocodb-env
+  NC_DB: 'pg://nocodb-db:5432?u=nocodb&p=${NOCODB_METADATA_PASSWORD:-nocodb-local-change-me}&d=nocodb'
+  NC_CACHE_REDIS_URL: 'redis://nocodb-redis:6379'
+  NC_JOBS_REDIS_URL: 'redis://nocodb-redis:6379'
+  NC_SITE_URL: '${NOCODB_SITE_URL:-http://127.0.0.1:8080}'
+  NC_AUTH_JWT_SECRET: '${NOCODB_AUTH_JWT_SECRET:-local-only-change-this-jwt-secret}'
+  NC_CONNECTION_ENCRYPT_KEY: '${NOCODB_CONNECTION_ENCRYPT_KEY:-local-only-change-this-encryption-key}'
+  NC_INVITE_ONLY_SIGNUP: 'true'
+  NC_DISABLE_TELE: 'true'
+  NC_DISABLE_SUPPORT_CHAT: 'true'
+  # The app DB is a private-network data source. The loader role + RLS remain the real boundary.
+  NC_ALLOW_LOCAL_EXTERNAL_DBS: 'true'
+  # Never let NocoDB create its per-base reflection schemas on Postgres.
+  NC_DISABLE_PG_DATA_REFLECTION: 'true'
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -37,6 +52,73 @@ services:
     volumes:
       - minio-data:/data
 
+  # NocoDB metadata is isolated from the application database.
+  nocodb-db:
+    image: postgres:17.10
+    container_name: octane-nocodb-db
+    environment:
+      POSTGRES_USER: nocodb
+      POSTGRES_PASSWORD: '${NOCODB_METADATA_PASSWORD:-nocodb-local-change-me}'
+      POSTGRES_DB: nocodb
+    volumes:
+      - nocodb-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nocodb -d nocodb']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  nocodb-redis:
+    image: redis:7
+    container_name: octane-nocodb-redis
+    volumes:
+      - nocodb-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  nocodb:
+    image: nocodb/nocodb:2026.07.0
+    container_name: octane-nocodb
+    environment: *nocodb-env
+    depends_on:
+      nocodb-db:
+        condition: service_healthy
+      nocodb-redis:
+        condition: service_healthy
+    ports:
+      # Localhost only. Production needs an internal network or an IP-restricted proxy.
+      - '127.0.0.1:8080:8080'
+    volumes:
+      - nocodb-data:/usr/app/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --tries=1 --spider http://localhost:8080/api/v1/health || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  nocodb-worker:
+    image: nocodb/nocodb:2026.07.0
+    container_name: octane-nocodb-worker
+    environment:
+      <<: *nocodb-env
+      NC_WORKER_MODE_ENABLED: 'true'
+    depends_on:
+      nocodb:
+        condition: service_healthy
+    volumes:
+      - nocodb-data:/usr/app/data
+    restart: unless-stopped
+
 volumes:
   octane_pgdata:
   minio-data:
+  nocodb-pgdata:
+  nocodb-redis-data:
+  nocodb-data:

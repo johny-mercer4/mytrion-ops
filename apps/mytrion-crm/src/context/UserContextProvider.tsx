@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
 import { getSession } from '../api/session';
 import { AuthScreen } from '../app/AuthScreen';
@@ -6,6 +13,8 @@ import { LoginGate } from '../app/LoginGate';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
 const Ctx = createContext<UserContext | null>(null);
+/** Lets profile picture uploads re-read the stored session without a full reload. */
+const ReloadCtx = createContext<(() => void) | null>(null);
 
 type BootState =
   | { phase: 'loading' }
@@ -70,13 +79,34 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.phase !== 'authed' || !getSession()) return;
     let cancelled = false;
-    void refreshWorkerFromMe().then((changed) => {
-      if (!cancelled && changed) setState(syncBootState());
-    });
+    const sync = (): void => {
+      void refreshWorkerFromMe().then((changed) => {
+        if (!cancelled && changed) setState(syncBootState());
+      });
+    };
+    sync();
+    /**
+     * Re-check on tab focus as well as on mount. An admin editing someone's access in another tab
+     * (or telling them over chat) previously required the affected user to hard-reload before the
+     * change took effect, which read as "the override isn't working". Coming back to the tab is the
+     * natural moment to re-resolve, and /auth/me is cheap; the UI only re-renders if the grant
+     * actually changed.
+     */
+    const onFocus = (): void => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
     };
   }, [state.phase]);
+
+  const reloadFromSession = useCallback((): void => {
+    setState(syncBootState());
+  }, []);
 
   if (state.phase === 'loading') {
     return (
@@ -88,7 +118,11 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
     );
   }
   if (state.phase === 'anon') return <LoginGate initialError={state.error} />;
-  return <Ctx.Provider value={state.context}>{children}</Ctx.Provider>;
+  return (
+    <ReloadCtx.Provider value={reloadFromSession}>
+      <Ctx.Provider value={state.context}>{children}</Ctx.Provider>
+    </ReloadCtx.Provider>
+  );
 }
 
 /** The session user context. Throws if used outside the provider (a programming error). */
@@ -96,4 +130,11 @@ export function useUserContext(): UserContext {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useUserContext must be used within <UserContextProvider>');
   return ctx;
+}
+
+/** Re-read identity from the stored session (e.g. after uploading a profile picture). */
+export function useReloadUserContext(): () => void {
+  const reload = useContext(ReloadCtx);
+  if (!reload) throw new Error('useReloadUserContext must be used within <UserContextProvider>');
+  return reload;
 }

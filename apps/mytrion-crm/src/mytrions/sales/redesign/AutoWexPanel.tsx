@@ -30,9 +30,9 @@ const WEX0: WexQ = {
   appId: '', firstName: '', lastName: '', company: '', email: '', phone: '', mc: '', dot: '',
 };
 
-const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
-const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const dropErr = 'padding:14px;font-size:13px;color:var(--danger);text-align:center';
+const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
+const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const dropErr = 'padding:14px;font-size:14px;color:var(--danger);text-align:center';
 const mono = "font-family:'JetBrains Mono',monospace";
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
@@ -109,7 +109,7 @@ export function AutoWexPanel() {
 
   return (
     <div>
-      <div style={s('font-size:13px;color:var(--text2);margin-bottom:12px')}>
+      <div style={s('font-size:14px;color:var(--text2);margin-bottom:12px')}>
         Search WEX applications by any combination of applicant fields.
       </div>
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
@@ -122,7 +122,7 @@ export function AutoWexPanel() {
         <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
         <div><Lbl t="DOT Number" /><input value={wexQ.dot} onChange={(e) => setWexField('dot', e.target.value)} placeholder="e.g. 602070" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
         <div style={s('grid-column:1 / -1;display:flex;justify-content:flex-end')}>
-          <button onClick={runWex} disabled={wexSearching} className="ss-btn-p" style={s(btnP('height:40px;padding:0 22px;border-radius:var(--radius-md);font-size:13px'))}>
+          <button onClick={runWex} disabled={wexSearching} className="ss-btn-p" style={s(btnP('height:40px;padding:0 22px;border-radius:var(--radius-md);font-size:14px'))}>
             Search
           </button>
         </div>
@@ -138,8 +138,8 @@ export function AutoWexPanel() {
         <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
           {wexResultsVM.map((r) => (
             <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-              <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:13.5px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
-              <div style={s(`font-size:12px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:14px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
+              <div style={s(`font-size:13px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
             </div>
           ))}
         </div>

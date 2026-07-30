@@ -1,0 +1,648 @@
+/* =====================================================
+   Customer Service — Horizon glass layer
+   Imported LAST from index.css, so equal-specificity rules here win over the panel sheets.
+
+   One language, applied once, inherited by every tab:
+     surface   frosted pane (--hz-pane) + 1px --hz-pane-bd + --hz-shadow-rest + inset sheen
+     hover     brighten to --hz-pane-lift, accent-tinted border, --hz-shadow-lift, -2px lift
+     selected  the module's gradient (accent → accent-2), never a flat fill
+     motion    --hz-ease, --hz-dur-wash (state) / --hz-dur-tone (tone) / --hz-dur-lift (transform)
+     focus     3px --cs-accent-glow ring, no outline
+   Tokens: styles/horizon.css (--hz-*) + shared-theme.css (--cs-*).
+   ===================================================== */
+
+/* ── Ambient field ───────────────────────────────────────────────────────── */
+.cs-root {
+    position: relative;
+    background: var(--hz-page);
+    isolation: isolate;
+}
+
+.cs-root .cs-ambience {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--hz-mesh);
+    transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.cs-root .cs-ambience::before,
+.cs-root .cs-ambience::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+}
+.cs-root .cs-ambience::before {
+    background-image: var(--hz-grid);
+    background-size: var(--hz-grid-size);
+}
+.cs-root .cs-ambience::after {
+    background: var(--hz-vignette);
+    transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+.cs-root .cs-body {
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+/* `position: relative; z-index: 2` so the sidebar outranks its later-in-DOM sibling `.cs-content`
+   (position: relative, z-index auto) — otherwise the content pane paints over anything the sidebar
+   pops out, e.g. the upward "View as" menu. */
+.cs-root .cs-sidebar {
+    position: relative;
+    z-index: 2;
+    background: var(--hz-glass);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-right: 1px solid var(--hz-glass-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        width 180ms var(--hz-ease),
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* The wordmark is the brand lockup: TRION + the department line take the Horizon ramp. */
+.cs-root .cs-brand-word span,
+.cs-root.dark-mode .cs-brand-word span {
+    background: linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+.cs-root .cs-brand-sub,
+.cs-root.dark-mode .cs-brand-sub {
+    background: linear-gradient(105deg, var(--cs-accent-deep) 0%, var(--cs-accent) 55%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.cs-root .cs-nav-collapse-btn {
+    background: var(--hz-pane);
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-nav-collapse-btn:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 40%, var(--hz-pane-bd));
+    box-shadow: 0 3px 12px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+}
+
+/* ── Nav items ───────────────────────────────────────────────────────────── */
+.cs-root .cs-nav-item {
+    position: relative;
+    overflow: hidden;
+    width: calc(100% - 16px);
+    border: 1px solid transparent;
+    background: none;
+    font-family: inherit;
+    text-align: left;
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root.cs-nav-collapsed .cs-nav-item {
+    width: calc(100% - 12px);
+}
+
+.cs-root .cs-nav-item:hover {
+    background: var(--hz-glass-hover);
+    border-color: var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-glass-inset);
+    transform: translateX(2px);
+}
+.cs-root.cs-nav-collapsed .cs-nav-item:hover {
+    transform: none;
+}
+
+/* Selected tab: the module's gradient as a 2px rail + the brand wash behind the row. A rail has to
+   be a ::after because box-shadow cannot take a gradient. */
+.cs-root .cs-nav-item.active,
+.cs-root .cs-nav-item.active:hover,
+.cs-root.dark-mode .cs-nav-item.active {
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--cs-accent) 14%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--cs-accent) 28%, transparent);
+    color: var(--cs-accent);
+    box-shadow: 0 2px 14px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: none;
+}
+.cs-root .cs-nav-item.active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+}
+.cs-root .cs-nav-item.active .cs-nav-icon-wrap {
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--cs-accent) 55%, transparent));
+}
+
+/* CITI Folder keeps its red identity, in the same glass language. */
+.cs-root .cs-nav-item.is-citi-folder.active,
+.cs-root.dark-mode .cs-nav-item.is-citi-folder.active {
+    background: color-mix(in srgb, var(--cs-danger) 12%, transparent);
+    border-color: color-mix(in srgb, var(--cs-danger) 30%, transparent);
+    color: var(--cs-danger);
+    box-shadow: 0 2px 14px -4px color-mix(in srgb, var(--cs-danger) 30%, transparent);
+}
+.cs-root .cs-nav-item.is-citi-folder.active::after {
+    background: var(--cs-danger);
+}
+
+.cs-root .cs-nav-item.cs-nav-disabled:hover {
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+    transform: none;
+}
+
+.cs-root .cs-nav-badge {
+    background: color-mix(in srgb, var(--cs-accent) 14%, transparent);
+    color: var(--cs-accent);
+    border-color: var(--cs-border-gold);
+}
+
+/* ── Sidebar footer ──────────────────────────────────────────────────────── */
+.cs-root .cs-theme-toggle,
+.cs-root .cs-user-card {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-theme-toggle:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 40%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+/* The avatar is the one solid piece of the gradient in the chrome. */
+/* The `.dark-mode` selector is required, not redundant: `.cs-root.dark-mode .cs-user-avatar` in
+   shared-base.css sets the ink to the accent itself. That was fine over the old soft tint, but on a
+   gradient fill it is amber-on-amber — invisible. Same story for the Home hero avatar. */
+.cs-root .cs-user-avatar,
+.cs-root.dark-mode .cs-user-avatar {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    color: var(--cs-on-accent);
+    border: none;
+    box-shadow: 0 0 12px var(--cs-accent-glow), var(--hz-glass-inset-strong);
+}
+
+/* ── Content + panels ────────────────────────────────────────────────────── */
+.cs-root .cs-content {
+    background: none;
+}
+
+/* ── Typography: one display face, one scale, across every tab ───────────── */
+.cs-root .cs-panel-title,
+.cs-root .cs-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+}
+.cs-root .cs-panel-sub,
+.cs-root .cs-subtitle {
+    color: var(--text-muted);
+}
+
+/* Section label / kicker — the brand marker that puts the ramp on every tab. */
+.cs-root .cs-pool-kicker,
+.cs-root .cs-section-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+/* The icon inside a gradient-clipped kicker must not be clipped away. */
+.cs-root .cs-pool-kicker svg,
+.cs-root .cs-section-kicker svg {
+    -webkit-text-fill-color: initial;
+    color: var(--cs-accent);
+    flex: none;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.cs-root .cs-btn {
+    border-radius: var(--r-md);
+    transition:
+        filter var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform 0.08s var(--hz-ease);
+}
+.cs-root .cs-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+}
+
+.cs-root .cs-btn-primary {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    color: var(--cs-on-accent);
+    border-color: transparent;
+    box-shadow: var(--hz-glass-inset-strong);
+}
+.cs-root .cs-btn-primary:hover:not(:disabled) {
+    filter: saturate(1.1) brightness(1.06);
+    box-shadow:
+        0 8px 26px -6px color-mix(in srgb, var(--cs-accent) 45%, transparent),
+        var(--hz-glass-inset-strong);
+    transform: var(--hz-hover-lift-sm);
+}
+
+.cs-root .cs-btn-ghost {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    color: var(--text-secondary);
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+.cs-root .cs-btn-ghost:hover:not(:disabled) {
+    background: var(--hz-pane-lift);
+    color: var(--cs-accent);
+    border-color: color-mix(in srgb, var(--cs-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* `.cs-btn-danger` previously had NO rule anywhere — "Mark sent" in CITI Folder rendered as bare
+   text with no affordance at all. This is the missing definition. */
+.cs-root .cs-btn-danger {
+    background: color-mix(in srgb, var(--cs-danger) 10%, transparent);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    color: var(--cs-danger);
+    border-color: color-mix(in srgb, var(--cs-danger) 38%, transparent);
+    box-shadow: var(--hz-glass-inset);
+}
+.cs-root .cs-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--cs-danger) 18%, transparent);
+    border-color: color-mix(in srgb, var(--cs-danger) 56%, transparent);
+    box-shadow: 0 4px 16px -4px color-mix(in srgb, var(--cs-danger) 34%, transparent), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+.cs-root .cs-btn-danger:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-danger) 28%, transparent);
+}
+
+/* Disabled: no lift, no glow, and NO faded gradient. Dropping a gradient fill to 45% opacity over a
+   pale field is exactly the muddy-beige look the amber ramp was meant to fix — a disabled control
+   should read as inert neutral, not as a washed-out brand colour. */
+.cs-root .cs-btn:disabled,
+.cs-root .cs-btn:disabled:hover {
+    transform: none;
+    filter: none;
+    box-shadow: none;
+    opacity: 1;
+    background: var(--hz-pane-alt);
+    border-color: var(--hz-pane-bd);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.cs-root .cs-refresh-btn {
+    color: var(--cs-accent);
+}
+.cs-root .cs-refresh-btn:hover:not(:disabled) {
+    color: var(--accent-2);
+}
+
+/* ── Cards, metric tiles, banners ────────────────────────────────────────── */
+.cs-root .cs-card,
+.cs-root .cs-pool-metric,
+.cs-root .cs-summary-banner > *,
+.cs-root .cs-stat-card,
+.cs-root .cs-metric-card {
+    position: relative;
+    overflow: hidden;
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-md));
+    -webkit-backdrop-filter: blur(var(--hz-blur-md));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease),
+        transform var(--hz-dur-lift) var(--hz-ease);
+}
+.cs-root .cs-card:hover,
+.cs-root .cs-pool-metric:hover,
+.cs-root .cs-stat-card:hover,
+.cs-root .cs-metric-card:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 34%, var(--hz-pane-bd));
+    box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+/*
+ * `overflow: auto`, NOT hidden. This sheet is imported last, so at equal specificity it beat
+ * shared-base's `overflow-x: auto` and applications-panel's `overflow: auto` — which clipped every
+ * wide CS table dead (the Applications table is ~4200px against a ~960px pane) and made horizontal
+ * scrolling impossible. `auto` clips to the border-radius just as well as `hidden` does, and only
+ * shows a scrollbar when the content actually overflows.
+ *
+ * No backdrop-filter here or on the sticky header either: this element is the SCROLLPORT, so a blur
+ * on it has to be recomposited every scroll frame (and the sticky header re-pays it per frame).
+ * --hz-pane over the solid --surface gives the same tint with nothing showing through to blur.
+ */
+.cs-root .cs-table-wrap {
+    background: var(--hz-pane), var(--surface);
+    border: 1px solid var(--hz-pane-bd);
+    border-radius: var(--r-lg);
+    overflow: auto;
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+/* Opaque, so rows don't show through the labels as they scroll under it. --hz-pane-alt mixes
+   surface-alt toward TRANSPARENT; this mixes the same 72% toward the solid surface instead, so the
+   tint is identical without the translucency the blur used to hide. (It can't be layered as
+   `var(--hz-pane-alt), var(--surface)` — a color is only legal in a background's final layer, so
+   that whole declaration would be dropped as invalid.) */
+.cs-root .cs-table thead th {
+    background: color-mix(in srgb, var(--surface-alt) 72%, var(--surface));
+    border-bottom: 1px solid var(--hz-pane-bd);
+    box-shadow: 0 1px 0 0 color-mix(in srgb, var(--cs-accent) 14%, transparent);
+    color: var(--th-color);
+}
+.cs-root .cs-table tbody tr {
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-table tbody tr:hover {
+    background: var(--hz-glass-hover);
+}
+
+/* ── Tabs (Applications / Analytics) — gradient underline for the live tab ── */
+.cs-root .cs-app-tab,
+.cs-root .cs-an-datatab {
+    position: relative;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-app-tab:hover,
+.cs-root .cs-an-datatab:hover {
+    color: var(--text-primary);
+}
+.cs-root .cs-app-tab.active,
+.cs-root .cs-an-datatab.active {
+    color: var(--cs-accent);
+}
+.cs-root .cs-app-tab.active::after,
+.cs-root .cs-an-datatab.active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    box-shadow: 0 0 10px -1px var(--cs-accent-glow);
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────── */
+.cs-root .cs-chip {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-chip:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 38%, var(--hz-pane-bd));
+    box-shadow: 0 4px 14px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+.cs-root .cs-chip.active {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    border-color: transparent;
+    color: var(--cs-on-accent);
+    box-shadow:
+        0 4px 14px -4px color-mix(in srgb, var(--cs-accent) 42%, transparent),
+        var(--hz-glass-inset-strong);
+}
+.cs-root .cs-chip.active svg {
+    opacity: 1;
+}
+/* The phase/status filters keep their own semantic hues, as glass rather than flat tint. */
+.cs-root .cs-chip.active.is-neutral {
+    background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+    border-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+    color: var(--text-primary);
+    box-shadow: var(--hz-glass-inset);
+}
+.cs-root .cs-chip.active.is-sales {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.9) 0%, rgba(37, 99, 235, 0.9) 100%);
+    border-color: transparent;
+    color: #04131c;
+    box-shadow: 0 4px 14px -4px rgba(56, 189, 248, 0.42), var(--hz-glass-inset-strong);
+}
+.cs-root .cs-chip.active.is-retention {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    border-color: transparent;
+    color: var(--cs-on-accent);
+    box-shadow: 0 4px 14px -4px var(--cs-accent-glow), var(--hz-glass-inset-strong);
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.cs-root .cs-form-input,
+.cs-root .cs-form-select,
+.cs-root .cs-form-textarea {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-form-input:hover:not(:focus),
+.cs-root .cs-form-select:hover:not(:focus) {
+    border-color: color-mix(in srgb, var(--cs-accent) 26%, var(--hz-pane-bd));
+}
+.cs-root .cs-form-input:focus,
+.cs-root .cs-form-select:focus,
+.cs-root .cs-form-textarea:focus {
+    outline: none;
+    background: var(--hz-pane-lift);
+    border-color: var(--cs-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.cs-root .cs-badge {
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────────── */
+.cs-root .cs-modal-backdrop {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.cs-root .cs-modal-box {
+    /* Ramp along the top edge, painted as a background layer so it survives internal scrolling. */
+    /* NO backdrop-filter here, deliberately. The sheet used to blur(28px) on top of the backdrop's
+       own blur(10px) + 62% tint — a second full-viewport blur pass for almost no visual gain, and it
+       wrapped the scrolling .cs-modal-body, so every scroll frame had to recomposite the blur
+       (the "modal scrolls in steps / freezes" report). The translucent --hz-pane-lift now layers
+       over the solid --modal-box-bg instead: same tint and top ramp, opaque sheet, nothing behind
+       to blur. */
+    background:
+        linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
+        var(--hz-pane-lift),
+        var(--modal-box-bg);
+    border: 1px solid var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+}
+
+/* ── Loading — ONE loader per surface, accent-ringed ─────────────────────── */
+.cs-root .cs-skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--hz-pane-alt) 25%,
+        color-mix(in srgb, var(--cs-accent) 9%, var(--hz-pane-alt)) 37%,
+        var(--hz-pane-alt) 63%
+    );
+    background-size: 900px 100%;
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+}
+.cs-root .cs-spinner,
+.cs-root .cs-ret-spin {
+    color: var(--cs-accent);
+    filter: drop-shadow(0 0 6px var(--cs-accent-glow));
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+.cs-root .cs-toast {
+    background: var(--hz-pane-lift);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border: 1px solid var(--hz-glass-bd-hover);
+    box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+    color: var(--text-primary);
+}
+
+/* ── Mobile bottom nav ───────────────────────────────────────────────────── */
+.cs-root .cs-bottom-nav {
+    background: color-mix(in srgb, var(--hz-page) 82%, transparent);
+    backdrop-filter: blur(var(--hz-blur));
+    -webkit-backdrop-filter: blur(var(--hz-blur));
+    border-top: 1px solid var(--hz-glass-bd);
+}
+.cs-root .bottom-nav-btn {
+    position: relative;
+    background: none;
+    border: none;
+    transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .bottom-nav-btn.active {
+    color: var(--cs-accent);
+}
+.cs-root .bottom-nav-btn.active::after {
+    content: '';
+    position: absolute;
+    left: 22%;
+    right: 22%;
+    top: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+}
+
+/* ── Focus rings — one treatment, keyboard only ──────────────────────────── */
+.cs-root :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-root .cs-nav-item:hover,
+    .cs-root .cs-btn:hover,
+    .cs-root .cs-chip:hover,
+    .cs-root .cs-card:hover,
+    .cs-root .cs-pool-metric:hover,
+    .cs-root .cs-theme-toggle:hover {
+        transform: none;
+    }
+}
+
+
+/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
+   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
+   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
+   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
+.cs-root .cs-modal-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}

@@ -14,6 +14,7 @@
 import type { CSSProperties } from 'react';
 import {
   ArrowUpDown,
+  Award,
   Ban,
   Banknote,
   Bell,
@@ -71,7 +72,11 @@ import {
   ShieldCheck,
   Sparkles,
   SquarePen,
+  Medal,
+  MinusCircle,
+  Sprout,
   Star,
+  Trophy,
   Sun,
   Ticket,
   TrendingUp,
@@ -110,6 +115,13 @@ export const ICON_REGISTRY = {
   notes: FileText,
   lead: UserPlus,
   star: Star,
+  // Loyalty tiers — one distinct SILHOUETTE each, so a badge is identifiable without relying on
+  // its colour (a star for every tier made Gold/Silver/Bronze read as the same badge tinted).
+  tierGold: Trophy,
+  tierSilver: Medal,
+  tierBronze: Award,
+  tierBuilding: Sprout,
+  tierIdle: MinusCircle,
   doc: FileText,
   check: CircleCheck,
   users: Users,

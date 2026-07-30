@@ -178,6 +178,8 @@ export interface LeadVM {
   dot: string;
   referral: string;
   trucks: number;
+  /** Mytrion_Call_Attempts — count of calls placed from Mytrion (our reliable "real calls" signal). */
+  callAttempts: number;
   note: string;
   /** Raw values for the inline editor (see {@link LeadEdit}). */
   edit: LeadEdit;
@@ -211,6 +213,7 @@ function mapLead(r: CrmRow): LeadVM {
     dot: dotRaw == null || str(dotRaw) === '' ? '—' : str(dotRaw),
     referral,
     trucks: n(r.Trucks),
+    callAttempts: n(r.Mytrion_Call_Attempts),
     note: str(r.Description) || 'No notes on this lead yet.',
     edit: {
       MC: str(r.MC),
@@ -250,6 +253,8 @@ export interface DealVM {
   value: number;
   valueFmt: string;
   cards: number;
+  /** Mytrion_Call_Attempts — count of calls placed from Mytrion. */
+  callAttempts: number;
   prob: number;
   close: string;
   contact: string;
@@ -290,6 +295,7 @@ function mapDeal(r: CrmRow): DealVM {
     value,
     valueFmt: value > 0 ? money(value) : '—',
     cards: n(r.Cards_Requested),
+    callAttempts: n(r.Mytrion_Call_Attempts),
     prob: n(r.Probability),
     close: fmtDate(r.Closing_Date) || '—',
     contact: contact || '—',
@@ -328,35 +334,90 @@ export interface RejectionVM {
   reason: string;
   date: string;
   status: string;
+  // --- Detail fields (the row is a summary; the modal shows these) ---
+  errorCode: string;
+  /** Cleaned, human-readable decline text. */
+  errorText: string;
+  /** The raw EFS string, kept verbatim for support escalation. */
+  errorRaw: string;
+  cardLast4: string;
+  driverName: string;
+  location: string;
+  station: string;
+  paymentType: string;
+  isNetwork: boolean;
+  isFraud: boolean;
+  /** The SMS the automation sent the driver, if any. */
+  automatedResponse: string;
+  agentName: string;
+  /** Full timestamp for the modal (the row shows the short date). */
+  occurredAtLong: string;
 }
 
-interface RejContact {
-  lastName?: string | null;
-  account?: { accountName?: string | null } | null;
+/**
+ * EFS decline text arrives pipe-delimited with a leading timestamp token, e.g.
+ * `202607280835|INACTIVE CARD`. The row only has room for the human half, so strip the numeric
+ * stamp and title-case what's left; the raw string is preserved on the VM for the modal.
+ */
+function cleanErrorText(raw: string): string {
+  const parts = raw.split('|').map((s) => s.trim()).filter(Boolean);
+  const human = parts.filter((s) => !/^\d{6,}$/.test(s)).join(' · ');
+  const text = human || raw.trim();
+  // EFS shouts in caps; sentence case reads better in a dense table.
+  return text === text.toUpperCase() ? text.charAt(0) + text.slice(1).toLowerCase() : text;
 }
 
+/** Our own workflow states → the badge vocabulary RejectionsView already colours. */
+const REJ_STATUS_LABEL: Record<string, string> = {
+  new: 'Open',
+  acknowledged: 'On Hold',
+  resolved: 'Resolved',
+};
+
+/**
+ * Rows now come from OUR `mytrion_rejection_reports` table (written by the Zoho Desk Deluge webhook)
+ * rather than a Desk ticket scan, so the company and reason are real columns instead of something
+ * parsed back out of a ticket subject. `number` shows the carrier id — the id agents actually search
+ * and cross-reference — and the reason leads with the EFS error code.
+ */
 function mapRejection(t: CrmRow): RejectionVM {
-  const subject = str(t.subject);
-  // "Rejection Report: <Company> - Error <code>" → split company / reason off the subject.
-  const m = subject.match(/^rejection report:\s*(.+?)\s*-\s*(.+)$/i);
-  const contact = (t.contact ?? {}) as RejContact;
-  const company =
-    str(contact.account?.accountName) || (m ? m[1] : '') || str(contact.lastName) || subject || '(unknown)';
-  const reason = (m ? m[2] : subject.replace(/^rejection report:\s*/i, '')) || 'Rejected';
-  const created = str(t.createdTime);
+  const company = str(t.companyName) || '(unknown)';
+  const code = str(t.errorCode);
+  const raw = str(t.errorDescription);
+  const errorText = raw ? cleanErrorText(raw) : '';
+  const when = str(t.occurredAt);
+  const city = str(t.locationCity);
+  const state = str(t.locationState);
+  const loc = str(t.locationName);
   return {
     id: str(t.id),
-    number: str(t.ticketNumber || t.number),
+    number: str(t.carrierId),
     company,
     initials: initialsOf(company),
-    reason,
-    date: fmtDate(created) || relTime(created) || '—',
-    status: str(t.status) || 'Open',
+    reason: [code && `Error ${code}`, errorText].filter(Boolean).join(' · ') || 'Rejected',
+    date: fmtDate(when) || relTime(when) || '—',
+    status: REJ_STATUS_LABEL[str(t.status)] ?? 'Open',
+    errorCode: code,
+    errorText,
+    errorRaw: raw,
+    cardLast4: str(t.cardLast4),
+    driverName: str(t.driverName),
+    location: [loc, [city, state].filter(Boolean).join(', ')].filter(Boolean).join(' — '),
+    station: str(t.stationName),
+    paymentType: str(t.paymentType),
+    isNetwork: t.isNetwork === true,
+    isFraud: t.isFraud === true,
+    automatedResponse: str(t.automatedResponse),
+    agentName: str(t.agentName),
+    occurredAtLong: when ? new Date(when).toLocaleString() : '—',
   };
 }
 
 export async function loadRejections(): Promise<RejectionVM[]> {
-  const rows = await listRejections();
+  // Forward the acted-as agent exactly like loadLeads/loadDeals — without this, View-as showed the
+  // admin's own (or the whole org's) declines while every other Data Center tab switched identity.
+  const actAsId = getImpersonation()?.zohoUserId;
+  const rows = await listRejections(actAsId);
   return rows.map(mapRejection);
 }
 

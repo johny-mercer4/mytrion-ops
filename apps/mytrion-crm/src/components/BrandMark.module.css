@@ -23,8 +23,12 @@
   color: var(--text-primary);
 }
 
+/* "HORIZON" carries the brand ramp itself — the same sky→sunset sweep as the workspace picker's
+   wordmark, now read from the shared tokens rather than a one-off pair of hexes. */
 .ai {
-  background: linear-gradient(135deg, #24C6DC 0%, #24C6DC 50%, #FF8008 100%);
+  background: var(--hz-gradient-r);
   -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
 }

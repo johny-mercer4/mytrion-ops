@@ -101,18 +101,34 @@ export async function refreshWorkerFromMe(): Promise<boolean> {
       s.worker.homeMytrion,
       s.worker.allDepartmentAccess,
       s.worker.mytrionAccessModes,
+      s.worker.avatarUrl ?? null,
+      s.worker.email ?? null,
     ]);
     const after = JSON.stringify([
       w.accessibleMytrions,
       w.homeMytrion,
       w.allDepartmentAccess,
       w.mytrionAccessModes,
+      w.avatarUrl ?? null,
+      w.email ?? null,
     ]);
     setSession({ ...s, worker: { ...s.worker, ...w } });
     return before !== after;
   } catch {
     return false; // offline / transient — keep the stored session
   }
+}
+
+/** Persist a profile-picture change into the stored session (caller re-renders via provider). */
+export async function setMyAvatar(dataUrl: string | null): Promise<string | null> {
+  const res = (await request('POST', '/auth/me/avatar', {
+    body: { dataUrl },
+    impersonate: false,
+  })) as { avatarUrl?: string | null };
+  const avatarUrl = res.avatarUrl ?? null;
+  const s = getSession();
+  if (s) setSession({ ...s, worker: { ...s.worker, avatarUrl } });
+  return avatarUrl;
 }
 
 /** Drop the session and bounce back through Zoho sign-in. */

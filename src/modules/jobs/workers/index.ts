@@ -12,10 +12,17 @@ import {
   agentRunJob,
   retentionCaseSyncJob,
   retentionDeadlineSweepJob,
+  referralBonusCalcJob,
+  kpiSalesDailyRollupJob,
+  kpiSalesHourlySyncJob,
+  kpiSalesMonthCloseJob,
+  kpiSalesReconcileJob,
+  salesBocaRequestJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
+import { runReferralBonusCalc } from './referralBonusCalc.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
 import { notificationDispatchJob, notificationPollJob, statementWeeklyJob } from '../catalog.js';
 import { dispatchMiniAppNotification } from '../../notifications/service.js';
@@ -28,6 +35,13 @@ import {
   sweepExpiredApprovals,
   sweepStaleCheckpoints,
 } from './maintenance.js';
+import {
+  runKpiDailyRollup,
+  runKpiHourlySync,
+  runKpiMonthClose,
+  runKpiReconcile,
+} from './salesKpi.js';
+import { runBocaRequest } from '../../browserAutomation/bocaRequest.js';
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(agentRunJob.name, { batchSize: env.JOBS_CONCURRENCY }, handleAgentRunJobs);
@@ -55,6 +69,12 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     await boss.work(spec.queue, { batchSize: 1 }, async () => handler());
   }
 
+  await boss.work(referralBonusCalcJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    const payload = referralBonusCalcJob.schema.parse(job.data ?? {});
+    return runReferralBonusCalc(payload);
+  });
   await boss.work(retentionCaseSyncJob.name, { batchSize: 1 }, async (jobs) => {
     const job = jobs[0];
     if (!job) return undefined;
@@ -66,6 +86,31 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     if (!job) return undefined;
     const payload = retentionDeadlineSweepJob.schema.parse(job.data ?? {});
     return runRetentionDeadlineSweep(payload);
+  });
+  await boss.work(kpiSalesHourlySyncJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runKpiHourlySync(kpiSalesHourlySyncJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(kpiSalesReconcileJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runKpiReconcile(kpiSalesReconcileJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(kpiSalesDailyRollupJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runKpiDailyRollup(kpiSalesDailyRollupJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(kpiSalesMonthCloseJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runKpiMonthClose(kpiSalesMonthCloseJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(salesBocaRequestJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runBocaRequest(salesBocaRequestJob.schema.parse(job.data ?? {}));
   });
   await boss.work(bulkIngestJob.name, { batchSize: 1 }, handleBulkIngestJobs);
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());

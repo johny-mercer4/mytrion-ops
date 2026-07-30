@@ -24,6 +24,8 @@ export type MytrionId =
   | 'verification'
   | 'manager'
   | 'analyst'
+  | 'hr'
+  | 'trailhead'
   | 'customer-service';
 
 export interface MytrionAccessRule {
@@ -131,7 +133,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     title: 'Collection Mytrion',
     tag: 'Collection',
     icon: 'collection',
-    blurb: 'Bad-debt escalation timeline, Array agency filing, recovery cases.',
+    blurb: 'Bad-debt escalation, Array agency filing and recovery cases.',
     hue: 'red',
     department: 'collection',
     allDepartments: false,
@@ -197,7 +199,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     title: 'Manager Mytrion',
     tag: 'Manager',
     icon: 'manager',
-    blurb: 'Team metrics roll-up and cross-department KPIs.',
+    blurb: 'Manager hub — referral records and team operations.',
     hue: 'light-blue',
     department: 'management',
     // OPEN DECISION: are managers hierarchical (see across departments)? If yes, set true.
@@ -226,6 +228,41 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  hr: {
+    id: 'hr',
+    title: 'HR Mytrion',
+    tag: 'HR',
+    icon: 'hr',
+    blurb: 'People operations — employee directory, attendance, requests and profiles.',
+    hue: 'red',
+    department: 'hr',
+    allDepartments: false,
+    // Placeholder until the real Zoho CRM profile/role names for HR are confirmed.
+    allowedProfiles: ['HR'],
+    allowedRoles: ['HR'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
+  trailhead: {
+    id: 'trailhead',
+    title: 'Trailhead',
+    tag: 'Learn',
+    icon: 'trailhead',
+    blurb: 'Internal learning — courses, an AI instructor and the exam hub.',
+    // The picker's hue union has no 'teal'; 'green' is the nearest. The module's real accent is the
+    // teal set by [data-mytrion='trailhead'] in global.css — this only tints the picker tile.
+    hue: 'green',
+    department: 'trailhead',
+    // Learning content is for everyone, so this is the one Mytrion with no department gate to
+    // narrow: every internal worker should be able to take a course.
+    allDepartments: false,
+    allowedProfiles: [],
+    allowedRoles: [],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
 };
 
 /** Display order for the picker. */
@@ -239,18 +276,23 @@ export const MYTRION_ORDER: MytrionId[] = [
   'verification',
   'manager',
   'analyst',
+  'hr',
+  'trailhead',
 ];
 
 /**
  * Live MytrionIds temporarily parked as Coming soon — shown on the picker grid but not
  * enterable (filtered out of resolveAccessibleMytrions / canAccess).
  */
-export const COMING_SOON_MYTRION_IDS: readonly MytrionId[] = [
-  'collection',
-  'verification',
-  'manager',
-  'analyst',
-];
+/**
+ * Live MytrionIds temporarily parked as Coming soon — shown on the picker grid but not enterable
+ * (filtered out of resolveAccessibleMytrions / canAccess).
+ *
+ * Currently EMPTY: every Mytrion is enterable. Modules that aren't finished ship real chrome with
+ * per-tab <ComingSoon /> panels instead of being hidden wholesale, which is more useful than a dead
+ * tile and keeps them from rotting unseen.
+ */
+export const COMING_SOON_MYTRION_IDS: readonly MytrionId[] = [];
 
 /** Picker-only tiles — visible on the wizard grid but not routable yet. */
 export interface ComingSoonPickerTile {
@@ -267,12 +309,6 @@ export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
     icon: MYTRIONS[id].icon,
     hue: MYTRIONS[id].hue,
   })),
-  {
-    id: 'hr',
-    title: 'HR Mytrion',
-    icon: 'hr',
-    hue: 'red',
-  },
 ];
 
 /** Type guard for a path param. */
@@ -295,6 +331,8 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   verification: 'verificationmytrion',
   manager: 'managermytrion',
   analyst: 'analystmytrion',
+  hr: 'hrmytrion',
+  trailhead: 'trailhead',
   'customer-service': 'csmytrion',
 };
 
@@ -340,5 +378,7 @@ export const AGENT_LABELS: Record<AgentKey, string> = {
 
 /** The department agent for a Mytrion. `admin` → null (orchestrator routes across the caller's agents). */
 export function agentKeyFor(id: MytrionId): AgentKey | null {
-  return id === 'admin' ? null : (id as AgentKey);
+  // `admin` routes through the orchestrator; `hr` and `trailhead` have no backend agent (neither is
+  // in AGENT_KEYS), so they must NOT be cast. No Mytrion shows a chat dock anyway — see MytrionShell.
+  return id === 'admin' || id === 'hr' || id === 'trailhead' ? null : (id as AgentKey);
 }

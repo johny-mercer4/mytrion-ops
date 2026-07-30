@@ -62,6 +62,14 @@ export interface ReverseInput {
   carrierId?: string | null;
   amount?: number | null;
   chargedDay?: string | null;
+  /**
+   * Look the payment up in CMP when the row stores NO ref at all — the money bounced, so a payment
+   * the portal created on our behalf still has to come back out. RETURNS ONLY: a manual unmap must
+   * not delete a genuine portal payment (unmapping is a CRM correction, the customer still paid).
+   */
+  resolveMissingRef?: boolean;
+  /** mapping_type. A CRM-Sync mapping deliberately never created a CMP payment. */
+  mappingType?: string | null;
 }
 
 export interface ReverseResult {
@@ -125,21 +133,7 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
     const entry = toEntry(ref);
     // Auto-mapped MX portal payment with no stored paymentId → resolve it, then reverse.
     if (!entry && input.carrierId && input.amount != null) {
-      const res = await resolveRef({
-        carrierId: str(input.carrierId),
-        invoiceNumber: str(ref.invoiceNumber) || undefined,
-        amount: Number(input.amount),
-        chargedDay: input.chargedDay ? str(input.chargedDay) : undefined,
-      });
-      if (res.status !== 'success' || !res.entries?.length) {
-        return { ok: false, kind: 'invoice', reversed: [], message: res.message || 'could not resolve CMP payment' };
-      }
-      try {
-        await reverseInvoicePayments(res.entries);
-        return { ok: true, kind: 'invoice', reversed: res.entries };
-      } catch (e) {
-        return { ok: false, kind: 'invoice', reversed: [], message: errText(e) };
-      }
+      return resolveThenReverse(input, str(ref.invoiceNumber) || undefined);
     }
     if (!entry) return { ok: false, kind: 'invoice', reversed: [], message: 'no CMP paymentId to reverse' };
     try {
@@ -162,8 +156,68 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
     }
   }
 
-  // CRM-Sync (no CMP payment was ever made) → nothing to reverse.
+  // ── No stored ref at all ──
+  // Historically this was treated as "CRM-Sync, nothing to reverse" and returned ok silently. For a
+  // RETURN that is wrong and expensive: MX charges the portal auto-applied to an invoice never stored
+  // a CMP_Ref (0 of the 7.6k mapped MX rows in PG have one), so the bounced money would quietly stay
+  // credited in CMP. The Deluge twin always resolved the payment live at return time; do the same.
+  if (input.resolveMissingRef) {
+    if (isCrmSyncMapping(input.mappingType)) {
+      // The mapping deliberately never created a CMP payment, but a payment made outside our system
+      // may still exist. Deleting a payment we cannot attribute is not ours to guess — flag it.
+      return {
+        ok: false,
+        kind: 'none',
+        reversed: [],
+        message: `CRM-Sync mapping (${str(input.mappingType)}) — check the CMP payment by hand; reconcile manually`,
+      };
+    }
+    if (!input.carrierId || input.amount == null) {
+      return {
+        ok: false,
+        kind: 'none',
+        reversed: [],
+        message: 'mapped but no CMP reference and no carrier/amount to look one up — reconcile manually',
+      };
+    }
+    return resolveThenReverse(input, undefined);
+  }
+
+  // Unmap path: no ref means nothing this system applied to CMP → nothing to undo.
   return { ok: true, kind: 'none', reversed: [] };
+}
+
+/** Mappings that record a link WITHOUT moving money in CMP ("CRM-Sync (Invoice)" / "(Prepay)"). */
+function isCrmSyncMapping(mappingType: string | null | undefined): boolean {
+  return /crm-sync/i.test(mappingType ?? '');
+}
+
+/**
+ * Ask CMP which payment(s) sit behind this charge (carrier + amount + charged day), then delete them.
+ * The resolver only accepts an unambiguous match, so a miss returns ok:false with the reason — which
+ * surfaces the return as "Reconcile CMP" instead of a silent success.
+ */
+async function resolveThenReverse(input: ReverseInput, invoiceNumber: string | undefined): Promise<ReverseResult> {
+  const res = await resolveRef({
+    carrierId: str(input.carrierId),
+    invoiceNumber,
+    amount: Number(input.amount),
+    chargedDay: input.chargedDay ? str(input.chargedDay) : undefined,
+  });
+  if (res.status !== 'success' || !res.entries?.length) {
+    return {
+      ok: false,
+      kind: 'invoice',
+      reversed: [],
+      message: res.message || 'could not resolve the CMP payment — reconcile manually',
+    };
+  }
+  try {
+    await reverseInvoicePayments(res.entries);
+    return { ok: true, kind: 'invoice', reversed: res.entries };
+  } catch (e) {
+    return { ok: false, kind: 'invoice', reversed: [], message: errText(e) };
+  }
 }
 
 function errText(e: unknown): string {

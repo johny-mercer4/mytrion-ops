@@ -18,8 +18,12 @@ export interface Application {
   dot: string;
   phone: string;
   email: string;
+  /** Street line — the Deluge returns it as `Address`. Shown above City/State/ZIP so the row
+   *  carries the full address on file, not just the locality (QA feedback 2026-07-28). */
+  street: string;
   city: string;
   state: string;
+  zip: string;
   credit: number | null;
   trucks: number;
   cards: number;
@@ -44,6 +48,9 @@ export type CitiDecision = string;
 export interface CitiClient {
   id: string;
   name: string;
+  /** Account the record hangs off (Zoho `Company_Name` lookup). Shown above the contact name so a
+   *  row is identifiable at a glance — QA feedback, 2026-07-28. Empty when unlinked. */
+  company: string;
   appId: string;
   status: CitiStatus;
   request: CitiRequest;

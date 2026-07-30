@@ -2,6 +2,8 @@
    component's *.module.css or Tailwind utilities. One token-driven system (see DESIGN_SYSTEM.md). */
 @import 'tailwindcss';
 @import './theme.css';
+/* Horizon brand gradient + glass primitives. After theme.css so it wins over the base scale. */
+@import './horizon.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
    `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules
@@ -56,9 +58,26 @@
 
 /* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
    module's hue; everything else (bg/surface/text/status) stays the shared scale. Dark is the
-   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7. */
-[data-mytrion='admin'] { --accent: #38bef0; --accent-strong: #2cb6ec; --on-accent: #04131c; --accent-soft: rgba(56, 190, 240, 0.12); --accent-glow: rgba(56, 190, 240, 0.26); }
-[data-theme='light'] [data-mytrion='admin'] { --accent: #0c8fc7; --accent-strong: #0e9ad6; --on-accent: #fff; --accent-soft: rgba(12, 143, 199, 0.1); --accent-glow: rgba(12, 143, 199, 0.2); }
+   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7.
+   `--accent-2` is the far end of the module's accent gradient — it defaults to the accent itself
+   (so a single-hue module is unchanged) and is only distinct where a module runs a real ramp. */
+[data-mytrion] { --accent-2: var(--accent); }
+
+/* Admin IS the Horizon workspace: its accent is the brand ramp itself, sky → sunset, so every
+   accent-driven surface in the module (nav rail, active tab, primary button, progress, focus ring)
+   is literally the Mytrion Horizon gradient. See styles/horizon.css. */
+[data-mytrion='admin'] {
+  --accent: var(--hz-sky);
+  --accent-2: var(--hz-sun);
+  --accent-strong: var(--hz-sky-deep);
+  --on-accent: var(--hz-on-gradient);
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --accent-glow: rgba(56, 189, 248, 0.26);
+}
+[data-theme='light'] [data-mytrion='admin'] {
+  --accent-soft: rgba(2, 132, 199, 0.1);
+  --accent-glow: rgba(2, 132, 199, 0.2);
+}
 
 /* Match Sales redesign theme.css (.ss-root / .ss-root.light) — not wizard --rocket */
 [data-mytrion='sales'] { --accent: #4cc2f5; --accent-strong: #7c5cff; --on-accent: #04131c; --accent-soft: rgba(76, 194, 245, 0.14); --accent-glow: rgba(76, 194, 245, 0.26); }
@@ -79,8 +98,58 @@
 [data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
 [data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
 
-[data-mytrion='manager'] { --accent: #2dd4bf; --accent-strong: #5ee0d0; --on-accent: #04231f; --accent-soft: rgba(45, 212, 191, 0.13); --accent-glow: rgba(45, 212, 191, 0.28); }
-[data-theme='light'] [data-mytrion='manager'] { --accent: #0d9488; --accent-strong: #0b8177; --on-accent: #fff; --accent-soft: rgba(13, 148, 136, 0.1); --accent-glow: rgba(13, 148, 136, 0.2); }
+/* Manager runs pink → rose: the workspace picker's Manager tile is pink, and the module used to be
+   teal, so the card you clicked and the workspace you landed in disagreed. */
+[data-mytrion='trailhead'] {
+  --accent: #2dd4bf;
+  --accent-2: #34d399;
+  --accent-strong: #5eead4;
+  --on-accent: #04231f;
+  --accent-soft: rgba(45, 212, 191, 0.13);
+  --accent-glow: rgba(45, 212, 191, 0.28);
+}
+[data-theme='light'] [data-mytrion='trailhead'] {
+  --accent: #0d9488;
+  --accent-2: #059669;
+  --accent-strong: #0f766e;
+  --on-accent: #fff;
+  --accent-soft: rgba(13, 148, 136, 0.1);
+  --accent-glow: rgba(13, 148, 136, 0.2);
+}
+
+[data-mytrion='hr'] {
+  --accent: #f26d6d;
+  --accent-2: #fb923c;
+  --accent-strong: #f89a9a;
+  --on-accent: #2b0a0a;
+  --accent-soft: rgba(242, 109, 109, 0.13);
+  --accent-glow: rgba(242, 109, 109, 0.28);
+}
+[data-theme='light'] [data-mytrion='hr'] {
+  --accent: #dc2626;
+  --accent-2: #ea580c;
+  --accent-strong: #b91c1c;
+  --on-accent: #fff;
+  --accent-soft: rgba(220, 38, 38, 0.1);
+  --accent-glow: rgba(220, 38, 38, 0.2);
+}
+
+[data-mytrion='manager'] {
+  --accent: #f472b6;
+  --accent-2: #fb7185;
+  --accent-strong: #f9a8d4;
+  --on-accent: #2a0716;
+  --accent-soft: rgba(244, 114, 182, 0.13);
+  --accent-glow: rgba(244, 114, 182, 0.28);
+}
+[data-theme='light'] [data-mytrion='manager'] {
+  --accent: #db2777;
+  --accent-2: #e11d48;
+  --accent-strong: #be185d;
+  --on-accent: #fff;
+  --accent-soft: rgba(219, 39, 119, 0.1);
+  --accent-glow: rgba(219, 39, 119, 0.2);
+}
 
 * {
   box-sizing: border-box;
@@ -112,6 +181,36 @@ button {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
+}
+
+/*
+ * …EXCEPT a field whose WRAPPER already owns the focus treatment.
+ *
+ * Every module builds search/composer fields the same way: a bordered wrapper paints the accent
+ * border on :focus-within, and the field inside is deliberately bare (`border: none`). The rule
+ * above — plus each module's own `.<mod>-root :focus-visible` ring, which is a DESCENDANT selector —
+ * then lands on that bare field as a SECOND line inside the wrapper's border. That is the doubled
+ * outline; scoping it per component never reached it, because the offending selector matches the
+ * input rather than the wrapper.
+ *
+ * Only `input`/`textarea` are cleared, never the wrapper's buttons (a clear "×" still needs its own
+ * visible focus ring), and the wrapper keeps painting the accent border, so keyboard focus stays
+ * obvious. Add a wrapper here whenever you give one a :focus-within treatment.
+ *
+ * CSS-module wrappers can't be named from here (hashed class names) — those carry the same rule
+ * locally: admin.module.css `.search`, MytrionShell.module.css `.navSearch`, Composer.module.css
+ * `.pill`.
+ */
+.cs-root .cs-app-search input:focus-visible,
+.cs-root .cs-citi-search-bar input:focus-visible,
+.bm-root .bm-search-bar input:focus-visible,
+.bm-root .db-search-wrap input:focus-visible,
+.bm-root .bm-ai-input-row textarea:focus-visible,
+.mg-root .mg-search input:focus-visible,
+.hr-root .hr-search input:focus-visible,
+.fi-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 ::selection {
@@ -176,5 +275,33 @@ button {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Smooth theme crossfade (View Transitions API — see themeContext.tsx). */
+html.theme-vt::view-transition-old(root),
+html.theme-vt::view-transition-new(root) {
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  mix-blend-mode: normal;
+}
+
+html.theme-vt::view-transition-old(root) {
+  animation-name: theme-vt-fade-out;
+}
+
+html.theme-vt::view-transition-new(root) {
+  animation-name: theme-vt-fade-in;
+}
+
+@keyframes theme-vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes theme-vt-fade-in {
+  from {
+    opacity: 0;
   }
 }

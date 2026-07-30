@@ -61,6 +61,19 @@ export interface MappingPatch {
   splitAllocations?: Record<string, unknown>[] | null;
 }
 
+/**
+ * Money-ish search query → the amount it names ("$1,234.56", "1,234", "500.5" → 1234.56 / 1234 / 500.5).
+ * `exact` is false for a whole-dollar query, which matches the cents range (1234 → 1234.00–1234.99)
+ * so a user who types the dollars finds the row without knowing its cents.
+ * (Mirrored client-side in apps/mytrion-crm/src/mytrions/billing/transactionModel.ts.)
+ */
+export function parseAmountQuery(query: string): { value: number; exact: boolean } | null {
+  const s = (query || '').trim().replace(/^\$\s*/, '').replace(/,/g, '');
+  if (!/^\d{1,12}(\.\d{1,2})?$/.test(s)) return null;
+  const value = Number(s);
+  return Number.isFinite(value) ? { value, exact: s.includes('.') } : null;
+}
+
 /** Candidate-search filters (a return → its original MX payment). */
 export interface CandidateFilters {
   query?: string | undefined;
@@ -68,6 +81,31 @@ export interface CandidateFilters {
   beforeDate?: string | undefined;
   customerName?: string | undefined;
   limit?: number | undefined;
+}
+
+/**
+ * Which pass produced the candidate list (the picker labels the list from this):
+ *   text    → the agent's own query (reference / Payment ID / customer)
+ *   suggest → same amount or same customer, on/before the return date
+ *   window  → nothing suggested, so every MX charge in the 7 days before the return
+ */
+export type CandidateMode = 'text' | 'suggest' | 'window';
+
+export interface CandidateResult {
+  rows: PaymentTransaction[];
+  mode: CandidateMode;
+}
+
+/** End of the return day ('2026-07-20' → '2026-07-20 23:59:59+00'); the payment precedes the return. */
+function dayEndBound(day: string | undefined): string | null {
+  return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day} 23:59:59+00` : null;
+}
+
+/** N days before a yyyy-mm-dd day, as a start-of-day bound. */
+function dayStartBefore(day: string, days: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return `${d.toISOString().slice(0, 10)} 00:00:00+00`;
 }
 
 const NEWEST_FIRST = sql`${paymentTransactions.occurredAt} DESC NULLS LAST, ${paymentTransactions.id} DESC`;
@@ -127,7 +165,7 @@ export const paymentTransactionRepo = {
     return out;
   },
 
-  /** Free-text search across payer/memo/txn fields + exact carrier id. Capped, newest first. */
+  /** Free-text search across payer/memo/txn fields + exact carrier id + amount. Capped, newest first. */
   async search(query: string, limit = 500): Promise<PaymentTransaction[]> {
     const q = (query || '').trim();
     if (!q) return [];
@@ -141,6 +179,16 @@ export const paymentTransactionRepo = {
       ilike(paymentTransactions.email, like),
     ];
     if (/^\d+$/.test(q)) conds.push(eq(paymentTransactions.carrierId, q));
+    // Amount search: compare on abs() so a query works for returns/refunds stored as negatives.
+    const amt = parseAmountQuery(q);
+    if (amt) {
+      const abs = sql`abs(${paymentTransactions.amount})`;
+      conds.push(
+        amt.exact
+          ? sql`${abs} = ${amt.value.toFixed(2)}`
+          : sql`${abs} >= ${amt.value.toFixed(2)} and ${abs} < ${(amt.value + 1).toFixed(2)}`,
+      );
+    }
     return db
       .select()
       .from(paymentTransactions)
@@ -149,29 +197,71 @@ export const paymentTransactionRepo = {
       .limit(Math.min(2000, Math.max(1, limit)));
   },
 
-  /** Candidate original payments for a return: MX rows near an amount, on/before a date, by name. */
-  async findReturnCandidates(f: CandidateFilters): Promise<PaymentTransaction[]> {
-    const conds: SQL[] = [eq(paymentTransactions.source, 'mx')];
-    const amt = f.amount != null && f.amount !== '' ? Number(f.amount) : null;
-    if (amt != null && Number.isFinite(amt)) {
-      conds.push(sql`abs(${paymentTransactions.amount} - ${amt.toFixed(2)}) < 0.01`);
-    }
-    if (f.beforeDate) conds.push(sql`${paymentTransactions.occurredAt} <= ${f.beforeDate}`);
-    const name = (f.customerName || f.query || '').trim();
-    if (name) {
-      const like = `%${name}%`;
-      const nameCond = or(
+  /**
+   * Candidate original payments for a return (MX only — returns originate from MX charges). Port of
+   * the Deluge mytrionSearchReturnCandidates' three modes.
+   *
+   * The agent's typed query used to be DISCARDED whenever the return carried a customer name
+   * (`customerName || query`), and neither the reference nor the Payment ID was ever searched — so
+   * pasting the value the return arrived with found nothing. Text mode now searches both id columns:
+   * `external_txn_id` is the MX Reference, `source_record_id` is the MX payment id (the field Zoho
+   * labels "Payment ID" and stores in Name), and a return's reference can be either one.
+   */
+  async findReturnCandidates(f: CandidateFilters): Promise<CandidateResult> {
+    const limit = Math.min(500, Math.max(1, f.limit ?? 50));
+    const isMx = eq(paymentTransactions.source, 'mx');
+    const page = (where: SQL | undefined): Promise<PaymentTransaction[]> =>
+      db.select().from(paymentTransactions).where(where).orderBy(NEWEST_FIRST).limit(limit);
+
+    // ── TEXT: the agent is looking for something specific. No amount/date narrowing — an exact
+    //    amount match is what already failed automatically, and a partial return differs anyway.
+    const query = (f.query ?? '').trim();
+    if (query.length >= 2) {
+      const like = `%${query}%`;
+      const hit = or(
+        ilike(paymentTransactions.externalTxnId, like), // MX Reference
+        ilike(paymentTransactions.sourceRecordId, like), // MX Payment ID (Zoho: Name)
         ilike(paymentTransactions.senderName, like),
         ilike(paymentTransactions.name, like),
       );
-      if (nameCond) conds.push(nameCond);
+      return { rows: await page(and(isMx, hit)), mode: 'text' };
     }
-    return db
-      .select()
-      .from(paymentTransactions)
-      .where(and(...conds))
-      .orderBy(NEWEST_FIRST)
-      .limit(Math.min(500, Math.max(1, f.limit ?? 50)));
+
+    // ── SUGGEST: same amount OR same customer, on/before the return date. The reference already
+    //    failed to match, so these are the next-strongest signals (the widget ORs them too).
+    const endBound = dayEndBound(f.beforeDate);
+    const terms: SQL[] = [];
+    const amt = f.amount != null && f.amount !== '' ? Number(f.amount) : null;
+    if (amt != null && Number.isFinite(amt)) {
+      terms.push(sql`abs(${paymentTransactions.amount} - ${amt.toFixed(2)}) < 0.01`);
+    }
+    const customer = (f.customerName ?? '').trim();
+    if (customer.length >= 3) {
+      const like = `%${customer}%`;
+      const nameCond = or(ilike(paymentTransactions.senderName, like), ilike(paymentTransactions.name, like));
+      if (nameCond) terms.push(nameCond);
+    }
+    if (terms.length) {
+      const conds: SQL[] = [isMx];
+      const anyTerm = terms.length === 1 ? terms[0] : or(...terms);
+      if (anyTerm) conds.push(anyTerm);
+      if (endBound) conds.push(sql`${paymentTransactions.occurredAt} <= ${endBound}`);
+      const rows = await page(and(...conds));
+      if (rows.length) return { rows, mode: 'suggest' };
+    }
+
+    // ── WINDOW: nothing suggested → the 7 days leading up to the return, so there is something to scan.
+    if (endBound && f.beforeDate) {
+      const rows = await page(
+        and(
+          isMx,
+          sql`${paymentTransactions.occurredAt} >= ${dayStartBefore(f.beforeDate, 7)}`,
+          sql`${paymentTransactions.occurredAt} <= ${endBound}`,
+        ),
+      );
+      return { rows, mode: 'window' };
+    }
+    return { rows: [], mode: 'suggest' };
   },
 
   async getById(id: number): Promise<PaymentTransaction | undefined> {

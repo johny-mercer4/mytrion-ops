@@ -14,9 +14,9 @@ import type { Card, Deal } from './autoLive';
 
 const MONO = "font-family:'JetBrains Mono',monospace";
 const INP =
-  'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+  'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const LABEL =
-  'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
+  'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 
 /** Contact · phone only — App / Carrier render as badges. */
 export function dealMetaLine(d: Deal): string {
@@ -62,8 +62,19 @@ export function PicklistMicroLoader({ rows = 4, label = 'Loading' }: { rows?: nu
   );
 }
 
-/** Centered run-phase loader (progress ring + bar + phase copy). */
-export function AutoMacroLoader({ progress, phase }: { progress: number; phase: string }) {
+/**
+ * Centered run-phase loader.
+ *
+ * ONE indeterminate bar, on purpose. This used to show a spinning ring, a numeric percentage and a
+ * determinate bar for a single operation — three indicators for one wait, which the project's UI
+ * rules call out explicitly. Worse, the percentage was invented client-side
+ * (`p + (3 + Math.random() * 6)` capped at 92) so it stalled at 92% for the rest of every run and
+ * actively misinformed: a long automation looked stuck at "almost done". We do not know the real
+ * progress of a touchpoint dispatch, so we no longer pretend to — the sweep says "working" and the
+ * phase label says what we're actually waiting on. The modal stays open until a write settles so an
+ * agent cannot dismiss and retry an operation that may still be processing.
+ */
+export function AutoMacroLoader({ phase }: { phase: string }) {
   return (
     <div
       role="status"
@@ -72,26 +83,16 @@ export function AutoMacroLoader({ progress, phase }: { progress: number; phase: 
       aria-label={phase || 'Waiting for result'}
       style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}
     >
-      <div style={s('position:relative;width:64px;height:64px;margin-bottom:24px')}>
-        <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid var(--border);opacity:0.5')} />
-        <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:var(--accent);animation:ss-spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite')} />
-        <div style={s(`position:absolute;inset:0;display:flex;align-items:center;justify-content:center;${MONO};font-size:13px;font-weight:700;color:var(--accent)`)}>
-          {progress}%
-        </div>
-      </div>
-      <div style={s('font-family:Rajdhani,sans-serif;font-size:20px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
+      <div style={s('font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
         {phase || 'Working…'}
       </div>
-      <div style={s('font-size:13px;color:var(--muted);max-width:280px;line-height:1.5')}>
+      <div style={s('font-size:14px;color:var(--muted);max-width:280px;line-height:1.5')}>
         Keep this window open. Closing now loses task status.
       </div>
-      <div style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}>
-        <div
-          style={s(
-            `height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${progress}%;transition:width .2s ease-out`,
-          )}
-        />
-      </div>
+      <div
+        className="ss-sweep"
+        style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}
+      />
     </div>
   );
 }
@@ -100,7 +101,7 @@ function DropMsg({ children, danger }: { children: ReactNode; danger?: boolean }
   return (
     <div
       style={s(
-        `padding:16px 15px;font-size:13px;text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
+        `padding:16px 15px;font-size:14px;text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
       )}
     >
       {children}
@@ -135,12 +136,12 @@ export function DealPickOption({ deal, onSelect }: { deal: Deal; onSelect: (d: D
       }}
       className="ss-pick-row"
     >
-      <div style={s('font-size:13px;font-weight:700;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+      <div style={s('font-size:14px;font-weight:700;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
         {deal.name}
       </div>
       <DealIdBadges deal={deal} />
       {meta ? (
-        <div style={s(`font-size:11px;color:var(--muted);margin-top:5px;${MONO};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>
+        <div style={s(`font-size:12px;color:var(--muted);margin-top:5px;${MONO};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>
           {meta}
         </div>
       ) : null}
@@ -159,10 +160,10 @@ export function DealSelectedChip({
   return (
     <div className="ss-deal-chip">
       <div className="ss-deal-chip-body">
-        <div style={s('font-size:13.5px;font-weight:700;line-height:1.3')}>{deal.name}</div>
+        <div style={s('font-size:14px;font-weight:700;line-height:1.3')}>{deal.name}</div>
         <DealIdBadges deal={deal} />
         {meta ? (
-          <div style={s(`font-size:12px;color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
+          <div style={s(`font-size:13px;color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
         ) : null}
       </div>
       <button
@@ -259,10 +260,10 @@ export function CardPickOption({
       className="ss-pick-row"
       style={s('display:flex;align-items:center;gap:10px')}
     >
-      <span style={s(`${MONO};font-size:13px;font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
+      <span style={s(`${MONO};font-size:14px;font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
       <Badge vm={cardStatusBadge(card.status)} />
-      <span style={s('font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
-        {`${card.driver || 'No driver'} · Unit ${card.unit || '—'}`}
+      <span style={s('font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+        {`${card.driver || 'No driver'} · ID ${card.driverId || '—'} · Unit ${card.unit || '—'}`}
       </span>
     </div>
   );
@@ -306,7 +307,7 @@ export function AutoCardPicklist({
       {card ? (
         <div className="ss-deal-chip ss-deal-chip--card">
           <div className="ss-deal-chip-body" style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
-            <span style={s(`${MONO};font-size:14px;font-weight:600;letter-spacing:.06em`)}>{displayNumber}</span>
+            <span style={s(`${MONO};font-size:15px;font-weight:600;letter-spacing:.06em`)}>{displayNumber}</span>
             <Badge vm={statusBadge} />
           </div>
           <button

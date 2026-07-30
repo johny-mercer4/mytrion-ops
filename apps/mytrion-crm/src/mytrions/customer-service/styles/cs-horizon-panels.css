@@ -1,0 +1,364 @@
+/* =====================================================
+   Customer Service — Horizon glass, per-tab surfaces
+   cs-horizon.css defines the language; this file maps every panel's own surface classes onto it so
+   Home / Applications / Retention / Open Pool / CITI / Citifuel / Analytics are one system rather
+   than seven. Imported after cs-horizon.css.
+   ===================================================== */
+
+/* ── Every readable pane in the module ───────────────────────────────────── */
+.cs-root .cs-home-hero,
+.cs-root .cs-home-card,
+.cs-root .cs-home-stat-card,
+.cs-root .cs-home-qa-card,
+.cs-root .cs-an-kpi-card,
+.cs-root .cs-an-chart-card,
+.cs-root .cs-an-lb-section,
+.cs-root .cs-an-error-card,
+.cs-root .cs-citi-stat-card,
+.cs-root .cs-ret-quota-card,
+.cs-root .cs-ret-act-block,
+.cs-root .cs-ret-timeline-wrap,
+.cs-root .cs-summary-item {
+    position: relative;
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-md));
+    -webkit-backdrop-filter: blur(var(--hz-blur-md));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease),
+        transform var(--hz-dur-lift) var(--hz-ease);
+}
+
+/*
+ * SCROLLING panes — the same glass look, deliberately WITHOUT backdrop-filter.
+ *
+ * These three are scrollports (`overflow: auto`), so a blur on them is a blur on the scroll
+ * container itself: every scroll frame has to recomposite a full-pane 20px blur, and the sticky
+ * header re-pays that cost on each frame too. That is what made the Applications table stutter when
+ * dragged sideways. Layering the translucent --hz-pane over the solid --surface keeps the tint and
+ * hairline; nothing shows through the pane, so there is nothing left to blur.
+ */
+.cs-root .cs-citi-table-wrap,
+.cs-root .cs-app-table-wrap,
+.cs-root .cs-ret-detail {
+    position: relative;
+    background: var(--hz-pane), var(--surface);
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* Interactive panes lift; containers (tables, charts, the hero) stay put. */
+.cs-root .cs-home-stat-card:hover,
+.cs-root .cs-home-qa-card:hover,
+.cs-root .cs-an-kpi-card:hover,
+.cs-root .cs-citi-stat-card:hover,
+.cs-root .cs-summary-item:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 32%, var(--hz-pane-bd));
+    box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* The Home hero keeps its warm corner bloom, now from the module ramp. */
+.cs-root .cs-home-hero-glow {
+    background: radial-gradient(
+        ellipse at 85% 20%,
+        color-mix(in srgb, var(--cs-accent) 22%, transparent),
+        transparent 68%
+    );
+}
+.cs-root .cs-home-welcome-avatar,
+.cs-root.dark-mode .cs-home-welcome-avatar {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    color: var(--cs-on-accent);
+    border: none;
+    box-shadow: 0 0 14px var(--cs-accent-glow), var(--hz-glass-inset-strong);
+}
+
+/* ── Quick-action cards (Home "Jump back in") behave like the picker's tiles ─ */
+.cs-root .cs-home-qa-card {
+    cursor: pointer;
+    overflow: hidden;
+}
+.cs-root .cs-home-qa-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    pointer-events: none;
+    background: var(--hz-shimmer);
+    opacity: 0;
+    transition: opacity 0.32s var(--hz-ease);
+}
+.cs-root .cs-home-qa-card:hover::after {
+    opacity: 1;
+}
+
+/* ── Section labels — one treatment, every tab ───────────────────────────── */
+.cs-root .cs-home-section-label,
+.cs-root .cs-ret-section-lbl,
+.cs-root .cs-an-section-head > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+/* A short gradient tick carries the brand without turning the label itself into a gradient, which
+   at this size and weight costs more legibility than it buys. */
+.cs-root .cs-home-section-label::before,
+.cs-root .cs-ret-section-lbl::before {
+    content: '';
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    flex: none;
+    background: linear-gradient(180deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+}
+
+/* ── Toolbars + bulk bars become glass rails ─────────────────────────────── */
+.cs-root .cs-app-toolbar,
+.cs-root .cs-citi-toolbar,
+.cs-root .cs-ret-filters,
+.cs-root .cs-ret-bulk-bar,
+.cs-root .cs-an-header-controls {
+    padding: 12px 14px;
+    border-radius: var(--r-lg);
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-md));
+    -webkit-backdrop-filter: blur(var(--hz-blur-md));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.cs-root .cs-ret-bulk-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.cs-root .cs-ret-bulk-actions {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Search fields ───────────────────────────────────────────────────────── */
+.cs-root .cs-app-search,
+.cs-root .cs-citi-search-bar {
+    background: var(--hz-pane-alt);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-app-search:focus-within,
+.cs-root .cs-citi-search-bar:focus-within {
+    background: var(--hz-pane-lift);
+    border-color: var(--cs-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Tab strips ──────────────────────────────────────────────────────────── */
+.cs-root .cs-app-tabs,
+.cs-root .cs-an-datatabs {
+    border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+/* ── Retention: case rows + detail ───────────────────────────────────────── */
+.cs-root .cs-ret-row {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-ret-row:hover {
+    background: var(--hz-pane-lift);
+    border-color: color-mix(in srgb, var(--cs-accent) 34%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -6px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: translateX(2px);
+}
+.cs-root .cs-ret-row.active,
+.cs-root .cs-ret-row.active:hover {
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--cs-accent) 14%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
+    );
+    border-color: color-mix(in srgb, var(--cs-accent) 40%, transparent);
+    box-shadow: 0 4px 18px -6px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: none;
+}
+
+/* Retention action buttons follow the ghost-glass recipe. */
+.cs-root .cs-ret-act-btn,
+.cs-root .cs-citi-action-btn {
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-ret-act-btn:hover:not(:disabled),
+.cs-root .cs-citi-action-btn:hover:not(:disabled) {
+    background: var(--hz-pane-lift);
+    color: var(--cs-accent);
+    border-color: color-mix(in srgb, var(--cs-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--cs-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
+.cs-root .cs-citi-add-btn {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    color: var(--cs-on-accent);
+    border: 1px solid transparent;
+    box-shadow: var(--hz-glass-inset-strong);
+}
+.cs-root .cs-citi-add-btn:hover:not(:disabled) {
+    filter: saturate(1.1) brightness(1.06);
+    box-shadow:
+        0 8px 26px -6px color-mix(in srgb, var(--cs-accent) 45%, transparent),
+        var(--hz-glass-inset-strong);
+    transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Analytics: KPI accents + range chips ────────────────────────────────── */
+.cs-root .cs-an-kpi-icon-wrap {
+    background: color-mix(in srgb, var(--cs-accent) 12%, transparent);
+    border: 1px solid var(--cs-border-gold);
+    color: var(--cs-accent);
+    box-shadow: var(--hz-glass-inset);
+}
+.cs-root .cs-an-kpi-value,
+.cs-root .cs-home-stat-value,
+.cs-root .cs-citi-stat-value,
+.cs-root .cs-home-perf-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+.cs-root .cs-an-range-chip {
+    background: var(--hz-pane);
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        color var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root .cs-an-range-chip.active {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    border-color: transparent;
+    color: var(--cs-on-accent);
+    box-shadow: 0 4px 14px -4px var(--cs-accent-glow), var(--hz-glass-inset-strong);
+}
+
+/* Applications rows use the same hover wash as every other table. */
+.cs-root .cs-app-row:hover {
+    background: var(--hz-glass-hover);
+}
+/* A sticky header must be OPAQUE — --hz-pane-alt mixes surface-alt toward transparent, so rows
+   scrolling beneath showed through the labels once the scrollport's blur was removed. Same 72% tint,
+   mixed toward the solid surface instead. */
+.cs-root .cs-app-table thead th {
+    background: color-mix(in srgb, var(--surface-alt) 72%, var(--surface));
+    border-bottom: 1px solid var(--hz-pane-bd);
+    box-shadow: 0 1px 0 0 color-mix(in srgb, var(--cs-accent) 14%, transparent);
+}
+
+/* CITI Folder: a selected row reads like a selected row everywhere else. */
+.cs-root .cs-citi-row-sel {
+    background: linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--cs-accent) 12%, transparent) 0%,
+        color-mix(in srgb, var(--accent-2) 6%, transparent) 100%
+    );
+}
+.cs-root .cs-citi-company {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Banners ─────────────────────────────────────────────────────────────── */
+.cs-root .cs-banner-danger,
+.cs-root .cs-banner-info {
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+}
+
+/* ── Checkboxes — the one control the module had left bare ───────────────── */
+.cs-root input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid var(--check-border);
+    background: var(--hz-pane-alt);
+    cursor: pointer;
+    position: relative;
+    flex: none;
+    transition:
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.cs-root input[type='checkbox']:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--cs-accent) 50%, var(--check-border));
+}
+.cs-root input[type='checkbox']:checked {
+    background: linear-gradient(135deg, var(--cs-accent) 0%, var(--accent-2) 100%);
+    border-color: transparent;
+    box-shadow: 0 2px 8px -2px var(--cs-accent-glow);
+}
+.cs-root input[type='checkbox']:checked::after {
+    content: '';
+    position: absolute;
+    left: 4.5px;
+    top: 1.5px;
+    width: 4px;
+    height: 8px;
+    border: solid var(--cs-on-accent);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+.cs-root input[type='checkbox']:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.cs-root input[type='checkbox']:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+}

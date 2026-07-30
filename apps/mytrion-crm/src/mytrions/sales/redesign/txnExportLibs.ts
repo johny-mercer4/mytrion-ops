@@ -1,11 +1,11 @@
 /**
- * Lazy-load the same client export stack the self-service widget uses
- * (jsPDF + MytrionPdfUtils / MytrionExcelUtils / MytrionDownload).
+ * Lazy-load the PDF helper stack the self-service widget uses. Excel is generated with the
+ * application-bundled ExcelJS module; CSV/Text need no runtime libraries.
  */
 declare global {
   interface Window {
-    jspdf?: { jsPDF: new (...args: unknown[]) => unknown };
-    jsPDF?: new (...args: unknown[]) => unknown;
+    jspdf?: { jsPDF: typeof import('jspdf').jsPDF };
+    jsPDF?: typeof import('jspdf').jsPDF;
     MytrionPdfUtils?: {
       generateTransactionsPdf: (opts: Record<string, unknown>) => Promise<void>;
     };
@@ -21,7 +21,7 @@ declare global {
   }
 }
 
-let loadPromise: Promise<void> | null = null;
+let pdfLoadPromise: Promise<void> | null = null;
 
 function injectScript(src: string, id: string): Promise<void> {
   if (document.getElementById(id)) return Promise.resolve();
@@ -31,34 +31,52 @@ function injectScript(src: string, id: string): Promise<void> {
     s.src = src;
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    s.onerror = () => {
+      s.remove();
+      reject(new Error(`Failed to load ${src}`));
+    };
     document.head.appendChild(s);
   });
 }
 
-/** Ensure jsPDF + Mytrion PDF/Excel/Download helpers are on window. */
-export async function ensureTxnExportLibs(): Promise<void> {
-  if (window.MytrionPdfUtils && window.MytrionExcelUtils && window.MytrionDownload) return;
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      const base = `${import.meta.env.BASE_URL || '/'}vendor/mytrion`;
-      if (!window.jspdf?.jsPDF && !window.jsPDF) {
-        // Vendored (public/vendor/mytrion, sourced from the jspdf@2.5.1 devDependency) like
-        // the other helpers — no runtime CDN dependency, works offline/behind CSP.
-        await injectScript(`${base}/jspdf.umd.min.js`, 'mytrion-jspdf');
+async function injectAsset(file: string, id: string): Promise<void> {
+  // `base: './'` is correct for the Zoho bundle but resolves below a deep SPA URL in local/dev.
+  // Try the bundle-relative asset first and the dev-server root second.
+  const relative = `${import.meta.env.BASE_URL || '/'}vendor/mytrion/${file}`;
+  const candidates = [...new Set([relative, `/vendor/mytrion/${file}`])];
+  let lastError: unknown;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      await injectScript(candidates[i]!, `${id}-${i}`);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`Failed to load ${file}`);
+}
+
+/** Ensure bundled jsPDF plus the Mytrion PDF helper are ready. */
+export async function ensureTxnPdfLibs(): Promise<void> {
+  if (window.MytrionPdfUtils && window.MytrionDownload) return;
+  if (!pdfLoadPromise) {
+    pdfLoadPromise = (async () => {
+      if (!window.jspdf?.jsPDF) {
+        const { jsPDF } = await import('jspdf');
+        window.jspdf = { jsPDF };
+        window.jsPDF = jsPDF;
       }
-      await injectScript(`${base}/download-utils.js`, 'mytrion-download-utils');
-      await injectScript(`${base}/pdf-utils.js`, 'mytrion-pdf-utils');
-      await injectScript(`${base}/excel-utils.js`, 'mytrion-excel-utils');
-      if (!window.MytrionPdfUtils || !window.MytrionExcelUtils || !window.MytrionDownload) {
-        throw new Error('Transaction export libraries failed to initialize.');
+      await injectAsset('download-utils.js', 'mytrion-download-utils');
+      await injectAsset('pdf-utils.js', 'mytrion-pdf-utils');
+      if (!window.MytrionPdfUtils || !window.MytrionDownload) {
+        throw new Error('Transaction PDF support failed to initialize.');
       }
     })().catch((err) => {
-      loadPromise = null;
+      pdfLoadPromise = null;
       throw err;
     });
   }
-  await loadPromise;
+  await pdfLoadPromise;
 }
 
 export function deliverBlob(blob: Blob, filename: string): void {

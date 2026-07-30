@@ -2,6 +2,11 @@
  * Octane Scope — scene theme tokens. The scene runs its own cinematic palette
  * (much deeper than the app surface tokens) keyed off the shell's <html data-theme>,
  * exposed to the tree as CSS custom props on .oct-root.
+ *
+ * `bg0` is pinned to the Horizon page colour (--hz-page in styles/horizon.css) so the tab sits on
+ * the same ground as the rest of the module; `bg1` keeps a step of separation above it for the
+ * scene's own layering. The rest of the palette stays deliberately deeper than the app tokens —
+ * that contrast is what makes the diagram read as a scene rather than another panel.
  */
 import { useEffect, useState } from 'react';
 
@@ -18,8 +23,8 @@ export interface SceneTokens {
 }
 
 export const SCENE_DARK: SceneTokens = {
-  bg0: '#04060b',
-  bg1: '#0a0f1a',
+  bg0: '#05081a',
+  bg1: '#0a1020',
   ink: '#E8EDF6',
   sub: '#8893A8',
   line: 'rgba(255,255,255,.08)',
@@ -30,8 +35,8 @@ export const SCENE_DARK: SceneTokens = {
 };
 
 export const SCENE_LIGHT: SceneTokens = {
-  bg0: '#EEF1F6',
-  bg1: '#FAFBFE',
+  bg0: '#F3F5FF',
+  bg1: '#FFFFFF',
   ink: '#161A24',
   sub: '#5B6577',
   line: 'rgba(0,0,0,.08)',
