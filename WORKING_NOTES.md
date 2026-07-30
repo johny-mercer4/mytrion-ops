@@ -1084,7 +1084,7 @@ Q-2 payment info; department codes C/Q/V/M) and servercrm (/api/clients/by-agent
 - **Live-tested (sales agent Frank Harrison, real servercrm)**: named client → resolve → REAL balance
   (ALI CARGO INC: EFS $1,000, limit $3,000, used $303.09, remaining $2,696.91); ambiguous "ALI" → REAL
   server-built picklist (ALI CARGO INC/5816381, ALI FAMILY TRUCKING/5759008, ALITRANS LLC/5772232, …);
-  foreign carrier 5000027 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
+  foreign carrier 5794015 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
 - Bugs caught + fixed by live testing: empty-string optional params abort LangChain pre-handler
   validation (relaxed schemas); servercrm booleans-as-numbers broke output validation (toBool coerce);
   model hand-copying 70 options → hallucinated picklist (switched to server-built crm.pick_my_client).
@@ -2260,7 +2260,7 @@ returned 510/510 (68 KB, 450 ms).
 
 **This also produced the first end-to-end proof that driver scoping filters.** Every carrier with a
 registered driver had one card, or all its transactions on the driver's card — scoping was
-indistinguishable from a passthrough. On carrier 5000027 (7599 line items across 95 cards, 230 active
+indistinguishable from a passthrough. On carrier 5794015 (7599 line items across 95 cards, 230 active
 cards) the driver's reads return 315 rows on 1 card.
 
 ### Test-suite trap (cost two debugging cycles)
@@ -4315,7 +4315,7 @@ Deal `Stage=Closed Lost` (same as CITI exclusion from future retention).
 ## 2026-07-22 — Admin grants for Retention RoundRobin pool
 
 Per-user `worker_mytrion_access` overrides for CS Mytrion (home CS) on:
-Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Jo Fischer, Dana Example,
+Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Layla Mei, Charlotte Birmingham,
 Isaac Leo. Standard profile default remains empty (no CS auto-grant).
 Cache invalidated per user after upsert.
 
