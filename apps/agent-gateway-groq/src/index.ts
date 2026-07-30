@@ -11,9 +11,10 @@ import { notePhoto } from './telegramTools.js';
 import { noteEngaged, shouldEngage } from './filter.js';
 import { recordTurn, startMonitor } from './monitor.js';
 import { logMessage } from './messageLog.js';
-import { isRegistered } from './access.js';
+import { registeredRole } from './access.js';
 import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
 import { startSamplers } from './metrics.js';
+import { enabledServiceSummary } from './serviceRegistry.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -117,7 +118,7 @@ function logTurn(
 
 async function main(): Promise<void> {
   console.log(
-    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · maxConcurrent=${maxConcurrentTurns()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
+    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · maxConcurrent=${maxConcurrentTurns()} · services=${enabledServiceSummary()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
   );
   startSamplers();
   startMonitor();
@@ -135,7 +136,8 @@ async function main(): Promise<void> {
         const cbCarrier = cb?.message ? await carrierFor(cb.message.chat.id) : null;
         if (cb?.message && cbCarrier) {
           void answerCallback(cb.id);
-          if (!(await isRegistered(cbCarrier, cb.from.id))) return;
+          const cbRole = await registeredRole(cbCarrier, cb.from.id);
+          if (!cbRole) return;
           const chatId = cb.message.chat.id;
           noteSender(chatId, cb.from.id);
           noteEngaged(chatId, cb.from.id);
@@ -145,7 +147,7 @@ async function main(): Promise<void> {
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
           const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          enqueueTurn(chatId, cb.from.id, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
+          enqueueTurn(chatId, cb.from.id, cbCarrier, cbRole, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -180,10 +182,11 @@ async function main(): Promise<void> {
         // came from exactly this kind of log). `engaged` is patched on below when a message
         // actually reaches the model.
         const wantsEngagement = shouldEngage(m, config.botUsername);
-        const registered =
+        const role =
           wantsEngagement || Boolean(m.photo)
-            ? await isRegistered(carrier, m.from?.id ?? 0)
-            : false;
+            ? await registeredRole(carrier, m.from?.id ?? 0)
+            : null;
+        const registered = role !== null;
         const willEngage = wantsEngagement && registered;
         logMessage({
           ts: new Date().toISOString(),
@@ -230,7 +233,7 @@ async function main(): Promise<void> {
           baseStats(stats);
           void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
         };
-        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), async (text) => {
+        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, role, formatPrompt(m), async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
           noteEngaged(m.chat.id, m.from?.id ?? 0);

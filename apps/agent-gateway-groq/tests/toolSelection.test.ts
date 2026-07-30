@@ -5,6 +5,10 @@ import {
   type SelectionHistoryMessage,
 } from '../src/toolSelection.js';
 import type { ToolManifest } from '../src/toolRuntime.js';
+import {
+  parseServiceFlags,
+  type ServiceAvailability,
+} from '../src/serviceRegistry.js';
 
 const names = [
   'octane_whoami',
@@ -51,11 +55,24 @@ function selected(prompt: string): string[] {
 function plan(
   prompt: string,
   history: SelectionHistoryMessage[] = [],
-): { tools: string[]; requiredSequence: string[] } {
-  const result = selectToolPlanForTurn(manifests, prompt, history);
+  availability?: ServiceAvailability,
+): {
+  tools: string[];
+  requiredSequence: string[];
+  unavailableService?: string;
+} {
+  const result = selectToolPlanForTurn(
+    manifests,
+    prompt,
+    history,
+    availability,
+  );
   return {
     tools: result.tools.map((tool) => tool.name),
     requiredSequence: result.requiredSequence,
+    ...(result.unavailableService
+      ? { unavailableService: result.unavailableService }
+      : {}),
   };
 }
 
@@ -194,6 +211,21 @@ describe('selectToolsForPrompt', () => {
     expect(confirmed.requiredSequence).toEqual(['octane_card_action']);
   });
 
+  it('deterministically refuses a write intent outside the verified role', () => {
+    const driverPlan = selectToolPlanForTurn(
+      manifests,
+      '[msg 30 from Driver (id 9)]: 917022 kartani deactivate qil',
+      [],
+      undefined,
+      'driver',
+    );
+    expect(driverPlan).toMatchObject({
+      tools: [],
+      requiredSequence: [],
+      roleDeniedTool: 'octane_card_action',
+    });
+  });
+
   it('forces progress before private report delivery', () => {
     expect(
       plan('[msg 40 from Jamshid (id 9)]: weekly report pdf').requiredSequence,
@@ -207,7 +239,46 @@ describe('selectToolsForPrompt', () => {
     });
   });
 
-  it('keeps every legacy gateway tool reachable through routing', () => {
+  it('keeps Money Code completely unavailable while its service is off', () => {
+    expect(plan('[msg 2 from J (id 9)]: qancha money code olishim mumkin?')).toEqual({
+      tools: [],
+      requiredSequence: [],
+      unavailableService: 'money_code',
+    });
+    expect(
+      plan('[button tap from J (id 9)]: confirm:money-code:500:12:B-2:yes'),
+    ).toEqual({
+      tools: [],
+      requiredSequence: [],
+      unavailableService: 'money_code',
+    });
+  });
+
+  it('restores the complete Money Code flow with one service switch', () => {
+    const enabled = parseServiceFlags('money_code=on');
+    expect(plan('[msg 2 from J (id 9)]: money code', [], enabled)).toEqual({
+      tools: [
+        'telegram_progress',
+        'octane_money_code_quote',
+        'telegram_buttons',
+      ],
+      requiredSequence: ['octane_money_code_quote', 'telegram_buttons'],
+    });
+    expect(
+      plan(
+        '[button tap from J (id 9)]: confirm:money-code:500:12:B-2:yes',
+        [],
+        enabled,
+      ),
+    ).toMatchObject({
+      requiredSequence: ['telegram_progress', 'octane_money_code'],
+    });
+  });
+
+  it('keeps every catalogued gateway tool reachable when all services are enabled', () => {
+    const allEnabled = parseServiceFlags(
+      'identity=on,knowledge=on,cards=on,funds=on,transactions=on,money_code=on,billing=on,service_requests=on,tracking=on,vision=on',
+    );
     const prompts = [
       '[msg 1 from J (id 9)]: card photo',
       '[msg 2 from J (id 9)]: money code',
@@ -231,7 +302,7 @@ describe('selectToolsForPrompt', () => {
       '[msg 14 from J (id 9)]: rahmat',
     ];
     const reachable = new Set(
-      prompts.flatMap((prompt) => plan(prompt).tools),
+      prompts.flatMap((prompt) => plan(prompt, [], allEnabled).tools),
     );
     expect([...reachable].sort()).toEqual([...names].sort());
   });

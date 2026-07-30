@@ -7,6 +7,7 @@ export * from './mini_app_notifications.js';
 export * from './client_news.js';
 export * from './support_bot_chats.js';
 export * from './support_bot_messages.js';
+export * from './support_bot_memories.js';
 export * from './support_bot_operations.js';
 export * from './conversations.js';
 export * from './messages.js';
