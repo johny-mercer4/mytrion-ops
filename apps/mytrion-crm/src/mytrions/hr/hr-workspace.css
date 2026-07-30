@@ -941,14 +941,14 @@
   height: 186px;
 }
 
-/* Admin Settings — Zoho sync card. */
+/* Admin Settings cards — width/density owned by hr-settings-v2.css. */
 .hr-root .hr-settings-card {
-  margin-top: 8px;
-  padding: 18px 20px;
+  margin-top: 0;
+  padding: 16px 18px;
   border-radius: var(--hr-r-md, 14px);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--hz-pane, var(--surface));
-  max-width: 640px;
+  max-width: none;
 }
 .hr-root .hr-settings-card h3 {
   margin: 0 0 8px;

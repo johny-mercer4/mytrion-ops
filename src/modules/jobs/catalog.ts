@@ -138,14 +138,7 @@ export const retentionCaseSyncJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
-/**
- * Monthly on the 1st: compute the PREVIOUS month's referral bonuses into mytrion_referral_bonuses.
- *
- * Persisted rather than derived on demand so the ledger is permanent history. `periodMonth` is the
- * backfill hook — omit it and the worker computes the month that just ended. Singleton + retryLimit
- * 1: a re-run is safe (monthly rows upsert) but the one-time bonus types raise on a re-dated award,
- * so retrying blindly is not useful.
- */
+/** Manual referral-ledger backfill. The Manager workspace itself calculates selected months live. */
 export const referralBonusCalcJob = defineJob({
   name: 'automation.referral.bonus-calc',
   schema: z.object({
@@ -305,9 +298,6 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
-  // 00:30 on the 1st: the previous month is closed, and the half-hour offset keeps it clear of the
-  // midnight pile-up of every other daily job.
-  { name: referralBonusCalcJob.name, cron: '30 0 1 * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly

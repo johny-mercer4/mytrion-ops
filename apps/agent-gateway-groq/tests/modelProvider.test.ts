@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { ToolManifest } from '../src/toolRuntime.js';
 
 type ProviderModule = typeof import('../src/modelProvider.js');
 let provider: ProviderModule;
@@ -52,5 +53,22 @@ describe('OpenAI provider adapter', () => {
     await expect(
       provider.completeModel([], [], 'safe-id', 'unavailable_tool'),
     ).rejects.toThrow('Required tool "unavailable_tool" is not available for this turn');
+  });
+
+  it('rejects a disabled Money Code tool before any provider request', async () => {
+    const manifest: ToolManifest = {
+      name: 'octane_money_code',
+      description: 'Issue Money Code',
+      parameters: { type: 'object' },
+      riskClass: 'write',
+      async execute() {
+        return { content: [{ type: 'text', text: 'issued' }] };
+      },
+    };
+    await expect(
+      provider.completeModel([], [manifest], 'safe-id', 'octane_money_code'),
+    ).rejects.toThrow(
+      'Required tool "octane_money_code" is not available for this turn',
+    );
   });
 });

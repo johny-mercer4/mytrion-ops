@@ -1,5 +1,4 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { CalendarDays } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
@@ -8,7 +7,6 @@ import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
 import { horizonSkin } from './horizonSkin';
 import { UserProfileModal } from './UserProfileModal';
-import { UserTimeOffModal } from './UserTimeOffModal';
 import styles from './MytrionShell.module.css';
 
 function initials(name: string): string {
@@ -135,6 +133,7 @@ export function MytrionShell({
   children,
   nav,
   navSections,
+  footerNav = [],
   enableNavSearch = false,
   enableDockChat = false,
 }: {
@@ -143,6 +142,8 @@ export function MytrionShell({
   nav?: NavItem[];
   /** Grouped sidebar sections (takes precedence over flat `nav` when provided). */
   navSections?: NavSection[];
+  /** Persistent destinations pinned immediately above the signed-in profile. */
+  footerNav?: NavItem[];
   /** Show a search field that filters sidebar items by label / keywords. */
   enableNavSearch?: boolean;
   /**
@@ -158,7 +159,6 @@ export function MytrionShell({
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
   const [profileOpen, setProfileOpen] = useState(false);
-  const [timeOffOpen, setTimeOffOpen] = useState(false);
   const flatFallback: NavItem[] = nav ?? [
     { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
   ];
@@ -221,21 +221,14 @@ export function MytrionShell({
           </div>
 
           <div className={styles.navFooter}>
-            <button
-              type="button"
-              title="My time off"
-              aria-label="Open My time off"
-              className={styles.navBtn}
-              onClick={() => {
-                setChatView(false);
-                setTimeOffOpen(true);
-              }}
-            >
-              <span className={styles.navIcon}>
-                <CalendarDays size={19} />
-              </span>
-              <span className={styles.navLabel}>Time Off</span>
-            </button>
+            {footerNav.map((item) => (
+              <NavItemButton
+                key={item.key}
+                item={item}
+                chatView={chatView}
+                onSelect={select}
+              />
+            ))}
             {enableDockChat && (
               <button
                 type="button"
@@ -289,7 +282,6 @@ export function MytrionShell({
         </div>
       </div>
       {profileOpen ? <UserProfileModal onClose={() => setProfileOpen(false)} /> : null}
-      {timeOffOpen ? <UserTimeOffModal onClose={() => setTimeOffOpen(false)} /> : null}
     </div>
   );
 }

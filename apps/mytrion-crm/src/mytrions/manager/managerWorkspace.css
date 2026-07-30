@@ -197,6 +197,46 @@
   }
 }
 
+/* Sales Manager is intentionally withheld until its production workflow is ready. */
+.mg-coming-soon {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 18px;
+  background: var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  padding: 38px;
+  text-align: center;
+}
+
+.mg-coming-soon > span {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--mg-tone) 32%, var(--hz-pane-bd));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--mg-tone) 9%, transparent);
+  color: var(--mg-tone);
+}
+
+.mg-coming-soon h2 {
+  margin: 2px 0 0;
+  font-size: 24px;
+  letter-spacing: -0.025em;
+}
+
+.mg-coming-soon p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
 /* ── Referrals accordion ───────────────────────────────────────────────────── */
 .mg-root .mg-acc-list {
   display: flex;
@@ -421,11 +461,15 @@
   color: var(--accent);
 }
 
-/* ── Focus — one ring, keyboard only ──────────────────────────────────────── */
-.mg-root :focus-visible {
+/* ── Focus — one ring, keyboard only (never on bare form fields — shells own that) ─ */
+.mg-root :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
   border-radius: var(--mg-r-sm);
+}
+.mg-root :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

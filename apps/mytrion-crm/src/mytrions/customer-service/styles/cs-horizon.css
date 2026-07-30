@@ -605,11 +605,20 @@
     background: linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%);
 }
 
-/* ── Focus rings — one treatment, keyboard only ──────────────────────────── */
-.cs-root :focus-visible {
+/* ── Focus rings — one treatment, keyboard only (never on bare form fields) ─ */
+.cs-root :focus-visible:not(input):not(textarea):not(select) {
     outline: none;
     box-shadow: 0 0 0 3px var(--cs-accent-glow);
     border-radius: var(--r-sm);
+}
+.cs-root :is(input, textarea, select):focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+.cs-root input[type='checkbox']:focus-visible,
+.cs-root input[type='radio']:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {

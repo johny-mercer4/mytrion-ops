@@ -120,6 +120,7 @@ export const ICON_REGISTRY = {
   tierGold: Trophy,
   tierSilver: Medal,
   tierBronze: Award,
+  tierEnterprise: ShieldCheck,
   tierBuilding: Sprout,
   tierIdle: MinusCircle,
   doc: FileText,

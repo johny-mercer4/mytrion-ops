@@ -1,5 +1,5 @@
 /**
- * Admin shift CRUD + assign + CSV export + webhook hint — lives on HR Settings.
+ * Admin shift CRUD + assignment + CSV export — lives on HR Settings.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
@@ -291,19 +291,6 @@ export function HrAttendanceSettings() {
             Download CSV
           </button>
         </div>
-      </section>
-
-      <section className="hr-settings-card">
-        <h3>Attendance webhook</h3>
-        <p>
-          Point Hikvision / servercrm at{' '}
-          <code className="hr-mono">POST /v1/hr/attendance/webhook</code> with header{' '}
-          <code className="hr-mono">x-attendance-webhook-secret</code> (env{' '}
-          <code className="hr-mono">HR_ATTENDANCE_WEBHOOK_SECRET</code>). Payload:{' '}
-          <code className="hr-mono">empCode</code>, <code className="hr-mono">door_name</code>,{' '}
-          <code className="hr-mono">event_date_time</code> (UZB wall-clock). Mapped by employee{' '}
-          Face ID.
-        </p>
       </section>
 
       {error ? (

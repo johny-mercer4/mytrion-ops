@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { Plus, RefreshCw, Search, UserCheck, UserMinus, Users } from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
 import { deleteHrEmployee, type HrEmployeeDto } from '../../../api/hr';
 import { formatCachedAt } from '../../_shared/swrCache';
@@ -10,6 +10,7 @@ import { HrEmployeeForm, type EmployeeFormMode } from '../HrEmployeeForm';
 import {
   DIRECTORY_WINDOW,
   invalidateHrEmployees,
+  isActiveStatus,
   useFilteredEmployees,
   useHrDepartments,
   useHrDesignations,
@@ -18,11 +19,10 @@ import {
   type HrEmployeeFilters,
 } from '../hrData';
 import {
-  HrCardGridSkeleton,
   HrEmpty,
-  HrHeadActionsSkeleton,
+  HrPageLoader,
   HrPageHead,
-  HrToolbarSkeleton,
+  HrSummaryTiles,
 } from '../HrBits';
 
 const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`.trim();
@@ -81,12 +81,26 @@ export function HrEmployees() {
 
   const source = serverMode ? serverSearch : directory;
   const filters: HrEmployeeFilters = { q, status, departmentId, designation };
-  const visible = useFilteredEmployees(
+  const filteredEmployees = useFilteredEmployees(
     source.data?.items,
     // A server search already applied the term; re-applying it locally would drop rows the server
     // matched on a column the local predicate does not check.
     serverMode ? { ...filters, q: '' } : filters,
   );
+  const visible = useMemo(() => {
+    const rows = [...filteredEmployees];
+    const byName = (a: HrEmployeeDto, b: HrEmployeeDto): number =>
+      displayName(a).localeCompare(displayName(b));
+    const activeRank = (employee: HrEmployeeDto): number =>
+      isActiveStatus(employee.status) ? 0 : 1;
+    // Default directory order: department → Active first → name.
+    rows.sort((a, b) => {
+      const aDepartment = a.department?.trim() || '\uffff';
+      const bDepartment = b.department?.trim() || '\uffff';
+      return aDepartment.localeCompare(bDepartment) || activeRank(a) - activeRank(b) || byName(a, b);
+    });
+    return rows;
+  }, [filteredEmployees]);
 
   const deptOptions = departments.data?.items ?? [];
   const designationOptions = designations.data ?? [];
@@ -99,6 +113,9 @@ export function HrEmployees() {
   const total = directory.data?.total ?? 0;
   const filtered = visible.length;
   const isFiltered = Boolean(q.trim() || status !== 'all' || departmentId || designation);
+  const directoryItems = directory.data?.items ?? [];
+  const active = directoryItems.filter((employee) => isActiveStatus(employee.status)).length;
+  const unassigned = directoryItems.filter((employee) => !employee.departmentId).length;
 
   /** One reload for the tab: the directory plus the two picklists that sit beside it. */
   const reloadAll = useCallback((): void => {
@@ -146,9 +163,7 @@ export function HrEmployees() {
       <HrPageHead
         tab="employees"
         actions={
-          firstLoad ? (
-            <HrHeadActionsSkeleton buttons={admin ? 2 : 1} />
-          ) : (
+          firstLoad ? null : (
             <>
               {/* ONE loader per surface: the Refresh icon spins, and the caption is text only. An
                   HrBusy ring here put a second spinner right next to the spinning icon. */}
@@ -179,9 +194,7 @@ export function HrEmployees() {
         }
       />
 
-      {firstLoad ? (
-        <HrToolbarSkeleton slots={3} />
-      ) : (
+      {!firstLoad ? (
         <div className="hr-toolbar">
           <label className="hr-search">
             <Search size={14} />
@@ -227,14 +240,37 @@ export function HrEmployees() {
               ))}
             </select>
           </label>
-          <div className="hr-summary">
-            {/* Filtered-of-total, not a bare count: "12 employees" while a filter is on reads as the
-                whole company having twelve people. */}
-            <strong>{filtered}</strong>
-            {isFiltered ? <> of {total}</> : null} {total === 1 ? 'employee' : 'employees'}
-          </div>
         </div>
-      )}
+      ) : null}
+
+      {!firstLoad ? (
+        <HrSummaryTiles
+          label="Employee directory summary"
+          items={[
+            {
+              label: isFiltered ? 'Matching people' : 'People directory',
+              value: isFiltered ? `${filtered} / ${total}` : total,
+              detail: isFiltered ? 'Visible with current filters' : 'All employee records',
+              icon: <Users size={19} />,
+              tone: 'var(--tone-blue)',
+            },
+            {
+              label: 'Active employees',
+              value: active,
+              detail: 'Currently active in Mytrion',
+              icon: <UserCheck size={19} />,
+              tone: 'var(--success)',
+            },
+            {
+              label: 'Needs department',
+              value: unassigned,
+              detail: 'Employee records not assigned',
+              icon: <UserMinus size={19} />,
+              tone: unassigned ? 'var(--warning)' : 'var(--success)',
+            },
+          ]}
+        />
+      ) : null}
 
       {error || source.error ? (
         <p className="hr-banner-error" role="alert">
@@ -243,7 +279,7 @@ export function HrEmployees() {
       ) : null}
 
       {firstLoad || searching ? (
-        <HrCardGridSkeleton count={8} label="Loading employees" />
+        <HrPageLoader label={searching ? 'Searching employees…' : 'Loading employees…'} />
       ) : filtered === 0 ? (
         <HrEmpty
           icon={<Users size={26} />}

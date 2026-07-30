@@ -8,6 +8,7 @@
  * `{ name, id }` objects.
  */
 import { request, requestMultipart } from './transport';
+import type { LoyaltyClientOverride } from './loyalty';
 
 // LEGACY assertion — the server now derives department access from the verified session (Zoho
 // profile/role), so this header is IGNORED for signed-in users. Kept only so the
@@ -143,9 +144,9 @@ export interface AgentClient {
   phone: string;
   producedCards: number;
   activeCards: number;
+  lastTierName: string;
   moneyCode: string;
-  /** Declared fleet size — the loyalty TRACK basis (1 truck = Owner-Operator). `null` = unknown, in
-   * which case the tier falls back to the transacting-card proxy. */
+  /** Declared fleet size — reference only; loyalty tracks use monthly transacting cards. */
   trucks: number | null;
   dot: string;
   isLocSuspended: boolean;
@@ -155,9 +156,12 @@ export interface AgentClient {
   /** This billing-cycle (26th→25th) gallons — the "Gallons · Cycle" figure. */
   cycleGallons: number;
   gallonsThisMonth: number;
+  inNetworkGallonsThisMonth: number;
   activeCardsThisMonth: number;
   transactionsThisMonth: number;
   gallonsPrevMonth: number;
+  inNetworkGallonsPrevMonth: number;
+  loyaltyOverride?: LoyaltyClientOverride | null;
   activeCardsPrevMonth: number;
 }
 

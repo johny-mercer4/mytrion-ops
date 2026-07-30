@@ -10,18 +10,27 @@ import { systemPrompt } from './prompt.js';
 import { startTypingKeepAlive } from './telegram.js';
 import { buildTelegramTools } from './telegramTools.js';
 import { toolDispatcher } from './toolRuntime.js';
-import { selectToolPlanForTurn } from './toolSelection.js';
+import { greetingText, selectAiToolPlan, type AiRouteDecision } from './aiRouter.js';
 import { buildOctaneTools } from './tools.js';
-import {
-  incrementCounter,
-  turnEnqueued,
-  type TurnLifecycle,
-} from './metrics.js';
+import { incrementCounter, turnEnqueued, type TurnLifecycle } from './metrics.js';
 import {
   acquireTurnSlot,
   maxConcurrentTurns,
   releaseTurnSlot,
 } from './turnConcurrency.js';
+import { isServiceEnabled, serviceUnavailableText } from './serviceRegistry.js';
+import {
+  enqueueSupportMemoryCommit,
+  recallSupportMemory,
+} from './supportMemory.js';
+import {
+  capabilitySummaryText,
+  filterToolsForRole,
+  isToolAllowedForRole,
+  roleDeniedText,
+  type GatewayRole,
+} from './skillRegistry.js';
+import { zeroTokenOutcome } from './turnOutcome.js';
 
 export { maxConcurrentTurns } from './turnConcurrency.js';
 
@@ -172,6 +181,16 @@ function historyFor(key: SessionKey): StoredMessage[] {
   return meta.messages;
 }
 
+/** Small read-only history view used by the semantic ingress router. */
+export function routingHistoryFor(
+  chatId: number,
+  userId: number,
+): StoredMessage[] {
+  return historyFor(sessionKey(chatId, userId)).slice(-8).map((message) => ({
+    ...message,
+  }));
+}
+
 function saveTurn(key: SessionKey, user: string, assistant: string): void {
   const now = Date.now();
   const existing = sessions.get(key) ?? {
@@ -243,6 +262,8 @@ export function enqueueTurn(
   chatId: number,
   userId: number,
   carrierId: string,
+  role: GatewayRole,
+  route: AiRouteDecision,
   userPrompt: TurnContent,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
@@ -273,6 +294,8 @@ export function enqueueTurn(
         chatId,
         key,
         carrierId,
+        role,
+        route,
         userPrompt,
         lifecycle,
         measuredReply,
@@ -308,6 +331,8 @@ async function runTurn(
   chatId: number,
   key: SessionKey,
   carrierId: string,
+  role: GatewayRole,
+  route: AiRouteDecision,
   userPrompt: TurnContent,
   lifecycle: TurnLifecycle,
   onReply: (text: string) => Promise<void>,
@@ -318,7 +343,14 @@ async function runTurn(
   const stopTyping = startTypingKeepAlive(chatId);
   try {
     const prompt = typeof userPrompt === 'string' ? userPrompt : JSON.stringify(userPrompt);
-    const outcome = await runModelLoop(chatId, key, carrierId, prompt);
+    const outcome = await runModelLoop(
+      chatId,
+      key,
+      carrierId,
+      role,
+      route,
+      prompt,
+    );
     const text = outcome.finalText.trim();
     if (text && text !== 'SILENT') await onReply(text.slice(0, 4000));
     saveTurn(key, prompt, text || 'SILENT');
@@ -341,20 +373,70 @@ async function runModelLoop(
   chatId: number,
   key: SessionKey,
   carrierId: string,
+  role: GatewayRole,
+  route: AiRouteDecision,
   prompt: string,
 ): Promise<{ finalText: string; stats: TurnStats }> {
   const startedAt = Date.now();
+  if (route.kind === 'greeting') {
+    incrementCounter('greeting_fast_path_total');
+    return zeroTokenOutcome(startedAt, greetingText(route.language));
+  }
+  if (route.kind === 'capability') {
+    incrementCounter('capability_fast_path_total');
+    return zeroTokenOutcome(
+      startedAt,
+      capabilitySummaryText(role, route.language),
+    );
+  }
   const askerId = verifiedAskerId(prompt);
   const history = historyFor(key);
-  const allManifests = [
+  const serviceManifests = [
     ...buildOctaneTools(chatId, carrierId, askerId),
     ...buildTelegramTools(chatId, askerId),
   ];
-  const plan = selectToolPlanForTurn(allManifests, prompt, history);
-  const manifests = plan.tools;
-  const requiredSequence = [...plan.requiredSequence];
+  const plan = selectAiToolPlan(
+    serviceManifests,
+    route,
+    role,
+  );
+  if (plan.unavailableService) {
+    incrementCounter('service_disabled_total');
+    return zeroTokenOutcome(
+      startedAt,
+      serviceUnavailableText(plan.unavailableService, route.language),
+    );
+  }
+  if (plan.roleDeniedTool) {
+    incrementCounter('role_tool_denied_total');
+    return zeroTokenOutcome(startedAt, roleDeniedText(role, route.language));
+  }
+  const deniedRequiredTool = plan.requiredSequence.find(
+    (toolName) => !isToolAllowedForRole(toolName, role),
+  );
+  if (deniedRequiredTool) {
+    incrementCounter('role_tool_denied_total');
+    return zeroTokenOutcome(startedAt, roleDeniedText(role, route.language));
+  }
+  const memoryScope = { chatId, carrierId, telegramUserId: askerId };
+  const memory = role !== 'guest' && isServiceEnabled('memory')
+    ? await recallSupportMemory(memoryScope, prompt)
+    : '';
+  const manifests = filterToolsForRole(plan.tools, role);
+  const requiredSequence = plan.requiredSequence.filter((toolName) =>
+    manifests.some((manifest) => manifest.name === toolName),
+  );
   const messages: ModelMessage[] = [
-    { role: 'system', content: systemPrompt() },
+    {
+      role: 'system',
+      content: systemPrompt(
+        role,
+        manifests.map((manifest) => manifest.name),
+      ),
+    },
+    ...(memory
+      ? [{ role: 'system' as const, content: memory }]
+      : []),
     ...history.map(
       (message): ModelMessage => ({ role: message.role, content: message.content }),
     ),
@@ -397,7 +479,7 @@ async function runModelLoop(
 
     for (const call of toolCalls) {
       const parsed = parseToolArguments(call.arguments);
-      const auditContext = { chatId, carrierId };
+      const auditContext = { chatId, carrierId, role };
       let result: string;
       if (parsed.ok) {
         result = await toolDispatcher(
@@ -431,6 +513,9 @@ async function runModelLoop(
 
   if (!finalText && modelSteps >= MAX_MODEL_STEPS) {
     throw new Error(`Model exceeded the ${MAX_MODEL_STEPS}-step tool limit`);
+  }
+  if (role !== 'guest' && isServiceEnabled('memory') && finalText) {
+    enqueueSupportMemoryCommit(memoryScope, prompt, finalText);
   }
 
   return {

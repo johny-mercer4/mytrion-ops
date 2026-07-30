@@ -18,6 +18,15 @@ vi.mock('../../src/repos/hrEmployeeRepo.js', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     listDesignationPicklist: vi.fn(async () => []),
+    setZohoUserLink: vi.fn(),
+    clearZohoUserLink: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/integrations/zohoCrm.js', () => ({
+  zohoCrm: {
+    listActiveUsers: vi.fn(async () => []),
+    getUserById: vi.fn(),
   },
 }));
 
@@ -27,6 +36,7 @@ vi.mock('../../src/modules/hr/hrEmployeeSync.js', () => ({
     inserted: 0,
     updated: 0,
     relinkedManagers: 0,
+    relinkedAttendancePunches: 0,
     errors: [],
   })),
 }));
@@ -48,6 +58,7 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { zohoCrm } from '../../src/integrations/zohoCrm.js';
 import { syncHrEmployeesFromZoho } from '../../src/modules/hr/hrEmployeeSync.js';
 import { buildHrOrgStructure } from '../../src/modules/hr/hrOrgStructure.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
@@ -57,6 +68,7 @@ import type { HrEmployee } from '../../src/db/schema/hr_employees.js';
 const repo = vi.mocked(hrEmployeeRepo);
 const syncMock = vi.mocked(syncHrEmployeesFromZoho);
 const orgMock = vi.mocked(buildHrOrgStructure);
+const crmMock = vi.mocked(zohoCrm);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -72,6 +84,10 @@ beforeEach(() => {
   repo.count.mockResolvedValue(0);
   repo.getById.mockResolvedValue(undefined);
   repo.delete.mockResolvedValue(true);
+  repo.setZohoUserLink.mockResolvedValue(undefined);
+  repo.clearZohoUserLink.mockResolvedValue(undefined);
+  crmMock.listActiveUsers.mockResolvedValue([]);
+  crmMock.getUserById.mockResolvedValue(null);
 });
 
 async function workerToken(profile: string, zohoUserId = '42'): Promise<string> {
@@ -181,6 +197,52 @@ describe('HR employees — auth', () => {
   });
 });
 
+describe('HR employees — Zoho user linking', () => {
+  it('refuses a non-admin HR reader', async () => {
+    const token = await workerToken('HR', 'hr-link-reader');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/hr/employees/hre_1/zoho-user',
+      headers: bearer(token),
+      payload: { zohoUserId: 'crm_1' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(repo.setZohoUserLink).not.toHaveBeenCalled();
+  });
+
+  it('validates and links an active Zoho user for an Administrator', async () => {
+    const row = employeeRow({
+      zohoUserId: 'crm_1',
+      zohoUserIdSource: 'manual',
+      zohoUserLinkedAt: new Date('2026-07-30T00:00:00.000Z'),
+    });
+    crmMock.getUserById.mockResolvedValue({
+      zohoUserId: 'crm_1',
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      profile: 'Standard',
+      role: 'Employee',
+      isOnline: false,
+    });
+    repo.setZohoUserLink.mockResolvedValue(row);
+    const token = await workerToken('Administrator', 'hr-link-admin');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/hr/employees/hre_1/zoho-user',
+      headers: bearer(token),
+      payload: { zohoUserId: 'crm_1' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'hre_1', zohoUserId: 'crm_1' });
+    expect(repo.setZohoUserLink).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      'hre_1',
+      'crm_1',
+      'manual',
+    );
+  });
+});
+
 describe('HR employees — admin writes', () => {
   it('Administrator can create an employee', async () => {
     repo.createManual.mockResolvedValue(employeeRow());
@@ -196,7 +258,14 @@ describe('HR employees — admin writes', () => {
   });
 
   it('Administrator can sync from Zoho', async () => {
-    syncMock.mockResolvedValue({ fetched: 2, inserted: 1, updated: 1, relinkedManagers: 0, errors: [] });
+    syncMock.mockResolvedValue({
+      fetched: 2,
+      inserted: 1,
+      updated: 1,
+      relinkedManagers: 0,
+      relinkedAttendancePunches: 0,
+      errors: [],
+    });
     const res = await app.inject({
       method: 'POST',
       url: '/v1/hr/employees/sync',

@@ -42,6 +42,12 @@ export interface ReferralCarrierVolume {
   cumulativeGallons: number;
 }
 
+export interface ReferralVolumeSet {
+  /** Caller-owned stable key, normally the sorted eligible fuel-code list. */
+  key: string;
+  fuelCodes: readonly string[];
+}
+
 interface VolumeRow {
   carrier_id: number | string;
   gallons: number | string | null;
@@ -113,4 +119,87 @@ export async function fetchReferralVolume(
     });
   }
   return out;
+}
+
+/**
+ * Calculate several referral fuel-code sets in ONE MART scan.
+ *
+ * Referrals has two economic code sets today (ULSD+ULSR and ULSD+ULSR+DSL). Running one historical
+ * query per set scanned the same large MART range twice and made the first workspace load needlessly
+ * slow. The generated SQL contains only numeric aliases/placeholders; carrier ids and every code
+ * remain bound parameters.
+ */
+export async function fetchReferralVolumeSets(
+  carrierIds: readonly number[],
+  periodMonth: string,
+  sets: readonly ReferralVolumeSet[],
+): Promise<Map<string, Map<number, ReferralCarrierVolume>>> {
+  const result = new Map<string, Map<number, ReferralCarrierVolume>>(
+    sets.map((set) => [set.key, new Map()]),
+  );
+  if (carrierIds.length === 0 || sets.length === 0) return result;
+
+  const normalizedSets = sets.map((set) => ({
+    key: set.key,
+    fuelCodes: [...new Set(set.fuelCodes.map((code) => code.trim().toUpperCase()).filter(Boolean))],
+  }));
+  const allCodes = [...new Set(normalizedSets.flatMap((set) => set.fuelCodes))];
+  if (allCodes.length === 0) return result;
+
+  const params: unknown[] = [carrierIds, periodMonth];
+  const expressions: string[] = [];
+  normalizedSets.forEach((set, index) => {
+    params.push(set.fuelCodes);
+    const codeBind = `$${params.length}::text[]`;
+    expressions.push(
+      `coalesce(sum(e.gal) filter (
+         where e.fuel_code = any(${codeBind}) and e.transaction_date >= $2::date
+       ), 0) as gallons_${index}`,
+      `coalesce(sum(e.gal) filter (
+         where e.fuel_code = any(${codeBind})
+       ), 0) as cumulative_gallons_${index}`,
+      `count(distinct e.card_number) filter (
+         where e.fuel_code = any(${codeBind})
+           and e.transaction_date >= $2::date
+           and e.card_number is not null
+       ) as swipes_${index}`,
+    );
+  });
+  params.push(allCodes);
+  const allCodesBind = `$${params.length}::text[]`;
+
+  const rows = await dwhQuery<Record<string, unknown>>(
+    `with eligible as (
+       select carrier_id,
+              card_number,
+              transaction_date,
+              upper(trim(line_item_category)) as fuel_code,
+              coalesce(line_item_fuel_quantity, 0)::numeric as gal
+         from octane.mart_transaction_line_items
+        where carrier_id = any($1::bigint[])
+          and upper(trim(line_item_category)) = any(${allCodesBind})
+          and transaction_date < ($2::date + interval '1 month')
+     )
+     select e.carrier_id,
+            ${expressions.join(',\n            ')}
+       from eligible e
+      group by e.carrier_id`,
+    params,
+  );
+
+  for (const row of rows) {
+    const id = Number(row.carrier_id);
+    if (!Number.isFinite(id)) continue;
+    normalizedSets.forEach((set, index) => {
+      result.get(set.key)?.set(id, {
+        carrierId: id,
+        gallons: num(row[`gallons_${index}`] as number | string | null | undefined),
+        swipes: num(row[`swipes_${index}`] as number | string | null | undefined),
+        cumulativeGallons: num(
+          row[`cumulative_gallons_${index}`] as number | string | null | undefined,
+        ),
+      });
+    });
+  }
+  return result;
 }

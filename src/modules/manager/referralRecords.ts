@@ -11,6 +11,7 @@
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { AppError, errorMessage } from '../../lib/errors.js';
+import { logger } from '../../lib/logger.js';
 
 /** Referral modules the card exposes, keyed by a SAFE url token — raw module names never leave here. */
 export const REFERRAL_MODULES = {
@@ -86,7 +87,13 @@ const NOISE_API_NAMES = new Set([
   'Unsubscribed_Time',
 ]);
 /** Non-scalar field types COQL / the browser can't render cleanly. */
-const NOISE_TYPES = new Set(['subform', 'multiselectlookup', 'profileimage', 'RRULE', 'event_reminder']);
+const NOISE_TYPES = new Set([
+  'subform',
+  'multiselectlookup',
+  'profileimage',
+  'RRULE',
+  'event_reminder',
+]);
 
 /** Zoho caps a COQL SELECT around 50 columns — stay under it. */
 const MAX_FIELDS = 48;
@@ -201,6 +208,12 @@ export interface ReferralAssociations {
   deals: LinkedRecords;
 }
 
+export interface ReferralCalculationRecords {
+  parents: ReferralRecordsResult;
+  children: ReferralRecordsResult;
+  associations: ReferralAssociations;
+}
+
 /** Display columns for linked Leads (concise — this is context, not the primary record). */
 const LEAD_DISPLAY: ReferralField[] = [
   { apiName: 'Full_Name', label: 'Name', type: 'text' },
@@ -220,21 +233,167 @@ const DEAL_DISPLAY: ReferralField[] = [
 /** Lookup keys selected for grouping on the client (not shown as columns). */
 const LINK_KEYS = ['Parent_Referrer', 'Child_Referrer', 'id'] as const;
 
+const PARENT_CALC_FIELDS: ReferralField[] = [
+  { apiName: 'ReferrerId', label: 'Referrer ID', type: 'text' },
+  { apiName: 'Name', label: 'Name', type: 'text' },
+  { apiName: 'Company_Name', label: 'Company', type: 'text' },
+  { apiName: 'Calculation', label: 'Calculation', type: 'picklist' },
+  { apiName: 'Deal_Id', label: 'Primary Deal', type: 'lookup' },
+];
+const CHILD_CALC_FIELDS: ReferralField[] = [
+  { apiName: 'Referrer_ID', label: 'Referrer ID', type: 'text' },
+  { apiName: 'Name', label: 'Name', type: 'text' },
+  { apiName: 'Company_Name', label: 'Company', type: 'text' },
+  { apiName: 'Calculation', label: 'Calculation override', type: 'picklist' },
+  { apiName: 'Parent_Referrer', label: 'Parent Referrer', type: 'lookup' },
+  { apiName: 'Paid', label: 'Child paid', type: 'boolean' },
+  { apiName: 'Parent_Paid', label: 'Parent paid', type: 'boolean' },
+];
+
+/** Narrow calculation drains use Zoho's full 2,000-row page to complete each live module in one call. */
+const REFERRAL_CALC_PAGE_SIZE = 2000;
+
+async function fetchCalculationModule(
+  moduleKey: ReferralModuleKey,
+  fields: ReferralField[],
+): Promise<ReferralRecordsResult> {
+  const module = REFERRAL_MODULES[moduleKey];
+  const cols = ['id', ...fields.map((field) => field.apiName)].join(', ');
+  const result = await zohoCrm.runCoqlAll(
+    `select ${cols} from ${module} where id is not null ${REFERRAL_ORDER}`,
+    { pageSize: REFERRAL_CALC_PAGE_SIZE, budgetMs: REFERRAL_DRAIN_BUDGET_MS },
+  );
+  if (result.truncated) {
+    throw new Error(`${module} calculation drain was truncated after ${result.rows.length} rows`);
+  }
+  return {
+    module,
+    moduleKey,
+    fields,
+    rows: result.rows,
+    total: result.rows.length,
+    truncated: false,
+    pages: result.pages,
+  };
+}
+
+/**
+ * Complete live calculation input, optimized for the workspace rather than the raw CRM browser.
+ *
+ * All three independent COQL drains start together. Their narrow projections fit in a single
+ * 2,000-row page with today's roster, avoiding the wide metadata + multi-page reads used by the CRM
+ * detail browser.
+ */
+async function computeReferralCalculationRecords(): Promise<ReferralCalculationRecords> {
+  try {
+    const [parents, children, deals] = await Promise.all([
+      fetchCalculationModule('parents', PARENT_CALC_FIELDS),
+      fetchCalculationModule('children', CHILD_CALC_FIELDS),
+      fetchLinked('Deals', DEAL_DISPLAY, undefined, REFERRAL_CALC_PAGE_SIZE),
+    ]);
+    return {
+      parents,
+      children,
+      associations: {
+        leads: {
+          module: 'Leads',
+          fields: LEAD_DISPLAY,
+          rows: [],
+          total: 0,
+          truncated: false,
+          pages: 0,
+        },
+        deals,
+      },
+    };
+  } catch (err) {
+    throw new AppError(`Zoho CRM referral calculation read failed: ${errorMessage(err)}`, {
+      statusCode: 502,
+      code: 'ZOHO_CRM_ERROR',
+      expose: true,
+      cause: err,
+    });
+  }
+}
+
+interface CalculationRecordsCache {
+  value: ReferralCalculationRecords;
+  expiresAt: number;
+  staleUntil: number;
+}
+
+const CALCULATION_RECORDS_TTL_MS = 10 * 60_000;
+const CALCULATION_RECORDS_STALE_MS = 30 * 60_000;
+let calculationRecordsCache: CalculationRecordsCache | null = null;
+let calculationRecordsInFlight: Promise<ReferralCalculationRecords> | null = null;
+
+/**
+ * Month-independent Zoho relationship graph.
+ *
+ * Selecting another calculation month must not download the same parent/child/deal records again.
+ * The MART volume remains live per month; only this CRM graph is shared for ten minutes.
+ */
+export async function fetchReferralCalculationRecords(
+  options: { force?: boolean } = {},
+): Promise<ReferralCalculationRecords> {
+  const cached = calculationRecordsCache;
+  if (!options.force && cached && cached.expiresAt > Date.now()) return cached.value;
+  if (calculationRecordsInFlight) return calculationRecordsInFlight;
+
+  calculationRecordsInFlight = computeReferralCalculationRecords()
+    .then((value) => {
+      const now = Date.now();
+      calculationRecordsCache = {
+        value,
+        expiresAt: now + CALCULATION_RECORDS_TTL_MS,
+        staleUntil: now + CALCULATION_RECORDS_STALE_MS,
+      };
+      return value;
+    })
+    .catch((error: unknown) => {
+      if (cached && cached.staleUntil > Date.now()) {
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error) },
+          'referral CRM refresh failed — serving recent relationship graph',
+        );
+        return cached.value;
+      }
+      throw error;
+    })
+    .finally(() => {
+      calculationRecordsInFlight = null;
+    });
+  return calculationRecordsInFlight;
+}
+
+export function resetReferralCalculationRecordsCache(): void {
+  calculationRecordsCache = null;
+  calculationRecordsInFlight = null;
+}
+
 async function fetchLinked(
   module: string,
   display: ReferralField[],
   maxRows: number | undefined,
+  pageSize = REFERRAL_PAGE_SIZE,
 ): Promise<LinkedRecords> {
   const cols = [...display.map((f) => f.apiName), ...LINK_KEYS].join(', ');
   const res = await zohoCrm.runCoqlAll(
     `select ${cols} from ${module} where Parent_Referrer is not null or Child_Referrer is not null ${REFERRAL_ORDER}`,
     {
-      pageSize: REFERRAL_PAGE_SIZE,
+      pageSize,
       budgetMs: REFERRAL_DRAIN_BUDGET_MS,
       ...(maxRows !== undefined ? { maxRows } : {}),
     },
   );
-  return { module, fields: display, rows: res.rows, total: res.rows.length, truncated: res.truncated, pages: res.pages };
+  return {
+    module,
+    fields: display,
+    rows: res.rows,
+    total: res.rows.length,
+    truncated: res.truncated,
+    pages: res.pages,
+  };
 }
 
 /**

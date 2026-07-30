@@ -34,7 +34,7 @@ describe('resolveAccessibleMytrions', () => {
     // correct as Mytrions launch instead of needing an edit each time one does.
     for (const parked of COMING_SOON_MYTRION_IDS) expect(accessible).not.toContain(parked);
     // The launched department Mytrions an admin should see.
-    for (const live of ['manager', 'hr', 'analyst', 'collection', 'verification', 'trailhead']) {
+    for (const live of ['manager', 'hr', 'recruit', 'analyst', 'collection', 'verification', 'trailhead']) {
       expect(accessible).toContain(live);
     }
     // Finance's rule sets adminBypass:false — the 'Administrator' PROFILE is what grants it here,
@@ -62,6 +62,15 @@ describe('resolveAccessibleMytrions', () => {
   it('an unknown profile is forbidden (0 accessible)', () => {
     const { accessible } = resolveAccessibleMytrions(ctx({ profile: 'Nobody' }));
     expect(accessible).toEqual([]);
+  });
+
+  it('Recruiter enters Recruit while HR can move between HR and Recruit', () => {
+    expect(resolveAccessibleMytrions(ctx({ profile: 'Recruiter' })).accessible).toEqual([
+      'recruit',
+    ]);
+    const hr = resolveAccessibleMytrions(ctx({ profile: 'HR' })).accessible;
+    expect(hr).toContain('hr');
+    expect(hr).toContain('recruit');
   });
 
   it('isAdmin is true only for admin profiles/roles', () => {

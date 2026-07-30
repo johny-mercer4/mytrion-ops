@@ -5,6 +5,7 @@
  * local state — matching the reference prototype's behavior with a cleaner React shape.
  */
 import { createContext, useContext } from 'react';
+import type { LoyaltyClientOverride } from '../../../api/loyalty';
 import type { BadgeVM } from './salesData';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import type { IconName } from './icons';
@@ -29,7 +30,7 @@ export interface ClientRecord {
   phone: string;
   cards: number;
   active: number;
-  /** Declared trucks — the loyalty tier's TRACK basis; `null` = unknown (falls back to cards). */
+  /** Declared trucks — account context only. */
   trucks: number | null;
   gallons: string;
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
@@ -41,10 +42,14 @@ export interface ClientRecord {
   dot: string;
   /** Real per-calendar-month loyalty inputs (DWH) — shown as the "this month" figure. */
   gallonsThisMonth: number;
+  inNetworkGallonsThisMonth: number;
   activeCardsThisMonth: number;
   transactionsThisMonth: number;
   gallonsPrevMonth: number;
+  inNetworkGallonsPrevMonth: number;
   activeCardsPrevMonth: number;
+  lastTierName: string;
+  loyaltyOverride?: LoyaltyClientOverride | null;
 }
 
 export interface SalesCtx {

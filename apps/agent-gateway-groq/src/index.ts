@@ -4,16 +4,29 @@
  * on that chat's serial queue → reply with the session's final text (or stay silent).
  */
 import { config } from './config.js';
-import { enqueueTurn, maxConcurrentTurns } from './sessions.js';
+import {
+  enqueueTurn,
+  maxConcurrentTurns,
+  routingHistoryFor,
+} from './sessions.js';
 import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
-import { noteSender } from './tools.js';
-import { notePhoto } from './telegramTools.js';
-import { noteEngaged, shouldEngage } from './filter.js';
+import { buildOctaneTools, noteSender } from './tools.js';
+import { buildTelegramTools, notePhoto } from './telegramTools.js';
+import {
+  engagementReason,
+  isConversationActive,
+  noteEngaged,
+} from './filter.js';
 import { recordTurn, startMonitor } from './monitor.js';
 import { logMessage } from './messageLog.js';
-import { isRegistered } from './access.js';
+import { registeredRole } from './access.js';
 import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
-import { startSamplers } from './metrics.js';
+import { incrementCounter, startSamplers } from './metrics.js';
+import { enabledServiceSummary } from './serviceRegistry.js';
+import { processInOrderByKey } from './ingressOrder.js';
+import { MessageBurstBuffer } from './messageBurst.js';
+import type { GatewayRole } from './skillRegistry.js';
+import { classifySupportTurn } from './aiRouter.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -72,11 +85,51 @@ function bindAnnounceText(companyName: string | null): string {
   return `✅ Guruh ulandi${co}. Endi shu yerda savol berishingiz mumkin: karta status, Money Code, hisobotlar. / Group connected${co}. Card status, Money Code, reports — just ask.`;
 }
 
-function formatPrompt(m: TgMessage): string {
-  const name = m.from?.first_name ?? m.from?.username ?? 'user';
-  const body = m.text ?? m.caption ?? '';
-  const photoHint = m.photo ? '\n[the user attached a photo — call telegram_read_image to read it if its contents matter]' : '';
-  return `[msg ${m.message_id} from ${name} (id ${m.from?.id ?? 0})]: ${body}${photoHint}`;
+interface BufferedMessage {
+  message: TgMessage;
+  carrierId: string;
+  role: GatewayRole;
+  receivedAt: number;
+  direct: boolean;
+  conversationActive: boolean;
+}
+
+const RECENT_CONTEXT_MS = 5 * 60_000;
+const RECENT_CONTEXT_MAX = 12;
+const recentContext = new Map<string, BufferedMessage[]>();
+
+function rememberContext(key: string, item: BufferedMessage): void {
+  const cutoff = Date.now() - RECENT_CONTEXT_MS;
+  const items = [...(recentContext.get(key) ?? []), item]
+    .filter((candidate) => candidate.receivedAt >= cutoff)
+    .slice(-RECENT_CONTEXT_MAX);
+  recentContext.set(key, items);
+}
+
+function contextFor(key: string): BufferedMessage[] {
+  const cutoff = Date.now() - RECENT_CONTEXT_MS;
+  const items = (recentContext.get(key) ?? []).filter(
+    (candidate) => candidate.receivedAt >= cutoff,
+  );
+  if (items.length) recentContext.set(key, items);
+  else recentContext.delete(key);
+  return items;
+}
+
+function formatPrompt(messages: readonly TgMessage[]): string {
+  const last = messages.at(-1);
+  if (!last) throw new Error('cannot format an empty Telegram message burst');
+  const name = last.from?.first_name ?? last.from?.username ?? 'user';
+  const body = messages
+    .map((message, index) => {
+      const text = message.text ?? message.caption ?? '';
+      const photoHint = message.photo
+        ? ' [photo attached — call telegram_read_image if its contents matter]'
+        : '';
+      return `${index + 1}. ${text}${photoHint}`.trimEnd();
+    })
+    .join('\n');
+  return `[msg ${last.message_id} from ${name} (id ${last.from?.id ?? 0})]: The user sent these messages in sequence. Treat them as one request:\n${body}`;
 }
 
 /** Bridge a finished turn into the web monitor (question, wait, exec, tokens). */
@@ -117,25 +170,134 @@ function logTurn(
 
 async function main(): Promise<void> {
   console.log(
-    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · maxConcurrent=${maxConcurrentTurns()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
+    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · maxConcurrent=${maxConcurrentTurns()} · services=${enabledServiceSummary()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
   );
   startSamplers();
   startMonitor();
+  const messageBursts = new MessageBurstBuffer<BufferedMessage>({
+    quietMs: config.telegramBurstQuietMs,
+    maxWaitMs: Math.max(
+      config.telegramBurstQuietMs,
+      config.telegramBurstMaxMs,
+    ),
+    onError: (error) => {
+      console.error(
+        '[messageBurst] flush failed',
+        error instanceof Error ? error.message : String(error),
+      );
+    },
+    onFlush: async (items) => {
+      const first = items[0];
+      const last = items.at(-1);
+      if (!first || !last) return;
+      const contextKey = `${last.message.chat.id}:${last.message.from?.id ?? 0}`;
+      const contextItems = contextFor(contextKey);
+      const messages = contextItems.map((item) => item.message);
+      const currentMessages = items.map((item) => item.message);
+      const message = last.message;
+      const chatId = message.chat.id;
+      const userId = message.from?.id ?? 0;
+      const name = message.from?.first_name ?? message.from?.username ?? 'user';
+      const question = currentMessages
+        .map(
+          (item) =>
+            (item.text ?? item.caption ?? '') + (item.photo ? ' [photo]' : ''),
+        )
+        .join('\n');
+      const manifests = [
+        ...buildOctaneTools(chatId, last.carrierId, userId),
+        ...buildTelegramTools(chatId, userId),
+      ];
+      const route = await classifySupportTurn({
+        role: last.role,
+        direct: items.some((item) => item.direct),
+        conversationActive: items.some((item) => item.conversationActive),
+        trustedConfirmation: false,
+        currentText: question,
+        context: [
+          ...routingHistoryFor(chatId, userId),
+          ...contextItems.map((item) => ({
+            role: 'user' as const,
+            content:
+              (item.message.text ?? item.message.caption ?? '') +
+              (item.message.photo ? ' [photo]' : ''),
+          })),
+        ],
+        manifests,
+      });
+      if (!route.engage) return;
+      recentContext.delete(contextKey);
+      incrementCounter('ambient_engagement_total');
+      const reply = { text: '' };
+      const baseStats = logTurn(
+        'message',
+        chatId,
+        userId,
+        name,
+        question,
+        first.receivedAt,
+        reply,
+      );
+      const stats: typeof baseStats = (turnStats) => {
+        baseStats(turnStats);
+        for (const item of currentMessages) {
+          void clearReaction(chatId, item.message_id).catch(() => undefined);
+        }
+      };
+      if (items.length > 1) {
+        incrementCounter('message_burst_total');
+        incrementCounter('message_burst_messages_total', items.length);
+      }
+      enqueueTurn(
+        chatId,
+        userId,
+        last.carrierId,
+        last.role,
+        route,
+        formatPrompt(messages),
+        async (text) => {
+          const finalText = stampElapsed(text, first.receivedAt);
+          reply.text = finalText;
+          await sendMessage(chatId, finalText, message.message_id);
+          logMessage({
+            ts: new Date().toISOString(),
+            chatId,
+            userId: 0,
+            name: 'bot',
+            dir: 'out',
+            text: finalText,
+          });
+        },
+        stats,
+      );
+    },
+  });
   let offset = 0;
   for (;;) {
     try {
       const updates = await getUpdates(offset);
       for (let start = 0; start < updates.length; start += INGRESS_CONCURRENCY) {
         const batch = updates.slice(start, start + INGRESS_CONCURRENCY);
-        await Promise.all(batch.map(async (u) => {
+        await processInOrderByKey(
+          batch,
+          (u) => {
+            const cb = u.callback_query;
+            if (cb?.message) return `${cb.message.chat.id}:${cb.from.id}`;
+            const message = u.message;
+            if (message) return `${message.chat.id}:${message.from?.id ?? 0}`;
+            return `update:${u.update_id}`;
+          },
+          async (u) => {
         // Button taps: ack instantly, gate by registration, then feed the tap into the session
         // as a structured line — the tapper's id comes from Telegram itself (sender-verified by
         // construction), so tools may act on it like any spoken message.
         const cb = u.callback_query;
         const cbCarrier = cb?.message ? await carrierFor(cb.message.chat.id) : null;
         if (cb?.message && cbCarrier) {
+          await messageBursts.flush(`${cb.message.chat.id}:${cb.from.id}`);
           void answerCallback(cb.id);
-          if (!(await isRegistered(cbCarrier, cb.from.id))) return;
+          const cbRole = await registeredRole(cbCarrier, cb.from.id);
+          if (!cbRole) return;
           const chatId = cb.message.chat.id;
           noteSender(chatId, cb.from.id);
           noteEngaged(chatId, cb.from.id);
@@ -145,7 +307,21 @@ async function main(): Promise<void> {
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
           const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          enqueueTurn(chatId, cb.from.id, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
+          const cbPrompt = `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`;
+          const cbManifests = [
+            ...buildOctaneTools(chatId, cbCarrier, cb.from.id),
+            ...buildTelegramTools(chatId, cb.from.id),
+          ];
+          const cbRoute = await classifySupportTurn({
+            role: cbRole,
+            direct: true,
+            conversationActive: true,
+            trustedConfirmation: cb.data?.split(':').at(-1) === 'yes',
+            currentText: cb.data ?? '',
+            context: routingHistoryFor(chatId, cb.from.id),
+            manifests: cbManifests,
+          });
+          enqueueTurn(chatId, cb.from.id, cbCarrier, cbRole, cbRoute, cbPrompt, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -179,12 +355,14 @@ async function main(): Promise<void> {
         // Full history, PRE-gate — ordinary chatter is data too (the whole 54k-message analysis
         // came from exactly this kind of log). `engaged` is patched on below when a message
         // actually reaches the model.
-        const wantsEngagement = shouldEngage(m, config.botUsername);
-        const registered =
-          wantsEngagement || Boolean(m.photo)
-            ? await isRegistered(carrier, m.from?.id ?? 0)
-            : false;
-        const willEngage = wantsEngagement && registered;
+        const engagement = engagementReason(m, config.botUsername);
+        const direct = engagement === 'mention' || engagement === 'reply';
+        const conversationActive = isConversationActive(
+          m.chat.id,
+          m.from?.id ?? 0,
+        );
+        const role = await registeredRole(carrier, m.from?.id ?? 0);
+        const registered = role !== null;
         logMessage({
           ts: new Date().toISOString(),
           chatId: m.chat.id,
@@ -194,50 +372,38 @@ async function main(): Promise<void> {
           dir: 'in',
           text: m.text ?? m.caption ?? '',
           ...(m.photo ? { photo: true } : {}),
-          ...(willEngage ? { engaged: true } : {}),
         });
         noteSender(m.chat.id, m.from?.id ?? 0);
         // Photo cache runs BEFORE gate 1 (drivers post the photo first, tag next message) but
         // still only for REGISTERED users — an outsider's image never enters the cache. The
         // photo message itself costs zero LLM tokens either way.
         if (m.photo && registered) notePhoto(m.chat.id, m.from?.id ?? 0, m.photo);
-        // Caveman gate 1: only @mentions / replies-to-bot / follow-ups reach further.
-        if (!wantsEngagement) return;
-        // Caveman gate 2: only REGISTERED mini-app users get any tokens at all. A tagged
-        // unregistered user gets the static registration signpost instead of silence.
+        // Only registered users reach the AI router. Explicit outsiders get one signpost.
         if (!registered) {
           const uid = m.from?.id ?? 0;
-          if (uid !== 0 && Date.now() - (regNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS) {
+          if (direct && uid !== 0 && Date.now() - (regNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS) {
             regNudge.set(uid, Date.now());
             await sendMessage(m.chat.id, regNudgeText(), m.message_id).catch(() => undefined);
             logMessage({ ts: new Date().toISOString(), chatId: m.chat.id, userId: 0, name: 'bot', dir: 'out', text: '[registration signpost]' });
           }
           return;
         }
-        // Instant acknowledgment on the very message we're about to answer: a 👀 reaction says
-        // "seen, working on it" the moment we engage — so a 20-40s turn never looks ignored (pairs
-        // with the typing keep-alive). Best-effort: a group that disabled this reaction just no-ops.
+        const contextKey = `${m.chat.id}:${m.from?.id ?? 0}`;
+        const buffered = {
+          message: m,
+          carrierId: carrier,
+          role,
+          receivedAt: Date.now(),
+          direct,
+          conversationActive,
+        };
+        noteEngaged(m.chat.id, m.from?.id ?? 0);
         void setReaction(m.chat.id, m.message_id, '👀').catch(() => undefined);
         void sendTyping(m.chat.id);
-        const mName = m.from?.first_name ?? m.from?.username ?? 'user';
-        const mQuestion = (m.text ?? m.caption ?? '') + (m.photo ? ' [photo]' : '');
-        const mReply = { text: '' };
-        const mAt = Date.now();
-        const baseStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
-        // The 👀 was only a transient "working on it" indicator — remove it once the turn is done
-        // (the reply itself is the acknowledgment), so old messages don't keep a stale eye reaction.
-        const mStats: typeof baseStats = (stats) => {
-          baseStats(stats);
-          void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
-        };
-        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), async (text) => {
-          const finalText = stampElapsed(text, mAt);
-          mReply.text = finalText;
-          noteEngaged(m.chat.id, m.from?.id ?? 0);
-          await sendMessage(m.chat.id, finalText, m.message_id);
-          logMessage({ ts: new Date().toISOString(), chatId: m.chat.id, userId: 0, name: 'bot', dir: 'out', text: finalText });
-        }, mStats);
-        }));
+        rememberContext(contextKey, buffered);
+        messageBursts.push(contextKey, buffered);
+          },
+        );
       }
       const newest = updates.at(-1);
       if (newest) offset = newest.update_id + 1;

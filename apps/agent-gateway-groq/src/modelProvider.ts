@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { getOpenAIClient } from './openaiClient.js';
 import { modelToolDefinitions, type ToolManifest } from './toolRuntime.js';
 import { incrementCounter } from './metrics.js';
+import { filterEnabledTools } from './serviceRegistry.js';
 
 export interface ModelToolCall {
   id: string;
@@ -140,11 +141,20 @@ export async function completeModel(
   safetyIdentifier: string,
   requiredTool?: string,
 ): Promise<ModelCompletion> {
-  if (requiredTool && !manifests.some((manifest) => manifest.name === requiredTool)) {
+  const enabledManifests = filterEnabledTools(manifests);
+  if (
+    requiredTool &&
+    !enabledManifests.some((manifest) => manifest.name === requiredTool)
+  ) {
     throw new Error(`Required tool "${requiredTool}" is not available for this turn`);
   }
   try {
-    return await completeWithOpenAI(messages, manifests, safetyIdentifier, requiredTool);
+    return await completeWithOpenAI(
+      messages,
+      enabledManifests,
+      safetyIdentifier,
+      requiredTool,
+    );
   } catch (error) {
     const status =
       error instanceof OpenAI.APIError

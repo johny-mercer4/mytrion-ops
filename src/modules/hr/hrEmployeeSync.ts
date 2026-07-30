@@ -3,6 +3,7 @@
  */
 import { zohoPeople } from '../../integrations/zohoPeople.js';
 import { hrEmployeeSyncRepo } from '../../repos/hrEmployeeSyncRepo.js';
+import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { mapZohoEmployeeToUpsert } from './mapZohoEmployee.js';
 
@@ -12,6 +13,8 @@ export interface HrEmployeeSyncResult {
   updated: number;
   /** Rows whose id-based manager link was (re)resolved from the synced `reporting_to` name. */
   relinkedManagers: number;
+  /** Previously unmapped Ganga punches attached by normalized Face ID. */
+  relinkedAttendancePunches: number;
   errors: Array<{ zohoRecordId: string; message: string }>;
 }
 
@@ -62,6 +65,14 @@ export async function syncHrEmployeesFromZoho(
    * it also picks up new hires whose manager only exists as of this batch.
    */
   const relinkedManagers = await hrEmployeeSyncRepo.relinkManagers(ctx);
+  const relinkedAttendancePunches = await hrAttendancePunchRepo.reconcileUnmapped(ctx);
 
-  return { fetched: records.length, inserted: 0, updated: written, relinkedManagers, errors };
+  return {
+    fetched: records.length,
+    inserted: 0,
+    updated: written,
+    relinkedManagers,
+    relinkedAttendancePunches,
+    errors,
+  };
 }

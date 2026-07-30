@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
   Award,
@@ -7,6 +7,8 @@ import {
   MinusCircle,
   RefreshCw,
   Search,
+  Settings2,
+  ShieldCheck,
   Sprout,
   TrendingDown,
   TrendingUp,
@@ -16,12 +18,16 @@ import {
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
 import {
   resolveTierForRow,
+  resolveProjectedTierForRow,
+  tierBucketOf,
   tierBucketLabel,
   tierLabel,
   type TierResult,
   type TrackId,
 } from '../../_shared/loyalty';
-import { listLoyaltyClients, loyaltyGallons, type LoyaltyClient } from '../../../api/loyalty';
+import { listLoyaltyClients, type LoyaltyClient } from '../../../api/loyalty';
+import type { LoyaltyClientOverride } from '../../../api/loyalty';
+import { LoyaltyBonusModal } from './LoyaltyBonusModal';
 
 /**
  * Manager Mytrion → Loyalty Program. The company-wide tier board: every carrier in the warehouse,
@@ -53,12 +59,13 @@ const PAGE = 60;
  * one colour. Splitting them is what makes the chart readable: ~3,950 clients are genuinely working
  * toward Bronze, while ~3,470 simply aren't in the program.
  */
-type Bucket = 'gold' | 'silver' | 'bronze' | 'building' | 'idle';
+type Bucket = 'enterprise' | 'gold' | 'silver' | 'bronze' | 'building' | 'idle';
 
-const BUCKET_ORDER: Bucket[] = ['gold', 'silver', 'bronze', 'building', 'idle'];
+const BUCKET_ORDER: Bucket[] = ['enterprise', 'gold', 'silver', 'bronze', 'building', 'idle'];
 
 /** Fill hue + label hue per bucket, from the card's own --lty-* palette. */
 const FILL: Record<Bucket, string> = {
+  enterprise: 'var(--lty-enterprise)',
   gold: 'var(--lty-gold)',
   silver: 'var(--lty-silver)',
   bronze: 'var(--lty-bronze)',
@@ -66,6 +73,7 @@ const FILL: Record<Bucket, string> = {
   idle: 'var(--lty-idle)',
 };
 const TEXT: Record<Bucket, string> = {
+  enterprise: 'var(--lty-enterprise-text)',
   gold: 'var(--lty-gold-text)',
   silver: 'var(--lty-silver-text)',
   bronze: 'var(--lty-bronze-text)',
@@ -73,6 +81,7 @@ const TEXT: Record<Bucket, string> = {
   idle: 'var(--lty-idle-text)',
 };
 const ICON: Record<Bucket, typeof Trophy> = {
+  enterprise: ShieldCheck,
   gold: Trophy,
   silver: Medal,
   bronze: Award,
@@ -81,12 +90,6 @@ const ICON: Record<Bucket, typeof Trophy> = {
 };
 // Labels come from _shared/loyalty (tierBucketLabel). A local copy existed here and is exactly how
 // the two surfaces drift — Sales said one thing and this board another.
-
-/** Which bucket a resolved tier falls in. `track === null` means zero active cards. */
-function bucketOf(t: TierResult): Bucket {
-  if (t.level !== 'none') return t.level;
-  return t.track === null ? 'idle' : 'building';
-}
 
 /** Set the two custom properties the CSS reads (--t fill, --tt label). */
 const bucketVars = (b: Bucket): CSSProperties =>
@@ -105,6 +108,7 @@ const TRACK_FILTERS: { id: TrackFilter; label: string }[] = [
   { id: 'T1', label: 'Owner-Operator' },
   { id: 'T2', label: 'Small Company' },
   { id: 'T3', label: 'Fleet' },
+  { id: 'enterprise', label: 'Enterprise' },
 ];
 
 /**
@@ -124,8 +128,8 @@ function progressPct(t: TierResult): number {
 interface Scored {
   client: LoyaltyClient;
   tier: TierResult;
+  projectedTier: TierResult;
   bucket: Bucket;
-  gallons: number;
 }
 
 function TierBadge({ bucket }: { bucket: Bucket }) {
@@ -169,7 +173,9 @@ function Distribution({
       <div className="mg-lty-bar">
         {BUCKET_ORDER.map((b) => {
           const pct = total > 0 ? (counts[b] / total) * 100 : 0;
-          return pct > 0 ? <span key={b} style={{ width: `${pct}%`, background: FILL[b] }} /> : null;
+          return pct > 0 ? (
+            <span key={b} style={{ width: `${pct}%`, background: FILL[b] }} />
+          ) : null;
         })}
       </div>
       <div className="mg-lty-tiles">
@@ -195,12 +201,18 @@ function Distribution({
 }
 
 /** One carrier — the card is tinted, bordered and top-ruled by the tier it holds. */
-function ClientCard({ row }: { row: Scored }) {
-  const { client, tier, bucket, gallons } = row;
+function ClientCard({ row, onOpen }: { row: Scored; onOpen: () => void }) {
+  const { client, tier, projectedTier, bucket } = row;
   // `is-<bucket>` carries the shared --tint / --sheen tuning (see manager.css) plus any per-bucket
   // extras — Gold's halo, No-cards' dashed border.
   return (
-    <article className={`mg-lty-c is-${bucket}`} style={bucketVars(bucket)}>
+    <button
+      type="button"
+      className={`mg-lty-c is-${bucket}`}
+      style={bucketVars(bucket)}
+      onClick={onOpen}
+      aria-label={`Manage loyalty rewards for ${client.companyName}`}
+    >
       <div className="mg-lty-c-top">
         <div>
           <div className="mg-lty-c-name" title={client.companyName}>
@@ -221,62 +233,103 @@ function ClientCard({ row }: { row: Scored }) {
         <TierBadge bucket={bucket} />
       </div>
 
-      <dl className="mg-lty-figs">
-        <div className="mg-lty-fig">
-          <dt>
-            <Fuel size={9} /> Gallons · mo
-          </dt>
-          <dd>{n0(gallons)}</dd>
-        </div>
-        <div className="mg-lty-fig">
-          {/* The TRACK basis — shown so an Owner-Operator badge next to "Cards 2/5" reads as
-              deliberate rather than broken. '—' means the Zoho Trucks field is empty and the tier
-              fell back to the card proxy. */}
-          <dt>Trucks</dt>
-          <dd>{client.trucks ?? '—'}</dd>
-        </div>
-        <div className="mg-lty-fig">
-          <dt>Cards</dt>
-          <dd>
-            {client.activeCardsThisMonth}/{client.activeCards}
-          </dd>
-        </div>
-        <div className="mg-lty-fig">
-          <dt>vs last mo</dt>
-          <dd>
-            <Trend now={gallons} prev={client.gallonsPrevMonth} />
-          </dd>
-        </div>
-      </dl>
+      <div className="mg-lty-periods">
+        <section className="mg-lty-period is-closed">
+          <header>
+            <span>Last month</span>
+            <strong>Tier basis</strong>
+          </header>
+          <div className="mg-lty-period-main">
+            <span>
+              <Fuel size={12} /> In-network
+            </span>
+            <strong>{n0(client.inNetworkGallonsPrevMonth)} gal</strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Transacting cards</dt>
+              <dd>{client.activeCardsPrevMonth}</dd>
+            </div>
+            <div>
+              <dt>Total gallons</dt>
+              <dd>{n0(client.gallonsPrevMonth)}</dd>
+            </div>
+          </dl>
+        </section>
+        <section className="mg-lty-period is-current">
+          <header>
+            <span>This month</span>
+            <strong>Next tier progress</strong>
+          </header>
+          <div className="mg-lty-period-main">
+            <span>
+              <Fuel size={12} /> In-network
+            </span>
+            <strong>{n0(client.inNetworkGallonsThisMonth)} gal</strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Transacting cards</dt>
+              <dd>{client.activeCardsThisMonth}</dd>
+            </div>
+            <div>
+              <dt>vs last month</dt>
+              <dd>
+                <Trend
+                  now={client.inNetworkGallonsThisMonth}
+                  prev={client.inNetworkGallonsPrevMonth}
+                />
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </div>
 
-      {tier.track ? (
+      <div className="mg-lty-account">
+        <span>Account active cards</span>
+        <strong>{client.activeCards}</strong>
+        <span>Declared trucks</span>
+        <strong>{client.trucks ?? '—'}</strong>
+      </div>
+
+      {projectedTier.track && projectedTier.track !== 'enterprise' ? (
         <div className="mg-lty-prog">
           <div className="mg-lty-prog-track">
             <div
               className="mg-lty-prog-fill"
-              style={{ width: `${progressPct(tier)}%` }}
+              style={{ width: `${progressPct(projectedTier)}%` }}
               /* The bar is decorative; the label below carries the same value as text. */
               aria-hidden="true"
             />
           </div>
           <div className="mg-lty-prog-lbl">
             <span>
-              {tier.trackLabel}
-              {tier.segmentLabel ? ` · ${tier.segmentLabel}` : ''}
+              Next evaluation · {projectedTier.trackLabel}
+              {projectedTier.segmentLabel ? ` · ${projectedTier.segmentLabel}` : ''}
             </span>
             <strong>
-              {tier.nextLevel
-                ? `${n0(tier.gallonsToNext)} gal to ${tierLabel(tier.nextLevel)}`
-                : 'Top tier'}
+              {projectedTier.nextLevel
+                ? `${n0(projectedTier.gallonsToNext)} gal to ${tierLabel(projectedTier.nextLevel)}`
+                : 'Projected Gold'}
             </strong>
           </div>
         </div>
       ) : (
         <div className="mg-lty-prog-lbl">
-          <span>No fuel activity — no tier</span>
+          <span>
+            {projectedTier.track === 'enterprise'
+              ? 'Next evaluation · Enterprise'
+              : tier.track
+                ? `${tier.trackLabel}${tier.segmentLabel ? ` · ${tier.segmentLabel}` : ''}`
+                : 'No current-month activity'}
+          </span>
         </div>
       )}
-    </article>
+      <span className="mg-lty-manage">
+        <Settings2 size={13} />
+        {client.loyaltyOverride ? 'Custom loyalty controls' : 'Manage rewards'}
+      </span>
+    </button>
   );
 }
 
@@ -285,6 +338,11 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
   const [bucket, setBucket] = useState<Bucket | null>(null);
   const [track, setTrack] = useState<TrackFilter>('all');
   const [shown, setShown] = useState(PAGE);
+  const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
+  const [localOverrides, setLocalOverrides] = useState<Map<string, LoyaltyClientOverride | null>>(
+    () => new Map(),
+  );
+  const forceRefreshRef = useRef(false);
 
   // The roster is one heavy DWH read (~8k carriers, ~2.5s), so it caches for 5 minutes.
   const {
@@ -294,23 +352,51 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
     error,
     cachedAt,
     reload,
-  } = useCachedLoad('mgr:loyalty:clients', listLoyaltyClients, { staleMs: 300_000 });
+  } = useCachedLoad(
+    'mgr:loyalty:clients',
+    () => {
+      const refresh = forceRefreshRef.current;
+      forceRefreshRef.current = false;
+      return listLoyaltyClients({ refresh });
+    },
+    { staleMs: 300_000 },
+  );
 
   /** Resolve every carrier's tier once — filters and the distribution both read this. */
   const scored = useMemo<Scored[]>(
     () =>
-      (roster?.clients ?? []).map((client) => {
-        const gallons = loyaltyGallons(client);
-        // One shared entry point: prev-month cards for the track, this-month gallons, grace anchor.
+      (roster?.clients ?? []).map((rawClient) => {
+        const client = localOverrides.has(rawClient.carrierId)
+          ? {
+              ...rawClient,
+              loyaltyOverride: localOverrides.get(rawClient.carrierId) ?? null,
+            }
+          : rawClient;
         const tier = resolveTierForRow(client);
-        return { client, tier, bucket: bucketOf(tier), gallons };
+        const projectedTier = resolveProjectedTierForRow(client);
+        return {
+          client,
+          tier,
+          projectedTier,
+          bucket: tierBucketOf(tier),
+        };
       }),
-    [roster],
+    [roster, localOverrides],
   );
+  const selectedRow = selectedCarrier
+    ? (scored.find((row) => row.client.carrierId === selectedCarrier) ?? null)
+    : null;
 
   /** Distribution over the FULL roster — never the filtered or visible subset. */
   const counts = useMemo(() => {
-    const c: Record<Bucket, number> = { gold: 0, silver: 0, bronze: 0, building: 0, idle: 0 };
+    const c: Record<Bucket, number> = {
+      enterprise: 0,
+      gold: 0,
+      silver: 0,
+      bronze: 0,
+      building: 0,
+      idle: 0,
+    };
     for (const s of scored) c[s.bucket] += 1;
     return c;
   }, [scored]);
@@ -330,10 +416,12 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
   }, [scored, q, bucket, track]);
 
   // Any filter change starts the window over, so you never land mid-list on a new result set.
-  const resetWindow = <T,>(set: (v: T) => void) => (v: T) => {
-    set(v);
-    setShown(PAGE);
-  };
+  const resetWindow =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setShown(PAGE);
+    };
 
   const busy = loading || revalidating;
   const visible = filtered.slice(0, shown);
@@ -344,7 +432,12 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
       <header className="mg-page-head">
         <div className="mg-page-head-left">
           {onBack ? (
-            <button type="button" className="mg-backbtn" onClick={onBack} aria-label="Back to overview">
+            <button
+              type="button"
+              className="mg-backbtn"
+              onClick={onBack}
+              aria-label="Back to overview"
+            >
               <ArrowLeft size={16} />
             </button>
           ) : null}
@@ -352,14 +445,24 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
             <div className="mg-kicker">Workspaces</div>
             <h1 className="mg-page-title">Loyalty Program</h1>
             <p className="mg-page-sub">
-              Every carrier&apos;s Loyalty Tiers v3 standing — track from fleet size (trucks), tier from this
-              month&apos;s gallons. Company-wide; Sales sees the same tiers for their own book.
+              Last month&apos;s transacting cards set the track; last month&apos;s ULSR + ULSD
+              gallons set the tier. This month shows progress toward the next evaluation.
             </p>
           </div>
         </div>
         <div className="mg-head-actions">
-          {cachedAt ? <span className="mg-cachedat">Updated {formatCachedAt(cachedAt)}</span> : null}
-          <button type="button" className="mg-btn" onClick={reload} disabled={busy}>
+          {cachedAt ? (
+            <span className="mg-cachedat">Updated {formatCachedAt(cachedAt)}</span>
+          ) : null}
+          <button
+            type="button"
+            className="mg-btn"
+            onClick={() => {
+              forceRefreshRef.current = true;
+              reload();
+            }}
+            disabled={busy}
+          >
             <RefreshCw size={15} className={busy ? 'mg-spin' : ''} />
             Refresh
           </button>
@@ -392,8 +495,9 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
 
           <div className="mg-toolbar">
             <div className="mg-summary">
-              <strong>{n0(roster.total)}</strong> clients · <strong>{n0(tieredTotal)}</strong> hold a
-              tier · showing <strong>{n0(visible.length)}</strong> of <strong>{n0(filtered.length)}</strong>
+              <strong>{n0(roster.total)}</strong> clients · <strong>{n0(tieredTotal)}</strong> hold
+              a tier · showing <strong>{n0(visible.length)}</strong> of{' '}
+              <strong>{n0(filtered.length)}</strong>
             </div>
             <label className="mg-search">
               <Search size={15} />
@@ -425,7 +529,11 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
           ) : (
             <div className="mg-lty-grid">
               {visible.map((row) => (
-                <ClientCard key={row.client.carrierId} row={row} />
+                <ClientCard
+                  key={row.client.carrierId}
+                  row={row}
+                  onOpen={() => setSelectedCarrier(row.client.carrierId)}
+                />
               ))}
             </div>
           )}
@@ -438,6 +546,20 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
             </div>
           ) : null}
         </>
+      ) : null}
+      {selectedRow ? (
+        <LoyaltyBonusModal
+          client={selectedRow.client}
+          tier={selectedRow.tier}
+          onClose={() => setSelectedCarrier(null)}
+          onSaved={(override) =>
+            setLocalOverrides((current) => {
+              const next = new Map(current);
+              next.set(selectedRow.client.carrierId, override);
+              return next;
+            })
+          }
+        />
       ) : null}
     </div>
   );

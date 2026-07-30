@@ -10,6 +10,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate && pnpm install --froz
 COPY tsconfig.json ./
 COPY src ./src
 COPY prompts ./prompts
+COPY skills ./skills
 
 # Rolling per-chat history and monitor logs live here.
 RUN mkdir -p data

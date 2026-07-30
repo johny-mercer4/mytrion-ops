@@ -619,10 +619,8 @@ export interface TouchpointMap {
     params: { tab: 'apps' | 'clients'; search?: string; page?: number; perPage?: number };
     result: CsApplicationsList;
   };
-  'cs.analytics.maintenance': {
-    params: { fromDate: string; toDate: string; prevFromDate: string; prevToDate: string };
-    result: CsMaintenanceAnalytics;
-  };
+  // 'cs.analytics.maintenance' removed with its catalog entry — Maintenance analytics is SQL over
+  // maintenance_cases now (GET /cs/analytics/maintenance, see api/cs.ts getMaintenanceAnalytics).
   'cs.datacenter.deals': {
     params: { lastSyncTime?: string };
     result: CsDataCenterDeals;
@@ -878,23 +876,6 @@ export interface CsApplicationsList {
   more_records?: boolean;
   page?: number | string;
   per_page?: number | string;
-}
-
-export interface CsMaintenanceAnalytics {
-  success?: boolean;
-  data?: {
-    totals?: {
-      current?: number;
-      previous?: number;
-      closed?: number;
-      halfComplete?: number;
-      fullComplete?: number;
-      open?: number;
-    };
-    daily?: Array<{ day?: string; count?: number }>;
-    byStatus?: Array<{ status?: string; count?: number }>;
-    byOwner?: Array<{ id?: string; name?: string; count?: number }>;
-  };
 }
 
 export interface CsDataCenterDeal {

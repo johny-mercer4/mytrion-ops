@@ -1,0 +1,325 @@
+/* HR-wide finishing layer.
+   Kept separate from the legacy HR stylesheets so the shared typography, KPI tiles and loader have
+   one small source of truth instead of adding more weight to files that are already at their cap. */
+
+/* HR uses Space Grotesk for UI body + headings (loaded in index.html). */
+[data-mytrion='hr'] {
+  --font-body: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-head: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --mytrion-nav-label-size: 14.5px;
+  --mytrion-nav-sub-size: 13px;
+  --mytrion-nav-search-size: 13.5px;
+  --mytrion-nav-section-size: 11px;
+  font-family: var(--font-body);
+}
+
+[data-mytrion='hr'] :where(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+/* ── Summary tiles ───────────────────────────────────────────────────────── */
+.hr-root .hr-summary-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.hr-root .hr-summary-tile {
+  --hr-summary-tone: var(--accent);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--hr-summary-tone) 24%, var(--hz-pane-bd));
+  border-radius: var(--hr-r-md);
+  background:
+    radial-gradient(
+      circle at 100% 100%,
+      color-mix(in srgb, var(--hr-summary-tone) 14%, transparent),
+      transparent 56%
+    ),
+    var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+
+.hr-root .hr-summary-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--hr-summary-tone) 92%, white),
+    var(--hr-summary-tone)
+  );
+}
+
+.hr-root .hr-summary-icon {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--hr-summary-tone) 34%, transparent);
+  border-radius: 12px;
+  color: var(--hr-summary-tone);
+  background: color-mix(in srgb, var(--hr-summary-tone) 12%, transparent);
+}
+
+.hr-root .hr-summary-copy {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+.hr-root .hr-summary-label {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.hr-root .hr-summary-copy strong {
+  color: var(--text-primary);
+  font-size: 25px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-root .hr-summary-copy small {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* ── One full-page loader ────────────────────────────────────────────────── */
+.hr-root .hr-page-loader {
+  min-height: 230px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 34px;
+  text-align: center;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--hr-r-lg);
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 44%
+    ),
+    var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+
+.hr-root .hr-page-loader-mark {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hz-pane-bd));
+  border-radius: 16px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 10px 30px -14px var(--accent-glow);
+}
+
+.hr-root .hr-page-loader-mark span {
+  width: 4px;
+  height: 18px;
+  border-radius: 99px;
+  background: currentColor;
+  animation: hrLoaderPulse 1s ease-in-out infinite;
+}
+
+.hr-root .hr-page-loader-mark span:nth-child(2) {
+  height: 28px;
+  animation-delay: 120ms;
+}
+
+.hr-root .hr-page-loader-mark span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.hr-root .hr-page-loader strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.hr-root .hr-page-loader small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@keyframes hrLoaderPulse {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scaleY(0.65);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/* Attendance's existing summary now reads as a real set of KPIs, consistent with other tabs. */
+.hr-root .hr-att-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px;
+  background: var(--hz-pane);
+}
+
+.hr-root .hr-att-totals > div:not(.hr-att-totals-shift) {
+  min-height: 74px;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-raised) 68%, transparent);
+}
+
+.hr-root .hr-att-totals strong {
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-root .hr-att-totals span {
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+
+.hr-root .hr-att-totals-shift {
+  grid-column: 1 / -1;
+  margin-left: 0;
+  padding: 7px 4px 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-page-loader-mark span {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .hr-root .hr-summary-tiles {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Light mode — quieter surfaces across every HR tab ─────────────────────
+   Theme light was leaving hard white cards, slate hairlines and hot accent
+   washes that felt sharp. Soften the ground, borders, and card fills so HR
+   reads as one calm workspace in both themes. */
+[data-theme='light'] [data-mytrion='hr'] {
+  --hz-page: #eef1f6;
+  --hz-pane: linear-gradient(
+    150deg,
+    color-mix(in srgb, #ffffff 94%, #e8edf5 6%) 0%,
+    color-mix(in srgb, #f7f9fc 92%, #e4eaf3 8%) 100%
+  );
+  --hz-pane-lift: linear-gradient(
+    150deg,
+    #ffffff 0%,
+    color-mix(in srgb, #f8fafc 90%, #eef2f8 10%) 100%
+  );
+  --hz-pane-alt: color-mix(in srgb, #f3f6fb 88%, #dfe6f1 12%);
+  --hz-pane-bd: rgba(70, 86, 112, 0.1);
+  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --hz-shadow-rest: 0 1px 2px rgba(40, 54, 78, 0.04);
+  --hz-shadow-lift: 0 10px 28px -16px rgba(40, 54, 78, 0.1);
+  --border: rgba(70, 86, 112, 0.1);
+  --border-light: rgba(70, 86, 112, 0.07);
+  --surface: #fbfcfe;
+  --surface-alt: #f1f4f9;
+  --surface-raised: rgba(40, 54, 78, 0.03);
+  --bg-primary: #eef1f6;
+  --bg-secondary: #e6ebf3;
+  --text-muted: #6b7382;
+}
+
+[data-theme='light'] .hr-root .hr-summary-tile,
+[data-theme='light'] .hr-root .hr-empc,
+[data-theme='light'] .hr-root .hr-deptc,
+[data-theme='light'] .hr-root .hr-settings-card,
+[data-theme='light'] .hr-root .hr-att-person,
+[data-theme='light'] .hr-root .hr-att-detail,
+[data-theme='light'] .hr-root .hr-att-day,
+[data-theme='light'] .hr-root .hr-modal,
+[data-theme='light'] .hr-root .hr-leave-policy-main,
+[data-theme='light'] .hr-root .hr-leave-escalation,
+[data-theme='light'] .hr-root .hr-holiday-settings,
+[data-theme='light'] .hr-root .hr-leave-default,
+[data-theme='light'] .hr-root .hr-onode {
+  border-color: rgba(70, 86, 112, 0.1);
+  box-shadow: 0 1px 2px rgba(40, 54, 78, 0.035);
+}
+
+[data-theme='light'] .hr-root .hr-summary-tile {
+  background:
+    radial-gradient(
+      circle at 100% 100%,
+      color-mix(in srgb, var(--hr-summary-tone) 8%, transparent),
+      transparent 58%
+    ),
+    var(--hz-pane);
+}
+
+[data-theme='light'] .hr-root .hr-empc:hover,
+[data-theme='light'] .hr-root .hr-deptc:hover,
+[data-theme='light'] .hr-root .hr-att-person:hover,
+[data-theme='light'] .hr-root .hr-onode:hover {
+  border-color: color-mix(in srgb, var(--accent) 28%, rgba(70, 86, 112, 0.12));
+  box-shadow: 0 8px 22px -14px rgba(40, 54, 78, 0.12);
+}
+
+[data-theme='light'] .hr-root .hr-btn,
+[data-theme='light'] .hr-root .hr-chip,
+[data-theme='light'] .hr-root .hr-select,
+[data-theme='light'] .hr-root .hr-search,
+[data-theme='light'] .hr-root .hr-att-search,
+[data-theme='light'] .hr-root .hr-settings-form-grid input,
+[data-theme='light'] .hr-root .hr-settings-form-grid select,
+[data-theme='light'] .hr-root .hr-leave-setting-field select,
+[data-theme='light'] .hr-root .hr-leave-default input,
+[data-theme='light'] .hr-root .hr-holiday-create,
+[data-theme='light'] .hr-root .hr-holiday-create input,
+[data-theme='light'] .hr-root .hr-holiday-create select {
+  border-color: rgba(70, 86, 112, 0.12);
+  background: color-mix(in srgb, #ffffff 88%, #eef2f8 12%);
+}
+
+[data-theme='light'] .hr-root .hr-settings-panes,
+[data-theme='light'] .hr-root .hr-att-panes {
+  background: rgba(70, 86, 112, 0.06);
+}
+
+[data-theme='light'] .hr-root .hr-ocanvas,
+[data-theme='light'] .hr-root .hr-ocanvas-flow {
+  background: #e8edf5;
+}
+
+[data-theme='light'] .hr-root .react-flow__minimap {
+  background: color-mix(in srgb, #ffffff 80%, #e8edf5 20%);
+}

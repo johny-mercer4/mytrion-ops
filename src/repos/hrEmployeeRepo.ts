@@ -203,6 +203,24 @@ export const hrEmployeeRepo = {
     return firstOrUndefined(rows);
   },
 
+  /** Remove a manually or automatically resolved CRM login from an employee. */
+  async clearZohoUserLink(
+    ctx: TenantContext,
+    employeeId: string,
+  ): Promise<HrEmployeeRow | undefined> {
+    const rows = await db
+      .update(hrEmployees)
+      .set({
+        zohoUserId: null,
+        zohoUserIdSource: null,
+        zohoUserLinkedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, employeeId)))
+      .returning(EMPLOYEE_COLUMNS);
+    return firstOrUndefined(rows);
+  },
+
   /**
    * The employee a signed-in Zoho CRM user IS — the entry point for HR RBAC.
    *
@@ -222,16 +240,39 @@ export const hrEmployeeRepo = {
     return firstOrUndefined(rows);
   },
 
-  /** Biometric / Hikvision Face ID → employee (exact trim match). */
+  /**
+   * Biometric / Hikvision Face ID → employee.
+   *
+   * Readers sometimes send an eight-character zero-padded code while HR stores the same numeric
+   * Face ID without padding. Numeric ids therefore compare after leading-zero normalization;
+   * non-numeric ids remain exact (case-insensitive). More than one match fails closed rather than
+   * attaching a punch to the wrong person.
+   */
   async findByFaceId(ctx: TenantContext, faceId: string): Promise<HrEmployeeRow | undefined> {
     const id = faceId.trim();
     if (!id) return undefined;
+    const normalized = sql<string>`
+      case
+        when btrim(${hrEmployees.faceId}) ~ '^[0-9]+$'
+          then coalesce(nullif(ltrim(btrim(${hrEmployees.faceId}), '0'), ''), '0')
+        else lower(btrim(${hrEmployees.faceId}))
+      end
+    `;
+    const inputNormalized = /^[0-9]+$/.test(id)
+      ? id.replace(/^0+/, '') || '0'
+      : id.toLocaleLowerCase('en-US');
     const rows = await db
       .select(EMPLOYEE_COLUMNS)
       .from(hrEmployees)
-      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.faceId, id)))
-      .limit(1);
-    return firstOrUndefined(rows);
+      .where(
+        and(
+          eq(hrEmployees.tenantId, ctx.tenantId),
+          sql`${hrEmployees.faceId} is not null`,
+          sql`${normalized} = ${inputNormalized}`,
+        ),
+      )
+      .limit(2);
+    return rows.length === 1 ? rows[0] : undefined;
   },
 
   /** Direct reports — people whose manager FK points at `managerEmployeeId`. */

@@ -1,23 +1,25 @@
 /**
- * The "caveman gate" — zero-token pre-filter, MENTION-ONLY mode (operator decision):
- * the bot engages ONLY when a REGISTERED user (checked separately in access.ts)
- *   1. @mentions the bot,
- *   2. replies to one of the bot's messages, or
- *   3. is inside the follow-up window (bot just engaged them — so "ha"/"yes" confirms
- *      work without re-tagging).
- * Everything else — service keywords included — never reaches the model. Clients are taught
- * one habit: tag the bot when you want it.
+ * Telegram transport state only. Semantic intent belongs to aiRouter.ts.
+ *
+ * Static checks are intentionally limited to facts Telegram can verify: a bot mention,
+ * a reply to the bot, or an already-active per-user conversation.
  */
 import type { TgMessage } from './telegram.js';
 
-/** chatId → (userId → last time the BOT engaged with them, ms). Follow-up window. */
+export type EngagementReason = 'mention' | 'reply' | 'followup';
+
 const engagedAt = new Map<number, Map<number, number>>();
-const FOLLOWUP_MS = 3 * 60_000;
+const FOLLOWUP_MS = 10 * 60_000;
 
 export function noteEngaged(chatId: number, userId: number): void {
-  let m = engagedAt.get(chatId);
-  if (!m) engagedAt.set(chatId, (m = new Map()));
-  m.set(userId, Date.now());
+  let users = engagedAt.get(chatId);
+  if (!users) engagedAt.set(chatId, (users = new Map()));
+  users.set(userId, Date.now());
+}
+
+export function isConversationActive(chatId: number, userId: number): boolean {
+  const engaged = engagedAt.get(chatId)?.get(userId);
+  return engaged !== undefined && Date.now() - engaged <= FOLLOWUP_MS;
 }
 
 setInterval(() => {
@@ -30,11 +32,32 @@ setInterval(() => {
   }
 }, FOLLOWUP_MS).unref();
 
-export function shouldEngage(m: TgMessage, botUsername: string): boolean {
-  const text = (m.text ?? m.caption ?? '').trim();
-  if (botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`)) return true;
-  if (m.reply_to_message?.from?.username?.toLowerCase() === botUsername.toLowerCase()) return true;
-  const ts = engagedAt.get(m.chat.id)?.get(m.from?.id ?? 0);
-  if (ts != null && Date.now() - ts <= FOLLOWUP_MS) return true;
-  return false;
+export function engagementReason(
+  message: TgMessage,
+  botUsername: string,
+): EngagementReason | null {
+  const text = (message.text ?? message.caption ?? '').trim();
+  if (
+    botUsername &&
+    text.toLocaleLowerCase().includes(`@${botUsername.toLocaleLowerCase()}`)
+  ) {
+    return 'mention';
+  }
+  if (
+    botUsername &&
+    message.reply_to_message?.from?.username?.toLocaleLowerCase() ===
+      botUsername.toLocaleLowerCase()
+  ) {
+    return 'reply';
+  }
+  return isConversationActive(message.chat.id, message.from?.id ?? 0)
+    ? 'followup'
+    : null;
+}
+
+export function shouldEngage(
+  message: TgMessage,
+  botUsername: string,
+): boolean {
+  return engagementReason(message, botUsername) !== null;
 }

@@ -9,6 +9,7 @@ import {
   vi,
 } from 'vitest';
 import { errorHandlerPlugin } from '../../src/plugins/errorHandler.js';
+import { AppError } from '../../src/lib/errors.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
 const mocks = vi.hoisted(() => ({
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   listEnabledChats: vi.fn(),
   setChat: vi.fn(),
   autoBindChat: vi.fn(),
+  resolveCaller: vi.fn(),
+  recallMemory: vi.fn(),
+  commitMemory: vi.fn(),
+  searchKnowledge: vi.fn(),
 }));
 
 vi.mock('../../src/modules/audit/auditLogger.js', () => ({
@@ -27,6 +32,23 @@ vi.mock('../../src/modules/audit/auditLogger.js', () => ({
 }));
 vi.mock('../../src/modules/carrier/supportBotDmAccess.js', () => ({
   resolveSupportBotDmAccess: mocks.dmAccess,
+}));
+vi.mock('../../src/modules/carrier/supportBotCaller.js', async () => {
+  const { z } = await import('zod');
+  return {
+    supportBotCallerSchema: z.object({
+      telegramUserId: z.string().min(1).max(40),
+      carrierId: z.string().min(1).max(40),
+    }),
+    resolveSupportBotCaller: mocks.resolveCaller,
+  };
+});
+vi.mock('../../src/modules/carrier/supportBotMemory.js', () => ({
+  recallSupportBotMemory: mocks.recallMemory,
+  commitSupportBotMemory: mocks.commitMemory,
+}));
+vi.mock('../../src/modules/carrier/supportBotKnowledge.js', () => ({
+  searchSupportBotKnowledge: mocks.searchKnowledge,
 }));
 vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
   registeredMiniAppCompanyRepo: {
@@ -59,6 +81,7 @@ vi.mock('../../src/routes/v1/helpers.js', () => ({
 }));
 
 import { supportBotGatewayRoutes } from '../../src/routes/v1/supportBotGateway.routes.js';
+import { env } from '../../src/config/env.js';
 
 async function app() {
   const instance = Fastify({ logger: false });
@@ -95,6 +118,10 @@ describe('support-bot gateway routes tenant isolation', () => {
           : [],
     );
     mocks.listActiveByCarrier.mockResolvedValue([]);
+    mocks.resolveCaller.mockResolvedValue({ registration: {}, role: 'owner' });
+    mocks.recallMemory.mockResolvedValue([]);
+    mocks.commitMemory.mockResolvedValue(true);
+    mocks.searchKnowledge.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -185,5 +212,125 @@ describe('support-bot gateway routes tenant isolation', () => {
       'http://localhost:8787/api/metrics?token=secret&since=2026-07-28T00%3A00%3A00.000Z',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it('recalls memory with authenticated tenant plus carrier/chat/user scope', async () => {
+    const previous = env.FF_SUPPORT_BOT_MEMORY;
+    env.FF_SUPPORT_BOT_MEMORY = true;
+    try {
+      mocks.recallMemory.mockResolvedValue([
+        { content: 'prior issue', score: 0.9, createdAt: new Date() },
+      ]);
+      const server = await app();
+      const response = await server.inject({
+        method: 'POST',
+        url: '/support-bot/memory/recall',
+        payload: {
+          carrierId: 'carrier-a',
+          chatId: '-1001',
+          telegramUserId: '9001',
+          query: 'that issue',
+        },
+      });
+      await server.close();
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.resolveCaller).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+        'carrier-a',
+        '9001',
+      );
+      expect(mocks.recallMemory).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+        {
+          carrierId: 'carrier-a',
+          chatId: '-1001',
+          telegramUserId: '9001',
+        },
+        'that issue',
+        undefined,
+      );
+    } finally {
+      env.FF_SUPPORT_BOT_MEMORY = previous;
+    }
+  });
+
+  it('searches knowledge with authenticated tenant and exact carrier scope', async () => {
+    mocks.searchKnowledge.mockResolvedValue([
+      {
+        id: 'kb-a',
+        slug: 'report-help',
+        title: 'Report help',
+        content: 'Use the report tool.',
+        translations: {},
+        serviceId: 'transactions',
+        knowledgeType: 'tool_pointer',
+        riskClass: 'read',
+        source: 'test',
+        version: 1,
+        score: 0.9,
+      },
+    ]);
+    const server = await app();
+    const response = await server.inject({
+      method: 'POST',
+      url: '/support-bot/knowledge/search',
+      payload: {
+        carrierId: 'carrier-a',
+        query: 'report qanday olaman',
+        enabledServices: ['knowledge', 'transactions'],
+        limit: 3,
+      },
+    });
+    await server.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(mocks.searchKnowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      {
+        carrierId: 'carrier-a',
+        enabledServices: ['knowledge', 'transactions'],
+      },
+      'report qanday olaman',
+      3,
+    );
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      expect.objectContaining({
+        action: 'support_bot.knowledge.search',
+        resourceId: 'carrier-a',
+      }),
+    );
+  });
+
+  it('does not query another user memory when caller verification fails', async () => {
+    const previous = env.FF_SUPPORT_BOT_MEMORY;
+    env.FF_SUPPORT_BOT_MEMORY = true;
+    mocks.resolveCaller.mockRejectedValue(
+      new AppError('carrier/user mismatch', {
+        statusCode: 403,
+        code: 'SUPPORT_BOT_CARRIER_MISMATCH',
+        expose: true,
+      }),
+    );
+    try {
+      const server = await app();
+      const response = await server.inject({
+        method: 'POST',
+        url: '/support-bot/memory/recall',
+        payload: {
+          carrierId: 'carrier-a',
+          chatId: '-1001',
+          telegramUserId: 'user-b',
+          query: 'user A history',
+        },
+      });
+      await server.close();
+
+      expect(response.statusCode).toBe(403);
+      expect(mocks.recallMemory).not.toHaveBeenCalled();
+    } finally {
+      env.FF_SUPPORT_BOT_MEMORY = previous;
+    }
   });
 });

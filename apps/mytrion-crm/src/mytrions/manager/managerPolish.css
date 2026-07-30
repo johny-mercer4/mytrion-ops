@@ -1,0 +1,178 @@
+/*
+ * Manager-wide finish layer. It intentionally comes last so Overview, department desks, Referrals,
+ * Loyalty, the shared sidebar, and portal modals use one restrained surface system in both themes.
+ */
+[data-mytrion='manager'] {
+  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --font-head: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'Space Grotesk', system-ui, sans-serif;
+  --mg-border: color-mix(in srgb, var(--border) 92%, transparent);
+  --mg-border-strong: color-mix(in srgb, var(--text-muted) 25%, var(--border));
+  --hz-page: #090d18;
+  --hz-mesh:
+    radial-gradient(ellipse 70% 45% at 10% 0%, rgba(56, 189, 248, 0.07), transparent 62%),
+    radial-gradient(ellipse 54% 44% at 92% 8%, rgba(167, 139, 250, 0.045), transparent 58%),
+    radial-gradient(ellipse 60% 58% at 50% 108%, rgba(56, 189, 248, 0.035), transparent 62%);
+  --hz-grid:
+    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  --hz-vignette: radial-gradient(
+    ellipse 125% 125% at 50% 48%,
+    transparent 42%,
+    rgba(3, 6, 14, 0.55) 100%
+  );
+  --hz-pane: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 90%, transparent),
+    color-mix(in srgb, var(--surface-alt) 76%, transparent)
+  );
+  --hz-pane-lift: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 96%, transparent),
+    color-mix(in srgb, var(--surface-alt) 84%, transparent)
+  );
+  --hz-pane-bd: var(--mg-border);
+  font-family: var(--font-body);
+}
+
+[data-theme='light'] [data-mytrion='manager'] {
+  --hz-page: #eef1f6;
+  --hz-mesh:
+    radial-gradient(ellipse 72% 48% at 8% 0%, rgba(51, 104, 145, 0.045), transparent 64%),
+    radial-gradient(ellipse 52% 42% at 92% 8%, rgba(114, 91, 150, 0.025), transparent 60%);
+  --hz-grid:
+    linear-gradient(rgba(71, 85, 105, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.03) 1px, transparent 1px);
+  --hz-vignette: radial-gradient(
+    ellipse 125% 125% at 50% 50%,
+    transparent 52%,
+    rgba(183, 191, 207, 0.2) 100%
+  );
+  --hz-pane: linear-gradient(150deg, rgba(255, 255, 255, 0.82), rgba(245, 247, 251, 0.74));
+  --hz-pane-lift: linear-gradient(150deg, rgba(255, 255, 255, 0.94), rgba(247, 248, 251, 0.9));
+  --hz-pane-alt: rgba(237, 240, 246, 0.78);
+  --mg-border: rgba(43, 55, 74, 0.12);
+  --mg-border-strong: rgba(43, 55, 74, 0.2);
+  --hz-pane-bd: var(--mg-border);
+  --hz-shadow-rest: 0 1px 2px rgba(30, 41, 59, 0.035);
+  --hz-shadow-lift: 0 12px 30px -18px rgba(30, 41, 59, 0.24);
+}
+
+[data-mytrion='manager'] :is(button, input, textarea, select, option) {
+  font-family: var(--font-body);
+}
+
+/* Calm surfaces: colour communicates status in the icon, badge, and rule—not across the whole card. */
+.mg-root .mg-lty .is-enterprise,
+.mg-root .mg-lty .is-gold,
+.mg-root .mg-lty .is-silver,
+.mg-root .mg-lty .is-bronze {
+  --tint: 7%;
+  --sheen: transparent;
+}
+.mg-root .mg-lty .is-building {
+  --tint: 5%;
+}
+.mg-root .mg-lty .is-idle {
+  --tint: 2%;
+}
+
+.mg-root .mg-lty-c {
+  width: 100%;
+  appearance: none;
+  border-color: var(--hz-pane-bd);
+  color: var(--text-primary);
+  text-align: left;
+  font-family: var(--font-body);
+  cursor: pointer;
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-c:hover {
+  border-color: color-mix(in srgb, var(--t) 30%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-c.is-gold {
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-c.is-gold:hover {
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-tile {
+  border-color: var(--hz-pane-bd);
+}
+.mg-root .mg-lty-tile:hover {
+  border-color: color-mix(in srgb, var(--t) 30%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-tile[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--t) 42%, var(--hz-pane-bd));
+  box-shadow:
+    inset 3px 0 0 var(--t),
+    var(--hz-glass-inset);
+}
+.mg-root .mg-lty-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.mg-root .mg-lty-c:hover .mg-lty-manage {
+  color: var(--tt);
+}
+
+.mg-root .mg-rf-card {
+  border-color: var(--hz-pane-bd);
+  background: var(--hz-pane);
+}
+.mg-root .mg-rf-card:hover {
+  border-color: color-mix(in srgb, var(--rf-tone) 28%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+}
+.mg-root .mg-rf-card-glow,
+.mg-root .mg-rf-kpis > div::after {
+  opacity: 0.42;
+}
+.mg-root .mg-rf-card-icon,
+.mg-root .mg-rf-avatar,
+.mg-root .mg-rf-modal-avatar {
+  border-color: color-mix(in srgb, var(--rf-tone) 18%, var(--hz-pane-bd));
+}
+
+[data-theme='light'] .mg-root .mg-rf-page,
+[data-theme='light'] .mg-root.mg-rf-modal-scope {
+  --rf-cyan: #267d8a;
+  --rf-violet: #6f62a8;
+  --rf-amber: #9b6a25;
+  --rf-emerald: #26795d;
+}
+[data-theme='light'] .mg-root .mg-lty {
+  --lty-enterprise: #47788f;
+  --lty-enterprise-text: #315f75;
+  --lty-gold: #a87a2f;
+  --lty-gold-text: #79561e;
+  --lty-silver: #7b8797;
+  --lty-silver-text: #515d6d;
+  --lty-bronze: #9a6842;
+  --lty-bronze-text: #704827;
+  --lty-building: #a76635;
+  --lty-building-text: #7e4720;
+  --lty-idle: #8a9099;
+  --lty-idle-text: #626873;
+}
+
+/* Modals remain clearly elevated without neon borders or multiple outline effects. */
+.mg-root .mg-rf-modal {
+  border-color: var(--mg-border-strong);
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg-primary));
+  box-shadow: var(--hz-shadow-pop);
+}
+.mg-root .mg-rf-calculation-hero,
+.mg-root .mg-rf-breakdown,
+.mg-root .mg-rf-related-record,
+.mg-root .mg-rf-crm-panel {
+  border-color: var(--hz-pane-bd);
+}

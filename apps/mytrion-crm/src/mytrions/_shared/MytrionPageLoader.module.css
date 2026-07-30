@@ -1,0 +1,79 @@
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scaleY(0.65);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.loader {
+  min-height: 250px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 36px;
+  text-align: center;
+  border: 1px solid var(--hz-pane-bd, var(--border));
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 44%
+    ),
+    var(--hz-pane, var(--surface));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+
+.mark {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hz-pane-bd, var(--border)));
+  border-radius: 16px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 10px 30px -14px var(--accent-glow);
+}
+
+.mark span {
+  width: 4px;
+  height: 18px;
+  border-radius: 99px;
+  background: currentColor;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.mark span:nth-child(2) {
+  height: 28px;
+  animation-delay: 120ms;
+}
+
+.mark span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.loader strong {
+  color: var(--text-primary);
+  font: 650 15px/1.35 var(--font-body);
+}
+
+.loader small {
+  color: var(--text-muted);
+  font: 400 12.5px/1.4 var(--font-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark span {
+    animation: none;
+  }
+}

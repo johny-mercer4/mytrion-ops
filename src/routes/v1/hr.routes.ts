@@ -8,11 +8,13 @@
 import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
+import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { syncHrEmployeesFromZoho } from '../../modules/hr/hrEmployeeSync.js';
 import { buildHrOrgStructure } from '../../modules/hr/hrOrgStructure.js';
 import { departmentWouldCycle, employeeWouldCycle } from '../../modules/hr/orgReparent.js';
 import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
+import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -62,6 +64,9 @@ function toDto(row: HrEmployeeRow) {
     reportingToZohoId: row.reportingToZohoId,
     reportingToEmployeeId: row.reportingToEmployeeId,
     photoUrl: row.photoUrl,
+    zohoUserId: row.zohoUserId,
+    zohoUserIdSource: row.zohoUserIdSource,
+    zohoUserLinkedAt: row.zohoUserLinkedAt?.toISOString() ?? null,
     canvasX: row.canvasX,
     canvasY: row.canvasY,
     source: row.source,
@@ -323,6 +328,9 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
         ? { reportingToEmployeeId: body.reportingToEmployeeId }
         : {}),
     });
+    if (row.faceId) {
+      await hrAttendancePunchRepo.linkUnmappedForEmployee(ctx, row.id, row.faceId);
+    }
     await auditFromContext(ctx, {
       action: 'hr.employee.create',
       status: 'ok',
@@ -364,6 +372,52 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
     return toDto(row);
   });
 
+  /** Active Zoho CRM identities available for a deliberate employee link. */
+  app.get('/hr/zoho-users', auth, async (request) => {
+    requireHrAdmin(request);
+    const users = await zohoCrm.listActiveUsers();
+    return {
+      items: users.map((user) => ({
+        id: user.zohoUserId,
+        name: user.name,
+        email: user.email,
+        profile: user.profile,
+        role: user.role,
+      })),
+    };
+  });
+
+  app.patch<{ Params: { id: string } }>(
+    '/hr/employees/:id/zoho-user',
+    auth,
+    async (request) => {
+      const ctx = requireHrAdmin(request);
+      const body = z.object({ zohoUserId: z.string().max(120).nullable() }).parse(request.body);
+      let row: HrEmployeeRow | undefined;
+      if (body.zohoUserId) {
+        const crmUser = await zohoCrm.getUserById(body.zohoUserId);
+        if (!crmUser) throw new NotFoundError('Active Zoho user not found');
+        row = await hrEmployeeRepo.setZohoUserLink(
+          ctx,
+          request.params.id,
+          crmUser.zohoUserId,
+          'manual',
+        );
+      } else {
+        row = await hrEmployeeRepo.clearZohoUserLink(ctx, request.params.id);
+      }
+      if (!row) throw new NotFoundError('Employee not found');
+      await auditFromContext(ctx, {
+        action: body.zohoUserId ? 'hr.employee.zoho_user.link' : 'hr.employee.zoho_user.unlink',
+        status: 'ok',
+        resourceType: 'hr_employee',
+        resourceId: row.id,
+        detail: { zohoUserId: body.zohoUserId },
+      });
+      return toDto(row);
+    },
+  );
+
   app.patch<{ Params: { id: string } }>('/hr/employees/:id', auth, async (request) => {
     const ctx = requireHrAdmin(request);
     const body = patchBody.parse(request.body);
@@ -403,6 +457,9 @@ export async function hrRoutes(app: FastifyInstance): Promise<void> {
     }
     const row = await hrEmployeeRepo.update(ctx, request.params.id, patch);
     if (!row) throw new NotFoundError('Employee not found');
+    if (body.faceId !== undefined && row.faceId) {
+      await hrAttendancePunchRepo.linkUnmappedForEmployee(ctx, row.id, row.faceId);
+    }
     await auditFromContext(ctx, {
       action: 'hr.employee.update',
       status: 'ok',

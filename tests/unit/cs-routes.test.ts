@@ -154,8 +154,8 @@ function csCtx(overrides: Partial<TenantContext> = {}): TenantContext {
 }
 
 describe('cs touchpoint catalog', () => {
-  it('registers the four cs.* entries, all customer-service scoped reads', () => {
-    const keys = ['cs.home.metrics', 'cs.applications.list', 'cs.analytics.maintenance', 'cs.datacenter.deals'];
+  it('registers the three cs.* entries, all customer-service scoped reads', () => {
+    const keys = ['cs.home.metrics', 'cs.applications.list', 'cs.datacenter.deals'];
     for (const key of keys) {
       const tp = getTouchpoint(key);
       expect(tp, key).toBeDefined();
@@ -163,6 +163,21 @@ describe('cs touchpoint catalog', () => {
       expect(tp?.riskClass).toBe('read');
     }
     expect(listTouchpoints().filter((t) => t.key.startsWith('cs.'))).toHaveLength(keys.length);
+  });
+
+  it('no longer exposes ANY Maintenance touchpoint — that data lives in our own table', () => {
+    // `cs.analytics.maintenance` (mytrionGetMaintenanceAnalytics) and `maintenance.create`
+    // (createmaintenance) were removed once maintenance_cases became the source of truth. The
+    // dispatcher executes any catalog entry, so leaving either in place meant a caller or an agent
+    // could still read stale Zoho figures — or, worse, WRITE a case Mytrion cannot see.
+    expect(getTouchpoint('cs.analytics.maintenance')).toBeUndefined();
+    expect(getTouchpoint('maintenance.create')).toBeUndefined();
+    // `functionNames` only exists on the 'deluge' variant of the Touchpoint union, so narrow on kind
+    // before reaching for it.
+    const viaDeluge = listTouchpoints().flatMap((t) =>
+      t.kind === 'deluge' && t.functionNames.some((f) => /maintenance/i.test(f)) ? [t.key] : [],
+    );
+    expect(viaDeluge, 'no touchpoint may call a Maintenance Deluge').toEqual([]);
   });
 
   it('dispatcher gate: customer-service dept passes, sales dept is refused, admin passes', () => {

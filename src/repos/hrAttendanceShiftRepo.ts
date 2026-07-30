@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   hrAttendanceShiftAssignments,
@@ -19,6 +19,10 @@ export interface ShiftWriteInput {
   endLocal: string;
   isActive?: boolean;
 }
+
+export type AttendanceAssignmentWithShift = HrAttendanceShiftAssignment & {
+  shift: HrAttendanceShift;
+};
 
 const SHIFT_COLS = {
   id: hrAttendanceShifts.id,
@@ -130,7 +134,22 @@ export const hrAttendanceShiftRepo = {
       effectiveFrom: input.effectiveFrom,
       effectiveTo: input.effectiveTo?.trim() || null,
     };
-    const rows = await db.insert(hrAttendanceShiftAssignments).values(row).returning();
+    const rows = await db
+      .insert(hrAttendanceShiftAssignments)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [
+          hrAttendanceShiftAssignments.tenantId,
+          hrAttendanceShiftAssignments.employeeId,
+          hrAttendanceShiftAssignments.effectiveFrom,
+        ],
+        set: {
+          shiftId: input.shiftId,
+          effectiveTo: input.effectiveTo?.trim() || null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return firstOrThrow(rows, 'hr_attendance_shift_assignments insert returned no row');
   },
 
@@ -165,10 +184,10 @@ export const hrAttendanceShiftRepo = {
           eq(hrAttendanceShiftAssignments.tenantId, ctx.tenantId),
           eq(hrAttendanceShiftAssignments.employeeId, employeeId),
           lte(hrAttendanceShiftAssignments.effectiveFrom, workDate),
-          or(
-            isNull(hrAttendanceShiftAssignments.effectiveTo),
-            sql`${hrAttendanceShiftAssignments.effectiveTo} >= ${workDate}`,
-          )!,
+          sql`(
+            ${hrAttendanceShiftAssignments.effectiveTo} is null
+            or ${hrAttendanceShiftAssignments.effectiveTo} >= ${workDate}
+          )`,
           eq(hrAttendanceShifts.isActive, true),
         ),
       )
@@ -187,6 +206,66 @@ export const hrAttendanceShiftRepo = {
       updatedAt: hit.updatedAt,
       shift: hit.shift,
     };
+  },
+
+  /** One active assignment per employee on a UZB calendar date, fetched in a single query. */
+  async assignmentsForEmployeesDate(
+    ctx: TenantContext,
+    employeeIds: string[],
+    workDate: string,
+  ): Promise<Map<string, AttendanceAssignmentWithShift>> {
+    if (employeeIds.length === 0) return new Map();
+    const rows = await db
+      .selectDistinctOn([hrAttendanceShiftAssignments.employeeId], {
+        id: hrAttendanceShiftAssignments.id,
+        tenantId: hrAttendanceShiftAssignments.tenantId,
+        employeeId: hrAttendanceShiftAssignments.employeeId,
+        shiftId: hrAttendanceShiftAssignments.shiftId,
+        effectiveFrom: hrAttendanceShiftAssignments.effectiveFrom,
+        effectiveTo: hrAttendanceShiftAssignments.effectiveTo,
+        createdAt: hrAttendanceShiftAssignments.createdAt,
+        updatedAt: hrAttendanceShiftAssignments.updatedAt,
+        shift: SHIFT_COLS,
+      })
+      .from(hrAttendanceShiftAssignments)
+      .innerJoin(
+        hrAttendanceShifts,
+        and(
+          eq(hrAttendanceShifts.id, hrAttendanceShiftAssignments.shiftId),
+          eq(hrAttendanceShifts.tenantId, ctx.tenantId),
+        ),
+      )
+      .where(
+        and(
+          eq(hrAttendanceShiftAssignments.tenantId, ctx.tenantId),
+          inArray(hrAttendanceShiftAssignments.employeeId, employeeIds),
+          lte(hrAttendanceShiftAssignments.effectiveFrom, workDate),
+          sql`(
+            ${hrAttendanceShiftAssignments.effectiveTo} is null
+            or ${hrAttendanceShiftAssignments.effectiveTo} >= ${workDate}
+          )`,
+          eq(hrAttendanceShifts.isActive, true),
+        ),
+      )
+      .orderBy(
+        hrAttendanceShiftAssignments.employeeId,
+        desc(hrAttendanceShiftAssignments.effectiveFrom),
+      );
+    const byEmployee = new Map<string, AttendanceAssignmentWithShift>();
+    for (const row of rows) {
+      byEmployee.set(row.employeeId, {
+        id: row.id,
+        tenantId: row.tenantId,
+        employeeId: row.employeeId,
+        shiftId: row.shiftId,
+        effectiveFrom: row.effectiveFrom,
+        effectiveTo: row.effectiveTo,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        shift: row.shift,
+      });
+    }
+    return byEmployee;
   },
 
   async listAssignmentsForShift(
