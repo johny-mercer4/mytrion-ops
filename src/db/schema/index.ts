@@ -53,3 +53,4 @@ export * from './hr_holidays.js';
 export * from './hr_leave_settings.js';
 export * from './hr_leave_requests.js';
 export * from './hr_leave_request_actions.js';
+export * from './maintenance_cases.js';
