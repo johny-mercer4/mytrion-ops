@@ -8713,3 +8713,166 @@ web typechecks pass; lint has 0 errors / 25 pre-existing warnings; all web tests
 invoice route tests pass (17/17); catalog shape test passes. The full backend run remains at 38
 failures across 12 unrelated suites (including sandbox-blocked localhost/Postgres tests and stale
 session/tool-count expectations); none are in the new invoice suite.
+
+## 2026-07-30 — Historical Telegram support analytics and KB candidates
+
+Analyzed the 10 local Telegram export directories under `/Users/jamshid/Projects/Octane/Analitika`
+without sending chat content to an external model. One byte-identical duplicate export was
+excluded, leaving 9 unique tenant histories with 54,433 messages from 2024-10-24 through
+2026-07-20. The reproducible local analyzer redacts identifiers, infers staff/client roles,
+classifies multilingual intents, measures response latency and first-response disposition, and
+creates anonymized tenant summaries.
+
+Generated privacy-reviewed candidate artifacts outside the repository: the analytics report,
+curated knowledge candidates, historical intent lexicon, current gateway coverage-gap matrix,
+105 redacted candidate eval prompts, and 14 exact-tool golden eval seeds. Historical replies were
+not ingested into the production KB because station networks, discounts, EFS behavior, limits, and
+tenant-specific rules require owner validation. The highest-value gaps are report scope/pricing
+dimensions, maintenance/work-order workflows, disabled Money/EFS negative paths, structured
+image extraction, and avoiding greeting/progress-only pseudo-resolutions.
+
+Verification: all four JSONL outputs parse successfully; the analyzer completed in under one
+second on the local exports. No application runtime code was changed, so application lint,
+typecheck, tests, and live eval were not rerun.
+
+## 2026-07-30 — Tenant/carrier-scoped support KB hybrid retrieval
+
+Replaced the OpenAI gateway's normal in-process keyword-only knowledge path with a dedicated
+backend `support_bot_knowledge_articles` store. Migration `0079_support_bot_knowledge.sql` creates
+an isolated pgvector + simple-dictionary full-text table; it is separate from generic Mytrion
+knowledge and per-user memory. Both retrieval legs enforce authenticated tenant, tenant-global or
+exact carrier, published/effective/unexpired content, and enabled service IDs inside the repo.
+Carrier overlays replace same-slug global articles during RRF fusion.
+
+The gateway now calls `/v1/support-bot/knowledge/search` with a closure-bound carrier and the
+deployment service set, uses a 5-minute/500-entry cache plus single-flight, and retains the bundled
+corpus only for migration/backend failure. Empty authoritative DB results do not silently restore
+legacy facts. Disabled Money Code articles are filtered from the fallback as well as DB retrieval.
+Every backend knowledge search is audited without logging raw query text.
+
+Added an idempotent seed command and a real-DB smoke command. The seed batches embeddings, omits
+Money Code unless deliberately opted in, expires volatile April-2026 station/discount/fee/limit
+facts, and publishes two stable workflows mined from 54,433 historical messages: report request
+intake and maintenance/work-order intake. Local migration and seed succeeded with 21 published
+rows and 3 Money Code rows skipped. Smoke and HTTP route checks retrieved the expected report and
+maintenance articles while returning no article for disabled Money Code or expired station facts.
+
+Verification: pre-feature RBAC baseline 34/34; new/targeted backend suite 36/36; gateway 57/57;
+root and gateway TypeScript clean; root build clean; changed-file ESLint clean. The root full suite
+has 1,277 passing and 11 unrelated existing failures. Required live eval spent $0.398: RBAC 3/3,
+tool-selection 5/5, grounding 7/8, refusal 5/5; existing routing and web-navigation thresholds plus
+transient OpenAI 429s kept the overall command red. Local backend/gateway health and ngrok tunnel
+were restored after restart.
+
+## 2026-07-30 — Capability fast-path history isolation
+
+Fixed Telegram capability questions inheriting the previous disabled Money Code intent. Added a
+deterministic, zero-token capability response before service routing; it is filtered by the
+backend-verified role and runtime service switches. Added Uzbek, English, Russian, and Spanish
+capability summaries plus regression coverage for the exact production history sequence.
+
+## 2026-07-30 — New-intent isolation and maintenance handoff
+
+Stopped unresolved card/override history from overriding a new customer topic. Only explicit
+follow-ups and confirmations now inherit the previous service; direct decline language routes to
+card diagnostics, while truck breakdown, roadside, tire, repair, towing, shop quote, and work-order
+language starts a dedicated maintenance request workflow. Added a role-checked
+`maintenance-roadside` Desk request for owners and drivers, routed to the Maintenance department,
+with structured intake and explicit confirmation before a real ticket is filed.
+
+## 2026-07-30 — Tagless registered-client support engagement
+
+Replaced mention-only Telegram engagement with a zero-token hybrid gate. Explicit mentions,
+replies, and active follow-ups remain authoritative; registered users in mapped carrier groups can
+now start card, EFS, report, billing, station, maintenance, tracking, mini-app, identity, and help
+requests without tagging the bot. Ordinary conversation stays silent, and unregistered ambient
+matches do not generate registration-nudge spam. The behavior is dynamically reversible with
+`AMBIENT_SUPPORT_ENABLED=0` and emits an `ambient_engagement_total` runtime metric.
+
+## 2026-07-30 — Conversational greeting and split-message ordering
+
+Added colloquial Uzbek identity recognition (`man/men kimman`) and a cooldown-bound tagless
+greeting entry for registered support-group users. A greeting opens a ten-minute follow-up window,
+so clients can describe an issue over several natural messages without remembering the bot tag.
+Telegram batch preprocessing now preserves source order per chat/user despite asynchronous access
+lookups, while different users remain concurrent.
+
+## 2026-07-30 — Natural multi-message request aggregation
+
+Added a bounded per-chat/user Telegram burst buffer for real support conversations where greeting,
+intent, unit/driver details, and politeness arrive as separate messages. A turn starts after eight
+seconds of silence for an actionable request. Incomplete follow-up fragments wait up to seventy-five
+seconds for the actual action, then switch back to the short window when it arrives; the hard cap
+is two minutes. Bursts combine fragments in source order, reply to the last fragment, and leave
+different users concurrent. Engagement is marked when the first
+recognized message is admitted so trailing tagless fragments join the open burst. Added a specific
+supported-station knowledge route so “fuel card qaysi stationlarda ishlaydi” cannot be mistaken for
+a live card-status lookup. The supplied 2026-07-30 human support answer became station article v2,
+with its own three-month re-verification expiry; unrelated expired operational facts remain
+expired. Colloquial callback requests (`call qivorizlar`) now start a separate CS handoff that
+collects the target/contact context and requires confirmation before a real Desk ticket; the bot
+never represents a ticket as a completed phone call. Added burst/routing regressions and runtime
+aggregation counters.
+
+## 2026-07-31 — AI-native Telegram ingress and dynamic tool routing
+
+Superseded the 2026-07-30 keyword/regex engagement and intent routes. `filter.ts` now contains only
+Telegram-verifiable transport state: direct bot mention, reply-to-bot, and the per-user active
+conversation clock. All registered tagless messages are grouped into an eight-second burst and
+sent to a bounded OpenAI structured-output router. The router decides support vs chatter,
+greeting/capability/continuation, completeness, language, service IDs, selected tools, and required
+tool calls from the live service catalog and current `ToolManifest` descriptions. The deleted
+`toolSelection.ts` keyword table is no longer part of runtime behavior.
+
+The router is advisory, not authoritative. Server code removes hallucinated names, enforces live
+service switches and role filtering, hides confirmation-gated mutations until a sender-verified
+Telegram button callback, and `toolDispatcher` still rechecks RBAC/validation and audit-logs every
+execution. Router failures fail closed: new tagless turns stay silent; direct turns receive only a
+safe read-only KB/identity scope. Unregistered group members never consume model tokens.
+
+Added a five-minute/12-message per-user context window for real split-message conversations.
+Context is cleared after an admitted request so a new issue does not inherit a stale unanswered
+question. Added independent router concurrency/configuration and router call/engage/silent/error
+metrics. Capability and unavailable/role-denied responses now use the language returned by the
+semantic router rather than text regexes.
+
+Verification: gateway typecheck clean and 58/58 tests pass; root typecheck/build clean; root lint
+has zero errors (24 pre-existing warnings); targeted tenant/RBAC suite 41/41 passes. A live OpenAI
+router smoke test admitted previously unseen colloquial Uzbek card-failure wording with the live
+card-status tool and kept an unrelated team scheduling message silent. A combined backend test
+command had 120/120 assertions pass but Vitest reported one unrelated asynchronous mock export
+error in `carrier-mini-app.test.ts`; the dedicated tenant/RBAC run is clean.
+
+Required root `pnpm eval:live` spent $0.392 and remained red on the existing generic Mytrion
+benchmarks: greeting 4/4, grounding 7/8, delegation 3/3, and tool selection 5/5 passed; routing,
+RBAC/refusal, and web-navigation missed thresholds, with several failures returning OpenAI TPM 429
+details instead of task answers. This benchmark does not exercise the Telegram gateway ingress
+module. The local backend and the restarted AI-router gateway are healthy on ports 3001 and 8787.
+
+## 2026-07-31 — Authenticated-user always-answer and human handoff
+
+Restored the desired support-group contract: every backend-authenticated owner/driver message now
+engages, without requiring a bot tag and without a semantic silent/chatter gate. The structured
+router still selects the service/tool dynamically, and now returns a typed handoff decision:
+commercial, pricing, onboarding, and growth questions resolve the live assigned Sales agent via
+`octane_whoami`; unresolved operational requests offer a confirmed Customer Service handoff.
+Added the role-checked `general-support` request type, which files a real Zoho Desk CS ticket only
+after a trusted Telegram confirmation.
+
+Reduced the default per-user typing debounce from eight seconds to three. Registered messages now
+receive immediate best-effort reaction/typing feedback before classification. Marked progress and
+reaction tools as best-effort execution metadata, so a report/invoice that completed successfully
+can no longer become a generic failure merely because the model skipped a late progress call (the
+exact 2026-07-31 production failure).
+
+Verification: pre-change tenant/RBAC baseline 15/15; gateway 60/60 and typecheck clean; backend
+typecheck/build clean; targeted gateway/backend routes 117/117; lint has zero errors (24 existing
+warnings). Live structured-router smoke admitted a tagless greeting, routed an unseen Uzbek
+new-company/pricing question to Sales with `octane_whoami`, and routed an out-of-scope operational
+request to Customer Service with identity + confirmation buttons.
+
+Required generic `pnpm eval:live` was rerun and spent $0.357. Greeting 4/4, grounding 7/8, and
+tool-selection 4/5 passed, but the unrelated root Mytrion thresholds remained red; all three RBAC
+judge tasks and several refusal/delegation tasks hit OpenAI TPM 429 during this run. The dedicated
+gateway/tenant RBAC suites above remain green. Local backend, restarted gateway, and Telegram API
+connectivity are healthy.

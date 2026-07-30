@@ -30,7 +30,10 @@ export type ServiceRequestKey =
   | 'card-fraud'
   | 'billing-form'
   | 'account-reactivate'
-  | 'dispute-txn';
+  | 'dispute-txn'
+  | 'maintenance-roadside'
+  | 'callback'
+  | 'general-support';
 
 interface ServiceRequestSpec {
   /** Desk ticket subject. Prefixed with the channel so CS can see where it came from. */
@@ -118,6 +121,24 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     dept: 'billing',
     roles: ['owner', 'driver'],
     ticketType: 'Billing',
+  },
+  'maintenance-roadside': {
+    subject: 'Maintenance / roadside assistance',
+    dept: 'maintenance',
+    roles: ['owner', 'driver'],
+    ticketType: 'Maintenance',
+  },
+  'callback': {
+    subject: 'Callback / contact request',
+    dept: 'cs',
+    roles: ['owner', 'driver'],
+    ticketType: 'Card Management',
+  },
+  'general-support': {
+    subject: 'General customer-service handoff',
+    dept: 'cs',
+    roles: ['owner', 'driver'],
+    ticketType: 'Customer Service',
   },
 };
 

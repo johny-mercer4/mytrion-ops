@@ -4,8 +4,8 @@
  * (a mini-app registration IS the grant); we read it live off a SHORT refresh window so a
  * fresh registration / revoke lands almost immediately.
  *
- * Cheap on purpose: this runs only AFTER gate-1 (mention/reply), so it fires per-MENTION, not
- * per-message — a ~30s refresh window just coalesces a rapid mention burst into one fetch.
+ * The AI ingress router evaluates all registered senders, so this lookup may run per message.
+ * A ~30s per-carrier cache plus single-flight refresh keeps that bounded to one backend fetch.
  *
  * Two independent clocks:
  *  - REFRESH_MS: how stale the cache may get before we refetch (near-instant registration).

@@ -10,6 +10,11 @@ export type CounterName =
   | 'turn_rejected_total'
   | 'openai_429_total'
   | 'openai_error_total'
+  | 'ai_router_calls_total'
+  | 'ai_router_engaged_total'
+  | 'ai_router_silent_total'
+  | 'ai_router_429_total'
+  | 'ai_router_error_total'
   | 'tg_429_total'
   | 'tg_send_fail_total'
   | 'tg_poll_fail_total'
@@ -18,11 +23,19 @@ export type CounterName =
   | 'tool_disabled_total'
   | 'tool_invalid_args_total'
   | 'service_disabled_total'
+  | 'capability_fast_path_total'
+  | 'greeting_fast_path_total'
+  | 'ambient_engagement_total'
+  | 'message_burst_total'
+  | 'message_burst_messages_total'
   | 'memory_recall_total'
   | 'memory_recall_hit_total'
   | 'memory_commit_total'
   | 'memory_commit_dropped_total'
   | 'memory_error_total'
+  | 'kb_cache_hit_total'
+  | 'kb_singleflight_hit_total'
+  | 'kb_backend_error_total'
   | 'role_resolution_total'
   | 'role_resolution_error_total'
   | 'role_guest_total'
@@ -35,6 +48,11 @@ const COUNTERS: CounterName[] = [
   'turn_rejected_total',
   'openai_429_total',
   'openai_error_total',
+  'ai_router_calls_total',
+  'ai_router_engaged_total',
+  'ai_router_silent_total',
+  'ai_router_429_total',
+  'ai_router_error_total',
   'tg_429_total',
   'tg_send_fail_total',
   'tg_poll_fail_total',
@@ -43,11 +61,19 @@ const COUNTERS: CounterName[] = [
   'tool_disabled_total',
   'tool_invalid_args_total',
   'service_disabled_total',
+  'capability_fast_path_total',
+  'greeting_fast_path_total',
+  'ambient_engagement_total',
+  'message_burst_total',
+  'message_burst_messages_total',
   'memory_recall_total',
   'memory_recall_hit_total',
   'memory_commit_total',
   'memory_commit_dropped_total',
   'memory_error_total',
+  'kb_cache_hit_total',
+  'kb_singleflight_hit_total',
+  'kb_backend_error_total',
   'role_resolution_total',
   'role_resolution_error_total',
   'role_guest_total',
