@@ -8713,3 +8713,88 @@ web typechecks pass; lint has 0 errors / 25 pre-existing warnings; all web tests
 invoice route tests pass (17/17); catalog shape test passes. The full backend run remains at 38
 failures across 12 unrelated suites (including sandbox-blocked localhost/Postgres tests and stale
 session/tool-count expectations); none are in the new invoice suite.
+
+## 2026-07-31 — Native ticket path: the reachable half of the comms substrate (`feature/Communication`)
+
+`b501390` landed 14 tables, the thread/member/message/presence repos, `publish.ts` and the comms WS
+topic grammar — but nothing above that line, so none of it was reachable. Two dead ends in particular:
+`canSubscribeCommsThread` was exported with no production caller (the synchronous `canSubscribe`
+hard-refuses the `comms:thread:` prefix, so the live chat feed could not be subscribed at all), and
+`mytrion_comms_number_seq` existed with no formatter, so no ticket could be numbered.
+
+This session builds the Sales create-ticket path end to end on the server. Still backend-only —
+nothing under `apps/` is touched and the Zoho Desk routes are untouched and still serve every live
+flow, so this is a parallel path with no consumer yet.
+
+**Config read layer.** `commsCatalogRepo` / `commsSettingsRepo` / `commsDepartmentRepo` +
+`GET /v1/comms/catalog`, which returns the 49 ticket types, 11 escalation reasons, the department
+options and the SLA maps in one request — the wizard cannot render its first step until all of it has
+arrived, so three requests would only add two more chances for a half-rendered picker. Gated by a new
+`requireInternal` (internal audience, no department): `requireDepartment` takes exactly one department,
+so gating shared metadata with it would mean locking Sales out of a CS-owned list or the reverse.
+
+**Two security properties, both structural rather than conventional.**
+1. `target_department` is read off the catalog row and never from the request body — there is no
+   `department` field on `POST /v1/comms/tickets` at all. The Desk route accepted one, which meant an
+   agent could file into any queue they chose. Retargeting a family of types is now a catalog UPDATE.
+2. An agent may only file against a deal they own, AND the client snapshot comes from that same deal
+   record. Added `fetchDealSnapshot` (one COQL for Owner + Account_Name + Carrier_ID + Application_ID)
+   replacing `fetchDealOwnerId` + trusting the body: a body-supplied carrier is a client-chosen client,
+   so an agent could file on their own deal while labelling it with someone else's carrier and every
+   downstream reader would believe the label. Reading both from one record costs the same one query.
+
+**Create is one transaction.** `commsTicketRepo.createWithThread` writes thread + opening message +
+requester member + ticket with all ids generated up front, so the thread is inserted with its final
+message counters already set. `commsMessageRepo.append` is deliberately NOT reused: it opens its own
+`db.transaction`, which would take a second pool connection and block on the very thread row this
+transaction holds — a self-deadlock, not a slow path. Proved on `xmin` in the smoke script.
+
+**Idempotency is select-then-insert, not ON CONFLICT.** `mytrion_tickets_idem_uk` is partial
+(`WHERE idempotency_key IS NOT NULL`) and Postgres refuses a partial index as an arbiter unless the
+statement restates the predicate, which Drizzle cannot express. The lookup is also scoped to the
+REQUESTER: it runs before any row exists so no reader filter applies, and an idempotency key is a
+client-chosen string rather than a secret — without the requester bound, guessing or replaying another
+agent's key returned their ticket in full. A key taken by someone else now 409s.
+
+**Reads.** All three ticket reads share one `selectTicketWithThread` builder, because those joins ARE
+the authorization surface (the thread join is what lets `commsThreadReaderFilter` apply); three copies
+would be three chances for one to drift and read unfiltered. The reader's own member row is LEFT
+joined so unread is arithmetic on data the list already has — left, not inner, because a CS agent must
+see a queue ticket they have never opened. Keyset paging over `(created_at, id)` via a row comparison;
+offset paging silently re-shows or skips rows the moment anything is filed. Non-readable ids answer
+404, never 403.
+
+**Conversation is thread-keyed**, not ticket-keyed (`/v1/comms/threads/:id/...`): an escalation's whole
+ladder talks in one thread and a DM has no ticket, so ticket-keyed message routes would need a second
+copy of this the moment either lands. First response is stamped only by a non-requester, non-internal
+reply, with the `IS NULL` guard in the WHERE so two simultaneous replies cannot move it.
+
+**WebSocket.** The subscribe branch is now async and routes `comms:thread:*` to
+`canSubscribeCommsThread`, so the live feed is reachable. Topic accounting became a Set rather than a
+per-frame counter — the counter burned budget every time a client re-subscribed to a topic it already
+held, which every reconnect does, until it was refused for topics it was already on. The comms lane is
+auto-subscribed and advertised in `hello` (a client cannot construct it itself: `commsUserTopicOf`
+returns null under view-as). The socket is re-checked for closure after the await.
+
+**Verification.** Typecheck clean; lint clean on every new file (the 24 repo-wide warnings are
+pre-existing non-null assertions elsewhere). 181 new unit tests across six suites, 222 including the
+existing comms/realtime ones. `scripts/comms-repo-smoke.ts` extended and run green end to end against
+a throwaway local Postgres — the transaction proved on `xmin`, 25 concurrent creates yielding 25
+distinct numbers, sequential AND raced idempotency replays, "another Sales agent sees NOTHING" while
+the CS agent sees it via the department arm, and paging walking every row exactly once.
+
+The security tests were mutation-verified rather than assumed: disabling the ownership check and adding
+the full card to the DTO failed exactly 7 tests, then both files were restored and re-checksummed.
+`.env` still points at Render prod, so every DB command above ran against an explicitly overridden
+local throwaway database.
+
+Known and deliberately deferred: a CRM lookup failure surfaces as 400 rather than 502 (the message is
+clear and exposed, and all three outcomes stay distinguishable); there is no
+`(tenant_id, created_at DESC, id DESC)` index yet, which the keyset walk will want once volume exists;
+`GET /threads/:id/messages` enrolls the reader as a watcher, which is a read-state side effect on a GET.
+
+Not built yet, in dependency order: Dropbox attachments, round-robin assignment over the department
+pool (the pools are empty and `FF_COMMS_PRESENCE` is still off), the Tickets console — which must mount
+in Sales AND the receiving CS/Billing/Verification queue in the SAME release, or native tickets land in
+a table nobody is watching — and escalations, which cannot route at all until the NULL
+`default_assignee_zoho_user_id` / `manager_zoho_user_id` / `c-level` pool config is filled.

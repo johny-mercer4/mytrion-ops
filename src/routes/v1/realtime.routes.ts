@@ -19,6 +19,9 @@ import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   canSubscribe,
+  canSubscribeCommsThread,
+  COMMS_THREAD_PREFIX,
+  commsUserTopicOf,
   ownTopicOf,
   publishInboxEvent,
   realtimeHub,
@@ -119,15 +122,33 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       }
     };
 
-    // Auto-subscribe the caller to their own feed — a client needs zero protocol to get
-    // its events. System identities (API key) have no own topic; they subscribe explicitly.
+    // Auto-subscribe the caller to their own feeds — a client needs zero protocol to get its events.
+    // System identities (API key) have no own topic; they subscribe explicitly.
     const ownTopic = ownTopicOf(ctx);
     if (ownTopic) realtimeHub.subscribe(socket, ownTopic);
-    send({ kind: 'hello', ownTopic, role: ctx.role });
 
-    let topicCount = ownTopic ? 1 : 0;
+    // The comms lane carries ticket/chat badges and assignment pings for threads the user does NOT have
+    // open, which per-thread subscriptions structurally cannot deliver. Auto-subscribed and advertised
+    // rather than left to the client to construct: `commsUserTopicOf` returns null while acting as
+    // someone else, and a client building `comms:user:<id>` itself would have to reimplement that rule.
+    const commsLane = commsUserTopicOf(ctx);
+    if (commsLane) realtimeHub.subscribe(socket, commsLane);
 
-    socket.on('message', (raw) => {
+    send({ kind: 'hello', ownTopic, commsTopic: commsLane, role: ctx.role });
+
+    // A SET, not a counter. The previous counter incremented per subscribe FRAME, so a client that
+    // re-subscribed to a topic it already held (every reconnect-and-resubscribe does) burned budget
+    // against a 25-topic cap until it started getting refused for topics it was already on.
+    const topics = new Set<string>();
+    if (ownTopic) topics.add(ownTopic);
+    if (commsLane) topics.add(commsLane);
+
+    /**
+     * Frame handler. Async because a `comms:thread:<id>` subscription needs a ROW LOOKUP to authorize —
+     * `canSubscribe` is synchronous and DB-free by design and hard-refuses that prefix, so before this
+     * the live chat feed was unreachable over the wire.
+     */
+    const handleFrame = async (raw: unknown): Promise<void> => {
       const text = String(raw);
       if (text.length > MAX_WS_MESSAGE_BYTES) {
         send({ kind: 'error', message: 'Message too large' });
@@ -147,26 +168,56 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       }
       const topic = typeof frame.topic === 'string' ? frame.topic : '';
       if (action === 'subscribe') {
-        if (!canSubscribe(ctx, topic)) {
+        // Re-subscribing to a topic already held is a no-op ack, checked BEFORE the cap so a reconnect
+        // storm cannot lock a client out of its own topics.
+        if (topics.has(topic)) {
+          send({ kind: 'ack', action, topic });
+          return;
+        }
+        // Thread topics take the async gate, which routes to the SAME reader filter REST uses (wired by
+        // modules/comms/bootstrap). Everything else keeps the synchronous check — including the
+        // own-only comms lane, whose deny-an-admin ordering in `canSubscribe` must not be bypassed.
+        const allowed = topic.startsWith(COMMS_THREAD_PREFIX)
+          ? await canSubscribeCommsThread(ctx, topic)
+          : canSubscribe(ctx, topic);
+        if (!allowed) {
           send({ kind: 'error', action, topic, message: 'Subscription not allowed' });
           return;
         }
-        if (topicCount >= MAX_TOPICS_PER_SOCKET) {
+        // Re-checked after the await: two subscribe frames can be in flight at once, and the first one's
+        // authorization must not let the second past the cap.
+        if (topics.has(topic)) {
+          send({ kind: 'ack', action, topic });
+          return;
+        }
+        if (topics.size >= MAX_TOPICS_PER_SOCKET) {
           send({ kind: 'error', action, topic, message: 'Too many topics on this socket' });
           return;
         }
+        // Closed while the authorization query was running: subscribing now would leak a socket into the
+        // hub that 'close' has already swept.
+        if (socket.readyState !== 1) return;
         realtimeHub.subscribe(socket, topic);
-        topicCount += 1;
+        topics.add(topic);
         send({ kind: 'ack', action, topic });
         return;
       }
       if (action === 'unsubscribe') {
         realtimeHub.unsubscribe(socket, topic);
-        topicCount = Math.max(0, topicCount - 1);
+        topics.delete(topic);
         send({ kind: 'ack', action, topic });
         return;
       }
       send({ kind: 'error', message: `Unknown action '${action}'` });
+    };
+
+    socket.on('message', (raw) => {
+      // The listener must stay sync-returning: an async listener's rejection becomes an unhandled
+      // rejection that can take the process down, so failures are answered on the socket instead.
+      void handleFrame(raw).catch((err: unknown) => {
+        request.log.warn({ err }, 'realtime frame handling failed');
+        send({ kind: 'error', message: 'Frame could not be processed' });
+      });
     });
 
     // Presence is tracked per connection, not per subscription: ticket round-robin only assigns

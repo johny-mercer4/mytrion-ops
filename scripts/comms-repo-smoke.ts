@@ -7,12 +7,22 @@
  * happily agree either way. Same for the monotonic read watermark and the "a hand-off never evicts
  * anyone" rule, which are both UPDATE-predicate behaviour.
  *
+ * PART 1 (here) is the thread/message/member substrate. PART 2 — the native ticket path, in
+ * lib/commsTicketChecks.ts — adds the checks a mock is structurally unable to make:
+ *   * thread + ticket + requester member + message seq 1 written by ONE transaction, asserted on the
+ *     rows' `xmin` (a Postgres MVCC system column) rather than on call counts;
+ *   * `mytrion_comms_number_seq` handing 25 concurrent creates 25 distinct numbers;
+ *   * the PARTIAL unique index `mytrion_tickets_idem_uk` firing both sequentially (pre-flight select)
+ *     and concurrently (unique-violation rescue);
+ *   * the reader filter, the LEFT JOIN read watermark and the keyset cursor over real rows.
+ *
  * Usage (creates and drops its own database):
  *   docker compose up -d postgres
- *   docker exec octane-postgres psql -U octane -d postgres -c 'CREATE DATABASE comms_smoke'
- *   MYTRION_OPS_DATABASE_URL='postgresql://octane:octane@localhost:5433/comms_smoke' \
+ *   docker exec octane-postgres psql -U octane -d postgres -c 'DROP DATABASE IF EXISTS comms_smoke2'
+ *   docker exec octane-postgres psql -U octane -d postgres -c 'CREATE DATABASE comms_smoke2'
+ *   MYTRION_OPS_DATABASE_URL='postgresql://octane:octane@localhost:5433/comms_smoke2' \
  *     pnpm exec drizzle-kit migrate
- *   MYTRION_OPS_DATABASE_URL='postgresql://octane:octane@localhost:5433/comms_smoke' \
+ *   MYTRION_OPS_DATABASE_URL='postgresql://octane:octane@localhost:5433/comms_smoke2' \
  *     pnpm exec tsx scripts/comms-repo-smoke.ts
  *
  * It REFUSES to run against anything but a local database: the repo's committed .env points
@@ -22,11 +32,18 @@
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
 import { closeDb, db } from '../src/db/client.js';
-import { mytrionThreadMessages, mytrionThreads, tenants } from '../src/db/schema/index.js';
+import { mytrionThreadMessages, mytrionThreads } from '../src/db/schema/index.js';
 import { commsMessageRepo } from '../src/repos/commsMessageRepo.js';
 import { commsThreadMemberRepo } from '../src/repos/commsThreadMemberRepo.js';
 import { commsThreadRepo } from '../src/repos/commsThreadRepo.js';
-import type { TenantContext } from '../src/types/tenantContext.js';
+import {
+  TENANT,
+  cs,
+  otherSalesAgent,
+  sales,
+  seedCommsFixtures,
+} from './lib/commsSmokeFixtures.js';
+import { runNativeTicketChecks } from './lib/commsTicketChecks.js';
 
 const url = process.env.MYTRION_OPS_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
@@ -37,7 +54,6 @@ if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
   process.exit(1);
 }
 
-const TENANT = 'octane';
 let failures = 0;
 
 function ok(label: string, cond: boolean, extra = ''): void {
@@ -45,31 +61,11 @@ function ok(label: string, cond: boolean, extra = ''): void {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? `  — ${extra}` : ''}`);
 }
 
-function ctxOf(over: Partial<TenantContext> = {}): TenantContext {
-  return {
-    tenantId: TENANT,
-    userId: 'zoho:42',
-    audience: 'internal',
-    role: 'worker',
-    scopes: [],
-    departments: ['sales'],
-    allDepartmentAccess: false,
-    requestId: 'smoke',
-    ...over,
-  } as TenantContext;
-}
+// -------------------------------------------------------------------------------------------------
+// Part 1 — the substrate: seq under concurrency, read state, scoping, hand-off, internal notes.
+// -------------------------------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-  await db
-    .insert(tenants)
-    .values({ id: TENANT, name: 'Octane', audience: 'internal' })
-    .onConflictDoNothing();
-
-  const sales = ctxOf();
-  const cs = ctxOf({ userId: 'zoho:77', departments: ['customer-service'] });
-  const otherSalesAgent = ctxOf({ userId: 'zoho:999', departments: ['sales'] });
-
-  // A Sales agent raises a ticket for their client, targeted at Customer Service.
+async function checkSubstrate(): Promise<void> {
   const [thread] = await db
     .insert(mytrionThreads)
     .values({
@@ -121,18 +117,16 @@ async function main(): Promise<void> {
 
   // --- read state ---
   const member = { memberKind: 'worker' as const, memberKey: '42' };
-  const unread = await commsThreadMemberRepo.unreadTotals(sales, member);
+  const unread = (await commsThreadMemberRepo.unreadTotals(sales, member)).filter(
+    (u) => u.threadId === threadId,
+  );
   ok('requester sees 25 unread', unread[0]?.unread === 25, `unread=${unread[0]?.unread}`);
   await commsThreadMemberRepo.markRead(sales, threadId, member, 25);
-  ok(
-    'markRead(25) clears it',
-    (await commsThreadMemberRepo.unreadTotals(sales, member)).length === 0,
-  );
+  const cleared = async (): Promise<boolean> =>
+    (await commsThreadMemberRepo.unreadTotals(sales, member)).every((u) => u.threadId !== threadId);
+  ok('markRead(25) clears it', await cleared());
   await commsThreadMemberRepo.markRead(sales, threadId, member, 10);
-  ok(
-    'a LOWER seq is ignored — read messages cannot resurrect',
-    (await commsThreadMemberRepo.unreadTotals(sales, member)).length === 0,
-  );
+  ok('a LOWER seq is ignored — read messages cannot resurrect', await cleared());
 
   // --- scoping: department arm vs peers ---
   ok('CS agent reads it via the department arm', await commsThreadRepo.canReadThread(cs, threadId));
@@ -205,6 +199,14 @@ async function main(): Promise<void> {
     tail.length === 2 && tail.every((m) => m.seq > 24),
     `seqs ${tail.map((m) => m.seq).join(',')}`,
   );
+}
+
+async function main(): Promise<void> {
+  await seedCommsFixtures();
+  await checkSubstrate();
+
+  console.log('\n--- native ticket path ---');
+  await runNativeTicketChecks(ok);
 
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 }

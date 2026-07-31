@@ -278,3 +278,82 @@ describe('prefix constants stay in step with the grammar', () => {
     expect(commsUserTopic('1').startsWith(COMMS_USER_PREFIX)).toBe(true);
   });
 });
+
+/**
+ * The `realtime.routes.ts` subscribe path — the half that is reachable without a live server.
+ *
+ * WHAT IS NOT COVERED HERE, AND WHY: the route's per-socket topic SET (which replaced a per-frame
+ * counter so a reconnect-and-resubscribe stops burning budget against the 25-topic cap), the
+ * re-check after the await, the `readyState !== 1` guard, and the `hello.commsTopic` field all live
+ * inside the WebSocket handler closure — `MAX_TOPICS_PER_SOCKET` is module-private and the Set is a
+ * local. Reaching them needs a real listener and a real `ws` client, i.e. the pattern in
+ * tests/unit/realtime-inbox.test.ts, not this suite. They are NOT faked here. The three things this
+ * block asserts are the invariants the route's logic RESTS on, each independently checkable.
+ */
+describe('realtime.routes subscribe branch — the offline-testable invariants', () => {
+  it('the ASYNC GATE IS TAKEN FOR EXACTLY the thread family', () => {
+    // The route branches on `topic.startsWith(COMMS_THREAD_PREFIX)`. If any other family matched that
+    // prefix, it would skip `canSubscribe` — including the own-only comms lane, whose deny-an-admin
+    // ordering is the whole point of that function.
+    expect(commsThreadTopic('mth_1').startsWith(COMMS_THREAD_PREFIX)).toBe(true);
+    for (const other of [
+      commsQueueTopic('customer-service'),
+      commsUserTopic('77'),
+      INBOX_ALL_TOPIC,
+      'inbox:worker:42',
+    ]) {
+      expect(other.startsWith(COMMS_THREAD_PREFIX), `${other} would skip canSubscribe`).toBe(false);
+    }
+  });
+
+  it('the two gates are complementary — neither can authorize the other family', async () => {
+    const admin = ctxOf({ role: 'admin', allDepartmentAccess: true });
+    registerCommsThreadAuthorizer(async () => true);
+    // The sync gate can never pass a thread topic (that is what made the chat feed unreachable before
+    // the async branch existed)…
+    expect(canSubscribe(admin, commsThreadTopic('mth_1'))).toBe(false);
+    // …and the async gate refuses everything that is not a thread topic, even with a permissive
+    // authorizer registered, so routing a lane through it could not open someone else's feed.
+    expect(await canSubscribeCommsThread(admin, commsUserTopic('77'))).toBe(false);
+    expect(await canSubscribeCommsThread(admin, commsQueueTopic('billing'))).toBe(false);
+    expect(await canSubscribeCommsThread(admin, INBOX_ALL_TOPIC)).toBe(false);
+  });
+
+  it('a repeated hub subscribe is idempotent — one frame, not two', () => {
+    // The route answers an already-held topic with a bare ack and no budget spend; that is only safe
+    // because the hub itself de-duplicates, so a double subscribe cannot double-deliver.
+    const socket = fakeSocket();
+    const topic = commsUserTopic('42');
+    realtimeHub.subscribe(socket, topic);
+    realtimeHub.subscribe(socket, topic);
+    publishThreadEvent(
+      { id: 'mth_9', department: 'customer-service' },
+      [{ memberKind: 'worker', memberKey: '42', state: 'active', notify: 'all' }],
+      { type: 'comms.thread.message', threadId: 'mth_9' },
+    );
+    expect(socket.frames).toHaveLength(1);
+    realtimeHub.dropSocket(socket);
+  });
+
+  it('the comms lane the route auto-subscribes is null for exactly the identities with no lane', () => {
+    // `hello.commsTopic` is whatever this returns, so a client never has to reimplement the rule —
+    // notably the view-as case, where a lane would tail the impersonated person's conversations.
+    expect(commsUserTopicOf(ctxOf())).toBe('comms:user:42');
+    expect(commsUserTopicOf(ctxOf({ userId: 'zoho:77', impersonatorUserId: 'zoho:1' }))).toBeNull();
+    expect(commsUserTopicOf(ctxOf({ userId: 'system' }))).toBeNull();
+    expect(commsUserTopicOf(ctxOf({ audience: 'customer', userId: 'client:cu_9' }))).toBeNull();
+  });
+
+  it('dropSocket clears both auto-subscribed lanes, so a reconnect starts clean', () => {
+    const socket = fakeSocket();
+    realtimeHub.subscribe(socket, 'inbox:worker:42');
+    realtimeHub.subscribe(socket, commsUserTopic('42'));
+    realtimeHub.dropSocket(socket);
+    publishThreadEvent(
+      { id: 'mth_9', department: 'customer-service' },
+      [{ memberKind: 'worker', memberKey: '42', state: 'active', notify: 'all' }],
+      { type: 'comms.thread.message', threadId: 'mth_9' },
+    );
+    expect(socket.frames).toHaveLength(0);
+  });
+});

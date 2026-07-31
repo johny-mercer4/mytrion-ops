@@ -35,6 +35,18 @@ const sql = postgres(databaseUrl, {
 
 export const db: PostgresJsDatabase<typeof schema> = drizzle(sql, { schema });
 export type Database = typeof db;
+
+/**
+ * The handle a `db.transaction(async (tx) => …)` callback receives, derived from `db` rather than
+ * spelled out as a `PgTransaction<…>` generic — that generic takes four type arguments whose exact
+ * shape is a Drizzle internal, so writing it by hand is the kind of thing that breaks on a minor
+ * version bump. Extracting it keeps helpers that must run INSIDE a caller's transaction typeable.
+ */
+export type DbTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/** Either handle — for helpers that work standalone or enlisted in a caller's transaction. */
+export type DbOrTx = Database | DbTransaction;
+
 export { schema };
 
 /** Raw postgres.js client — use for vector kNN and other queries Drizzle can't express. */

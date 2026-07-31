@@ -8,6 +8,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { actorZohoUserIdOf, commsThreadRepo } from '../../src/repos/commsThreadRepo.js';
+import { commsCatalogRepo } from '../../src/repos/commsCatalogRepo.js';
+import { commsDepartmentRepo } from '../../src/repos/commsDepartmentRepo.js';
+import { commsSettingsRepo } from '../../src/repos/commsSettingsRepo.js';
+import { commsTicketEventRepo } from '../../src/repos/commsTicketEventRepo.js';
+import { commsTicketRepo, encodeTicketCursor } from '../../src/repos/commsTicketRepo.js';
 import { KNOWN_DEPARTMENTS } from '../../src/lib/department.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
@@ -168,5 +173,273 @@ describe('comms RBAC — the gate is shared between REST and the WebSocket', () 
     expect(one.params).toContain('42');
     expect(one.params).toContain('mth_x');
     expect(list.sql).toContain('exists');
+  });
+});
+
+// =============================================================================================
+// The reads added on top of the thread substrate: the catalog, the settings row, the department
+// config, the ticket list/detail and the ticket journal. Same offline .toSQL() discipline — an
+// unfiltered read of any of these looks identical to a correct one against an empty fixture DB.
+// =============================================================================================
+
+/** toSQL() params are `unknown[]`; department/tenant leakage is only ever a bound STRING. */
+const strings = (params: unknown[]): string[] =>
+  params.filter((p): p is string => typeof p === 'string');
+
+const OTHER_TENANT = 'other-tenant';
+
+describe('commsCatalogRepo.buildListQuery — tenant-bound, department-silent', () => {
+  it('binds the caller tenant and never a second one', () => {
+    const { sql, params } = commsCatalogRepo.buildListQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('a different tenant is a different BINDING, not a widened query', () => {
+    const a = commsCatalogRepo.buildListQuery(ctxOf({ tenantId: 'octane' })).toSQL();
+    const b = commsCatalogRepo.buildListQuery(ctxOf({ tenantId: OTHER_TENANT })).toSQL();
+    expect(a.sql).toBe(b.sql);
+    expect(b.params).toContain(OTHER_TENANT);
+    expect(b.params).not.toContain('octane');
+  });
+
+  it('the tenant predicate survives a blanket-access caller', () => {
+    const { sql, params } = commsCatalogRepo
+      .buildListQuery(ctxOf({ role: 'admin', allDepartmentAccess: true, bypassRbac: true }))
+      .toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+  });
+
+  it('binds NO department at all unless one is asked for — the catalog is tenant-global config', () => {
+    // The catalog is not department-scoped data; the important property is the inverse of the thread
+    // filter's — a caller's department grant must not silently narrow OR widen the picker.
+    const { params } = commsCatalogRepo
+      .buildListQuery(ctxOf({ departments: ['sales', 'billing'] }))
+      .toSQL();
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('a targetDepartment filter binds exactly that one department and no other', () => {
+    const { params } = commsCatalogRepo
+      .buildListQuery(ctxOf(), { targetDepartment: 'customer-service' })
+      .toSQL();
+    expect(params).toContain('customer-service');
+    for (const dept of KNOWN_DEPARTMENTS.filter((d) => d !== 'customer-service')) {
+      expect(params).not.toContain(dept);
+    }
+  });
+
+  it('defaults to active rows and never emits an empty IN () that could unfilter the kind', () => {
+    const { sql, params } = commsCatalogRepo
+      .buildListQuery(ctxOf(), { kind: 'escalation_reason' })
+      .toSQL();
+    expect(params).toContain('escalation_reason');
+    expect(params).toContain(true);
+    expect(sql).not.toContain('in ()');
+  });
+});
+
+describe('commsSettingsRepo.buildGetQuery — one row, one tenant', () => {
+  it('binds the caller tenant and nothing else', () => {
+    const { sql, params } = commsSettingsRepo.buildGetQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(strings(params)).toEqual(['octane']);
+  });
+
+  it('cannot be steered to another tenant by role or department', () => {
+    const admin = commsSettingsRepo
+      .buildGetQuery(ctxOf({ role: 'admin', allDepartmentAccess: true, departments: [] }))
+      .toSQL();
+    expect(strings(admin.params)).toEqual(['octane']);
+    const other = commsSettingsRepo.buildGetQuery(ctxOf({ tenantId: OTHER_TENANT })).toSQL();
+    expect(other.params).not.toContain('octane');
+  });
+});
+
+describe('commsDepartmentRepo.buildListQuery — tenant-bound routing config', () => {
+  it('binds the caller tenant and never a second one', () => {
+    const { sql, params } = commsDepartmentRepo.buildListQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it("does not bind the caller's own departments — the config list is not the grant", () => {
+    // A department-scoped filter here would be wrong in the dangerous direction too: the create path
+    // validates a TARGET queue the caller may not hold.
+    const { params } = commsDepartmentRepo
+      .buildListQuery(ctxOf({ departments: ['sales'] }))
+      .toSQL();
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('acceptsTicketsOnly narrows on a boolean, adding no department binding', () => {
+    const { params } = commsDepartmentRepo
+      .buildListQuery(ctxOf(), { acceptsTicketsOnly: true })
+      .toSQL();
+    expect(params).toContain(true);
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+});
+
+describe('commsTicketRepo.buildListQuery — the thread reader filter IS the ticket filter', () => {
+  const listSql = (ctx: TenantContext, opts = {}) =>
+    commsTicketRepo.buildListQuery(ctx, opts).toSQL();
+
+  it('binds the caller tenant and never a second one', () => {
+    const { sql, params } = listSql(ctxOf());
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('a different tenant produces the same SQL with a different binding', () => {
+    const a = listSql(ctxOf({ tenantId: 'octane' }));
+    const b = listSql(ctxOf({ tenantId: OTHER_TENANT }));
+    expect(a.sql).toBe(b.sql);
+    expect(b.params).not.toContain('octane');
+  });
+
+  it('CARRIES THE THREAD READER FILTER — both arms, not a ticket-shaped reimplementation', () => {
+    const { sql, params } = listSql(ctxOf({ departments: ['customer-service'] }));
+    // Participant arm (correlated EXISTS over thread members, worker-keyed, excluding leavers)…
+    expect(sql).toContain('exists');
+    expect(params).toContain('worker');
+    expect(params).toContain('left');
+    expect(params).toContain('42');
+    // …ORed with the department arm.
+    expect(sql).toContain(' or ');
+    expect(params).toContain('department');
+    expect(params).toContain('customer-service');
+  });
+
+  it('AN EMPTY DEPARTMENT GRANT COLLAPSES THE DEPARTMENT ARM TO FALSE, not to "no filter"', () => {
+    const { sql, params } = listSql(ctxOf({ departments: [] }));
+    expect(sql).toContain('false');
+    expect(sql).toContain('exists'); // own tickets still reachable
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('no foreign department is ever bound, for any single-department grant', () => {
+    for (const dept of KNOWN_DEPARTMENTS) {
+      const { params } = listSql(ctxOf({ departments: [dept] }));
+      for (const other of KNOWN_DEPARTMENTS.filter((d) => d !== dept)) {
+        expect(strings(params), `ctx held only "${dept}" but bound "${other}"`).not.toContain(other);
+      }
+    }
+  });
+
+  it('a targetDepartment option NARROWS inside the grant — it never replaces the reader filter', () => {
+    const { sql, params } = listSql(ctxOf({ departments: ['sales'] }), {
+      targetDepartment: 'customer-service',
+    });
+    // The queue filter is additive; the reader arms are still there, so asking for another
+    // department's queue returns nothing rather than that department's tickets.
+    expect(sql).toContain('exists');
+    expect(params).toContain('sales');
+    expect(params).toContain('customer-service');
+  });
+
+  it('the reader member LEFT JOIN is keyed on the caller, and is `false` for a non-worker', () => {
+    const worker = listSql(ctxOf());
+    expect(worker.sql).toContain('left join');
+    expect(worker.params).toContain('42');
+
+    const customer = listSql(
+      ctxOf({ audience: 'customer', userId: 'client:cu_9', role: 'viewer', departments: [] }),
+    );
+    // Shape preserved (same columns) but the join can never match, so no readSeq is borrowed from
+    // someone else's member row.
+    expect(customer.sql).toContain('left join');
+    expect(customer.sql).toContain('false');
+    expect(customer.params).not.toContain('cu_9');
+  });
+
+  it('A KEYSET CURSOR BINDS A ROW COMPARISON, NEVER AN OFFSET', () => {
+    const createdAt = new Date('2026-07-30T10:11:12.000Z');
+    const cursor = encodeTicketCursor({ createdAt, id: 'mtk_page2' });
+    const { sql, params } = listSql(ctxOf(), { cursor });
+    // Row comparison over (created_at, id) — matches the composite ORDER BY.
+    expect(sql).toContain(') < (');
+    expect(sql).toContain('created_at');
+    expect(params).toContain(createdAt.toISOString());
+    expect(params).toContain('mtk_page2');
+    // An OFFSET page would re-show or skip rows the moment a ticket is filed.
+    expect(sql.toLowerCase()).not.toContain('offset');
+  });
+
+  it('a garbage cursor is dropped rather than injected or 500ing', () => {
+    const { sql, params } = listSql(ctxOf(), { cursor: 'not-a-cursor' });
+    expect(sql).not.toContain(') < (');
+    expect(params).toContain('octane');
+  });
+
+  it('a search term is parameterised and its LIKE metacharacters escaped', () => {
+    const { params } = listSql(ctxOf(), { search: '100%_x' });
+    expect(params).toContain('%100\\%\\_x%');
+  });
+
+  it('the limit is clamped and never taken raw from the caller', () => {
+    expect(listSql(ctxOf(), { limit: 100_000 }).params).toContain(100);
+    expect(listSql(ctxOf(), { limit: -5 }).params).toContain(1);
+  });
+});
+
+describe('commsTicketRepo.buildFindQuery — the detail read cannot be looser than the list', () => {
+  it('binds tenant + id AND the same reader filter', () => {
+    const { sql, params } = commsTicketRepo.buildFindQuery(ctxOf(), 'mtk_1').toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).toContain('mtk_1');
+    // The IDOR guard: an id alone is not authorization.
+    expect(sql).toContain('exists');
+    expect(params).toContain('42');
+    expect(params).toContain('worker');
+    expect(params).toContain('left');
+  });
+
+  it('a department-less caller gets the collapsed-to-false arm here too', () => {
+    const { sql, params } = commsTicketRepo
+      .buildFindQuery(ctxOf({ departments: [] }), 'mtk_1')
+      .toSQL();
+    expect(sql).toContain('false');
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('never binds a foreign tenant even when the id is guessed correctly', () => {
+    const { params } = commsTicketRepo
+      .buildFindQuery(ctxOf({ tenantId: OTHER_TENANT }), 'mtk_1')
+      .toSQL();
+    expect(params).toContain(OTHER_TENANT);
+    expect(params).not.toContain('octane');
+  });
+});
+
+describe('commsTicketEventRepo.buildListQuery — the journal is tenant + ticket scoped', () => {
+  it('binds the caller tenant and the one ticket', () => {
+    const { sql, params } = commsTicketEventRepo.buildListQuery(ctxOf(), 'mtk_1').toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).toContain('mtk_1');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('binds no department — authorization is the caller\'s ticket read, not a second filter', () => {
+    // Documented contract on the repo ("Authorization is the caller's job"): the route must have
+    // already resolved the ticket through buildFindQuery. This asserts the journal does not *pretend*
+    // to filter, which would be the more dangerous half-measure.
+    const { params } = commsTicketEventRepo
+      .buildListQuery(ctxOf({ departments: ['sales'] }), 'mtk_1')
+      .toSQL();
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('clamps the limit at both ends', () => {
+    expect(commsTicketEventRepo.buildListQuery(ctxOf(), 'mtk_1', 10_000).toSQL().params).toContain(
+      500,
+    );
+    expect(commsTicketEventRepo.buildListQuery(ctxOf(), 'mtk_1', 0).toSQL().params).toContain(1);
   });
 });
