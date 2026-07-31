@@ -355,6 +355,17 @@ export function getMaintenanceAttachmentDownloadUrl(
   ) as Promise<{ id: string; name: string; url: string; expiresAt: string }>;
 }
 
+export function deleteMaintenanceAttachment(
+  caseId: string,
+  attachmentId: string,
+): Promise<{ id: string; deleted: boolean }> {
+  return request(
+    'DELETE',
+    `/cs/maintenance/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { headers: CS_HEADERS },
+  ) as Promise<{ id: string; deleted: boolean }>;
+}
+
 // ---- Maintenance Timeline History (CS feedback 2026-07-31) ----
 
 export interface MaintenanceHistoryChange {

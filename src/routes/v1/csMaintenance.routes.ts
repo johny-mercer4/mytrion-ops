@@ -356,7 +356,8 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
 
   /** Attachments — the CRM has this on every record; the Postgres-backed case didn't (CS feedback
    *  2026-07-31). Metadata in Postgres, bytes in R2 via the same object-storage seam `files.routes.ts`
-   *  uses. No delete: the CRM reference for this feature is upload + list only. */
+   *  uses. Unlike the case itself, an attachment carries no accounting weight — deleting one has no
+   *  ledger impact, so (unlike `maintenance_cases`) a real delete is safe here. */
   app.post('/cs/maintenance/:id/attachments', guard, async (request, reply) => {
     const ctx = requireCsAccess(request);
     requireStorageConfigured();
@@ -412,6 +413,30 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
       filename: attachment.fileName,
     });
     return { id: attachment.id, name: attachment.fileName, url, expiresAt };
+  });
+
+  app.delete('/cs/maintenance/:id/attachments/:attId', guard, async (request) => {
+    const ctx = requireCsAccess(request);
+    requireStorageConfigured();
+    const { id, attId } = attachmentIdParam.parse(request.params);
+    const attachment = await maintenanceAttachmentRepo.getById(attId);
+    if (!attachment || attachment.caseId !== id) {
+      throw new AppError('Attachment not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+    }
+    await maintenanceAttachmentRepo.delete(attId);
+    // Best-effort: the metadata row is the source of truth for the UI, so it's gone either way. A
+    // failed blob delete here just leaves an orphaned object in storage, not a broken reference.
+    await getStorage()
+      .delete(attachment.s3Key)
+      .catch(() => undefined);
+    await auditFromContext(ctx, {
+      action: 'cs.maintenance.attachment_delete',
+      status: 'ok',
+      resourceType: 'maintenance_case',
+      resourceId: id,
+      detail: { fileName: attachment.fileName, attachmentId: attachment.id },
+    });
+    return { id: attId, deleted: true };
   });
 
   /** Timeline History — newest first, matching the CRM's Timeline reading order. */

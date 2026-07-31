@@ -64,6 +64,7 @@ vi.mock('../../src/repos/maintenanceAttachmentRepo.js', () => ({
     insert: vi.fn(async (row: Record<string, unknown>) => ({ id: 'mca_created', ...row })),
     listByCaseId: vi.fn(async () => []),
     getById: vi.fn(async () => undefined),
+    delete: vi.fn(async (id: string) => ({ id })),
   },
 }));
 const storagePutMock = vi.fn(async (_key: string, _body: Buffer, _opts: { contentType: string }) => undefined);
@@ -71,8 +72,9 @@ const storagePresignGetMock = vi.fn(async (_key: string, _opts?: { filename?: st
   url: 'https://example.test/signed',
   expiresAt: new Date(0),
 }));
+const storageDeleteMock = vi.fn(async (_key: string) => undefined);
 vi.mock('../../src/modules/files/storage/index.js', () => ({
-  getStorage: () => ({ put: storagePutMock, presignGet: storagePresignGetMock }),
+  getStorage: () => ({ put: storagePutMock, presignGet: storagePresignGetMock, delete: storageDeleteMock }),
 }));
 // Storage isn't feature-flagged for Maintenance attachments — the route checks env directly
 // (requireStorageConfigured). Defaults to "configured"; individual tests blank a field to hit the
@@ -756,5 +758,89 @@ describe('Attachments (CS feedback 2026-07-31)', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(storagePresignGetMock).not.toHaveBeenCalled();
+  });
+
+  it('deletes the metadata row and the storage object, and audits', async () => {
+    attachmentRepo.getById.mockResolvedValueOnce({
+      id: 'mca_1',
+      caseId: 'mtc_abc123',
+      fileName: 'invoice.pdf',
+      s3Key: 'maintenance/mtc_abc123/abc-invoice.pdf',
+    } as never);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ id: 'mca_1', deleted: true });
+    expect(attachmentRepo.delete).toHaveBeenCalledWith('mca_1');
+    expect(storageDeleteMock).toHaveBeenCalledWith('maintenance/mtc_abc123/abc-invoice.pdf');
+    expect(audited).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'cs.maintenance.attachment_delete', status: 'ok' }),
+    );
+  });
+
+  it('404s a delete for an attachment id that does not exist', async () => {
+    attachmentRepo.getById.mockResolvedValueOnce(undefined);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_gone',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(attachmentRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it("404s a delete whose attachment belongs to a DIFFERENT case — never delete by guessing an id", async () => {
+    attachmentRepo.getById.mockResolvedValueOnce({
+      id: 'mca_1',
+      caseId: 'mtc_other_case',
+      fileName: 'invoice.pdf',
+      s3Key: 'maintenance/mtc_other_case/abc-invoice.pdf',
+    } as never);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(attachmentRepo.delete).not.toHaveBeenCalled();
+    expect(storageDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the metadata row even if the storage delete fails (orphaned blob, not a broken reference)', async () => {
+    attachmentRepo.getById.mockResolvedValueOnce({
+      id: 'mca_1',
+      caseId: 'mtc_abc123',
+      fileName: 'invoice.pdf',
+      s3Key: 'maintenance/mtc_abc123/abc-invoice.pdf',
+    } as never);
+    storageDeleteMock.mockRejectedValueOnce(new Error('object store unreachable'));
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(attachmentRepo.delete).toHaveBeenCalledWith('mca_1');
+  });
+
+  it('503s a delete with a clear message when storage is not configured', async () => {
+    const original = env.S3_ACCESS_KEY_ID;
+    (env as { S3_ACCESS_KEY_ID: string }).S3_ACCESS_KEY_ID = '';
+    try {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1',
+        headers: auth(await csAgent()),
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: expect.objectContaining({ code: 'STORAGE_NOT_CONFIGURED' }) });
+      expect(attachmentRepo.delete).not.toHaveBeenCalled();
+    } finally {
+      (env as { S3_ACCESS_KEY_ID: string }).S3_ACCESS_KEY_ID = original;
+    }
   });
 });

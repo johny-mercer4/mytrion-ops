@@ -27,4 +27,10 @@ export const maintenanceAttachmentRepo = {
       await db.select().from(maintenanceCaseAttachments).where(eq(maintenanceCaseAttachments.id, id)).limit(1),
     );
   },
+
+  async delete(id: string): Promise<MaintenanceCaseAttachment | undefined> {
+    return firstOrUndefined(
+      await db.delete(maintenanceCaseAttachments).where(eq(maintenanceCaseAttachments.id, id)).returning(),
+    );
+  },
 };
