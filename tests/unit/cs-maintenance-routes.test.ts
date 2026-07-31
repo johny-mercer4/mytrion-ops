@@ -53,6 +53,32 @@ vi.mock('../../src/repos/maintenanceCaseRepo.js', () => ({
     countAll: vi.fn(async () => 0),
   },
 }));
+vi.mock('../../src/repos/maintenanceCaseHistoryRepo.js', () => ({
+  maintenanceCaseHistoryRepo: {
+    insert: vi.fn(async (row: Record<string, unknown>) => ({ id: 'mch_created', ...row })),
+    listByCaseId: vi.fn(async () => []),
+  },
+}));
+vi.mock('../../src/repos/maintenanceAttachmentRepo.js', () => ({
+  maintenanceAttachmentRepo: {
+    insert: vi.fn(async (row: Record<string, unknown>) => ({ id: 'mca_created', ...row })),
+    listByCaseId: vi.fn(async () => []),
+    getById: vi.fn(async () => undefined),
+  },
+}));
+vi.mock('../../src/modules/files/storage/index.js', () => ({
+  getStorage: () => ({
+    put: vi.fn(async () => undefined),
+    presignGet: vi.fn(async () => ({ url: 'https://example.test/signed', expiresAt: new Date(0) })),
+  }),
+}));
+// withGeneratedReferenceNumber's raw sequence query — same seam cs-maintenance-rules.test.ts stubs.
+// Real `db` (and everything else this module exports) stays intact: the app's own session/auth
+// plumbing depends on it, and a bare `{ pg }` mock would silently blank that out for the WHOLE app.
+vi.mock('../../src/db/client.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/db/client.js')>();
+  return { ...mod, pg: vi.fn(async () => [{ v: '500000001' }]) };
+});
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
@@ -70,8 +96,10 @@ import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { maintenanceCaseRepo } from '../../src/repos/maintenanceCaseRepo.js';
+import { maintenanceCaseHistoryRepo } from '../../src/repos/maintenanceCaseHistoryRepo.js';
 
 const repo = vi.mocked(maintenanceCaseRepo, true);
+const historyRepo = vi.mocked(maintenanceCaseHistoryRepo, true);
 const records = vi.mocked(zohoCrmRecords, true);
 const crm = vi.mocked(zohoCrm, true);
 const audited = vi.mocked(auditFromContext);
@@ -435,6 +463,85 @@ describe('update', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(audited).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write a history row when the 404 check fails', async () => {
+    repo.update.mockResolvedValueOnce(undefined);
+    await app.inject({
+      method: 'PATCH',
+      url: '/v1/cs/maintenance/mtc_gone',
+      headers: auth(await csAgent()),
+      payload: { status: 'Completed' },
+    });
+    expect(historyRepo.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('Timeline History (CS feedback 2026-07-31)', () => {
+  it('logs one "created" entry with every field the create actually set', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/maintenance',
+      headers: auth(await csAgent()),
+      payload: { name: 'ACME TRUCKING', carrierId: '5000001' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(historyRepo.insert).toHaveBeenCalledTimes(1);
+    const call = historyRepo.insert.mock.calls[0]?.[0] as { action: string; changes: unknown[] };
+    expect(call.action).toBe('created');
+    expect(call.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'name', from: null, to: 'ACME TRUCKING' }),
+      ]),
+    );
+    // Server-resolved fields (compensation defaults, carrier id) are in the SAME entry, not a second one.
+    expect(call.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'completionCompensation', to: '5.00' }),
+      ]),
+    );
+  });
+
+  it('logs one "updated" entry naming the field that changed, using the PRIOR row for "from"', async () => {
+    repo.getById.mockResolvedValueOnce({ status: 'In Process' } as never);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/cs/maintenance/mtc_abc123',
+      headers: auth(await csAgent()),
+      payload: { status: 'Completed' },
+    });
+    expect(res.statusCode).toBe(200);
+    const call = historyRepo.insert.mock.calls[0]?.[0] as {
+      caseId: string;
+      action: string;
+      changes: unknown[];
+    };
+    expect(call.caseId).toBe('mtc_abc123');
+    expect(call.action).toBe('updated');
+    expect(call.changes).toEqual([
+      { field: 'status', label: 'Status', from: 'In Process', to: 'Completed' },
+    ]);
+  });
+
+  it('writes no history row for a no-op patch (nothing actually changed)', async () => {
+    repo.getById.mockResolvedValueOnce({ status: 'Completed' } as never);
+    await app.inject({
+      method: 'PATCH',
+      url: '/v1/cs/maintenance/mtc_abc123',
+      headers: auth(await csAgent()),
+      payload: { status: 'Completed' },
+    });
+    expect(historyRepo.insert).not.toHaveBeenCalled();
+  });
+
+  it('GET history is a thin pass-through to the repo, gated the same as every other route here', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/maintenance/mtc_abc123/history',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(historyRepo.listByCaseId).toHaveBeenCalledWith('mtc_abc123');
   });
 });
 

@@ -109,9 +109,80 @@ export const MAINTENANCE_EDITABLE = [
   'leadCompensation',
   'ownerZohoUserId',
   'ownerName',
+  /** "Second agent" on a jointly worked case — splits the bonus 50/50 with the Owner. Migrated
+   *  from Zoho's `Bonus_for_Completion`, unused there for split purposes; see csMaintenance.ts. */
+  'bonusCompletionUserId',
+  'bonusCompletionName',
 ] as const;
 
 export type MaintenanceEditableField = (typeof MAINTENANCE_EDITABLE)[number];
+
+/** Human labels for the Timeline (CS feedback 2026-07-31) — mirrors the CRM's field labels. */
+export const FIELD_LABELS: Record<MaintenanceEditableField, string> = {
+  name: 'Company Name',
+  companyZohoId: 'Company (CRM link)',
+  companyName: 'Company',
+  carrierId: 'Carrier ID',
+  unitNumber: 'Unit Number',
+  status: 'Status',
+  caseType: 'Case Type',
+  caseDate: 'Date',
+  caseCompletion: 'Completion Date',
+  driverName: 'Driver Name',
+  phone: 'Phone',
+  shopNumber: 'Shop Number',
+  parts: 'Parts / Work',
+  workOrderId: 'Work Order ID',
+  referenceNumber: 'Reference Number',
+  paymentMethod: 'Payment Method',
+  paymentStatus: 'Payment Status',
+  invoiced: 'Invoiced',
+  cardDigits: 'Card Digits',
+  totalAmount: 'Total Amount',
+  completionCompensation: 'Completion Compensation',
+  halfCompletionCompensation: 'Half-Completion Compensation',
+  leadCompensation: 'Lead Compensation',
+  ownerZohoUserId: 'Owner (id)',
+  ownerName: 'Owner',
+  bonusCompletionUserId: 'Second Agent (id)',
+  bonusCompletionName: 'Second Agent',
+};
+
+/** Id-only fields whose paired `*Name` field already renders the same change meaningfully — the
+ *  Timeline skips these so it doesn't show a bare Zoho/CRM id next to the readable name change. */
+const HISTORY_SKIP_FIELDS = new Set<MaintenanceEditableField>([
+  'companyZohoId',
+  'ownerZohoUserId',
+  'bonusCompletionUserId',
+]);
+
+export interface MaintenanceHistoryChangeEntry {
+  field: string;
+  label: string;
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * One Timeline entry's `changes` list. `before` is the row's prior values (null on create, where
+ * every field the patch sets reads as "from blank"); `patch` is exactly what the request wrote
+ * (already coerced by `pickEditable`), so this only reports fields the save actually touched.
+ */
+export function diffMaintenanceCase(
+  before: Partial<Record<MaintenanceEditableField, unknown>> | null,
+  patch: Partial<Record<MaintenanceEditableField, unknown>>,
+): MaintenanceHistoryChangeEntry[] {
+  const out: MaintenanceHistoryChangeEntry[] = [];
+  for (const [field, to] of Object.entries(patch) as [MaintenanceEditableField, unknown][]) {
+    if (HISTORY_SKIP_FIELDS.has(field)) continue;
+    const from = before ? (before[field] ?? null) : null;
+    const fromStr = from === null || from === undefined ? null : String(from);
+    const toStr = to === null || to === undefined ? null : String(to);
+    if (fromStr === toStr) continue;
+    out.push({ field, label: FIELD_LABELS[field] ?? field, from: fromStr, to: toStr });
+  }
+  return out;
+}
 
 // ── value coercion ─────────────────────────────────────────────────────────────
 
