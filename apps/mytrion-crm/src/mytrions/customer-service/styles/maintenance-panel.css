@@ -511,6 +511,32 @@
     color: var(--text-muted);
 }
 
+/* ── Modal tab strip (Overview / Attachments / Timeline) ────────────────────── */
+.cs-root .cs-mt-tab-strip {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0 1.25rem;
+    border-bottom: 1px solid var(--check-border);
+}
+.cs-root .cs-mt-tab {
+    padding: 0.65rem 0.9rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+.cs-root .cs-mt-tab:hover {
+    color: var(--text);
+}
+.cs-root .cs-mt-tab-active {
+    color: var(--cs-sky);
+    border-bottom-color: var(--cs-sky);
+}
+
 /* ── Narrow screens ──────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
     .cs-root .cs-mt-grid {
