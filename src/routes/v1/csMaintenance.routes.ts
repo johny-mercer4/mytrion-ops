@@ -15,6 +15,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { searchCompanies } from '../../integrations/dwhCompanies.js';
 import { AppError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
@@ -49,6 +50,21 @@ const idParam = z.object({ id: z.string().regex(/^mtc_[a-z0-9]+$/, 'not a mainte
 const attachmentIdParam = idParam.extend({
   attId: z.string().regex(/^mca_[a-z0-9]+$/, 'not an attachment id'),
 });
+
+/**
+ * R2/S3 isn't gated by a feature flag for Maintenance attachments (unlike the generic
+ * FF_FILES_ENABLED file system) — so an unconfigured environment must fail with a clear message
+ * here rather than an opaque 500 from deep inside the AWS SDK (`AuthorizationHeaderMalformed`,
+ * which reveals nothing about WHY to whoever is looking at the browser network tab).
+ */
+function requireStorageConfigured(): void {
+  if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY || !env.S3_BUCKET) {
+    throw new AppError(
+      'File storage is not configured in this environment (S3_ENDPOINT/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY/S3_BUCKET) — attachments are unavailable here.',
+      { statusCode: 503, code: 'STORAGE_NOT_CONFIGURED', expose: true },
+    );
+  }
+}
 
 /** Strips path separators and traversal sequences — this name becomes part of an R2 object key. */
 function sanitizeFileName(name: string): string {
@@ -343,6 +359,7 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
    *  uses. No delete: the CRM reference for this feature is upload + list only. */
   app.post('/cs/maintenance/:id/attachments', guard, async (request, reply) => {
     const ctx = requireCsAccess(request);
+    requireStorageConfigured();
     const { id } = idParam.parse(request.params);
     const caseRow = await maintenanceCaseRepo.getById(id);
     if (!caseRow) {
@@ -385,6 +402,7 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/cs/maintenance/:id/attachments/:attId/download', guard, async (request) => {
     requireCsAccess(request);
+    requireStorageConfigured();
     const { id, attId } = attachmentIdParam.parse(request.params);
     const attachment = await maintenanceAttachmentRepo.getById(attId);
     if (!attachment || attachment.caseId !== id) {

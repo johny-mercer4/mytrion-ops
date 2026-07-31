@@ -66,12 +66,30 @@ vi.mock('../../src/repos/maintenanceAttachmentRepo.js', () => ({
     getById: vi.fn(async () => undefined),
   },
 }));
-vi.mock('../../src/modules/files/storage/index.js', () => ({
-  getStorage: () => ({
-    put: vi.fn(async () => undefined),
-    presignGet: vi.fn(async () => ({ url: 'https://example.test/signed', expiresAt: new Date(0) })),
-  }),
+const storagePutMock = vi.fn(async (_key: string, _body: Buffer, _opts: { contentType: string }) => undefined);
+const storagePresignGetMock = vi.fn(async (_key: string, _opts?: { filename?: string }) => ({
+  url: 'https://example.test/signed',
+  expiresAt: new Date(0),
 }));
+vi.mock('../../src/modules/files/storage/index.js', () => ({
+  getStorage: () => ({ put: storagePutMock, presignGet: storagePresignGetMock }),
+}));
+// Storage isn't feature-flagged for Maintenance attachments — the route checks env directly
+// (requireStorageConfigured). Defaults to "configured"; individual tests blank a field to hit the
+// 503 path, same mutate-then-restore approach other suites in this repo use for `env`.
+vi.mock('../../src/config/env.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/config/env.js')>();
+  return {
+    ...mod,
+    env: {
+      ...mod.env,
+      S3_ENDPOINT: 'https://example.test',
+      S3_ACCESS_KEY_ID: 'test-key',
+      S3_SECRET_ACCESS_KEY: 'test-secret',
+      S3_BUCKET: 'test-bucket',
+    },
+  };
+});
 // withGeneratedReferenceNumber's raw sequence query — same seam cs-maintenance-rules.test.ts stubs.
 // Real `db` (and everything else this module exports) stays intact: the app's own session/auth
 // plumbing depends on it, and a bare `{ pg }` mock would silently blank that out for the WHOLE app.
@@ -91,15 +109,18 @@ vi.mock('../../src/integrations/dwhCompanies.js', () => ({
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { env } from '../../src/config/env.js';
 import { zohoCrm } from '../../src/integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { maintenanceCaseRepo } from '../../src/repos/maintenanceCaseRepo.js';
 import { maintenanceCaseHistoryRepo } from '../../src/repos/maintenanceCaseHistoryRepo.js';
+import { maintenanceAttachmentRepo } from '../../src/repos/maintenanceAttachmentRepo.js';
 
 const repo = vi.mocked(maintenanceCaseRepo, true);
 const historyRepo = vi.mocked(maintenanceCaseHistoryRepo, true);
+const attachmentRepo = vi.mocked(maintenanceAttachmentRepo, true);
 const records = vi.mocked(zohoCrmRecords, true);
 const crm = vi.mocked(zohoCrm, true);
 const audited = vi.mocked(auditFromContext);
@@ -610,5 +631,130 @@ describe('there is no delete', () => {
       headers: auth(await csAgent()),
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('Attachments (CS feedback 2026-07-31)', () => {
+  function multipartUpload(caseId: string) {
+    const boundary = '----testboundary';
+    const body =
+      `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="file"; filename="invoice.pdf"\r\n' +
+      'Content-Type: application/pdf\r\n\r\n' +
+      'fake pdf bytes\r\n' +
+      `--${boundary}--\r\n`;
+    return app.inject({
+      method: 'POST',
+      url: `/v1/cs/maintenance/${caseId}/attachments`,
+      headers: {
+        ...auth(csAgentToken),
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+  }
+
+  let csAgentToken: string;
+  beforeEach(async () => {
+    csAgentToken = await csAgent();
+    repo.getById.mockResolvedValue({ id: 'mtc_abc123' } as never);
+  });
+
+  it('uploads to storage, stores metadata, and audits', async () => {
+    const res = await multipartUpload('mtc_abc123');
+    expect(res.statusCode).toBe(201);
+    expect(storagePutMock).toHaveBeenCalledTimes(1);
+    const call = storagePutMock.mock.calls[0];
+    if (!call) throw new Error('storage.put was not called');
+    const [key, buf, opts] = call;
+    expect(key).toMatch(/^maintenance\/mtc_abc123\/.+-invoice\.pdf$/);
+    expect(opts.contentType).toBe('application/pdf');
+    expect(Buffer.isBuffer(buf)).toBe(true);
+
+    const inserted = attachmentRepo.insert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(inserted).toMatchObject({ caseId: 'mtc_abc123', fileName: 'invoice.pdf', mime: 'application/pdf' });
+    expect(audited).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'cs.maintenance.attachment_upload', status: 'ok' }),
+    );
+  });
+
+  it('404s when the case does not exist', async () => {
+    repo.getById.mockResolvedValue(undefined);
+    const res = await multipartUpload('mtc_gone');
+    expect(res.statusCode).toBe(404);
+    expect(storagePutMock).not.toHaveBeenCalled();
+  });
+
+  it('503s with a clear message when storage is not configured, instead of an opaque 500', async () => {
+    const original = env.S3_ACCESS_KEY_ID;
+    (env as { S3_ACCESS_KEY_ID: string }).S3_ACCESS_KEY_ID = '';
+    try {
+      const res = await multipartUpload('mtc_abc123');
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: expect.objectContaining({ code: 'STORAGE_NOT_CONFIGURED' }) });
+      expect(storagePutMock).not.toHaveBeenCalled();
+    } finally {
+      (env as { S3_ACCESS_KEY_ID: string }).S3_ACCESS_KEY_ID = original;
+    }
+  });
+
+  it('lists whatever the repo returns for the case', async () => {
+    attachmentRepo.listByCaseId.mockResolvedValueOnce([
+      { id: 'mca_1', caseId: 'mtc_abc123', fileName: 'invoice.pdf' } as never,
+    ]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ attachments: [{ id: 'mca_1', caseId: 'mtc_abc123', fileName: 'invoice.pdf' }] });
+  });
+
+  it('download presigns a URL for an attachment that belongs to the case', async () => {
+    attachmentRepo.getById.mockResolvedValueOnce({
+      id: 'mca_1',
+      caseId: 'mtc_abc123',
+      fileName: 'invoice.pdf',
+      s3Key: 'maintenance/mtc_abc123/abc-invoice.pdf',
+    } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1/download',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(storagePresignGetMock).toHaveBeenCalledWith(
+      'maintenance/mtc_abc123/abc-invoice.pdf',
+      expect.objectContaining({ filename: 'invoice.pdf' }),
+    );
+    expect(res.json()).toMatchObject({ id: 'mca_1', name: 'invoice.pdf', url: 'https://example.test/signed' });
+  });
+
+  it('404s a download for an attachment id that does not exist', async () => {
+    attachmentRepo.getById.mockResolvedValueOnce(undefined);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_gone/download',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("404s a download whose attachment belongs to a DIFFERENT case — never leak by guessing an id", async () => {
+    attachmentRepo.getById.mockResolvedValueOnce({
+      id: 'mca_1',
+      caseId: 'mtc_other_case',
+      fileName: 'invoice.pdf',
+      s3Key: 'maintenance/mtc_other_case/abc-invoice.pdf',
+    } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/maintenance/mtc_abc123/attachments/mca_1/download',
+      headers: auth(await csAgent()),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storagePresignGetMock).not.toHaveBeenCalled();
   });
 });
