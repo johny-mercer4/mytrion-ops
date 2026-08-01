@@ -9,6 +9,8 @@ import { actorZohoUserIdOf } from '../../repos/commsThreadRepo.js';
 import { commsTicketRepo, type CreatedTicket } from '../../repos/commsTicketRepo.js';
 import type { CommsTicketPriority, MytrionTicketType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { logger } from '../../lib/logger.js';
+import { autoAssignTicket } from './assignment.js';
 import { publishSafely, publishThreadEvent } from './publish.js';
 
 /**
@@ -186,10 +188,15 @@ function lastFour(cardNumber?: string): string | null {
  *
  * Returns the created unit. The caller (the route) owns the audit-success row and the HTTP shape.
  */
+export interface CreatedClientTicket extends CreatedTicket {
+  /** Who the round-robin gave it to, or why nobody got it. */
+  assignment: { assigned: boolean; zohoUserId?: string | undefined; name?: string | null | undefined };
+}
+
 export async function createClientTicket(
   ctx: TenantContext,
   input: CreateClientTicketInput,
-): Promise<CreatedTicket> {
+): Promise<CreatedClientTicket> {
   const actor = actorZohoUserIdOf(ctx);
   if (!actor) {
     throw new RBACError('Filing a ticket requires a signed-in worker identity.');
@@ -245,7 +252,8 @@ export async function createClientTicket(
   });
 
   // A replay wrote nothing, so it must not journal or publish a second time.
-  if (!created.created) return created;
+  // A replay wrote nothing, so it must not journal, assign or publish a second time.
+  if (!created.created) return { ...created, assignment: { assigned: false } };
 
   await commsTicketEventRepo.append(ctx, {
     ticketId: created.ticket.id,
@@ -264,6 +272,18 @@ export async function createClientTicket(
     },
   });
 
+  // Round-robin, AFTER the unit is durable and the 'created' event is journalled. Deliberately not inside
+  // the create transaction: a staffing gap must not roll back a filed ticket, and the roster claim is a
+  // separate contended write that would hold the thread row lock for its duration.
+  const assignment = await autoAssignTicket(ctx, created.ticket, created.thread.id).catch(
+    (err: unknown) => {
+      // Belt and braces — autoAssignTicket already swallows its own failures. A ticket in the queue with
+      // nobody on it is recoverable; losing the ticket is not.
+      logger.warn({ err, ticketId: created.ticket.id }, 'comms: auto-assign threw; ticket left unassigned');
+      return { assigned: false } as const;
+    },
+  );
+
   publishSafely('comms.ticket.created', () => {
     publishThreadEvent(
       created.thread,
@@ -280,6 +300,9 @@ export async function createClientTicket(
         priority: created.ticket.priority,
         targetDepartment: created.ticket.targetDepartment,
         companyName: created.ticket.companyName,
+        ...(assignment.assigned
+          ? { assigneeZohoUserId: assignment.zohoUserId, assigneeName: assignment.name }
+          : {}),
       },
       // alsoQueue: the target department's board is the whole point of filing — the requester is the
       // only member yet, so without this nobody on the receiving side hears about it.
@@ -287,5 +310,5 @@ export async function createClientTicket(
     );
   });
 
-  return created;
+  return { ...created, assignment };
 }

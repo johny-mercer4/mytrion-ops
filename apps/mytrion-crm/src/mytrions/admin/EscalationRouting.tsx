@@ -4,8 +4,10 @@ import {
   listRoutingCandidates,
   patchDepartmentRouting,
   patchEscalationReason,
+  patchPoolSeat,
   removePoolSeat,
   upsertPoolSeat,
+  type AssignmentStrategy,
   type DepartmentRouting,
   type EscalationReasonRouting,
   type RoutingCandidate,
@@ -127,6 +129,11 @@ export function EscalationRouting() {
   const unconfiguredHr = snap.hrDepartments.filter((d) => !d.configured);
   // A name that cannot produce a valid routing slug is unconfigurable until renamed, not merely unconfigured.
   const unroutableHr = unconfiguredHr.filter((d) => d.suggestedSlug === null);
+  // Departments that take tickets but have nobody on the rota — those tickets land unassigned.
+  const ticketDepts = snap.departments.filter(
+    (d) => d.acceptsTickets && d.ticketAssignmentStrategy !== 'manual',
+  );
+  const staffed = ticketDepts.filter((d) => d.pool.some((p) => p.active));
 
   return (
     <>
@@ -156,6 +163,19 @@ export function EscalationRouting() {
               : 'Level 3 resolves for every department that takes escalations.'
           }
           ok={snap.readiness.departmentsMissingManager.length === 0}
+        />
+        <ReadyTile
+          num={`${staffed.length}/${ticketDepts.length}`}
+          label="Ticket queues staffed"
+          hint={
+            staffed.length === ticketDepts.length
+              ? 'Every auto-assigning queue has somebody on the rota.'
+              : `No rota: ${ticketDepts
+                  .filter((d) => !d.pool.some((p) => p.active))
+                  .map((d) => d.label)
+                  .join(', ')} — tickets there land unassigned.`
+          }
+          ok={staffed.length === ticketDepts.length}
         />
         <ReadyTile
           num={String(cLevelSeats.length)}
@@ -200,7 +220,7 @@ export function EscalationRouting() {
 
       <section className={e.section}>
         <div className={e.sectionHead}>
-          <h3 className={s.h2}>Level 3 — the department manager</h3>
+          <h3 className={s.h2}>Departments — manager, hand-off target and ticket rota</h3>
         </div>
         <p className={e.sectionSub}>
           The <strong>default assignee</strong> is level 2 for anything opened against this department, and
@@ -414,6 +434,142 @@ function DepartmentRow({
           <span className={s.pillGood}>ready</span>
         )}
       </div>
+
+      {/* The TICKET ROSTER. Separate from the manager and the hand-off target above, because this is who
+          picks up NEW CLIENT TICKETS — the round-robin draws from exactly this list. */}
+      {dept.acceptsTickets && (
+        <RosterEditor dept={dept} candidates={candidates} onSaved={onSaved} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Who works this department's ticket queue.
+ *
+ * The order shown is the ROTATION order: least-recently-assigned first, which is who gets the next ticket.
+ * Showing it is deliberate — "why did that go to her and not me" should be answerable by looking, not by
+ * asking. `assignedCount` is lifetime, so it stays meaningful after a quiet week.
+ */
+function RosterEditor({
+  dept,
+  candidates,
+  onSaved,
+}: {
+  dept: DepartmentRouting;
+  candidates: RoutingCandidate[];
+  onSaved: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const roster = [...dept.pool].sort((a, b) => {
+    // NULL last_assigned_at first: a newly added member is next in line, because they are owed work.
+    const at = a.lastAssignedAt ? Date.parse(a.lastAssignedAt) : 0;
+    const bt = b.lastAssignedAt ? Date.parse(b.lastAssignedAt) : 0;
+    return at - bt;
+  });
+  const active = roster.filter((r) => r.active);
+
+  async function run(label: string, fn: () => Promise<unknown>): Promise<void> {
+    setBusy(true);
+    try {
+      await fn();
+      adminToast.success(label);
+      await onSaved();
+    } catch (err) {
+      adminToast.error('Could not save', err instanceof Error ? err.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={e.poolWrap}>
+      <div className={e.poolHead}>
+        <span>
+          Ticket roster — {active.length} active
+          {dept.ticketAssignmentStrategy === 'manual'
+            ? ' · assignment is manual, nothing auto-assigns'
+            : dept.ticketAssignmentStrategy === 'least_open'
+              ? ' · next ticket goes to the smallest backlog'
+              : ' · next ticket goes to whoever is at the top'}
+        </span>
+        <select
+          value={dept.ticketAssignmentStrategy}
+          disabled={busy}
+          aria-label={`Assignment strategy for ${dept.label}`}
+          onChange={(ev) =>
+            void run('Assignment strategy updated', () =>
+              patchDepartmentRouting(dept.department, {
+                ticketAssignmentStrategy: ev.target.value as AssignmentStrategy,
+              }),
+            )
+          }
+        >
+          <option value="round_robin">Round robin</option>
+          <option value="least_open">Least open</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+
+      {roster.length > 0 && (
+        <div className={e.seats}>
+          {roster.map((p, i) => (
+            <span key={p.zohoUserId} className={`${e.seat} ${p.active ? '' : e.seatOff}`}>
+              {p.active && dept.ticketAssignmentStrategy !== 'manual' && i === 0 && (
+                <span className={e.seatRole} title="Next in the rotation">
+                  next
+                </span>
+              )}
+              {p.displayName ?? p.zohoUserId}
+              <span className={e.attachSize} title="Tickets assigned all time">
+                {p.assignedCount}
+              </span>
+              <button
+                type="button"
+                className={e.seatX}
+                title={p.active ? 'Take off the rota (keeps their place)' : 'Put back on the rota'}
+                aria-label={`${p.active ? 'Deactivate' : 'Reactivate'} ${p.displayName ?? p.zohoUserId}`}
+                disabled={busy}
+                onClick={() =>
+                  void run(p.active ? 'Taken off the rota' : 'Back on the rota', () =>
+                    patchPoolSeat(dept.department, p.zohoUserId, { active: !p.active }),
+                  )
+                }
+              >
+                {p.active ? '−' : '+'}
+              </button>
+              <button
+                type="button"
+                className={e.seatX}
+                title="Remove from the roster"
+                aria-label={`Remove ${p.displayName ?? p.zohoUserId} from the roster`}
+                disabled={busy}
+                onClick={() =>
+                  void run('Removed from the roster', () =>
+                    removePoolSeat(dept.department, p.zohoUserId),
+                  )
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <PersonPicker
+        candidates={candidates}
+        value={null}
+        busy={busy}
+        hintDepartment={dept.department}
+        placeholder={roster.length === 0 ? 'Add the first person to this rota…' : 'Add someone to the rota…'}
+        ariaLabel={`Add someone to the ${dept.label} ticket roster`}
+        onPick={(c) =>
+          void run(`${c.name} added to the ${dept.label} rota`, () =>
+            upsertPoolSeat(dept.department, { zohoUserId: c.zohoUserId, displayName: c.name }),
+          )
+        }
+      />
     </div>
   );
 }

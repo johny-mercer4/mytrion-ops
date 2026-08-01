@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   listRoutingCandidates: vi.fn(),
   patchEscalationReason: vi.fn(),
   patchDepartmentRouting: vi.fn(),
+  patchPoolSeat: vi.fn(),
   upsertPoolSeat: vi.fn(),
   removePoolSeat: vi.fn(),
 }));
@@ -206,6 +207,136 @@ describe('EscalationRouting — readiness', () => {
     render(<EscalationRouting />);
     expect(await screen.findByRole('alert')).toHaveTextContent('backend down');
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+});
+
+describe('EscalationRouting — ticket rota', () => {
+  const withRota = () =>
+    snapshot({
+      departments: [
+        {
+          department: 'customer-service',
+          hrDepartmentId: 'hrd_cs',
+          label: 'Customer Service',
+          unlinked: false,
+          managerZohoUserId: '88',
+          managerName: 'Bekzod',
+          defaultAssigneeZohoUserId: null,
+          ticketAssignmentStrategy: 'round_robin',
+          requireOnline: true,
+          acceptsTickets: true,
+          acceptsEscalations: true,
+          slaHoursOverride: null,
+          pool: [
+            {
+              zohoUserId: '77',
+              displayName: 'Dilnoza',
+              roleTitle: null,
+              active: true,
+              acceptsNew: true,
+              maxOpen: null,
+              sortOrder: 0,
+              // Assigned longer ago → next in the rotation.
+              lastAssignedAt: '2026-08-01T09:00:00.000Z',
+              assignedCount: 12,
+            },
+            {
+              zohoUserId: '78',
+              displayName: 'Sardor',
+              roleTitle: null,
+              active: true,
+              acceptsNew: true,
+              maxOpen: null,
+              sortOrder: 1,
+              lastAssignedAt: '2026-08-01T10:00:00.000Z',
+              assignedCount: 15,
+            },
+          ],
+        },
+      ],
+    });
+
+  it('shows WHO IS NEXT — least-recently-assigned first', async () => {
+    arrange(withRota());
+    // "why did that go to her and not me" should be answerable by looking.
+    const next = await screen.findByTitle('Next in the rotation');
+    expect(next.parentElement).toHaveTextContent('Dilnoza');
+    expect(next.parentElement).not.toHaveTextContent('Sardor');
+  });
+
+  it('surfaces a queue with nobody on the rota as a gap', async () => {
+    arrange(
+      snapshot({
+        departments: [
+          {
+            department: 'billing',
+            hrDepartmentId: 'hrd_bill',
+            label: 'Billing & Accounting',
+            unlinked: false,
+            managerZohoUserId: '88',
+            managerName: 'B',
+            defaultAssigneeZohoUserId: null,
+            ticketAssignmentStrategy: 'round_robin',
+            requireOnline: false,
+            acceptsTickets: true,
+            acceptsEscalations: true,
+            slaHoursOverride: null,
+            pool: [],
+          },
+        ],
+      }),
+    );
+    // An empty rota means tickets land unassigned — the admin has to be told which queue.
+    expect(await screen.findByText(/No rota: Billing & Accounting/)).toBeInTheDocument();
+  });
+
+  it('adds someone to the rota', async () => {
+    const user = userEvent.setup();
+    api.upsertPoolSeat.mockResolvedValue({ seat: {} });
+    arrange(withRota());
+
+    await user.click(
+      await screen.findByRole('button', { name: /Add someone to the Customer Service ticket roster/i }),
+    );
+    await user.click(await screen.findByRole('option', { name: /Bekzod Tashkentov/ }));
+
+    await waitFor(() =>
+      expect(api.upsertPoolSeat).toHaveBeenCalledWith('customer-service', {
+        zohoUserId: '88',
+        displayName: 'Bekzod Tashkentov',
+      }),
+    );
+  });
+
+  it('takes someone off the rota WITHOUT removing them', async () => {
+    const user = userEvent.setup();
+    api.patchPoolSeat.mockResolvedValue({ seat: {} });
+    arrange(withRota());
+
+    await user.click(await screen.findByRole('button', { name: /Deactivate Dilnoza/i }));
+
+    // Deactivating keeps their rotation history — that is what you want for someone on leave.
+    await waitFor(() =>
+      expect(api.patchPoolSeat).toHaveBeenCalledWith('customer-service', '77', { active: false }),
+    );
+    expect(api.removePoolSeat).not.toHaveBeenCalled();
+  });
+
+  it('changes the assignment strategy', async () => {
+    const user = userEvent.setup();
+    api.patchDepartmentRouting.mockResolvedValue({ department: 'customer-service' });
+    arrange(withRota());
+
+    await user.selectOptions(
+      await screen.findByLabelText(/Assignment strategy for Customer Service/i),
+      'least_open',
+    );
+
+    await waitFor(() =>
+      expect(api.patchDepartmentRouting).toHaveBeenCalledWith('customer-service', {
+        ticketAssignmentStrategy: 'least_open',
+      }),
+    );
   });
 });
 

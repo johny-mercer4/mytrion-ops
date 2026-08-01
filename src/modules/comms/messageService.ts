@@ -4,6 +4,7 @@ import { actorZohoUserIdOf, commsThreadRepo } from '../../repos/commsThreadRepo.
 import { commsThreadMemberRepo } from '../../repos/commsThreadMemberRepo.js';
 import { commsTicketEventRepo } from '../../repos/commsTicketEventRepo.js';
 import { commsTicketRepo } from '../../repos/commsTicketRepo.js';
+import { commsTicketStateRepo } from '../../repos/commsTicketStateRepo.js';
 import type { MytrionThread, MytrionThreadMessage } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { publishSafely, publishThreadEvent, publishUserEvent } from './publish.js';
@@ -96,7 +97,7 @@ export async function postReply(ctx: TenantContext, input: ReplyInput): Promise<
     // answer to anybody. Counting either would make the metric flatter and meaningless.
     const isRequester = ticket.requesterZohoUserId === actor;
     if (!isRequester && !input.isInternal) {
-      await commsTicketRepo.stampFirstResponse(ctx, ticket.id, message.createdAt);
+      await commsTicketStateRepo.stampFirstResponse(ctx, ticket.id, message.createdAt);
     }
     await commsTicketEventRepo.append(ctx, {
       ticketId: ticket.id,

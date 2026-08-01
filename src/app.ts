@@ -43,6 +43,7 @@ import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
 import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
 import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
+import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
@@ -322,6 +323,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(commsThreadsRoutes);
       await v1.register(commsAttachmentsRoutes);
       await v1.register(commsEscalationsRoutes);
+      await v1.register(commsQueueRoutes);
       await v1.register(commsAdminRoutes);
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);

@@ -9115,3 +9115,80 @@ input and its button shared the accessible name "Attach a file").
 "Sales files a ticket → it appears in the CS queue within one frame → CS replies → Sales sees it live". That
 needs `pnpm dev:all` plus two signed-in sessions, and the routing config filled in. Dropbox is still
 credential-blocked.
+
+## 2026-08-02 — Round-robin ticket assignment
+
+The Tickets tab was already live in all four Mytrions (Sales in requester mode; CS, Billing and
+Verification in queue mode, one shared `TicketConsole` chunk). What was missing was assignment: a client
+ticket landed in the department queue with nobody on it. This session builds the rotation, configurable
+from Mytrion Admin.
+
+### The roster is explicit, never derived
+
+`mytrion_department_agents` rows an admin manages — NOT everyone holding the department grant. Deriving it
+would auto-assign live client tickets to every admin and every read-only viewer who can merely open the
+Mytrion; deriving from `hr_employees.department_id` would conflate being *in* a department with being *on
+the rota* (a head, a trainee and someone on parental leave are all "in" CS).
+
+### Selection
+
+One statement, and it has to stay one: `UPDATE … WHERE id = (SELECT … ORDER BY … LIMIT 1 FOR UPDATE SKIP
+LOCKED)`. The obvious SELECT-then-UPDATE hands the same person to two tickets filed in the same instant,
+which is the exact failure round-robin exists to prevent.
+
+Ordering IS the strategy — `round_robin` = `last_assigned_at ASC NULLS FIRST` (a new member goes first;
+they are owed work), `least_open` = fewest open tickets first. Filters: `active`, `accepts_new`, and
+`max_open` counted against the agent's OPEN tickets.
+
+### Three real bugs the real-DB run caught
+
+1. **The rotation never rotated.** Every ticket went to the same agent. The subquery used the Drizzle
+   column helpers, which render `"mytrion_department_agents"."last_assigned_at"` — inside a subquery over
+   the SAME table that is a CORRELATED reference to the outer UPDATE row, so `ORDER BY` was constant per
+   row. Every reference inside the subquery is now written against the alias `a` literally.
+2. **`SKIP LOCKED` starved under a burst.** Twelve concurrent creates over three agents left most tickets
+   unassigned: a claim that walks past every locked row finds nothing. Bounded retry (5 attempts, ~10ms
+   apart) fixes it — the locks are held only for the length of one UPDATE.
+3. **`require_online` would have starved everything.** 0087 seeds it TRUE for customer-service, billing and
+   verification, while `FF_COMMS_PRESENCE=0` means nothing is ever written to `mytrion_agent_presence`. The
+   eligible set would have been permanently empty. Presence is now ignored while the flag is off, and
+   logged. When it IS on, eligibility needs socket liveness AND declared availability — connected-but-away
+   is the common case an hour before end of shift.
+
+### Fairness is approximate, and that is the design
+
+`SKIP LOCKED` trades exact evenness for throughput: a burst lands within about one of the mean (12 over 3
+came out 4/5/3). The guarantee is that nobody is starved and the skew SELF-CORRECTS, because
+`last_assigned_at ASC` pulls whoever fell behind to the front next — asserted directly rather than
+asserting an even split that would only ever be a coincidence.
+
+### Assignment never fails a create
+
+A ticket that could not be assigned is still a filed ticket: it stays visible to the whole department
+through the queue and a `assignment_failed` journal row records why (`empty_roster`, `nobody_eligible`,
+`nobody_online`, `department_not_configured`). `manual` is the configured intent for c-level and sales, so
+it is deliberately NOT journalled as a failure. The claim happens before the ticket is stamped, and is
+released if the stamp loses a race — an agent must not go to the back of the rotation for work they never
+received.
+
+### Surface
+
+`/v1/comms/queue/:id/assign` (claim, or assign to someone who holds a seat on that roster),
+`/release` (only the holder or an admin), `/comms/queue/:department/roster` (read-only, visible to anyone
+who can see the queue — "why did that go to her" is a fair question to answer by looking).
+
+Repos split: `commsTicketStateRepo` now owns the contended writes (transition, assign, unassign,
+first-response) while `commsTicketRepo` keeps create and the reader-filtered reads. Each of those is a write
+whose correctness lives in its WHERE clause, which is worth having in one place.
+
+Admin screen gained a per-department **ticket rota** editor: add/remove people, take someone off without
+losing their rotation history, switch strategy, and a `next` chip on whoever the next ticket goes to. A
+fourth readiness tile flags any auto-assigning queue with an empty rota.
+
+### Verification
+
+20/20 against a fresh throwaway Postgres: exact 3/3/3 rotation, 12 concurrent creates all assigned with
+self-correction proven, `accepts_new=false` and `active=false` skipped, `max_open` capping at 2 and freeing
+when a ticket resolves, empty roster and manual both behaving correctly, `least_open` picking the smallest
+backlog, and two simultaneous claims yielding exactly one winner. Typecheck and lint clean (0 errors).
+Backend 1543 passing with the same 35 pre-existing failures as baseline; web 357 (5 new rota tests).

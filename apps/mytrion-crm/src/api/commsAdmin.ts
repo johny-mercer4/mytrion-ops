@@ -43,6 +43,8 @@ export interface HrDepartmentOption {
   configured: boolean;
 }
 
+export type AssignmentStrategy = 'round_robin' | 'least_open' | 'manual';
+
 export interface DepartmentRouting {
   /** The routing key. Stays a slug even though departments come from hr_departments. */
   department: string;

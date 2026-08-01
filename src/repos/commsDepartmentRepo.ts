@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionDepartmentAgents,
@@ -277,6 +277,126 @@ export const commsDepartmentRepo = {
       )
       .returning();
     return rows[0];
+  },
+
+  /**
+   * ROUND-ROBIN: claim the next eligible seat, atomically.
+   *
+   * One statement, and it must stay one statement. The obvious two-step — SELECT the least-recently-assigned
+   * agent, then UPDATE them — hands the SAME person to two tickets created in the same instant, which is
+   * exactly the failure round-robin exists to prevent. Instead the inner SELECT takes a row lock with
+   * `FOR UPDATE SKIP LOCKED`, so a concurrent claim walks past the locked row to the next candidate rather
+   * than blocking or colliding.
+   *
+   * Ordering IS the strategy:
+   *   round_robin  `last_assigned_at` ascending, NULLS FIRST — the least recently given work goes next, and
+   *                a newly added member (NULL) goes first because they are owed work. Self-healing: an agent
+   *                who was away has a stale timestamp and is first in line when they return.
+   *   least_open   fewest open tickets first, then the same recency tiebreak. Better when handling times
+   *                vary wildly; worse at fairness, which is why round_robin is the default.
+   *
+   * `excludeZohoUserIds` keeps a reassignment from handing the ticket back to whoever just gave it up.
+   * Returns undefined when nobody is eligible — the caller leaves the ticket unassigned in the queue and
+   * journals why, rather than failing the create.
+   */
+  async claimNextAgent(
+    ctx: TenantContext,
+    department: string,
+    opts: {
+      strategy?: TicketAssignmentStrategy;
+      /** Zoho ids considered live. Undefined = do not filter on presence at all. */
+      onlineZohoUserIds?: string[] | undefined;
+      excludeZohoUserIds?: string[];
+    } = {},
+  ): Promise<MytrionDepartmentAgent | undefined> {
+    const strategy = opts.strategy ?? 'round_robin';
+    const online = opts.onlineZohoUserIds;
+    const exclude = opts.excludeZohoUserIds ?? [];
+
+    // EVERY reference inside the subquery must be to the alias `a`, written out literally. Using the
+    // Drizzle column helpers here renders `"mytrion_department_agents"."last_assigned_at"`, which inside a
+    // subquery over the SAME table is a CORRELATED reference to the outer UPDATE row — so ORDER BY became
+    // constant per row and the rotation silently handed every ticket to the same agent.
+    const openLoad = sql`(
+      SELECT count(*) FROM mytrion_tickets t
+       WHERE t.tenant_id = a.tenant_id
+         AND t.assignee_zoho_user_id = a.zoho_user_id
+         AND t.status IN ('open', 'in_progress', 'pending_requester', 'on_hold', 'escalated')
+    )`;
+
+    const order =
+      strategy === 'least_open'
+        ? sql`${openLoad} ASC, a.last_assigned_at ASC NULLS FIRST`
+        : sql`a.last_assigned_at ASC NULLS FIRST`;
+
+    const onlineFilter =
+      online === undefined
+        ? sql`TRUE`
+        : online.length === 0
+          ? sql`FALSE`
+          : sql`a.zoho_user_id IN ${online}`;
+
+    const excludeFilter = exclude.length === 0 ? sql`TRUE` : sql`a.zoho_user_id NOT IN ${exclude}`;
+
+    // Bounded retry, because `SKIP LOCKED` STARVES under a burst. With three agents and twelve tickets
+    // arriving together, a claim that walks past every locked row finds nothing and the ticket would be
+    // filed unassigned — the opposite of what round-robin is for. The locks are held only for the length of
+    // this one UPDATE, so a few milliseconds is enough for the winner to commit and free the row. If nobody
+    // is genuinely eligible the retries cost ~40ms and still return undefined.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const rows = await db
+        .update(mytrionDepartmentAgents)
+        .set({
+          lastAssignedAt: new Date(),
+          assignedCount: sql`${mytrionDepartmentAgents.assignedCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          sql`${mytrionDepartmentAgents.id} = (
+            SELECT a.id FROM mytrion_department_agents a
+             WHERE a.tenant_id = ${ctx.tenantId}
+               AND a.department = ${department}
+               AND a.active = TRUE
+               AND a.accepts_new = TRUE
+               AND (a.max_open IS NULL OR ${openLoad} < a.max_open)
+               AND ${onlineFilter}
+               AND ${excludeFilter}
+             ORDER BY ${order}
+             LIMIT 1
+             FOR UPDATE SKIP LOCKED
+          )`,
+        )
+        .returning();
+      const seat = rows[0];
+      if (seat) return seat;
+      if (attempt < 4) await new Promise((r) => setTimeout(r, 10 * (attempt + 1)));
+    }
+    return undefined;
+  },
+
+  /**
+   * Give back a claim.
+   *
+   * Used when the ticket write fails after an agent was already claimed: without this they would sit at the
+   * back of the rotation having received nothing, and `assigned_count` would over-report their load.
+   */
+  async releaseClaim(ctx: TenantContext, department: string, zohoUserId: string): Promise<void> {
+    await db
+      .update(mytrionDepartmentAgents)
+      .set({
+        assignedCount: sql`GREATEST(${mytrionDepartmentAgents.assignedCount} - 1, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(mytrionDepartmentAgents.tenantId, ctx.tenantId),
+          eq(mytrionDepartmentAgents.department, department),
+          eq(mytrionDepartmentAgents.zohoUserId, zohoUserId),
+        ),
+      );
+    // `last_assigned_at` is deliberately NOT rewound. Restoring it would need the previous value, and the
+    // only cost of leaving it is that this agent waits one extra turn — far better than a rollback race
+    // handing the next two tickets to the same person.
   },
 
   /**
