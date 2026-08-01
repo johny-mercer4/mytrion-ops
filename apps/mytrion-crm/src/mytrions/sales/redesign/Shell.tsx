@@ -407,7 +407,13 @@ export function SalesRedesign() {
                       the server's participant arm decides. The same component serves the CS, Billing and
                       Verification queues — Sales does not have its own chat implementation. */}
                   {section === 'tickets' && (
-                    <TicketConsole mode="requester" title="My tickets & escalations" />
+                    <TicketConsole
+                      mode="requester"
+                      title="My tickets & escalations"
+                      // Create → "opening it now" lands on the new ticket with its chat already open.
+                      focusTicketId={focusTicket}
+                      onFocusConsumed={clearFocusTicket}
+                    />
                   )}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}

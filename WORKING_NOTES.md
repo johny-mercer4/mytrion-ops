@@ -9192,3 +9192,33 @@ self-correction proven, `accepts_new=false` and `active=false` skipped, `max_ope
 when a ticket resolves, empty roster and manual both behaving correctly, `least_open` picking the smallest
 backlog, and two simultaneous claims yielding exactly one winner. Typecheck and lint clean (0 errors).
 Backend 1543 passing with the same 35 pre-existing failures as baseline; web 357 (5 new rota tests).
+
+## 2026-08-02 (2) — Can Sales keep talking in a ticket after creating it?
+
+Asked directly, so verified directly rather than reasoned about. **Backend: yes, fully.** A 16-check run
+against a fresh throwaway Postgres proves the requester path end to end:
+
+- The creator holds `role='requester'` on the thread, so the reader filter's PARTICIPANT arm keeps the
+  ticket visible to them after filing — while another Sales agent still cannot see it.
+- They can post replies into it, attributed to their own id.
+- CS replies in the same thread and the requester sees the whole conversation in order (1,2,3).
+- Assignment does not disturb it: after CS is auto-assigned, the requester still holds `requester` and CS
+  holds `assignee` — `transferAssignee` moves the role without evicting anyone.
+- Unread works both ways: the CS reply shows unread to Sales, and opening it clears the badge.
+- `first_response_at` is set by the CS reply, not by the requester's own follow-up.
+
+**One real UI gap found and fixed.** `openTicket()` (Create → "opening it now") set `focusTicketId` and
+navigated to the Tickets tab, but `TicketConsole` never consumed it — the old Desk-era `TicketsTab` did, and
+that wiring was lost in the swap. The agent landed on the list with nothing selected, having to hunt for the
+ticket they had just filed. The console now takes `focusTicketId` / `onFocusConsumed`: it selects the ticket
+if it is already listed, and FETCHES it if the active filter excludes it (a resolved ticket reached from a
+link), prepending rather than silently changing the user's filter. A failed focus is consumed anyway so it
+cannot loop.
+
+**Worth knowing, by design:** an INTERNAL NOTE written by CS on a Sales ticket IS visible to the Sales
+requester. `is_internal` means "never shown to a CARRIER" — both parties here are staff, and the filter is
+`excludeInternal` only for a customer audience. If notes should be hidden from the requesting Mytrion too,
+that is a different rule and a deliberate change, not a bug fix.
+
+Verification: web typecheck clean, 364 web tests (7 new console tests covering focus-when-listed,
+focus-with-fetch, focus-when-gone, and the queue/requester scoping difference). Bundle rebuilt.

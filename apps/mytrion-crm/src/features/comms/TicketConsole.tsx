@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  getTicket,
   listTickets,
   type TicketDto,
   type ListTicketsParams,
@@ -43,6 +44,16 @@ export interface TicketConsoleProps {
   /** Include escalations alongside client tickets. */
   includeEscalations?: boolean;
   emptyHint?: string;
+  /**
+   * Open this ticket on entry — how "Create → jump to the new ticket" works.
+   *
+   * A ticket id rather than an index, and the console fetches it if the first page does not contain it:
+   * the filter is "Open" by default and the list is newest-first, so a just-created ticket is usually there,
+   * but nothing guarantees it and landing on a list with nothing selected is exactly the bug this closes.
+   */
+  focusTicketId?: string | null;
+  /** Called once the focus has been honoured, so a re-render does not keep re-selecting it. */
+  onFocusConsumed?: () => void;
 }
 
 type StatusFilter = 'open' | 'all' | 'mine';
@@ -55,6 +66,8 @@ export function TicketConsole({
   title,
   includeEscalations = true,
   emptyHint,
+  focusTicketId,
+  onFocusConsumed,
 }: TicketConsoleProps) {
   const [tickets, setTickets] = useState<TicketDto[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -103,6 +116,42 @@ export function TicketConsole({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Honour an incoming focus (Create → "opening it now"). Runs after the first load so the common case is a
+  // pure selection; only a ticket outside the current filter costs a fetch.
+  useEffect(() => {
+    if (!focusTicketId || loading) return;
+    let cancelled = false;
+
+    const inList = tickets.some((t) => t.id === focusTicketId);
+    if (inList) {
+      setSelectedId(focusTicketId);
+      setMobileView('chat');
+      onFocusConsumed?.();
+      return;
+    }
+
+    void getTicket(focusTicketId)
+      .then((t) => {
+        if (cancelled) return;
+        // Prepend rather than reload: the ticket may not match the active filter (a resolved one reached
+        // from a link), and silently changing the user's filter to make it appear would be worse.
+        setTickets((prev) => (prev.some((x) => x.id === t.id) ? prev : [t, ...prev]));
+        setSelectedId(t.id);
+        setMobileView('chat');
+      })
+      .catch(() => {
+        // Gone or not visible to this user — leave the list alone rather than showing an error for
+        // something they did not explicitly ask for.
+      })
+      .finally(() => {
+        if (!cancelled) onFocusConsumed?.();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [focusTicketId, loading, tickets, onFocusConsumed]);
 
   /**
    * Debounced quiet refresh.
