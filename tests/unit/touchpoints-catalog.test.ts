@@ -22,10 +22,6 @@ const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionfetchbillingforminfo',
   'mytrioncardstatus',
   'mytrioncardlimits',
-  'createescalationticket',
-  'createticketincrm',
-  'uploadticketattachment',
-  'uploadescalationattachment',
   'createmaintenance',
   'mytriondatacenterleads',
 ] as const;
@@ -39,7 +35,10 @@ describe('catalog shape', () => {
     // search, a CMP read via servercrm), moved off Deluge. Two waves of Sales touchpoints migrated
     // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
+    // TICKETING then removed the last four: `createticketincrm` and `createescalationticket` went with
+    // the Zoho Desk create routes when Sales moved to /v1/comms, and the two `tickets.upload_*`
+    // attachment touchpoints had already lost their only callers. 19 → 15.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(15);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
     // BOCA and Close Application are guarded local handlers around Playwright.
@@ -141,7 +140,6 @@ describe('catalog shape', () => {
       'inbox.list',
       'leads.datacenter',
       'leads.create',
-      'tickets.create_escalation',
     ]) {
       expect(getTouchpoint(key)?.identityParam, `${key} needs identityParam`).toBe('userId');
     }

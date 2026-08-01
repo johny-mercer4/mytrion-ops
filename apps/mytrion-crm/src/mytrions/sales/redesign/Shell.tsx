@@ -131,9 +131,9 @@ export function SalesRedesign() {
   }, []);
 
   // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
-  // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open). Shell-
-  // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
-  const liveBadges = useSidebarBadges(currentUserId, pushToast);
+  // the tab marks them read); Tickets = unread comms messages from /v1/comms. Shell-level (not tab-scoped)
+  // so the toast on a new inbox message fires no matter which tab is open.
+  const liveBadges = useSidebarBadges(currentUserId);
   // Octane /v1/realtime — new retention cases (and pool/ops) push live to this agent.
   useRetentionRealtime(currentUserId, pushToast);
   const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);

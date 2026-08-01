@@ -9222,3 +9222,62 @@ that is a different rule and a deliberate change, not a bug fix.
 
 Verification: web typecheck clean, 364 web tests (7 new console tests covering focus-when-listed,
 focus-with-fetch, focus-when-gone, and the queue/requester scoping difference). Bundle rebuilt.
+
+## 2026-08-02 (3) — Sales is now ZERO-dependent on Zoho Desk
+
+Audited rather than assumed, then deleted what was left. Sales had been repointed to `/v1/comms` for every
+WRITE, but the Desk code was still in the tree — dead, and one import away from being live again.
+
+### Deleted from the Sales UI
+
+`api/desk.ts` (the whole web client), `tabs/TicketsTab.tsx`, `TicketsBootSkeleton.tsx`, `useTicketsFeed.ts`,
+`ticketOptimistic.ts`, `ticketListCache.ts`, `ticketListMeta.ts`, `ticketStatus.ts`,
+`ticketSubscribeRegistry.ts`, `ticketUnread.ts`, `ticketDirectory.ts`, `ticketLiveBus.ts`, and 315 lines of
+Desk ticket adapters out of `live.ts` (`TicketVM`, `mapTicket`, `loadTicketsPage`, `loadTicketById`,
+`loadTickets`, `loadTicketMessages`).
+
+The cluster rooted at exactly two entry points: the already-orphaned `TicketsTab`, and `sidebarBadges`.
+`sidebarBadges` was rewritten to the two badges it actually serves — the servercrm INBOX socket (unrelated
+to Desk) and `GET /comms/unread`. The previous commit had gated the Desk half off behind
+`DESK_TICKET_BADGE = false`; leaving it would have meant a second, divergent idea of "unread tickets" one
+boolean away from being switched back on, so it is gone. Its subscribe frame no longer carries ticket ids,
+so servercrm stops broadcasting ticket comment events to this client entirely.
+
+### Deleted from the backend
+
+`POST /v1/desk/tickets`, `POST /v1/desk/escalations`, `POST /v1/desk/tickets/:id/reply` — every WRITE on the
+Sales-gated Desk surface. With them went `src/modules/touchpoints/catalog/ticketsDeluge.ts` and all four
+Deluge touchpoints: `tickets.create_in_crm` (`createticketincrm`), `tickets.create_escalation`
+(`createescalationticket`), and the two `tickets.upload_*` attachment ones that had already lost their
+callers. **No Deluge function is invoked for ticketing any more, from anywhere.**
+
+### What deliberately REMAINS, and why
+
+Four `GET /v1/desk/*` read routes. They are unreferenced by any UI, but they are the only route back to
+tickets filed in Zoho Desk BEFORE the migration, and there is no history import. Deleting them makes that
+history unreachable from the app — a product decision, not a cleanup, so it is flagged rather than taken.
+The file header says exactly that.
+
+The `zohoDesk` integration itself stays for three consumers that are NOT Sales ticketing:
+`modules/carrier/serviceRequest.ts` (the mini-app / support-bot service requests, 9 keys),
+`csAnalytics.routes.ts` + `csAnalyticsScope.ts` (CS dashboards over the Desk agent id space), and the
+`zoho_desk.search_tickets` agent tool.
+
+### Dependence level, measured
+
+| Surface | Zoho Desk |
+|---|---|
+| Sales Mytrion (UI) | **0** — no import, no client, no URL |
+| Sales ticketing (backend) | **0 writes**, 4 read routes for pre-migration history only |
+| Deluge (ticketing) | **0** — catalog file deleted |
+| CS / Billing / Verification ticketing | **0** — native from the start |
+| CS analytics dashboards | still Desk (out of scope — only ticketing was being replaced) |
+| Carrier mini-app service requests | still Desk (out of scope) |
+
+### Verification
+
+Typecheck clean, lint 0 errors. Backend back to the EXACT baseline failure set — 10 files / 35 tests, all
+pre-existing — after updating `touchpoints-catalog.test.ts` for the intentional change (deluge count 19→15,
+and the four removed function names). `desk-routes.test.ts` lost the create/reply/escalation cases along
+with their routes rather than being skipped; its 12 remaining tests still cover the ownership gate on the
+historical reads. Web 364/364. Bundle rebuilt.
