@@ -1,17 +1,21 @@
 /**
- * Live sidebar badge counts — one shell-level servercrm socket feeding BOTH nav badges so they
- * update in real time from anywhere in the app and reflect UNREAD (not total):
- *   - Inbox   = messages not yet read (marking read in the tab decrements it immediately).
- *   - Tickets = unread ticket messages (a `ticket_comment_added` bumps it; opening a ticket clears).
+ * Live sidebar badge counts.
+ *   - Inbox   = messages not yet read (servercrm socket; unchanged).
+ *   - Tickets = unread comms messages, from `GET /comms/unread`.
  *
- * Ticket WS scope matches zoho-octane ticketdashboard.html: subscribe with the creator's currently
- * known ticket ids (first Desk page of 20, then whatever the Tickets tab pages in). We do NOT dump
- * the full Desk queue on shell mount — that starved the Tickets tab and felt like a hang.
+ * THE TICKETS BADGE IS NATIVE. Tickets moved to /v1/comms, so counting the Zoho Desk queue here would
+ * put a number in the sidebar that does not match the list the tab shows — the classic badge-lies bug.
+ * The whole Desk warm/subscribe machinery below is therefore gated OFF (`DESK_TICKET_BADGE = false`)
+ * rather than deleted: it still drives the servercrm ticket socket, which is retired with the Desk read
+ * endpoints, not before.
+ *
+ * The native count is a poll, not a push: the console's own socket already updates the list instantly
+ * while the tab is open, and a sidebar number that is a few seconds stale is not worth a second socket.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useCachedLoad } from './dcCache';
 import { useLoad, loadInbox, loadTicketsPage, type TicketVM } from './live';
-import { TICKETS_ENABLED } from './salesData';
+import { getUnreadTotals } from '@/api/comms';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
 import { subscribeInboxReload } from './inboxLiveBus';
@@ -29,7 +33,7 @@ import {
   subscribeTicketIds,
   upsertTicketSubscribeRows,
 } from './ticketSubscribeRegistry';
-import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
+import { useTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
 import { setSocketConnected } from './socketStatus';
 
@@ -41,20 +45,47 @@ async function warmFirstTicketPage(): Promise<{ tickets: TicketVM[]; scoped: boo
   return { tickets: res.tickets, scoped: res.scoped };
 }
 
+/**
+ * Kept false deliberately. `TICKETS_ENABLED` is now TRUE (the tab is live on the native path), so reading
+ * it here would newly switch ON the Desk page-warm this hook used to skip.
+ */
+const DESK_TICKET_BADGE = false;
+
 export function useSidebarBadges(
   currentUserId: string,
   pushToast?: (title: string, msg: string) => void,
 ): { inbox: number; tickets: number } {
   const readSet = useInboxRead();
-  const ticketCounts = useTicketUnread();
+  // Subscribed so the retired Desk counter still settles for the rollback path; not read for the badge.
+  useTicketUnread();
   const inboxLoad = useLoad(loadInbox, [currentUserId]);
+  // The native unread total. Refreshed on tab focus and on a slow interval — the console handles instant
+  // updates while it is open, so this only has to be right when the user is looking elsewhere.
+  const commsUnread = useLoad(
+    async () => (currentUserId ? (await getUnreadTotals()).total : 0),
+    [currentUserId],
+  );
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+    const tick = (): void => {
+      if (document.visibilityState === 'visible') commsUnread.reload();
+    };
+    const id = setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
 
   // First page only — same as ticketdashboard.html open. Seeds feed cache + WS ids.
   const ticketWarm = useCachedLoad(
     ticketsWarmCacheKey(currentUserId),
-    () => (TICKETS_ENABLED ? warmFirstTicketPage() : Promise.resolve({ tickets: [] as TicketVM[], scoped: true })),
+    () => (DESK_TICKET_BADGE ? warmFirstTicketPage() : Promise.resolve({ tickets: [] as TicketVM[], scoped: true })),
     {
-      enabled: TICKETS_ENABLED && !!currentUserId,
+      enabled: DESK_TICKET_BADGE && !!currentUserId,
       staleMs: TICKETS_FEED_STALE_MS,
     },
   );
@@ -124,7 +155,7 @@ export function useSidebarBadges(
 
   // Visibility soft-refresh of the FIRST page only (reference never re-dumps the full set).
   useEffect(() => {
-    if (!TICKETS_ENABLED || !currentUserId) return undefined;
+    if (!DESK_TICKET_BADGE || !currentUserId) return undefined;
     let last = Date.now();
     const onVisible = (): void => {
       if (document.visibilityState !== 'visible') return;
@@ -141,6 +172,7 @@ export function useSidebarBadges(
 
   return {
     inbox: countUnread(inboxLoad.data ?? [], readSet),
-    tickets: totalTicketUnread(ticketCounts),
+    // Native. The Desk counter in ./ticketUnread is left wired for the rollback path but not read.
+    tickets: commsUnread.data ?? 0,
   };
 }

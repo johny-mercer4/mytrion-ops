@@ -36,7 +36,7 @@ import './dc-clients.css';
 
 import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
-import { TicketsTab } from './tabs/TicketsTab';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import { RetentionTab } from './tabs/RetentionTab';
 import { VerificationTab } from './tabs/VerificationTab';
 import { RecordsTab } from './tabs/RecordsTab';
@@ -403,7 +403,12 @@ export function SalesRedesign() {
                   {section === 'home' && <HomeTab />}
                   {section === 'inbox' && <InboxTab />}
                   {section === 'tasks' && <TasksTab />}
-                  {section === 'tickets' && <TicketsTab />}
+                  {/* The SHARED console in requester mode: "the tickets and escalations I raised", which
+                      the server's participant arm decides. The same component serves the CS, Billing and
+                      Verification queues — Sales does not have its own chat implementation. */}
+                  {section === 'tickets' && (
+                    <TicketConsole mode="requester" title="My tickets & escalations" />
+                  )}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}
                   {section === 'records' && <RecordsTab />}

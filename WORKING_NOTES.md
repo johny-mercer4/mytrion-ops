@@ -9021,3 +9021,97 @@ failures.
 credentials yet. Upload, download, temporary link and the chunked session are unexercised end to end. Once
 `DROPBOX_APP_KEY` / `_APP_SECRET` / `_REFRESH_TOKEN` exist, set `COMMS_STORAGE_PROVIDER=dropbox` and round-trip
 a small file and one over 120MB (the chunked path) before trusting it.
+
+## 2026-08-01 (3) — The chat UI: one reusable console, mounted in four Mytrions
+
+Answering the question directly: before this, **there was no chat UI**. The comms substrate and API were
+backend-only, and the Sales Tickets tab was still the Zoho Desk one, parked behind `comingSoon`. This
+session builds the surface.
+
+### Reuse is the architecture, not a later refactor
+
+```
+apps/mytrion-crm/src/api/comms.ts              one client for tickets + escalations + threads
+apps/mytrion-crm/src/features/comms/
+  useCommsSocket.ts   comms-aware WS with DYNAMIC thread subscribe
+  ChatThread.tsx      THE chat pane — thread-keyed, so it serves any thread kind
+  TicketConsole.tsx   list + chat, `mode: 'requester' | 'queue'`
+  chatFormat.ts       pure presentation helpers (testable without rendering)
+  comms.module.css    one stylesheet on the Horizon tokens
+```
+
+Mounted with a single line each: Sales `<TicketConsole mode="requester" />`, and CS / Billing /
+Verification `<TicketConsole mode="queue" department="…" />`. Vite emits it as ONE shared
+`TicketConsole-*.js` chunk with four importers, so the reuse is real at the bundle level too.
+
+What makes it genuinely reusable is that the console holds **no Mytrion knowledge**. Visibility is decided
+server-side by `commsThreadReaderFilter` — the participant arm gives Sales what it raised, the department arm
+gives CS its inbound queue — and neither is expressed in the component. `mode` changes only defaults and
+copy, never authorization. Adding a fifth Mytrion is a mount, not a fork.
+
+`ChatThread` is keyed on the THREAD, not the ticket, which is why it will serve escalations and DMs with no
+second implementation: everything ticket-specific is passed in as `headerSlot`.
+
+### Chat behaviours that were deliberate, not incidental
+
+- **Optimistic send reconciles on the echoed `clientMsgId`**, never on matching text — two identical
+  messages a second apart must not collapse into one bubble.
+- **A failed send keeps the text** and offers Retry. Losing what someone typed is the worst thing a chat
+  can do; the bubble goes to "Not sent" rather than vanishing.
+- **Realtime is push with a self-heal.** Frames carry `seq`, so the pane fetches only `afterSeq` — that
+  same path is the reconnect gap-fill, so a socket drop cannot leave a hole in the conversation.
+- **Read receipts only while the tab is visible.** Marking a conversation read that nobody is looking at is
+  the one thing that makes an unread badge untrustworthy.
+- **Auto-scroll sticks only near the bottom** (48px of slack), so scrolling up to read history is not
+  yanked away by an incoming message.
+- Enter sends, Shift+Enter is a newline. Internal notes are dashed + amber + labelled "Internal note" —
+  never colour alone. Overdue SLA gets a pulse *and* text. Unread gets a rail, a bold subject *and* a count.
+
+### Attachments
+
+Upload is one bubble: caption and file travel together, so a chat never shows a comment beside an orphan
+file the way the Desk path forced. Download links are fetched **on click** — a Dropbox temporary link is a
+round trip that expires in ~4h, so embedding one per row would be slow and would hand out links that die in
+an open tab.
+
+### Two inconsistencies this exposed, both fixed
+
+1. **The Create wizard still wrote to Zoho Desk.** A new ticket would not have appeared in the native list
+   it now reads. Both submits are repointed: `createTicket` (no `department` field — the queue comes from the
+   catalog code; no contact/email/phone — there is no contact record) and `createEscalation`. Attachments
+   became a second call against the new thread, and a failed attach no longer reads as "the ticket failed".
+2. **The sidebar Tickets badge counted the Desk queue.** Unparking the tab flipped `TICKETS_ENABLED` true,
+   which would have newly switched ON a Desk page-warm this hook used to skip. The badge now reads
+   `GET /comms/unread`; the Desk machinery is gated off behind an explicit `DESK_TICKET_BADGE = false`
+   rather than deleted, since it still drives the servercrm ticket socket that retires with the Desk reads.
+
+The escalation form also gained the **department picker** the routing now needs, with reasons loaded from
+`/comms/catalog` — an unrouted reason is disabled with "· not set up" so the agent learns that before typing
+the request rather than from a refusal.
+
+Every WRITE in the Sales UI is now native. The only remaining `api/desk` imports are READS in
+`live.ts` and the orphaned `TicketsTab.tsx`, kept for the rollback path.
+
+### Design
+
+Built on the Horizon tokens (`--hz-pane`, `--hz-blur-md`, `--hz-glass`, `--hz-ease`, `--tone-*`) — no new
+colours, so light/dark and the accent theme keep working. Two-pane split that stacks to one pane on a narrow
+viewport (a 320px-wide chat is not a chat). One shimmer skeleton per pane, never stacked with a spinner.
+`prefers-reduced-motion` disables the bubble entrance, the overdue pulse and smooth scroll.
+
+Still no `modern-web-guidance` skill in this repo (CLAUDE.md rule 10) — worth installing before the next UI
+push if it carries guidance this should have followed.
+
+### Verification
+
+Web typecheck clean, backend typecheck clean, **352 web tests pass (20 new ChatThread tests)**. The new
+tests cover the things a backend test cannot see: clientMsgId reconciliation, a failed send keeping its text,
+`afterSeq` gap-fill, a frame for a different thread being ignored, full state reset on thread switch, the
+internal-note label, a redacted placeholder, and links fetched only on click. `build:widget` rerun and
+`apps/mytrion-crm/app` committed. One real a11y bug found by the tests and fixed in the component (the file
+input and its button shared the accessible name "Attach a file").
+
+**Not verified:** nothing has been exercised against a running backend + browser — no end-to-end pass of
+"Sales files a ticket → it appears in the CS queue within one frame → CS replies → Sales sees it live". That
+needs `pnpm dev:all` plus two signed-in sessions, and the routing config filled in. Dropbox is still
+credential-blocked.

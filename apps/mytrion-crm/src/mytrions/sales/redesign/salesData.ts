@@ -124,9 +124,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
       { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
-      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
-      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
-      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
+      // LIVE on the native comms path (/v1/comms), not Zoho Desk. The old Desk-backed TicketsTab is no
+      // longer rendered; Sales now mounts the shared TicketConsole in requester mode.
+      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
       // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
       { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
       { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
