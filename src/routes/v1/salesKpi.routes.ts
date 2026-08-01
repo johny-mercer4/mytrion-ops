@@ -60,9 +60,10 @@ const listTaskQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
+/** Assignee kanban may land on any board column (incl. reopen from terminal). */
 const workerStatusSchema = z.object({
   version: z.number().int().positive(),
-  status: z.enum(['in_progress', 'completed']),
+  status: statusSchema,
 });
 const presenceSchema = z.object({
   sessionId: z.string().trim().min(8).max(128),
@@ -330,11 +331,14 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
     if (!existing || existing.assigneeZohoUserId !== zohoUserId(ctx)) {
       throw new NotFoundError('Task not found');
     }
+    if (existing.status === body.status) {
+      return { task: taskDto(existing) };
+    }
     const allowed: Record<WorkerTaskStatus, WorkerTaskStatus[]> = {
-      open: ['in_progress'],
-      in_progress: ['completed'],
-      completed: [],
-      cancelled: [],
+      open: ['in_progress', 'completed', 'cancelled'],
+      in_progress: ['open', 'completed', 'cancelled'],
+      completed: ['open', 'in_progress'],
+      cancelled: ['open', 'in_progress'],
     };
     if (!allowed[existing.status].includes(body.status)) {
       throw new ConflictError(`Task cannot move from ${existing.status} to ${body.status}`);

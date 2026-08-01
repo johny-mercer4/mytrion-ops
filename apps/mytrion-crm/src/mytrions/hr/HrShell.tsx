@@ -15,6 +15,7 @@ import './hr-attendance.css';
 import './hr-leave-settings.css';
 import './hr-polish.css';
 import './hr-settings-v2.css';
+import './hr-attendance-v2.css';
 
 /**
  * HR Mytrion shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell.
@@ -55,15 +56,17 @@ export function HrShell() {
     },
   ];
   const footerNav: NavItem[] = settingsTab
-    ? [{
-        key: settingsTab.id,
-        label: settingsTab.label,
-        icon: <settingsTab.icon size={19} />,
-        tone: settingsTab.tone,
-        active: view === settingsTab.id,
-        onClick: () => open(settingsTab.id),
-        keywords: settingsTab.keywords,
-      }]
+    ? [
+        {
+          key: settingsTab.id,
+          label: settingsTab.label,
+          icon: <settingsTab.icon size={19} />,
+          tone: settingsTab.tone,
+          active: view === settingsTab.id,
+          onClick: () => open(settingsTab.id),
+          keywords: settingsTab.keywords,
+        },
+      ]
     : [];
 
   return (

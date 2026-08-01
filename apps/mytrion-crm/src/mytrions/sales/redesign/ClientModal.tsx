@@ -15,6 +15,7 @@ import {
 import type { ClientRecord } from './ctx';
 import { s } from './dc';
 import { Icon, type IconName } from './icons';
+import { LoyaltyOverrideNotice } from './LoyaltyOverrideNotice';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import {
@@ -330,6 +331,7 @@ export function ClientModal({
           )}
           {clientTab === 'loyalty' && (
             <div className="dc-lty" style={s('display:flex;flex-direction:column;gap:14px')}>
+              <LoyaltyOverrideNotice override={client.loyaltyOverride ?? null} />
               <div style={s(`${tile};display:flex;align-items:center;gap:14px;border-color:color-mix(in srgb,${loyaltyTone} 34%,var(--border2))`)}>
                 <div style={s(`width:48px;height:48px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${loyaltyTone} 16%,transparent);color:${loyaltyTone}`)}>
                   <Icon name={tierBucketIcon(loyaltyBucket)} size={23} />

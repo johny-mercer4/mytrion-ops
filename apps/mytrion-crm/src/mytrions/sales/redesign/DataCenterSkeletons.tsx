@@ -57,10 +57,10 @@ export function DcKanbanSkeleton({ label }: { label: string }) {
 export function DcCardGridSkeleton({ label, count = 6 }: { label: string; count?: number }) {
   return (
     <div
-      className="ss-fu"
+      className="ss-fu ss-card-grid-skeleton"
       aria-busy="true"
       aria-label={`Loading ${label}`}
-      style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}
+      style={s('gap:14px')}
     >
       {Array.from({ length: count }, (_, i) => (
         <div
@@ -90,6 +90,35 @@ export function DcCardGridSkeleton({ label, count = 6 }: { label: string; count?
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Verification detail placeholder: same glass sections and nine-stage rhythm as the loaded page. */
+export function VerificationDetailSkeleton() {
+  return (
+    <div
+      className="ss-verification-detail-skeleton"
+      aria-busy="true"
+      aria-label="Loading verification detail"
+    >
+      <div className="ss-verification-detail-summary">
+        <div style={s('display:flex;flex-direction:column;gap:8px;flex:1')}>
+          <Skel w="138px" h="12px" />
+          <Skel w="62%" h="15px" />
+        </div>
+        <Skel w="112px" h="28px" extra="border-radius:99px" />
+      </div>
+      <div className="ss-verification-stage-skeleton">
+        {Array.from({ length: 9 }, (_, index) => (
+          <div key={index} className="ss-verification-stage-skeleton-row">
+            <Skel w="24px" h="24px" extra="border-radius:50%" />
+            <Skel w={`${44 + (index % 3) * 8}%`} h="14px" />
+            <Skel w="82px" h="22px" extra="border-radius:99px;margin-left:auto" />
+          </div>
+        ))}
+      </div>
+      <Skel w="100%" h="88px" />
     </div>
   );
 }

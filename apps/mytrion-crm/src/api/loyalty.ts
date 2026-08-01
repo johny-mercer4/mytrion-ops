@@ -1,6 +1,6 @@
 /**
- * Manager Mytrion → Loyalty Program API. Reads EVERY carrier's tier inputs (active cards + monthly
- * gallons) from the manager-gated backend (`/v1/manager/loyalty/clients`). Read-only.
+ * Manager Mytrion → Loyalty Program API. Reads every carrier's tier inputs and persists the
+ * manager-gated per-client reward controls exposed by the Loyalty workspace.
  *
  * Same DWH roster query as Sales' Data Center → Clients, minus the per-agent owner filter, so the two
  * surfaces resolve identical tiers. Tier math itself is client-side, in mytrions/_shared/loyalty.ts.

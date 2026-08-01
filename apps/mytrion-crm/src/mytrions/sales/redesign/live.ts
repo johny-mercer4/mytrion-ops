@@ -307,6 +307,7 @@ export interface RecordVM {
   activeCardsPrevMonth: number;
   lastTierName: string;
   loyaltyOverride?: AgentClient['loyaltyOverride'];
+  managerControlled?: boolean;
 }
 
 /** DWH roster row → the card/list view-model. Debt/active/gallons are already computed + typed
@@ -342,6 +343,7 @@ function mapRecord(c: AgentClient): RecordVM {
     activeCardsPrevMonth: c.activeCardsPrevMonth,
     lastTierName: c.lastTierName,
     loyaltyOverride: c.loyaltyOverride ?? null,
+    managerControlled: Boolean(c.loyaltyOverride),
   };
 }
 

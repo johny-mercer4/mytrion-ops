@@ -26,13 +26,8 @@ const isAllowedPunchSource = sql`
   (${hrAttendancePunches.source} = 'manual' or ${hrAttendancePunches.doorName} ilike '%Ganga%')
 `;
 
-async function rebucketMappedGangaPunches(
-  ctx: TenantContext,
-  employeeId?: string,
-): Promise<void> {
-  const employeeClause = employeeId
-    ? sql`and punch.employee_id = ${employeeId}`
-    : sql``;
+async function rebucketMappedGangaPunches(ctx: TenantContext, employeeId?: string): Promise<void> {
+  const employeeClause = employeeId ? sql`and punch.employee_id = ${employeeId}` : sql``;
   await db.execute(sql`
     with corrected as (
       select
@@ -40,7 +35,10 @@ async function rebucketMappedGangaPunches(
         case
           when active_shift.end_local::time <= active_shift.start_local::time
            and (punch.punched_at at time zone 'Asia/Tashkent')::time
-               < active_shift.end_local::time
+               < least(
+                   active_shift.start_local::time,
+                   (active_shift.end_local::time + interval '4 hours')::time
+                 )
             then (punch.punched_at at time zone 'Asia/Tashkent')::date - 1
           else (punch.punched_at at time zone 'Asia/Tashkent')::date
         end as work_date
@@ -60,6 +58,10 @@ async function rebucketMappedGangaPunches(
             assignment.effective_to is null
             or assignment.effective_to
                >= (punch.punched_at at time zone 'Asia/Tashkent')::date
+                  - case
+                      when shift.end_local::time <= shift.start_local::time then 1
+                      else 0
+                    end
           )
         order by assignment.effective_from desc
         limit 1

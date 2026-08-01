@@ -1,20 +1,17 @@
 /**
  * Verification pipeline — DWH deals + current-terms service (read-only). Backs the Sales
- * "Verification Pipeline" tab's client list: the caller's deal-clients ordered by freshest
- * application date (octane.agent_deals.appfilldate), each classified in_pipeline | active | closed
- * from octane.dim_company, and enriched with current terms (credit limit, billing cycle, payment
- * terms/day, card/swipe status). Raw SQL lives here (repo rule 2); runs through the read-only `dwh`
- * pool. The compliance-stage data itself comes from the pipeline PROVIDER (mock this phase), NOT
- * from here — this module never touches the credit_platform verification DB.
+ * "Verification Pipeline" tab's server-paginated client list, ordered by freshest application
+ * date and enriched where a carrier has reached dim_company.
+ * Raw SQL lives here (external read-only integration); it runs through the enforced-read-only DWH
+ * pool. Compliance-stage data itself comes from the pipeline provider, not from the DWH.
  */
 import { dwh } from '../../integrations/dwh.js';
-import { buildOwnedCte, ownerBinds } from '../../integrations/dwhClientRoster.js';
 
 export type VerificationClientStage = 'in_pipeline' | 'active' | 'closed';
 
 export interface VerificationClient {
   dealId: string | null;
-  carrierId: string;
+  carrierId: string | null;
   companyName: string;
   /** yyyy-mm-dd application-fill date (freshest-first sort key). */
   appFillDate: string | null;
@@ -39,10 +36,16 @@ export interface VerificationClient {
   /** Keys used to look up the compliance pipeline (provider); from dim_company. */
   applicationId: string | null;
   dot: string | null;
+  country: string | null;
+  contactSource: string | null;
+  agentName: string;
+  attentionCount: number;
+  verificationStatus: string | null;
+  verificationUpdatedAt: string | null;
 }
 
 /** dim_company columns the `owned` CTE must expose for classification + terms + pipeline keys. */
-const OWNED_COLS = `carrier_id, company_name, deal_stage, application_id, dot,
+const OWNED_COLS = `company_name, deal_stage, application_id, dot,
   credit_score, credit_limit, billing_cycle, payment_terms, payment_day, minimum_required_balance,
   first_swipe_date, last_transaction_date, total_active_cards, total_swiped_cards,
   active_cards_last_30_days, is_active, is_loc_suspended, is_debtor`;
@@ -68,7 +71,17 @@ interface Row {
   is_loc_suspended: boolean | null;
   is_debtor: boolean | null;
   deal_id: string | null;
+  deal_name: string | null;
+  agent: string | null;
+  country: string | null;
+  contact_source: string | null;
   appfilldate: Date | string | null;
+  total_count: number | string | null;
+}
+
+export interface VerificationClientPage {
+  clients: VerificationClient[];
+  total: number;
 }
 
 const num = (v: unknown): number => {
@@ -102,44 +115,68 @@ function classify(r: Row): VerificationClientStage {
 }
 
 /**
- * The caller's deal-clients, freshest application date first. Owner resolution reuses the roster's
- * id-suffix-first / display-name-fallback authority (buildOwnedCte over dim_company); we then join
- * octane.agent_deals on carrier_id for the Zoho deal id + appfilldate sort key. Empty when the
- * caller has neither a usable id-suffix nor a name (fail-closed).
- *
- * Note: agent_deals rows without a carrier_id (pre-company applications) have no dim_company terms
- * and no pipeline join key, so they are intentionally excluded — the list is the agent's clients
- * that reached a company record.
+ * One pipeline-only page of the caller's agent_deals rows, including applications that do not have
+ * a carrier_id yet. The DWH table has an agent display name but no Zoho user id, so the
+ * server-resolved session/View-as name is the fail-closed owner authority. A lateral lookup reads
+ * only each deal's latest dim_company record instead of sorting the entire company dimension.
  */
 export async function getAgentVerificationClients(
-  ownerZohoUserId: string,
+  _ownerZohoUserId: string,
   agentName: string | undefined,
-  limit = 300,
-): Promise<VerificationClient[]> {
-  const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
-  if (idBindIdx === null && nameBindIdx === null) return [];
-  const lim = Math.min(Math.max(limit, 1), 1000);
+  options: { page?: number; pageSize?: number; search?: string } = {},
+): Promise<VerificationClientPage> {
+  const ownerName = agentName?.trim();
+  if (!ownerName) return { clients: [], total: 0 };
+  const page = Math.max(options.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? 9, 1), 24);
+  const offset = (page - 1) * pageSize;
+  const search = options.search?.trim().toLowerCase() ?? '';
 
   const rows = await dwh.query<Row>(
-    `with ${buildOwnedCte(idBindIdx, nameBindIdx, OWNED_COLS)},
-     deals as (
-       select distinct on (carrier_id) carrier_id, id::text as deal_id, appfilldate
+    `with deals as (
+       select distinct on (id) id::text as deal_id, carrier_id, deal_name, agent, country,
+              contact_source, appfilldate
          from octane.agent_deals
-        where carrier_id is not null and id is not null
-        order by carrier_id, appfilldate desc nulls last, id desc
+        where id is not null and lower(agent) = lower($1)
+        order by id, appfilldate desc nulls last
+     ),
+     enriched as (
+       select c.*, d.deal_id, d.carrier_id, d.deal_name, d.agent, d.country,
+              d.contact_source, d.appfilldate
+         from deals d
+         left join lateral (
+           select ${OWNED_COLS}
+             from octane.dim_company company
+            where company.carrier_id = d.carrier_id
+            order by company.update_date desc nulls last
+            limit 1
+         ) c on true
+     ),
+     filtered as (
+       select *, count(*) over() as total_count
+         from enriched
+        where not (
+          lower(coalesce(deal_stage, '')) = 'card swiped'
+          or first_swipe_date is not null
+          or coalesce(total_swiped_cards, 0) > 0
+        )
+          and (
+            $2 = ''
+            or lower(concat_ws(' ', deal_name, company_name, deal_stage, carrier_id::text))
+               like '%' || $2 || '%'
+          )
      )
-     select o.*, d.deal_id, d.appfilldate
-       from owned o
-       left join deals d on d.carrier_id = o.carrier_id
-      order by d.appfilldate desc nulls last, o.company_name asc nulls last
-      limit ${lim}`,
-    binds,
+     select *
+       from filtered
+      order by appfilldate desc nulls last, deal_id desc
+      limit $3 offset $4`,
+    [ownerName, search, pageSize, offset],
   );
 
-  return rows.map((r) => ({
+  const clients = rows.map((r) => ({
     dealId: strOrNull(r.deal_id),
-    carrierId: str(r.carrier_id),
-    companyName: str(r.company_name) || '(unnamed)',
+    carrierId: strOrNull(r.carrier_id),
+    companyName: str(r.deal_name) || str(r.company_name) || '(unnamed application)',
     appFillDate: dateOrNull(r.appfilldate),
     dealStage: str(r.deal_stage) || '—',
     classification: classify(r),
@@ -159,5 +196,12 @@ export async function getAgentVerificationClients(
     isDebtor: r.is_debtor === true,
     applicationId: strOrNull(r.application_id),
     dot: strOrNull(r.dot),
+    country: strOrNull(r.country),
+    contactSource: strOrNull(r.contact_source),
+    agentName: str(r.agent),
+    attentionCount: 0,
+    verificationStatus: null,
+    verificationUpdatedAt: null,
   }));
+  return { clients, total: rows.length ? num(rows[0]?.total_count) : 0 };
 }

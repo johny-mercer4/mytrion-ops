@@ -9577,6 +9577,177 @@ than reasoned about: 89 entries applied, 87 tables, and `maintenance_cases`,
 `hr_leave_*` tables, `loyalty_client_overrides`, and the `hr_attendance_ganga_only_trg` trigger all
 verified present.
 
+## 2026-07-31 — Manager reward controls propagated into Sales
+
+Closed two manual Loyalty control gaps on `feature/Mytrion`. A client without an override was
+incorrectly initialized as a custom checklist because optional chaining produced `undefined`, which
+was compared only against `null`; saving untouched controls could therefore freeze today's automatic
+rewards into an unnecessary exception. The editor now treats both null and undefined as automatic,
+while an explicit empty array still means the Manager intentionally disabled every reward.
+
+Saving or resetting a Manager override now patches the cached company-wide Manager roster and
+invalidates every owner-scoped `sales:clients:*` cache. This prevents old controls from reappearing
+when the Manager card is reopened and guarantees Sales refetches the tenant-scoped override rather
+than retaining a warm pre-save roster. Sales client cards disclose `Manager loyalty controls`, and
+the client Loyalty tab shows a read-only control notice with the active custom/default state,
+manager identity, update date, and note. Tier and projection calculations remain shared through
+`_shared/loyalty.ts`; manual reward selection remains independent from tier thresholds.
+
+Added Manager modal regressions for untouched/default and explicit checkbox saves, cache propagation
+and reset tests, Sales disclosure tests, and repository predicate tests proving reads/deletes include
+tenant plus carrier while upserts take tenant from context. Manager Loyalty + Sales Data Center +
+repository routes pass 48/48, the complete frontend suite passes 348/348, both TypeScript projects
+pass, lint has zero errors and 23 existing warnings, and the production frontend build passes. The
+full backend run is not repository-green: 1,379 tests pass and 62 unrelated baseline/environment
+tests fail across Customer Service authorization fixtures, retention expectations, remote Render DB
+DNS, sandboxed WebSocket binding, and older touchpoint/tool/stream mocks.
+
+## 2026-07-31 — HR attendance live presence and visit timeline
+
+Reworked Mytrion HR Attendance around actual office visits instead of a decorative shift bar. The
+page now leads with the employee's live presence, exact Ganga reader, check-in time, a second-by-second
+time-in-office tracker, and the week's accumulated office time. Every day expands into explicit
+Check in → Check out rows with both doors and the duration of each visit; an open visit says “Still
+inside”, while standalone scans remain visible as an audit-quality note rather than a vague worked-
+time warning. Team and organization rosters also disclose a checkout-needs-review state.
+
+The zero-hour defect was in sessionization: open sessions were deliberately emitted with
+`durationMs = 0` and excluded from `totalMs`. Attendance summaries now use one calculation timestamp,
+include a recent open visit in day/week totals, expose ISO visit timestamps to the frontend, and
+expire a forgotten checkout after 16 hours into `needs_review` so someone cannot remain “in office”
+forever. A read-only production-data diagnostic confirmed the screenshot's mapped employee at
+Ganga 4F Entry now calculates as in-office from 18:51:14 UZT with 02:24 elapsed instead of 00:00.
+
+Added migration `0089_hr_attendance_shift_grace`: overnight punches receive a four-hour checkout
+grace, so an overtime exit such as 05:00 after the 19:00–03:00 shift is re-bucketed onto the shift it
+closes instead of appearing as a standalone checkout on the following day. Application-side
+reconciliation uses the same rule for future Face ID links. Ganga-only ingestion, entry/exit door
+classification, normalized Face ID mapping, manager shift assignment, leave, employee, department,
+and org-structure tests remain green. The HR home copy now describes the native live workspaces,
+and an invalid attendance stylesheet brace discovered by the production build was repaired.
+
+Verification: 13 backend HR files / 84 tests pass; HR frontend tests pass 23/23; the complete
+frontend suite passes 349/349; backend and frontend TypeScript pass; lint has zero errors and 23
+existing warnings; and the production frontend build passes. The in-app preview had no authenticated
+Zoho session, so visual implementation was grounded in the user's current authenticated screenshot
+and component-level rendering; signed-in browser QA remains the final deployment smoke. Migration
+0089 must be applied for already-stored late overnight checkouts to be re-bucketed.
+
+## 2026-08-01 — Sales Verification live pipeline and Referrals loader
+
+Standardized Manager Referrals on the same nine-card skeleton used by Loyalty and kept cached
+results visible during background refreshes. This removes the separate full-page calculation loader
+without changing referral calculations.
+
+Enabled the Sales Verification workspace and changed its roster to start from every caller-owned
+`octane.agent_deals` row, including applications without a carrier yet, ordered by `appfilldate`
+newest first. Card enrichment remains read-only DWH work. Pipeline detail now resolves the direct
+`agent_deals.id` → `credit_platform.requests.request_id` relationship (with carrier/application/DOT
+fallbacks), reads live stages, decisions, tracker events and safe attachment metadata, and loads
+card-level action counts in bulk to avoid an N+1 request pattern.
+
+Verification events can now declare Sales requirements through payload fields, choices, audience,
+instructions, and attachment flags; MC/DOT wording also produces the expected fields when the
+payload is sparse. Sales sees those requests as prominent red flags on cards and in the opened
+pipeline, completes the generated form, optionally/mandatorily attaches a file, and sends the
+response through the owning Zoho Deal. Known MC/DOT fields are updated, the complete response is
+journaled as a Deal note, and attachment metadata plus idempotency history is stored in the new
+tenant-isolated `verification_sales_responses` table. The external Verification database remains
+session-enforced read-only.
+
+Added migration `0090_verification_sales_responses`, payload parser tests, response repository
+tenant-isolation tests, the action-form component test, and the standardized Referrals loader test.
+Backend/frontend typechecks, lint (0 errors / 22 existing warnings), both production builds, all 350
+frontend tests, and the focused Verification + RBAC set (42/42) pass. The full backend baseline is
+not green: 1,387 pass and 63 unrelated tests fail across existing Customer Service authorization
+fixtures, retention/tool expectations, sandboxed WebSocket binding, and unavailable remote Render
+DNS. The new Verification pipeline tests pass within that run.
+
+## 2026-08-02 — Sales Verification 502 recovery and roster simplification
+
+Reproduced the reported `/v1/verification/clients?zoho_user_id=…` 502 against the affected View-as
+user and isolated each dependency. The DWH roster and read-only Verification database were healthy;
+the failure was the local response-history lookup because `verification_sales_responses` did not
+exist. A broad route catch incorrectly relabeled that local migration failure as `DWH_ERROR`.
+
+The card endpoint now treats `agent_deals` as its required source and loads live Verification
+summaries plus tenant response history as optional enrichments with `Promise.allSettled`. Either
+enrichment can fail without hiding the cards, and only an actual DWH roster failure returns 502.
+Pipeline response-history hydration is fail-soft for the same reason. Added route regressions for
+missing history, unavailable Verification, and genuine DWH failure.
+
+The first migration run appeared successful but post-migration verification still found no table.
+Drizzle metadata showed the configured database already had different hashes recorded at the
+timestamps originally assigned to 0089/0090. Moved 0090 beyond the database's current maximum
+timestamp, reran migrations, and verified the table through the tenant-scoped repository. The exact
+authenticated endpoint for Zoho user `6227679000007809267` now returns HTTP 200 with 500 cards,
+newest application first.
+
+Simplified the Verification tab to one complete roster: removed the Active sub-tab and application
+order button, retained the server's fixed newest-first order, and replaced the text loader with the
+shared nine-card Sales skeleton. Added a UI regression pinning those controls and loader. Focused
+backend Verification tests pass 14/14, the complete frontend suite passes 351/351, lint has zero
+errors (22 existing warnings), both typechecks pass, and both production builds pass.
+
+## 2026-08-02 — Sales My Tasks kanban
+
+Shipped assignee **My Tasks** in Sales Horizon as a status kanban (Open / In progress /
+Completed / Cancelled) with HTML5 drag-and-drop status updates and a DetailSheet modal for
+subject, description, deadline, priority, and event history. Reuses Retention board chrome
+(`.ss-ret-*`). Nav item moved into the daily cluster (no longer Coming soon).
+
+Backend: `/v1/sales/tasks/:taskId/status` now accepts all `WorkerTaskStatus` values so board
+drops can reopen or cancel; same-status is a no-op. No new tables — storage remains
+`mytrion_worker_tasks` (+ `mytrion_worker_task_events`, `mytrion_task_types`).
+
+## 2026-08-02 — Sales Verification roster restoration
+
+Confirmed from git history that the full Verification Pipeline UI already existed and had been
+parked behind `comingSoon`. The live-data work extended that implementation rather than replacing
+it, but a later interpretation of “remove Active” incorrectly merged active clients into the
+pipeline roster. Restored the intended pipeline-only roster while retaining live stages, Sales
+action requests, attachments, and activity.
+
+Made the roster a bounded responsive grid using `minmax(0, 1fr)` so long company or billing text
+cannot widen a track and clip the third column. Cards now share one row height and flex layout,
+render nine per page, and collapse to two/one columns at the existing tablet/mobile breakpoints.
+When a DWH application has no live Verification record yet, its detail view now shows the original
+nine stages as “Not started” with an explicit “Awaiting intake” state instead of an empty panel.
+
+Added regressions for pipeline-only filtering, equal-grid contracts, nine-card pagination, and the
+pending nine-stage detail state. Frontend typecheck passes, the focused Verification tests pass
+4/4, the complete frontend suite passes 353/353, and the production frontend build succeeds. A
+browser visual check reached the local Zoho sign-in gate, so signed-in visual QA remains manual.
+
+## 2026-08-02 — Verification pagination, query, and glass workspace
+
+Moved the Verification roster from client-side slicing of a 500-record payload to a true
+server-paginated contract (`page`, `page_size`, debounced `q`). The DWH query now returns one
+pipeline-only page plus a windowed total, uses bound Postgres placeholders for limit/offset/search,
+and replaces the global `dim_company` distinct/sort with a per-deal latest-row lateral lookup.
+Live Verification summaries and local Sales-response enrichment now receive only the nine deal IDs
+on the visible page. A live read-only validation for the affected View-as user returned 9 of 469
+records in 857 ms.
+
+Rebuilt the Verification surface around the Sales Horizon tokens in a dedicated, scoped stylesheet:
+responsive equal-height glass cards, semantic status rail, tokenized type scale, bounded search
+toolbar, stable pagination footer, and a rectangular Refresh action in the page header. Both themes
+inherit the shared translucent surface, border, blur, shadow, radius, focus, and semantic colour
+tokens. Added a shaped nine-stage detail skeleton so opening a card no longer falls back to loader
+text or an empty panel; stale roster pages remain painted while manual refresh revalidates.
+
+Added route, DWH-query, pagination, and detail-loader regressions. Focused Verification tests pass
+19/19 across backend and frontend; the complete frontend suite passes 354/354; both typechecks and
+production builds pass; lint has zero errors (22 unrelated existing warnings). The full backend
+suite still contains unrelated pre-existing CS/retention authorization failures plus the sandboxed
+WebSocket bind failure; the required cross-tenant RBAC leakage suite passes.
+
+## 2026-08-02 — My Tasks polish (skeleton, badge, switch icon, light)
+
+Finished Sales My Tasks setup: cold-load board skeleton (hero + 4 columns), sidebar
+badge for `open` tasks never opened in the detail modal (local opened set + shared SWR
+cache with the tab), Switch Mytrion icon corrected to ArrowLeftRight swap (TopBar +
+MytrionSwitchLink), and light-mode board/card/hero polish under `.ss-tasks-*`.
 ## 2026-07-31 — Native ticket path: the reachable half of the comms substrate (`feature/Communication`)
 
 `b501390` landed 14 tables, the thread/member/message/presence repos, `publish.ts` and the comms WS
