@@ -31,6 +31,7 @@ import { useTheme } from '@/hooks/useTheme';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 import './ss-horizon.css';
+import './verification.css';
 // After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
 import './dc-clients.css';
 
@@ -144,6 +145,7 @@ export function SalesRedesign() {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
     tickets: TICKETS_ENABLED ? liveBadges.tickets || undefined : undefined,
+    tasks: liveBadges.tasks || undefined,
   };
 
   const go = useCallback((next: string) => {

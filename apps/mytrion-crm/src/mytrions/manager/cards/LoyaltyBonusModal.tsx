@@ -45,7 +45,7 @@ export function LoyaltyBonusModal({ client, tier, onClose, onSaved }: Props) {
     [tier.level],
   );
   const existing = client.loyaltyOverride;
-  const [customRewards, setCustomRewards] = useState(existing?.enabledRewardIds !== null);
+  const [customRewards, setCustomRewards] = useState(existing?.enabledRewardIds != null);
   const [selected, setSelected] = useState<LoyaltyRewardId[]>(
     existing?.enabledRewardIds ?? automaticIds,
   );

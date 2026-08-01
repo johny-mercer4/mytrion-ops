@@ -3,18 +3,22 @@
  * update in real time from anywhere in the app and reflect UNREAD (not total):
  *   - Inbox   = messages not yet read (marking read in the tab decrements it immediately).
  *   - Tickets = unread ticket messages (a `ticket_comment_added` bumps it; opening a ticket clears).
+ *   - Tasks   = `open` assignments never opened in the detail modal (local opened set).
  *
  * Ticket WS scope matches zoho-octane ticketdashboard.html: subscribe with the creator's currently
  * known ticket ids (first Desk page of 20, then whatever the Tickets tab pages in). We do NOT dump
  * the full Desk queue on shell mount — that starved the Tickets tab and felt like a hang.
  */
 import { useEffect, useRef, useState } from 'react';
+import { listMyTasks } from '@/api/salesKpi';
 import { useCachedLoad } from './dcCache';
 import { useLoad, loadInbox, loadTicketsPage, type TicketVM } from './live';
 import { TICKETS_ENABLED } from './salesData';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
 import { subscribeInboxReload } from './inboxLiveBus';
+import { countUnopenedTasks, useTaskOpened } from './taskOpened';
+import { subscribeTasksReload, tasksBadgeCacheKey } from './tasksLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
 import {
   seedTicketsFeedCache,
@@ -44,10 +48,15 @@ async function warmFirstTicketPage(): Promise<{ tickets: TicketVM[]; scoped: boo
 export function useSidebarBadges(
   currentUserId: string,
   pushToast?: (title: string, msg: string) => void,
-): { inbox: number; tickets: number } {
+): { inbox: number; tickets: number; tasks: number } {
   const readSet = useInboxRead();
+  const openedTasks = useTaskOpened();
   const ticketCounts = useTicketUnread();
   const inboxLoad = useLoad(loadInbox, [currentUserId]);
+  const tasksLoad = useCachedLoad(tasksBadgeCacheKey(currentUserId), () => listMyTasks(), {
+    enabled: !!currentUserId,
+    staleMs: 60_000,
+  });
 
   // First page only — same as ticketdashboard.html open. Seeds feed cache + WS ids.
   const ticketWarm = useCachedLoad(
@@ -138,9 +147,11 @@ export function useSidebarBadges(
   }, [currentUserId]);
 
   useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
+  useEffect(() => subscribeTasksReload(() => tasksLoad.reload()), [tasksLoad.reload]);
 
   return {
     inbox: countUnread(inboxLoad.data ?? [], readSet),
     tickets: totalTicketUnread(ticketCounts),
+    tasks: countUnopenedTasks(tasksLoad.data ?? [], openedTasks),
   };
 }

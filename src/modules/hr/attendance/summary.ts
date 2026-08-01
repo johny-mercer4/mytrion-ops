@@ -15,7 +15,11 @@ import {
   formatUzbHhMmSs,
   isUzbWeekend,
 } from './uzbTime.js';
-import { pairAttendancePunches } from './sessionize.js';
+import {
+  MAX_LIVE_ATTENDANCE_SESSION_MS,
+  pairAttendancePunches,
+  type AttendancePresenceState,
+} from './sessionize.js';
 
 export type DayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled';
 
@@ -27,7 +31,7 @@ export interface AttendanceDayRow {
   hoursWorked: string;
   hoursWorkedMs: number;
   punchCount: number;
-  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  currentState: AttendancePresenceState;
   unmatchedPunches: number;
   sessions: Array<{
     checkIn: string;
@@ -36,6 +40,9 @@ export interface AttendanceDayRow {
     checkOutDoor: string | null;
     duration: string;
     durationMs: number;
+    checkInAt: string;
+    checkOutAt: string | null;
+    status: 'complete' | 'open' | 'needs_review';
   }>;
 }
 
@@ -43,6 +50,7 @@ export interface AttendanceSummary {
   employeeId: string;
   from: string;
   to: string;
+  calculatedAt: string;
   timezone: 'Asia/Tashkent';
   shift: {
     id: string;
@@ -68,7 +76,7 @@ export interface AttendanceSummary {
     localDateTime: string;
     doorName: string | null;
   } | null;
-  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  currentState: AttendancePresenceState;
 }
 
 export async function buildAttendanceSummary(
@@ -82,7 +90,7 @@ export async function buildAttendanceSummary(
   // immediately visible in the current-week UI (the rollout itself began on 2026-07-30).
   const asg = await hrAttendanceShiftRepo.assignmentForDate(ctx, employeeId, to);
   const last = await hrAttendancePunchRepo.lastForEmployee(ctx, employeeId);
-  return buildAttendanceSummaryFromRecords(employeeId, from, to, punches, asg, last);
+  return buildAttendanceSummaryFromRecords(employeeId, from, to, punches, asg, last, new Date());
 }
 
 /** Pure summary builder shared by My Data and the batched HR Team directory. */
@@ -93,6 +101,7 @@ export function buildAttendanceSummaryFromRecords(
   punches: HrAttendancePunch[],
   asg: AttendanceAssignmentWithShift | undefined,
   last: HrAttendancePunch | undefined,
+  calculatedAt = new Date(),
 ): AttendanceSummary {
   const byDate = new Map<string, HrAttendancePunch[]>();
   for (const p of punches) {
@@ -123,7 +132,7 @@ export function buildAttendanceSummaryFromRecords(
       asg != null &&
       asg.effectiveFrom <= date &&
       (asg.effectiveTo == null || asg.effectiveTo >= date);
-    const paired = pairAttendancePunches(dayPunches);
+    const paired = pairAttendancePunches(dayPunches, { now: calculatedAt });
     let status: DayStatus;
     if (weekendDay && dayPunches.length === 0) {
       status = 'Weekend';
@@ -158,6 +167,9 @@ export function buildAttendanceSummaryFromRecords(
         checkOutDoor: session.checkOutDoor,
         duration: formatDurationHours(session.durationMs),
         durationMs: session.durationMs,
+        checkInAt: session.checkIn.toISOString(),
+        checkOutAt: session.checkOut?.toISOString() ?? null,
+        status: session.status,
       })),
     });
   }
@@ -166,6 +178,7 @@ export function buildAttendanceSummaryFromRecords(
     employeeId,
     from,
     to,
+    calculatedAt: calculatedAt.toISOString(),
     timezone: 'Asia/Tashkent',
     shift,
     days,
@@ -187,19 +200,23 @@ export function buildAttendanceSummaryFromRecords(
           doorName: last.doorName,
         }
       : null,
-    currentState: last
-      ? last.kind === 'check_in'
-        ? 'in_office'
-        : 'out_of_office'
-      : 'no_activity',
+    currentState: presenceStateForLastPunch(last, calculatedAt),
   };
+}
+
+function presenceStateForLastPunch(
+  last: HrAttendancePunch | undefined,
+  calculatedAt: Date,
+): AttendancePresenceState {
+  if (!last) return 'no_activity';
+  if (last.kind === 'check_out') return 'out_of_office';
+  const elapsed = calculatedAt.getTime() - last.punchedAt.getTime();
+  return elapsed >= 0 && elapsed <= MAX_LIVE_ATTENDANCE_SESSION_MS ? 'in_office' : 'needs_review';
 }
 
 /** CSV lines for historical export (header + rows). */
 export function summaryToCsv(summary: AttendanceSummary, employeeLabel: string): string {
-  const lines = [
-    'employee,date,status,first_in,last_out,hours_worked,punch_count',
-  ];
+  const lines = ['employee,date,status,first_in,last_out,hours_worked,punch_count'];
   for (const d of summary.days) {
     lines.push(
       [

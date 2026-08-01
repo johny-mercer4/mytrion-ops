@@ -5,6 +5,7 @@ import type { TenantContext } from '../../../types/tenantContext.js';
 import { hrAttendancePunchRepo } from '../../../repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../../repos/hrAttendanceShiftRepo.js';
 import { buildAttendanceSummaryFromRecords } from './summary.js';
+import type { AttendancePresenceState } from './sessionize.js';
 import {
   resolveAttendanceTeam,
   type AttendanceTeamRelation,
@@ -40,7 +41,7 @@ export interface AttendanceTeamListItem {
     localDateTime: string;
     doorName: string | null;
   } | null;
-  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  currentState: AttendancePresenceState;
 }
 
 export interface AttendanceTeamList {
@@ -61,6 +62,7 @@ export async function buildAttendanceTeamList(
   scope: AttendanceTeamScope,
   q = '',
 ): Promise<AttendanceTeamList> {
+  const calculatedAt = new Date();
   const team = await resolveAttendanceTeam(ctx, selfEmployeeId, scope, q);
   const items: AttendanceTeamListItem[] = [];
   const employeeIds = team.items.map((member) => member.employee.id);
@@ -86,6 +88,7 @@ export async function buildAttendanceTeamList(
       punchesByEmployee.get(e.id) ?? [],
       assignments.get(e.id),
       latestPunches.get(e.id),
+      calculatedAt,
     );
     items.push({
       employeeId: e.id,

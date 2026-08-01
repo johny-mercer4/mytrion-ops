@@ -118,7 +118,7 @@ export async function listMyTaskEvents(taskId: string): Promise<WorkerTaskEventD
 export async function moveMyTask(
   taskId: string,
   version: number,
-  status: 'in_progress' | 'completed',
+  status: WorkerTaskStatus,
 ): Promise<WorkerTaskDto> {
   const data = (await request('PATCH', `/sales/tasks/${encodeURIComponent(taskId)}/status`, {
     body: { version, status },

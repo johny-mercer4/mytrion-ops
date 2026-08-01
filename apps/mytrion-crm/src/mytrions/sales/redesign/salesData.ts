@@ -100,6 +100,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
     ],
   },
   {
@@ -122,13 +123,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'soon',
     items: [
-      // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
-      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
       // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
       // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
       { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
-      // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
-      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
+      { id: 'verification', label: 'Verification', icon: 'verification' },
       { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
     ],
   },

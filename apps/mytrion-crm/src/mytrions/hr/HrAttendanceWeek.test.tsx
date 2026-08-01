@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AttendanceSummaryDto } from '../../api/hr';
 import { HrAttendanceWeek } from './HrAttendanceWeek';
 
@@ -7,6 +7,7 @@ const summary: AttendanceSummaryDto = {
   employeeId: 'hre_1',
   from: '2026-07-30',
   to: '2026-07-30',
+  calculatedAt: '2026-07-30T16:30:00.000Z',
   timezone: 'Asia/Tashkent',
   shift: {
     id: 'hrs_1',
@@ -34,6 +35,9 @@ const summary: AttendanceSummaryDto = {
           checkOutDoor: 'Ganga 5F Exit',
           duration: '02:30',
           durationMs: 9_000_000,
+          checkInAt: '2026-07-30T14:00:00.000Z',
+          checkOutAt: '2026-07-30T16:30:00.000Z',
+          status: 'complete',
         },
       ],
     },
@@ -58,13 +62,62 @@ const summary: AttendanceSummaryDto = {
 };
 
 describe('HrAttendanceWeek', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows Tashkent punch time, paired session, presence, and office duration', () => {
     render(<HrAttendanceWeek data={summary} today="2026-07-30" />);
 
-    expect(screen.getByText(/2026-07-30 21:30:00 UZT/)).toBeInTheDocument();
+    expect(screen.getByText(/Last scan 2026-07-30 21:30:00/)).toBeInTheDocument();
     expect(screen.getByText('19:00:00')).toBeInTheDocument();
     expect(screen.getByText('21:30:00')).toBeInTheDocument();
-    expect(screen.getByText('Out of office')).toBeInTheDocument();
-    expect(screen.getAllByText('02:30')).toHaveLength(2);
+    expect(screen.getByText('Currently out of office')).toBeInTheDocument();
+    expect(screen.getAllByText('2h 30m').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('shows an open visit as a live office timer', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T16:24:14.000Z'));
+    const live: AttendanceSummaryDto = {
+      ...summary,
+      calculatedAt: '2026-07-30T16:24:14.000Z',
+      currentState: 'in_office',
+      lastPunch: {
+        kind: 'check_in',
+        punchedAt: '2026-07-30T14:00:00.000Z',
+        localDateTime: '2026-07-30 19:00:00',
+        doorName: 'Ganga 5F Entry',
+      },
+      days: [
+        {
+          ...summary.days[0]!,
+          lastOut: null,
+          hoursWorked: '02:24',
+          hoursWorkedMs: 8_654_000,
+          punchCount: 1,
+          currentState: 'in_office',
+          sessions: [
+            {
+              checkIn: '19:00:00',
+              checkOut: null,
+              checkInDoor: 'Ganga 5F Entry',
+              checkOutDoor: null,
+              duration: '02:24',
+              durationMs: 8_654_000,
+              checkInAt: '2026-07-30T14:00:00.000Z',
+              checkOutAt: null,
+              status: 'open',
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<HrAttendanceWeek data={live} today="2026-07-30" />);
+
+    expect(screen.getByText('Currently in the office')).toBeInTheDocument();
+    expect(screen.getByText('Still inside')).toBeInTheDocument();
+    expect(screen.getAllByText('2h 24m 14s').length).toBeGreaterThanOrEqual(1);
   });
 });

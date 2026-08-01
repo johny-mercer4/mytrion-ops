@@ -3,12 +3,7 @@
  * isRecords slice: five sub-tabs (Clients / Leads / Deals / Rejection Reports / Money Codes) with a
  * per-tab search and a board/list toggle for the pipeline tabs.
  *
- * Live data:
- *   - Clients     → loadRecords()   (ONE DWH roster query: dim_company + mart_transaction_line_items + cmp_invoice)
- *   - Leads       → loadLeads()      (Zoho CRM COQL, Owner-scoped)
- *   - Deals       → loadDeals()      (Zoho CRM COQL, Owner-scoped)
- *   - Rejections  → loadRejections() (Zoho CRM COQL — lost/declined Deals, Owner-scoped)
- *   - Money Codes → local Ops DB money_code_requests (own draws + void; codes never shown)
+ * Clients use the owner-scoped DWH roster; pipeline tabs use Zoho CRM; Money Codes use Ops DB.
  */
 import { useMemo, useState } from 'react';
 import { s } from '../dc';
@@ -43,6 +38,7 @@ import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCen
 import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 import { RejectionDetailModal } from '../RejectionDetailModal';
+import { ManagerLoyaltyBadge } from '../LoyaltyOverrideNotice';
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
@@ -150,6 +146,7 @@ interface RecordVM {
   previousCards: number;
   currentCards: number;
   owed: number;
+  managerControlled: boolean;
   tier: TierResult;
   onClick: () => void;
 }
@@ -336,6 +333,7 @@ export function RecordsTab() {
         previousCards: c.activeCardsPrevMonth,
         currentCards: c.activeCardsThisMonth,
         owed: c.computedDebt,
+        managerControlled: c.managerControlled === true,
         tier,
         onClick: () => openClient({
           id: c.id, name: c.name, carrier: c.carrier, contact: c.contact, phone: c.phone,
@@ -498,6 +496,7 @@ export function RecordsTab() {
                   <div style={s('min-width:0;flex:1')}>
                     <div style={s('font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.name}</div>
                     <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{c.carrier}</div>
+                    {c.managerControlled ? <ManagerLoyaltyBadge /> : null}
                   </div>
                 </div>
                 <div style={s('margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px')}>
