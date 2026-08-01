@@ -8798,3 +8798,86 @@ pool (the pools are empty and `FF_COMMS_PRESENCE` is still off), the Tickets con
 in Sales AND the receiving CS/Billing/Verification queue in the SAME release, or native tickets land in
 a table nobody is watching — and escalations, which cannot route at all until the NULL
 `default_assignee_zoho_user_id` / `manager_zoho_user_id` / `c-level` pool config is filled.
+
+## 2026-08-01 — Escalations, and the Mytrion Admin routing config that makes them possible
+
+The user's decision: escalation-level assignees must be **dynamic from Mytrion Admin**, and they will
+choose the reason defaults, the department managers and the C-Level themselves. So this session builds
+both halves — the admin config surface and the escalation engine that reads it.
+
+**The ladder, and where each rung comes from.** All four are config rows, none are constants:
+```
+level 1  requester           the person raising it (not a hop — `requester_zoho_user_id`)
+level 2  agent               mytrion_ticket_types.default_assignee_zoho_user_id  (per REASON)
+level 3  department manager  mytrion_department_config.manager_zoho_user_id
+level 4  C-Level             an explicit pick from the `c-level` pool in mytrion_department_agents
+```
+Every one ships NULL/empty. A NULL is "unrouted, refuse loudly" and never a wildcard: raising on an
+unconfigured reason is refused with a message that names the admin screen, because an escalation with a
+null assignee sits in nobody's inbox while looking submitted to the person who raised it. HR remains
+CANDIDATES only — `/comms/admin/candidates` returns employees who have a `zoho_user_id` (that id IS the
+routing key, so offering anyone without one would let an admin save a row that can never receive
+anything) and marks `hr_departments.lead_employee_id` holders so the manager picker can pre-select the
+likely answer. HR suggests; the config row decides. `resolveDepartmentManager` deliberately does NOT
+fall back through the HR lead link, and there is a test asserting it never calls HR at all.
+
+**Admin surface** (`/v1/comms/admin`, all-department admin, every write audited with before AND after —
+one row here can silently redirect every escalation in the company): `GET /routing` returns the whole
+picture plus a `readiness` block (`unroutedReasons`, `departmentsMissingManager`, `cLevelConfigured`)
+computed server-side so the screen and the refusal messages cannot disagree. Then
+`PATCH /departments/:department`, `PUT|PATCH|DELETE /departments/:department/pool/...` and
+`PATCH /escalation-reasons/:code`. `code` and `kind` are immutable in the catalog patch allowlist:
+every historical ticket snapshots the code, and `kind` decides whether a row is a ticket type or a
+reason. Deleting a pool seat is distinct from `active:false` — deactivating keeps the rotation history,
+which is what you want for someone on leave.
+
+**Engine.** `escalationRouting` (config reads) → `escalationService` (raise) →
+`escalationTransitions` (up / sideways / terminal) → `escalationNotify` (deadlines, fan-out, the
+act-on gate). Split four ways because the two service halves together came to 732 lines.
+
+Decisions worth keeping:
+- **Hop 1 is the level-2 landing, not the requester** — which is why its `decided_by` is NULL: nobody
+  moved it there. `current_hop_index` defaults to 1 while `current_level` defaults to 2, and this is
+  what that combination means.
+- **Growing group.** Every hop `transferAssignee`s (moving the ROLE, demoting the previous holder to
+  participant) and never evicts, so requester + agent + manager + C-Level all end up in one chat and
+  all keep replying. `visibility` stays `'participants'` for life — flipping it to `'department'` on a
+  hand-off would expose the whole history to everyone holding the receiving department.
+- **A sideways hand-off RESETS to level 2**, so a chain handed off by a manager can still rise to the
+  NEW department's manager. Carrying level 3 across would skip that person entirely.
+- **Level 4 is an explicit, pool-validated pick.** "Escalate to C-Level" must not become "assign to
+  anyone I name", and the same check makes a deactivated CEO seat unescalatable while leaving the
+  historical hop that named them untouched.
+- **A reason that falls to the requester** rises straight to their department manager with
+  `skip_reason='is_requester'` rather than routing someone's escalation to themselves.
+- The cursor moves BEFORE the hop is closed, because the cursor carries the optimistic-version check:
+  closing first would mark a hop decided on a chain someone else moved a different way.
+
+**One real dead end found by the end-to-end check and fixed.** When the level-2 assignee IS the
+department manager — normal in a small department — `escalateUp` refused with "escalate to C-Level or
+hand off instead", but level 2 had no path to C-Level, so a lone department head was stuck holding their
+own escalation. Level 3 is now treated as a rung that exists only when the department has a manager who
+is not the current holder; otherwise C-Level is reachable directly from level 2 with an explicit pick,
+and the refusal message says which case you are in.
+
+**Verification.** Typecheck and lint clean, every new file under the 600-line cap. 31 new routing unit
+tests (each mocked so "nothing routes when nothing is configured" cannot pass vacuously) and 10 new
+RBAC-leakage assertions covering `commsEscalationRepo.buildListQuery` / `buildHopsQuery` and
+`commsDepartmentRepo.buildPoolQuery` — 56 in that suite now. A 74-check end-to-end run against a fresh
+throwaway local Postgres proves the whole ladder over real rows: the unrouted refusal writes no ticket,
+level 2 lands on the configured default, an uninvolved worker and the CS manager both cannot read it
+before being brought in, the manager can after, the demoted level-2 agent can still reply, level 4
+refuses an unnamed and an off-pool pick, hop levels run 2→3→4 with the right `decided_by` on each closed
+hop, resolve clears the inbox while the chain stays readable, a hand-off resets to level 2 without
+evicting anyone and keeps the thread participants-only, withdraw works from three hops away and mirrors
+as cancelled rather than resolved, and a deactivated C-Level seat stops being escalatable without
+rewriting history.
+
+Full suite: 35 failures across 10 suites. 34 are the same pre-existing ones verified against a clean
+b501390 worktree last session; the 35th is `retention-phase1.test.ts > stamps a 2BD agent-action
+deadline`, which hardcodes 2026-07-20 and asserts the deadline falls within the last 10 days of
+`Date.now()` — it decayed when the calendar reached 2026-08-01 and is untouched by this work
+(commit 49b1d8a). Worth fixing with a fake timer, separately.
+
+Still to come: the Mytrion Admin screen itself (this session shipped its API), Dropbox attachments,
+round-robin assignment, and the Tickets/Escalations console.

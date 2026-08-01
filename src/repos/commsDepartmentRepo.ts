@@ -1,20 +1,62 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { mytrionDepartmentConfig, type MytrionDepartmentConfig } from '../db/schema/index.js';
+import {
+  mytrionDepartmentAgents,
+  mytrionDepartmentConfig,
+  type MytrionDepartmentAgent,
+  type MytrionDepartmentConfig,
+  type TicketAssignmentStrategy,
+} from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
+import { firstOrThrow } from './util.js';
 
 /**
- * Per-department routing configuration: which queues accept work, the assignment strategy, and the
- * level-3 escalation manager.
+ * Per-department routing configuration and the explicit agent pool.
  *
- * 0087 seeds ten rows per tenant with `manager_zoho_user_id` and `default_assignee_zoho_user_id`
- * deliberately NULL — those are chosen in Mytrion Admin against the HR directory, and a guessed
- * default would silently route real work to the wrong person. Callers must therefore treat a NULL as
- * "unrouted, fail loudly", never as a wildcard.
+ * 0087 seeds ten config rows per tenant with `manager_zoho_user_id` and
+ * `default_assignee_zoho_user_id` deliberately NULL, and leaves `mytrion_department_agents` EMPTY.
+ * Those values are chosen in Mytrion Admin against the HR directory — a guessed default would silently
+ * route real work to the wrong person. So every read here must treat a NULL as "unrouted, fail loudly",
+ * never as a wildcard.
  *
- * The round-robin pool (`mytrion_department_agents`) is read from here too once assignment lands; this
- * module owns the config half first so the ticket create path can validate a target queue.
+ * The pool serves two jobs: ticket round-robin for an operational department, and ESCALATION LEVEL 4 —
+ * the `c-level` pool, which holds CEO and COO as separate rows distinguished by `role_title`, because
+ * level 4 is more than one person and the escalating manager picks which.
  */
+
+export interface DepartmentConfigPatch {
+  ticketAssignmentStrategy?: TicketAssignmentStrategy | undefined;
+  requireOnline?: boolean | undefined;
+  defaultAssigneeZohoUserId?: string | null | undefined;
+  /** ESCALATION LEVEL 3 — the department manager an escalation rises to from the agent level. */
+  managerZohoUserId?: string | null | undefined;
+  managerName?: string | null | undefined;
+  acceptsTickets?: boolean | undefined;
+  acceptsEscalations?: boolean | undefined;
+  slaHoursOverride?: number | null | undefined;
+}
+
+export interface PoolMemberInput {
+  department: string;
+  zohoUserId: string;
+  displayName?: string | null | undefined;
+  /** 'CEO' | 'COO' | 'Team Lead' | … Advisory only; routing always goes by zohoUserId. */
+  roleTitle?: string | null | undefined;
+  active?: boolean | undefined;
+  acceptsNew?: boolean | undefined;
+  maxOpen?: number | null | undefined;
+  sortOrder?: number | undefined;
+  addedByZohoUserId?: string | null | undefined;
+}
+
+export interface PoolMemberPatch {
+  displayName?: string | null | undefined;
+  roleTitle?: string | null | undefined;
+  active?: boolean | undefined;
+  acceptsNew?: boolean | undefined;
+  maxOpen?: number | null | undefined;
+  sortOrder?: number | undefined;
+}
 
 export const commsDepartmentRepo = {
   buildListQuery(ctx: TenantContext, opts: { acceptsTicketsOnly?: boolean } = {}) {
@@ -46,5 +88,190 @@ export const commsDepartmentRepo = {
       )
       .limit(1);
     return row;
+  },
+
+  /**
+   * Create or patch one department's config.
+   *
+   * An UPSERT rather than an UPDATE because 0087 only seeded ten departments: `maintenance` and
+   * `marketing` have no row, and an admin configuring one of those must not get a silent no-op. Only the
+   * keys present in the patch are written, so setting a manager cannot accidentally reset the strategy.
+   */
+  async upsertConfig(
+    ctx: TenantContext,
+    department: string,
+    patch: DepartmentConfigPatch,
+  ): Promise<MytrionDepartmentConfig> {
+    const now = new Date();
+    // Built key-by-key so an ABSENT key means "leave it alone" while an explicit null means "clear it".
+    // A spread of the whole patch would turn every unspecified column into undefined, which Drizzle
+    // omits from the UPDATE — the same outcome by accident rather than by design.
+    const set: Partial<typeof mytrionDepartmentConfig.$inferInsert> = { updatedAt: now };
+    if (patch.ticketAssignmentStrategy !== undefined) {
+      set.ticketAssignmentStrategy = patch.ticketAssignmentStrategy;
+    }
+    if (patch.requireOnline !== undefined) set.requireOnline = patch.requireOnline;
+    if (patch.defaultAssigneeZohoUserId !== undefined) {
+      set.defaultAssigneeZohoUserId = patch.defaultAssigneeZohoUserId;
+    }
+    if (patch.managerZohoUserId !== undefined) set.managerZohoUserId = patch.managerZohoUserId;
+    if (patch.managerName !== undefined) set.managerName = patch.managerName;
+    if (patch.acceptsTickets !== undefined) set.acceptsTickets = patch.acceptsTickets;
+    if (patch.acceptsEscalations !== undefined) set.acceptsEscalations = patch.acceptsEscalations;
+    if (patch.slaHoursOverride !== undefined) set.slaHoursOverride = patch.slaHoursOverride;
+
+    const rows = await db
+      .insert(mytrionDepartmentConfig)
+      .values({ tenantId: ctx.tenantId, department, ...set, createdAt: now })
+      .onConflictDoUpdate({
+        target: [mytrionDepartmentConfig.tenantId, mytrionDepartmentConfig.department],
+        set,
+      })
+      .returning();
+    return firstOrThrow(rows, 'department config upsert returned no row');
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Pool (mytrion_department_agents)
+  // -------------------------------------------------------------------------------------------
+
+  buildPoolQuery(ctx: TenantContext, opts: { departments?: string[]; activeOnly?: boolean } = {}) {
+    const where = [eq(mytrionDepartmentAgents.tenantId, ctx.tenantId)];
+    if (opts.departments && opts.departments.length > 0) {
+      where.push(inArray(mytrionDepartmentAgents.department, opts.departments));
+    }
+    if (opts.activeOnly) where.push(eq(mytrionDepartmentAgents.active, true));
+    return db
+      .select()
+      .from(mytrionDepartmentAgents)
+      .where(and(...where))
+      .orderBy(
+        asc(mytrionDepartmentAgents.department),
+        asc(mytrionDepartmentAgents.sortOrder),
+        asc(mytrionDepartmentAgents.zohoUserId),
+      );
+  },
+
+  async listPool(
+    ctx: TenantContext,
+    opts: { departments?: string[]; activeOnly?: boolean } = {},
+  ): Promise<MytrionDepartmentAgent[]> {
+    return this.buildPoolQuery(ctx, opts);
+  },
+
+  async getPoolMember(
+    ctx: TenantContext,
+    department: string,
+    zohoUserId: string,
+  ): Promise<MytrionDepartmentAgent | undefined> {
+    const [row] = await db
+      .select()
+      .from(mytrionDepartmentAgents)
+      .where(
+        and(
+          eq(mytrionDepartmentAgents.tenantId, ctx.tenantId),
+          eq(mytrionDepartmentAgents.department, department),
+          eq(mytrionDepartmentAgents.zohoUserId, zohoUserId),
+        ),
+      )
+      .limit(1);
+    return row;
+  },
+
+  /**
+   * Add someone to a pool, or revive/refresh an existing seat.
+   *
+   * Idempotent on (tenant, department, zoho_user_id) so re-adding a person who was deactivated brings
+   * them back rather than failing — the alternative is an admin having to know whether a row already
+   * exists before clicking Add. `last_assigned_at` and `assigned_count` are deliberately NOT reset: a
+   * returning agent keeps their place in the least-recently-assigned rotation, and zeroing the counter
+   * would hand them a burst of work as a side effect of an edit.
+   */
+  async upsertPoolMember(
+    ctx: TenantContext,
+    input: PoolMemberInput,
+  ): Promise<MytrionDepartmentAgent> {
+    const now = new Date();
+    const set: Partial<typeof mytrionDepartmentAgents.$inferInsert> = { updatedAt: now };
+    if (input.displayName !== undefined) set.displayName = input.displayName;
+    if (input.roleTitle !== undefined) set.roleTitle = input.roleTitle;
+    set.active = input.active ?? true;
+    set.acceptsNew = input.acceptsNew ?? true;
+    if (input.maxOpen !== undefined) set.maxOpen = input.maxOpen;
+    if (input.sortOrder !== undefined) set.sortOrder = input.sortOrder;
+
+    const rows = await db
+      .insert(mytrionDepartmentAgents)
+      .values({
+        tenantId: ctx.tenantId,
+        department: input.department,
+        zohoUserId: input.zohoUserId,
+        addedByZohoUserId: input.addedByZohoUserId ?? null,
+        createdAt: now,
+        ...set,
+      })
+      .onConflictDoUpdate({
+        target: [
+          mytrionDepartmentAgents.tenantId,
+          mytrionDepartmentAgents.department,
+          mytrionDepartmentAgents.zohoUserId,
+        ],
+        set,
+      })
+      .returning();
+    return firstOrThrow(rows, 'department pool upsert returned no row');
+  },
+
+  async updatePoolMember(
+    ctx: TenantContext,
+    department: string,
+    zohoUserId: string,
+    patch: PoolMemberPatch,
+  ): Promise<MytrionDepartmentAgent | undefined> {
+    const set: Partial<typeof mytrionDepartmentAgents.$inferInsert> = { updatedAt: new Date() };
+    if (patch.displayName !== undefined) set.displayName = patch.displayName;
+    if (patch.roleTitle !== undefined) set.roleTitle = patch.roleTitle;
+    if (patch.active !== undefined) set.active = patch.active;
+    if (patch.acceptsNew !== undefined) set.acceptsNew = patch.acceptsNew;
+    if (patch.maxOpen !== undefined) set.maxOpen = patch.maxOpen;
+    if (patch.sortOrder !== undefined) set.sortOrder = patch.sortOrder;
+
+    const rows = await db
+      .update(mytrionDepartmentAgents)
+      .set(set)
+      .where(
+        and(
+          eq(mytrionDepartmentAgents.tenantId, ctx.tenantId),
+          eq(mytrionDepartmentAgents.department, department),
+          eq(mytrionDepartmentAgents.zohoUserId, zohoUserId),
+        ),
+      )
+      .returning();
+    return rows[0];
+  },
+
+  /**
+   * Remove a seat outright.
+   *
+   * Distinct from `active: false`. Deactivating keeps the rotation history, which is what an admin wants
+   * for someone on leave; deleting is for a seat created by mistake. The escalation chain snapshots its
+   * assignee per hop, so removing someone never rewrites an escalation already in flight.
+   */
+  async removePoolMember(
+    ctx: TenantContext,
+    department: string,
+    zohoUserId: string,
+  ): Promise<boolean> {
+    const rows = await db
+      .delete(mytrionDepartmentAgents)
+      .where(
+        and(
+          eq(mytrionDepartmentAgents.tenantId, ctx.tenantId),
+          eq(mytrionDepartmentAgents.department, department),
+          eq(mytrionDepartmentAgents.zohoUserId, zohoUserId),
+        ),
+      )
+      .returning({ id: mytrionDepartmentAgents.id });
+    return rows.length > 0;
   },
 };

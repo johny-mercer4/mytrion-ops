@@ -40,6 +40,8 @@ import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
+import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
+import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
@@ -304,6 +306,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(commsRoutes);
       await v1.register(commsTicketsRoutes);
       await v1.register(commsThreadsRoutes);
+      await v1.register(commsEscalationsRoutes);
+      await v1.register(commsAdminRoutes);
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
       await v1.register(managerRoutes);

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { actorZohoUserIdOf, commsThreadRepo } from '../../src/repos/commsThreadRepo.js';
 import { commsCatalogRepo } from '../../src/repos/commsCatalogRepo.js';
 import { commsDepartmentRepo } from '../../src/repos/commsDepartmentRepo.js';
+import { commsEscalationRepo } from '../../src/repos/commsEscalationRepo.js';
 import { commsSettingsRepo } from '../../src/repos/commsSettingsRepo.js';
 import { commsTicketEventRepo } from '../../src/repos/commsTicketEventRepo.js';
 import { commsTicketRepo, encodeTicketCursor } from '../../src/repos/commsTicketRepo.js';
@@ -441,5 +442,94 @@ describe('commsTicketEventRepo.buildListQuery — the journal is tenant + ticket
       500,
     );
     expect(commsTicketEventRepo.buildListQuery(ctxOf(), 'mtk_1', 0).toSQL().params).toContain(1);
+  });
+});
+
+describe('commsEscalationRepo — escalations are gated by the SAME thread filter', () => {
+  it('the list binds the tenant and carries the thread reader filter', () => {
+    const { sql, params } = commsEscalationRepo.buildListQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    // The join onto threads is what makes commsThreadReaderFilter applicable at all — without it the
+    // escalation table would be read with no gate whatsoever.
+    expect(sql).toContain('"mytrion_threads"');
+    expect(sql).toContain('exists');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('an escalation is participants-only, so an empty department grant still yields the participant arm', () => {
+    // Escalation threads are visibility='participants' for life, so the department arm can never match
+    // one. This asserts the query still binds the ACTOR — otherwise a caller with no departments would
+    // fall through to an unfiltered read.
+    const { sql, params } = commsEscalationRepo.buildListQuery(ctxOf({ departments: [] })).toSQL();
+    expect(sql).toContain('false');
+    expect(params).toContain('42');
+    expect(params).toContain('octane');
+  });
+
+  it('a non-worker identity cannot participate, so the participant arm collapses to false', () => {
+    const { sql } = commsEscalationRepo
+      .buildListQuery(ctxOf({ audience: 'customer', userId: 'client:cu_1', departments: [] }))
+      .toSQL();
+    expect(sql).toContain('false');
+  });
+
+  it('a different tenant produces the same shape with a different binding', () => {
+    const a = commsEscalationRepo.buildListQuery(ctxOf()).toSQL();
+    const b = commsEscalationRepo.buildListQuery(ctxOf({ tenantId: OTHER_TENANT })).toSQL();
+    expect(a.sql).toBe(b.sql);
+    expect(b.params).toContain(OTHER_TENANT);
+    expect(b.params).not.toContain('octane');
+  });
+
+  it('scope filters narrow inside the gate — the reader filter is still present with them', () => {
+    const { sql, params } = commsEscalationRepo
+      .buildListQuery(ctxOf(), { currentAssigneeZohoUserId: '88', status: ['pending'] })
+      .toSQL();
+    expect(sql).toContain('exists');
+    expect(params).toContain('88');
+    expect(params).toContain('pending');
+    expect(params).toContain('octane');
+  });
+
+  it('the hop chain is tenant + escalation scoped and binds no department', () => {
+    const { sql, params } = commsEscalationRepo.buildHopsQuery(ctxOf(), 'mesc_1').toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).toContain('mesc_1');
+    // Same contract as the ticket journal: authorization is the caller's readable escalation load, and
+    // this query must not pretend to filter on something it does not.
+    for (const dept of KNOWN_DEPARTMENTS) expect(params).not.toContain(dept);
+  });
+
+  it('clamps the list limit at both ends', () => {
+    expect(commsEscalationRepo.buildListQuery(ctxOf(), { limit: 10_000 }).toSQL().params).toContain(200);
+    expect(commsEscalationRepo.buildListQuery(ctxOf(), { limit: 0 }).toSQL().params).toContain(1);
+  });
+});
+
+describe('commsDepartmentRepo.buildPoolQuery — the pool is tenant-scoped', () => {
+  it('binds the caller tenant, never a foreign one', () => {
+    const { sql, params } = commsDepartmentRepo.buildPoolQuery(ctxOf()).toSQL();
+    expect(sql).toContain('"tenant_id"');
+    expect(params).toContain('octane');
+    expect(params).not.toContain(OTHER_TENANT);
+  });
+
+  it('binds only the departments explicitly asked for — the caller grant must not narrow it', () => {
+    // The pool is admin config, not caller-scoped data: an admin editing the c-level pool holds no
+    // 'c-level' department, and filtering by their grant would hide the rows they came to edit.
+    const { params } = commsDepartmentRepo
+      .buildPoolQuery(ctxOf({ departments: ['sales'] }), { departments: ['c-level'] })
+      .toSQL();
+    expect(params).toContain('c-level');
+    expect(params).not.toContain('sales');
+  });
+
+  it('activeOnly is opt-in, so an admin can see deactivated seats', () => {
+    expect(commsDepartmentRepo.buildPoolQuery(ctxOf()).toSQL().params).not.toContain(true);
+    expect(
+      commsDepartmentRepo.buildPoolQuery(ctxOf(), { activeOnly: true }).toSQL().params,
+    ).toContain(true);
   });
 });
