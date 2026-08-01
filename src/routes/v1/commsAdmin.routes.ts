@@ -163,9 +163,17 @@ export async function commsAdminRoutes(app: FastifyInstance): Promise<void> {
       cLevel: departments.find((d) => d.department === C_LEVEL_DEPARTMENT)?.pool ?? [],
       /** The gaps, computed server-side so the screen and the refusal messages agree. */
       readiness: {
+        // Only ACTIVE reasons: an unrouted reason nobody can pick is not a gap to chase.
         unroutedReasons: escalationReasons.filter((r) => r.active && !r.routed).map((r) => r.code),
+        // `c-level` is excluded because level 4 is a POOL, not a person — there is no such thing as the
+        // C-Level department's manager, and reporting one as missing would be a gap that cannot be closed.
         departmentsMissingManager: departments
-          .filter((d) => d.acceptsEscalations && !d.managerZohoUserId)
+          .filter(
+            (d) =>
+              d.department !== C_LEVEL_DEPARTMENT &&
+              d.acceptsEscalations &&
+              !d.managerZohoUserId,
+          )
           .map((d) => d.department),
         cLevelConfigured:
           (departments.find((d) => d.department === C_LEVEL_DEPARTMENT)?.pool ?? []).filter(
@@ -269,8 +277,12 @@ export async function commsAdminRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Add or update a seat in a department's pool — including the `c-level` pool, which IS escalation
    * level 4. `roleTitle` is what makes "Escalate to CEO" distinguishable from "Escalate to COO".
+   *
+   * POST rather than PUT even though it is an idempotent upsert: the browser transport in
+   * apps/mytrion-crm deliberately speaks only GET/POST/PATCH/DELETE (the Zoho server-side proxy is
+   * unreliable for other verbs), so adding PUT here would mean a route no client can call.
    */
-  app.put('/comms/admin/departments/:department/pool', guard, async (request) => {
+  app.post('/comms/admin/departments/:department/pool', guard, async (request) => {
     const ctx = requireCommsAdmin(request);
     const department = departmentSlug.parse((request.params as { department: string }).department);
     const body = poolMemberBody.parse(request.body);

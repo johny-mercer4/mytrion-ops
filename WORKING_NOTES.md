@@ -8881,3 +8881,45 @@ deadline`, which hardcodes 2026-07-20 and asserts the deadline falls within the 
 
 Still to come: the Mytrion Admin screen itself (this session shipped its API), Dropbox attachments,
 round-robin assignment, and the Tickets/Escalations console.
+
+### Mytrion Admin → Escalation Routing (the screen)
+
+Admin → CRM & Ops → **Escalation Routing**. Three sections matching the three configurable rungs, plus a
+readiness strip: reasons routed `N/M`, departments with a manager `N/M`, C-Level member count. The
+readiness numbers come from the server, not from counting rows in the browser, so what the screen calls a
+gap and what an agent's refusal message says are the same computation.
+
+- **Level 2** — one row per escalation reason, each with a person picker. An unrouted row is marked
+  structurally (amber left rail + `gap` pill), not by hue alone, and its subtitle says what the
+  consequence is: "escalations on this reason are refused".
+- **Level 3** — one row per department, with the manager picker and the sideways hand-off target.
+- **Level 4** — the C-Level pool, with a role-title field, because the seat label is what makes
+  "Escalate to CEO" distinguishable from "Escalate to COO" in the agent's picker.
+
+The picker is fed by `GET /comms/admin/candidates` and marks whoever HR has as a department lead with a
+"Dept lead" chip. That chip only ORDERS and labels — it never pre-selects, because HR's lead link resolves
+through a nullable heuristic `zoho_user_id` and a silent default there is exactly what this config exists
+to avoid.
+
+Saves are per row: each row awaits its own request and shows its own busy text, so one slow save never
+blocks the screen and there is no second page-level spinner (one `aria-busy` region, asserted in the
+component test). After a save the screen refetches rather than patching local state — a locally-patched
+copy would drift from the server-derived readiness.
+
+Two bugs the tests caught, both fixed:
+- `readiness.departmentsMissingManager` included `c-level`. Level 4 is a POOL, so there is no such thing
+  as the C-Level department's manager and it was reporting a gap that could never be closed.
+- The clear-assignee control took its accessible name from its own "×" glyph, so it announced as "×".
+  It now carries an explicit `aria-label`.
+
+CLAUDE.md rule 10 asks for the `modern-web-guidance` skill first. **That skill is not installed in this
+repo** (`.claude/skills/` has the Zoho/LLM/DB ones only), so I matched the existing Mytrion Admin
+conventions instead: `admin.module.css` for every generic element, the house glass tokens
+(`--hz-pane`, `--hz-blur-*`, `--tone-*`) for the new ladder visuals, one skeleton loader, `adminToast` for
+outcomes, and `prefers-reduced-motion` honoured on the picker animation. Worth installing that skill if
+there is guidance it should have followed.
+
+Verification: web typecheck clean, 332/332 web tests pass (9 new), 244/244 comms backend tests pass
+(22 new route tests covering the gate — an ordinary worker AND a department head are both refused on every
+write, not just the read). `pnpm build:widget` rerun and `apps/mytrion-crm/app` committed, since that
+vendored bundle is what actually deploys; confirmed the built output contains the new screen.
