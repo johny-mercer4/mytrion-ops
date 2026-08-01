@@ -1,4 +1,4 @@
--- 0094: a file row records WHERE ITS OWN BYTES ARE.
+-- 0096: a file row records WHERE ITS OWN BYTES ARE.
 --
 -- Comms chat attachments go to Dropbox, while every file_assets row written until now is on S3/MinIO. A
 -- single global storage switch would repoint reads for the existing rows and they would 404, so the provider

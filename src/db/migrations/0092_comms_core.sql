@@ -1,4 +1,4 @@
--- 0090: native comms core — threads, tickets, routing, escalations, settings.
+-- 0092: native comms core — threads, tickets, routing, escalations, settings.
 --
 -- Replaces the Zoho Desk dependency. Design notes worth keeping next to the DDL:
 --   * One thread substrate carries tickets, requests, escalations and DMs, so there is a single

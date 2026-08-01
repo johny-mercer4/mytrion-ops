@@ -1,4 +1,4 @@
--- 0092: seed the ticket-type / escalation-reason catalog.
+-- 0094: seed the ticket-type / escalation-reason catalog.
 --
 -- Moves hardcoded frontend arrays into the DB so admins own them:
 --   * 49 client ticket types   (sales/redesign/createTicketForms.tsx CR_TYPES)

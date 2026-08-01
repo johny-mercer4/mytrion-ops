@@ -5,7 +5,7 @@ import type { DbOrTx } from '../../db/client.js';
 /**
  * Human-readable ticket numbers: `T-000123` / `R-000045` / `E-000012`.
  *
- * One global Postgres sequence (`mytrion_comms_number_seq`, created in 0090) formatted per kind at
+ * One global Postgres sequence (`mytrion_comms_number_seq`, created in 0092) formatted per kind at
  * insert time. Consequences, all deliberate — see the DDL comment:
  *   * The number is globally monotone, NOT per-tenant contiguous. A rolled-back transaction burns a
  *     value, which is invisible in a ticket number and costs nothing.

@@ -13,7 +13,7 @@ import { firstOrThrow } from './util.js';
 /**
  * Per-department routing configuration and the explicit agent pool.
  *
- * 0091 seeds ten config rows per tenant with `manager_zoho_user_id` and
+ * 0093 seeds ten config rows per tenant with `manager_zoho_user_id` and
  * `default_assignee_zoho_user_id` deliberately NULL, and leaves `mytrion_department_agents` EMPTY.
  * Those values are chosen in Mytrion Admin against the HR directory — a guessed default would silently
  * route real work to the wrong person. So every read here must treat a NULL as "unrouted, fail loudly",
@@ -84,7 +84,7 @@ export const commsDepartmentRepo = {
    * The config row for one HR department, or undefined when it has never been configured.
    *
    * Keyed on the HR id rather than on a slugified name, so a rename in HR does not orphan the routing
-   * config — which is the whole reason 0093 added the link.
+   * config — which is the whole reason 0095 added the link.
    */
   async getByHrDepartment(
     ctx: TenantContext,
@@ -120,7 +120,7 @@ export const commsDepartmentRepo = {
   /**
    * Create or patch one department's config.
    *
-   * An UPSERT rather than an UPDATE because 0091 only seeded ten departments: `maintenance` and
+   * An UPSERT rather than an UPDATE because 0093 only seeded ten departments: `maintenance` and
    * `marketing` have no row, and an admin configuring one of those must not get a silent no-op. Only the
    * keys present in the patch are written, so setting a manager cannot accidentally reset the strategy.
    */

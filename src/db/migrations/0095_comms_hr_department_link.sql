@@ -1,4 +1,4 @@
--- 0093: routing config is keyed on OUR OWN hr_departments, not on a hardcoded slug list.
+-- 0095: routing config is keyed on OUR OWN hr_departments, not on a hardcoded slug list.
 --
 -- Until now `mytrion_department_config.department` was a free-text slug seeded from KNOWN_DEPARTMENTS, so
 -- the admin screen offered a list that lived in code and had no connection to the real org chart. The
@@ -15,7 +15,7 @@
 --     exactly the class of heuristic link this schema avoids elsewhere (see the note on
 --     `hr_employees.zoho_user_id` being chosen explicitly rather than derived).
 --
--- Nullable on purpose: the ten rows 0091 seeded have no HR link yet, and an unlinked row must keep routing
+-- Nullable on purpose: the ten rows 0093 seeded have no HR link yet, and an unlinked row must keep routing
 -- rather than fail. The admin screen surfaces unlinked rows so they can be mapped.
 
 ALTER TABLE mytrion_department_config ADD COLUMN IF NOT EXISTS hr_department_id text;
@@ -34,7 +34,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS mytrion_department_config_hr_uk
   WHERE hr_department_id IS NOT NULL;
 --> statement-breakpoint
 
--- Best-effort backfill for the rows 0091 seeded: match a slugified hr_departments.name against the
+-- Best-effort backfill for the rows 0093 seeded: match a slugified hr_departments.name against the
 -- existing slug. Deliberately a ONE-OFF convenience, not a live fallback — after this runs the link is
 -- explicit data an admin owns, and nothing in the code re-derives it.
 --

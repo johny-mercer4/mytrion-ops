@@ -1,11 +1,11 @@
--- 0091: escalation level 4 is a POOL (CEO + COO), not a single configured user.
+-- 0093: escalation level 4 is a POOL (CEO + COO), not a single configured user.
 --
--- 0090 put `c_level_zoho_user_id` on mytrion_comms_settings on the assumption that C-Level was one
+-- 0092 put `c_level_zoho_user_id` on mytrion_comms_settings on the assumption that C-Level was one
 -- person. It is two — CEO and COO — and the escalating manager picks which. A single column would
 -- have been a second source of truth for the same question, so level 4 now resolves from the
 -- `c-level` pool in mytrion_department_agents ('c-level' is already a KNOWN_DEPARTMENTS value).
 --
--- Appended rather than amending 0090 so anyone who already applied it moves forward safely.
+-- Appended rather than amending 0092 so anyone who already applied it moves forward safely.
 
 -- Seat label within a pool: 'CEO', 'COO', 'Team Lead', 'Senior Agent'. Load-bearing for the c-level
 -- pool, where "Escalate to CEO" must be distinguishable from "Escalate to COO" in the picker.

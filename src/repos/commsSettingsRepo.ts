@@ -10,7 +10,7 @@ import type { TenantContext } from '../types/tenantContext.js';
 /**
  * The one-row-per-tenant comms control centre (SLA maps, DM phase gate, timezone).
  *
- * 0090 seeds a row for every tenant that existed when it ran, so a MISSING row means a tenant created
+ * 0092 seeds a row for every tenant that existed when it ran, so a MISSING row means a tenant created
  * afterwards. That must not fail a ticket create, so reads fall back to the same defaults the DDL
  * declares rather than throwing — and the fallback is a shared constant instead of two literals that
  * can drift apart.
@@ -26,7 +26,7 @@ export interface EffectiveCommsSettings {
   persisted: boolean;
 }
 
-/** Mirrors the column DEFAULTs in 0086_comms_core.sql. Kept in one place on purpose. */
+/** Mirrors the column DEFAULTs in 0092_comms_core.sql. Kept in one place on purpose. */
 export const DEFAULT_COMMS_SETTINGS: Omit<EffectiveCommsSettings, 'persisted'> = {
   slaHoursByPriority: { low: 72, medium: 24, high: 4, critical: 4 },
   firstResponseHoursByPriority: { low: 24, medium: 8, high: 2, critical: 1 },

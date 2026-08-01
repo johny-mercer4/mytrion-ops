@@ -119,7 +119,7 @@ export const mytrionDepartmentConfig = pgTable(
      * and the escalation picker are driven by this link rather than by KNOWN_DEPARTMENTS.
      *
      * Explicit rather than matched on a slugified name: a name match would silently orphan a department's
-     * whole routing config the first time HR renames it. Nullable because the rows 0091 seeded predate the
+     * whole routing config the first time HR renames it. Nullable because the rows 0093 seeded predate the
      * link and must keep routing until an admin maps them.
      */
     hrDepartmentId: text('hr_department_id'),
