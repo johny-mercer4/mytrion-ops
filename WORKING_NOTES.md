@@ -10144,3 +10144,77 @@ pre-existing — after updating `touchpoints-catalog.test.ts` for the intentiona
 and the four removed function names). `desk-routes.test.ts` lost the create/reply/escalation cases along
 with their routes rather than being skipped; its 12 remaining tests still cover the ownership gate on the
 historical reads. Web 364/364. Bundle rebuilt.
+
+## 2026-08-02 — Merging feature/Communication into feature/Mytrion: migration ordering
+
+Merged `feature/Mytrion` (27 commits) **into** `feature/Communication` here, so the final step in the
+main worktree is a pure fast-forward and every conflict got resolved with full context. Merge commit
+`b3ceda0b`; migration renumber `93f0e9e7`.
+
+### Two migration-number collisions git could not see
+
+Git treats `0085_a.sql` and `0085_b.sql` as unrelated adds, so a duplicate migration number merges
+clean and breaks at `db:migrate` time.
+
+1. **Committed collision** — both branches claimed 0085-0088 (HR/loyalty vs comms). Comms moved to
+   0089-0094.
+2. **Uncommitted collision** — the main worktree has ~176 uncommitted changes including
+   `0089_hr_attendance_shift_grace` and `0090_verification_sales_responses`. Comms moved again to
+   **0091-0096**, leaving 89/90 reserved. The journal now has a deliberate gap at 89/90 that their
+   commit fills.
+
+### The `when` timestamp is load-bearing, and failure is SILENT
+
+`drizzle-orm/pg-core/dialect.js:56`:
+
+```js
+const lastDbMigration = dbMigrations[0];   // order by created_at desc limit 1 — the MAX, read ONCE
+…
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { …apply… }
+```
+
+A migration is applied only when its journal `when` exceeds the **maximum** `created_at` already
+recorded. So **`when` must increase along journal idx**, or a later-numbered migration is skipped —
+with no error, no warning, and a green `migrations applied successfully`.
+
+Renaming files is therefore only half a renumber. The comms set was stamped 7/30 19:00-7/31 00:00,
+which *straddled* their 0089 (7/30 17:00) and 0090 (7/30 20:00): `0091_comms_presence` at 19:00 sorted
+before their 0090. Comms is now **7/31 06:00-11:00**, strictly after everything on `feature/Mytrion`.
+
+Reproduced against real throwaway Postgres, on a simulated post-merge tree (their two in-flight `.sql`
+files spliced into the merged journal):
+
+| Scenario | Result |
+|---|---|
+| Fresh DB, 97 migrations | both feature sets present |
+| DB at their idx≤90, then comms lands | 91 → 97, all six apply |
+| **Reverse: comms first, their 0089/0090 committed after** | **95 stays 95, `verification_sales_responses` never created, exit 0** |
+
+### Rule this implies
+
+**Whichever branch's migrations land second must carry the later `when` timestamps.** Comms is merging
+*into* `feature/Mytrion`, and the fast-forward requires a clean tree — so their WIP is committed first
+and comms follows, which is exactly how it is now stamped. If that order is ever reversed (comms merged
+before their WIP is committed), their `0089`/`0090` `when` values must be bumped past 7/31 11:00 or
+those two migrations will silently never run.
+
+One pre-existing inversion remains at `0078_support_bot_memories` (09:00) → `0079_maintenance_cases`
+(08:00.001), inherited from `feature/Mytrion`. Harmless in practice — the two were committed together,
+so no DB stops between them — and left alone rather than restamped, since rewriting the `when` of an
+already-applied migration is its own hazard.
+
+### Merge conflicts resolved
+
+`drizzle.config.ts` (union of both schema lists) · `src/app.ts` (kept the comms multipart ceiling — a
+`max()` over both caps subsumes theirs) · `WORKING_NOTES.md` (both sections) ·
+`tests/unit/touchpoints-catalog.test.ts` (each branch removed a *different* set of Deluge entries, so
+the union removes both; count **13**, computed rather than guessed) · `meta/_journal.json` · plus 110
+rename/rename conflicts in the committed `apps/mytrion-crm/app` bundle, resolved by deleting it and
+rebuilding from merged source.
+
+### Verification
+
+95 migrations apply from scratch → 101 tables carrying **both** feature sets. Journal cross-check clean
+(95 entries, 95 files, no orphans, no duplicate idx). Backend + web typecheck clean; lint 0 errors.
+Backend tests **identical to `feature/Mytrion`'s own baseline** measured in a scratch worktree at
+`bdf23883` — zero new failures, +285 passing (1380 → 1665). Web 383/383.
