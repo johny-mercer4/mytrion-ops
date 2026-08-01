@@ -69,7 +69,7 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-2_5);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .navTop {
@@ -78,6 +78,9 @@
   gap: var(--space-3);
   min-height: 0;
   flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 35%, transparent) transparent;
 }
 .navSearch {
   display: flex;
@@ -178,14 +181,14 @@
   gap: 1px;
 }
 .userName {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .userRole {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,7 +206,7 @@
 }
 .navSectionLabel {
   padding: 0 var(--space-3) var(--space-1);
-  font-size: var(--mytrion-nav-section-size, 10px);
+  font-size: var(--mytrion-nav-section-size, 11px);
   font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -319,7 +322,7 @@
   opacity: 1;
 }
 .navLabel {
-  font-size: var(--mytrion-nav-label-size, var(--text-sm));
+  font-size: var(--mytrion-nav-label-size, 14px);
   font-weight: var(--fw-medium);
   white-space: nowrap;
   overflow: hidden;
@@ -472,10 +475,12 @@
     border-right: none;
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
+    overflow-y: visible;
     max-height: none;
   }
   .navTop {
     flex: none;
+    overflow: visible;
   }
   .navGroup {
     flex-direction: row;

@@ -45,7 +45,7 @@ export interface EscalateUpInput {
  * Escalate UP one level: agent (2) → department manager (3) → C-Level (4).
  *
  * Level 4 needs an explicit person because it is CEO *and* COO and which to involve is a human call —
- * the reason 0087 replaced the single `c_level_zoho_user_id` column with a pool.
+ * the reason 0091 replaced the single `c_level_zoho_user_id` column with a pool.
  */
 export async function escalateUp(
   ctx: TenantContext,

@@ -9,8 +9,8 @@ import { RingCentralPhone } from '../components/ringcentral/RingCentralPhone';
  * "act as agent"). Client-facing routes are siblings of this layout in the router, so they are NOT
  * wrapped by it — a client is not a Zoho worker and must not be bounced through Zoho sign-in.
  *
- * RingCentral softphone mounts here (route-gated to Sales + CS) so it survives hops between
- * those Mytrions and never appears on Billing / Finance / Admin / picker.
+ * RingCentral softphone mounts here (route-gated to Sales + CS + Collection) so it survives hops
+ * between those Mytrions and never appears on Billing / Finance / Admin / picker / etc.
  */
 export function WorkerLayout() {
   return (

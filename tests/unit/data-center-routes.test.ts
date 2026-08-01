@@ -43,9 +43,15 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   return { ...mod, zohoCrmRecords: stub };
 });
 vi.mock('../../src/modules/customerService/fieldResolver.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../src/modules/customerService/fieldResolver.js')>();
+  const mod =
+    await importOriginal<typeof import('../../src/modules/customerService/fieldResolver.js')>();
   // Identity resolver: the allowlist keys are already exact API-cased in these routes.
-  return { ...mod, resolveWritePayload: vi.fn(async (_module: string, payload: Record<string, unknown>) => payload) };
+  return {
+    ...mod,
+    resolveWritePayload: vi.fn(
+      async (_module: string, payload: Record<string, unknown>) => payload,
+    ),
+  };
 });
 vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoDesk.js')>();
@@ -55,9 +61,23 @@ vi.mock('../../src/integrations/dwhClientRoster.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/dwhClientRoster.js')>();
   return { ...mod, fetchAgentClients: vi.fn(async () => []) };
 });
+vi.mock('../../src/repos/loyaltyClientOverrideRepo.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/repos/loyaltyClientOverrideRepo.js')>();
+  return {
+    ...mod,
+    loyaltyClientOverrideRepo: {
+      ...mod.loyaltyClientOverrideRepo,
+      list: vi.fn(async () => []),
+    },
+  };
+});
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
-  return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
+  return {
+    ...mod,
+    audit: vi.fn(async () => undefined),
+    auditFromContext: vi.fn(async () => undefined),
+  };
 });
 // Admin View-as of Clients resolves the TARGET's display name for the DWH name-fallback arm.
 vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
@@ -66,7 +86,13 @@ vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
     ...mod,
     resolveActAsTarget: vi.fn(async (id: string) =>
       id === '999'
-        ? { zohoUserId: '999', name: 'Frank Harrison', email: null, profile: 'Sales Agent', role: null }
+        ? {
+            zohoUserId: '999',
+            name: 'Frank Harrison',
+            email: null,
+            profile: 'Sales Agent',
+            role: null,
+          }
         : null,
     ),
   };
@@ -85,10 +111,12 @@ import { fetchAgentClients } from '../../src/integrations/dwhClientRoster.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { loyaltyClientOverrideRepo } from '../../src/repos/loyaltyClientOverrideRepo.js';
 
 const leadsMock = vi.mocked(fetchAgentLeads);
 const appStatsMock = vi.mocked(fetchAgentApplicationStats);
 const clientsMock = vi.mocked(fetchAgentClients);
+const loyaltyOverridesMock = vi.mocked(loyaltyClientOverrideRepo.list);
 const leadOwnerMock = vi.mocked(fetchLeadOwnerId);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
 const updateRecordMock = vi.mocked(zohoCrmRecords.updateRecord);
@@ -104,6 +132,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   leadsMock.mockResolvedValue([]);
+  loyaltyOverridesMock.mockResolvedValue([]);
 });
 
 async function workerToken(profile: string, zohoUserId = '42'): Promise<string> {
@@ -180,7 +209,12 @@ describe('data-center app-stats — owner scope + RBAC (Home goal bar / streak)'
   });
 
   it('a sales worker gets their OWN stats — never a victim via ?zoho_user_id + x-all-departments', async () => {
-    appStatsMock.mockResolvedValue({ days: { '2026-07-20': 3 }, total: 3, windowDays: 90, truncated: false });
+    appStatsMock.mockResolvedValue({
+      days: { '2026-07-20': 3 },
+      total: 3,
+      windowDays: 90,
+      truncated: false,
+    });
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
       method: 'GET',
@@ -215,6 +249,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     phone: '555-0100',
     producedCards: 6,
     activeCards: 4,
+    lastTierName: 'Silver',
     moneyCode: 'MC-1',
     dot: '12345',
     // The loyalty TRACK basis (dim_company.trucks) — 1 truck = Owner-Operator.
@@ -225,9 +260,11 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     computedDebtDays: 0,
     cycleGallons: 1200,
     gallonsThisMonth: 500,
+    inNetworkGallonsThisMonth: 480,
     activeCardsThisMonth: 4,
     transactionsThisMonth: 40,
     gallonsPrevMonth: 450,
+    inNetworkGallonsPrevMonth: 425,
     activeCardsPrevMonth: 3,
   };
 
@@ -286,6 +323,43 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     expect(res.statusCode).toBe(200);
     expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
   });
+
+  it('carries Manager loyalty controls into the Sales client roster', async () => {
+    clientsMock.mockResolvedValue([sampleClient]);
+    loyaltyOverridesMock.mockResolvedValue([
+      {
+        id: 'lco_test',
+        tenantId: DEFAULT_TENANT_ID,
+        carrierId: '123',
+        companyName: 'Acme Trucking',
+        enterpriseMode: 'volume_target',
+        enterpriseGoldTargetGallons: '23000',
+        enabledRewardIds: ['loves_rebate'],
+        note: 'Manager-approved exception',
+        updatedBy: 'zoho:42',
+        createdAt: new Date('2026-07-31T10:00:00Z'),
+        updatedAt: new Date('2026-07-31T10:00:00Z'),
+      },
+    ]);
+    const token = await workerToken('Sales Rep');
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/data-center/clients',
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().clients[0]).toMatchObject({
+      carrierId: '123',
+      loyaltyOverride: {
+        enterpriseMode: 'volume_target',
+        enterpriseGoldTargetGallons: 23_000,
+        enabledRewardIds: ['loves_rebate'],
+        note: 'Manager-approved exception',
+      },
+    });
+  });
 });
 
 describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)', () => {
@@ -322,7 +396,10 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       '555',
       expect.objectContaining({ MC: 'MC-1', Phone: '5551234567', DOT: '1234567' }),
     );
-    expect(res.json()).toMatchObject({ id: '555', updatedFields: expect.arrayContaining(['MC', 'Phone', 'DOT']) });
+    expect(res.json()).toMatchObject({
+      id: '555',
+      updatedFields: expect.arrayContaining(['MC', 'Phone', 'DOT']),
+    });
     expect(auditFromContext).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: 'sales.datacenter.lead_update', resourceId: '555' }),
@@ -469,7 +546,11 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       payload: { Phone: '5559998888' },
     });
     expect(res.statusCode).toBe(200);
-    expect(updateRecordMock).toHaveBeenCalledWith('Deals', '777', expect.objectContaining({ Phone: '5559998888' }));
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      'Deals',
+      '777',
+      expect.objectContaining({ Phone: '5559998888' }),
+    );
   });
 
   it('an admin WITHOUT act-as cannot edit another agent’s deal (owner mismatch → 403)', async () => {

@@ -34,6 +34,7 @@ export const KNOWN_DEPARTMENTS = [
    * risk is bounded to widening a view the grant already permits.
    */
   'hr',
+  'recruit',
 ] as const;
 
 export type KnownDepartment = (typeof KNOWN_DEPARTMENTS)[number];

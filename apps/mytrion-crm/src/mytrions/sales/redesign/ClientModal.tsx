@@ -18,10 +18,14 @@ import { Icon, type IconName } from './icons';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import {
+  resolveProjectedTierForRow,
   resolveTierForRow,
+  tierBucketColor,
+  tierBucketIcon,
+  tierBucketLabel,
+  tierBucketOf,
   tierRewards,
   tierColor,
-  tierTextColor,
   tierLabel,
   trackCaption,
   type TierResult,
@@ -166,7 +170,13 @@ export function ClientModal({
   // `client.active` — the account's ALL-TIME card total — which already disagreed with the grid, and
   // would now be read as a truck count (an 85-card carrier scored as an 85-truck fleet).
   const tier = resolveTierForRow(client);
-  const rewards = tierRewards(tier.level);
+  const projectedTier = resolveProjectedTierForRow(client);
+  const loyaltyBucket = tierBucketOf(tier);
+  const loyaltyTone = tierBucketColor(loyaltyBucket);
+  const rewards = tierRewards(
+    tier.level,
+    client.loyaltyOverride?.enabledRewardIds,
+  );
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
   const billingL = useLoad(() => loadClientBilling(client.id), [client.id]);
   const [actRows, setActRows] = useState<ClientActivityVM[]>([]);
@@ -236,6 +246,7 @@ export function ClientModal({
       )}
     >
       <div
+        className="dc-lty"
         role="dialog"
         aria-modal="true"
         aria-label={`Client ${client.name}`}
@@ -256,12 +267,10 @@ export function ClientModal({
               {client.carrier} · MC {client.mc} · DOT {client.dot}
             </div>
           </div>
-          {tier.level !== 'none' && (
-            <span style={s(badge(tierLabel(tier.level), tierColor(tier.level)).style + `;color:${tierTextColor(tier.level)};display:inline-flex;align-items:center;gap:4px`)}>
-              <Icon name="star" size={11} />
-              {tierLabel(tier.level)}
-            </span>
-          )}
+          <span style={s(badge(tierBucketLabel(loyaltyBucket), loyaltyTone).style + `;color:${loyaltyTone};display:inline-flex;align-items:center;gap:4px`)}>
+            <Icon name={tierBucketIcon(loyaltyBucket)} size={11} />
+            {tierBucketLabel(loyaltyBucket)}
+          </span>
           <span style={s(statusBadge.style)}>{statusBadge.text}</span>
           <button
             type="button"
@@ -319,63 +328,86 @@ export function ClientModal({
               </div>
             </div>
           )}
-          {clientTab === 'loyalty' &&
-            (tier.track === null ? (
-              <EmptyHint
-                icon="star"
-                title="Loyalty not active yet"
-                body="The tier track appears once this carrier has active fuel cards pumping."
-              />
-            ) : (
-              <div style={s('display:flex;flex-direction:column;gap:14px')}>
-                <div style={s(`${tile};display:flex;align-items:center;gap:14px`)}>
-                  <div style={s(`width:46px;height:46px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${tierColor(tier.level)} 16%,transparent);color:${tierColor(tier.level)}`)}>
-                    <Icon name="star" size={22} />
-                  </div>
-                  <div style={s('flex:1;min-width:0')}>
-                    <div style={s(`font-family:Rajdhani,sans-serif;font-size:24px;font-weight:700;line-height:1;color:${tierTextColor(tier.level)}`)}>{tierLabel(tier.level)}</div>
-                    <div style={s('font-size:12px;color:var(--muted);margin-top:4px')}>{trackCaption(tier)}</div>
-                  </div>
-                  {tier.grace && <span style={s(badge('Grace · 1 mo', 'var(--warn)').style)}>Grace · 1 mo</span>}
+          {clientTab === 'loyalty' && (
+            <div className="dc-lty" style={s('display:flex;flex-direction:column;gap:14px')}>
+              <div style={s(`${tile};display:flex;align-items:center;gap:14px;border-color:color-mix(in srgb,${loyaltyTone} 34%,var(--border2))`)}>
+                <div style={s(`width:48px;height:48px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${loyaltyTone} 16%,transparent);color:${loyaltyTone}`)}>
+                  <Icon name={tierBucketIcon(loyaltyBucket)} size={23} />
                 </div>
-
-                <div style={s(tile)}>
-                  <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
-                    <span style={s('font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Gallons · This month</span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text)")}>{numFmt(tier.gallons)}</span>
-                  </div>
-                  <div style={s('position:relative;height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-                    <div style={s(`position:absolute;inset:0 auto 0 0;width:${progressPct(tier)}%;border-radius:99px;background:${tierColor(tier.nextLevel ?? tier.level)};transition:width .5s ease`)} />
-                  </div>
-                  <div style={s('font-size:12px;margin-top:7px;color:var(--muted)')}>
-                    {tier.nextLevel ? `${numFmt(tier.gallonsToNext)} gal to ${tierLabel(tier.nextLevel)}` : 'Top tier reached'}
-                  </div>
-                </div>
-
-                <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                  <div style={s(tile)}><div style={s(tLbl)}>Active cards</div><div style={s(tVal)}>{client.active}<span style={s('color:var(--muted);font-size:15px')}>/{client.cards}</span></div></div>
-                  <div style={s(tile)}><div style={s(tLbl)}>Cards used · This month</div><div style={s(tVal)}>{client.activeCardsThisMonth}</div></div>
-                  <div style={s(tile)}><div style={s(tLbl)}>Gallons · Cycle</div><div style={s(`${tVal};color:var(--violet)`)}>{numFmt(client.cycleGallons)}</div></div>
-                  <div style={s(tile)}><div style={s(tLbl)}>Gallons · This month</div><div style={s(`${tVal};color:var(--accent)`)}>{numFmt(client.gallonsThisMonth)}</div></div>
-                </div>
-
-                <div>
-                  <div style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:2px 0 4px')}>Rewards</div>
-                  {rewards.map((r) => (
-                    <div key={r.title} style={s(`display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border2);opacity:${r.active ? '1' : '.5'}`)}>
-                      <div style={s(`width:26px;height:26px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${r.active ? tierColor(tier.level) : 'var(--muted)'} 14%,transparent);color:${r.active ? tierColor(tier.level) : 'var(--muted)'}`)}>
-                        <Icon name={r.active ? 'check' : 'close'} size={13} />
-                      </div>
-                      <div style={s('flex:1;min-width:0')}>
-                        <div style={s(`font-size:14px;font-weight:600;color:${r.active ? 'var(--text)' : 'var(--muted)'}`)}>{r.title}</div>
-                        <div style={s('font-size:11px;color:var(--muted);margin-top:1px')}>{r.desc}</div>
-                      </div>
-                      <span style={s(`font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;white-space:nowrap;color:${r.active ? tierTextColor(tier.level) : 'var(--muted)'}`)}>{r.value}</span>
-                    </div>
-                  ))}
+                <div style={s('flex:1;min-width:0')}>
+                  <div style={s(`font-family:Rajdhani,sans-serif;font-size:27px;font-weight:700;line-height:1;color:${loyaltyTone}`)}>{tierBucketLabel(loyaltyBucket)}</div>
+                  <div style={s('font-size:12px;color:var(--muted);margin-top:5px')}>{trackCaption(tier)}</div>
                 </div>
               </div>
-            ))}
+
+              <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                {[
+                  {
+                    title: 'Last month',
+                    caption: 'Current tier basis',
+                    gallons: client.inNetworkGallonsPrevMonth,
+                    total: client.gallonsPrevMonth,
+                    cards: client.activeCardsPrevMonth,
+                  },
+                  {
+                    title: 'This month',
+                    caption: 'Next tier progress',
+                    gallons: client.inNetworkGallonsThisMonth,
+                    total: client.gallonsThisMonth,
+                    cards: client.activeCardsThisMonth,
+                  },
+                ].map((period) => (
+                  <section key={period.title} style={s(`${tile};min-width:0`)}>
+                    <div style={s('display:flex;align-items:baseline;justify-content:space-between;gap:8px')}>
+                      <strong style={s('font-size:14px')}>{period.title}</strong>
+                      <span style={s('font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em')}>{period.caption}</span>
+                    </div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:25px;font-weight:700;margin-top:9px")}>{numFmt(period.gallons)}<span style={s('font-size:12px;color:var(--muted)')}> in-net gal</span></div>
+                    <div style={s('display:flex;justify-content:space-between;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border2);font-size:11.5px;color:var(--muted)')}>
+                      <span>{period.cards} transacting cards</span>
+                      <span>{numFmt(period.total)} total gal</span>
+                    </div>
+                  </section>
+                ))}
+              </div>
+
+              {projectedTier.thresholds && projectedTier.nextLevel ? (
+                <div style={s(tile)}>
+                  <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
+                    <span style={s('font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Next evaluation projection</span>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text)")}>{numFmt(projectedTier.gallons)} ULSR + ULSD gal</span>
+                  </div>
+                  <div style={s('position:relative;height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
+                    <div style={s(`position:absolute;inset:0 auto 0 0;width:${progressPct(projectedTier)}%;border-radius:99px;background:${tierColor(projectedTier.nextLevel)};transition:width .5s ease`)} />
+                  </div>
+                  <div style={s('font-size:12px;margin-top:7px;color:var(--muted)')}>
+                    {numFmt(projectedTier.gallonsToNext)} gal to {tierLabel(projectedTier.nextLevel)}
+                  </div>
+                </div>
+              ) : null}
+
+              <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                <div style={s(tile)}><div style={s(tLbl)}>Account active cards</div><div style={s(tVal)}>{client.active}<span style={s('color:var(--muted);font-size:15px')}>/{client.cards}</span></div></div>
+                <div style={s(tile)}><div style={s(tLbl)}>Gallons · Billing cycle</div><div style={s(tVal)}>{numFmt(client.cycleGallons)}</div></div>
+              </div>
+
+              <div>
+                <div style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:2px 0 4px')}>Active rewards this month</div>
+                {rewards.map((reward) => (
+                  <div key={reward.title} style={s(`display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border2);opacity:${reward.active ? '1' : '.5'}`)}>
+                    <div style={s(`width:26px;height:26px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${reward.active ? loyaltyTone : 'var(--muted)'} 14%,transparent);color:${reward.active ? loyaltyTone : 'var(--muted)'}`)}>
+                      <Icon name={reward.active ? 'check' : 'close'} size={13} />
+                    </div>
+                    <div style={s('flex:1;min-width:0')}>
+                      <div style={s(`font-size:14px;font-weight:600;color:${reward.active ? 'var(--text)' : 'var(--muted)'}`)}>{reward.title}</div>
+                      <div style={s('font-size:11px;color:var(--muted);margin-top:1px')}>{reward.desc}</div>
+                    </div>
+                    <span style={s(`font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;white-space:nowrap;color:${reward.active ? loyaltyTone : 'var(--muted)'}`)}>{reward.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {clientTab === 'cards' && (
             <div style={s('display:flex;flex-direction:column;gap:10px')}>
               {cardsL.loading && <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>Loading cards…</div>}

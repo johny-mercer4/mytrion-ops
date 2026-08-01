@@ -52,6 +52,7 @@ import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
 import { managerRoutes } from './routes/v1/manager.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
+import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
@@ -61,6 +62,7 @@ import { hrRoutes } from './routes/v1/hr.routes.js';
 import { hrDepartmentsRoutes } from './routes/v1/hrDepartments.routes.js';
 import { hrAttendanceRoutes } from './routes/v1/hrAttendance.routes.js';
 import { hrLeaveRoutes } from './routes/v1/hrLeave.routes.js';
+import { recruitRoutes } from './routes/v1/recruit.routes.js';
 import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
@@ -153,24 +155,20 @@ export async function buildApp(): Promise<FastifyInstance> {
   // as {} while still rejecting malformed JSON. Global on purpose — every widget POST hits the same
   // proxy. Caveat: a future POST route with an all-optional schema would accept an empty body as a
   // no-op {} rather than erroring; keep at least one required field (or a .refine) on such schemas.
-  app.addContentTypeParser(
-    'application/json',
-    { parseAs: 'string' },
-    (_req, body, done) => {
-      const text = typeof body === 'string' ? body.trim() : '';
-      if (text === '') {
-        done(null, {});
-        return;
-      }
-      try {
-        done(null, JSON.parse(text));
-      } catch (err) {
-        const e = err as Error & { statusCode?: number };
-        e.statusCode = 400;
-        done(e, undefined);
-      }
-    },
-  );
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = typeof body === 'string' ? body.trim() : '';
+    if (text === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      const e = err as Error & { statusCode?: number };
+      e.statusCode = 400;
+      done(e, undefined);
+    }
+  });
 
   // Cross-cutting (root-level so decorators/hooks reach every route).
   requestContextPlugin(app);
@@ -273,7 +271,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       applyDepartmentPolicy(mcpTools); // no agent lists MCP tools → admin-only
       toolRegistry.register(mcpTools);
     } catch (err) {
-      logger.error({ err }, 'zoho mcp: tool discovery failed/timed out; continuing without MCP tools');
+      logger.error(
+        { err },
+        'zoho mcp: tool discovery failed/timed out; continuing without MCP tools',
+      );
     }
   }
 
@@ -289,7 +290,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       applyDepartmentPolicy(dbtTools);
       toolRegistry.register(dbtTools);
     } catch (err) {
-      logger.error({ err }, 'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools');
+      logger.error(
+        { err },
+        'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools',
+      );
     }
   }
 
@@ -332,6 +336,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(verificationClientsRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
+      await v1.register(csMaintenanceRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
       await v1.register(financeRoutes);
@@ -341,6 +346,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(hrDepartmentsRoutes);
       await v1.register(hrAttendanceRoutes);
       await v1.register(hrLeaveRoutes);
+      await v1.register(recruitRoutes);
       // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
       await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);

@@ -75,6 +75,14 @@ function formula(preview: ReferralCalculationPreview): string {
   return `${number(preview.cumulativeGallons)} of ${number(preview.thresholdGallons ?? 0)} cumulative gallons`;
 }
 
+function calculationRule(calculation: string): string {
+  if (calculation === 'Gallons (Legacy)') return '$0.01 per eligible gallon, paid monthly';
+  if (calculation === 'Swipes (Legacy)') return '$50 per unique card, paid monthly';
+  if (calculation === 'Gallons (Parent)') return '$50 to the parent at 500 cumulative gallons';
+  if (calculation === 'Gallons (Child)') return '$50 to the child at 1,000 cumulative gallons';
+  return 'Complete the Calculation field and related Deal to calculate this referral';
+}
+
 function PreviewState({ preview }: { preview: ReferralCalculationPreview }) {
   if (preview.state === 'paid') {
     return (
@@ -131,7 +139,10 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
               <strong>
                 {preview.dealName || preview.childName || `Carrier ${preview.carrierId}`}
               </strong>
-              <span>Carrier #{preview.carrierId}</span>
+              <span>
+                Carrier #{preview.carrierId} · {preview.recurring ? 'Monthly' : 'One-time'} ·{' '}
+                {preview.fuelCodes.join(' / ')}
+              </span>
             </div>
             <PreviewState preview={preview} />
           </header>
@@ -153,16 +164,24 @@ function CalculationBreakdown({ previews }: { previews: ReferralCalculationPrevi
           ) : null}
           <dl className="mg-rf-mini-metrics">
             <div>
+              <dt>Eligible gallons</dt>
+              <dd>{number(preview.periodGallons)}</dd>
+            </div>
+            <div>
+              <dt>Unique cards</dt>
+              <dd>{number(preview.periodSwipes)}</dd>
+            </div>
+            <div>
+              <dt>Cumulative gallons</dt>
+              <dd>{number(preview.cumulativeGallons)}</dd>
+            </div>
+            <div>
               <dt>Recipient</dt>
               <dd>{preview.recipientName || 'Not linked'}</dd>
             </div>
             <div>
-              <dt>Fuel codes</dt>
-              <dd>{preview.fuelCodes.join(' · ')}</dd>
-            </div>
-            <div>
-              <dt>Frequency</dt>
-              <dd>{preview.recurring ? 'Monthly' : 'One-time'}</dd>
+              <dt>Rate / award</dt>
+              <dd>{preview.recurring ? money(preview.rateUsd) : '$50 milestone'}</dd>
             </div>
             <div>
               <dt>Payable now</dt>
@@ -184,6 +203,8 @@ function RelatedRecords({
   childFields: ReferralField[];
   dealFields: ReferralField[];
 }) {
+  const visibleChildFields = childFields.filter((field) => field.apiName !== 'Calculation');
+  const visibleDealFields = dealFields.filter((field) => field.apiName !== 'Amount');
   return (
     <div className="mg-rf-related-stack">
       <section className="mg-rf-modal-section">
@@ -202,7 +223,7 @@ function RelatedRecords({
                 </strong>
                 <span>{str(child.Referrer_ID) || 'No referrer ID'}</span>
               </header>
-              <DetailGrid fields={childFields} row={child} />
+              <DetailGrid fields={visibleChildFields} row={child} />
             </article>
           ))
         ) : (
@@ -224,7 +245,7 @@ function RelatedRecords({
                 <strong>{str(deal.Deal_Name) || 'Unnamed deal'}</strong>
                 <span>Carrier #{str(deal.Carrier_ID) || 'missing'}</span>
               </header>
-              <DetailGrid fields={dealFields} row={deal} />
+              <DetailGrid fields={visibleDealFields} row={deal} />
             </article>
           ))
         ) : (
@@ -256,6 +277,12 @@ export function ReferralDetailModal({
   const dialogRef = useModalFocus<HTMLDivElement>();
   const tone = TYPE_CLASS[card.calculation] ?? 'mg-rf-tone-neutral';
   const amount = card.previews.reduce((sum, preview) => sum + Number(preview.amountUsd), 0);
+  const periodGallons = card.previews.reduce(
+    (sum, preview) => sum + preview.periodGallons,
+    0,
+  );
+  const periodCards = card.previews.reduce((sum, preview) => sum + preview.periodSwipes, 0);
+  const carriers = new Set(card.previews.map((preview) => preview.carrierId)).size;
   const month = new Date(`${periodMonth}T00:00:00Z`).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
@@ -295,7 +322,7 @@ export function ReferralDetailModal({
               <p>{card.company || card.calculation || 'Zoho Parent Referrer'}</p>
             </div>
             <div className="mg-rf-modal-amount">
-              <span>{month}</span>
+              <span>Calculated bonus · {month}</span>
               <strong>{money(amount)}</strong>
             </div>
             <button
@@ -333,6 +360,21 @@ export function ReferralDetailModal({
           <div className="mg-rf-modal-body">
             {tab === 'overview' ? (
               <>
+                <div className="mg-rf-calculation-hero">
+                  <span>
+                    <Calculator size={21} />
+                  </span>
+                  <div>
+                    <small>Calculation applied</small>
+                    <strong>{card.calculation || 'Setup required'}</strong>
+                    <p>{calculationRule(card.calculation)}</p>
+                  </div>
+                  <aside>
+                    <small>Live result for {month}</small>
+                    <strong>{money(amount)}</strong>
+                    <span>{money(card.payableAmount)} payable now</span>
+                  </aside>
+                </div>
                 <div className="mg-rf-modal-kpis">
                   <div>
                     <UsersRound size={16} />
@@ -346,10 +388,18 @@ export function ReferralDetailModal({
                   </div>
                   <div>
                     <Fuel size={16} />
+                    <span>Eligible gallons</span>
+                    <strong>{number(periodGallons)}</strong>
+                  </div>
+                  <div>
+                    <CreditCard size={16} />
+                    <span>Unique cards</span>
+                    <strong>{number(periodCards)}</strong>
+                  </div>
+                  <div>
+                    <Database size={16} />
                     <span>Connected carriers</span>
-                    <strong>
-                      {new Set(card.previews.map((preview) => preview.carrierId)).size}
-                    </strong>
+                    <strong>{carriers}</strong>
                   </div>
                   <div>
                     <BadgeDollarSign size={16} />
@@ -361,19 +411,22 @@ export function ReferralDetailModal({
               </>
             ) : null}
             {tab === 'calculation' ? (
-              <RelatedRecords card={card} childFields={childFields} dealFields={dealFields} />
+              <CalculationBreakdown previews={card.previews} />
             ) : null}
             {tab === 'crm' ? (
-              <section className="mg-rf-modal-section">
-                <div className="mg-rf-section-head">
-                  <Database size={15} />
-                  <h3>Parent Referrer fields</h3>
-                  <span>{parentFields.length}</span>
-                </div>
-                <div className="mg-rf-crm-panel">
-                  <DetailGrid fields={parentFields} row={card.parent} />
-                </div>
-              </section>
+              <div className="mg-rf-related-stack">
+                <section className="mg-rf-modal-section">
+                  <div className="mg-rf-section-head">
+                    <Database size={15} />
+                    <h3>Parent Referrer fields</h3>
+                    <span>{parentFields.length}</span>
+                  </div>
+                  <div className="mg-rf-crm-panel">
+                    <DetailGrid fields={parentFields} row={card.parent} />
+                  </div>
+                </section>
+                <RelatedRecords card={card} childFields={childFields} dealFields={dealFields} />
+              </div>
             ) : null}
           </div>
         </div>

@@ -6,15 +6,25 @@ import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fas
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { AppError, AuthError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
+import { isTransientDbError } from '../../modules/jobs/bossErrors.js';
 import { safeEqual } from '../../lib/crypto.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { systemContext } from '../../modules/auth/authService.js';
 import { ingestAttendanceWebhook } from '../../modules/hr/attendance/ingestWebhook.js';
 import { buildAttendanceSummary, summaryToCsv } from '../../modules/hr/attendance/summary.js';
-import { assertCanViewEmployeeAttendance } from '../../modules/hr/attendance/teamScope.js';
+import {
+  assertCanAssignEmployeeShift,
+  assertCanViewEmployeeAttendance,
+  canViewAllAttendance,
+} from '../../modules/hr/attendance/teamScope.js';
 import { buildAttendanceTeamList } from '../../modules/hr/attendance/teamSummary.js';
-import { isValidHhMm, weekRangeContaining } from '../../modules/hr/attendance/uzbTime.js';
+import {
+  isValidHhMm,
+  uzbDateString,
+  weekRangeContaining,
+} from '../../modules/hr/attendance/uzbTime.js';
 import { hrAttendanceShiftRepo } from '../../repos/hrAttendanceShiftRepo.js';
-import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
+import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
@@ -36,11 +46,23 @@ function zohoUserIdFromCtx(ctx: TenantContext): string {
   return ctx.userId.startsWith('zoho:') ? ctx.userId.replace(/^zoho:/, '') : '';
 }
 
-async function resolveSelfEmployeeId(ctx: TenantContext): Promise<string> {
+async function resolveSelfEmployeeId(
+  ctx: TenantContext,
+  allowElevatedUnlinked = false,
+): Promise<string> {
   const zohoUserId = zohoUserIdFromCtx(ctx);
-  if (!zohoUserId) throw new NotFoundError('No employee record linked to this sign-in');
+  if (!zohoUserId) {
+    if (allowElevatedUnlinked && canViewAllAttendance(ctx)) return '';
+    throw new NotFoundError('No employee record linked to this sign-in');
+  }
   const row = await hrEmployeeRepo.findByZohoUserId(ctx, zohoUserId);
-  if (!row) throw new NotFoundError('No employee record linked to this sign-in');
+  if (!row) {
+    // Org-wide attendance access belongs to the verified Administrator / HR Manager identity,
+    // not to whether HR has already linked that identity to an employee row. An empty self id
+    // gives elevated users zero "direct" reports while still allowing the scoped All directory.
+    if (allowElevatedUnlinked && canViewAllAttendance(ctx)) return '';
+    throw new NotFoundError('No employee record linked to this sign-in');
+  }
   return row.id;
 }
 
@@ -96,6 +118,17 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
       throw new AuthError('Invalid or missing attendance webhook secret');
     }
     const stats = await ingestAttendanceWebhook(request.body, request.id);
+    await auditFromContext(systemContext(request.id), {
+      action: 'hr.attendance.webhook.ingest',
+      status: stats.failed > 0 ? 'error' : 'ok',
+      resourceType: 'hr_attendance_punch',
+      resourceId: request.id,
+      detail: {
+        accepted: stats.success,
+        skipped: stats.skipped,
+        failed: stats.failed,
+      },
+    });
     return { success: true, stats };
   });
 
@@ -111,7 +144,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     let from = q.from;
     let to = q.to;
     if (!from || !to) {
-      const anchor = q.weekOf ?? new Date().toISOString().slice(0, 10);
+      const anchor = q.weekOf ?? uzbDateString(new Date());
       const range = weekRangeContaining(anchor);
       from = from ?? range.from;
       to = to ?? range.to;
@@ -131,8 +164,11 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
       })
       .parse(request.query);
     if (q.from > q.to) throw new ValidationError('from must be on or before to');
-    const selfId = await resolveSelfEmployeeId(ctx);
+    const selfId = await resolveSelfEmployeeId(ctx, true);
     const employeeId = q.employeeId?.trim() || selfId;
+    if (!employeeId) {
+      throw new NotFoundError('Choose an employee to view attendance');
+    }
     if (employeeId !== selfId) {
       const emp = await hrEmployeeRepo.getById(ctx, employeeId);
       if (!emp) throw new NotFoundError('Employee not found');
@@ -160,14 +196,27 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     let from = q.from;
     let to = q.to;
     if (!from || !to) {
-      const anchor = q.weekOf ?? new Date().toISOString().slice(0, 10);
+      const anchor = q.weekOf ?? uzbDateString(new Date());
       const range = weekRangeContaining(anchor);
       from = from ?? range.from;
       to = to ?? range.to;
     }
     if (from > to) throw new ValidationError('from must be on or before to');
-    const selfId = await resolveSelfEmployeeId(ctx);
-    return buildAttendanceTeamList(ctx, selfId, from, to, q.scope, q.q ?? '');
+    const selfId = await resolveSelfEmployeeId(ctx, true);
+    try {
+      return await buildAttendanceTeamList(ctx, selfId, from, to, q.scope, q.q ?? '');
+    } catch (err) {
+      // Render Postgres flaps show up as opaque 500s in the Attendance UI — surface a retryable 503.
+      if (isTransientDbError(err)) {
+        throw new AppError('Attendance directory temporarily unavailable — retry in a moment', {
+          statusCode: 503,
+          code: 'DB_UNAVAILABLE',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw err;
+    }
   });
 
   app.get('/hr/attendance/export', auth, async (request) => {
@@ -261,14 +310,23 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     '/hr/attendance/shifts/:id/assign',
     auth,
     async (request) => {
-      const ctx = requireHrAdmin(request);
+      const ctx = requireHrInternal(request);
       const shift = await hrAttendanceShiftRepo.getById(ctx, request.params.id);
       if (!shift) throw new NotFoundError('Shift not found');
       const body = assignBody.parse(request.body);
-      const assigned: string[] = [];
+      const selfEmployeeId = await resolveSelfEmployeeId(ctx, true);
+      const targets: HrEmployeeRow[] = [];
       for (const employeeId of body.employeeIds) {
         const emp = await hrEmployeeRepo.getById(ctx, employeeId);
-        if (!emp) continue;
+        if (!emp) throw new NotFoundError('Employee not found');
+        await assertCanAssignEmployeeShift(ctx, selfEmployeeId, emp.id);
+        targets.push(emp);
+      }
+
+      // Scope every target before the first write so a mixed authorised/unauthorised batch cannot
+      // partially apply and then fail halfway through.
+      const assigned: string[] = [];
+      for (const emp of targets) {
         await hrAttendanceShiftRepo.assign(ctx, {
           shiftId: shift.id,
           employeeId: emp.id,

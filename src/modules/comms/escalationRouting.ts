@@ -194,7 +194,7 @@ export async function resolveDepartmentManager(
  * LEVEL 4 — validate an explicit C-Level pick against the pool.
  *
  * Explicit rather than resolved, because level 4 is CEO *and* COO and which one to involve is a human
- * decision — that is exactly why 0087 dropped the single `c_level_zoho_user_id` column. The pick is
+ * decision — that is exactly why 0091 dropped the single `c_level_zoho_user_id` column. The pick is
  * validated against the pool so "escalate to C-Level" cannot become "escalate to anyone I name".
  */
 export async function resolveCLevel(

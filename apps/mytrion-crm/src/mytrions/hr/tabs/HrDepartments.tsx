@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Building2, Plus, RefreshCw, Search } from 'lucide-react';
+import { Building2, Plus, RefreshCw, Search, UserRoundCheck, Users } from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
 import { deleteHrDepartment, type HrDepartmentDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
@@ -14,11 +14,10 @@ import {
   useHrDirectory,
 } from '../hrData';
 import {
-  HrCardGridSkeleton,
   HrEmpty,
-  HrHeadActionsSkeleton,
+  HrPageLoader,
   HrPageHead,
-  HrToolbarSkeleton,
+  HrSummaryTiles,
 } from '../HrBits';
 
 /**
@@ -109,15 +108,19 @@ export function HrDepartments() {
 
   const firstLoad = departments.loading && !departments.data;
   const cachedCaption = formatCachedAt(departments.cachedAt);
+  const staffed = headcounts
+    ? items.filter((department) => (headcounts.get(department.id)?.total ?? 0) > 0).length
+    : 0;
+  const assignedPeople = headcounts
+    ? [...headcounts.values()].reduce((sum, count) => sum + count.total, 0)
+    : 0;
 
   return (
     <div className="hr-page">
       <HrPageHead
         tab="departments"
         actions={
-          firstLoad ? (
-            <HrHeadActionsSkeleton buttons={admin ? 2 : 1} />
-          ) : (
+          firstLoad ? null : (
             <>
               {/* One loader: the Refresh icon spins; this stays text. */}
               <span className="hr-cached">
@@ -151,9 +154,7 @@ export function HrDepartments() {
         }
       />
 
-      {firstLoad ? (
-        <HrToolbarSkeleton slots={0} />
-      ) : (
+      {!firstLoad ? (
         <div className="hr-toolbar">
           <label className="hr-search">
             <Search size={14} />
@@ -164,13 +165,37 @@ export function HrDepartments() {
               aria-label="Search departments"
             />
           </label>
-          <div className="hr-summary">
-            <strong>{visible.length}</strong>
-            {term ? <> of {items.length}</> : null}{' '}
-            {items.length === 1 ? 'department' : 'departments'}
-          </div>
         </div>
-      )}
+      ) : null}
+
+      {!firstLoad ? (
+        <HrSummaryTiles
+          label="Department summary"
+          items={[
+            {
+              label: term ? 'Matching departments' : 'Departments',
+              value: term ? `${visible.length} / ${items.length}` : items.length,
+              detail: term ? 'Visible with current search' : 'Configured organizational units',
+              icon: <Building2 size={19} />,
+              tone: 'var(--tone-violet)',
+            },
+            {
+              label: 'Staffed departments',
+              value: staffed,
+              detail: 'Have at least one assigned person',
+              icon: <UserRoundCheck size={19} />,
+              tone: 'var(--success)',
+            },
+            {
+              label: 'Assigned people',
+              value: assignedPeople,
+              detail: 'Linked across all departments',
+              icon: <Users size={19} />,
+              tone: 'var(--tone-blue)',
+            },
+          ]}
+        />
+      ) : null}
 
       {error || departments.error ? (
         <p className="hr-banner-error" role="alert">
@@ -179,7 +204,7 @@ export function HrDepartments() {
       ) : null}
 
       {firstLoad ? (
-        <HrCardGridSkeleton count={6} label="Loading departments" gridClass="hr-deptc-grid" />
+        <HrPageLoader label="Loading departments…" />
       ) : visible.length === 0 ? (
         <HrEmpty
           icon={<Building2 size={26} />}

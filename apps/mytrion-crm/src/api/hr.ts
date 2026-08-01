@@ -26,6 +26,10 @@ export interface HrEmployeeDto {
   /** The manager as a stable id — what the org canvas links on (a name cannot survive a rename). */
   reportingToEmployeeId: string | null;
   photoUrl: string | null;
+  /** Zoho CRM sign-in linked to this employee for HR RBAC. */
+  zohoUserId: string | null;
+  zohoUserIdSource: string | null;
+  zohoUserLinkedAt: string | null;
   /** Dragged org-canvas position; null means the auto-layout owns this node. */
   canvasX: number | null;
   canvasY: number | null;
@@ -104,6 +108,32 @@ export async function listHrDesignations(signal?: AbortSignal): Promise<string[]
     ...(signal ? { signal } : {}),
   });
   return (data as { designations?: string[] }).designations ?? [];
+}
+
+export interface HrZohoUserDto {
+  id: string;
+  name: string | null;
+  email: string | null;
+  profile: string | null;
+  role: string | null;
+}
+
+export async function listHrZohoUsers(signal?: AbortSignal): Promise<HrZohoUserDto[]> {
+  const data = await request('GET', '/hr/zoho-users', {
+    ...(signal ? { signal } : {}),
+  });
+  return (data as { items: HrZohoUserDto[] }).items;
+}
+
+export async function linkHrEmployeeZohoUser(
+  employeeId: string,
+  zohoUserId: string | null,
+): Promise<HrEmployeeDto> {
+  return (await request(
+    'PATCH',
+    `/hr/employees/${encodeURIComponent(employeeId)}/zoho-user`,
+    { body: { zohoUserId } },
+  )) as HrEmployeeDto;
 }
 
 // ── Org graph (`GET /hr/org-structure`) ─────────────────────────────────────
@@ -198,6 +228,7 @@ export interface HrSyncResult {
   inserted: number;
   updated: number;
   relinkedManagers?: number;
+  relinkedAttendancePunches?: number;
   errors: Array<{ zohoRecordId: string; message: string }>;
 }
 
@@ -304,7 +335,7 @@ export async function deleteHrDepartment(id: string): Promise<void> {
 
 // ── Attendance (Mytrion-owned punches + shifts) ───────────────────────────────
 
-export type AttendanceDayStatus = 'Present' | 'Absent' | 'Weekend';
+export type AttendanceDayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled';
 
 export interface AttendanceDayRow {
   date: string;
@@ -314,12 +345,23 @@ export interface AttendanceDayRow {
   hoursWorked: string;
   hoursWorkedMs: number;
   punchCount: number;
+  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  unmatchedPunches: number;
+  sessions: Array<{
+    checkIn: string;
+    checkOut: string | null;
+    checkInDoor: string | null;
+    checkOutDoor: string | null;
+    duration: string;
+    durationMs: number;
+  }>;
 }
 
 export interface AttendanceSummaryDto {
   employeeId: string;
   from: string;
   to: string;
+  timezone: 'Asia/Tashkent';
   shift: {
     id: string;
     name: string;
@@ -333,6 +375,7 @@ export interface AttendanceSummaryDto {
     present: number;
     weekend: number;
     absent: number;
+    unscheduled: number;
     onDuty: number;
     paidLeave: number;
     holidays: number;
@@ -340,8 +383,10 @@ export interface AttendanceSummaryDto {
   lastPunch: {
     kind: string;
     punchedAt: string;
+    localDateTime: string;
     doorName: string | null;
   } | null;
+  currentState: 'in_office' | 'out_of_office' | 'no_activity';
 }
 
 export interface HrAttendanceShiftDto {
@@ -413,8 +458,10 @@ export interface AttendanceTeamListItem {
     present: number;
     weekend: number;
     absent: number;
+    unscheduled: number;
   };
   lastPunch: AttendanceSummaryDto['lastPunch'];
+  currentState: AttendanceSummaryDto['currentState'];
 }
 
 export interface AttendanceTeamListDto {
@@ -423,6 +470,7 @@ export interface AttendanceTeamListDto {
   scope: AttendanceTeamScope;
   canViewAll: boolean;
   counts: { direct: number; all: number };
+  unmappedPunches: number;
   items: AttendanceTeamListItem[];
 }
 

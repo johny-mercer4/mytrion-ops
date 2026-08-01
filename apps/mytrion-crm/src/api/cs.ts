@@ -150,6 +150,172 @@ export function deleteCitifuel(id: string): Promise<{ id: string; deleted: boole
   }) as Promise<{ id: string; deleted: boolean }>;
 }
 
+// ---- Maintenance cases ----
+// Postgres-backed end to end: the Zoho `Maintenance` module was migrated once and is not read
+// again, so none of these hit Zoho (see src/routes/v1/csMaintenance.routes.ts).
+
+export interface MaintenanceRecord {
+  id: string;
+  zohoRecordId: string | null;
+  source: 'zoho_migration' | 'mytrion';
+  name: string | null;
+  companyZohoId: string | null;
+  companyName: string | null;
+  carrierId: string | null;
+  unitNumber: string | null;
+  status: string | null;
+  caseType: string | null;
+  caseDate: string | null;
+  caseCompletion: string | null;
+  driverName: string | null;
+  phone: string | null;
+  shopNumber: string | null;
+  parts: string | null;
+  workOrderId: string | null;
+  referenceNumber: string | null;
+  paymentMethod: string | null;
+  paymentStatus: string | null;
+  invoiced: boolean | null;
+  cardDigits: string | null;
+  /** NUMERIC arrives as a string — format, never arithmetic on the raw value. */
+  totalAmount: string | null;
+  completionCompensation: string | null;
+  halfCompletionCompensation: string | null;
+  leadCompensation: string | null;
+  ownerZohoUserId: string | null;
+  ownerName: string | null;
+  bonusCompletionName: string | null;
+  bonusLeadName: string | null;
+  createdTime: string | null;
+  modifiedTime: string | null;
+  createdByName: string | null;
+  updatedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaintenanceFacets {
+  total: number;
+  byStatus: Record<string, number>;
+  byCaseType: Record<string, number>;
+  byPaymentStatus: Record<string, number>;
+  totalAmount: number;
+}
+
+export interface MaintenancePage {
+  rows: MaintenanceRecord[];
+  page: number;
+  perPage: number;
+  total: number;
+  hasMore: boolean;
+  facets: MaintenanceFacets;
+}
+
+export interface MaintenanceQuery {
+  search?: string;
+  status?: string[];
+  caseType?: string[];
+  paymentMethod?: string[];
+  paymentStatus?: string[];
+  owner?: string;
+  carrierId?: string;
+  completed?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'date' | 'created' | 'amount' | 'company' | 'carrier';
+  dir?: 'asc' | 'desc';
+  page?: number;
+  perPage?: number;
+}
+
+/** Multi-selects travel as `a,b,c`; empty values are dropped so they never widen the filter. */
+function maintenanceParams(q: MaintenanceQuery): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  if (q.search?.trim()) out.search = q.search.trim();
+  if (q.status?.length) out.status = q.status.join(',');
+  if (q.caseType?.length) out.caseType = q.caseType.join(',');
+  if (q.paymentMethod?.length) out.paymentMethod = q.paymentMethod.join(',');
+  if (q.paymentStatus?.length) out.paymentStatus = q.paymentStatus.join(',');
+  if (q.owner) out.owner = q.owner;
+  if (q.carrierId) out.carrierId = q.carrierId;
+  if (q.completed !== undefined) out.completed = String(q.completed);
+  if (q.dateFrom) out.dateFrom = q.dateFrom;
+  if (q.dateTo) out.dateTo = q.dateTo;
+  if (q.sort) out.sort = q.sort;
+  if (q.dir) out.dir = q.dir;
+  out.page = q.page ?? 1;
+  out.perPage = q.perPage ?? 24;
+  return out;
+}
+
+export function listMaintenance(q: MaintenanceQuery = {}): Promise<MaintenancePage> {
+  return request('GET', '/cs/maintenance', {
+    headers: CS_HEADERS,
+    query: maintenanceParams(q),
+  }) as Promise<MaintenancePage>;
+}
+
+export function getMaintenanceStats(): Promise<MaintenanceFacets> {
+  return request('GET', '/cs/maintenance/stats', {
+    headers: CS_HEADERS,
+  }) as Promise<MaintenanceFacets>;
+}
+
+export interface MaintenanceMeta {
+  statusOptions: string[];
+  caseTypeOptions: string[];
+  paymentMethodOptions: string[];
+  paymentStatusOptions: string[];
+  owners: Array<{ ownerZohoUserId: string; ownerName: string; count: number }>;
+  editableFields: string[];
+}
+
+export function getMaintenanceMeta(): Promise<MaintenanceMeta> {
+  return request('GET', '/cs/maintenance/meta', {
+    headers: CS_HEADERS,
+  }) as Promise<MaintenanceMeta>;
+}
+
+export interface CompanyOption {
+  carrierId: string;
+  companyName: string;
+  isActive: boolean;
+  paymentTerms: string | null;
+}
+
+/**
+ * Company typeahead from the DWH (`octane.dim_company`) — the authoritative company ↔ carrier-id map.
+ * Selecting one fills the carrier id, so an agent never types it. 49 company names map to more than
+ * one carrier, which is why the carrier id travels with each option and must be shown.
+ */
+export function lookupMaintenanceCompanies(q: string): Promise<{ companies: CompanyOption[] }> {
+  return request('GET', '/cs/maintenance/lookup/companies', {
+    headers: CS_HEADERS,
+    query: { q },
+  }) as Promise<{ companies: CompanyOption[] }>;
+}
+
+export type MaintenanceWriteValue = string | number | boolean | null;
+
+export function createMaintenance(
+  data: Record<string, MaintenanceWriteValue>,
+): Promise<MaintenanceRecord> {
+  return request('POST', '/cs/maintenance', {
+    headers: CS_HEADERS,
+    body: data,
+  }) as Promise<MaintenanceRecord>;
+}
+
+export function updateMaintenance(
+  id: string,
+  data: Record<string, MaintenanceWriteValue>,
+): Promise<MaintenanceRecord> {
+  return request('PATCH', `/cs/maintenance/${encodeURIComponent(id)}`, {
+    headers: CS_HEADERS,
+    body: data,
+  }) as Promise<MaintenanceRecord>;
+}
+
 // ---- Analytics ----
 
 export interface CsContext {

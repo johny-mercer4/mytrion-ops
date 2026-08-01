@@ -558,43 +558,113 @@
     {
       "idx": 79,
       "version": "7",
-      "when": 1785405600000,
-      "tag": "0085_comms_presence",
+      "when": 1785398400001,
+      "tag": "0079_maintenance_cases",
       "breakpoints": true
     },
     {
       "idx": 80,
       "version": "7",
-      "when": 1785409200000,
-      "tag": "0086_comms_core",
+      "when": 1785398400002,
+      "tag": "0080_maintenance_cases_sort_idx",
       "breakpoints": true
     },
     {
       "idx": 81,
       "version": "7",
-      "when": 1785412800000,
-      "tag": "0087_comms_c_level_pool",
+      "when": 1785398400003,
+      "tag": "0081_support_bot_operations_repair",
       "breakpoints": true
     },
     {
       "idx": 82,
       "version": "7",
-      "when": 1785416400000,
-      "tag": "0088_comms_catalog_seed",
+      "when": 1785405600000,
+      "tag": "0082_support_bot_knowledge",
       "breakpoints": true
     },
     {
       "idx": 83,
       "version": "7",
-      "when": 1785420000000,
-      "tag": "0089_comms_hr_department_link",
+      "when": 1785409200000,
+      "tag": "0083_recruit_workspace",
       "breakpoints": true
     },
     {
       "idx": 84,
       "version": "7",
+      "when": 1785412800000,
+      "tag": "0084_hr_oybek_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1785416400000,
+      "tag": "0085_hr_ganga_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1785420000000,
+      "tag": "0086_hr_workspace_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
       "when": 1785423600000,
-      "tag": "0090_file_assets_storage_provider",
+      "tag": "0087_hr_ganga_ingest_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1785427200000,
+      "tag": "0088_loyalty_client_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1785430800000,
+      "tag": "0089_comms_presence",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1785434400000,
+      "tag": "0090_comms_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1785438000000,
+      "tag": "0091_comms_c_level_pool",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1785441600000,
+      "tag": "0092_comms_catalog_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1785445200000,
+      "tag": "0093_comms_hr_department_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1785448800000,
+      "tag": "0094_file_assets_storage_provider",
       "breakpoints": true
     }
   ]

@@ -11,7 +11,7 @@ import type { TenantContext } from '../types/tenantContext.js';
  * The ticket-type / escalation-reason catalog — the admin-owned replacement for three hardcoded
  * frontend arrays (49 ticket types, four department options, 11 escalation reasons).
  *
- * Rows are seeded by 0088 and edited from Mytrion Admin. Note what the write path does NOT allow:
+ * Rows are seeded by 0092 and edited from Mytrion Admin. Note what the write path does NOT allow:
  * `code` and `kind` are immutable, because every historical ticket snapshots the code and `kind` decides
  * whether a row is a ticket type or an escalation reason. `targetDepartment` IS editable — retargeting a
  * whole family of types without a deploy is the reason this table exists — but only through an admin

@@ -15,6 +15,9 @@
 .cs-root .cs-an-lb-section,
 .cs-root .cs-an-error-card,
 .cs-root .cs-citi-stat-card,
+.cs-root .cs-mt-stat-card,
+.cs-root .cs-mt-card,
+.cs-root .cs-mt-filters,
 .cs-root .cs-ret-quota-card,
 .cs-root .cs-ret-act-block,
 .cs-root .cs-ret-timeline-wrap,
@@ -59,11 +62,21 @@
 .cs-root .cs-home-qa-card:hover,
 .cs-root .cs-an-kpi-card:hover,
 .cs-root .cs-citi-stat-card:hover,
+.cs-root .cs-mt-stat-card:hover,
+.cs-root .cs-mt-card:hover,
 .cs-root .cs-summary-item:hover {
     background: var(--hz-pane-lift);
     border-color: color-mix(in srgb, var(--cs-accent) 32%, var(--hz-pane-bd));
     box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
     transform: var(--hz-hover-lift-sm);
+}
+
+/* A maintenance card is a real <button>, so its keyboard focus gets the module's accent ring rather
+   than the UA outline. Cards are the only clickable pane in the module, hence the separate rule. */
+.cs-root .cs-mt-card:focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--cs-accent) 55%, var(--hz-pane-bd));
+    box-shadow: 0 0 0 3px var(--cs-accent-glow), var(--hz-shadow-lift), var(--hz-glass-inset);
 }
 
 /* The Home hero keeps its warm corner bloom, now from the module ramp. */
@@ -154,6 +167,46 @@
     display: inline-flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+/* ── Form controls: ONE corner radius for the whole module ───────────────── */
+/*
+ * The module had drifted into four different radii on controls that sit in the same row: buttons at
+ * 12px, my owner combobox at 8px, every native <select> and date input at 6px, and the search bars at
+ * 0px. Two token scales are to blame — the legacy widget's `--radius-*` collapses xs/sm/md/lg all to
+ * 6px, while Horizon's `--r-*` is the real 8/12/16/22 ramp. Anything still reaching for `--radius-md`
+ * silently renders square next to a 12px button.
+ *
+ * So: every control in the module takes `--r-md`, matching the buttons and reading as one family.
+ * This sheet is imported LAST, so these win at equal specificity over the per-panel sheets; the
+ * two-class selectors below exist to beat the per-panel rules that are themselves two-class.
+ */
+.cs-root select,
+.cs-root .cs-form-input,
+/* Named explicitly: a bare `.cs-root select` is one class + one element, which LOSES to any
+   two-class per-panel rule like `.cs-root .cs-an-range-select`. */
+.cs-root .cs-an-range-select,
+.cs-root .cs-mt-filter select,
+.cs-root .cs-mt-filter-date input,
+.cs-root .cs-mt-dir-btn,
+.cs-root .cs-mt-clear-btn,
+.cs-root .cs-ss-input,
+.cs-root .cs-an-rc-field input,
+/* Carries the attribute selector on purpose: analytics-panel.css styles this as
+   `.cs-root .cs-an-rc-field input[type="date"]`, which outranks a plain two-class selector no matter
+   how late this sheet is imported. Matching its specificity is what lets import order decide. */
+.cs-root .cs-an-rc-field input[type='date'],
+.cs-root .cs-app-search,
+.cs-root .cs-citi-search-bar,
+.cs-root .cs-mt-search {
+    border-radius: var(--r-md);
+}
+
+/* A dropdown panel is the visual continuation of the field above it — same corner, or the pairing
+   reads as two unrelated controls stacked by accident. */
+.cs-root .cs-lookup-dropdown,
+.cs-root .cs-ss-list {
+    border-radius: var(--r-md);
 }
 
 /* ── Search fields ───────────────────────────────────────────────────────── */

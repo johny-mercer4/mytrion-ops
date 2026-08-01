@@ -10,7 +10,6 @@
   backdrop-filter: blur(14px) saturate(0.72);
 }
 .mg-root .mg-rf-modal {
-  --rf-modal-edge: color-mix(in srgb, var(--rf-tone) 72%, white);
   position: relative;
   isolation: isolate;
   width: min(1160px, 96vw);
@@ -18,41 +17,13 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 2px solid color-mix(in srgb, var(--rf-modal-edge) 70%, var(--hz-pane-bd));
+  border: 1px solid color-mix(in srgb, var(--rf-tone) 58%, var(--hz-pane-bd));
   border-radius: 18px;
-  outline: 1px solid color-mix(in srgb, var(--rf-modal-edge) 36%, transparent);
-  outline-offset: 4px;
   background: color-mix(in srgb, var(--bg-primary) 97%, var(--rf-tone));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--rf-modal-edge) 34%, transparent),
     0 36px 110px -24px rgba(0, 0, 0, 0.72),
     0 0 76px -24px color-mix(in srgb, var(--rf-tone) 82%, transparent),
     var(--hz-glass-inset);
-}
-.mg-root .mg-rf-modal::after {
-  content: '';
-  position: absolute;
-  z-index: 5;
-  inset: 7px;
-  border-radius: 11px;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, var(--rf-modal-edge), var(--rf-modal-edge)) top left / 52px 3px no-repeat,
-    linear-gradient(180deg, var(--rf-modal-edge), var(--rf-modal-edge)) top left / 3px 52px
-      no-repeat,
-    linear-gradient(270deg, var(--rf-modal-edge), var(--rf-modal-edge)) top right / 52px 3px
-      no-repeat,
-    linear-gradient(180deg, var(--rf-modal-edge), var(--rf-modal-edge)) top right / 3px 52px
-      no-repeat,
-    linear-gradient(90deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom left / 52px 3px
-      no-repeat,
-    linear-gradient(0deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom left / 3px 52px
-      no-repeat,
-    linear-gradient(270deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom right / 52px 3px
-      no-repeat,
-    linear-gradient(0deg, var(--rf-modal-edge), var(--rf-modal-edge)) bottom right / 3px 52px
-      no-repeat;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--rf-tone) 70%, transparent));
 }
 .mg-root .mg-rf-modal-head {
   display: flex;
@@ -156,9 +127,71 @@
   overflow: auto;
   padding: 18px;
 }
+.mg-root .mg-rf-calculation-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 12px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--rf-tone) 34%, var(--hz-pane-bd));
+  border-radius: 13px;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--rf-tone) 11%, transparent), transparent 58%),
+    var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-rf-calculation-hero > span {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--rf-tone) 34%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--rf-tone) 12%, transparent);
+  color: var(--rf-tone);
+}
+.mg-root .mg-rf-calculation-hero > div {
+  min-width: 0;
+}
+.mg-root .mg-rf-calculation-hero small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.mg-root .mg-rf-calculation-hero > div strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--rf-tone);
+  font: 750 17px/1.25 var(--font-head);
+}
+.mg-root .mg-rf-calculation-hero p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.mg-root .mg-rf-calculation-hero aside {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+}
+.mg-root .mg-rf-calculation-hero aside strong {
+  color: var(--text-primary);
+  font: 800 24px/1.1 var(--font-head);
+  letter-spacing: -0.03em;
+}
+.mg-root .mg-rf-calculation-hero aside span {
+  color: var(--success);
+  font-size: 11.5px;
+  font-weight: 650;
+}
 .mg-root .mg-rf-modal-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -184,7 +217,11 @@
 }
 .mg-root .mg-rf-modal-kpis strong {
   grid-area: value;
-  font: 700 18px/1.2 var(--font-head);
+  overflow: hidden;
+  font: 700 16px/1.2 var(--font-head);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mg-root .mg-rf-breakdowns,
 .mg-root .mg-rf-related-stack {
@@ -257,9 +294,10 @@
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  padding: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--rf-tone) 20%, var(--hz-pane-bd));
   border-radius: 9px;
-  background: var(--hz-pane-alt);
+  background: color-mix(in srgb, var(--rf-tone) 5%, var(--hz-pane-alt));
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -268,7 +306,7 @@
 }
 .mg-root .mg-rf-breakdown-formula strong {
   color: var(--text-primary);
-  font-size: 15px;
+  font: 750 19px/1 var(--font-head);
 }
 .mg-root .mg-rf-progress {
   margin-top: 11px;
@@ -285,7 +323,7 @@
 }
 .mg-root .mg-rf-mini-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   margin: 12px 0 0;
 }
@@ -381,10 +419,10 @@
 
 @media (max-width: 900px) {
   .mg-root .mg-rf-modal-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .mg-root .mg-rf-mini-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 620px) {
@@ -402,6 +440,14 @@
   }
   .mg-root .mg-rf-modal-amount {
     display: none;
+  }
+  .mg-root .mg-rf-calculation-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mg-root .mg-rf-calculation-hero aside {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    text-align: left;
   }
   .mg-root .mg-rf-modal-tabs {
     overflow-x: auto;

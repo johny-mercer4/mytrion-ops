@@ -88,21 +88,18 @@ export const carrierDelugeTouchpoints: Touchpoint[] = [
     unwrap: 'status',
     paramsSchema: z.object({ carrierId }),
   },
-  {
-    kind: 'deluge',
-    key: 'maintenance.create',
-    title: 'Maintenance ticket (mechanical / tire)',
-    riskClass: 'write',
-    departments: SALES,
-    carrierParam: 'carrierId',
-    functionNames: ['createmaintenance'],
-    unwrap: 'permissive',
-    paramsSchema: z.object({
-      companyName: shortText(300),
-      companyId: idString,
-      number: shortText(40),
-      type: z.enum(['Mechanical', 'Tire Replacement']),
-      carrierId,
-    }),
-  },
+  /*
+   * `maintenance.create` was REMOVED here — the last WRITE path in mytrion-ops that created a
+   * maintenance case in Zoho instead of in our own `maintenance_cases` table.
+   *
+   * It called the `createmaintenance` Deluge, and `POST /v1/touchpoints/maintenance.create` executes
+   * any catalog entry, so it stayed reachable by API callers and by agents even though no frontend
+   * ever used it. Anything that did would have written a case Mytrion cannot see: reads all come from
+   * Postgres now, and there is deliberately no sync back from Zoho. Cases are created through
+   * `POST /cs/maintenance` (the Maintenance tab), which writes the table everything else reads.
+   *
+   * The Deluge function itself is untouched in Zoho, so the in-Zoho widgets that call it directly
+   * (self-service create-panel, createticket*.html — via ZOHO.CRM.FUNCTIONS.execute, never through
+   * this catalog) keep working exactly as before.
+   */
 ];

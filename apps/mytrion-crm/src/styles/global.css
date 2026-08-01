@@ -126,12 +126,30 @@
   --accent-glow: rgba(242, 109, 109, 0.28);
 }
 [data-theme='light'] [data-mytrion='hr'] {
-  --accent: #dc2626;
-  --accent-2: #ea580c;
-  --accent-strong: #b91c1c;
+  /* Softer coral — #dc2626 was a hard primary red that made light HR feel sharp. */
+  --accent: #c24b4b;
+  --accent-2: #d97706;
+  --accent-strong: #a33d3d;
   --on-accent: #fff;
-  --accent-soft: rgba(220, 38, 38, 0.1);
-  --accent-glow: rgba(220, 38, 38, 0.2);
+  --accent-soft: rgba(194, 75, 75, 0.08);
+  --accent-glow: rgba(194, 75, 75, 0.14);
+}
+
+[data-mytrion='recruit'] {
+  --accent: #9b7cf6;
+  --accent-2: #5f9cf4;
+  --accent-strong: #b49df8;
+  --on-accent: #10072d;
+  --accent-soft: rgba(155, 124, 246, 0.13);
+  --accent-glow: rgba(155, 124, 246, 0.28);
+}
+[data-theme='light'] [data-mytrion='recruit'] {
+  --accent: #7654d8;
+  --accent-2: #347fd5;
+  --accent-strong: #6442c4;
+  --on-accent: #fff;
+  --accent-soft: rgba(118, 84, 216, 0.1);
+  --accent-glow: rgba(118, 84, 216, 0.2);
 }
 
 [data-mytrion='manager'] {
@@ -176,7 +194,7 @@ button {
   font-family: inherit;
 }
 
-/* Global keyboard focus ring — every interactive element (DESIGN_SYSTEM.md §8). */
+/* Global keyboard focus ring — buttons, links, custom controls (DESIGN_SYSTEM.md §8). */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -184,31 +202,43 @@ button {
 }
 
 /*
- * …EXCEPT a field whose WRAPPER already owns the focus treatment.
- *
- * Every module builds search/composer fields the same way: a bordered wrapper paints the accent
- * border on :focus-within, and the field inside is deliberately bare (`border: none`). The rule
- * above — plus each module's own `.<mod>-root :focus-visible` ring, which is a DESCENDANT selector —
- * then lands on that bare field as a SECOND line inside the wrapper's border. That is the doubled
- * outline; scoping it per component never reached it, because the offending selector matches the
- * input rather than the wrapper.
- *
- * Only `input`/`textarea` are cleared, never the wrapper's buttons (a clear "×" still needs its own
- * visible focus ring), and the wrapper keeps painting the accent border, so keyboard focus stays
- * obvious. Add a wrapper here whenever you give one a :focus-within treatment.
- *
- * CSS-module wrappers can't be named from here (hashed class names) — those carry the same rule
- * locally: admin.module.css `.search`, MytrionShell.module.css `.navSearch`, Composer.module.css
- * `.pill`.
+ * Form controls never take the hard outline. Mytrion modules either:
+ *   1. paint an accent border / soft glow on the field itself, or
+ *   2. wrap a bare field in a shell that owns :focus-within.
+ * Letting :focus-visible outline land on the bare field is what produced the ugly
+ * "internal" accent ring inside search bars across every Mytrion.
  */
-.cs-root .cs-app-search input:focus-visible,
-.cs-root .cs-citi-search-bar input:focus-visible,
-.bm-root .bm-search-bar input:focus-visible,
-.bm-root .db-search-wrap input:focus-visible,
-.bm-root .bm-ai-input-row textarea:focus-visible,
-.mg-root .mg-search input:focus-visible,
-.hr-root .hr-search input:focus-visible,
-.fi-search input:focus-visible {
+:is(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/*
+ * Focus shells — bordered wrappers with a bare inner field. Clear BOTH outline and the
+ * module-level glow ring (`box-shadow`) so only the wrapper's :focus-within chrome shows.
+ *
+ * Prefer `data-focus-shell` on new wrappers. The class list covers existing search / select /
+ * composer shells. CSS-module wrappers (hashed names) keep the same rule locally:
+ * admin.module.css `.search`, MytrionShell.module.css `.navSearch`, Composer.module.css `.pill`.
+ */
+:is(
+  [data-focus-shell],
+  .hr-search,
+  .hr-att-search,
+  .hr-select,
+  .hr-prefixed,
+  .mg-search,
+  .mg-rf-search,
+  .mg-rf-month,
+  .fi-search,
+  .vf-search,
+  .cs-app-search,
+  .cs-citi-search-bar,
+  .bm-search-bar,
+  .db-search-wrap,
+  .bm-ai-input-row,
+  .ss-pool-search
+)
+  :is(input, textarea, select):focus-visible {
   outline: none;
   box-shadow: none;
 }

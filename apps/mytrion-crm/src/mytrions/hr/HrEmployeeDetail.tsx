@@ -2,12 +2,12 @@ import { useEffect, type CSSProperties } from 'react';
 import {
   Briefcase,
   CalendarDays,
-  Fingerprint,
   Mail,
   MapPin,
   Pencil,
   Phone,
   Send,
+  ScanFace,
   User,
   X,
 } from 'lucide-react';
@@ -15,6 +15,7 @@ import type { HrEmployeeDto } from '../../api/hr';
 import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
 import { Pill, toneFor } from './HrBits';
+import { HrZohoUserLink } from './HrZohoUserLink';
 
 /**
  * Read-only employee detail — what a card click opens.
@@ -81,7 +82,7 @@ export function HrEmployeeDetail({
         <dl className="hr-empd-grid">
           <Field icon={<User size={12} />} label="Employee ID" value={employee.employeeId} mono />
           <Field
-            icon={<Fingerprint size={12} />}
+            icon={<ScanFace size={12} />}
             label="Face ID"
             value={employee.faceId}
             mono
@@ -103,15 +104,18 @@ export function HrEmployeeDetail({
         </dl>
 
         {admin ? (
-          <footer className="hr-modal-actions">
-            <button type="button" className="hr-btn" onClick={onClose}>
-              Close
-            </button>
-            <button type="button" className="hr-btn hr-btn-primary" onClick={() => onEdit(employee)}>
-              <Pencil size={14} />
-              Edit
-            </button>
-          </footer>
+          <>
+            <HrZohoUserLink employee={employee} />
+            <footer className="hr-modal-actions">
+              <button type="button" className="hr-btn" onClick={onClose}>
+                Close
+              </button>
+              <button type="button" className="hr-btn hr-btn-primary" onClick={() => onEdit(employee)}>
+                <Pencil size={14} />
+                Edit
+              </button>
+            </footer>
+          </>
         ) : null}
       </div>
     </div>

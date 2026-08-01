@@ -10,7 +10,7 @@ import type { TenantContext } from '../types/tenantContext.js';
 /**
  * The one-row-per-tenant comms control centre (SLA maps, DM phase gate, timezone).
  *
- * 0086 seeds a row for every tenant that existed when it ran, so a MISSING row means a tenant created
+ * 0090 seeds a row for every tenant that existed when it ran, so a MISSING row means a tenant created
  * afterwards. That must not fail a ticket create, so reads fall back to the same defaults the DDL
  * declares rather than throwing — and the fallback is a shared constant instead of two literals that
  * can drift apart.

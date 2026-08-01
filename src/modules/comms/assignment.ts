@@ -48,7 +48,7 @@ export interface AssignmentOutcome {
  *   * the department does not require online agents, or
  *   * PRESENCE TRACKING IS OFF (`FF_COMMS_PRESENCE=0`). With the feature flag off nothing is ever written to
  *     `mytrion_agent_presence`, so honouring `require_online` would make the eligible set permanently empty
- *     and no ticket would ever be assigned. 0087 seeds `require_online = true` for customer-service, billing
+ *     and no ticket would ever be assigned. 0091 seeds `require_online = true` for customer-service, billing
  *     and verification, so without this the default configuration would silently assign nothing.
  */
 async function onlineFilterFor(

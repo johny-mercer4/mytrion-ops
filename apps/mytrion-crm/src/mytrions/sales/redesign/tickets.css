@@ -127,6 +127,12 @@
   color: var(--text);
   font-size: 13px;
 }
+.ss-root .ss-tk-search input:focus,
+.ss-root .ss-tk-search input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: none;
+}
 .ss-root .ss-tk-pick {
   display: flex;
   flex-direction: column;

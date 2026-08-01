@@ -921,11 +921,19 @@
   }
 }
 
-/* ── Focus — one ring, keyboard only ──────────────────────────────────────── */
-.hr-root :focus-visible {
+/* ── Focus — one ring, keyboard only (never on bare form fields — shells own that) ─ */
+.hr-root :focus-visible:not(input):not(textarea):not(select) {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
   border-radius: var(--hr-r-sm);
+}
+.hr-root :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.hr-root .hr-select:focus-within {
+  border-color: var(--accent);
+  background: var(--hz-pane-lift);
 }
 
 @media (prefers-reduced-motion: reduce) {

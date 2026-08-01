@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import {
   SERVICE_CATALOG,
+  isServiceEnabled,
+  runtimeServiceAvailability,
+  type ServiceAvailability,
   type ServiceId,
 } from './serviceRegistry.js';
 import type { ToolManifest } from './toolRuntime.js';
@@ -255,16 +258,109 @@ export function rolePromptPolicy(role: GatewayRole): string {
   ].join('\n');
 }
 
+type CapabilityLocale = 'uz' | 'en' | 'ru' | 'es';
+type CapabilityService = Exclude<
+  ServiceId,
+  'core' | 'identity' | 'money_code' | 'memory'
+>;
+
+const CAPABILITY_LABELS: Record<
+  CapabilityLocale,
+  Record<CapabilityService, string>
+> = {
+  uz: {
+    knowledge: 'Octane bo‘yicha savollar va yo‘riqnomalar',
+    cards: 'karta statusi, diagnostika va ruxsat etilgan karta amallari',
+    funds: 'mablag‘ va balans tekshiruvi',
+    transactions: 'tranzaksiyalar va hisobotlar',
+    billing: 'billing, invoice va to‘lov holati',
+    service_requests: 'support ticket va agentga yo‘naltirish',
+    tracking: 'karta yetkazib berilishini kuzatish',
+    vision: 'rasm va screenshotlarni o‘qish',
+  },
+  en: {
+    knowledge: 'Octane guidance and support knowledge',
+    cards: 'card status, diagnostics, and permitted card actions',
+    funds: 'funds and balance checks',
+    transactions: 'transactions and reports',
+    billing: 'billing, invoices, and payment status',
+    service_requests: 'support tickets and agent handoff',
+    tracking: 'card shipment tracking',
+    vision: 'image and screenshot reading',
+  },
+  ru: {
+    knowledge: 'справка и инструкции Octane',
+    cards: 'статус, диагностика и разрешённые действия с картами',
+    funds: 'проверка средств и баланса',
+    transactions: 'транзакции и отчёты',
+    billing: 'биллинг, инвойсы и статус оплаты',
+    service_requests: 'заявки в поддержку и передача агенту',
+    tracking: 'отслеживание доставки карт',
+    vision: 'чтение изображений и скриншотов',
+  },
+  es: {
+    knowledge: 'ayuda y guías de Octane',
+    cards: 'estado, diagnóstico y acciones permitidas de tarjetas',
+    funds: 'consulta de fondos y saldo',
+    transactions: 'transacciones e informes',
+    billing: 'facturación, facturas y estado de pago',
+    service_requests: 'tickets de soporte y derivación a un agente',
+    tracking: 'seguimiento del envío de tarjetas',
+    vision: 'lectura de imágenes y capturas de pantalla',
+  },
+};
+
+const CAPABILITY_SERVICES = new Set<CapabilityService>(
+  Object.keys(CAPABILITY_LABELS.uz) as CapabilityService[],
+);
+
+function isCapabilityService(serviceId: ServiceId): serviceId is CapabilityService {
+  return CAPABILITY_SERVICES.has(serviceId as CapabilityService);
+}
+
+function capabilityLocale(language: string): CapabilityLocale {
+  const locale = language.toLocaleLowerCase();
+  if (locale.startsWith('ru')) return 'ru';
+  if (locale.startsWith('es')) return 'es';
+  if (locale.startsWith('en')) return 'en';
+  return 'uz';
+}
+
+/** Role- and switch-aware capability answer; language comes from the AI router. */
+export function capabilitySummaryText(
+  role: GatewayRole,
+  language: string,
+  availability: ServiceAvailability = runtimeServiceAvailability,
+): string {
+  const enabledServices = new Set<CapabilityService>(
+    skills
+      .filter(
+        (skill) =>
+          (skill.roles as readonly GatewayRole[]).includes(role) &&
+          isServiceEnabled(skill.service, availability),
+      )
+      .map((skill) => skill.service)
+      .filter(isCapabilityService),
+  );
+  const locale = capabilityLocale(language);
+  const labels = [...enabledServices].map(
+    (serviceId) => CAPABILITY_LABELS[locale][serviceId],
+  );
+  const bullets = labels.map((label) => `• ${label}`).join('\n');
+
+  if (locale === 'ru') return `Я могу помочь со следующим:\n${bullets}\n\nЧто вам нужно?`;
+  if (locale === 'es') return `Puedo ayudarle con:\n${bullets}\n\n¿Qué necesita?`;
+  if (locale === 'en') return `I can help with:\n${bullets}\n\nWhat do you need?`;
+  return `Quyidagilarda yordam bera olaman:\n${bullets}\n\nQaysi xizmat kerak?`;
+}
+
 export function roleDeniedText(
   role: GatewayRole,
-  prompt = '',
+  language = 'uz',
 ): string {
-  const body = prompt.toLocaleLowerCase();
-  const russian = /\p{Script=Cyrillic}/u.test(body);
-  const english =
-    /\b(can|could|please|how|what|need|want|invoice|balance|card)\b/u.test(
-      body,
-    );
+  const locale = language.toLocaleLowerCase();
+  const russian = locale.startsWith('ru');
+  const english = locale.startsWith('en');
   if (role === 'guest') {
     if (russian) return '⚠️ Сначала зарегистрируйтесь в Octane mini-app.';
     if (english) return '⚠️ Please register in the Octane mini-app first.';

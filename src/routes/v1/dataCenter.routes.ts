@@ -18,6 +18,7 @@ import {
   fetchLeadOwnerId,
 } from '../../integrations/salesDataCenter.js';
 import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
+import { loyaltyOverrides } from '../../modules/manager/loyaltyOverrides.js';
 import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
@@ -308,8 +309,16 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
       ? (await resolveActAsTarget(q.zoho_user_id!.trim()))?.name?.trim() || undefined
       : ctx.userName?.trim() || undefined;
     try {
-      const clients = await fetchAgentClients(ownerId, ownerName);
-      return { clients };
+      const [clients, overrides] = await Promise.all([
+        fetchAgentClients(ownerId, ownerName),
+        loyaltyOverrides(ctx),
+      ]);
+      return {
+        clients: clients.map((client) => ({
+          ...client,
+          loyaltyOverride: overrides.get(client.carrierId) ?? null,
+        })),
+      };
     } catch (err) {
       throw dwhError(err);
     }

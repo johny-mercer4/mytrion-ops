@@ -20,6 +20,10 @@ describe('runtime metrics', () => {
     stats({ durationMs: 12, isError: false });
     lifecycle.settle();
     incrementCounter('openai_429_total');
+    incrementCounter('ambient_engagement_total');
+    incrementCounter('greeting_fast_path_total');
+    incrementCounter('message_burst_total');
+    incrementCounter('message_burst_messages_total', 4);
 
     const snapshot = metricsSnapshot();
     expect(snapshot.gauges.active_turns).toBe(0);
@@ -27,6 +31,10 @@ describe('runtime metrics', () => {
     expect(snapshot.counters.turns_total).toBe(1);
     expect(snapshot.counters.turn_errors_total).toBe(0);
     expect(snapshot.counters.openai_429_total).toBe(1);
+    expect(snapshot.counters.ambient_engagement_total).toBe(1);
+    expect(snapshot.counters.greeting_fast_path_total).toBe(1);
+    expect(snapshot.counters.message_burst_total).toBe(1);
+    expect(snapshot.counters.message_burst_messages_total).toBe(4);
     expect(snapshot.histograms.exec_ms.count).toBe(1);
     expect(snapshot.histograms.queue_wait_ms.count).toBe(1);
     expect(snapshot.histograms.send_ms.count).toBe(1);

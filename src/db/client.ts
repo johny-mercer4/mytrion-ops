@@ -26,10 +26,19 @@ export function dbSslOption(url: string): false | { rejectUnauthorized: false } 
 /**
  * postgres.js connects lazily (on first query), so importing this module never
  * opens a socket — safe for tests and tooling that don't touch the DB.
+ *
+ * Idle / lifetime caps matter on Render: the managed Postgres (and the path in
+ * front of it) will drop sockets without a clean close. Without `idle_timeout`,
+ * the pool keeps half-open TLS sockets and the next query fails with
+ * CONNECTION_CLOSED / "SSL connection has been closed unexpectedly". Close
+ * idle clients ourselves before the server does.
  */
 const sql = postgres(databaseUrl, {
   max: env.DATABASE_POOL_MAX,
   ssl: dbSslOption(databaseUrl),
+  // Seconds. Recycle idle sockets well under Render's reaper / LB idle window.
+  idle_timeout: 20,
+  connect_timeout: 30,
   onnotice: (notice) => logger.debug({ notice }, 'pg notice'),
 });
 

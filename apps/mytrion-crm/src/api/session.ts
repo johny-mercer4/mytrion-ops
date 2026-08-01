@@ -38,6 +38,13 @@ export interface StoredSession {
 }
 
 const KEY = 'octane.session.v1';
+export const SESSION_CHANGED_EVENT = 'octane:session-changed';
+
+function announceSessionChange(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+  }
+}
 
 export function getSession(): StoredSession | null {
   try {
@@ -54,6 +61,7 @@ export function getSession(): StoredSession | null {
 export function setSession(session: StoredSession): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(session));
+    announceSessionChange();
   } catch {
     /* storage full / disabled — the in-memory flow still works for this tab */
   }
@@ -62,6 +70,7 @@ export function setSession(session: StoredSession): void {
 export function clearSession(): void {
   try {
     localStorage.removeItem(KEY);
+    announceSessionChange();
   } catch {
     /* ignore */
   }

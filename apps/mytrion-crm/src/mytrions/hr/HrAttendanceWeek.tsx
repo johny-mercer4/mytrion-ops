@@ -1,6 +1,7 @@
 /**
  * Shared week day-list + totals used by My Data and the Team detail panel.
  */
+import { ArrowRight, LogIn, LogOut, Timer } from 'lucide-react';
 import type { AttendanceSummaryDto } from '../../api/hr';
 
 function weekdayLabel(iso: string, today: string): string {
@@ -45,8 +46,8 @@ export function HrAttendanceWeek({
     <>
       {data.lastPunch ? (
         <p className="hr-att-last">
-          Last punch · {data.lastPunch.kind.replace('_', '-')} ·{' '}
-          {new Date(data.lastPunch.punchedAt).toLocaleString()}
+          Last Ganga punch · {data.lastPunch.kind === 'check_in' ? 'checked in' : 'checked out'} ·{' '}
+          {data.lastPunch.localDateTime} UZT
           {data.lastPunch.doorName ? ` · ${data.lastPunch.doorName}` : ''}
         </p>
       ) : null}
@@ -63,14 +64,52 @@ export function HrAttendanceWeek({
               <div className="hr-att-track">
                 <div className="hr-att-bar" data-status={day.status}>
                   <span className="hr-att-badge">{day.status}</span>
+                  {day.currentState !== 'no_activity' ? (
+                    <span className="hr-att-state" data-state={day.currentState}>
+                      {day.currentState === 'in_office' ? 'In office' : 'Out of office'}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="hr-att-ticks" aria-hidden="true">
                   {ticks.map((t) => (
                     <span key={`${day.date}-${t}`}>{t}</span>
                   ))}
                 </div>
+                {day.sessions.length ? (
+                  <div className="hr-att-session-list">
+                    {day.sessions.map((session, index) => (
+                      <div
+                        className={`hr-att-session${session.checkOut ? '' : ' is-open'}`}
+                        key={`${day.date}-${session.checkIn}-${index}`}
+                      >
+                        <span title={session.checkInDoor ?? 'Ganga entry'}>
+                          <LogIn size={13} aria-hidden="true" />
+                          {session.checkIn}
+                        </span>
+                        <ArrowRight size={12} aria-hidden="true" />
+                        <span title={session.checkOutDoor ?? 'Awaiting a Ganga exit punch'}>
+                          <LogOut size={13} aria-hidden="true" />
+                          {session.checkOut ?? 'Still inside'}
+                        </span>
+                        <em>
+                          <Timer size={12} aria-hidden="true" />
+                          {session.checkOut ? session.duration : 'Open'}
+                        </em>
+                      </div>
+                    ))}
+                    {day.unmatchedPunches > 0 ? (
+                      <span className="hr-att-unmatched">
+                        {day.unmatchedPunches} repeated or unmatched scan
+                        {day.unmatchedPunches === 1 ? '' : 's'} ignored in worked time
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-              <span className="hr-att-hours">{day.hoursWorked} Hrs worked</span>
+              <span className="hr-att-hours">
+                <strong>{day.hoursWorked}</strong>
+                In office
+              </span>
             </li>
           );
         })}
@@ -101,6 +140,12 @@ export function HrAttendanceWeek({
           <strong>{data.totals.weekend}</strong>
           <span>Weekend</span>
         </div>
+        {data.totals.unscheduled > 0 ? (
+          <div>
+            <strong>{data.totals.unscheduled}</strong>
+            <span>Unscheduled</span>
+          </div>
+        ) : null}
         {data.shift ? (
           <div className="hr-att-totals-shift">
             {data.shift.name} [ {data.shift.startLocal} – {data.shift.endLocal} ]

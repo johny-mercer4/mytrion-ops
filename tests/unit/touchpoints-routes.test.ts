@@ -71,10 +71,13 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    // 106 = the current assembled catalog total (including direct EFS status + limit writes).
+    // 103 = the current assembled catalog total. Down 2 from 105: `cs.analytics.maintenance` and
+    // `maintenance.create` were removed when maintenance_cases became the source of truth, so no
+    // touchpoint reads or writes Maintenance in Zoho any more. (The comment here previously said 106
+    // against an assertion of 105 — the number is the assertion, not the prose.)
     // The catalog assembler throws on duplicate keys, so a 200 here already proves uniqueness;
     // this count pins the total so a silent add/drop is caught.
-    expect(touchpoints.length).toBe(105);
+    expect(touchpoints.length).toBe(103);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 

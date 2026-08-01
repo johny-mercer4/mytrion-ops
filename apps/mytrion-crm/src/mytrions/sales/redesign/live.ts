@@ -284,7 +284,7 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
-  /** Declared trucks — the loyalty tier's TRACK basis; `null` = unknown (falls back to cards). */
+  /** Declared trucks — account context only. */
   trucks: number | null;
   /** This billing-cycle gallons (DWH roster query — mart_transaction_line_items, 26th→25th cycle). */
   gallons: string;
@@ -299,10 +299,14 @@ export interface RecordVM {
    *  no transactions that month. Drive the tier from THESE — never the formatted `gallons` string
    *  (cycle) or `active`/`cards` (all-time). */
   gallonsThisMonth: number;
+  inNetworkGallonsThisMonth: number;
   activeCardsThisMonth: number;
   transactionsThisMonth: number;
   gallonsPrevMonth: number;
+  inNetworkGallonsPrevMonth: number;
   activeCardsPrevMonth: number;
+  lastTierName: string;
+  loyaltyOverride?: AgentClient['loyaltyOverride'];
 }
 
 /** DWH roster row → the card/list view-model. Debt/active/gallons are already computed + typed
@@ -330,10 +334,14 @@ function mapRecord(c: AgentClient): RecordVM {
     mc: c.moneyCode,
     dot: c.dot,
     gallonsThisMonth: c.gallonsThisMonth,
+    inNetworkGallonsThisMonth: c.inNetworkGallonsThisMonth,
     activeCardsThisMonth: c.activeCardsThisMonth,
     transactionsThisMonth: c.transactionsThisMonth,
     gallonsPrevMonth: c.gallonsPrevMonth,
+    inNetworkGallonsPrevMonth: c.inNetworkGallonsPrevMonth,
     activeCardsPrevMonth: c.activeCardsPrevMonth,
+    lastTierName: c.lastTierName,
+    loyaltyOverride: c.loyaltyOverride ?? null,
   };
 }
 

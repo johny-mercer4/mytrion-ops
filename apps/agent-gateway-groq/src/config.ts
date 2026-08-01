@@ -12,10 +12,41 @@ function openAIReasoningEffort(): 'none' | 'low' | 'medium' | 'high' {
   return 'low';
 }
 
+function optionalBoundedNumber(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = process.env[name];
+  const value = raw === undefined || raw === '' ? fallback : Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`env ${name} must be between ${min} and ${max}`);
+  }
+  return value;
+}
+
 export const config = {
   botToken: req('TELEGRAM_BOT_TOKEN'),
   openaiApiKey: req('OPENAI_API_KEY'),
   openaiModel: process.env['OPENAI_MODEL'] ?? 'gpt-5.6-luna',
+  /** Small structured-output model call that decides engagement and tool scope. */
+  openaiRouterModel:
+    process.env['OPENAI_ROUTER_MODEL'] ??
+    process.env['OPENAI_MODEL'] ??
+    'gpt-5.6-luna',
+  openaiRouterMaxOutputTokens: optionalBoundedNumber(
+    'OPENAI_ROUTER_MAX_OUTPUT_TOKENS',
+    320,
+    128,
+    2_048,
+  ),
+  openaiRouterMaxConcurrent: optionalBoundedNumber(
+    'OPENAI_ROUTER_MAX_CONCURRENT',
+    16,
+    1,
+    128,
+  ),
   openaiMaxOutputTokens: Number(process.env['OPENAI_MAX_OUTPUT_TOKENS'] ?? '1024'),
   openaiRequestTimeoutMs: Number(process.env['OPENAI_TIMEOUT_MS'] ?? '90000'),
   openaiReasoningEffort: openAIReasoningEffort(),
@@ -27,4 +58,18 @@ export const config = {
   carrierId: process.env.OCTANE_CARRIER_ID ?? '',
   /** Public mini-app link appended to the unregistered-user nudge (optional). */
   miniAppLink: process.env.OCTANE_MINIAPP_LINK ?? '',
+  /** Collect consecutive Telegram fragments after this much typing silence. */
+  telegramBurstQuietMs: optionalBoundedNumber(
+    'TELEGRAM_BURST_QUIET_MS',
+    3_000,
+    0,
+    60_000,
+  ),
+  /** A continuously typing user cannot postpone their turn beyond this bound. */
+  telegramBurstMaxMs: optionalBoundedNumber(
+    'TELEGRAM_BURST_MAX_MS',
+    120_000,
+    1_000,
+    120_000,
+  ),
 };

@@ -54,7 +54,7 @@ export const otherSalesAgent = ctxOf({ userId: 'zoho:999', departments: ['sales'
 /**
  * Seed the tenants, settings, department config and catalog rows the create path reads.
  *
- * 0086-0088 seed them with `SELECT … FROM tenants t`, so on a database migrated BEFORE any tenant
+ * 0090-0092 seed them with `SELECT … FROM tenants t`, so on a database migrated BEFORE any tenant
  * existed (which is exactly what the header's DROP/CREATE + migrate sequence produces) they insert
  * nothing at all. Every insert here is therefore `onConflictDoNothing`, so a DB where the migration
  * seeds DID run keeps the migration's own rows and this stays a genuine no-op.

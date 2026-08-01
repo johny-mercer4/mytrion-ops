@@ -8714,6 +8714,869 @@ invoice route tests pass (17/17); catalog shape test passes. The full backend ru
 failures across 12 unrelated suites (including sandbox-blocked localhost/Postgres tests and stale
 session/tool-count expectations); none are in the new invoice suite.
 
+## 2026-07-30 — Historical Telegram support analytics and KB candidates
+
+Analyzed the 10 local Telegram export directories under `/Users/jamshid/Projects/Octane/Analitika`
+without sending chat content to an external model. One byte-identical duplicate export was
+excluded, leaving 9 unique tenant histories with 54,433 messages from 2024-10-24 through
+2026-07-20. The reproducible local analyzer redacts identifiers, infers staff/client roles,
+classifies multilingual intents, measures response latency and first-response disposition, and
+creates anonymized tenant summaries.
+
+Generated privacy-reviewed candidate artifacts outside the repository: the analytics report,
+curated knowledge candidates, historical intent lexicon, current gateway coverage-gap matrix,
+105 redacted candidate eval prompts, and 14 exact-tool golden eval seeds. Historical replies were
+not ingested into the production KB because station networks, discounts, EFS behavior, limits, and
+tenant-specific rules require owner validation. The highest-value gaps are report scope/pricing
+dimensions, maintenance/work-order workflows, disabled Money/EFS negative paths, structured
+image extraction, and avoiding greeting/progress-only pseudo-resolutions.
+
+Verification: all four JSONL outputs parse successfully; the analyzer completed in under one
+second on the local exports. No application runtime code was changed, so application lint,
+typecheck, tests, and live eval were not rerun.
+
+## 2026-07-30 — Tenant/carrier-scoped support KB hybrid retrieval
+
+Replaced the OpenAI gateway's normal in-process keyword-only knowledge path with a dedicated
+backend `support_bot_knowledge_articles` store. Migration `0082_support_bot_knowledge.sql` creates
+an isolated pgvector + simple-dictionary full-text table; it is separate from generic Mytrion
+knowledge and per-user memory. Both retrieval legs enforce authenticated tenant, tenant-global or
+exact carrier, published/effective/unexpired content, and enabled service IDs inside the repo.
+Carrier overlays replace same-slug global articles during RRF fusion.
+
+The gateway now calls `/v1/support-bot/knowledge/search` with a closure-bound carrier and the
+deployment service set, uses a 5-minute/500-entry cache plus single-flight, and retains the bundled
+corpus only for migration/backend failure. Empty authoritative DB results do not silently restore
+legacy facts. Disabled Money Code articles are filtered from the fallback as well as DB retrieval.
+Every backend knowledge search is audited without logging raw query text.
+
+Added an idempotent seed command and a real-DB smoke command. The seed batches embeddings, omits
+Money Code unless deliberately opted in, expires volatile April-2026 station/discount/fee/limit
+facts, and publishes two stable workflows mined from 54,433 historical messages: report request
+intake and maintenance/work-order intake. Local migration and seed succeeded with 21 published
+rows and 3 Money Code rows skipped. Smoke and HTTP route checks retrieved the expected report and
+maintenance articles while returning no article for disabled Money Code or expired station facts.
+
+Verification: pre-feature RBAC baseline 34/34; new/targeted backend suite 36/36; gateway 57/57;
+root and gateway TypeScript clean; root build clean; changed-file ESLint clean. The root full suite
+has 1,277 passing and 11 unrelated existing failures. Required live eval spent $0.398: RBAC 3/3,
+tool-selection 5/5, grounding 7/8, refusal 5/5; existing routing and web-navigation thresholds plus
+transient OpenAI 429s kept the overall command red. Local backend/gateway health and ngrok tunnel
+were restored after restart.
+
+## 2026-07-30 — Capability fast-path history isolation
+
+Fixed Telegram capability questions inheriting the previous disabled Money Code intent. Added a
+deterministic, zero-token capability response before service routing; it is filtered by the
+backend-verified role and runtime service switches. Added Uzbek, English, Russian, and Spanish
+capability summaries plus regression coverage for the exact production history sequence.
+
+## 2026-07-30 — New-intent isolation and maintenance handoff
+
+Stopped unresolved card/override history from overriding a new customer topic. Only explicit
+follow-ups and confirmations now inherit the previous service; direct decline language routes to
+card diagnostics, while truck breakdown, roadside, tire, repair, towing, shop quote, and work-order
+language starts a dedicated maintenance request workflow. Added a role-checked
+`maintenance-roadside` Desk request for owners and drivers, routed to the Maintenance department,
+with structured intake and explicit confirmation before a real ticket is filed.
+
+## 2026-07-30 — Tagless registered-client support engagement
+
+Replaced mention-only Telegram engagement with a zero-token hybrid gate. Explicit mentions,
+replies, and active follow-ups remain authoritative; registered users in mapped carrier groups can
+now start card, EFS, report, billing, station, maintenance, tracking, mini-app, identity, and help
+requests without tagging the bot. Ordinary conversation stays silent, and unregistered ambient
+matches do not generate registration-nudge spam. The behavior is dynamically reversible with
+`AMBIENT_SUPPORT_ENABLED=0` and emits an `ambient_engagement_total` runtime metric.
+
+## 2026-07-30 — Conversational greeting and split-message ordering
+
+Added colloquial Uzbek identity recognition (`man/men kimman`) and a cooldown-bound tagless
+greeting entry for registered support-group users. A greeting opens a ten-minute follow-up window,
+so clients can describe an issue over several natural messages without remembering the bot tag.
+Telegram batch preprocessing now preserves source order per chat/user despite asynchronous access
+lookups, while different users remain concurrent.
+
+## 2026-07-30 — Natural multi-message request aggregation
+
+Added a bounded per-chat/user Telegram burst buffer for real support conversations where greeting,
+intent, unit/driver details, and politeness arrive as separate messages. A turn starts after eight
+seconds of silence for an actionable request. Incomplete follow-up fragments wait up to seventy-five
+seconds for the actual action, then switch back to the short window when it arrives; the hard cap
+is two minutes. Bursts combine fragments in source order, reply to the last fragment, and leave
+different users concurrent. Engagement is marked when the first
+recognized message is admitted so trailing tagless fragments join the open burst. Added a specific
+supported-station knowledge route so “fuel card qaysi stationlarda ishlaydi” cannot be mistaken for
+a live card-status lookup. The supplied 2026-07-30 human support answer became station article v2,
+with its own three-month re-verification expiry; unrelated expired operational facts remain
+expired. Colloquial callback requests (`call qivorizlar`) now start a separate CS handoff that
+collects the target/contact context and requires confirmation before a real Desk ticket; the bot
+never represents a ticket as a completed phone call. Added burst/routing regressions and runtime
+aggregation counters.
+
+## 2026-07-31 — AI-native Telegram ingress and dynamic tool routing
+
+Superseded the 2026-07-30 keyword/regex engagement and intent routes. `filter.ts` now contains only
+Telegram-verifiable transport state: direct bot mention, reply-to-bot, and the per-user active
+conversation clock. All registered tagless messages are grouped into an eight-second burst and
+sent to a bounded OpenAI structured-output router. The router decides support vs chatter,
+greeting/capability/continuation, completeness, language, service IDs, selected tools, and required
+tool calls from the live service catalog and current `ToolManifest` descriptions. The deleted
+`toolSelection.ts` keyword table is no longer part of runtime behavior.
+
+The router is advisory, not authoritative. Server code removes hallucinated names, enforces live
+service switches and role filtering, hides confirmation-gated mutations until a sender-verified
+Telegram button callback, and `toolDispatcher` still rechecks RBAC/validation and audit-logs every
+execution. Router failures fail closed: new tagless turns stay silent; direct turns receive only a
+safe read-only KB/identity scope. Unregistered group members never consume model tokens.
+
+Added a five-minute/12-message per-user context window for real split-message conversations.
+Context is cleared after an admitted request so a new issue does not inherit a stale unanswered
+question. Added independent router concurrency/configuration and router call/engage/silent/error
+metrics. Capability and unavailable/role-denied responses now use the language returned by the
+semantic router rather than text regexes.
+
+Verification: gateway typecheck clean and 58/58 tests pass; root typecheck/build clean; root lint
+has zero errors (24 pre-existing warnings); targeted tenant/RBAC suite 41/41 passes. A live OpenAI
+router smoke test admitted previously unseen colloquial Uzbek card-failure wording with the live
+card-status tool and kept an unrelated team scheduling message silent. A combined backend test
+command had 120/120 assertions pass but Vitest reported one unrelated asynchronous mock export
+error in `carrier-mini-app.test.ts`; the dedicated tenant/RBAC run is clean.
+
+Required root `pnpm eval:live` spent $0.392 and remained red on the existing generic Mytrion
+benchmarks: greeting 4/4, grounding 7/8, delegation 3/3, and tool selection 5/5 passed; routing,
+RBAC/refusal, and web-navigation missed thresholds, with several failures returning OpenAI TPM 429
+details instead of task answers. This benchmark does not exercise the Telegram gateway ingress
+module. The local backend and the restarted AI-router gateway are healthy on ports 3001 and 8787.
+
+## 2026-07-31 — Authenticated-user always-answer and human handoff
+
+Restored the desired support-group contract: every backend-authenticated owner/driver message now
+engages, without requiring a bot tag and without a semantic silent/chatter gate. The structured
+router still selects the service/tool dynamically, and now returns a typed handoff decision:
+commercial, pricing, onboarding, and growth questions resolve the live assigned Sales agent via
+`octane_whoami`; unresolved operational requests offer a confirmed Customer Service handoff.
+Added the role-checked `general-support` request type, which files a real Zoho Desk CS ticket only
+after a trusted Telegram confirmation.
+
+Reduced the default per-user typing debounce from eight seconds to three. Registered messages now
+receive immediate best-effort reaction/typing feedback before classification. Marked progress and
+reaction tools as best-effort execution metadata, so a report/invoice that completed successfully
+can no longer become a generic failure merely because the model skipped a late progress call (the
+exact 2026-07-31 production failure).
+
+Verification: pre-change tenant/RBAC baseline 15/15; gateway 60/60 and typecheck clean; backend
+typecheck/build clean; targeted gateway/backend routes 117/117; lint has zero errors (24 existing
+warnings). Live structured-router smoke admitted a tagless greeting, routed an unseen Uzbek
+new-company/pricing question to Sales with `octane_whoami`, and routed an out-of-scope operational
+request to Customer Service with identity + confirmation buttons.
+
+Required generic `pnpm eval:live` was rerun and spent $0.357. Greeting 4/4, grounding 7/8, and
+tool-selection 4/5 passed, but the unrelated root Mytrion thresholds remained red; all three RBAC
+judge tasks and several refusal/delegation tasks hit OpenAI TPM 429 during this run. The dedicated
+gateway/tenant RBAC suites above remain green. Local backend, restarted gateway, and Telegram API
+connectivity are healthy.
+---
+
+## 2026-07-30 — CS Maintenance tab on a Postgres-owned `maintenance_cases` table
+
+Zoho CRM's `Maintenance` module had no UI in Mytrion — it was only read for the Analytics →
+Maintenance sub-tab and (via servercrm) the Prepay ledger's maintenance-fee column. Agents went
+into Zoho to look at or edit a case. This moves the whole queue into Mytrion.
+
+**Decisions taken with the requester, and their consequences:**
+
+- **Postgres is the source of truth.** Zoho was drained once (2,714 records) and is not read again.
+  No sync job, no `Modified_Time` watermark, no write-back — deliberately.
+- **No delete.** `total_amount` on these rows is real money feeding prepay math, so removal is not an
+  agent action. `status = 'Cancelled'` is the reversible path and the route has no DELETE at all.
+- Two paths still touch Zoho and will therefore drift. Both are out of this change's scope and were
+  flagged: (1) servercrm's `services/prepayLedger.js` still sums `Total_Amount` from ZOHO for
+  `Payment_Method = 'Prepay / EFS'`, so cases created in Mytrion are missing from a carrier's
+  `loaded` balance until that column is repointed at this table; (2) the carrier-facing self-service
+  widget still creates cases through the `createmaintenance` Deluge, straight into Zoho, so those do
+  not appear in the tab. `scripts/migrateMaintenanceFromZoho.ts` is idempotent, so a manual
+  re-import remains available with no new code.
+
+### Field discovery came first
+
+`scripts/inspectMaintenanceModule.ts` (new, read-only, ~5 API credits) prints the field catalog,
+per-year volume, one raw record and the blueprint state. Preferred over `pnpm meta:zoho-crm`, which
+walks every module and dumps org-wide PII to a gitignored file. Findings are in
+`docs/crm-maintenance-module.md`; three things no repo knew: the unit-number field is `Unit_Number`,
+the company lookup is `Company` (→ Accounts), and `Case_Type` has 9 values (only 3 are in use).
+`Status` is NOT blueprint-gated. `Created_By` / `Modified_By` do not exist on this module — selecting
+them would 400.
+
+### Notable implementation points
+
+- **`drizzle-kit generate` has been unusable in this repo since 0024** (68 journal entries, 25
+  snapshots; it aborts on a 0022/0023 parent-snapshot collision), so `0076_maintenance_cases.sql` is
+  hand-authored with `IF NOT EXISTS` throughout — the same way every migration from 0025 on was
+  written. The journal entry was appended by hand. Verified by running the full 69-migration chain
+  against a fresh throwaway DB.
+- **`zoho_record_id` is nullable with a PARTIAL unique index**, `hr_employees` style: every
+  Mytrion-created row has none, and a plain unique index would collide on the second one. The primary
+  key is our own cuid2 (`mtc_`), not `bigserial`, because we now create rows ourselves.
+- **`unit_number` and `carrier_id` are TEXT.** Unit numbers arrive zero-padded (`'012'`); an integer
+  column would silently destroy them and the agent searching "012" would find nothing.
+- **The unit-number search predicate is character-identical to its expression index**
+  (`lower(regexp_replace(unit_number, '[^a-zA-Z0-9]', '', 'g'))`) and a test asserts that, because a
+  drift there doesn't break anything — it just quietly stops using the index. `pg_trgm` is NOT
+  installed in this DB (only `vector`), and at 2,714 rows `text_pattern_ops` btrees are enough;
+  revisit above ~50k rows.
+- **Facets drop the filter they drive.** Status counts are computed without the selected status, so
+  the tabs keep showing how many cases every other status holds instead of collapsing to zero.
+- **`owner_name` holds the FULL name.** COQL returns `Owner.name` as the last name only
+  (`"Rivera"` → `"Alex Rivera"`), resolved through the user directory at migration time — the same
+  fix `csMaintenance.ts` already carries for the leaderboard.
+- **A bug the browser pass caught:** the modal's company box was typeahead-query-only and committed
+  the typed text to `name` on *blur*, deferred 150 ms so a dropdown mousedown could land. Type a
+  company, click "Create Case" without tabbing away, and the form rejected the save as "Company is
+  required" while visibly holding text. Now every keystroke commits, which removes the race instead
+  of shortening it.
+
+### Shape note from the data
+
+2,701 of the 2,714 migrated cases are `Completed`; only 13 are live. So the default view is
+unfiltered-newest-first (a Completed-heavy list IS the archive an agent searches) and the status tabs
+are how they reach the active few.
+
+### Verified
+
+Migration chain green on a fresh DB (all 12 indexes, partial unique included); import 2,714/2,714
+with 0 errors and idempotent on re-run; both search indexes confirmed in use via EXPLAIN; 63 new unit
+tests pass; suite is 1176 passed with the same 7 files / 11 tests failing as `origin/build` (that
+suite is pre-existing flaky). Browser pass against the real 2,714 rows: search by carrier ID, company
+and zero-padded unit number; status tabs; filter rail; create and edit persisted end to end; light +
+dark; mobile single-column with no horizontal overflow; zero console errors. Vendored bundle rebuilt
+and the CS chunk confirmed *reachable* from the entry JS, not merely present.
+
+### Switchover — every Maintenance reader moved off Zoho (same day)
+
+With `maintenance_cases` populated on prod, the remaining Zoho readers were repointed. Parity was
+proven against Zoho BEFORE committing, not assumed.
+
+**CS analytics (`src/integrations/csMaintenance.ts`) — COQL → SQL.** Same exported shapes, so
+`csAnalytics.routes.ts` and the frontend are untouched. This closes a divergence the tab itself
+created: analytics counted Zoho rows while the tab showed Postgres rows, so any agent edit made the
+two disagree. Two Zoho-era workarounds are gone rather than ported — the `listActiveUsers()` lookup
+that repaired COQL's last-name-only `Owner.name` (it's denormalized on the row now) and COQL's
+mandatory-WHERE / binary-AND contortions. The generous `bucketStatus()` matching stays, because the
+original Deluge bug was hard-matching words the data never contained.
+
+Parity run against prod, window 2026-07-01→30: every metric identical — current 269, previous 295,
+open 7, closed 261, fullComplete 253, halfComplete 9, 3 status buckets, 4 case types, 29 daily points,
+10 owners, and per-owner full/half/bonus matching for every agent.
+
+One row differed on the first attempt (268 vs 269) and it is worth recording WHY, because it is the
+no-sync decision showing its cost rather than a bug: we already had the row, but our copy had
+`case_date = null` — someone set `Date` in Zoho at 21:21:45Z, three minutes AFTER the import finished
+at 21:18:44Z. Re-running the (idempotent) importer took it to full parity. Note the re-import
+refreshes Zoho-sourced facts, so once agents are editing cases in the tab a blind re-run would revert
+their edits; it was safe here only because the tab is not deployed yet.
+
+**Prepay maintenance — from our Postgres, servercrm's Zoho figure discarded.** New
+`maintenanceCaseRepo.sumPrepayByCarrier` / `sumPrepayByDay`, with servercrm's semantics copied exactly
+(`Payment_Method = 'Prepay / EFS'` only, fee = `total_amount`, bucketed on `case_date`, `endDate`
+EXCLUSIVE). `getPrepayExternalsBatch` and `getPrepayLedgerProxy` now override the maintenance term.
+
+Two non-obvious bits:
+- The override ZEROES every carrier servercrm reported before writing ours in. Without that pass, a
+  carrier whose maintenance now lives only in our table keeps servercrm's stale Zoho number.
+- `difference` in the daily ledger is a RUNNING balance, so replacing one day's maintenance
+  invalidates that day and every day after it. The recompute reuses servercrm's exact delta formula
+  (`top_up - rmve + maintenance + money_code - stripe - zelle - chase - merchant`) and re-derives
+  `totals.net`. If that formula changes in servercrm this silently diverges — flagged in the comment.
+
+**servercrm's Zoho maintenance query is deliberately LEFT IN PLACE.** It cannot simply be deleted:
+the legacy `zoho-octane/app/billing-mytrion` widget calls `/api/billing/prepay-ledger` DIRECTLY
+(`js/constants.js`) and has no route to our database. Overriding downstream keeps that widget working
+while making our numbers correct. It does mean servercrm still spends Zoho credits on a figure we
+throw away — worth removing once the legacy widget is retired.
+
+Prepay parity against servercrm/Zoho for 2026-07-01→08-01: 5 carriers with maintenance on both sides,
+every amount matching to the cent, total the window total.
+
+**Left alone, with reasons:** the legacy `zoho-octane` CS analytics widget still calls the
+`mytrionGetMaintenanceAnalytics` Deluge (superseded by the React tab), and `app/maintenanceInvoice/`
+reads a Maintenance record through `ZOHO.CRM.API` because it IS a Zoho context-menu widget on that
+module — there is nothing to repoint.
+
+28 new tests (16 analytics + 12 prepay). The 9 test files touching this change pass deterministically
+twice over; whole-suite failures fluctuate 11–13 on `origin/build` and on this branch alike.
+
+### Fix — the update toast reported the wrong thing, and never left on time
+
+Reported as "notification after updating something is not working correct". Reproduced in the browser
+with a MutationObserver (the toast auto-dismisses in 3.5s, so a plain DOM read after the fact finds
+nothing, and timer-based polling is unusable while the preview pane is hidden — the browser throttles
+timers there). Observed text on an edit:
+
+    Case updated · $1,000.00
+
+Two separate bugs behind it.
+
+**1. Wrong content.** The message reported the case's TOTAL AMOUNT — not what the agent changed (a
+Payment Status, in the repro), and not a confirmation of anything. On the 9 cases that carry no amount
+it rendered `Case updated · —`, which reads as broken. Now it names the case, symmetric with create:
+`Case created for X` / `Case updated for X`. Naming the record is the useful part, since cards look
+alike and an agent's real question is "did I just edit the right one".
+
+**2. The 3.5s countdown restarted on every parent re-render** (`Toast.tsx`). Every caller passes an
+inline `onDismiss={() => setToast(null)}`, so the handler is a new function each render, and it was in
+the effect's dependency list — so each re-render cleared the pending timeout and started a fresh one.
+This matters because of WHEN toasts are raised: `save → notify() → refreshAll()` fires three reloads
+that land underneath the toast over the next second or two, each re-rendering the panel and pushing
+dismissal back (measured ~10s instead of 3.5s). Worse, a toast raised while an agent is typing in the
+search box never dismissed at all. Fixed by holding the handler in a ref so the effect depends on
+`toast.id` alone.
+
+This is a SHARED component, so the same bug was live in Citifuel, Applications and Retention — all of
+them get the correct 3.5s now.
+
+`Toast.test.tsx` (7 tests) pins it, including the case that actually regressed: re-render with a new
+handler identity must still dismiss at 3.5s. Verified the test genuinely catches it by re-introducing
+the old dependency array — that one case fails, the other six pass.
+
+Web suite 43 files / 279 tests green; backend unchanged at the `origin/build` baseline (7 files / 11
+tests, pre-existing flake). Vendored bundle rebuilt — `Case updated for` is in the CS chunk, the old
+`Case updated · ` is gone, and the chunk is reachable from the entry JS.
+
+### Optimization + create-form and owner-filter fixes
+
+**Measured before changing anything.** The important correction: the ~263ms-per-query latency in a
+local run is my laptop→Oregon, NOT what a user pays — in prod the API sits next to the DB. So the
+optimization targets what users actually pay for.
+
+- **41% of the list response was the `raw` jsonb column** (21KB of 52KB for one page of 24), read by
+  nothing in the UI. The repo now selects an explicit `CARD_COLUMNS` list; `raw` stays on
+  `GET /cs/maintenance/:id` for provenance. Measured: **51,578 → 26,087 bytes, a 49% cut**, on every
+  list load and every search keystroke.
+- **Rows + total are now ONE query** via `count(*) OVER ()` instead of a `Promise.all` pair.
+- **The default sort was not using any index.** `EXPLAIN` showed `Seq Scan` + top-N `Sort` on all
+  2,715 rows: the index is `(case_date, id)` ASC while the list orders by `case_date DESC NULLS LAST,
+  id DESC`, and a backward scan cannot serve `NULLS LAST` because DESC implies NULLS FIRST. Only ~3ms
+  today, which is why nobody noticed, but it is paid on every page and every search and grows with the
+  table. `0077_maintenance_cases_sort_idx.sql` adds the matching index; verified on a 5,715-row local
+  copy that the plan becomes a bare `Index Scan` with no Sort (0.07ms).
+
+**Create form: company now comes from the DWH, and carrier ID is derived.** `octane.dim_company` is
+the authoritative company ↔ carrier map (8,075 rows, every one has a carrier_id, all unique), so
+picking a company FILLS the carrier id. The Zoho Accounts typeahead it replaces knew nothing about
+carrier ids at all. Two details that shaped the API: `carrier_id` is BIGINT there vs TEXT here so it
+is cast, and **49 company names map to more than one carrier id** — so options are rows, not names,
+and the dropdown renders the carrier id beside the name or the pick would be ambiguous.
+
+Carrier ID is **read-only, not removed**. Removing it was the other option; it stays visible because
+it is the tab's primary search key and appears on every card, so a modal that hid it could not show
+what the agent searched by. Changing the company clears both the carrier id and any `company_zoho_id`
+— a stale carrier id is worse than none, and the Zoho Accounts link on a migrated record described the
+OLD company.
+
+**Owner filter — "not showing all owners" was a real bug, not just ergonomics.** 4 of the 16 owners
+rendered as raw 19-digit Zoho ids, covering **766 cases (28%)**. Cause: they are DEACTIVATED users, so
+`listActiveUsers()` (127 users) omits them AND COQL returns `Owner: {id, name: null}` for them — the
+mapper's last-name fallback had nothing to fall back to, `owner_name` landed null, and
+`distinctOwners()` substituted the id for display. `getUserById` resolves all four (names deliberately
+not recorded here), so the importer now collects ids the active roster missed and fetches just those —
+a handful of extra calls, not one per record. **The prod backfill still needs a
+re-import to take effect.**
+
+The filter itself is now a searchable select (`SearchableSelect.tsx`, client-side over the roster that
+already arrives with `/meta`), with prefix matches ranked above mid-string ones, keyboard nav, and an
+Escape that closes the panel WITHOUT bubbling to the surrounding rail.
+
+Verified in the browser end to end: owner search filters 16 → 2 with `Alex Rivera` above
+`Tamara Diaz`; company search returns options with carrier ids; picking one fills `5000001`; typing
+`9999999` into the read-only carrier field leaves it unchanged; the created case persisted carrier
+`5000001` and zero-padded unit `077`. 14 SearchableSelect tests + 3 route tests added.
+
+Suite note: the backend suite's failure count is genuinely non-deterministic — 11, then 92, then 11
+twice in a row on identical code. Two consecutive runs land on the `origin/build` baseline of 7 files /
+11 tests, with 1,208 passing (up from 1,113), and the 5 files touching this work pass 95/95 twice.
+
+### Fix — owner dropdown painted under the cards, and one radius for every CS control
+
+**The dropdown was not a z-index VALUE problem.** It already set `position: absolute; z-index: 300`
+and was still painted under the card grid. `.cs-mt-filters` receives `backdrop-filter: blur(20px)` from
+the Horizon pane recipe, and **backdrop-filter creates a stacking context** — with the pane's own
+`z-index` left at `auto`, everything inside it (300 included) is sealed in, and the card grid is a
+LATER SIBLING, so the cards win on DOM order regardless. Diagnosed by walking the ancestor chain for
+stacking-context triggers and confirming with `document.elementFromPoint`, which returned
+`button.cs-mt-card` at a point inside the dropdown.
+
+Fixed by raising the PANE (`position: relative; z-index: 20`), which lifts its whole subtree. 20 clears
+the grid and stays far below the modal layer — verified the modal backdrop (9990) still wins over it.
+The dropdown's background was already fully opaque (`rgb(23,29,40)`), so "not fully readable" was
+entirely the cards painting over it, not transparency. Same trap as the RingCentral card versus
+`.cs-root { isolation: isolate }` — commented in place so nobody "tidies" the z-index away.
+
+**Control radii had drifted into four values in the same row.** Measured: buttons 12px, the owner
+combobox 8px, every native `<select>` and date input 6px, and the search bars **0px**. The cause is two
+token scales coexisting — the legacy widget's `--radius-*` collapses xs/sm/md/lg all to **6px**, while
+Horizon's `--r-*` is the real 8/12/16/22 ramp, so anything still reaching for `--radius-md` renders
+square next to a 12px button. Every control now takes `--r-md`, matching the buttons.
+
+Two specificity traps hit on the way, both the same shape as the earlier doubled-focus-ring bug — a
+per-panel rule outranking a module-level one, where import order cannot help:
+- `.cs-root .cs-an-rc-field input[type="date"]` (two classes + an attribute) beat a plain two-class
+  selector, so the date inputs stayed 6px.
+- `.cs-root .cs-an-range-select` (two classes) beat `.cs-root select` (one class + one element), so the
+  Analytics period select stayed 6px.
+Both are now named explicitly with the reason recorded next to them.
+
+Verified by measuring every control across four mounted tabs: **11 controls, all 12px, zero
+holdouts** — Maintenance filters, the Citifuel search bar, modal `.cs-form-input`s, the Analytics
+period select and custom-range date fields. Web suite 49 files / 344 tests green.
+
+Also visible in the verification screenshots and worth restating: two owner rows still render as raw
+Zoho ids in the local snapshot. That is the deactivated-user bug — the importer fix is in, but the
+**prod re-import has not been run**, so the backfill has not taken effect anywhere yet.
+
+### mytrion-ops is now fully off Zoho for Maintenance
+
+Audited every reference rather than trusting the earlier passes, and found two Zoho paths still live in
+mytrion-ops that the read-side migration had not touched — both in the touchpoint catalog, which
+`GET|POST /v1/touchpoints/:key` executes for ANY entry, so both were reachable by API callers and by
+agents even though no frontend used either:
+
+- **`maintenance.create`** (carrierDeluge) — `riskClass: 'write'`, called the `createmaintenance`
+  Deluge. This was the real find: a WRITE that created a case in Zoho, which Mytrion then cannot see,
+  because reads all come from Postgres and there is deliberately no sync back. Removed. Cases are
+  created through `POST /cs/maintenance`, which writes the table everything else reads.
+- **`cs.analytics.maintenance`** (csDeluge) — called `mytrionGetMaintenanceAnalytics`. Superseded by
+  the SQL route; leaving it in meant a caller could still get Zoho figures that disagree with the tab.
+  Removed.
+
+**The Zoho CRM widgets are unaffected, and this was verified before deleting anything:** zoho-octane has
+ZERO references to `/touchpoints` — its widgets call `ZOHO.CRM.FUNCTIONS.execute("createmaintenance")`
+and `("mytrionGetMaintenanceAnalytics")` directly inside Zoho (6 and 2 call sites). Nothing in servercrm
+or the mini-app references either key either. So only mytrion-ops' catalog entries were removed; the
+Deluge functions themselves are untouched in Zoho and the widgets keep working exactly as before.
+
+Confirmed at runtime, not just by grep: `getTouchpoint()` returns undefined for both keys, no catalog
+entry names a Maintenance Deluge function, and catalog size went 105 → 103.
+
+Final audit of `src/`: exactly ONE file still contains Zoho code for Maintenance —
+`integrations/csMaintenanceRecords.ts`, the COQL drain, imported by nothing except
+`scripts/migrateMaintenanceFromZoho.ts`. Every other hit is a comment.
+
+Three stale assertions/comments the removal exposed, all fixed rather than suppressed:
+- `cs-routes.test.ts` asserted the four cs.* entries → now three, plus a new test that pins BOTH keys
+  as absent and that no touchpoint may call a Maintenance Deluge.
+- `touchpoints-catalog.test.ts` pinned the deluge count at 19 → 17, and listed `createmaintenance`
+  among the functions the catalog must cover → removed from that list with the reason recorded (the
+  data moved out of Zoho, unlike the others which moved into TypeScript handlers).
+- `touchpoints-routes.test.ts` pinned the catalog total at 105 → 103. Its comment had said 106 against
+  an assertion of 105, so that drift is corrected too.
+- Also dropped the orphaned `CsMaintenanceAnalytics` frontend type and its touchpoint-map entry, and
+  fixed the `csAnalytics.routes.ts` comment that still described the route as "native COQL".
+
+Worth noting on process: the two new tests PASSED under vitest while `tsc` failed — `functionNames`
+exists only on the 'deluge' variant of the Touchpoint union, so the assertion needed a `kind` narrow.
+Vitest does not typecheck; running tsc separately is what caught it.
+
+Backend suite back to the exact `origin/main` baseline (7 files / 11 tests, pre-existing flake) with
+1,285 passing. Web 49 files / 344 tests green.
+
+## 2026-07-30 — Prod migrate + re-import: a timestamp collision had been silently eating migrations
+
+Ran the two outstanding prod steps. Both were blocked by the same root cause, and finding it turned up
+a defect in `main`'s work, not just mine.
+
+### The migrator had been reporting success and doing nothing
+
+Pre-flight (read-only) against prod showed the sort index absent while the journal implied it was
+applied. Identifying the applied rows by hashing every historical blob — `created_at` alone cannot
+identify a row, because two branches can stamp the same millisecond — gave the picture:
+
+    id=141  created_at 1785394800000  hash 6d53da0e685f  = this branch's 0076_maintenance_cases
+    id=142  created_at 1785398400000  hash c1e6097ecf59  = main's 0077_support_bot_chat_tenant_scope
+
+`main` had advanced 14 commits and taken 0076/0077 with `when` stamps **identical** to this branch's:
+1785394800000 and 1785398400000. Drizzle applies an entry only when
+`lastApplied.created_at < entry.when` and reads that ceiling ONCE before the loop, so of two entries
+sharing a millisecond only the first to reach a database ever runs. Consequences, both verified against
+prod rather than reasoned about:
+
+- **main's `0076_support_bot_operations` never ran on prod.** `support_bot_operations`,
+  `support_bot_session_fences`, their five indexes and the `support_bot_fencing_seq` sequence were all
+  absent, while the journal implied otherwise. Deployed support-bot code touching those tables was
+  failing at runtime. This branch's migration reached prod first and blocked it.
+- **The maintenance sort index had been skipped for days.** main's 0077 landing made prod's ceiling
+  *equal* this branch's 0077 stamp, and `<` is strict.
+
+Resolution: main keeps 0076/0077 verbatim; the maintenance migrations become **0079** and **0080**
+(0078 belongs to `0078_support_bot_memories` on an unmerged branch), stamped `prod_max + 1ms / + 2ms`
+rather than the next hour slot — the next slot is already that branch's, and stamping above it would
+push *their* migration below the deployed ceiling and skip it in turn. No duplicate `when` values
+remain anywhere in the journal.
+
+`0081_support_bot_operations_repair.sql` re-applies main's 0076 verbatim. The migrator cannot be made
+to revisit that entry — its stamp sits permanently below prod's ceiling — so a fresh entry above the
+ceiling is the only thing that can repair the database. All statements are IF NOT EXISTS, so it no-ops
+wherever 0076 did apply.
+
+**The lesson worth carrying:** a green `pnpm db:migrate` proves nothing. Verify the objects.
+
+### A re-import would have overwritten an agent's edit
+
+`upsertMany` kept created_by/updated_by out of the conflict `set` and its comment claimed that meant a
+re-run never clobbers an agent's work. It did not: the audit columns survived while every business
+column still took `excluded.…`, so the row would have shown Zoho's stale value with
+`updated_by_user_id` still naming the agent — as though they had reverted their own correction. Prod
+had exactly one such row. Fixed with `setWhere: updated_by_user_id is null`, plus a returned `skipped`
+count so the importer explains a `written < fetched` gap instead of looking like data loss.
+
+### Results on prod
+
+- Migrations applied and **verified by querying for the objects**: both support_bot tables, all five
+  indexes, the fencing sequence, and `maintenance_cases_case_date_desc_idx`.
+- Default list order now plans as `Index Only Scan … maintenance_cases_case_date_desc_idx`,
+  Heap Fetches 0, 0.058 ms — it was a Seq Scan + top-N sort.
+- Import: 2,717 drained, 2,716 upserted, **1 left alone** (the Mytrion-edited row; guard confirmed to
+  have held — its `synced_at` and `updated_at` both predate the run).
+- **`owner_name` NULL: 766 rows → 0.** All 16 owners resolve to real names; the four deactivated users
+  now come back through `getUserById`.
+- No duplicate `zoho_record_id`.
+
+### Two things the numbers surface, both consequences of the no-sync decision
+
+- Table holds **2,718** against Zoho's **2,717**. The extra row is `mtc_myqq5lpwxgtllulpcpxko361`
+  (In Process, case_date 2026-07-29): confirmed via `getRecord` to have been **deleted in Zoho** after
+  the first import. We keep it, because Postgres is the source of truth and there is no delete path —
+  `Status = Cancelled` is the soft path if it should go. Not touched unilaterally.
+- Zoho gained 2 records between the two imports, presumably from the carrier-facing self-service
+  widget, which still writes maintenance tickets straight into Zoho. Until that widget is repointed at
+  `POST /cs/maintenance`, "everyone uses mytrion-ops" stays a convention rather than something enforced.
+
+Vendored bundle checked, not rebuilt: main made **zero** frontend src or `app/` changes since the merge
+base, so the merge left the bundle coherent. Verified by BFS over the chunk graph from the entry
+`index.html` points at — the Maintenance JS and CSS are both reachable.
+
+Test baseline unchanged: 11 failures in 7 files, byte-identical set to `origin/main` (confirmed by
+running those files in a detached `origin/main` worktree). All 5 maintenance suites green (96 tests).
+
+## 2026-07-30 (later) — The module's two workflow rules came across too
+
+The data migration moved fields and rows. It did not move BEHAVIOUR: Zoho workflow rules fire on Zoho
+records, so both rules on the Maintenance module stopped applying the moment cases started being
+created in Postgres. Nothing errored — a rule that never runs just leaves a column empty forever.
+
+Recovered read-only from the live org with a new `scripts/inspectMaintenanceAutomation.ts` (~6 credits)
+rather than inferred from field names. The endpoint shapes are worth recording because the documented
+ones 404 on this org's API version:
+
+    /settings/automation/workflow_rules?module=Maintenance   works (list; per-rule GET has the criteria)
+    /settings/automation/field_updates?module=Maintenance     works  <-- NOT /settings/actions/...
+    /settings/functions            +  /settings/functions/{id}/code   works (Deluge source)
+
+Both rules were still firing when captured (`last_executed_time` today on each).
+
+### Rule 1 — "Compensation Prepopulation" (create_or_edit, repeat)
+
+Three static field updates: Completion 5, Lead 10, Half-Completion 2.5. Every one of the 2,718
+imported rows already holds 5.00 / 10.00 / 2.50 **because the Zoho rule filled them** — which is
+exactly why the gap was invisible: the tab looked correct on migrated data and would only have shown
+empty compensation on the first case somebody created here.
+
+These are the same rates the analytics leaderboard multiplies, so `BONUS_FULL_USD` / `BONUS_HALF_USD`
+now DERIVE from `COMPENSATION_DEFAULTS` instead of restating 5 and 2.5 as separate literals. Two
+copies would have let the payout rate drift from the fee stored on each case, with both sides
+internally consistent and disagreeing.
+
+**Deliberate divergence.** Zoho ORs the three criteria while firing all three actions unconditionally,
+so in Zoho one empty field resets the other two — a hand-set 7.00 completion fee reverts to 5.00 as
+soon as any other compensation is blank. That is an artifact of expressing three independent defaults
+as one rule, not intent anybody would state out loud, so Mytrion applies each default independently
+and only where the value is empty. An override entered here sticks. A test pins this and would fail
+against a faithful port, on purpose.
+
+### Rule 2 — "UpdateCompanyForMaintenance" (create only)
+
+Deluge: if the Company lookup is empty, find an Account whose `Account_Name` equals the case's `Name`;
+if none exists, CREATE that Account and link it. Net effect either way: the linked company name always
+equals the case name.
+
+**Deliberate divergence.** It creates nothing in Zoho — writing an Account back would break the freeze
+this whole migration rests on. `companyName` is filled from `name`, then the DWH `octane.dim_company`
+supplies a canonical name plus the **carrier id**, which the Zoho rule never did. Only an exact
+case-insensitive name match may adopt a carrier id: a fuzzy hit would attach a case and its money to
+the wrong carrier, which is much worse than a blank field. `companyZohoId` stays null on a
+Mytrion-created case by design.
+
+**214 imported rows have no company at all** — cases this rule never linked (it was added 2025-07-14,
+after the oldest cases). Left as-is; backfilling is a data decision, not a code one.
+
+### Verification, and a false one I nearly reported
+
+Applied by the route on create and edit, so every path gets them, not just the form. The create modal
+also prefills the three amounts, so an agent sees the numbers before saving rather than after — Zoho
+stamped them on save.
+
+End-to-end against a real Postgres (local DB, rows cleaned up after): a create with no company and no
+compensation came back with all three amounts and the company set; an explicit 7.00 survived while the
+other two still defaulted; clearing an amount on edit put the default back; and a real DWH company
+name adopted the right carrier id with `companyZohoId` still null.
+
+**The near-miss worth remembering:** the first end-to-end attempt showed the rules NOT firing. The
+cause was not the code — a 16-hour-old `tsx watch` server already owned the port, my instance died with
+EADDRINUSE, and both my health check and my create were answered by the stale process. `curl /health`
+succeeding proves a server is there, not that it is YOURS. The discriminator that settled it was asking
+`/cs/maintenance/meta` for a key only the new code returns (`compensationDefaults`). Do that before
+trusting any local verification. The user's own long-running servers on :3001/:3002 were left alone and
+a free port used instead.
+
+Suite back to the `origin/main` baseline: 11 failures / 7 files, identical set. One run in between
+reported 94 failures across 21 files — the same load-dependent flake seen before (route suites using
+`app.inject` time out under contention); a clean re-run returned to 11. Web 49 files / 344 tests green.
+Vendored bundle rebuilt and the new constants confirmed present in a chunk reachable from the entry.
+
+## 2026-07-31 — PR #102 build merge conflict resolution
+
+Merged the latest `origin/build` into `feature/agent-gateway-multi-token-failover` for PR #102.
+Preserved both append-only `WORKING_NOTES.md` histories. Build already owned migrations 0079–0081,
+so the support-bot knowledge migration was renumbered from 0079 to 0082 and the Drizzle journal was
+resolved with unique, sequential indexes and all four migration entries intact.
+
+## 2026-07-30 — HR navigation and presentation polish
+
+Removed the shared-shell Time Off shortcut and its modal so leave requests are available only from
+HR Mytrion's Time Off tab. The shared sidebar now gives its long navigation list its own scroll area,
+keeps the profile footer outside that scroll region, and uses slightly larger tab, section, and
+profile typography; this also resolves the Admin sidebar overlap.
+
+HR now scopes Space Grotesk across the complete module. Employees, Departments, and Org Structure
+use one labeled KPI tile system; Attendance totals use the same visual hierarchy, while Time Off
+retains its balance cards. All cold data loads now use the shared branded HR page loader, with small
+inline busy indicators reserved for saves and refreshes.
+
+Verification: frontend TypeScript, the production Vite build, and all 323 frontend tests pass;
+`git diff --check` is clean. Authenticated visual QA could not run in the isolated browser session
+because it opened at the Zoho sign-in screen.
+
+## 2026-07-30 — Recruit Mytrion and HR admin refinements
+
+Added the native Recruit Mytrion with persisted, tenant-scoped Job Openings, Candidates, and
+admin-owned conversion settings. Openings link directly to existing HR departments. Candidates
+move through a six-stage pipeline, and an admin can atomically convert an accepted candidate into
+an `hr_employees` record; the candidate claim and employee insert share one transaction so partial
+hires cannot be committed. Recruiter and HR access defaults were added, while conversion and
+settings remain admin-only.
+
+Built the Recruit Home, Job Openings, Candidates, and Settings screens with the shared Horizon
+shell, responsive cards, bordered modals, consistent loaders, and Space Grotesk typography.
+Settings is pinned above the signed-in profile. Recruit settings control employee-ID prefix,
+default location, and initial status.
+
+HR Settings is now a consistent control center with bordered policy blocks and clearer grouping for
+directory sync, attendance operations, and Time Off. The attendance webhook explainer was removed.
+The employee directory defaults to department grouping and adds order controls for newest, active,
+terminated, and name; the Face ID glyph is now a face-scan icon. Employee details also expose an
+admin-only Zoho CRM user link/unlink workflow so a new sign-in can be attached after conversion.
+
+Verification: backend and frontend typechecks pass; backend and frontend production builds pass;
+lint has 0 errors (24 existing warnings). Targeted Recruit/HR/access tests pass 57/57. The full
+backend suite reached 1,272 passing tests with 10 unrelated existing failures in touchpoints,
+stream adapter, tool-count, Zoho MCP, retention caps, and notification copy. Visual QA ran through
+the dev mock: Recruit Home, opening modal, HR Settings, sidebar pinning, and the employee order menu
+were inspected; a stacking issue on the order menu was found and fixed.
+
+## 2026-07-30 — Recruit runtime recovery and theme alignment
+
+Traced the Recruit Job Openings and Candidates 500 responses to an unapplied database migration:
+all three Recruit relations were absent from the active database. Applied migration
+`0079_recruit_workspace.sql` and confirmed the tenant-scoped job and candidate repository reads now
+complete with empty result sets instead of throwing. Registered all Recruit schema modules in
+`drizzle.config.ts` so schema generation and drift checks include the workspace going forward.
+
+Aligned Recruit with the parent Horizon visual system in both themes. The complete workspace now
+uses Space Grotesk, slightly larger navigation and content typography, shared glass pane/border/
+shadow tokens, theme-owned semantic accents, and clearer elevated modal treatment. Dark and light
+pages were inspected live at desktop size.
+
+Verification: backend and frontend typechecks pass; production frontend build passes; lint has zero
+errors and 24 existing warnings. Recruit/HR/access backend tests pass 40/40 and the frontend access
+suite passes 17/17. Direct repository smoke reads after migration returned zero jobs and zero
+candidates without an error.
+
+## 2026-07-30 — Oybek attendance production rollout
+
+Restricted Hikvision attendance ingestion to door names containing `Oybek`; non-Oybek events now
+stop before employee lookup or persistence. Device wall-clock timestamps are parsed as
+Asia/Tashkent and stored as UTC, while work dates, display times, week anchors, and overnight
+03:00 bucketing use the UZB calendar. Webhook batches are audit-logged with accepted, skipped, and
+failed counts.
+
+Face ID matching now safely normalizes numeric zero padding (`00000564` = `564`) while ambiguous
+matches fail closed. Stored unmapped Oybek punches reconcile automatically on a matching future
+punch, an employee Face ID edit, or an employee-directory sync. HR Team attendance shows an
+actionable unmatched-punch count for HR/Admin users.
+
+Worked time now pairs every entry with the next exit and sums completed office visits. Repeated
+entry scans do not inflate hours, unmatched scans are disclosed, and open sessions render as
+`Still inside`. My Data and Team details show Tashkent-local last activity, in/out state, individual
+sessions, and total in-office time in clearer bordered blocks.
+
+Applied `0080_hr_oybek_attendance.sql` to the active database. It created the active
+`UZB Tashkent · Oybek` 19:00–03:00 Asia/Tashkent shift and assigned 122 eligible active employees
+effective 2026-07-30. Fifteen active Canada employees were excluded; there is currently no US
+department. The live data currently has eight unmatched Oybek punches; Face ID `00000215` has no
+employee profile match yet, so it remains safely unmapped and visible to HR instead of being guessed.
+
+Verification: backend/frontend typechecks and the frontend production build pass; lint has zero
+errors and 24 existing warnings. Attendance unit/route tests pass 19/19, adjacent HR/Recruit route
+tests pass 19/19, and HR attendance UI/access tests pass 18/18. Repository smoke checks confirmed
+the shift, assignment count, exclusions, and zero-padding match behavior.
+
+## 2026-07-30 — Ganga attendance correction and manager shift assignment
+
+Corrected the authoritative attendance source from Oybek to Ganga. Hikvision events are now
+accepted only when `door_name` contains `Ganga` (case-insensitive); every Oybek and other-door
+event stops before employee lookup or persistence. Applied `0081_hr_ganga_attendance.sql`, which
+renamed the existing overnight shift to `UZB Tashkent · Ganga`, preserved its 122 employee
+assignments, removed the incorrectly ingested Oybek punch rows, reconciled unambiguous stored
+Ganga Face IDs, and re-bucketed mapped Ganga events on the Tashkent overnight work date.
+
+Department managers can now assign an active shift from an employee's Attendance Team detail.
+Authorization is enforced by the attendance route: admins and HR managers may assign any employee;
+a department manager may assign direct reports and employees in departments they lead, but cannot
+assign themselves or employees outside their managed scope. The entire requested target set is
+authorized before the first write, preventing partial batch assignment. Reassigning the same
+effective date updates the existing assignment instead of creating a conflict.
+
+Verification: attendance unit/route tests pass 21/21, adjacent HR/Recruit route tests pass 19/19,
+and HR attendance UI/access tests pass 18/18. Backend and frontend TypeScript checks and the
+frontend production build pass. Lint has zero errors and 24 existing warnings. Live repository
+verification confirmed the renamed 19:00–03:00 Asia/Tashkent shift and 122 preserved assignments;
+there were no stored Ganga punches at verification time.
+
+## 2026-07-31 — HR light mode + org canvas UX
+
+Light HR: softer coral accent, quieter page/pane/border tokens, calmer cards and
+inputs across tabs. Org chart: single-click opens department/employee modals;
+expand/collapse keeps existing node positions and parks new children under the
+parent (no full re-fit jump). Attendance no longer shows the unmapped Ganga
+punches banner.
+
+## 2026-07-31 — Manager typography, loyalty controls, and final tier audit
+
+Changed the complete Manager shell—including shared sidebar chrome, department tabs, Referrals,
+Loyalty, and portal modals—to Space Grotesk. Added a final Manager finish layer with quieter neutral
+glass surfaces, softer light-mode mesh/borders, restrained tier/referral tints, and single-border
+modal elevation. The Referrals month control is now a full clickable button that explicitly opens
+the native month picker; its native input no longer owns an invisible, unreliable hit area.
+
+Added tenant-scoped `loyalty_client_overrides` persistence and migration 0085. A Manager Loyalty card
+now opens a client-control modal where a full-access Manager user can select an Enterprise operating
+mode, set the manual Enterprise Gold ULSR+ULSD target, and enable/disable the six reward benefits as
+an explicit checklist. Saving and resetting are audited. Null rewards preserve automatic tier
+defaults; an empty checklist intentionally disables all benefits. Overrides are returned to both the
+company-wide Manager roster and owner-scoped Sales clients, so the displayed tier/rewards stay
+consistent between Mytrions.
+
+Re-audited the rules: previous-calendar-month distinct transacting cards determine the track;
+previous-month ULSR+ULSD gallons determine the active tier; total gallons and account active cards
+remain reference-only; exact thresholds/no grace still apply. Enterprise stays outside Bronze and
+Silver. A stored volume target grants Enterprise Gold only at full attainment, while Normal Billing
+never creates a gallon tier. The live read-only DWH check for the closed month confirmed ULSD
+6,042,502.01 gallons and ULSR 69,917.17 gallons as distinct categories; DEFD/FUEL/other categories
+remain excluded from tier gallons.
+
+Verification: backend typecheck passes; lint has zero errors and 23 existing warnings. Manager
+Loyalty/Data Center routes pass 42/42, focused loyalty/month-picker tests pass 20/20, and the complete
+frontend suite passes 320/320. Frontend TypeScript reaches only the pre-existing unrelated
+`HrAttendance.tsx` incomplete UserContext fixture, which was left untouched per the request to ignore
+HR changes.
+
+## 2026-07-31 — Manager performance and workspace release hardening
+
+Removed the principal Referral loading bottlenecks. MART fuel-code variants are now calculated in
+one bound query instead of repeatedly scanning the transaction history, and the month-independent
+Zoho parent/child/Deal relationship graph is cached separately from monthly volume calculations.
+Tenant/month snapshots have bounded TTL, in-flight request deduplication, manual force-refresh, and
+recent-snapshot fallback. A live cold calculation returned the 687-parent workspace in 5.7 seconds;
+switching month after the relationship graph was warm took 2.4 seconds, and a cached return was
+immediate.
+
+Replaced Manager Loyalty's reuse of the full Sales debt/PII roster with a dedicated company-wide
+tier projection that preserves the same closed-month ULSR+ULSD, transacting-card, and billing-cycle
+formulas. Both global and per-agent rosters now have bounded caches, concurrent-request sharing, and
+stale fallback. The optional client-override read degrades to automatic rewards when migration 0085
+is not yet available, while writes remain fail-closed. DWH outages now surface as a specific 502
+instead of an opaque 500. Live reads returned 8,097 Manager clients in 1.4 seconds and 374 scoped
+Sales clients in 0.7 seconds.
+
+Fixed HR Org Structure collapse so closing a department clears every expanded descendant department,
+manager, and employee instead of leaving nested people visible. Removed the double border from the
+Time Off year control and corrected the Attendance admin-access type guard. Recruit now uses the
+shared Horizon page loader, full Space Grotesk controls/modals, and calmer light/dark glass surfaces.
+Manager Sales is a polished Coming Soon workspace and is labelled accordingly on the Manager home.
+Removed two stray loyalty CSS declarations that produced production minifier warnings.
+
+Verification: backend and frontend typechecks pass; lint has zero errors and 23 existing warnings;
+the complete frontend suite passes 321/321; the frontend production build passes without CSS syntax
+warnings; focused Manager/Referral/Data Center tests pass 103/103. The full backend suite reaches 1,277 passing
+tests but is not repository-green: 37 unrelated baseline/environment tests fail across remote
+database DNS, sandboxed websocket binding, Customer Service/retention/touchpoint expectations, and
+older stream/tool mocks. Migration 0085 remains required before production users can persist Loyalty
+overrides, although roster reads now remain available before it is applied.
+
+## 2026-07-31 — Build merge for the HR/Recruit/Manager workspace (migration renumber)
+
+Merged `origin/build` (through PR #102, `5b3b935`) into `feature/hr-workspace-v2`. Three files
+conflicted: `WORKING_NOTES.md`, `drizzle.config.ts`, and the Drizzle journal. Both append-only
+histories are preserved and the Drizzle schema list is the union of both sides
+(`maintenance_cases` alongside the six HR leave tables and three Recruit tables).
+
+Build had taken 0079–0082, so this branch's six migrations were renumbered. Their **relative order
+is unchanged** — the Ganga correction still follows the Oybek seed, and the ingest guard still
+follows both — because reordering them would let the non-Ganga trigger predate the punches it is
+meant to clean up:
+
+| was | now |
+| --- | --- |
+| `0079_recruit_workspace` | `0083_recruit_workspace` |
+| `0080_hr_oybek_attendance` | `0084_hr_oybek_attendance` |
+| `0081_hr_ganga_attendance` | `0085_hr_ganga_attendance` |
+| `0083_hr_workspace_recovery` | `0086_hr_workspace_recovery` |
+| `0084_hr_ganga_ingest_guard` | `0087_hr_ganga_ingest_guard` |
+| `0085_loyalty_client_overrides` | `0088_loyalty_client_overrides` |
+
+The `when` stamps matter more than the filenames, and this branch had walked into exactly the trap
+the 2026-07-30 prod-migrate entry documents: our `0079_recruit_workspace` carried
+`1785405600000`, the **same millisecond** as build's `0082_support_bot_knowledge`. Because Drizzle
+reads its ceiling once and applies only on a strict `<`, whichever of the two reached a database
+first would have permanently silenced the other. The six entries are now stamped
+`1785409200000` … `1785427200000`, strictly above build's highest (`0082`, `1785405600000`), and
+the journal has no duplicate `when` value and no duplicate tag anywhere.
+
+Two things carried over from build rather than fixed here, both worth a separate decision:
+build's 0079–0081 sit *below* `0078_support_bot_memories` by design (they were stamped
+`prod_max + 1ms` while 0078 was still unmerged), so on any database already at 0078 they are
+skipped — prod got them by hand; and `.whois.tmp.mjs`, the migration-hashing scratch script from
+`495f886`, is still committed at the repo root.
+
+**The conflict Git did not report.** Both sides had rebuilt `apps/mytrion-crm/app`, and because Vite
+filenames are content-hashed, Git saw two disjoint sets of adds/renames and merged them without a
+murmur. The result was build's bundle verbatim: its `index.html` still pointed at
+`index-FBX2djQY.js`, and no chunk contained a single HR, Recruit, or Manager string. A clean
+`pnpm lint && typecheck && test` would have signed off on a merge that shipped none of this
+branch's UI. Rebuilt with `pnpm build:widget` and re-staged; the new entry is `index-DPxzEfi_.js`,
+all 54 chunks are reachable from it with zero orphans, and "Job Opening", "Recruit", "Time Off"
+(this branch) and "Maintenance" (build) all resolve to reachable chunks.
+
+Verification: backend and frontend typechecks pass; lint is 0 errors / 23 pre-existing warnings;
+frontend 52 files / 342 tests pass. Backend is 11 failed / 1,430 passed across 7 files — the same
+baseline set build recorded (`boot-db-transient`, `notification-templates`, `retention-cs-caps`,
+`stream-adapter`, `tools`, `touchpoints-routes`, `zoho-crm`), none of them HR, Recruit, Manager,
+Loyalty, or Maintenance. Migrations were run against a throwaway `merge_verify` database rather
+than reasoned about: 89 entries applied, 87 tables, and `maintenance_cases`,
+`support_bot_knowledge_articles`, `support_bot_operations`, the three `recruit_*` tables, the
+`hr_leave_*` tables, `loyalty_client_overrides`, and the `hr_attendance_ganga_only_trg` trigger all
+verified present.
+
 ## 2026-07-31 — Native ticket path: the reachable half of the comms substrate (`feature/Communication`)
 
 `b501390` landed 14 tables, the thread/member/message/presence repos, `publish.ts` and the comms WS

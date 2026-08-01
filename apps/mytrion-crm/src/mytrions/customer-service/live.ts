@@ -21,6 +21,16 @@ import {
   type CsContext,
 } from '@/api/cs';
 import { listCitifuel } from '@/api/cs';
+import {
+  getMaintenanceMeta,
+  getMaintenanceStats,
+  listMaintenance,
+  type MaintenanceFacets,
+  type MaintenanceMeta,
+  type MaintenancePage,
+  type MaintenanceQuery,
+  type MaintenanceRecord,
+} from '@/api/cs';
 import type { CsApplicationRow, CsDataCenterDeal } from '@/api/touchpointTypes';
 import type {
   ActivityRow,
@@ -36,6 +46,13 @@ import type {
 export { useLoad, type Loaded } from '../_shared/useLoad';
 export { getCsContext, type CsContext };
 export type { CitiDecisionSplit };
+export type {
+  MaintenanceFacets,
+  MaintenanceMeta,
+  MaintenancePage,
+  MaintenanceQuery,
+  MaintenanceRecord,
+};
 
 // ---- shared coercions ----
 
@@ -666,4 +683,43 @@ export function invalidateDealsCache(): void {
   } catch {
     /* noop */
   }
+}
+
+// ---- Maintenance cases ----
+// Thin pass-throughs: unlike Applications/Citifuel there is no Zoho row shape to normalize, because
+// the route already returns our own columns. The helpers below are the formatting the cards need.
+
+export async function loadMaintenance(q: MaintenanceQuery): Promise<MaintenancePage> {
+  return listMaintenance(q);
+}
+
+export async function loadMaintenanceStats(): Promise<MaintenanceFacets> {
+  return getMaintenanceStats();
+}
+
+export async function loadMaintenanceMeta(): Promise<MaintenanceMeta> {
+  return getMaintenanceMeta();
+}
+
+/** The label an agent identifies a case by: the linked Account if there is one, else the case name. */
+export function maintenanceTitle(m: MaintenanceRecord): string {
+  return (m.companyName || m.name || '').trim() || 'Untitled case';
+}
+
+/**
+ * NUMERIC arrives from the API as a string ('500.00'), so this parses before formatting rather than
+ * doing arithmetic on it. Null/blank → em dash, never '$0.00', which would read as a real zero fee.
+ */
+export function fmtMoneyStr(v: string | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? fmtUsd(n) : '—';
+}
+
+/** `2026-07-29` → `Jul 29, 2026`, parsed as a LOCAL date so it never shifts back a day. */
+export function fmtYmd(v: string | null | undefined): string {
+  if (!v) return '';
+  const d = parseYmd(v.slice(0, 10));
+  if (!d) return v;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
