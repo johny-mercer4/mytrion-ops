@@ -27,8 +27,19 @@ import { requireInternal } from './helpers.js';
 import type { MytrionEscalation, MytrionEscalationHop } from '../../db/schema/index.js';
 
 const createBody = z.object({
-  /** Escalation reason code (ESC-01 …). Decides the level-2 landing via its configured fall-to user. */
+  /** Escalation reason code (ESC-01 …). Categorises the request, and can name a fall-to user. */
   reasonCode: z.string().min(1).max(60),
+  /**
+   * WHICH DEPARTMENT the request is aimed at, chosen when it is opened. This is the primary routing input:
+   * level 2 is that department's own agent. A slug, because that is the routing key — the UI picks from our
+   * hr_departments list and sends the slug its routing row is keyed on.
+   */
+  targetDepartment: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z][a-z0-9-]*$/, 'lowercase department slug')
+    .optional(),
   subject: z.string().min(1).max(300),
   description: z.string().min(1).max(8000),
   sourceMytrion: z.string().max(60).optional(),
@@ -133,6 +144,7 @@ export async function commsEscalationsRoutes(app: FastifyInstance): Promise<void
 
     const { escalation, created } = await raiseEscalation(ctx, {
       reasonCode: body.reasonCode,
+      targetDepartment: body.targetDepartment,
       subject: body.subject,
       description: body.description,
       sourceMytrion: body.sourceMytrion,

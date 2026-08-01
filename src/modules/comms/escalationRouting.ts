@@ -106,6 +106,72 @@ export interface ManagerRoute {
   skipReason?: RoutingSkipReason;
 }
 
+export interface DepartmentAgentRoute {
+  zohoUserId: string;
+  name: string;
+  department: string;
+  /** How the department's agent was chosen, recorded on the hop so the routing is explainable. */
+  via: 'department_default' | 'pool';
+}
+
+/**
+ * LEVEL 2 for a department — the agent an escalation OPENED AGAINST that department lands on.
+ *
+ * The department is chosen when the request is opened, so this is the primary level-2 resolution: an
+ * escalation aimed at Billing goes to Billing's agent, not to whoever a reason happens to name. Precedence:
+ *   1. `default_assignee_zoho_user_id` — the department's explicitly nominated first responder.
+ *   2. the least-recently-assigned eligible pool member, so a department that staffs a rota instead of
+ *      nominating one person still routes, and the load spreads.
+ *
+ * The MANAGER is deliberately not a fallback here. Level 3 exists precisely so an escalation reaches the
+ * head only after the agent level has had it; falling straight through to the manager would collapse two
+ * rungs into one and there would be nothing left to escalate to.
+ *
+ * Returns null when the department has neither — the caller decides whether that is a refusal (opening a
+ * request against it) or a reason to try something else.
+ */
+export async function resolveDepartmentAgent(
+  ctx: TenantContext,
+  department: string,
+): Promise<DepartmentAgentRoute | null> {
+  const config = await commsDepartmentRepo.get(ctx, department);
+  if (!config) return null;
+
+  const nominated = config.defaultAssigneeZohoUserId?.trim();
+  if (nominated) {
+    return {
+      zohoUserId: nominated,
+      name: await resolveWorkerName(ctx, nominated, null),
+      department,
+      via: 'department_default',
+    };
+  }
+
+  const pool = await commsDepartmentRepo.listPool(ctx, {
+    departments: [department],
+    activeOnly: true,
+  });
+  // `listPool` orders by (department, sortOrder, zohoUserId); pick the least-recently-assigned among those
+  // still accepting work, which is the same fairness rule ticket round-robin uses. NULL means never
+  // assigned, so a newly added member goes first — they are owed work.
+  const eligible = pool
+    .filter((p) => p.acceptsNew)
+    .sort((a, b) => {
+      const at = a.lastAssignedAt?.getTime() ?? 0;
+      const bt = b.lastAssignedAt?.getTime() ?? 0;
+      return at - bt;
+    });
+  const seat = eligible[0];
+  if (!seat) return null;
+
+  return {
+    zohoUserId: seat.zohoUserId,
+    name: seat.displayName ?? (await resolveWorkerName(ctx, seat.zohoUserId, null)),
+    department,
+    via: 'pool',
+  };
+}
+
 /**
  * LEVEL 3 — the department manager an escalation rises to.
  *

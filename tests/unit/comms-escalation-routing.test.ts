@@ -74,6 +74,8 @@ function configRow(over: Partial<MytrionDepartmentConfig> = {}): MytrionDepartme
     id: 'mdcf_1',
     tenantId: 'octane',
     department: 'customer-service',
+    hrDepartmentId: null,
+    label: null,
     ticketAssignmentStrategy: 'round_robin',
     requireOnline: true,
     defaultAssigneeZohoUserId: null,

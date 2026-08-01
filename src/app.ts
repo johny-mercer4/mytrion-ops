@@ -41,6 +41,7 @@ import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
+import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
 import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
 import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
 import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
@@ -229,8 +230,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
-    // Global ceiling; /v1/files/upload additionally enforces FILE_MAX_SIZE_MB per request.
-    limits: { fileSize: Math.max(10_000_000, env.FILE_MAX_SIZE_MB * 1024 * 1024), files: 20, fields: 20 },
+    // Global ceiling; each route additionally enforces its OWN per-request cap — /v1/files/upload uses
+    // FILE_MAX_SIZE_MB, comms attachments use COMMS_ATTACHMENT_MAX_MB.
+    //
+    // The max() over both is load-bearing: FILE_MAX_SIZE_MB is zod-capped at 200MB, so a larger chat
+    // attachment limit would be silently truncated here — the request would die in the parser with a
+    // generic error before the comms route's own, clearer 413 could ever run.
+    limits: {
+      fileSize: Math.max(
+        10_000_000,
+        env.FILE_MAX_SIZE_MB * 1024 * 1024,
+        env.COMMS_ATTACHMENT_MAX_MB * 1024 * 1024,
+      ),
+      files: 20,
+      fields: 20,
+    },
   });
 
   if (!isProduction && !isTest) {
@@ -306,6 +320,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(commsRoutes);
       await v1.register(commsTicketsRoutes);
       await v1.register(commsThreadsRoutes);
+      await v1.register(commsAttachmentsRoutes);
       await v1.register(commsEscalationsRoutes);
       await v1.register(commsAdminRoutes);
       await v1.register(dataCenterRoutes);

@@ -8923,3 +8923,101 @@ Verification: web typecheck clean, 332/332 web tests pass (9 new), 244/244 comms
 (22 new route tests covering the gate — an ordinary worker AND a department head are both refused on every
 write, not just the read). `pnpm build:widget` rerun and `apps/mytrion-crm/app` committed, since that
 vendored bundle is what actually deploys; confirmed the built output contains the new screen.
+
+## 2026-08-01 (2) — Departments come from HR, escalations are opened against one, and Dropbox
+
+Two changes, both from the same decision: **departments are our own `hr_departments` rows plus Zoho users
+(`hr_employees.zoho_user_id`), not a hardcoded slug list** — and an escalation request names its department
+when it is opened, so level 2 is that department's agent.
+
+### Migration 0089 — routing config is keyed on hr_departments
+
+`mytrion_department_config` gains `hr_department_id` + `label`. Why BOTH the link and the slug:
+
+- `department` stays the ROUTING KEY. It is stored on `mytrion_threads.department`, built into the
+  `comms:queue:<department>` WebSocket topic (validator: `^[a-z][a-z0-9-]{1,40}$`) and held in
+  `TenantContext.departments` for RBAC. Swapping in an `hrd_…` id would break the read gate, the topic
+  grammar and every existing access grant at once.
+- `hr_department_id` makes the ORG identity explicit rather than matching a slugified name — a name match
+  would orphan a department's whole routing config the first time HR renames it. Same reasoning as
+  `hr_employees.zoho_user_id` being chosen explicitly rather than derived.
+
+A one-off backfill links the ten rows 0087 seeded by slugified name, skipping any name that slugifies
+ambiguously — an ambiguous match is a human decision, not a guess. Nothing re-derives the link at runtime.
+`slugifyDepartment()` (lib/department.ts) returns **null** for a name that cannot make a valid slug (no
+letters, or a leading digit), so such a department is surfaced as unconfigurable instead of producing a row
+that publishes to a topic nobody can subscribe to.
+
+0089 also widens `mytrion_escalation_hops_routing_chk` with `department_default` and `department_pool`.
+`routing_source` exists to make a chain explainable, and filing a department-resolved assignee under
+`reason_default` would claim a reason chose someone it never named.
+
+### Level 2 is now department-first
+
+`raiseEscalation` takes an optional `targetDepartment`. Resolution order:
+1. **the target department's own agent** — its `default_assignee_zoho_user_id`, else its
+   least-recently-assigned roster member that still accepts work. "Escalate to Billing" has to reach
+   Billing; deciding from the reason instead would make the department the requester picked irrelevant.
+2. the reason's fall-to user, for a raise with no department in mind.
+3. if either resolves to the requester, rise to that department's manager with
+   `skip_reason='is_requester'`.
+
+The manager is deliberately NOT a fallback at step 1: level 3 exists so an escalation reaches the head only
+after the agent level has had it, and falling straight through would collapse two rungs into one.
+
+Admin `GET /routing` now returns `hrDepartments` (id, name, lead, `suggestedSlug`, `configured`) beside the
+config, so the screen offers departments that have never been configured — the point of driving it from HR.
+The live HR name wins over the stored `label`, so a rename shows immediately, while the snapshot is the
+fallback for a department since deleted from HR (historical escalations must still render). An HR outage
+degrades to an empty list and is logged, rather than failing the whole screen.
+
+### Dropbox
+
+`src/integrations/dropbox.ts` — refresh-token grant via `createTokenProvider` (access tokens last ~4h, so a
+stored access token would break silently); single-shot upload under 120MB and `upload_session/*` above it
+(deliberately below the 150MB vendor hard limit — sitting at the limit means the first oversized production
+file discovers it); `Dropbox-API-Arg` escaped to `\uXXXX` so a Cyrillic or emoji filename cannot produce an
+invalid header; 401 force-refresh **once** (a revoked refresh token also answers 401, so retrying forever
+would hammer auth with a dead credential); 429/5xx retry honouring `Retry-After`, capped at 30s.
+
+`get_temporary_link` rather than a shared link: it serves the BYTES, whereas
+`create_shared_link_with_settings` returns an HTML preview page unless `?dl=1` is appended — and it creates
+a durable PUBLIC link, the wrong default for a client's document.
+
+**The provider travels with the row.** Migration 0090 adds `file_assets.storage_provider` (default `'s3'`,
+CHECK-constrained, backfilled). `storageFor(row.storageProvider)` resolves reads and deletes; the new
+`COMMS_STORAGE_PROVIDER` env only decides where the NEXT comms attachment goes. A single global switch would
+have repointed reads for every existing S3 file and 404'd them — and `deleteFile` previously handed `s3_key`
+to the S3 client unconditionally, which with two providers would report success while leaving the Dropbox
+object behind.
+
+Attachments arrive as ONE bubble: the upload appends a message and links the file to it, so `is_internal` is
+inherited by construction and a file on an internal note cannot become visible on its own. Links are fetched
+on click, not embedded per row — a Dropbox link is a network round trip and expires in ~4h, so a list full of
+them would be slow and hand out links that die in an open tab. `COMMS_ATTACHMENT_MAX_MB` is separate from
+`FILE_MAX_SIZE_MB` (zod-capped at 200) and the global multipart ceiling is now the max of the two, so raising
+the chat limit alone is enough.
+
+### Verification
+
+Typecheck and lint clean (0 errors; the 23 warnings are pre-existing non-null assertions elsewhere). All 84
+migrations apply from scratch against a fresh throwaway Postgres — 95 tables, both new columns, the partial
+`mytrion_department_config_hr_uk` with its predicate intact, the widened routing CHECK with all 8 values, and
+`file_assets_storage_provider_chk`.
+
+A 28-check real-DB run proves the department-first routing: the nominated default wins over a reason that has
+no fall-to user at all; a rota-only department routes to its least-recently-assigned member and skips a
+deactivated one and one with `accepts_new=false`; a configured-but-empty department and an unknown slug are
+both refused naming Mytrion Admin; the department's own agent starts at level 3 with
+`skip_reason='is_requester'`; a reason-only raise still uses `reason_default`; escalating up uses the OPENED
+department's manager; and the HR link survives it all.
+
+Tests: 21 new Dropbox adapter tests (path mapping including `..` traversal, provider-by-row selection, header
+escaping, retry backoff) and 6 new admin-route tests for the HR-driven section — 1543 passing backend, 332
+web. Full suite still shows the same 35 failures across the same 10 suites as the baseline, so zero new
+failures.
+
+**Not verified:** the Dropbox HTTP layer itself has never run against live Dropbox — there are no
+credentials yet. Upload, download, temporary link and the chunked session are unexercised end to end. Once
+`DROPBOX_APP_KEY` / `_APP_SECRET` / `_REFRESH_TOKEN` exist, set `COMMS_STORAGE_PROVIDER=dropbox` and round-trip
+a small file and one over 120MB (the chunked path) before trusting it.

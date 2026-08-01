@@ -181,6 +181,8 @@ export function deptConfig(over: Partial<MytrionDepartmentConfig> = {}): Mytrion
     id: 'mdcf_1',
     tenantId: 'octane',
     department: CATALOG_DEPARTMENT,
+    hrDepartmentId: null,
+    label: null,
     ticketAssignmentStrategy: 'round_robin',
     requireOnline: true,
     defaultAssigneeZohoUserId: null,

@@ -25,6 +25,10 @@ import { firstOrThrow } from './util.js';
  */
 
 export interface DepartmentConfigPatch {
+  /** FK → hr_departments.id. Departments are our own org data, so this is how a row gets its identity. */
+  hrDepartmentId?: string | null | undefined;
+  /** Display name, snapshotted from hr_departments.name. */
+  label?: string | null | undefined;
   ticketAssignmentStrategy?: TicketAssignmentStrategy | undefined;
   requireOnline?: boolean | undefined;
   defaultAssigneeZohoUserId?: string | null | undefined;
@@ -76,6 +80,29 @@ export const commsDepartmentRepo = {
     return this.buildListQuery(ctx, opts);
   },
 
+  /**
+   * The config row for one HR department, or undefined when it has never been configured.
+   *
+   * Keyed on the HR id rather than on a slugified name, so a rename in HR does not orphan the routing
+   * config — which is the whole reason 0089 added the link.
+   */
+  async getByHrDepartment(
+    ctx: TenantContext,
+    hrDepartmentId: string,
+  ): Promise<MytrionDepartmentConfig | undefined> {
+    const [row] = await db
+      .select()
+      .from(mytrionDepartmentConfig)
+      .where(
+        and(
+          eq(mytrionDepartmentConfig.tenantId, ctx.tenantId),
+          eq(mytrionDepartmentConfig.hrDepartmentId, hrDepartmentId),
+        ),
+      )
+      .limit(1);
+    return row;
+  },
+
   async get(ctx: TenantContext, department: string): Promise<MytrionDepartmentConfig | undefined> {
     const [row] = await db
       .select()
@@ -107,6 +134,8 @@ export const commsDepartmentRepo = {
     // A spread of the whole patch would turn every unspecified column into undefined, which Drizzle
     // omits from the UPDATE — the same outcome by accident rather than by design.
     const set: Partial<typeof mytrionDepartmentConfig.$inferInsert> = { updatedAt: now };
+    if (patch.hrDepartmentId !== undefined) set.hrDepartmentId = patch.hrDepartmentId;
+    if (patch.label !== undefined) set.label = patch.label;
     if (patch.ticketAssignmentStrategy !== undefined) {
       set.ticketAssignmentStrategy = patch.ticketAssignmentStrategy;
     }

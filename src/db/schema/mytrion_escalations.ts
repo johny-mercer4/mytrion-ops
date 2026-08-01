@@ -23,10 +23,18 @@ export const ESCALATION_LEVEL_LABELS: Record<EscalationLevel, string> = {
 
 export type EscalationStatus = 'pending' | 'resolved' | 'rejected' | 'withdrawn' | 'expired';
 
-/** How a hop's assignee was chosen. */
+/**
+ * How a hop's assignee was chosen — the provenance that makes a chain explainable.
+ *
+ * `department_default` / `department_pool` exist because an escalation is OPENED AGAINST a department, so
+ * level 2 resolves from that department's nominated agent or its roster. Filing either under
+ * `reason_default` would claim a reason chose someone it never named.
+ */
 export type EscalationRoutingSource =
   | 'requester'
   | 'reason_default'
+  | 'department_default'
+  | 'department_pool'
   | 'department_manager'
   | 'c_level'
   | 'manual'

@@ -1,6 +1,7 @@
 import {
   ESCALATION_LEVEL_LABELS,
   type EscalationLevel,
+  type EscalationRoutingSource,
   type MytrionEscalation,
   type MytrionEscalationHop,
   type MytrionThread,
@@ -14,6 +15,7 @@ import { commsTicketRepo, type CreatedTicket } from '../../repos/commsTicketRepo
 import type { TenantContext } from '../../types/tenantContext.js';
 import {
   departmentOfWorker,
+  resolveDepartmentAgent,
   resolveDepartmentManager,
   resolveReason,
   resolveWorkerName,
@@ -36,6 +38,15 @@ import { hopDueAt, notifyChain } from './escalationNotify.js';
 
 export interface RaiseEscalationInput {
   reasonCode: string;
+  /**
+   * WHICH DEPARTMENT this request is aimed at, chosen when the request is opened.
+   *
+   * This is the primary routing input: level 2 is that department's own agent. The reason still matters —
+   * it categorises the request and can name a fall-to user — but "escalate to Billing" should reach
+   * Billing, not whoever a reason happens to point at. Optional so a reason-only raise still works when
+   * the requester has no particular department in mind.
+   */
+  targetDepartment?: string | undefined;
   subject: string;
   description: string;
   idempotencyKey?: string | undefined;
@@ -52,53 +63,92 @@ interface FirstLanding {
   level: EscalationLevel;
   assignee: string;
   department: string | null;
-  routingSource: 'reason_default' | 'department_manager';
+  /** Provenance for hop 1 — see EscalationRoutingSource for why the department paths are distinct. */
+  routingSource: EscalationRoutingSource;
   skipReason: string | null;
 }
 
 /**
  * Where a freshly raised escalation lands.
  *
- * Normally level 2, the reason's configured fall-to user. If that user IS the person raising it, rise
- * straight to their department manager instead: routing someone's own escalation to themselves is a dead
- * end, not a hop, and `skip_reason='is_requester'` records why the ladder started a level higher.
+ * Resolution order, and why:
+ *   1. THE TARGET DEPARTMENT'S OWN AGENT, when a department was chosen at open time. "Escalate to Billing"
+ *      has to reach Billing; deciding the assignee from the reason instead would mean the department the
+ *      requester picked had no effect on where it went.
+ *   2. The reason's configured fall-to user, for a raise with no department in mind.
+ *   3. If whichever of those resolves IS the person raising it, rise straight to the department manager —
+ *      routing someone's own escalation to themselves is a dead end, not a hop, and
+ *      `skip_reason='is_requester'` records why the ladder started a level higher.
  *
- * An unrouted reason is REFUSED rather than parked. An escalation with a null assignee sits in nobody's
- * inbox while looking submitted to the person who raised it, which is the worst of both outcomes.
+ * Nothing here falls back to "unassigned". An escalation with a null assignee sits in nobody's inbox while
+ * looking submitted to the person who raised it, so every path either resolves a person or refuses with a
+ * message naming the admin screen.
  */
 async function resolveFirstLanding(
   ctx: TenantContext,
-  reasonLabel: string,
-  reasonAssignee: string | null,
+  reason: { label: string; assignee: string | null },
+  targetDepartment: string | undefined,
   actor: string,
 ): Promise<FirstLanding> {
-  if (!reasonAssignee) {
+  if (targetDepartment) {
+    const agent = await resolveDepartmentAgent(ctx, targetDepartment);
+    if (!agent) {
+      throw new ValidationError(
+        `The ${targetDepartment} department has nobody to receive escalations. Ask an admin to set its default assignee, or add someone to its roster, in Mytrion Admin.`,
+      );
+    }
+    if (agent.zohoUserId !== actor) {
+      return {
+        level: 2,
+        assignee: agent.zohoUserId,
+        department: targetDepartment,
+        // Records WHICH of the two department paths ran, so the chain can explain itself: a nominated
+        // first responder and a roster pick are different operational facts.
+        routingSource: agent.via === 'department_default' ? 'department_default' : 'department_pool',
+        skipReason: null,
+      };
+    }
+    // The requester IS that department's agent — go up to its manager rather than to themselves.
+    return riseToManager(ctx, targetDepartment, actor, `You are the ${targetDepartment} agent`);
+  }
+
+  if (!reason.assignee) {
     throw new ValidationError(
-      `'${reasonLabel}' has no assignee configured yet. Ask an admin to set its fall-to user in Mytrion Admin.`,
+      `'${reason.label}' has no assignee configured yet. Pick a department to escalate to, or ask an admin to set the reason's fall-to user in Mytrion Admin.`,
     );
   }
 
-  if (reasonAssignee !== actor) {
+  if (reason.assignee !== actor) {
     return {
       level: 2,
-      assignee: reasonAssignee,
-      department: await departmentOfWorker(ctx, reasonAssignee),
+      assignee: reason.assignee,
+      department: await departmentOfWorker(ctx, reason.assignee),
       routingSource: 'reason_default',
       skipReason: null,
     };
   }
 
   const requesterDept = await departmentOfWorker(ctx, actor);
-  const manager = await resolveDepartmentManager(ctx, requesterDept);
+  return riseToManager(ctx, requesterDept, actor, `'${reason.label}' falls to you`);
+}
+
+/** Skip the agent rung when it resolves to the requester, and land on the department manager instead. */
+async function riseToManager(
+  ctx: TenantContext,
+  department: string | null,
+  actor: string,
+  why: string,
+): Promise<FirstLanding> {
+  const manager = await resolveDepartmentManager(ctx, department);
   if (!manager.zohoUserId || manager.zohoUserId === actor) {
     throw new ValidationError(
-      `'${reasonLabel}' falls to you, and your department has no other manager configured to escalate to. Ask an admin to set one in Mytrion Admin.`,
+      `${why}, and ${department ? `the ${department} department has` : 'you have'} no other manager configured to escalate to. Ask an admin to set one in Mytrion Admin.`,
     );
   }
   return {
     level: 3,
     assignee: manager.zohoUserId,
-    department: requesterDept,
+    department,
     routingSource: 'department_manager',
     skipReason: 'is_requester',
   };
@@ -118,7 +168,12 @@ export async function raiseEscalation(
   if (!actor) throw new RBACError('Raising an escalation requires a signed-in worker identity.');
 
   const { reason, assigneeZohoUserId } = await resolveReason(ctx, input.reasonCode);
-  const landing = await resolveFirstLanding(ctx, reason.label, assigneeZohoUserId, actor);
+  const landing = await resolveFirstLanding(
+    ctx,
+    { label: reason.label, assignee: assigneeZohoUserId },
+    input.targetDepartment,
+    actor,
+  );
 
   const assigneeName = await resolveWorkerName(ctx, landing.assignee);
   const requesterDepartment = await departmentOfWorker(ctx, actor);

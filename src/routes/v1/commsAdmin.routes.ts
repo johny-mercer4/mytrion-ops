@@ -3,9 +3,15 @@
  * escalation goes to at each level, and who works each ticket queue.
  *
  * Everything the escalation ladder needs is a row an admin edits here, not a constant in code:
- *   level 2  the reason's fall-to user   → `mytrion_ticket_types.default_assignee_zoho_user_id`
- *   level 3  the department manager      → `mytrion_department_config.manager_zoho_user_id`
- *   level 4  C-Level                     → the `c-level` pool in `mytrion_department_agents`
+ *   level 2  the TARGET DEPARTMENT's agent → `mytrion_department_config.default_assignee_zoho_user_id`,
+ *                                            or its least-recently-assigned roster member
+ *            (a reason-only raise falls back to `mytrion_ticket_types.default_assignee_zoho_user_id`)
+ *   level 3  the department manager        → `mytrion_department_config.manager_zoho_user_id`
+ *   level 4  C-Level                       → the `c-level` pool in `mytrion_department_agents`
+ *
+ * DEPARTMENTS THEMSELVES COME FROM `hr_departments` — our own org table — not from KNOWN_DEPARTMENTS. The
+ * config row keeps a slug as its routing key (threads, WS queue topics and RBAC grants all use one), and
+ * `hr_department_id` carries the org identity so a rename in HR cannot orphan the config.
  *
  * All of them ship NULL/empty on purpose. A NULL is "unrouted, refuse loudly" — never a wildcard — so
  * raising an escalation on an unconfigured reason is refused with a message naming this screen, rather
@@ -27,7 +33,7 @@ import { commsCatalogRepo } from '../../repos/commsCatalogRepo.js';
 import { commsDepartmentRepo } from '../../repos/commsDepartmentRepo.js';
 import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
-import { KNOWN_DEPARTMENTS } from '../../lib/department.js';
+import { KNOWN_DEPARTMENTS, slugifyDepartment } from '../../lib/department.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
 
@@ -41,6 +47,9 @@ const departmentSlug = z
   .regex(/^[a-z][a-z0-9-]*$/, 'lowercase slug (letters, digits, dashes)');
 
 const configPatchBody = z.object({
+  /** FK → hr_departments.id. Departments are our own org data, so this is a row's org identity. */
+  hrDepartmentId: z.string().max(60).nullable().optional(),
+  label: z.string().max(200).nullable().optional(),
   /** ESCALATION LEVEL 3. Explicit null clears it. */
   managerZohoUserId: zohoUserId.nullable().optional(),
   managerName: z.string().max(200).nullable().optional(),
@@ -107,11 +116,22 @@ export async function commsAdminRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/comms/admin/routing', guard, async (request) => {
     const ctx = requireCommsAdmin(request);
-    const [configs, pool, reasons] = await Promise.all([
+    const [configs, pool, reasons, hrDepartments] = await Promise.all([
       commsDepartmentRepo.list(ctx),
       commsDepartmentRepo.listPool(ctx),
       // activeOnly:false — an admin must be able to see and re-activate a retired reason.
       commsCatalogRepo.list(ctx, { kind: 'escalation_reason', activeOnly: false }),
+      // OUR OWN org departments. Returned alongside the config so the screen can offer a department that
+      // has never been configured — the whole point of driving this from hr_departments rather than from a
+      // hardcoded slug list. Merged in memory instead of joined: both lists are tens of rows, and a join
+      // method here would duplicate hrDepartmentRepo's tenant filtering.
+      // Degrades to an empty list rather than failing the whole screen: without HR the admin can still see
+      // and fix the routing rows that already exist. Logged, because silently showing "no departments" would
+      // otherwise be indistinguishable from a tenant that genuinely has none.
+      hrDepartmentRepo.list(ctx, { limit: 200 }).catch((err: unknown) => {
+        request.log.warn({ err }, 'comms admin: hr_departments unavailable; department list will be empty');
+        return [];
+      }),
     ]);
 
     const byDepartment = new Map<string, typeof pool>();
@@ -121,10 +141,19 @@ export async function commsAdminRoutes(app: FastifyInstance): Promise<void> {
       byDepartment.set(seat.department, list);
     }
 
+    const hrById = new Map(hrDepartments.map((d) => [d.id, d]));
+
     // Unlike the picker DTO, the admin view DOES expose the configured ids — that is the whole point of
     // the screen. It is why this route is all-department-admin gated.
     const departments = configs.map((c) => ({
       department: c.department,
+      hrDepartmentId: c.hrDepartmentId,
+      // The live HR name wins over the stored snapshot, so a rename shows immediately; the snapshot is the
+      // fallback for a department that has since been deleted from HR, which must still render as
+      // something in historical escalations.
+      label: (c.hrDepartmentId ? hrById.get(c.hrDepartmentId)?.name : null) ?? c.label ?? c.department,
+      /** True when this routing row is not yet tied to a real org department. */
+      unlinked: !c.hrDepartmentId,
       managerZohoUserId: c.managerZohoUserId,
       managerName: c.managerName,
       defaultAssigneeZohoUserId: c.defaultAssigneeZohoUserId,
@@ -180,7 +209,28 @@ export async function commsAdminRoutes(app: FastifyInstance): Promise<void> {
             (p) => p.active,
           ).length > 0,
       },
-      /** Slugs the UI may offer for a new department row. Reference, not an allowlist the server enforces. */
+      /**
+       * OUR OWN org departments, and whether each already has a routing row.
+       *
+       * `suggestedSlug` is what a new row would be keyed on — the routing key must stay a slug because it
+       * is stored on threads, built into the `comms:queue:<department>` topic and held in
+       * `TenantContext.departments` for RBAC. A null means the name cannot produce a valid slug (no letters,
+       * or it starts with a digit), so the UI must show it as unconfigurable rather than offer a broken row.
+       *
+       * `leadEmployeeId` is HR's department lead. It only SUGGESTS a level-3 manager in the picker — the
+       * config row is what routes, because that link resolves through a nullable heuristic zoho_user_id.
+       */
+      hrDepartments: hrDepartments.map((d) => ({
+        id: d.id,
+        name: d.name,
+        code: d.code,
+        parentId: d.parentId,
+        leadEmployeeId: d.leadEmployeeId,
+        leadName: d.leadName,
+        suggestedSlug: slugifyDepartment(d.name),
+        configured: configs.some((c) => c.hrDepartmentId === d.id),
+      })),
+      /** Legacy slug list, kept only so an unlinked seeded row still renders. Not an allowlist. */
       knownDepartments: KNOWN_DEPARTMENTS,
     };
   });

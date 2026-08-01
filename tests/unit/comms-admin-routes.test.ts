@@ -33,7 +33,8 @@ vi.mock('../../src/repos/hrEmployeeRepo.js', () => ({
 }));
 
 vi.mock('../../src/repos/hrDepartmentRepo.js', () => ({
-  hrDepartmentRepo: { listIdsLedBy: vi.fn(async () => []) },
+  // `list` feeds the HR-driven department section; `listIdsLedBy` marks a candidate as a department lead.
+  hrDepartmentRepo: { list: vi.fn(async () => []), listIdsLedBy: vi.fn(async () => []) },
 }));
 
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
@@ -47,6 +48,7 @@ import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { commsCatalogRepo } from '../../src/repos/commsCatalogRepo.js';
 import { commsDepartmentRepo } from '../../src/repos/commsDepartmentRepo.js';
+import { hrDepartmentRepo } from '../../src/repos/hrDepartmentRepo.js';
 import { hrEmployeeRepo } from '../../src/repos/hrEmployeeRepo.js';
 import type { MytrionDepartmentAgent, MytrionDepartmentConfig, MytrionTicketType } from '../../src/db/schema/index.js';
 
@@ -69,6 +71,7 @@ beforeEach(() => {
   depts.listPool.mockResolvedValue([]);
   catalog.list.mockResolvedValue([]);
   hr.listAllForMapping.mockResolvedValue([]);
+  vi.mocked(hrDepartmentRepo.list).mockResolvedValue([]);
 });
 
 /** `allDepartmentAccess` is derived from the profile, so the token carries a profile, not a flag. */
@@ -90,6 +93,8 @@ function configRow(over: Partial<MytrionDepartmentConfig> = {}): MytrionDepartme
     id: 'mdcf_1',
     tenantId: DEFAULT_TENANT_ID,
     department: 'customer-service',
+    hrDepartmentId: null,
+    label: null,
     ticketAssignmentStrategy: 'round_robin',
     requireOnline: true,
     defaultAssigneeZohoUserId: null,
@@ -239,6 +244,94 @@ describe('GET /routing — the shape the screen depends on', () => {
     expect(body.readiness.departmentsMissingManager).toEqual(['billing']);
     expect(body.readiness.cLevelConfigured).toBe(true);
     expect(body.escalationReasons.find((r: { code: string }) => r.code === 'ESC-01').routed).toBe(true);
+  });
+
+  it('returns OUR OWN hr_departments, flags which are configured, and suggests a routing slug', async () => {
+    vi.mocked(hrDepartmentRepo.list).mockResolvedValue([
+      { id: 'hrd_cs', name: 'Customer Service', code: 'CS', parentId: null, leadEmployeeId: 'e1', leadName: 'Bekzod' },
+      { id: 'hrd_bill', name: 'Billing & Accounting', code: null, parentId: null, leadEmployeeId: null, leadName: null },
+      // A name that cannot become a valid queue-topic slug — must be surfaced as unconfigurable, not as a
+      // broken row the admin can save.
+      { id: 'hrd_bad', name: '3PL Ops', code: null, parentId: null, leadEmployeeId: null, leadName: null },
+    ] as never);
+    depts.list.mockResolvedValue([
+      configRow({ department: 'customer-service', hrDepartmentId: 'hrd_cs', label: 'Old CS Name' }),
+    ]);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/comms/admin/routing',
+      headers: bearer(await tokenFor({ profile: 'Administrator', role: 'admin' })),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    const byId = new Map(body.hrDepartments.map((d: { id: string }) => [d.id, d]));
+    expect(byId.get('hrd_cs')).toMatchObject({ suggestedSlug: 'customer-service', configured: true, leadEmployeeId: 'e1' });
+    expect(byId.get('hrd_bill')).toMatchObject({ suggestedSlug: 'billing-accounting', configured: false });
+    expect(byId.get('hrd_bad')).toMatchObject({ suggestedSlug: null, configured: false });
+
+    // The LIVE HR name wins over the stored snapshot, so a rename in HR shows immediately.
+    const cs = body.departments.find((d: { department: string }) => d.department === 'customer-service');
+    expect(cs.label).toBe('Customer Service');
+    expect(cs.unlinked).toBe(false);
+  });
+
+  it('an unlinked routing row is flagged so it can be mapped, and still renders', async () => {
+    vi.mocked(hrDepartmentRepo.list).mockResolvedValue([]);
+    depts.list.mockResolvedValue([configRow({ department: 'billing', hrDepartmentId: null, label: null })]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/comms/admin/routing',
+      headers: bearer(await tokenFor({ profile: 'Administrator', role: 'admin' })),
+    });
+    const row = res.json().departments[0];
+    expect(row).toMatchObject({ department: 'billing', unlinked: true, label: 'billing' });
+  });
+
+  it('keeps the snapshot label when the HR department has since been deleted', async () => {
+    vi.mocked(hrDepartmentRepo.list).mockResolvedValue([]);
+    depts.list.mockResolvedValue([
+      configRow({ department: 'retention', hrDepartmentId: 'hrd_gone', label: 'Retention Team' }),
+    ]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/comms/admin/routing',
+      headers: bearer(await tokenFor({ profile: 'Administrator', role: 'admin' })),
+    });
+    // Historical escalations still have to render as something.
+    expect(res.json().departments[0].label).toBe('Retention Team');
+  });
+
+  it('degrades to an empty HR list rather than failing the whole screen', async () => {
+    vi.mocked(hrDepartmentRepo.list).mockRejectedValue(new Error('hr down'));
+    depts.list.mockResolvedValue([configRow()]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/comms/admin/routing',
+      headers: bearer(await tokenFor({ profile: 'Administrator', role: 'admin' })),
+    });
+    // Without HR an admin can still see and fix the routing rows that already exist.
+    expect(res.statusCode).toBe(200);
+    expect(res.json().hrDepartments).toEqual([]);
+    expect(res.json().departments).toHaveLength(1);
+  });
+
+  it('accepts an hrDepartmentId + label on a department patch', async () => {
+    depts.get.mockResolvedValue(configRow());
+    depts.upsertConfig.mockResolvedValue(configRow({ hrDepartmentId: 'hrd_cs', label: 'Customer Service' }));
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/comms/admin/departments/customer-service',
+      headers: bearer(await tokenFor({ profile: 'Administrator', role: 'admin' })),
+      payload: { hrDepartmentId: 'hrd_cs', label: 'Customer Service' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(depts.upsertConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      'customer-service',
+      expect.objectContaining({ hrDepartmentId: 'hrd_cs', label: 'Customer Service' }),
+    );
   });
 
   it('reports cLevelConfigured false when every C-Level seat is deactivated', async () => {

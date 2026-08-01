@@ -26,8 +26,31 @@ export interface PoolSeat {
   assignedCount: number;
 }
 
+export interface HrDepartmentOption {
+  id: string;
+  name: string;
+  code: string | null;
+  parentId: string | null;
+  /** HR's department lead — a SUGGESTION for the level-3 manager picker, never a selection. */
+  leadEmployeeId: string | null;
+  leadName: string | null;
+  /**
+   * The slug a new routing row would be keyed on. Null when the name cannot produce a valid one (no
+   * letters, or it starts with a digit) — such a department is unconfigurable until it is renamed, because
+   * the slug is what the WebSocket queue topic and the RBAC grants are built from.
+   */
+  suggestedSlug: string | null;
+  configured: boolean;
+}
+
 export interface DepartmentRouting {
+  /** The routing key. Stays a slug even though departments come from hr_departments. */
   department: string;
+  /** FK → hr_departments.id. Null = this row is not yet tied to a real org department. */
+  hrDepartmentId: string | null;
+  /** HR's live display name, falling back to the stored snapshot, falling back to the slug. */
+  label: string;
+  unlinked: boolean;
   /** ESCALATION LEVEL 3. */
   managerZohoUserId: string | null;
   managerName: string | null;
@@ -66,6 +89,9 @@ export interface RoutingSnapshot {
   escalationReasons: EscalationReasonRouting[];
   cLevel: PoolSeat[];
   readiness: RoutingReadiness;
+  /** OUR OWN org departments — the source of what a department IS. */
+  hrDepartments: HrDepartmentOption[];
+  /** Legacy slug list, kept only so an unlinked seeded row still renders. Not an allowlist. */
   knownDepartments: string[];
 }
 
@@ -103,6 +129,8 @@ export async function listRoutingCandidates(
 }
 
 export interface DepartmentPatch {
+  hrDepartmentId?: string | null;
+  label?: string | null;
   managerZohoUserId?: string | null;
   managerName?: string | null;
   defaultAssigneeZohoUserId?: string | null;

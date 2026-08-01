@@ -33,7 +33,12 @@ const C_LEVEL = 'c-level';
 /** The rung colours match the ladder legend, so a row and the legend never disagree about a level. */
 const RUNGS: { level: number; label: string; tone: string; where: string }[] = [
   { level: 1, label: 'Requester', tone: 'var(--tone-slate)', where: 'whoever raises it' },
-  { level: 2, label: 'Agent', tone: 'var(--tone-cyan)', where: 'set per escalation reason' },
+  {
+    level: 2,
+    label: 'Agent',
+    tone: 'var(--tone-cyan)',
+    where: "the target department's default assignee or roster; a reason-only raise uses the reason's fall-to user",
+  },
   { level: 3, label: 'Dept. Manager', tone: 'var(--tone-violet)', where: 'set per department' },
   { level: 4, label: 'C-Level', tone: 'var(--tone-amber)', where: 'the C-Level pool' },
 ];
@@ -118,6 +123,10 @@ export function EscalationRouting() {
   const escalationDepts = snap.departments.filter((d) => d.acceptsEscalations);
   const withManager = escalationDepts.filter((d) => d.managerZohoUserId).length;
   const cLevelSeats = snap.cLevel.filter((p) => p.active);
+  // Departments the org HAS but that nothing can be escalated to yet — the gap this screen exists to close.
+  const unconfiguredHr = snap.hrDepartments.filter((d) => !d.configured);
+  // A name that cannot produce a valid routing slug is unconfigurable until renamed, not merely unconfigured.
+  const unroutableHr = unconfiguredHr.filter((d) => d.suggestedSlug === null);
 
   return (
     <>
@@ -174,11 +183,13 @@ export function EscalationRouting() {
 
       <section className={e.section}>
         <div className={e.sectionHead}>
-          <h3 className={s.h2}>Level 2 — who each reason falls to</h3>
+          <h3 className={s.h2}>Level 2 — the fall-to user per reason</h3>
         </div>
         <p className={e.sectionSub}>
-          Choosing a reason IS choosing the person it lands on. An unrouted reason cannot be escalated on
-          at all — the agent is refused rather than filing into an empty inbox.
+          An escalation opened <em>against a department</em> goes to that department&rsquo;s default assignee
+          (or its roster) — set those below. This list is the fallback for a raise with no department in mind:
+          the person a reason lands on by itself. Either way an unrouted request is refused rather than filed
+          into an empty inbox.
         </p>
         <div className={e.rows}>
           {reasons.map((r) => (
@@ -192,8 +203,10 @@ export function EscalationRouting() {
           <h3 className={s.h2}>Level 3 — the department manager</h3>
         </div>
         <p className={e.sectionSub}>
-          Where an escalation rises to from the agent level. Also sets who receives a sideways hand-off
-          into this department. Escalations already in flight keep the assignee they were given.
+          The <strong>default assignee</strong> is level 2 for anything opened against this department, and
+          also who receives a sideways hand-off into it. The <strong>manager</strong> is level 3, where an
+          escalation rises from the agent level. Departments come from HR; escalations already in flight keep
+          the assignee they were given.
         </p>
         <div className={e.rows}>
           {snap.departments
@@ -203,6 +216,16 @@ export function EscalationRouting() {
             ))}
         </div>
       </section>
+
+      {unconfiguredHr.length > 0 && (
+        <p className={s.noticeNote}>
+          {unconfiguredHr.length} HR department{unconfiguredHr.length === 1 ? '' : 's'} have no routing row
+          yet, so nothing can be escalated to them:{' '}
+          {unconfiguredHr.map((d) => d.name).join(', ')}.
+          {unroutableHr.length > 0 &&
+            ` ${unroutableHr.map((d) => d.name).join(', ')} cannot be configured until renamed — a routing key needs to start with a letter.`}
+        </p>
+      )}
 
       <section className={e.section}>
         <div className={e.sectionHead}>
@@ -343,8 +366,18 @@ function DepartmentRow({
   return (
     <div className={`${e.row} ${needsManager ? e.rowGap : ''}`}>
       <div className={e.rowMain}>
-        <span className={e.rowTitle}>{dept.department}</span>
+        <span className={e.rowTitle}>
+          {/* HR's name, not the slug: 'Billing & Accounting' is what people call it. The slug is the
+              routing key and belongs in the metadata line, where it is useful for debugging. */}
+          {dept.label}
+          {dept.unlinked && (
+            <span className={s.pillWarn} title="Not tied to an HR department yet">
+              unlinked
+            </span>
+          )}
+        </span>
         <span className={e.rowMeta}>
+          <span className={e.rowCode}>{dept.department}</span>{' · '}
           {dept.acceptsEscalations ? 'Accepts escalations' : 'Not accepting escalations'}
           {dept.acceptsTickets ? ' · accepts tickets' : ''}
           {dept.pool.length > 0 ? ` · ${dept.pool.filter((p) => p.active).length} on the roster` : ''}

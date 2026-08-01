@@ -38,6 +38,9 @@ function snapshot(over: Partial<RoutingSnapshot> = {}): RoutingSnapshot {
     departments: [
       {
         department: 'customer-service',
+        hrDepartmentId: 'hrd_cs',
+        label: 'Customer Service',
+        unlinked: false,
         managerZohoUserId: '88',
         managerName: 'Bekzod',
         defaultAssigneeZohoUserId: null,
@@ -50,6 +53,9 @@ function snapshot(over: Partial<RoutingSnapshot> = {}): RoutingSnapshot {
       },
       {
         department: 'billing',
+        hrDepartmentId: 'hrd_bill',
+        label: 'Billing & Accounting',
+        unlinked: false,
         managerZohoUserId: null,
         managerName: null,
         defaultAssigneeZohoUserId: null,
@@ -87,6 +93,11 @@ function snapshot(over: Partial<RoutingSnapshot> = {}): RoutingSnapshot {
       departmentsMissingManager: ['billing'],
       cLevelConfigured: false,
     },
+    hrDepartments: [
+      { id: 'hrd_cs', name: 'Customer Service', code: 'CS', parentId: null, leadEmployeeId: 'e1', leadName: 'Bekzod', suggestedSlug: 'customer-service', configured: true },
+      { id: 'hrd_bill', name: 'Billing & Accounting', code: null, parentId: null, leadEmployeeId: null, leadName: null, suggestedSlug: 'billing-accounting', configured: true },
+      { id: 'hrd_new', name: 'Retention', code: null, parentId: null, leadEmployeeId: null, leadName: null, suggestedSlug: 'retention', configured: false },
+    ],
     knownDepartments: ['sales', 'customer-service', 'billing', 'c-level'],
     ...over,
   };

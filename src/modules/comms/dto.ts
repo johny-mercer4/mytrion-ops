@@ -52,7 +52,10 @@ export interface EscalationReasonDto {
 }
 
 export interface DepartmentOptionDto {
+  /** The routing key the client sends back when opening a request against this department. */
   department: string;
+  /** HR's display name ('Billing & Accounting'), falling back to the slug. What the picker shows. */
+  label: string;
   acceptsTickets: boolean;
   acceptsEscalations: boolean;
 }
@@ -85,6 +88,9 @@ export function toEscalationReasonDto(row: MytrionTicketType): EscalationReasonD
 export function toDepartmentOptionDto(row: MytrionDepartmentConfig): DepartmentOptionDto {
   return {
     department: row.department,
+    // The snapshot from hr_departments.name, or the slug. Never null: a picker with a blank option is
+    // worse than one showing 'customer-service'.
+    label: row.label ?? row.department,
     acceptsTickets: row.acceptsTickets,
     acceptsEscalations: row.acceptsEscalations,
   };

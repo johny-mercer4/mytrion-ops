@@ -439,6 +439,25 @@ const EnvSchema = z.object({
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
   // Hard cap for uploads AND generated artifacts.
   FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
+
+  // --- Dropbox: the storage for comms chat attachments ---
+  //
+  // Which provider a NEW comms attachment lands on. Per-provider rather than global because every
+  // existing file_assets row is on S3 and must keep resolving there — the row records its own provider, so
+  // flipping this only changes where the next upload goes.
+  COMMS_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
+  // Refresh-token grant. Dropbox access tokens last ~4h, so the refresh token is the durable credential;
+  // there is no place to persist a rotated one, which is why rotation must stay off on the Dropbox app.
+  DROPBOX_APP_KEY: z.string().default(''),
+  DROPBOX_APP_SECRET: z.string().default(''),
+  DROPBOX_REFRESH_TOKEN: z.string().default(''),
+  // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
+  // serve every tenant without their files interleaving.
+  DROPBOX_ROOT_PATH: z.string().default('/comms'),
+  // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
+  // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
+  // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
+  COMMS_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().max(2048).default(50),
   // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
   PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
 
@@ -700,6 +719,13 @@ export function assertRuntimeSecrets(): void {
     if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');
     if (!env.S3_SECRET_ACCESS_KEY) missing.push('S3_SECRET_ACCESS_KEY');
     if (!env.S3_BUCKET) missing.push('S3_BUCKET');
+  }
+  // Only when Dropbox is actually selected: the three credentials are optional otherwise, and warning
+  // about them on every S3 deploy would train people to ignore this list.
+  if (env.COMMS_STORAGE_PROVIDER === 'dropbox') {
+    if (!env.DROPBOX_APP_KEY) missing.push('DROPBOX_APP_KEY');
+    if (!env.DROPBOX_APP_SECRET) missing.push('DROPBOX_APP_SECRET');
+    if (!env.DROPBOX_REFRESH_TOKEN) missing.push('DROPBOX_REFRESH_TOKEN');
   }
 
   // Presence timing is a CORRECTNESS invariant, not a missing secret, so it throws in every

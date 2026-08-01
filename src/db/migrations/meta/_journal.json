@@ -582,6 +582,20 @@
       "when": 1785416400000,
       "tag": "0088_comms_catalog_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1785420000000,
+      "tag": "0089_comms_hr_department_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1785423600000,
+      "tag": "0090_file_assets_storage_provider",
+      "breakpoints": true
     }
   ]
 }

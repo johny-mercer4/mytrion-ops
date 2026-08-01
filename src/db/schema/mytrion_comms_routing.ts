@@ -108,7 +108,23 @@ export const mytrionDepartmentConfig = pgTable(
       .primaryKey()
       .$defaultFn(() => `mdcf_${createId()}`),
     tenantId: text('tenant_id').notNull(),
+    /**
+     * THE ROUTING KEY. Stored on `mytrion_threads.department`, built into the
+     * `comms:queue:<department>` WebSocket topic, and held in `TenantContext.departments` for RBAC — so it
+     * stays a slug even though departments themselves now come from `hr_departments`.
+     */
     department: text('department').notNull(),
+    /**
+     * FK → hr_departments.id. Departments are OUR OWN org data, not a hardcoded list, so the admin screen
+     * and the escalation picker are driven by this link rather than by KNOWN_DEPARTMENTS.
+     *
+     * Explicit rather than matched on a slugified name: a name match would silently orphan a department's
+     * whole routing config the first time HR renames it. Nullable because the rows 0087 seeded predate the
+     * link and must keep routing until an admin maps them.
+     */
+    hrDepartmentId: text('hr_department_id'),
+    /** Display name snapshotted from hr_departments.name, so a picker renders without joining HR. */
+    label: text('label'),
     ticketAssignmentStrategy: text('ticket_assignment_strategy')
       .$type<TicketAssignmentStrategy>()
       .notNull()
@@ -141,6 +157,17 @@ export const mytrionDepartmentConfig = pgTable(
     departmentUk: uniqueIndex('mytrion_department_config_dept_uk').on(
       table.tenantId,
       table.department,
+    ),
+    /**
+     * One config row per HR department. PARTIAL in the migration (`WHERE hr_department_id IS NOT NULL`) —
+     * the unlinked seeded rows are all NULL, and a plain unique index would treat only one of them as
+     * allowed. Drizzle cannot express the predicate, so this declaration is for typing; the migration is
+     * the authority. Do NOT use it as an ON CONFLICT arbiter: Postgres rejects a partial index as one
+     * unless the statement restates the predicate.
+     */
+    hrDepartmentUk: uniqueIndex('mytrion_department_config_hr_uk').on(
+      table.tenantId,
+      table.hrDepartmentId,
     ),
   }),
 );

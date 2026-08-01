@@ -340,10 +340,13 @@ describe('toTicketTypeDto / toDepartmentOptionDto — no routing ids either', ()
     expect(wire).not.toContain('111222');
     expect(wire).not.toContain('333444');
     expect(wire).not.toContain('Dept Lead');
+    // `label` is the HR display name the picker shows. The exact key set is the assertion: it is what
+    // proves no routing id (manager, default assignee, hr id) can be added here by accident.
     expect(Object.keys(toDepartmentOptionDto(config)).sort()).toEqual([
       'acceptsEscalations',
       'acceptsTickets',
       'department',
+      'label',
     ]);
   });
 });
