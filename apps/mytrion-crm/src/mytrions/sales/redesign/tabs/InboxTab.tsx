@@ -1,256 +1,337 @@
 /**
- * Sales Mytrion redesign — Inbox tab. Ported verbatim from the reference prototype's
- * `isInbox` slice + renderVals() view-model (script.js). Filter tabs (All/Unread/Tasks/
- * Alerts/Reminders) with live counts; message rows with a type icon + colored bar, priority
- * badge, tag, unread dot, per-row mark-read + delete actions; "Mark all read"; empty state.
- * DATA: live CRM inbox via loadInbox() (inbox.list); delete via deleteInboxMessage (optimistic);
- * read-state kept local in localStorage; live toast + push are shell-owned
- * (`useSidebarBadges`); this tab refetches via `inboxLiveBus` and keeps a socket only for Live/OFFLINE.
+ * Server-paginated, realtime Sales inbox with optimistic read/unread/delete actions.
+ * Page chrome is the shared `SalesPage` — the top bar already says "Inbox", so the tab doesn't.
  */
-import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
-import { badge, iconBox, ICO } from '../salesData';
+import { badge, iconBox, ICO, NAV_DESC } from '../salesData';
 import { useSales } from '../ctx';
-import { useLoad, loadInbox, deleteInboxMessage, invalidateInboxCache, type InboxVM } from '../live';
+import {
+  SalesEmpty,
+  SalesErrorNote,
+  SalesPage,
+  SalesPageHead,
+  SalesPager,
+  SalesSubTabs,
+  type SalesSubTab,
+} from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
+import {
+  deleteInboxMessage,
+  invalidateInboxCache,
+  loadInboxPage,
+  setAllInboxRead,
+  setInboxRead,
+  type InboxVM,
+} from '../live';
 import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
-import { useServerCrmSocket } from '../useServerCrmSocket';
-import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
+import { useSocketConnected } from '../socketStatus';
+import { useCachedLoad, writeDcCache } from '../dcCache';
 
-type InboxItem = InboxVM;
-type IType = InboxItem['type'];
 type FilterId = 'all' | 'unread' | 'task' | 'alert' | 'reminder';
+type InboxPageVM = Awaited<ReturnType<typeof loadInboxPage>>;
 
-// type → icon path / bar color (reference iconOf/colOf)
-const iconOf: Record<IType, IconName> = {
-  critical: ICO.warn, task: ICO.check, warning: ICO.warn, reminder: ICO.clock, info: ICO.bell,
+const PAGE_SIZE = 25;
+const iconOf: Record<InboxVM['type'], IconName> = {
+  critical: ICO.warn,
+  task: ICO.check,
+  warning: ICO.warn,
+  reminder: ICO.clock,
+  info: ICO.bell,
 };
-const colOf: Record<IType, string> = {
-  critical: 'var(--danger)', task: 'var(--accent)', warning: 'var(--orange)', reminder: 'var(--warn)', info: 'var(--ok)',
+const colOf: Record<InboxVM['type'], string> = {
+  critical: 'var(--danger)',
+  task: 'var(--accent)',
+  warning: 'var(--orange)',
+  reminder: 'var(--warn)',
+  info: 'var(--ok)',
 };
 const prioCol: Record<string, string> = {
-  high: 'var(--danger)', medium: 'var(--warn)', small: 'var(--ok)', low: 'var(--ok)',
+  high: 'var(--danger)',
+  medium: 'var(--warn)',
+  small: 'var(--ok)',
+  low: 'var(--ok)',
 };
-
 const TAB_DEFS: ReadonlyArray<readonly [FilterId, string]> = [
-  ['all', 'All'], ['unread', 'Unread'], ['task', 'Tasks'], ['alert', 'Alerts'], ['reminder', 'Reminders'],
+  ['all', 'All'],
+  ['unread', 'Unread'],
+  ['task', 'Tasks'],
+  ['alert', 'Alerts'],
+  ['reminder', 'Reminders'],
 ];
+
+function categoryOf(item: InboxVM): Exclude<FilterId, 'all' | 'unread'> {
+  if (item.type === 'task') return 'task';
+  if (item.type === 'warning' || item.type === 'critical') return 'alert';
+  return 'reminder';
+}
 
 export function InboxTab() {
   const { openDetail, pushToast } = useSales();
   const { actingAs } = useImpersonation();
-  const [inboxFilter, setInboxFilter] = useState<string>('all');
-  // Read-state lives in the shared store so marking a message read here drops the sidebar Inbox badge.
-  const read = useInboxRead();
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [wsReady, setWsReady] = useState(false);
-  const [refreshSpin, setRefreshSpin] = useState(false);
-  const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => () => {
-    if (spinTimer.current) clearTimeout(spinTimer.current);
-  }, []);
-
-  // The effective CRM user this inbox belongs to (the acted-as agent for an admin, else the
-  // signed-in worker) — the same id the fetch is scoped to and that WS events must match.
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
+  const wsReady = useSocketConnected();
+  const [filter, setFilter] = useState<FilterId>('all');
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([undefined]);
 
-  // ---- live data (inbox.list) mirrored into local state for optimistic delete ----
-  // Keyed on currentUserId so View-as swaps refetch the acted-as agent's inbox.
-  const { data, loading, error, reload } = useLoad(loadInbox, [currentUserId]);
   useEffect(() => {
-    if (data) setItems(data);
-  }, [data]);
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
-  // ---- real-time: Shell owns toast + WS; this tab refetches via inboxLiveBus.
-  //      Local socket is only for the Live/OFFLINE indicator. ----
-  useServerCrmSocket({
-    enabled: !!currentUserId,
-    watchKey: currentUserId,
-    subscribe: { type: 'subscribe', userId: currentUserId },
-    onOpen: () => setWsReady(true),
-    onClose: () => setWsReady(false),
-  });
-  useEffect(() => subscribeInboxLive(() => reload()), [reload]);
+  const cursor = pageCursors[page - 1];
+  const cacheKey = `sales:inbox:${currentUserId}:${filter}:${page}:${encodeURIComponent(debouncedQuery)}`;
+  const load = useCachedLoad(
+    cacheKey,
+    () => loadInboxPage({
+      page,
+      pageSize: PAGE_SIZE,
+      filter,
+      query: debouncedQuery,
+      ...(cursor ? { cursor } : {}),
+    }),
+    { staleMs: 30_000 },
+  );
+  const items = load.data?.items ?? [];
+  const counts = load.data?.counts ?? { all: 0, unread: 0, task: 0, alert: 0, reminder: 0 };
+  const total = load.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // ---- view-model (mirrors renderVals()) ----
-  const fMatch = (i: InboxItem): boolean => {
-    const f = inboxFilter;
-    if (f === 'all') return true;
-    if (f === 'unread') return !read[i.id];
-    if (f === 'alert') return i.type === 'warning' || i.type === 'critical';
-    if (f === 'reminder') return i.type === 'reminder' || i.type === 'info';
-    return i.type === f;
+  const resetPaging = (): void => {
+    setPage(1);
+    setPageCursors([undefined]);
   };
-  const iCount: Record<FilterId, number> = {
-    all: items.length,
-    unread: items.filter((i) => !read[i.id]).length,
-    task: items.filter((i) => i.type === 'task').length,
-    alert: items.filter((i) => i.type === 'warning' || i.type === 'critical').length,
-    reminder: items.filter((i) => i.type === 'reminder' || i.type === 'info').length,
-  };
-  const filtered = items.filter(fMatch);
-  const isInitialLoading = loading && items.length === 0;
-  const hasError = Boolean(error) && items.length === 0;
-  const inboxHas = filtered.length > 0;
-  const inboxEmpty = !isInitialLoading && !hasError && filtered.length === 0;
-  const inboxUnreadHas = iCount.unread > 0;
-  const inboxEmptyLabel = inboxFilter === 'all' ? '' : inboxFilter + ' ';
 
-  // ---- handlers ----
-  const markAllRead = () => {
-    markInboxReadMany(items.map((i) => i.id));
-    pushToast('All caught up', 'Marked everything as read');
+  const nextPage = (): void => {
+    const nextCursor = load.data?.nextCursor;
+    if (!nextCursor) return;
+    setPageCursors((current) => {
+      const next = [...current];
+      next[page] = nextCursor;
+      return next;
+    });
+    setPage((value) => value + 1);
   };
-  const refreshInbox = (): void => {
-    if (refreshSpin) return;
-    setRefreshSpin(true);
-    // Bypass the shared 30s cache; the badge's bus-triggered reload joins this one POST.
+
+  useEffect(() => subscribeInboxLive(() => load.reload()), [load.reload]);
+
+  const sync = (value: InboxPageVM): void => {
+    writeDcCache(cacheKey, value);
+  };
+  const finishMutation = (): void => {
     invalidateInboxCache();
-    reload();
     publishInboxReload();
-    if (spinTimer.current) clearTimeout(spinTimer.current);
-    spinTimer.current = setTimeout(() => setRefreshSpin(false), 900);
   };
-  const refreshSpinCss = refreshSpin ? 'animation:ss-spin .9s linear infinite' : '';
-  const markReadOnly = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    markInboxRead(i.id);
-  };
-  const deleteInbox = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    // Optimistic remove with rollback — a failed delete puts the row back where it was.
-    const prev = items;
-    setItems((xs) => xs.filter((x) => x.id !== i.id));
-    void deleteInboxMessage(i.id)
-      // Drop the cached list so the 30s-cached copy can't resurrect the deleted row on the
-      // next Home-preview/badge mount.
-      .then(() => {
-        invalidateInboxCache();
-        pushToast('Message removed', '');
-      })
-      .catch((err: unknown) => {
-        setItems(prev);
-        pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
+
+  const toggleRead = (item: InboxVM, event?: MouseEvent<HTMLButtonElement>): void => {
+    event?.stopPropagation();
+    if (!load.data) return;
+    const previous = load.data;
+    const nextRead = !item.read;
+    const nextItems = previous.items
+      .map((row) => (row.id === item.id ? { ...row, read: nextRead } : row))
+      .filter((row) => filter !== 'unread' || !row.read);
+    sync({
+      ...previous,
+      items: nextItems,
+      counts: {
+        ...previous.counts,
+        unread: Math.max(0, previous.counts.unread + (nextRead ? -1 : 1)),
+      },
+      total: filter === 'unread' ? Math.max(0, previous.total + (nextRead ? -1 : 1)) : previous.total,
+    });
+    void setInboxRead(item.id, nextRead)
+      .then(() => finishMutation())
+      .catch((error: unknown) => {
+        sync(previous);
+        pushToast('Inbox not updated', error instanceof Error ? error.message : 'Try again.');
       });
   };
-  const openInbox = (i: InboxItem) => {
-    markInboxRead(i.id);
+
+  const markAllRead = (): void => {
+    if (!load.data) return;
+    const previous = load.data;
+    sync({
+      ...previous,
+      items: filter === 'unread' ? [] : previous.items.map((item) => ({ ...item, read: true })),
+      counts: { ...previous.counts, unread: 0 },
+      total: filter === 'unread' ? 0 : previous.total,
+      hasMore: filter === 'unread' ? false : previous.hasMore,
+    });
+    void setAllInboxRead()
+      .then(() => {
+        finishMutation();
+        pushToast('All caught up', 'Marked every inbox message as read.');
+      })
+      .catch((error: unknown) => {
+        sync(previous);
+        pushToast('Inbox not updated', error instanceof Error ? error.message : 'Try again.');
+      });
+  };
+
+  const remove = (item: InboxVM, event: MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    if (!load.data) return;
+    const previous = load.data;
+    const group = categoryOf(item);
+    sync({
+      ...previous,
+      items: previous.items.filter((row) => row.id !== item.id),
+      counts: {
+        ...previous.counts,
+        all: Math.max(0, previous.counts.all - 1),
+        unread: Math.max(0, previous.counts.unread - (item.read ? 0 : 1)),
+        [group]: Math.max(0, previous.counts[group] - 1),
+      },
+      total: Math.max(0, previous.total - 1),
+    });
+    void deleteInboxMessage(item.id)
+      .then(() => {
+        finishMutation();
+        pushToast('Message removed', '');
+      })
+      .catch((error: unknown) => {
+        sync(previous);
+        pushToast('Delete failed', error instanceof Error ? error.message : 'Could not remove the message.');
+      });
+  };
+
+  const openInbox = (item: InboxVM): void => {
+    if (!item.read) toggleRead(item);
     openDetail({
-      title: i.title,
-      body: i.desc,
-      icon: iconOf[i.type],
-      iconStyle: iconBox(colOf[i.type], 44),
+      title: item.title,
+      body: item.desc,
+      icon: iconOf[item.type],
+      iconStyle: iconBox(colOf[item.type], 44),
       metaLabel: 'Received:',
-      meta: i.time,
-      badges: [badge(i.prio.toUpperCase(), colOf[i.type]), ...(i.tag ? [badge(i.tag, 'var(--muted)')] : [])],
+      meta: item.time,
+      badges: [badge(item.prio.toUpperCase(), colOf[item.type]), ...(item.tag ? [badge(item.tag, 'var(--muted)')] : [])],
     });
   };
 
+  const cold = load.loading && !load.data;
+  const filterTabs: ReadonlyArray<SalesSubTab<FilterId>> = TAB_DEFS.map(([id, label]) => ({
+    id,
+    label,
+    count: counts[id] || undefined,
+  }));
+
   return (
-    <div className="ss-fu">
-      <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px')}>
-        <div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Inbox</div>
-          <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
-        </div>
-        <div style={s('display:flex;align-items:center;gap:9px')}>
-          <span style={s(`display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
-            <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
-          </span>
-          <button
-            type="button"
-            onClick={refreshInbox}
-            disabled={refreshSpin}
-            aria-label="Refresh inbox"
-            title="Fetch latest messages"
-            className="ss-ico-btn"
-            style={s('width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
-          >
-            <Icon name="refresh" size={15} style={s(refreshSpinCss)} />
-          </button>
-          {inboxUnreadHas && (
-            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer')}>Mark all read</button>
-          )}
+    <SalesPage busy={cold || load.revalidating}>
+      <SalesPageHead
+        description={NAV_DESC.inbox}
+        eyebrow={wsReady ? 'Live' : 'Reconnecting'}
+        eyebrowTone={wsReady ? 'ok' : 'warn'}
+        actions={
+          counts.unread > 0 ? (
+            <button type="button" onClick={markAllRead} className="ss-pager-btn">
+              Mark all read
+            </button>
+          ) : null
+        }
+      />
+
+      <div className="ss-toolbar">
+        <div className="ss-search">
+          <Icon name="search" size={16} />
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.currentTarget.value);
+              resetPaging();
+            }}
+            aria-label="Search inbox"
+            placeholder="Search subject, content or tag…"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="ss-search-clear"
+              aria-label="Clear search"
+              onClick={() => {
+                setQuery('');
+                resetPaging();
+              }}
+            >
+              <Icon name="close" size={13} strokeWidth={2.4} />
+            </button>
+          ) : null}
         </div>
       </div>
-      <div style={s('display:flex;gap:9px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px')}>
-        {TAB_DEFS.map(([id, label]) => {
-          const on = inboxFilter === id;
-          const count = iCount[id];
-          const style = `padding:8px 15px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${on ? 'var(--accent)' : 'var(--muted)'};border-radius:99px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`;
+
+      <SalesSubTabs
+        items={filterTabs}
+        value={filter}
+        label="Inbox filter"
+        size="sm"
+        onChange={(next) => {
+          setFilter(next);
+          resetPaging();
+        }}
+      />
+
+      {cold ? <SalesBodySkeleton variant="rows" rows={4} /> : null}
+      {/* An error on a background refresh must not hide the rows that are already working — hence
+          `inline` above the list rather than a state that replaces it. */}
+      {load.error ? <SalesErrorNote inline={items.length > 0}>{load.error}</SalesErrorNote> : null}
+      {!cold && !load.error && items.length === 0 ? (
+        <SalesEmpty
+          icon="check"
+          tone="ok"
+          title="All caught up"
+          body={
+            debouncedQuery
+              ? 'No messages match this search.'
+              : `No ${filter === 'all' ? '' : `${filter} `}messages right now.`
+          }
+        />
+      ) : null}
+
+      {items.length ? <div style={s('display:flex;flex-direction:column;gap:11px')}>
+        {items.map((item) => {
+          const unread = !item.read;
+          const tone = colOf[item.type];
+          const priority = badge(item.prio.toUpperCase(), prioCol[item.prio] || 'var(--muted)');
           return (
-            <button key={id} onClick={() => setInboxFilter(id)} style={s(style)}>
-              {label} {count > 0 && (<span style={s('opacity:.7')}>· {String(count)}</span>)}
-            </button>
+            <div key={item.id} className="ss-card-h" style={s(`width:100%;display:flex;align-items:stretch;gap:8px;padding:12px 12px 12px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.28)' : 'var(--border)'};color:var(--text);box-shadow:var(--shadow-sm);position:relative;overflow:hidden`)}>
+              <span style={s(`position:absolute;left:0;inset-block:0;width:3px;background:${tone}`)} />
+              <button type="button" onClick={() => openInbox(item)} style={s('flex:1;min-width:0;display:flex;align-items:flex-start;gap:13px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;padding:3px 4px')}>
+                <span style={s(`${iconBox(tone, 40)};margin-left:1px`)}><Icon name={iconOf[item.type]} size={17} /></span>
+                <span style={s('flex:1;min-width:0')}>
+                  <span style={s('display:block;font-size:14px;font-weight:700;line-height:1.35')}>{item.title}</span>
+                  <span style={s('display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;color:var(--muted);margin-top:4px;line-height:1.5')}>{item.desc}</span>
+                  <span style={s('display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap')}>
+                    <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{item.time}</span>
+                    <span style={s(priority.style)}>{priority.text}</span>
+                    {item.tag ? <span style={s('font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{item.tag}</span> : null}
+                  </span>
+                </span>
+              </button>
+              <span style={s('display:flex;flex-direction:column;gap:7px;flex-shrink:0')}>
+                <button type="button" onClick={(event) => toggleRead(item, event)} aria-label={unread ? 'Mark read' : 'Mark unread'} title={unread ? 'Mark read' : 'Mark unread'} className="ss-ico-btn" style={s('width:40px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name={unread ? 'check' : 'inbox'} size={15} /></button>
+                <button type="button" onClick={(event) => remove(item, event)} aria-label="Delete message" title="Delete message" className="ss-ico-btn" style={s('width:40px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="close" size={15} /></button>
+              </span>
+            </div>
           );
         })}
-      </div>
-      {isInitialLoading && (
-        <div style={s('display:flex;flex-direction:column;gap:11px;padding:8px 0')}>
-          {[1, 2, 3].map((sk) => (
-            <div key={sk} style={s('display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-              <div className="ss-skel" style={s('width:38px;height:38px;border-radius:var(--radius-md);flex-shrink:0')} />
-              <div style={s('flex:1;display:flex;flex-direction:column;gap:8px')}>
-                <div className="ss-skel" style={s('width:52%;height:14px')} />
-                <div className="ss-skel" style={s('width:88%;height:12px')} />
-                <div className="ss-skel" style={s('width:34%;height:11px')} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {hasError && (
-        <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:14px')}>{error}</div>
-      )}
-      {inboxHas && (
-        <div style={s('display:flex;flex-direction:column;gap:11px')}>
-          {filtered.map((i) => {
-            const unread = !read[i.id];
-            const barColor = colOf[i.type];
-            const rowStyle = `display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.25)' : 'var(--border)'};cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden`;
-            const prioBadge = badge(i.prio.toUpperCase(), prioCol[i.prio] || 'var(--muted)');
-            return (
-              <div key={i.id} onClick={() => openInbox(i)} className="ss-card-h" style={s(rowStyle)}>
-                <div style={s('position:absolute;left:0;top:0;bottom:0;width:3px;background:' + barColor)}></div>
-                {unread && (<div style={s('position:absolute;left:11px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--accent)')}></div>)}
-                <div style={s(iconBox(colOf[i.type], 38) + ';margin-left:6px')}><Icon name={iconOf[i.type]} size={16} /></div>
-                <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:14px;font-weight:700;line-height:1.3')}>{i.title}</div>
-                  <div style={s('font-size:13px;color:var(--muted);margin-top:4px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{i.desc}</div>
-                  <div style={s('display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap')}>
-                    <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{i.time}</span>
-                    <span style={s(prioBadge.style)}>{prioBadge.text}</span>
-                    {i.tag && <span style={s('font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{i.tag}</span>}
-                  </div>
-                </div>
-                <div style={s('display:flex;flex-direction:column;gap:6px;flex-shrink:0')}>
-                  {unread && (
-                    <button onClick={(e) => markReadOnly(i, e)} aria-label="Mark read" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                      <Icon name="check" size={14} strokeWidth={2.4} />
-                    </button>
-                  )}
-                  <button onClick={(e) => deleteInbox(i, e)} aria-label="Delete" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                    <Icon name="close" size={14} strokeWidth={2.2} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {inboxEmpty && (
-        <div style={s('text-align:center;padding:64px 20px;color:var(--muted)')}>
-          <div style={s('width:72px;height:72px;border-radius:50%;background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--ok)')}>
-            <Icon name="check" size={34} strokeWidth={1.6} />
-          </div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.05em;color:var(--text)')}>All caught up!</div>
-          <div style={s('font-size:14px;margin-top:5px')}>No {inboxEmptyLabel}notifications right now.</div>
-        </div>
-      )}
-    </div>
+      </div> : null}
+
+      {total > PAGE_SIZE ? (
+        <SalesPager
+          page={page}
+          pageCount={pageCount}
+          // Cursor-paged: forward needs the server's cursor, back is plain state.
+          onPage={(next) => (next > page ? nextPage() : setPage(next))}
+          nextDisabled={!load.data?.nextCursor}
+          summary={`Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+        />
+      ) : null}
+    </SalesPage>
   );
 }

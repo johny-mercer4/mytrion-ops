@@ -5,6 +5,7 @@ import { registerAllWrappers } from '../../integrations/core/registerAll.js';
 import { wrapperHealthAll } from '../../integrations/core/registry.js';
 import { RBACError } from '../../lib/errors.js';
 import { requireContext } from './helpers.js';
+import { getCommsSchemaReadiness } from '../../modules/comms/readiness.js';
 
 const integrationsQuery = z.object({
   // live=1 runs each wrapper's cheap probe (SELECT 1 / ping). Off by default: Zoho probes
@@ -14,14 +15,18 @@ const integrationsQuery = z.object({
 
 /** Readiness probe (DB-aware) at GET /v1/health. The liveness probe is GET /health. */
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/health', async () => {
+  app.get('/health', async (_request, reply) => {
     let db = false;
+    let comms = { ready: false, missing: [] as string[] };
     try {
       db = await pingDb();
+      if (db) comms = await getCommsSchemaReadiness();
     } catch {
       db = false;
     }
-    return { ok: db, db, time: new Date().toISOString() };
+    const ok = db && comms.ready;
+    if (!ok) reply.code(503);
+    return { ok, db, comms, time: new Date().toISOString() };
   });
 
   /**

@@ -25,15 +25,11 @@ export const SOON_TABS: Record<string, SoonTabMeta> = {
     icon: 'verification',
     hue: 'var(--violet)',
   },
-  tickets: {
-    title: 'Tickets',
-    blurb: 'Your Desk ticket queue is coming soon. Use Create and Data Center for leads and deals in the meantime.',
-    icon: 'tickets',
-    hue: 'var(--accent)',
-  },
+  // No `tickets` entry: the native comms console is live, so it is never rendered as coming-soon.
+  // The old blurb also still advertised the Zoho Desk queue, which Sales no longer talks to at all.
   callHub: {
     title: 'Call Hub',
-    blurb: 'Click-to-dial history, callbacks, and call notes will land here next.',
+    blurb: 'Your Mytrion and Zoho call history lives here. Callbacks queue and richer notes are next.',
     icon: 'callHub',
     hue: 'var(--ok)',
   },

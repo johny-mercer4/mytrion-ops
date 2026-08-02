@@ -280,6 +280,24 @@ export async function dispatchTouchpoint(
   key: string,
   rawParams: unknown,
 ): Promise<TouchpointResult> {
+  const invocation = await prepareTouchpointInvocation(ctx, key, rawParams);
+  return dispatchPreparedTouchpoint(ctx, invocation);
+}
+
+export interface PreparedTouchpointInvocation {
+  touchpoint: Touchpoint;
+  params: Record<string, unknown>;
+}
+
+/**
+ * Authorize and normalize every invocation before a read-cache lookup. Cache hits must never bypass
+ * department RBAC, schema validation, identity injection, or carrier ownership checks.
+ */
+export async function prepareTouchpointInvocation(
+  ctx: TenantContext,
+  key: string,
+  rawParams: unknown,
+): Promise<PreparedTouchpointInvocation> {
   const tp = getTouchpoint(key);
   if (!tp) throw new NotFoundError(`Unknown touchpoint '${key}'`);
   assertInvokable(ctx, tp);
@@ -298,6 +316,14 @@ export async function dispatchTouchpoint(
     await assertCarrierOwned(ctx, String(carrier));
   }
 
-  const data = await executeTouchpointKind(ctx, tp, params);
-  return { key: tp.key, kind: tp.kind, data };
+  return { touchpoint: tp, params };
+}
+
+/** Execute an invocation that has already passed prepareTouchpointInvocation. */
+export async function dispatchPreparedTouchpoint(
+  ctx: TenantContext,
+  invocation: PreparedTouchpointInvocation,
+): Promise<TouchpointResult> {
+  const data = await executeTouchpointKind(ctx, invocation.touchpoint, invocation.params);
+  return { key: invocation.touchpoint.key, kind: invocation.touchpoint.kind, data };
 }

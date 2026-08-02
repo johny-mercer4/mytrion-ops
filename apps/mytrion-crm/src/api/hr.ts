@@ -87,7 +87,9 @@ export async function getHrMe(signal?: AbortSignal): Promise<HrEmployeeDto> {
   })) as HrEmployeeDto;
 }
 
-export async function listHrEmployees(opts: ListHrEmployeesOpts = {}): Promise<ListHrEmployeesResult> {
+export async function listHrEmployees(
+  opts: ListHrEmployeesOpts = {},
+): Promise<ListHrEmployeesResult> {
   const data = await request('GET', '/hr/employees', {
     query: {
       q: opts.q,
@@ -129,11 +131,9 @@ export async function linkHrEmployeeZohoUser(
   employeeId: string,
   zohoUserId: string | null,
 ): Promise<HrEmployeeDto> {
-  return (await request(
-    'PATCH',
-    `/hr/employees/${encodeURIComponent(employeeId)}/zoho-user`,
-    { body: { zohoUserId } },
-  )) as HrEmployeeDto;
+  return (await request('PATCH', `/hr/employees/${encodeURIComponent(employeeId)}/zoho-user`, {
+    body: { zohoUserId },
+  })) as HrEmployeeDto;
 }
 
 // ── Org graph (`GET /hr/org-structure`) ─────────────────────────────────────
@@ -215,8 +215,13 @@ export async function createHrEmployee(body: HrEmployeeWriteInput): Promise<HrEm
   return (await request('POST', '/hr/employees', { body })) as HrEmployeeDto;
 }
 
-export async function updateHrEmployee(id: string, body: HrEmployeePatchInput): Promise<HrEmployeeDto> {
-  return (await request('PATCH', `/hr/employees/${encodeURIComponent(id)}`, { body })) as HrEmployeeDto;
+export async function updateHrEmployee(
+  id: string,
+  body: HrEmployeePatchInput,
+): Promise<HrEmployeeDto> {
+  return (await request('PATCH', `/hr/employees/${encodeURIComponent(id)}`, {
+    body,
+  })) as HrEmployeeDto;
 }
 
 export async function deleteHrEmployee(id: string): Promise<void> {
@@ -336,6 +341,11 @@ export async function deleteHrDepartment(id: string): Promise<void> {
 // ── Attendance (Mytrion-owned punches + shifts) ───────────────────────────────
 
 export type AttendanceDayStatus = 'Present' | 'Absent' | 'Weekend' | 'Unscheduled';
+export type AttendancePresenceState =
+  | 'in_office'
+  | 'out_of_office'
+  | 'no_activity'
+  | 'needs_review';
 
 export interface AttendanceDayRow {
   date: string;
@@ -345,7 +355,7 @@ export interface AttendanceDayRow {
   hoursWorked: string;
   hoursWorkedMs: number;
   punchCount: number;
-  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  currentState: AttendancePresenceState;
   unmatchedPunches: number;
   sessions: Array<{
     checkIn: string;
@@ -354,6 +364,9 @@ export interface AttendanceDayRow {
     checkOutDoor: string | null;
     duration: string;
     durationMs: number;
+    checkInAt: string;
+    checkOutAt: string | null;
+    status: 'complete' | 'open' | 'needs_review';
   }>;
 }
 
@@ -361,6 +374,7 @@ export interface AttendanceSummaryDto {
   employeeId: string;
   from: string;
   to: string;
+  calculatedAt: string;
   timezone: 'Asia/Tashkent';
   shift: {
     id: string;
@@ -386,7 +400,7 @@ export interface AttendanceSummaryDto {
     localDateTime: string;
     doorName: string | null;
   } | null;
-  currentState: 'in_office' | 'out_of_office' | 'no_activity';
+  currentState: AttendancePresenceState;
 }
 
 export interface HrAttendanceShiftDto {
@@ -408,12 +422,14 @@ export interface HrAttendanceShiftWrite {
   isActive?: boolean;
 }
 
-export async function getMyAttendance(opts: {
-  from?: string;
-  to?: string;
-  weekOf?: string;
-  signal?: AbortSignal;
-} = {}): Promise<AttendanceSummaryDto> {
+export async function getMyAttendance(
+  opts: {
+    from?: string;
+    to?: string;
+    weekOf?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<AttendanceSummaryDto> {
   return (await request('GET', '/hr/attendance/me', {
     query: {
       from: opts.from,
@@ -474,14 +490,16 @@ export interface AttendanceTeamListDto {
   items: AttendanceTeamListItem[];
 }
 
-export async function getAttendanceTeam(opts: {
-  from?: string;
-  to?: string;
-  weekOf?: string;
-  scope?: AttendanceTeamScope;
-  q?: string;
-  signal?: AbortSignal;
-} = {}): Promise<AttendanceTeamListDto> {
+export async function getAttendanceTeam(
+  opts: {
+    from?: string;
+    to?: string;
+    weekOf?: string;
+    scope?: AttendanceTeamScope;
+    q?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<AttendanceTeamListDto> {
   return (await request('GET', '/hr/attendance/team', {
     query: {
       from: opts.from,
@@ -508,9 +526,7 @@ export async function exportAttendanceCsv(opts: {
   })) as { csv: string; filename: string };
 }
 
-export async function listAttendanceShifts(
-  signal?: AbortSignal,
-): Promise<HrAttendanceShiftDto[]> {
+export async function listAttendanceShifts(signal?: AbortSignal): Promise<HrAttendanceShiftDto[]> {
   const data = await request('GET', '/hr/attendance/shifts', {
     ...(signal ? { signal } : {}),
   });

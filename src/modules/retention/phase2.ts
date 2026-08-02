@@ -83,6 +83,14 @@ export function resolvePhase2Transition(
           expose: true,
         });
       }
+      const currentOwner = row.assignedAgentZohoUserId?.trim();
+      if (currentOwner && currentOwner !== actor) {
+        throw new AppError('Retention case is already assigned to another agent', {
+          statusCode: 409,
+          code: 'RETENTION_ALREADY_ASSIGNED',
+          expose: true,
+        });
+      }
       const wait = stampRetentionWaitDeadline(now);
       return {
         phaseCode: RETENTION_PHASE.retention,

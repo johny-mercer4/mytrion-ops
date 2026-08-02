@@ -9,7 +9,9 @@ export function getOpenAIClient(): OpenAI {
   }
   client ??= new OpenAI({
     apiKey: config.openaiApiKey,
-    maxRetries: 2,
+    // Retry-After, RPM/TPM admission, and circuit breaking are centralized in
+    // openaiResilience so SDK retries cannot bypass accounting.
+    maxRetries: 0,
     timeout: config.openaiRequestTimeoutMs,
   });
   return client;

@@ -7,13 +7,15 @@ import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js'
 import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
-// Always-on core tools + the flag-gated native Telegram toolkit (6 tools, all internal-audience).
-// Core = 7 originals + 8 servercrm client-service / UI tools (crm.pick_my_client, crm.list_my_clients,
-// crm.carrier_balance/overview, crm.list_cards, crm.transactions, crm.payment_info, ui.request_choice)
-// + analytics.snapshot (cached org-wide dashboard aggregates, bound to every department agent).
-const CORE_TOOL_COUNT = 16;
+// Keep the catalog total explicit per feature family so every flag combination remains deterministic.
+// Base = knowledge + 4 Zoho + 3 agent + analytics + DAG + 8 servercrm/UI tools.
+const CORE_TOOL_COUNT = 18;
+const DBT_TOOL_COUNT = env.FF_DBT_MCP_ENABLED ? 1 : 0;
+const BLACKBOARD_TOOL_COUNT = env.FF_AGENT_BLACKBOARD ? 2 : 0;
+const FILE_TOOL_COUNT = env.FF_FILES_ENABLED ? 6 : 0;
 const TELEGRAM_TOOL_COUNT = env.FF_TELEGRAM_ENABLED ? 6 : 0;
-const INTERNAL_TOOL_COUNT = CORE_TOOL_COUNT + TELEGRAM_TOOL_COUNT;
+const INTERNAL_TOOL_COUNT =
+  CORE_TOOL_COUNT + DBT_TOOL_COUNT + BLACKBOARD_TOOL_COUNT + FILE_TOOL_COUNT + TELEGRAM_TOOL_COUNT;
 
 describe('tool registry', () => {
   it('registers the core tools + flag-gated toolkits with unique names', () => {

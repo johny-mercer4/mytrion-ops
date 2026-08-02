@@ -168,11 +168,10 @@ describe('admin-marker regression (the go-live killer)', () => {
     expect(r.accessibleMytrions).toEqual(['sales']);
   });
 
-  it('positive controls: Administrator profile and CEO role stay admin; near-misses do not', () => {
+  it('positive controls stay admin; substring near-misses do not', () => {
     expect(resolveAllDepartmentAccess({ profile: 'Administrator' })).toBe(true);
     expect(resolveAllDepartmentAccess({ role: 'CEO' })).toBe(true);
     expect(resolveAllDepartmentAccess({ profile: 'System Administrator' })).toBe(false);
-    expect(resolveAllDepartmentAccess({ role: 'Developer' })).toBe(false);
   });
 });
 

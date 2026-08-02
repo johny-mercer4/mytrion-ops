@@ -19,7 +19,7 @@ const RGB: Record<string, string> = {
 
 /** Code / label chip tinted with an explicit color (theme CSS vars preferred). */
 export function chipStyle(col: string): string {
-  return `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-md);color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
+  return `font-family:'Space Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-md);color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
 }
 
 /** Dept-code chip style (C=orange, Q=accent, V=ok, M=violet). Pass `color` to override (e.g. per-automation accent). */
@@ -100,6 +100,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
     ],
   },
   {
@@ -122,14 +123,14 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'soon',
     items: [
-      // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
-      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
-      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
-      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
-      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
-      // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
-      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
-      { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
+      // LIVE on the native comms path (/v1/comms), not Zoho Desk. The old Desk-backed TicketsTab is no
+      // longer rendered; Sales now mounts the shared TicketConsole in requester mode.
+      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
+      { id: 'verification', label: 'Verification', icon: 'verification' },
+      // `soon` is now a LAYOUT SLOT, not a status: every tab in it has shipped (My Tasks moved up to
+      // `daily`, Tickets went native, Verification and Call Hub landed). Kept as its own group for
+      // the sidebar divider. Re-parking anything is still a one-word change.
+      { id: 'callHub', label: 'Call Hub', icon: 'callHub' },
     ],
   },
 ];
@@ -138,31 +139,42 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /**
- * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the
- * shell-level full-ticket paging (sidebarBadges — up to 20 Desk pages for a badge nobody
- * sees while parked), the badge itself, and openTicket navigation. Flip the NAV entry's
- * comingSoon to re-enable everything at once.
+ * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the unread
+ * badge (`/v1/comms/unread`) and openTicket navigation. Flip the NAV entry's comingSoon to park
+ * everything at once.
+ *
+ * Currently TRUE — the native comms queue is live. The old gate existed because the Desk-backed
+ * badge paged up to 20 ticket pages for a number nobody could see while parked; the comms badge is
+ * a single count query, so the cost that motivated the gate is gone.
  */
 export const TICKETS_ENABLED: boolean = !NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
 
 /**
- * Top-bar titles — deliberately different from in-page H1s so chrome + content don't echo
- * the same uppercase phrase (e.g. top "New Entry" vs form "Create a Lead").
+ * One-line description per tab — the single source of truth for the sentence under a page's header
+ * (see `SalesPageHead`). These used to be a second set of TITLES ("Assignments", "Pipeline Hub")
+ * printed in the top bar beside the nav label, while every tab separately hard-coded both a heading
+ * and its own description. The section NAME now lives only in the sidebar + top bar, and the
+ * sentence explaining it lives only here, so the two can never drift or echo each other.
+ *
+ * A tab may pass its own `description` to `SalesPageHead` when the copy has to be dynamic
+ * (Call Hub names the agent, Automations counts the catalog).
  */
-export const NAVLABEL: Record<string, string> = {
-  home: "Today's Briefing",
-  inbox: 'Message Center',
-  tasks: 'Assignments',
-  tickets: 'Support Queue',
-  retention: 'Retention Desk',
-  verification: 'Verification Desk',
-  records: 'Pipeline Hub',
-  create: 'New Entry',
-  auto: 'Action Catalog',
-  dash: 'Live Dashboard',
-  carriers: 'Carrier Lookup',
-  callHub: 'Call Workspace',
-};
+// `as const` (not `Record<string, string>`) so a literal key resolves to a definite string under
+// `noUncheckedIndexedAccess`, and a typo in `NAV_DESC.taks` is a compile error.
+export const NAV_DESC = {
+  home: 'Your day at a glance — goal, announcements and what needs a call.',
+  inbox: 'Reminders, alerts and tasks assigned to you.',
+  tasks: 'Drag cards across columns to update status. Open any card for full detail and history.',
+  tickets: 'Tickets and escalations you raised, with their live conversation.',
+  retention: 'Quiet clients that need winning back — your cases and the shared open pool.',
+  verification: 'Newest applications first. Review live compliance stages and answer Verification requests.',
+  records: 'Everything about your pipeline — clients, leads, deals, rejections and money codes.',
+  create: 'Raise a ticket, escalate a request, or add a lead.',
+  auto: 'Handle Customer Service, Billing and Verification yourself — no ticket needed.',
+  dash: 'Live sales, company and debtor performance.',
+  carriers: 'Search by DOT number, company name or phone — then create a lead when it’s a fit.',
+  callHub: 'Your Mytrion and Zoho call history, merged. Open a row to redial.',
+} as const;
 
 // ---------- time / workday ----------
 

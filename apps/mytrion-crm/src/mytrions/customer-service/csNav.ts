@@ -10,4 +10,5 @@ export type CsSectionId =
   | 'analytics'
   | 'data-center'
   | 'inbox'
+  | 'tickets'
   | 'service-center';

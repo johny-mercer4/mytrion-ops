@@ -28,6 +28,7 @@ import {
 import { listLoyaltyClients, type LoyaltyClient } from '../../../api/loyalty';
 import type { LoyaltyClientOverride } from '../../../api/loyalty';
 import { LoyaltyBonusModal } from './LoyaltyBonusModal';
+import { MANAGER_LOYALTY_CACHE_KEY, propagateLoyaltyOverride } from './loyaltyOverrideCache';
 
 /**
  * Manager Mytrion → Loyalty Program. The company-wide tier board: every carrier in the warehouse,
@@ -353,7 +354,7 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
     cachedAt,
     reload,
   } = useCachedLoad(
-    'mgr:loyalty:clients',
+    MANAGER_LOYALTY_CACHE_KEY,
     () => {
       const refresh = forceRefreshRef.current;
       forceRefreshRef.current = false;
@@ -552,13 +553,14 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
           client={selectedRow.client}
           tier={selectedRow.tier}
           onClose={() => setSelectedCarrier(null)}
-          onSaved={(override) =>
+          onSaved={(override) => {
+            propagateLoyaltyOverride(selectedRow.client.carrierId, override);
             setLocalOverrides((current) => {
               const next = new Map(current);
               next.set(selectedRow.client.carrierId, override);
               return next;
-            })
-          }
+            });
+          }}
         />
       ) : null}
     </div>

@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
+const { fetchMock, callMcpToolMock } = vi.hoisted(() => ({
+  fetchMock: vi.fn(),
+  callMcpToolMock: vi.fn(),
+}));
 
 // Auth + base URL are the wrapper's job; mock them so we exercise zohoCrm's request/parse logic.
 vi.mock('../../src/integrations/zohoAuth.js', () => ({
   authHeaders: async () => ({ Authorization: 'Zoho-oauthtoken test' }),
   baseUrl: () => 'https://www.zohoapis.com/crm/v8',
   invalidateZohoToken: () => {},
+}));
+vi.mock('../../src/integrations/zohoMcp.js', () => ({
+  callMcpTool: callMcpToolMock,
 }));
 vi.stubGlobal('fetch', fetchMock);
 
@@ -20,6 +26,7 @@ function coqlResponse(data: Array<Record<string, unknown>>, info?: { more_record
 
 beforeEach(() => {
   fetchMock.mockReset();
+  callMcpToolMock.mockReset();
 });
 
 describe('assertReadOnlyCoql', () => {
@@ -96,7 +103,10 @@ describe('zohoCrm.getOrg', () => {
 
 describe('zoho_crm.query tool', () => {
   it('returns { count, moreRecords, rows } from the handler', async () => {
-    fetchMock.mockResolvedValue(coqlResponse([{ id: '1' }], { more_records: false, count: 1 }));
+    callMcpToolMock.mockResolvedValue({
+      data: [{ id: '1' }],
+      info: { more_records: false, count: 1 },
+    });
     const result = await zohoCrmQueryTool.handler(
       { select_query: 'select id from Leads limit 0, 1' },
       makeContext({ role: 'admin' }),

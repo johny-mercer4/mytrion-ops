@@ -73,7 +73,22 @@ export interface TeamOpenTicket {
  *  ticket is ever crowded out of a newest-N window; a status this org renamed just returns empty. */
 const CS_OPEN_STATUSES = ['Open', 'On Hold', 'Escalated'] as const;
 
-/** All open CS Desk tickets, merged across the open statuses (deduped by id, Open first). */
+/**
+ * A ticket's origin, read the same way `zohoDesk.listRejectionReportTickets` does — Desk has no
+ * field for this, so subject prefix is the only signal: `desk.routes.ts` stamps CRM-widget tickets
+ * "CRM Ticket: …" and `serviceRequest.ts` stamps mini-app tickets "Mini-app: …".
+ */
+function isCrmOrMobileTicket(row: Record<string, unknown>): boolean {
+  const subject = String(row.subject ?? '').trim();
+  return /^crm ticket:/i.test(subject) || /^mini-app:/i.test(subject);
+}
+
+/**
+ * Open CS Desk tickets from the CRM widget + mobile mini-app, merged across the open statuses
+ * (deduped by id, Open first). Auto-created "Rejection Report: …" tickets (and anything else
+ * without a recognized origin) land in the same CS department but are excluded — the Home team
+ * panel is CRM + mobile-app requests only.
+ */
 async function fetchCsOpenTicketsDetailed(): Promise<Record<string, unknown>[]> {
   const perStatus = await Promise.all(
     CS_OPEN_STATUSES.map((status) =>
@@ -85,7 +100,7 @@ async function fetchCsOpenTicketsDetailed(): Promise<Record<string, unknown>[]> 
   const byId = new Map<string, Record<string, unknown>>();
   for (const row of perStatus.flat()) {
     const id = String(row.id ?? '');
-    if (id && !byId.has(id)) byId.set(id, row);
+    if (id && !byId.has(id) && isCrmOrMobileTicket(row)) byId.set(id, row);
   }
   return [...byId.values()];
 }
@@ -119,45 +134,40 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Team-wide open-ticket aggregate for the Home panel (widget parity: every CS agent sees
-   * the TEAM overview). Deliberately narrow — a summed count + priority histogram, never
-   * the per-agent breakdown (that stays manager-only via /cs/analytics/tickets).
+   * Team-wide open-ticket count for the Home panel (widget parity: every CS agent sees the TEAM
+   * overview) — CRM + mobile-app tickets only, matching the list below it (see
+   * fetchCsOpenTicketsDetailed). Count and priority breakdown are derived from that same list
+   * rather than the DWH aggregate: the DWH has no subject field, so it can't exclude Rejection
+   * Report tickets, which would make the KPI disagree with the rows actually shown. The trade-off
+   * is the same cap fetchCsOpenTicketsDetailed already has (100 per status × 3 statuses).
    */
   app.get('/cs/analytics/tickets/team-open', guard, async (request) => {
     requireCsAccess(request);
-    const q = z.object({ from: isoStamp, to: isoStamp }).parse(request.query);
-    // Aggregate counts come from the DWH analytics proxy (accurate total even >100). The per-ticket
-    // list is a live Desk read (CS dept, Open) so an agent sees the actual tickets — number, status,
-    // owner — not just a histogram. Independent so a slow/failed Desk read still returns the counts.
-    const [aggR, listR] = await Promise.allSettled([
-      serverCrm.get('/api/desk/dwh/tickets/analytics', { from: q.from, to: q.to }) as Promise<{
-        data?: { agents?: Array<{ open_count?: number }>; byPriority?: unknown };
-      }>,
-      fetchCsOpenTicketsDetailed(),
-    ]);
-    const agg = aggR.status === 'fulfilled' ? aggR.value : {};
-    const agents = agg.data?.agents ?? [];
-    const summedOpen = agents.reduce((sum, a) => sum + (Number(a.open_count) || 0), 0);
+    const raw = await fetchCsOpenTicketsDetailed();
+    const enriched = await enrichTicketOwners(raw).catch(() => raw);
+    const allTickets: TeamOpenTicket[] = enriched
+      .map((t) => ({
+        id: String(t.id ?? ''),
+        ticketNumber: sstr(t.ticketNumber),
+        status: sstr(t.status),
+        statusType: sstr(t.statusType),
+        priority: sstr(t.priority),
+        subject: sstr(t.subject),
+        owner: ticketOwnerName(t.assignee),
+      }))
+      .filter((t) => t.id);
 
-    let tickets: TeamOpenTicket[] = [];
-    if (listR.status === 'fulfilled') {
-      const enriched = await enrichTicketOwners(listR.value).catch(() => listR.value);
-      tickets = enriched
-        .map((t) => ({
-          id: String(t.id ?? ''),
-          ticketNumber: sstr(t.ticketNumber),
-          status: sstr(t.status),
-          statusType: sstr(t.statusType),
-          priority: sstr(t.priority),
-          subject: sstr(t.subject),
-          owner: ticketOwnerName(t.assignee),
-        }))
-        .filter((t) => t.id)
-        .slice(0, 100);
+    const priorityCounts = new Map<string, number>();
+    for (const t of allTickets) {
+      const key = t.priority ?? 'Other';
+      priorityCounts.set(key, (priorityCounts.get(key) ?? 0) + 1);
     }
-    // Prefer the DWH total; fall back to the live list length if the analytics proxy was down.
-    const openTickets = summedOpen > 0 ? summedOpen : tickets.length;
-    return { openTickets, byPriority: agg.data?.byPriority ?? [], tickets };
+
+    return {
+      openTickets: allTickets.length,
+      byPriority: [...priorityCounts.entries()].map(([priority, count]) => ({ priority, count })),
+      tickets: allTickets.slice(0, 100),
+    };
   });
 
   /** Tickets analytics (DWH; scoped by Desk assignee_id). */

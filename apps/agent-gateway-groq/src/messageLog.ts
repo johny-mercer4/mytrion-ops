@@ -1,7 +1,6 @@
 /**
- * Full message history — what turns.jsonl is NOT. Every inbound group message (BEFORE the
- * caveman gates, so ordinary chatter is kept too, exactly like hamroh v1's SQLite did) and
- * every outbound bot reply, full text, append-only.
+ * Privacy-bounded message history. By default only inbound messages that reached the model and
+ * outbound bot replies are retained. Ordinary group chatter is never copied into bot storage.
  *
  * Storage: data/messages-YYYY-MM.jsonl — monthly files so nothing needs rotation logic and a
  * month is a natural analysis unit (the 54k-message study was month-bucketed too). One JSON
@@ -12,11 +11,16 @@
  *
  * Failure policy: history must never break the bot — every write is fire-and-forget.
  */
+import { createHash } from 'node:crypto';
+import { readdir, stat, unlink } from 'node:fs/promises';
 import { config } from './config.js';
 import { createBufferedJsonlWriter } from './bufferedJsonl.js';
+import { maskSensitiveDigitRuns } from './messagePrivacy.js';
+import { supportBotHeaders } from './octaneClient.js';
 
 export interface MessageLogEntry {
   ts: string;
+  carrierId: string;
   chatId: number;
   msgId?: number;
   userId: number;
@@ -35,8 +39,24 @@ function monthFile(): string {
 const localWriter = createBufferedJsonlWriter();
 
 export function logMessage(e: MessageLogEntry): void {
-  localWriter.append(monthFile(), e);
-  enqueueCentral(e);
+  if (config.messageLogMode === 'off') return;
+  if (e.dir === 'in' && config.messageLogMode === 'engaged' && e.engaged !== true) return;
+  const safe = sanitizeEntry(e);
+  if (config.messageLogLocalEnabled) localWriter.append(monthFile(), safe);
+  enqueueCentral(safe);
+}
+
+function sanitizeEntry(e: MessageLogEntry): MessageLogEntry {
+  const name =
+    e.dir === 'out' || config.messageLogStoreNames
+      ? e.name.slice(0, 200)
+      : `user:${createHash('sha256')
+          .update(`${e.carrierId}:${e.userId}`)
+          .digest('hex')
+          .slice(0, 12)}`;
+  // Mask likely PAN/account-number runs while retaining enough suffix for support correlation.
+  const text = maskSensitiveDigitRuns(e.text).slice(0, config.messageLogMaxChars);
+  return { ...e, name, text };
 }
 
 /**
@@ -68,10 +88,10 @@ async function flushCentral(): Promise<void> {
   try {
     const res = await fetch(`${config.octaneBase}/v1/support-bot/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.octaneKey}`, 'Content-Type': 'application/json' },
+      headers: supportBotHeaders(true),
       body: JSON.stringify({
-        carrierId: config.carrierId,
         messages: batch.map((e) => ({
+          carrierId: e.carrierId,
           ts: e.ts,
           chatId: e.chatId,
           ...(e.msgId != null ? { msgId: e.msgId } : {}),
@@ -88,6 +108,7 @@ async function flushCentral(): Promise<void> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (err) {
     buffer.unshift(...batch); // retry on the next tick — JSONL already has them regardless
+    if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
     console.error('[messageLog] central flush failed (will retry)', err instanceof Error ? err.message : err);
   } finally {
     flushing = false;
@@ -95,4 +116,38 @@ async function flushCentral(): Promise<void> {
 }
 
 setInterval(() => void flushCentral(), FLUSH_MS).unref();
+
+async function pruneLocalHistory(): Promise<void> {
+  if (!config.messageLogLocalEnabled) return;
+  const cutoff = Date.now() - config.messageLogRetentionDays * 86_400_000;
+  try {
+    const entries = await readdir('data', { withFileTypes: true });
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && /^messages-\d{4}-\d{2}\.jsonl$/u.test(entry.name))
+        .map(async (entry) => {
+          const path = `data/${entry.name}`;
+          if ((await stat(path)).mtimeMs < cutoff) await unlink(path);
+        }),
+    );
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? String(error.code) : '';
+    if (code !== 'ENOENT') console.error('[messageLog] local retention cleanup failed');
+  }
+}
+
+void pruneLocalHistory();
+setInterval(() => void pruneLocalHistory(), 24 * 60 * 60_000).unref();
 process.once('beforeExit', () => void localWriter.flush());
+
+export async function flushMessageLogs(): Promise<void> {
+  // Drain every bounded batch during graceful shutdown. Stop after a failed/no-progress attempt;
+  // the local JSONL copy (when enabled) remains the never-fails fallback.
+  while (flushing) await new Promise((resolve) => setTimeout(resolve, 10));
+  for (let attempt = 0; buffer.length > 0 && attempt < Math.ceil(BUFFER_MAX / 200); attempt += 1) {
+    const before = buffer.length;
+    await flushCentral();
+    if (buffer.length >= before) break;
+  }
+  await localWriter.flush();
+}

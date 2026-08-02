@@ -3,6 +3,7 @@ import {
   engagementReason,
   isConversationActive,
   noteEngaged,
+  shouldRouteAtIngress,
 } from '../src/filter.js';
 import type { TgMessage } from '../src/telegram.js';
 
@@ -55,5 +56,13 @@ describe('Telegram transport engagement state', () => {
     expect(isConversationActive(-2002, 77)).toBe(true);
     expect(engagementReason(followup, 'Bot')).toBe('followup');
     expect(isConversationActive(-2002, 78)).toBe(false);
+  });
+
+  it('drops ambient chatter in the production-safe direct mode', () => {
+    expect(shouldRouteAtIngress('direct', null)).toBe(false);
+    expect(shouldRouteAtIngress('direct', 'mention')).toBe(true);
+    expect(shouldRouteAtIngress('direct', 'reply')).toBe(true);
+    expect(shouldRouteAtIngress('direct', 'followup')).toBe(true);
+    expect(shouldRouteAtIngress('all_registered', null)).toBe(true);
   });
 });

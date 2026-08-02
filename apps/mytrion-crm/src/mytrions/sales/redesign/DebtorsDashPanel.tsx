@@ -7,6 +7,7 @@ import { getImpersonation } from '@/api/impersonation';
 import { formatCachedAt } from './dashCache';
 import { s } from './dc';
 import { DebtorsSkeleton } from './DashSkeleton';
+import { SalesErrorNote } from './SalesPage';
 import { useSales } from './ctx';
 import {
   DEBT_MIN_DAYS,
@@ -243,26 +244,18 @@ export function DebtorsDashPanel() {
   if (loading && !data) return <DebtorsSkeleton />;
   if (error && !data) {
     return (
-      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>
+      <SalesErrorNote>
         {error}
-        <div style={s('margin-top:12px')}>
-          <button
-            type="button"
-            onClick={() => void fetch(true)}
-            style={s(
-              'padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer',
-            )}
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+        <button type="button" onClick={() => void fetch(true)} className="ss-pager-btn" style={{ marginLeft: 10 }}>
+          Retry
+        </button>
+      </SalesErrorNote>
     );
   }
   if (!data) return null;
 
   return (
-    <div className="ss-fu" style={s('display:flex;flex-direction:column;gap:14px')}>
+    <div style={s('display:flex;flex-direction:column;gap:14px')}>
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div>
           <div style={s('font-size:16px;font-weight:800')}>Your debtors</div>

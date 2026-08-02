@@ -81,12 +81,16 @@ export function ViewAsPicker() {
         </span>
         <button
           type="button"
-          onClick={() => setActingAs(null)}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setActingAs(null);
+          }}
           title="Exit — return to your own view"
           aria-label="Exit admin view"
           className="ss-ico-btn"
           style={s(
-            'display:flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:99px;border:none;background:var(--surface);color:var(--text2);font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer',
+            'display:flex;align-items:center;gap:4px;height:24px;min-height:24px;flex:none;padding:0 9px;border-radius:99px;border:none;background:var(--surface);color:var(--text2);font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer',
           )}
         >
           <Icon name="close" size={9} strokeWidth={3} />

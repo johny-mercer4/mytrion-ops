@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
+  ArrowLeftRight,
   ArrowRight,
   BadgeCheck,
   Ban,
@@ -42,7 +43,6 @@ import {
   X,
   Wallet,
   LineChart,
-  LayoutGrid,
   Timer,
 } from 'lucide-react';
 
@@ -86,7 +86,8 @@ export const ChatIcon = icon(MessageCircleMore, 16);
 
 // ── actions + controls ──────────────────────────────────────────────────────
 export const SearchIcon = icon(Search, 15);
-export const SwitchIcon = icon(LayoutGrid, 13);
+/** Switch Mytrion — swap/transfer affordance (not a grid/apps launcher). */
+export const SwitchIcon = icon(ArrowLeftRight, 13);
 /** Impersonation / "View as" — distinct from SwitchIcon (module picker). */
 export const ViewAsIcon = icon(Eye, 13);
 export const PlusIcon = icon(Plus, 12);

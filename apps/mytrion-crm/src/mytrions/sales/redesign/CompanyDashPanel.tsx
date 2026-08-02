@@ -16,6 +16,7 @@ import {
 } from './dashCompanyData';
 import { msdFmtNum } from './dashFormat';
 import { CompanySkeleton } from './DashSkeleton';
+import { SalesErrorNote } from './SalesPage';
 
 function Gauge(props: {
   label: string;
@@ -87,14 +88,12 @@ export function CompanyDashPanel() {
   if (loading && !data) return <CompanySkeleton />;
   if (error && !data) {
     return (
-      <div style={s('text-align:center;padding:48px 20px;color:var(--danger);font-size:14px')}>
+      <SalesErrorNote>
         {error}
-        <div style={s('margin-top:12px')}>
-          <button type="button" onClick={() => void fetch(true)} style={s('padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer')}>
-            Retry
-          </button>
-        </div>
-      </div>
+        <button type="button" onClick={() => void fetch(true)} className="ss-pager-btn" style={{ marginLeft: 10 }}>
+          Retry
+        </button>
+      </SalesErrorNote>
     );
   }
   if (!data) return null;

@@ -24,7 +24,23 @@ export const fileAssets = pgTable(
     name: text('name').notNull(),
     mime: text('mime').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
+    /**
+     * Storage key. Named for S3 historically; it is the provider-agnostic key, mapped to a Dropbox path by
+     * the Dropbox adapter. Renaming the column would be a migration for no behavioural gain.
+     */
     s3Key: text('s3_key').notNull(),
+    /**
+     * WHERE THESE BYTES ACTUALLY ARE. Resolved through `storageFor()` on every read and delete.
+     *
+     * Per-row rather than a single global setting, because comms attachments go to Dropbox while every
+     * pre-existing row is on S3 — a global switch would repoint reads for those and they would 404. It is
+     * also what makes delete correct: handing a Dropbox key to the S3 client would report success and leave
+     * the object behind.
+     */
+    storageProvider: text('storage_provider')
+      .$type<'s3' | 'dropbox'>()
+      .notNull()
+      .default('s3'),
     kind: text('kind').$type<'generated' | 'upload'>().notNull(),
     /** Producing tool ('file.generate_excel') or route ('files.upload'). */
     createdBy: text('created_by'),
@@ -38,6 +54,8 @@ export const fileAssets = pgTable(
   (table) => ({
     tenantIdx: index('file_assets_tenant_idx').on(table.tenantId, table.createdAt),
     ownerIdx: index('file_assets_owner_idx').on(table.tenantId, table.ownerUserId),
+    /** "every Dropbox object for this tenant" — the cleanup sweep and the reconciliation report. */
+    providerIdx: index('file_assets_tenant_provider_idx').on(table.tenantId, table.storageProvider),
   }),
 );
 

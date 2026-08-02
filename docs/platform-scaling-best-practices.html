@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Mytrion engineering handbook for PostgreSQL, DWH, PgVector, pg-boss, Zoho, realtime delivery, security, and external-provider scaling.">
+  <title>Mytrion Platform Scaling &amp; Vendor Best Practices</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07101d;--bg2:#0b1525;--panel:rgba(17,29,48,.78);--panel2:rgba(24,39,61,.76);--chrome:rgba(7,16,29,.82);--line:#293b56;--line2:#3e5677;--text:#edf4ff;--muted:#9eabc0;--blue:#59b7ff;--cyan:#47e6cf;--violet:#ad91ff;--amber:#ffc968;--red:#ff7f8d;--green:#66e0a3;--shadow:0 18px 48px rgba(0,0,0,.28);--code:#091321}
+    [data-theme="light"]{color-scheme:light;--bg:#edf3fa;--bg2:#f7f9fc;--panel:rgba(255,255,255,.78);--panel2:rgba(247,250,255,.9);--chrome:rgba(247,250,255,.88);--line:#cad6e5;--line2:#aebdd0;--text:#172235;--muted:#5d6a7c;--blue:#0879c9;--cyan:#007f73;--violet:#6f4fc4;--amber:#9a6400;--red:#be3649;--green:#087b4a;--shadow:0 16px 42px rgba(39,62,89,.12);--code:#eef3f9}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:88px}body{margin:0;background:radial-gradient(circle at 88% 4%,rgba(89,183,255,.12),transparent 27%),radial-gradient(circle at 8% 45%,rgba(173,145,255,.09),transparent 26%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.58}a{color:var(--blue)}button,input{font:inherit}code,pre,.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}.shell{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:100vh}.side{position:sticky;top:0;height:100vh;padding:26px 18px;border-right:1px solid var(--line);background:var(--chrome);backdrop-filter:blur(18px);overflow:auto}.brand{padding:0 10px 20px;border-bottom:1px solid var(--line)}.brand b{display:block;font-size:19px;letter-spacing:.02em}.brand span{font-size:12px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}.search{width:100%;margin:18px 0 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);color:var(--text);padding:10px 12px;outline:none}.search:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(89,183,255,.15)}nav a{display:flex;gap:9px;align-items:center;padding:8px 10px;margin:2px 0;border-radius:9px;text-decoration:none;color:var(--muted);font-size:14px}nav a:hover,nav a.active{background:var(--panel2);color:var(--text)}nav i{width:7px;height:7px;border-radius:99px;background:var(--line2)}.side-note{margin:20px 8px;color:var(--muted);font-size:12px}.main{min-width:0}.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:flex-end;padding:14px clamp(20px,4vw,58px);border-bottom:1px solid var(--line);background:var(--chrome);backdrop-filter:blur(18px)}.theme{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:8px 12px;cursor:pointer}.content{max-width:1260px;margin:auto;padding:54px clamp(20px,4vw,58px) 100px}.eyebrow{color:var(--cyan);font-weight:800;font-size:12px;letter-spacing:.16em;text-transform:uppercase}.hero{padding:38px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(135deg,rgba(89,183,255,.10),transparent 42%),var(--panel);box-shadow:var(--shadow)}h1{font-size:clamp(35px,5vw,62px);line-height:1.04;letter-spacing:-.045em;margin:10px 0 18px;max-width:900px}.lead{max-width:850px;color:var(--muted);font-size:18px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}.chip{padding:7px 10px;border:1px solid var(--line2);border-radius:99px;background:var(--panel2);font-size:12px;font-weight:700}.section{margin-top:64px}.section.hidden{display:none}.section-head{display:flex;gap:18px;align-items:flex-start;margin-bottom:20px}.num{flex:0 0 auto;display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line2);border-radius:11px;background:var(--panel);color:var(--cyan);font-weight:900}.section h2{margin:0;font-size:clamp(26px,3vw,38px);letter-spacing:-.025em}.section-head p{margin:5px 0 0;color:var(--muted)}h3{font-size:18px;margin:0 0 9px}h4{font-size:14px;margin:18px 0 7px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}p{margin:8px 0}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}.card{grid-column:span 6;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.08)}.card.third{grid-column:span 4}.card.full{grid-column:1/-1}.card p,.card li{color:var(--muted)}.card strong{color:var(--text)}.rule{border-left:3px solid var(--cyan)}.warn{border-left:3px solid var(--amber)}.danger{border-left:3px solid var(--red)}.ok{border-left:3px solid var(--green)}ul,ol{margin:10px 0 0;padding-left:20px}li+li{margin-top:5px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel)}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:13px 15px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--panel2)}tr:last-child td{border-bottom:0}td{font-size:14px}pre{overflow:auto;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--code);color:var(--text);font-size:13px;line-height:1.55}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;align-items:center}.node{min-height:92px;padding:15px 12px;display:grid;place-items:center;text-align:center;border:1px solid var(--line2);border-radius:13px;background:var(--panel2);font-size:13px;font-weight:750}.arrow{text-align:center;color:var(--blue);font-size:22px}.metric{font-size:30px;font-weight:850;letter-spacing:-.04em}.caption{font-size:12px;color:var(--muted)}.check{list-style:none;padding:0}.check li{position:relative;padding-left:26px}.check li:before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:900}.pill{display:inline-block;margin:2px 4px 2px 0;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:800;background:rgba(89,183,255,.12);color:var(--blue)}.sources a{display:block;padding:7px 0;border-bottom:1px solid var(--line);text-decoration:none}.sources a:last-child{border:0}.footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}.no-results{display:none;margin:40px 0;padding:30px;text-align:center;border:1px dashed var(--line2);border-radius:16px;color:var(--muted)}mark{background:rgba(255,201,104,.26);color:var(--text)}
+    @media(max-width:980px){.shell{display:block}.side{position:relative;height:auto;border-right:0;border-bottom:1px solid var(--line)}nav{display:flex;gap:4px;overflow:auto;padding-bottom:5px}nav a{white-space:nowrap}.side-note{display:none}.top{top:0}.card,.card.third{grid-column:1/-1}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}}
+    @media(max-width:600px){.content{padding-top:28px}.hero{padding:24px}.section{margin-top:48px}.card{padding:18px}.top{padding:10px 16px}}
+    @media print{.side,.top{display:none}.shell{display:block}.content{max-width:none;padding:0}.section{break-inside:avoid}.card{box-shadow:none;background:white}.hero{box-shadow:none}body{background:white}}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span>Engineering handbook</span><b>Mytrion Platform</b></div>
+    <input class="search" id="search" type="search" placeholder="Search this handbook…" aria-label="Search documentation">
+    <nav id="nav">
+      <a href="#principles"><i></i>Operating model</a><a href="#architecture"><i></i>Architecture</a>
+      <a href="#zoho"><i></i>Zoho CRM</a><a href="#dwh"><i></i>DWH PostgreSQL</a>
+      <a href="#postgres"><i></i>Application PostgreSQL</a><a href="#vector"><i></i>PgVector</a>
+      <a href="#jobs"><i></i>pg-boss</a><a href="#realtime"><i></i>WebSocket &amp; pub/sub</a>
+      <a href="#vendors"><i></i>External vendors</a><a href="#security"><i></i>Security</a>
+      <a href="#scaling"><i></i>Scaling stages</a><a href="#operations"><i></i>Operations &amp; SLOs</a>
+      <a href="#checklist"><i></i>Release checklist</a><a href="#sources"><i></i>Primary sources</a>
+    </nav>
+    <p class="side-note">Version 1.0 · 2 August 2026<br>Owner: Platform Engineering<br>Review quarterly and after vendor limit changes.</p>
+  </aside>
+  <main class="main">
+    <header class="top"><button class="theme" id="theme" type="button" aria-label="Toggle color theme">☼ Theme</button></header>
+    <article class="content">
+      <header class="hero">
+        <div class="eyebrow">Performance · resilience · security</div>
+        <h1>Platform scaling and vendor best practices</h1>
+        <p class="lead">The operating standard for Mytrion's transactional PostgreSQL, read-only DWH, PgVector retrieval, pg-boss work queues, Zoho CRM, realtime delivery, and external-provider integrations.</p>
+        <div class="chips"><span class="chip">Tenant isolated</span><span class="chip">Budget every request</span><span class="chip">Event-first synchronization</span><span class="chip">Stale-safe reads</span><span class="chip">Idempotent writes</span><span class="chip">Observable by default</span></div>
+      </header>
+      <div class="no-results" id="noResults">No section matches this search.</div>
+
+      <section class="section" id="principles" data-search="principles resource budget latency caching read write">
+        <div class="section-head"><span class="num">01</span><div><h2>Operating model</h2><p>These rules apply to every route, repository, integration, job, and realtime event.</p></div></div>
+        <div class="grid">
+          <div class="card rule"><h3>Every operation gets a budget</h3><ul><li>Deadline and cancellation signal.</li><li>Maximum rows, bytes, provider calls, and retries.</li><li>Separate interactive, background, write, and export concurrency.</li><li>Fail predictably before a dependency exhausts the whole process.</li></ul></div>
+          <div class="card ok"><h3>Preferred read hierarchy</h3><ol><li>Authorized local projection or cache.</li><li>Application PostgreSQL repository.</li><li>Prepared DWH mart or cached aggregate.</li><li>External provider only on miss, explicit refresh, or sync.</li></ol></div>
+          <div class="card warn"><h3>Preferred write hierarchy</h3><p><strong>Transaction → domain update → outbox → commit → worker → provider.</strong></p><p>Never hold a database transaction open while calling Zoho, DWH, object storage, messaging, or another network service.</p></div>
+          <div class="card danger"><h3>Forbidden patterns</h3><ul><li>One upstream query per card or table row.</li><li>Unbounded list endpoints or retry loops.</li><li>Cross-tenant cache keys.</li><li>Blind full-page refetch after a one-row update.</li><li>Logging secrets or complete vendor payloads.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section" id="architecture" data-search="architecture cache outbox projection API worker websocket">
+        <div class="section-head"><span class="num">02</span><div><h2>Reference architecture</h2><p>Mytrion owns the user-facing read path; external systems feed durable projections asynchronously.</p></div></div>
+        <div class="card full">
+          <div class="flow"><div class="node">Browser<br><span class="caption">HTTP + one realtime connection</span></div><div class="arrow">→</div><div class="node">API<br><span class="caption">RBAC · cache · budgets</span></div><div class="arrow">→</div><div class="node">Repositories<br><span class="caption">tenant-scoped PostgreSQL</span></div></div>
+          <div class="flow" style="margin-top:10px"><div class="node">Vendors / DWH<br><span class="caption">bounded upstream sources</span></div><div class="arrow">→</div><div class="node">pg-boss workers<br><span class="caption">sync · write · export</span></div><div class="arrow">→</div><div class="node">Projection + outbox<br><span class="caption">durable source of UI state</span></div></div>
+        </div>
+        <div class="grid" style="margin-top:14px"><div class="card third"><span class="metric">1</span><p>Realtime connection per browser session.</p></div><div class="card third"><span class="metric">0</span><p>External calls inside database transactions.</p></div><div class="card third"><span class="metric">100%</span><p>Cache keys include tenant, effective user, permissions, filters, and version.</p></div></div>
+      </section>
+
+      <section class="section" id="zoho" data-search="zoho crm coql get records bulk read write credits oauth API rate limit">
+        <div class="section-head"><span class="num">03</span><div><h2>Zoho CRM: choose the correct API</h2><p>COQL is the default for filtered relational reads—not a universal replacement for purpose-built APIs.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Need</th><th>Use</th><th>Reason / control</th></tr></thead><tbody>
+          <tr><td>One known record</td><td><strong>Record by ID</strong></td><td>Cheapest and safest read-after-write path.</td></tr>
+          <tr><td>Known set of IDs</td><td><strong>Get Records + ids</strong></td><td>Batch IDs; request only required fields.</td></tr>
+          <tr><td>Filters, lookup joins, aggregates</td><td><strong>COQL</strong></td><td>Up to 2,000 rows/call, 500 fields, 25 criteria, two joins. Use deterministic keyset/watermark pagination.</td></tr>
+          <tr><td>Incremental module sync</td><td><strong>Get Records</strong></td><td><code>If-Modified-Since</code> or <code>Modified_Time,id</code> watermark; reconcile deletes separately.</td></tr>
+          <tr><td>User-entered lookup</td><td><strong>Search API</strong></td><td>Designed for search; accept index lag and 2,000-result ceiling.</td></tr>
+          <tr><td>Related lists / files</td><td><strong>Dedicated endpoint</strong></td><td>Preserves relationship and attachment semantics.</td></tr>
+          <tr><td>More than 100k records</td><td><strong>Bulk Read</strong></td><td>Asynchronous; run through pg-boss and stream/process the result.</td></tr>
+          <tr><td>Create or update ≤100</td><td><strong>Records / Upsert</strong></td><td>Use stable external IDs; parse every item in HTTP 207 responses.</td></tr>
+          <tr><td>Large scheduled import</td><td><strong>Bulk Write</strong></td><td>Expensive initialization; reserve for genuinely large batches.</td></tr>
+        </tbody></table></div>
+        <div class="grid" style="margin-top:14px">
+          <div class="card"><h3>COQL discipline</h3><ul><li>Select only necessary fields and use live API names.</li><li>Order by <code>Modified_Time,id</code> or another stable pair.</li><li>Prefer keyset criteria over growing offsets.</li><li>Batch relationships; never query per UI record.</li><li>Beyond 100k matching rows, move to Bulk Read.</li></ul></div>
+          <div class="card"><h3>Credit and concurrency governor</h3><ul><li>One semaphore per Zoho org and application.</li><li>Reserve slots for interactive traffic.</li><li>Track estimated credits and <code>X-API-CREDITS-REMAINING</code>.</li><li>Heavy API sub-concurrency must remain below ten.</li><li>Honor 429 and <code>Retry-After</code>; jitter transient retries.</li></ul></div>
+          <div class="card warn"><h3>Write safety</h3><p>Use idempotency in Mytrion plus Zoho <code>duplicate_check_fields</code>. Parse per-record success/failure. A timeout after sending is an <em>unknown outcome</em>: reconcile by stable external ID before retrying.</p></div>
+          <div class="card ok"><h3>Sync model</h3><p>Zoho notifications enqueue small sync jobs. Workers update a local projection and publish invalidation. Periodic watermark reconciliation repairs missed or delayed notifications.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="dwh" data-search="DWH PostgreSQL analytics read only pool query mart dbt">
+        <div class="section-head"><span class="num">04</span><div><h2>DWH PostgreSQL</h2><p>A bounded, read-only analytical source—not a transactional backend or per-card API.</p></div></div>
+        <div class="grid">
+          <div class="card rule"><h3>Query contract</h3><ul class="check"><li>Read-only database role plus session enforcement.</li><li>PostgreSQL <code>$1</code> placeholders.</li><li>Filter and aggregate in SQL; return bounded rows.</li><li>Batch IDs with <code>ANY($1)</code>.</li><li>Prepared marts for recurring interactive metrics.</li></ul></div>
+          <div class="card"><h3>Capacity</h3><p>The current small pool and 30-second statement timeout are sensible. Keep application concurrency below pool capacity so health checks and interactive queries retain a slot. Coalesce identical in-flight queries.</p></div>
+          <div class="card"><h3>Freshness and failure</h3><p>Every analytical response should carry <code>generatedAt</code>, <code>sourceHealth</code>, <code>partial</code>, and freshness. Serve an authorized stale snapshot when DWH or dbt is temporarily unavailable.</p></div>
+          <div class="card danger"><h3>Do not</h3><ul><li>Write or migrate the third-party DWH.</li><li>Open distributed transactions with the app DB.</li><li>Run one query per customer/card.</li><li>Use <code>SELECT *</code> or return raw fact tables to browsers.</li><li>Use plaintext transport outside a trusted private network.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section" id="postgres" data-search="own app PostgreSQL tenant repository RLS pool index transaction migration TLS">
+        <div class="section-head"><span class="num">05</span><div><h2>Application PostgreSQL</h2><p>The durable transactional authority for Mytrion-owned state, audit, idempotency, outbox, and projections.</p></div></div>
+        <div class="grid">
+          <div class="card full"><h3>Global connection budget</h3><pre>(API instances × API pool)
++ (worker instances × pg-boss pool)
++ migrations + monitoring + admin reserve
+&lt; database max_connections</pre><p>Measure pool wait before increasing pool size. More connections can reduce throughput through memory pressure and context switching.</p></div>
+          <div class="card"><h3>Interactive query standard</h3><ul><li>2–5 second statement budget.</li><li>1–2 second lock budget.</li><li>Short idle-in-transaction limit.</li><li>Cursor pagination with stable tie-breaker.</li><li>Composite index begins with tenant and supports filter + sort.</li></ul></div>
+          <div class="card"><h3>Write standard</h3><ul><li>Repository-only DB access with <code>tenant_id</code>.</li><li>Optimistic version checks.</li><li>Unique idempotency constraint.</li><li>Audit and outbox in the same transaction.</li><li>Return the updated representation; invalidate narrowly.</li></ul></div>
+          <div class="card"><h3>Operational hygiene</h3><ul><li><code>pg_stat_statements</code> and slow-query sampling.</li><li>Monitor locks, dead tuples, bloat, temp files, and pool wait.</li><li>Use <code>EXPLAIN (ANALYZE, BUFFERS)</code> in staging.</li><li>Create large indexes concurrently when safe.</li><li>Test PITR restoration, not only backup creation.</li></ul></div>
+          <div class="card danger"><h3>Current hardening priority</h3><p>Managed PostgreSQL currently disables certificate identity verification. Replace <code>rejectUnauthorized:false</code> with verified TLS/CA handling. Add route-class statement and lock timeouts instead of relying on an unlimited application query.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="vector" data-search="pgvector embedding HNSW cosine recall hybrid RAG chunks">
+        <div class="section-head"><span class="num">06</span><div><h2>PgVector and retrieval</h2><p>Optimize for authorization, recall, latency, and index memory—not nearest-neighbor latency alone.</p></div></div>
+        <div class="grid">
+          <div class="card ok"><h3>Current direction</h3><p>HNSW cosine indexing, tenant/audience indexes, department filtering, and a GIN text-search leg form a sound hybrid base.</p></div>
+          <div class="card"><h3>Query controls</h3><ul><li>Use the matching cosine operator <code>&lt;=&gt;</code>.</li><li>Apply tenant and audience authorization inside SQL.</li><li>Benchmark exact search for very small authorized subsets.</li><li>Tune <code>hnsw.ef_search</code> against measured recall.</li><li>Use iterative scans when post-filtering under-returns.</li></ul></div>
+          <div class="card"><h3>Embedding lifecycle</h3><ul><li>Deterministic content hash skips unchanged chunks.</li><li>Version model, dimensions, chunker, and source revision.</li><li>Embed asynchronously in bounded batches.</li><li>Activate new revisions atomically.</li><li>Retire old vectors asynchronously.</li></ul></div>
+          <div class="card warn"><h3>Scale signals</h3><p>Track index RAM, vector count, insert/update rate, p95 search latency, and offline recall@k. Partitioning, partial indexes, <code>halfvec</code>, or a separate vector service require evidence—not record count alone.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="jobs" data-search="pg boss jobs queues worker retry dead letter cron idempotency">
+        <div class="section-head"><span class="num">07</span><div><h2>pg-boss jobs</h2><p>Queue separation is resource isolation. Job delivery does not replace domain idempotency.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Queue class</th><th>Concurrency</th><th>Behavior</th></tr></thead><tbody>
+          <tr><td><code>zoho-read</code></td><td>Below org/provider ceiling</td><td>Watermark sync, metadata refresh, bulk-read coordination.</td></tr>
+          <tr><td><code>zoho-write</code></td><td>Lower and reserved</td><td>Idempotent external writes; reconcile unknown outcomes.</td></tr>
+          <tr><td><code>dwh-heavy</code></td><td>Below DWH pool capacity</td><td>Exports and expensive aggregation; never starve interactive reads.</td></tr>
+          <tr><td><code>embedding</code></td><td>Provider/token bounded</td><td>Hash-deduplicated batches with versioned results.</td></tr>
+          <tr><td><code>notifications</code></td><td>Latency optimized</td><td>Small payloads, quick acknowledgement, durable follow-up.</td></tr>
+          <tr><td><code>exports</code></td><td>CPU/memory bounded</td><td>Object-storage output, progress, cancellation, expiry.</td></tr>
+        </tbody></table></div>
+        <div class="grid" style="margin-top:14px">
+          <div class="card"><h3>Production topology</h3><p>API processes use send-only mode. Dedicated worker processes own consumers and schedules. This protects HTTP latency and lets worker classes scale independently.</p></div>
+          <div class="card"><h3>Job contract</h3><ul><li>Small schema-versioned payload.</li><li>Domain idempotency key.</li><li>Timeout, retry limit, exponential backoff, jitter.</li><li>Dead-letter queue and operator runbook.</li><li>Correlation ID from request through provider call.</li></ul></div>
+          <div class="card danger"><h3>Never retry</h3><p>Validation failures, missing permissions, revoked credentials, malformed input, or deterministic conflicts. Retrying permanent errors converts one failure into a queue outage.</p></div>
+          <div class="card ok"><h3>Observe</h3><p>Queue depth, oldest-job age, processing p95, success rate, retry rate, dead letters, schedule lag, stuck-active jobs, and pool utilization.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="realtime" data-search="websocket realtime pub sub redis listen notify events rooms auth reconnect">
+        <div class="section-head"><span class="num">08</span><div><h2>WebSocket and pub/sub</h2><p>WebSocket transports authorized hints. Durable state and replay live elsewhere.</p></div></div>
+        <div class="grid">
+          <div class="card rule"><h3>Connection standard</h3><ul><li>One connection per browser session.</li><li>Authenticate the handshake and periodically revalidate.</li><li>Authorize every subscription to tenant/user/department rooms.</li><li>Heartbeat, idle timeout, payload cap, and connection cap.</li><li>Exponential reconnect with jitter and resume cursor.</li></ul></div>
+          <div class="card"><h3>Event envelope</h3><pre>{
+  "id": "evt_…",
+  "type": "ticket.updated.v1",
+  "tenantId": "…",
+  "subjectId": "…",
+  "version": 42,
+  "occurredAt": "…"
+}</pre><p>Send IDs and versions, not sensitive complete records. Clients invalidate or patch authorized cached state.</p></div>
+          <div class="card"><h3>PostgreSQL LISTEN/NOTIFY</h3><p>Good for lightweight same-database invalidation at small scale. Notifications are delivered after commit, payloads are under 8 KB by default, and disconnected consumers cannot replay them. Send a durable event ID, not the data itself.</p></div>
+          <div class="card warn"><h3>Redis Pub/Sub</h3><p>Use for cross-instance fan-out and cache invalidation. Redis Pub/Sub is at-most-once: pair it with an outbox, Redis Streams, or another durable log when replay and guaranteed processing matter.</p></div>
+          <div class="card full"><h3>Horizontal realtime topology</h3><div class="flow"><div class="node">Committed outbox<br><span class="caption">durable event</span></div><div class="arrow">→</div><div class="node">Publisher worker<br><span class="caption">idempotent</span></div><div class="arrow">→</div><div class="node">Redis channel/stream<br><span class="caption">cross-instance</span></div></div><div class="flow" style="margin-top:10px"><div class="node">WebSocket node A</div><div class="arrow">↔</div><div class="node">Authorized rooms</div><div class="arrow">↔</div><div class="node">WebSocket node B</div></div></div>
+        </div>
+      </section>
+
+      <section class="section" id="vendors" data-search="external vendor RingCentral Gong Power BI S3 Zoho Desk People WorkDrive Telegram Zapier provider adapter">
+        <div class="section-head"><span class="num">09</span><div><h2>Other external vendors</h2><p>Every provider uses one adapter contract, even when its authentication and limits differ.</p></div></div>
+        <div class="grid">
+          <div class="card full"><h3>Required adapter capabilities</h3><p><span class="pill">timeout</span><span class="pill">cancellation</span><span class="pill">concurrency semaphore</span><span class="pill">credit/rate telemetry</span><span class="pill">bounded retry</span><span class="pill">circuit breaker</span><span class="pill">redaction</span><span class="pill">health</span><span class="pill">idempotency</span><span class="pill">mock contract</span></p></div>
+          <div class="card third"><h3>Communications</h3><p>RingCentral, Gong, Telegram: deduplicate provider events/calls, verify webhooks, retain provider IDs, pause polling when hidden, and lazy-load recordings or transcripts.</p></div>
+          <div class="card third"><h3>Business systems</h3><p>Zoho Desk/People/WorkDrive, Power BI, ServerCRM: keep purpose-specific scopes, cache metadata, separate reads/writes, expose source health, and avoid browser-owned credentials.</p></div>
+          <div class="card third"><h3>Files and automation</h3><p>S3/EFS/Dropbox/Zapier: presigned short-lived access, private-by-default buckets, checksum and size validation, malware scanning, lifecycle expiry, webhook replay protection.</p></div>
+          <div class="card"><h3>External databases</h3><p>AWS RDS/Aurora and future SQL providers use a dedicated, bounded, TLS-verified pool and a server-enforced read-only role by default. Prefer IAM database authentication where operationally supported. PostgreSQL uses <code>$1</code> placeholders; MySQL uses <code>?</code>.</p></div>
+          <div class="card"><h3>AI and embedding providers</h3><p>Batch by token and payload limits, cap concurrent generations, record model/version/cost, redact sensitive prompts, and never retry non-idempotent generations blindly. Cache only when authorization and data-retention policy permit it.</p></div>
+          <div class="card"><h3>Retry classification</h3><p><strong>Retry:</strong> connection reset, timeout before send, 429 with delay, 502/503/504.<br><strong>Do not retry:</strong> 400/401/403/404 validation or permission failures.<br><strong>Reconcile first:</strong> timeout after a write may have reached the provider.</p></div>
+          <div class="card"><h3>Universal response metadata</h3><pre>{ "freshness": "fresh|stale",
+  "generatedAt": "ISO timestamp",
+  "sourceHealth": { "zoho": "ok" },
+  "partial": false,
+  "requestId": "…" }</pre></div>
+        </div>
+      </section>
+
+      <section class="section" id="security" data-search="security RBAC tenant RLS TLS secrets oauth webhook audit privacy backup">
+        <div class="section-head"><span class="num">10</span><div><h2>Security baseline</h2><p>Tenant isolation, least privilege, verified transport, controlled writes, and recoverability are release gates.</p></div></div>
+        <div class="grid">
+          <div class="card"><h3>Identity and authorization</h3><ul class="check"><li>RBAC checked at route and tool dispatcher.</li><li>Repositories enforce <code>tenant_id</code>.</li><li>Effective “View as” identity enters authorization and cache keys.</li><li>RLS protects sensitive tables in depth.</li><li>Admin writes require explicit risk classification and audit.</li></ul></div>
+          <div class="card"><h3>Transport and secrets</h3><ul class="check"><li>TLS with certificate verification.</li><li>Secrets in a managed secret store, never source or logs.</li><li>Least-privilege OAuth scopes and periodic token rotation.</li><li>Separate runtime, migration, worker, and read-only DB users.</li><li>Private networking for databases where possible.</li></ul></div>
+          <div class="card"><h3>Webhooks and files</h3><ul class="check"><li>Signature/token validation and timestamp window.</li><li>Replay/idempotency key persisted before processing.</li><li>Body-size limits before parsing.</li><li>File MIME, extension, checksum, size, and malware checks.</li><li>Presigned access expires and is audience-scoped.</li></ul></div>
+          <div class="card"><h3>Data protection</h3><ul class="check"><li>Structured log allowlist and payload redaction.</li><li>Retention and deletion policies by data class.</li><li>Encrypted backups and restore drills.</li><li>Cross-tenant leakage tests before feature work.</li><li>Security alerts for repeated denial, replay, and credential failure.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section" id="scaling" data-search="scale stages instances redis pgbouncer replicas partition autoscale">
+        <div class="section-head"><span class="num">11</span><div><h2>Scaling stages</h2><p>Advance when measurements cross a boundary; do not add distributed systems speculatively.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Stage</th><th>Topology</th><th>Required controls</th><th>Move on when…</th></tr></thead><tbody>
+          <tr><td><strong>1 · Controlled monolith</strong></td><td>One API, one worker or bounded inline jobs, process cache, PostgreSQL.</td><td>Strict pools, in-flight dedupe, SWR, idempotency, query and provider metrics.</td><td>Need high availability, worker contention affects HTTP, or a second API instance is required.</td></tr>
+          <tr><td><strong>2 · Separated compute</strong></td><td>Multiple API nodes, dedicated workers, Redis cache/pub-sub, shared PostgreSQL.</td><td>Distributed cache keys, outbox fan-out, send-only APIs, connection budget, graceful rolling deploys.</td><td>DB connection pressure, hot-table contention, queue backlog, or read-heavy analytical load dominates.</td></tr>
+          <tr><td><strong>3 · Data specialization</strong></td><td>PgBouncer, read replicas where consistency allows, prepared marts, worker autoscaling, object exports.</td><td>Replica-lag awareness, queue-based autoscaling, cache stampede protection, partition/bloat operations.</td><td>Measured PostgreSQL write/storage ceilings or independent regional/compliance requirements.</td></tr>
+          <tr><td><strong>4 · Service extraction</strong></td><td>Extract only proven bounded domains.</td><td>Durable event contracts, ownership, SLOs, tracing, independent capacity and failure isolation.</td><td>A domain needs materially different scale, security, deploy cadence, or data ownership.</td></tr>
+        </tbody></table></div>
+        <div class="card full warn" style="margin-top:14px"><h3>Scale by bottleneck</h3><p>HTTP nodes, workers, DWH, Zoho concurrency, PostgreSQL connections, vector memory, and WebSocket connections scale differently. A single “add more instances” control can make database and provider pressure worse.</p></div>
+      </section>
+
+      <section class="section" id="operations" data-search="operations observability metrics SLO p95 tracing alert capacity">
+        <div class="section-head"><span class="num">12</span><div><h2>Operations and SLOs</h2><p>Latency without source, pool, cache, and queue context is not actionable.</p></div></div>
+        <div class="grid">
+          <div class="card third"><h3>HTTP</h3><p>Request rate, p50/p95/p99, errors by route, cancellations, response bytes, authenticated rate-limit decisions.</p></div>
+          <div class="card third"><h3>PostgreSQL</h3><p>Query p95, pool wait, active/idle connections, locks, slow plans, dead tuples, disk and WAL growth.</p></div>
+          <div class="card third"><h3>Providers</h3><p>Calls, concurrency, latency, credits, 429s, retries, circuit state, stale fallbacks, outcome uncertainty.</p></div>
+          <div class="card third"><h3>Cache</h3><p>Hit, stale hit, miss, fill duration, dedupe count, evictions, invalidation lag, key cardinality.</p></div>
+          <div class="card third"><h3>Jobs</h3><p>Queue depth, oldest age, run p95, schedule lag, retries, dead letters, worker saturation.</p></div>
+          <div class="card third"><h3>Realtime</h3><p>Connections, subscriptions, messages, drops, reconnects, fan-out delay, backpressure and unauthorized attempts.</p></div>
+          <div class="card full"><h3>Initial service objectives</h3><div class="grid"><div class="card third"><span class="metric">≤ 2.5s</span><p>Cold interactive page p95.</p></div><div class="card third"><span class="metric">≤ 800ms</span><p>Warm paginated endpoint p95.</p></div><div class="card third"><span class="metric">0</span><p>Unhandled 429/500 responses in load testing.</p></div></div><p>Propagate one correlation ID across HTTP → repository → outbox/job → provider → realtime event. Alert on customer impact and exhausted budgets, not raw CPU alone.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="checklist" data-search="checklist release production deploy review">
+        <div class="section-head"><span class="num">13</span><div><h2>Production release checklist</h2><p>A short gate to use on every feature and integration change.</p></div></div>
+        <div class="grid">
+          <div class="card"><h3>Data</h3><ul class="check"><li>All app DB access is in a tenant-scoped repository.</li><li>Pagination is bounded and stable.</li><li>Indexes match production filters and sort.</li><li>Migration and rollback behavior are understood.</li><li>No external network call occurs inside a transaction.</li></ul></div>
+          <div class="card"><h3>Provider</h3><ul class="check"><li>Timeout, cancellation, semaphore, retry class, and circuit breaker exist.</li><li>Write is idempotent or reconciles uncertain outcomes.</li><li>429 and partial success are tested.</li><li>Cache/freshness/source health are represented.</li><li>OAuth scopes and payload logging are minimized.</li></ul></div>
+          <div class="card"><h3>Jobs and realtime</h3><ul class="check"><li>Queue, concurrency, timeout, retry, DLQ, and runbook exist.</li><li>Payload is small and schema-versioned.</li><li>Realtime event is authorized and versioned.</li><li>Reconnect/replay path is tested.</li><li>Background load cannot starve interactive traffic.</li></ul></div>
+          <div class="card"><h3>Verification</h3><ul class="check"><li>Lint, typecheck, tests, and cross-tenant tests pass.</li><li>Cold, warm, stale, provider-down, and rate-limited states pass.</li><li>Load test includes realistic provider and DB ceilings.</li><li>Dashboards and alerts are live before rollout.</li><li>Rollback and database restore paths are known.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section sources" id="sources" data-search="sources official documentation references">
+        <div class="section-head"><span class="num">14</span><div><h2>Primary sources</h2><p>Recheck vendor limits quarterly; limits and product behavior can change.</p></div></div>
+        <div class="grid">
+          <div class="card"><h3>Zoho CRM v8</h3><a href="https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html">COQL overview and limits ↗</a><a href="https://www.zoho.com/crm/developer/docs/api/v8/get-records.html">Get Records and pagination ↗</a><a href="https://www.zoho.com/crm/developer/docs/api/v8/api-limits.html">API credits and concurrency ↗</a><a href="https://www.zoho.com/crm/developer/docs/api/v8/bulk-read/create-job.html">Bulk Read ↗</a><a href="https://www.zoho.com/crm/developer/docs/api/v8/upsert-records.html">Upsert Records ↗</a></div>
+          <div class="card"><h3>PostgreSQL and extensions</h3><a href="https://www.postgresql.org/docs/current/runtime-config-client.html">Statement, lock, and session timeouts ↗</a><a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html">Row-level security ↗</a><a href="https://www.postgresql.org/docs/current/pgstatstatements.html">pg_stat_statements ↗</a><a href="https://www.postgresql.org/docs/current/sql-notify.html">LISTEN / NOTIFY behavior ↗</a><a href="https://github.com/pgvector/pgvector">PgVector indexing and tuning ↗</a><a href="https://github.com/timgit/pg-boss">pg-boss ↗</a></div>
+          <div class="card"><h3>Realtime and storage</h3><a href="https://www.rfc-editor.org/rfc/rfc6455">RFC 6455: WebSocket protocol ↗</a><a href="https://redis.io/docs/latest/develop/interact/pubsub/">Redis Pub/Sub delivery semantics ↗</a><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html">Amazon S3 security best practices ↗</a></div>
+          <div class="card"><h3>Repository-specific controls</h3><p>Review alongside <code>AGENTS.md</code>, integration wrappers, repository isolation tests, environment schema, queue catalog, migrations, and deployment configuration. This handbook defines the expected behavior; code and dashboards prove it.</p></div>
+        </div>
+      </section>
+
+      <footer class="footer">Mytrion Platform Engineering · Internal documentation · Review owner and revision date must be updated whenever a vendor limit, database topology, or security boundary changes.</footer>
+    </article>
+  </main>
+</div>
+<script>
+  const root=document.documentElement,theme=document.getElementById('theme'),search=document.getElementById('search'),sections=[...document.querySelectorAll('.section')],links=[...document.querySelectorAll('nav a')],empty=document.getElementById('noResults');
+  const saved=localStorage.getItem('platform-doc-theme');if(saved)root.dataset.theme=saved;
+  theme.addEventListener('click',()=>{const next=root.dataset.theme==='light'?'dark':'light';root.dataset.theme=next;localStorage.setItem('platform-doc-theme',next)});
+  search.addEventListener('input',()=>{const q=search.value.trim().toLowerCase();let shown=0;sections.forEach(s=>{const hit=!q||(s.textContent+' '+s.dataset.search).toLowerCase().includes(q);s.classList.toggle('hidden',!hit);if(hit)shown++});empty.style.display=shown?'none':'block'});
+  const observer=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){links.forEach(a=>a.classList.toggle('active',a.hash==='#'+e.target.id))}}),{rootMargin:'-20% 0px -70% 0px'});sections.forEach(s=>observer.observe(s));
+</script>
+</body>
+</html>

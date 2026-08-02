@@ -157,7 +157,7 @@ export async function loadSalesDashRaw(opts: { force?: boolean } = {}): Promise<
       return { ...hit.data, cachedAt: hit.cachedAt.toISOString(), fromCache: true };
     }
   }
-  const res = await callTouchpoint('dashboard.agent_sales', {});
+  const res = await callTouchpoint('dashboard.agent_sales', {}, { force: opts.force === true });
   if (res.success === false) throw new Error(res.error || 'Sales dashboard failed to load');
   const mapped = mapSalesDash(res.data ?? {});
   const cachedAt = writeDashCache(CACHE_PREFIX, mapped);

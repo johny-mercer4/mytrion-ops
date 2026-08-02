@@ -12,6 +12,7 @@
  * (integrations/ringcentral.ts) is the reference example.
  */
 import { fetchWithTimeout } from '../../lib/http.js';
+import { providerGuard } from '../../lib/providerGuard.js';
 
 export type WrapperKind = 'http' | 'sql' | 'sdk';
 
@@ -105,6 +106,8 @@ export interface HttpRequestOptions {
   /** Extra headers, merged over authHeaders(). */
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** Retry one transient 429/502/503/504. Enable for POST endpoints that are semantically reads. */
+  retryTransient?: boolean;
 }
 
 /**
@@ -174,11 +177,22 @@ export abstract class HttpWrapper extends BaseWrapper {
         init.body = JSON.stringify(opts.body);
       }
     }
-    const res =
-      opts.timeoutMs !== undefined
-        ? await fetchWithTimeout(url, init, opts.timeoutMs)
-        : await fetchWithTimeout(url, init);
+    const res = await providerGuard.run(
+      this.name,
+      () => opts.timeoutMs !== undefined
+        ? fetchWithTimeout(url, init, opts.timeoutMs)
+        : fetchWithTimeout(url, init),
+      { isFailure: (response) => response.status === 429 || response.status >= 500 },
+    );
     if (res.status === 401 && mayRetry && (await this.onUnauthorized())) {
+      return this.send(method, path, opts, false);
+    }
+    const transient = res.status === 429 || [502, 503, 504].includes(res.status);
+    if (transient && mayRetry && (method === 'GET' || opts.retryTransient === true)) {
+      const header = res.headers.get('retry-after');
+      const seconds = header == null ? Number.NaN : Number(header);
+      const delay = Number.isFinite(seconds) ? Math.min(2_000, Math.max(0, seconds * 1000)) : 350;
+      await new Promise((resolve) => setTimeout(resolve, delay));
       return this.send(method, path, opts, false);
     }
     return res;

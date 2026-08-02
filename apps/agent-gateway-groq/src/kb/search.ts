@@ -7,6 +7,7 @@
  */
 import { KB_ARTICLES, type KbArticle } from './corpus.js';
 import { config } from '../config.js';
+import { supportBotHeaders } from '../octaneClient.js';
 import { incrementCounter } from '../metrics.js';
 
 const STOP = new Set([
@@ -163,8 +164,7 @@ async function fetchRemoteKb(
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.octaneKey}`,
-        'Content-Type': 'application/json',
+        ...supportBotHeaders(true),
       },
       body: JSON.stringify({
         carrierId,

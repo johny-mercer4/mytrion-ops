@@ -24,6 +24,7 @@ import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { requireContext } from './helpers.js';
+import { executeSupportBotWrite } from './supportBotOperation.js';
 
 function takeReadToken(carrierId: string): void {
   if (!takeToken(`support-bot-read:${carrierId}`, 30)) {
@@ -39,7 +40,7 @@ function takeReadToken(carrierId: string): void {
 export async function supportBotDocumentRoutes(
   app: FastifyInstance,
 ): Promise<void> {
-  const guard = { onRequest: [app.sessionOrApiKey] };
+  const guard = { onRequest: [app.supportBotGatewayAuth] };
 
   app.post('/support-bot/invoice', guard, async (request) => {
     const body = supportBotCallerSchema
@@ -323,35 +324,52 @@ export async function supportBotDocumentRoutes(
         expose: true,
       });
     }
-    if (!takeToken(`support-bot-ticket:${body.carrierId}`, 10)) {
-      throw new AppError('Too many requests right now — try again in a minute.', {
-        statusCode: 429,
-        code: 'SUPPORT_BOT_RATE_LIMITED',
-        expose: true,
-      });
-    }
     const cardNumber =
       role === 'driver'
         ? await requireDriverCardNumber(registration).catch(() => null)
         : null;
-    const ticketId = await fileServiceRequest({
-      key: body.request,
-      profile: role,
+    const execution = await executeSupportBotWrite(request, {
+      operationType: 'service_request',
+      actorTelegramUserId: body.telegramUserId,
       carrierId: body.carrierId,
-      cardNumber,
-      requesterName:
-        registration.driverName ??
-        registration.companyName ??
-        'Client',
-      telegramUserId: registration.telegramUserId,
-      telegramUsername: registration.telegramUsername,
-      companyName: registration.companyName,
-      comment: body.comment || null,
+      validatedArguments: body,
+      confirmationArguments: {
+        telegram_user_id: body.telegramUserId,
+        request: body.request,
+        comment: body.comment,
+      },
+      prepare: () => {
+        if (!takeToken(`support-bot-ticket:${body.carrierId}`, 10)) {
+          throw new AppError('Too many requests right now — try again in a minute.', {
+            statusCode: 429,
+            code: 'SUPPORT_BOT_RATE_LIMITED',
+            expose: true,
+          });
+        }
+      },
+      execute: async () => {
+        const ticketId = await fileServiceRequest({
+          key: body.request,
+          profile: role,
+          carrierId: body.carrierId,
+          cardNumber,
+          requesterName: registration.driverName ?? registration.companyName ?? 'Client',
+          telegramUserId: registration.telegramUserId,
+          telegramUsername: registration.telegramUsername,
+          companyName: registration.companyName,
+          comment: body.comment || null,
+        });
+        return { ticketId, request: body.request };
+      },
+      sanitize: (output) => output,
     });
+    const ticketId = String(execution.result['ticketId'] ?? '');
     await auditFromContext(
       telegramCtx(registration.profile, registration.telegramUserId),
       {
-        action: 'carrier.support_bot.service_request',
+        action: execution.replayed
+          ? 'carrier.support_bot.service_request_replay'
+          : 'carrier.support_bot.service_request',
         status: 'ok',
         resourceType: 'desk_ticket',
         resourceId: ticketId,
@@ -359,9 +377,11 @@ export async function supportBotDocumentRoutes(
           carrierId: body.carrierId,
           role,
           request: body.request,
+          operationId: execution.operationId,
+          replayed: execution.replayed,
         },
       },
     );
-    return { ticketId, request: body.request };
+    return { ...execution.result, ...(execution.replayed ? { replayed: true } : {}) };
   });
 }

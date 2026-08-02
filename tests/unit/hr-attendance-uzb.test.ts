@@ -34,16 +34,30 @@ describe('attendance uzbTime', () => {
     // 01:00 UZB on Jul 30 → work_date Jul 29 for 19:00–03:00 shift
     const punched = parseUzbWallClock('2026-07-30 01:00:00');
     expect(uzbDateString(punched)).toBe('2026-07-30');
-    expect(
-      workDateForPunch(punched, { startLocal: '19:00', endLocal: '03:00' }),
-    ).toBe('2026-07-29');
+    expect(workDateForPunch(punched, { startLocal: '19:00', endLocal: '03:00' })).toBe(
+      '2026-07-29',
+    );
+  });
+
+  it('keeps a late overnight checkout with the shift during the grace window', () => {
+    const punched = parseUzbWallClock('2026-07-30 05:00:00');
+    expect(workDateForPunch(punched, { startLocal: '19:00', endLocal: '03:00' })).toBe(
+      '2026-07-29',
+    );
+  });
+
+  it('starts the new work date after the overnight checkout grace window', () => {
+    const punched = parseUzbWallClock('2026-07-30 08:00:00');
+    expect(workDateForPunch(punched, { startLocal: '19:00', endLocal: '03:00' })).toBe(
+      '2026-07-30',
+    );
   });
 
   it('keeps same-day shift punches on calendar day', () => {
     const punched = parseUzbWallClock('2026-07-29 10:00:00');
-    expect(
-      workDateForPunch(punched, { startLocal: '09:00', endLocal: '18:00' }),
-    ).toBe('2026-07-29');
+    expect(workDateForPunch(punched, { startLocal: '09:00', endLocal: '18:00' })).toBe(
+      '2026-07-29',
+    );
   });
 
   it('detects UZB weekends', () => {

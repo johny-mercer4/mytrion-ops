@@ -2,9 +2,8 @@
  * Verification pipeline — the snapshot the Sales "Verification Pipeline" tab renders per client.
  *
  * Shaped to mirror the real `credit_platform` model (kxd.<stage>_reports.status per request +
- * kxd.decision_reports / requests.result.summary) so the mock provider used today and the future
- * live provider return the IDENTICAL shape — the swap is drop-in (see provider.ts). This module is
- * pure types/constants; no DB access.
+ * kxd.decision_reports / requests.result.summary) so the live and development providers return the
+ * identical shape. This module is pure types/constants; no DB access.
  */
 
 /** Normalized per-stage status (maps the credit_platform status vocab into 5 UI states). */
@@ -44,10 +43,70 @@ export interface PipelineDecision {
   reason?: string;
 }
 
+export type PipelineRequirementFieldType =
+  | 'text'
+  | 'number'
+  | 'email'
+  | 'date'
+  | 'textarea'
+  | 'select';
+
+export interface PipelineRequirementField {
+  id: string;
+  label: string;
+  type: PipelineRequirementFieldType;
+  required: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
+export interface PipelineRequirementResponse {
+  sentAt: string;
+  sentBy: string;
+  attachmentName: string | null;
+  warning: string | null;
+}
+
+/** A Verification event that needs a concrete Sales answer. */
+export interface PipelineRequirement {
+  id: string;
+  eventId: string;
+  title: string;
+  detail: string | null;
+  createdAt: string;
+  fields: PipelineRequirementField[];
+  attachmentRequired: boolean;
+  attachmentLabel: string | null;
+  response?: PipelineRequirementResponse;
+}
+
+export interface PipelineTimelineEvent {
+  id: string;
+  stage: string;
+  status: string | null;
+  title: string;
+  createdAt: string;
+}
+
+export interface PipelineAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  scope: string;
+  createdAt: string;
+}
+
 export interface PipelineSnapshot {
+  requestId: string;
+  status: string;
+  updatedAt: string | null;
   stages: PipelineStage[];
   decision: PipelineDecision;
-  /** Where the snapshot came from — 'mock' this phase; 'credit_platform' once the live provider lands. */
+  requirements: PipelineRequirement[];
+  events: PipelineTimelineEvent[];
+  attachments: PipelineAttachment[];
+  /** Where the snapshot came from. */
   source: 'mock' | 'credit_platform';
 }
 

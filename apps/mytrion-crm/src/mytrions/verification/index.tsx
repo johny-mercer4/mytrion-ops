@@ -1,5 +1,6 @@
-import { FileCheck2, Home, SlidersHorizontal, Users } from 'lucide-react';
+import { FileCheck2, Home, MessagesSquare, SlidersHorizontal, Users } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import { VerificationClients } from './tabs/VerificationClients';
 import './verification.css';
 
@@ -62,6 +63,17 @@ const TABS: ModuleTab[] = [
     tone: 'var(--tone-emerald)',
     keywords: ['existing', 're-verification', 'compliance', 'review', 'renewal', 'roster', 'clients'],
     content: <VerificationClients />,
+  },
+  {
+    id: 'tickets',
+    label: 'Tickets',
+    description: 'Requests filed to Verification, with the conversation attached.',
+    icon: MessagesSquare,
+    tone: 'var(--tone-cyan)',
+    keywords: ['tickets', 'requests', 'chat', 'plaid', 'limit review', 'escalation', 'queue'],
+    // The SHARED console — Verification's inbound queue. Visibility comes from the server's thread reader
+    // filter, so there is no Verification-specific chat code.
+    content: <TicketConsole mode="queue" department="verification" title="Verification tickets" />,
   },
 ];
 

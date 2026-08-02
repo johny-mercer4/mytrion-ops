@@ -7,7 +7,8 @@ import { logAutomation } from '@/api/touchpoints';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
-import { deptStyle, iconBox, nyDaysAgo, nyToday } from '../salesData';
+import { deptStyle, iconBox, nyDaysAgo, nyToday, NAV_DESC } from '../salesData';
+import { SalesEmpty, SalesPage, SalesPageHead } from '../SalesPage';
 import { useLoad, money } from '../live';
 import {
   AUTO_LIST, LIMITTYPES, LIMIT_CHANGE_MAX, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
@@ -25,6 +26,7 @@ import { AutoWexEligibilityNotice, useWexActionContext } from '../AutoWexEligibi
 import { AutoCardCredentialsPanel, useCardCredentials } from '../AutoCardCredentials';
 import { AutoReportFilters } from '../AutoReportFilters';
 import type { TxnReportState } from '../txnReport';
+import { useAccessibleDialog } from '../useAccessibleDialog';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
@@ -104,21 +106,14 @@ export function AutoTab() {
   const cardInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
 
-  // ESC follows the same guarded-close rule as the backdrop and X.
-  useEffect(() => {
-    if (!autoModal) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      closeAuto();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // closeAuto is stable enough for this purpose (it only touches refs + setState).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoModal]);
-
-  const dealsLoad = useLoad(loadDeals, []);
+  // The roster is one of the heavier Sales reads. Do not fetch it until an opened automation
+  // actually needs a client/deal selector; catalog browsing stays instant.
+  const shouldLoadDeals =
+    autoModal !== null && autoModal.kind !== 'search' && autoModal.kind !== 'link';
+  const dealsLoad = useLoad(
+    () => (shouldLoadDeals ? loadDeals() : Promise.resolve<Deal[]>([])),
+    [shouldLoadDeals],
+  );
   const DEAL_LIST = dealsLoad.data ?? [];
   const cardCarrier = autoModal?.kind === 'card' && autoDeal?.carrier ? autoDeal.carrier : '';
   const cardsLoad = useLoad(() => (cardCarrier ? loadCards(cardCarrier) : Promise.resolve<Card[]>([])), [cardCarrier]);
@@ -192,6 +187,9 @@ export function AutoTab() {
     abandonRun();
     setAutoModal(null);
   };
+  const autoDialogRef = useAccessibleDialog(autoModal !== null, closeAuto, {
+    dismissible: autoStep !== 'running',
+  });
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
   const selectDeal = (d: Deal): void => {
     setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); setAutoCardQuery('');
@@ -326,18 +324,52 @@ export function AutoTab() {
 
   return (
     <>
-      <div className="ss-fu">
-        <div style={s('margin-bottom:16px')}>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Self-Service Actions</div>
-          <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
+      <SalesPage>
+        <SalesPageHead
+          description={
+            <>
+              {NAV_DESC.auto} <strong>{autoCatalog.length}</strong>{' '}
+              {autoCatalog.length === 1 ? 'action' : 'actions'}
+              {autoSearch.trim() ? ' match your search.' : ' available.'}
+            </>
+          }
+        />
+        <div className="ss-toolbar">
+          <div className="ss-search">
+            <Icon name="search" size={16} />
+            <input
+              value={autoSearch}
+              onChange={(e) => setAutoSearch(e.target.value)}
+              aria-label="Search actions"
+              placeholder="Search by name, code (e.g. C-16), or keyword…"
+            />
+            {autoSearch ? (
+              <button
+                type="button"
+                onClick={() => setAutoSearch('')}
+                aria-label="Clear search"
+                className="ss-search-clear"
+              >
+                <Icon name="close" size={13} strokeWidth={2.4} />
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div style={s('position:relative;margin-bottom:18px')}>
-          <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
-          <input value={autoSearch} onChange={(e) => setAutoSearch(e.target.value)} placeholder="Search by name, code (e.g. C-16), or keyword…" className="ss-in" style={s('width:100%;height:46px;padding:0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)')} />
-          {autoSearch && <button onClick={() => setAutoSearch('')} aria-label="Clear" className="ss-ico-btn" style={s('position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:var(--radius-md);border:none;background:var(--alt);color:var(--muted);cursor:pointer')}>✕</button>}
-        </div>
-        <AutoCatalog items={autoCatalog} onOpen={openAuto} />
-      </div>
+        {autoCatalog.length === 0 ? (
+          <SalesEmpty
+            icon="bolt"
+            title="No matching actions"
+            body="Nothing in the catalog matches that name, code or keyword."
+            action={
+              <button type="button" className="ss-pager-btn" onClick={() => setAutoSearch('')}>
+                Clear search
+              </button>
+            }
+          />
+        ) : (
+          <AutoCatalog items={autoCatalog} onOpen={openAuto} />
+        )}
+      </SalesPage>
 
       {/* Scrim matches dataCenterSheet (.78 / blur 6) — .62 / blur 3 left the catalog legible through
           the dialog. The panel takes the shared `ss-modal-box` recipe (accent rail +
@@ -345,13 +377,22 @@ export function AutoTab() {
           reason the modal read as translucent in dark mode. */}
       {b && (
         <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div className="ss-modal-box" onClick={(e) => e.stopPropagation()} style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+          <div
+            ref={autoDialogRef}
+            className="ss-modal-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sales-auto-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}
+          >
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(autoIconColor(b), 48))}>
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
-                <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
+                <div id="sales-auto-title" style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
                 <div style={s('font-size:14px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>

@@ -11,9 +11,21 @@ import type { TouchpointKey, TouchpointMap } from './touchpointTypes';
 export async function callTouchpoint<K extends TouchpointKey>(
   key: K,
   params: TouchpointMap[K]['params'],
-  opts: { departmentAccess?: string[] } = {},
+  opts: {
+    departmentAccess?: string[];
+    signal?: AbortSignal;
+    /** Authorized administrators may explicitly bypass the read cache. */
+    force?: boolean;
+    /** Stable mutation identity; important writes should reuse it across retries. */
+    idempotencyKey?: string;
+  } = {},
 ): Promise<TouchpointMap[K]['result']> {
   const res = (await request('POST', `/touchpoints/${encodeURIComponent(key)}`, {
+    signal: opts.signal,
+    headers: {
+      ...(opts.force ? { 'x-cache-refresh': '1' } : {}),
+      ...(opts.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
+    },
     body: {
       departmentAccess: opts.departmentAccess ?? ['sales'],
       params,

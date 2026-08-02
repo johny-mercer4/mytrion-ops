@@ -40,6 +40,12 @@ vi.mock('../../src/repos/workerTaskRepo.js', () => ({
       },
     ]),
     list: vi.fn(async () => []),
+    countByStatus: vi.fn(async () => ({
+      open: 0,
+      in_progress: 0,
+      completed: 0,
+      cancelled: 0,
+    })),
     findById: vi.fn(),
     findWebhookReplay: vi.fn(),
     listEvents: vi.fn(async () => []),

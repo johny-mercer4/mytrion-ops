@@ -88,6 +88,30 @@ export const workerTaskRepo = {
       .offset(Math.max(filter.offset ?? 0, 0));
   },
 
+  async countByStatus(
+    ctx: TenantContext,
+    assigneeZohoUserId: string,
+  ): Promise<Record<WorkerTaskStatus, number>> {
+    const rows = await db
+      .select({ status: mytrionWorkerTasks.status, count: sql<number>`count(*)::int` })
+      .from(mytrionWorkerTasks)
+      .where(
+        and(
+          eq(mytrionWorkerTasks.tenantId, ctx.tenantId),
+          eq(mytrionWorkerTasks.assigneeZohoUserId, assigneeZohoUserId),
+        ),
+      )
+      .groupBy(mytrionWorkerTasks.status);
+    const counts: Record<WorkerTaskStatus, number> = {
+      open: 0,
+      in_progress: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+    for (const row of rows) counts[row.status] = Number(row.count) || 0;
+    return counts;
+  },
+
   async findById(ctx: TenantContext, taskId: string): Promise<MytrionWorkerTask | undefined> {
     const rows = await db
       .select()

@@ -8,8 +8,19 @@
  *
  * Focus lands on Cancel, not Confirm: every caller gates something the UI cannot undo, so a stray
  * Enter must not be the thing that deletes a record.
+ *
+ * Portalled to the `.cs-root` wrapper rather than rendered in place: `.cs-modal-body` (the
+ * scrollable content area of every CS modal) has `contain: paint` for scroll-perf reasons, and CSS
+ * containment makes an element the containing block for `position: fixed` descendants — same
+ * effect as a `transform`. A caller that opens this from inside a modal's body (e.g. a tab's own
+ * content, not just its footer) would otherwise get a dialog clipped/positioned to that scrollable
+ * box instead of the viewport. Portalling all the way to `document.body` would dodge that but land
+ * OUTSIDE `.cs-root`, and every rule here is scoped `.cs-root .cs-confirm-*` — so `.cs-root` itself
+ * (an ancestor of `.cs-modal-body`, so still clear of its containment) is the target: far enough up
+ * to escape, still inside the scope that styles it.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const WARN_PATH =
   'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z';
@@ -34,6 +45,7 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const downOnBackdrop = useRef(false);
+  const [portalTarget] = useState(() => document.querySelector<HTMLElement>('.cs-root') ?? document.body);
   // Read through refs so the effect runs once: callers pass inline arrows, and re-running this on
   // every parent render would steal focus back mid-interaction.
   const onCancelRef = useRef(onCancel);
@@ -75,7 +87,7 @@ export function ConfirmDialog({
     };
   }, []);
 
-  return (
+  return createPortal(
     <div
       className="cs-modal-backdrop cs-confirm-backdrop"
       onMouseDown={(e) => {
@@ -117,6 +129,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
 }

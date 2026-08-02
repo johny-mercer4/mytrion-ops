@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { operationalEnvShape } from './envOperational.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
 const flag = (def: '0' | '1') =>
@@ -127,15 +128,6 @@ const EnvSchema = z.object({
   EVAL_MAX_COST_USD: z.coerce.number().positive().default(2),
   // Checkpointed threads idle longer than this are swept by a background job.
   AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
-  // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
-  AGENT_MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(30),
-  AGENT_MEMORY_MAX_PER_KEY: z.coerce.number().int().positive().default(500),
-  // Telegram support-bot semantic turn history. Dedicated table and strict
-  // tenant+carrier+chat+telegram-user scope; off until migration 0078 is applied.
-  SUPPORT_BOT_MEMORY_TTL_DAYS: z.coerce.number().int().positive().max(365).default(30),
-  SUPPORT_BOT_MEMORY_MAX_PER_USER: z.coerce.number().int().positive().max(2000).default(200),
-  SUPPORT_BOT_MEMORY_TOP_K: z.coerce.number().int().positive().max(8).default(3),
-  SUPPORT_BOT_MEMORY_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.35),
   // Context paging (PagedPostgresSaver): char budget for mid-history before eviction (~tokens×4).
   AGENT_CONTEXT_PAGE_CHARS: z.coerce.number().int().positive().default(32_000),
   // Keep this many trailing messages when paging (plus the first message).
@@ -350,6 +342,12 @@ const EnvSchema = z.object({
   // auto-login). Set to 1 only as a deliberate decision; every fetch is then audited.
   RINGCENTRAL_BROWSER_CREDS_ACK: flag('0'),
 
+  // --- Gong (Call Hub Phase 2 — recordings/transcripts). Off until credentials + client land. ---
+  FF_GONG_ENABLED: flag('0'),
+  GONG_ACCESS_KEY: z.string().default(''),
+  GONG_ACCESS_KEY_SECRET: z.string().default(''),
+  GONG_BASE_URL: z.string().default('https://api.gong.io'),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
@@ -389,6 +387,15 @@ const EnvSchema = z.object({
 
   // --- Inbound server API key (callers present this to reach this engine) ---
   API_KEY: z.string().default(''),
+
+  // --- Telegram support-bot gateway (service-to-service only) ---
+  // Deliberately separate from API_KEY: compromise of the bot process must not grant access to
+  // unrelated admin/API routes. The gateway presents this only as x-support-bot-key.
+  SUPPORT_BOT_GATEWAY_API_KEY: z.string().default(''),
+  // Render URL for the separately deployed gateway monitor, plus the gateway's MONITOR_TOKEN.
+  // The backend injects the token server-side after authenticating an Octane admin/service caller.
+  SUPPORT_BOT_GATEWAY_MONITOR_URL: z.string().url().or(z.literal('')).default(''),
+  SUPPORT_BOT_GATEWAY_MONITOR_TOKEN: z.string().default(''),
 
   // --- Billing payment-ingest webhook (Zapier → payment_transactions). A dedicated shared
   //     secret, scoped to just the ingest endpoint (NOT the full API_KEY). ---
@@ -439,8 +446,47 @@ const EnvSchema = z.object({
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
   // Hard cap for uploads AND generated artifacts.
   FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
+
+  // --- Dropbox: the storage for comms chat attachments ---
+  //
+  // Which provider a NEW comms attachment lands on. Per-provider rather than global because every
+  // existing file_assets row is on S3 and must keep resolving there — the row records its own provider, so
+  // flipping this only changes where the next upload goes.
+  COMMS_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
+  // Refresh-token grant. Dropbox access tokens last ~4h, so the refresh token is the durable credential;
+  // there is no place to persist a rotated one, which is why rotation must stay off on the Dropbox app.
+  DROPBOX_APP_KEY: z.string().default(''),
+  DROPBOX_APP_SECRET: z.string().default(''),
+  DROPBOX_REFRESH_TOKEN: z.string().default(''),
+  // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
+  // serve every tenant without their files interleaving.
+  DROPBOX_ROOT_PATH: z.string().default('/comms'),
+  // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
+  // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
+  // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
+  COMMS_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().max(2048).default(50),
   // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
   PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+
+  // --- Realtime WebSocket (GET /v1/realtime + GET /v1/carrier/mini-app/realtime) ---
+  // Server-side protocol-ping interval, which is also the reap deadline: a socket that has not
+  // answered the PREVIOUS sweep's ping is terminated on the next one (so a dead socket is
+  // dropped within 2 intervals). The browser's WebSocket API answers `pong` at the protocol
+  // level with no JS involvement, so this is how a dead CLIENT is noticed server-side and its
+  // hub subscriptions are freed. Render imposes no fixed WS timeout, but a CDN in front (e.g.
+  // Cloudflare) caps WS at 100s — 25s stays under 75% of that so adding one needs no retune.
+  REALTIME_PING_INTERVAL_MS: z.coerce.number().int().min(1_000).default(25_000),
+  // --- Agent presence (drives ticket round-robin: only an available ONLINE agent is assignable) ---
+  // Ships dark. When off, sockets are not tracked and nothing is written to
+  // mytrion_agent_presence — so the table can land, and the heartbeat can run, well before ticket
+  // assignment exists. Turn on together with the comms ticketing surface.
+  FF_COMMS_PRESENCE: flag('0'),
+  // How often a lease's last_seen_at is refreshed when nothing changed. Must be >= the ping
+  // interval so each refresh follows at least one liveness check.
+  PRESENCE_REFRESH_MS: z.coerce.number().int().min(1_000).default(30_000),
+  // How old a lease may be and still count as online. Must be > 2x PRESENCE_REFRESH_MS or agents
+  // flicker offline between refreshes — enforced as a boot assertion below, not left to a comment.
+  PRESENCE_STALE_MS: z.coerce.number().int().min(3_000).default(90_000),
 
   // --- Browser automation: Browserbase (legacy direct stubs — superseded by Composio toolkits) ---
   BROWSERBASE_API_KEY: z.string().default(''),
@@ -543,77 +589,7 @@ const EnvSchema = z.object({
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   // ON by default — the portal always expects Zoho OAuth; set to 0 only for emergency static-key bypass.
   FF_ZOHO_OAUTH_ENABLED: flag('1'),
-  // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
-  // deprecated alias — either flag enables the endpoint.
-  FF_ORCHESTRATOR_ENABLED: flag('1'),
-  // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema).
-  FF_AGENT_CHECKPOINTS: flag('1'),
-  // Reuse the compiled LangGraph agent across turns, keyed by (agent + full caller identity/scope).
-  // Skips re-compiling the graph + re-fetching Composio tools every turn (big win for admin/
-  // orchestrator turns). Safe because the key includes every identity/authority/view field, so no
-  // two callers ever share a graph; requestId is sourced from the run context at dispatch, not baked.
-  FF_AGENT_GRAPH_CACHE: flag('1'),
-  // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
-  FF_FILES_ENABLED: flag('0'),
-  // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).
-  FF_BROWSER_ENABLED: flag('0'),
-  // Human-in-the-loop approvals: agent-proposed write/destructive tools park as pending
-  // approvals (24h TTL) instead of executing. Unlocks agent writes safely.
-  FF_WRITE_APPROVALS: flag('0'),
-  // Long-term agent memory: end-of-run distillation + UNTRUSTED recall in scoped RAG.
-  FF_AGENT_MEMORY: flag('0'),
-  // Per-user Telegram semantic history. Requires support_bot_memories (migration 0078).
-  FF_SUPPORT_BOT_MEMORY: flag('0'),
-  // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
-  FF_BROWSER_WRITES: flag('0'),
-  // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.
-  // Empty = skip inbox notify (sweep/transitions still run). Outbound email = Zapier.
-  RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
-  RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
-  // Reserved for Zapier / ops identity — not used by app Zoho send_mail (disabled).
-  RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
-  // Phase 2 Retention CS assignee — first Zoho user id wins (no RoundRobin). Gated off until
-  // RETENTION_AUTO_ASSIGN_ENABLED is flipped in csRoundRobin.ts.
-  RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
-  // Spanish Retention desk assignee (bypasses fixed assignee when is_spanish_desk).
-  RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
-  // Pilot switch: when ON, auto-create Retention cases only for listed Sales agents
-  // (Zoho CRM user ids). Off = generate for all agents (production). Clear flag to reset.
-  FF_RETENTION_PILOT_ONLY: flag('0'),
-  // Comma-separated Zoho CRM user ids (e.g. Daniel Brown 6227679000031473048).
-  RETENTION_PILOT_AGENT_ZOHO_USER_IDS: z.string().default(''),
-
-  // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
-  FF_JOBS_ENABLED: flag('0'),
-  // inline: this process runs boss + workers + schedules (default, single Render service).
-  // send-only: this process only enqueues; a dedicated worker (dist/worker.js) executes.
-  // off: /v1/agent/tasks returns 503.
-  JOBS_WORKER_MODE: z.enum(['inline', 'send-only', 'off']).default('inline'),
-  PGBOSS_SCHEMA: z
-    .string()
-    .regex(/^[a-z_][a-z0-9_]*$/, 'must be a plain lowercase identifier')
-    .default('pgboss'),
-  // Batch size for the agent-run queue worker (how many agent runs execute concurrently).
-  JOBS_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
-  JOBS_CRON_TZ: z.string().default('America/Chicago'),
-  /**
-   * pg-boss's OWN pool, separate from DATABASE_POOL_MAX (the app pool).
-   *
-   * v12 runs several independent internal loops — queue-cache refresh, supervision, the cron
-   * timekeeper, the job navigator, maintenance — on top of one poller per registered worker (~20
-   * queues here). At the old value of 3 those loops queued behind each other, so a single slow or
-   * dropped connection made every waiter miss pg-boss's 10s acquire deadline at the same instant and
-   * emit "timeout exceeded when trying to connect" in a burst. Keep it comfortably above the number
-   * of concurrent internal loops, and mind the server budget: this is per process, and prod + local
-   * share one Render instance (~100 max_connections).
-   */
-  PGBOSS_POOL_MAX: z.coerce.number().int().positive().max(20).default(8),
-  /**
-   * How long pg-boss may wait for a pooled connection (its own default is 10s). A managed DB reached
-   * over the public internet needs more headroom than one on localhost — a fresh TLS handshake to
-   * Render from a dev laptop alone measures over a second.
-   */
-  PGBOSS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  ...operationalEnvShape,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -646,48 +622,3 @@ export const corsOrigins: string[] = env.CORS_ORIGINS.split(',')
 export const corsOriginSuffixes: string[] = env.CORS_ORIGIN_SUFFIXES.split(',')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
-
-/**
- * Verify that runtime secrets are present. Called once at server/worker startup
- * (not at import time, so tests and tooling can import modules freely). In
- * production any missing secret is fatal; in dev/test we warn and continue with
- * insecure fallbacks so the app still boots locally.
- */
-export function assertRuntimeSecrets(): void {
-  const missing: string[] = [];
-  if (!databaseUrl) missing.push('MYTRION_OPS_DATABASE_URL');
-  if (!env.JWT_SECRET) missing.push('JWT_SECRET');
-  if (!env.ENCRYPTION_KEY) missing.push('ENCRYPTION_KEY');
-  if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
-  if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
-  if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
-  // Soft: flag defaults ON so agents prefer dbt MCP, but missing creds must not brick boot —
-  // discovery already no-ops when DBT_MCP_URL is empty. Warn via missing only in production.
-  if (env.FF_DBT_MCP_ENABLED && env.NODE_ENV === 'production') {
-    if (!env.DBT_MCP_URL) missing.push('DBT_MCP_URL');
-    if (!env.DBT_MCP_CLIENT_ID) missing.push('DBT_MCP_CLIENT_ID');
-    if (!env.DBT_MCP_CLIENT_SECRET) missing.push('DBT_MCP_CLIENT_SECRET');
-  }
-  if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
-  if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
-  if (env.FF_ZOHO_OAUTH_ENABLED) {
-    if (!env.ZOHO_SERVER_CLIENT_ID) missing.push('ZOHO_SERVER_CLIENT_ID');
-    if (!env.ZOHO_SERVER_CLIENT_SECRET) missing.push('ZOHO_SERVER_CLIENT_SECRET');
-    if (!env.JWT_SECRET) missing.push('JWT_SECRET');
-  }
-  if (env.FF_FILES_ENABLED) {
-    if (!env.S3_ENDPOINT) missing.push('S3_ENDPOINT');
-    if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');
-    if (!env.S3_SECRET_ACCESS_KEY) missing.push('S3_SECRET_ACCESS_KEY');
-    if (!env.S3_BUCKET) missing.push('S3_BUCKET');
-  }
-
-  if (missing.length === 0) return;
-
-  if (isProduction) {
-    throw new Error(`Missing required secrets in production: ${missing.join(', ')}`);
-  }
-  console.warn(
-    `[env] Missing secrets (${missing.join(', ')}). Using insecure dev fallbacks — do not use in production.`,
-  );
-}

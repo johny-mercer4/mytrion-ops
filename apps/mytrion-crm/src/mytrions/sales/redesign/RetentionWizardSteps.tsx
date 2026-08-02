@@ -13,14 +13,12 @@ import {
   type RetentionDissatisfactionReason,
   type RetentionPhase1Outcome,
 } from './retentionData';
-
 export interface PendingCallLog {
   sessionId?: string;
   peer: string;
   result?: string;
   durationMs?: number;
 }
-
 function callPeerLine(pending: PendingCallLog): string {
   const phone = formatUsPhone(pending.peer) || pending.peer;
   const bits = [
@@ -30,9 +28,7 @@ function callPeerLine(pending: PendingCallLog): string {
   ].filter(Boolean);
   return bits.join(' · ');
 }
-
 export type StatusPick = 'out_of_reach' | 'reached' | 'vacation' | 'dissatisfied' | '';
-
 /** Stage card chrome — colors match `KANBAN_COLS` on the Retention board. */
 const STAGE_CARD: Record<Exclude<StatusPick, ''>, { color: string; icon: IconName }> = {
   out_of_reach: { color: 'var(--warn)', icon: 'warn' },
@@ -40,10 +36,8 @@ const STAGE_CARD: Record<Exclude<StatusPick, ''>, { color: string; icon: IconNam
   vacation: { color: 'var(--violet)', icon: 'calendar' },
   dissatisfied: { color: 'var(--danger)', icon: 'alert' },
 };
-
 /** High-contrast label on bright stage fills (warn/ok/violet/danger). */
 const STAGE_ON = '#04131c';
-
 export function WizardChrome(props: {
   stage: string;
   stepLabel?: string;
@@ -90,7 +84,6 @@ export function WizardChrome(props: {
     </div>
   );
 }
-
 function StepPill({
   n,
   label,
@@ -120,7 +113,6 @@ function StepPill({
     </div>
   );
 }
-
 export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }) {
   const line = callPeerLine(pendingCall);
   return (
@@ -142,7 +134,6 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
     </div>
   );
 }
-
 function CallDialButton(props: {
   canCall: boolean;
   awaitingCallEnd: boolean;
@@ -176,7 +167,6 @@ function CallDialButton(props: {
     </button>
   );
 }
-
 export function CallFirstBlock(props: {
   busy: boolean;
   contactPhone: string | null;
@@ -201,7 +191,6 @@ export function CallFirstBlock(props: {
           Dissatisfied, or Vacation. Out of Reach auto-logs attempt 1 for RingCentral.
         </div>
       </div>
-
       {phoneLoading ? (
         <div
           className="ss-skel"
@@ -221,7 +210,6 @@ export function CallFirstBlock(props: {
           No phone on file — add a number on the deal before calling.
         </div>
       )}
-
       <CallDialButton
         canCall={canCall}
         awaitingCallEnd={awaitingCallEnd}
@@ -232,7 +220,6 @@ export function CallFirstBlock(props: {
     </section>
   );
 }
-
 export function AttemptStep(props: {
   row: RetentionCaseRow;
   busy: boolean;
@@ -258,7 +245,6 @@ export function AttemptStep(props: {
   // Messenger / email: note required; screenshot optional (encourage both).
   const noteMissing = !props.attemptNote.trim();
   const canCall = !busy && !awaitingCallEnd && !!contactPhone?.trim();
-
   return (
     <section
       style={s(
@@ -305,7 +291,6 @@ export function AttemptStep(props: {
           )}
         </div>
       )}
-
       <CallDialButton
         canCall={canCall}
         awaitingCallEnd={awaitingCallEnd}

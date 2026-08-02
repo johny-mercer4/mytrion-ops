@@ -6,6 +6,9 @@ import { databaseUrl, env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { dbSslOption } from './client.js';
 
+/** Stable, application-scoped advisory lock. Prevents two deploy instances migrating at once. */
+const MIGRATION_LOCK_ID = 8_062_683;
+
 /**
  * Apply pending Drizzle migrations at boot — so a deploy (push -> Render redeploy) brings the DB
  * schema forward with no separate manual step. Opt-in via DB_MIGRATE_ON_BOOT=1 (set it in the
@@ -67,6 +70,7 @@ export async function runMigrationsOnBoot(): Promise<void> {
     const sql = postgres(databaseUrl, { max: 1, ssl: dbSslOption(databaseUrl) });
     try {
       logger.info({ migrationsFolder, attempt }, 'applying database migrations on boot');
+      await sql`select pg_advisory_lock(${MIGRATION_LOCK_ID})`;
       await migrate(drizzle(sql), { migrationsFolder });
       logger.info({ attempt }, 'database migrations up to date');
       return;
@@ -83,6 +87,7 @@ export async function runMigrationsOnBoot(): Promise<void> {
       await sleep(backoffMs);
       continue;
     } finally {
+      await sql`select pg_advisory_unlock(${MIGRATION_LOCK_ID})`.catch(() => undefined);
       // No-op on the retry path (already ended above); closes the pool on success and on rethrow.
       await sql.end({ timeout: 5 }).catch(() => undefined);
     }

@@ -12,6 +12,7 @@ import {
   publishRetentionLive,
 } from './retentionLiveBus';
 import { useOctaneRealtime } from './useOctaneRealtime';
+import { setSocketConnected } from './socketStatus';
 // Suffix-normalized: event ownerId / session id / View-as id may differ by org prefix (zohoIds.ts).
 import { zohoIdsMatch } from './zohoIds';
 
@@ -31,6 +32,8 @@ export function useRetentionRealtime(
   useOctaneRealtime({
     enabled: !!currentUserId,
     extraTopics,
+    onOpen: () => setSocketConnected(true),
+    onClose: () => setSocketConnected(false),
     onInboxEvent: (event) => {
       // Inbox messages (our copy of Zoho Org_Module) — refresh the Sales inbox in real time.
       if (event.type.startsWith('inbox.')) {

@@ -17,14 +17,18 @@ const mocks = vi.hoisted(() => ({
   dmAccess: vi.fn(),
   findRegistration: vi.fn(),
   listActiveByCarrier: vi.fn(),
+  listActiveForSupportBot: vi.fn(),
   insertMessages: vi.fn(async () => 1),
+  deleteMessagesOlderThan: vi.fn(async () => 0),
   listEnabledChats: vi.fn(),
   setChat: vi.fn(),
+  disableChat: vi.fn(),
   autoBindChat: vi.fn(),
   resolveCaller: vi.fn(),
   recallMemory: vi.fn(),
   commitMemory: vi.fn(),
   searchKnowledge: vi.fn(),
+  deleteConfirmations: vi.fn(async () => 0),
 }));
 
 vi.mock('../../src/modules/audit/auditLogger.js', () => ({
@@ -54,15 +58,21 @@ vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
   registeredMiniAppCompanyRepo: {
     findActiveByTelegramUserId: mocks.findRegistration,
     listActiveByCarrier: mocks.listActiveByCarrier,
+    listActiveForSupportBot: mocks.listActiveForSupportBot,
   },
 }));
 vi.mock('../../src/repos/supportBotGatewayRepo.js', () => ({
   supportBotGatewayRepo: {
     insertMessages: mocks.insertMessages,
+    deleteMessagesOlderThan: mocks.deleteMessagesOlderThan,
     listEnabledChats: mocks.listEnabledChats,
     setChat: mocks.setChat,
+    disableChat: mocks.disableChat,
     autoBindChat: mocks.autoBindChat,
   },
+}));
+vi.mock('../../src/repos/supportBotConfirmationRepo.js', () => ({
+  supportBotConfirmationRepo: { deleteResolvedBefore: mocks.deleteConfirmations },
 }));
 
 let requestContext: TenantContext = {
@@ -87,7 +97,8 @@ async function app() {
   const instance = Fastify({ logger: false });
   errorHandlerPlugin(instance);
   await instance.register(sensible);
-  instance.decorate('sessionOrApiKey', async () => undefined);
+  instance.decorate('supportBotGatewayAuth', async () => undefined);
+  instance.decorate('supportBotGatewayOrAdmin', async () => undefined);
   await instance.register(supportBotGatewayRoutes);
   return instance;
 }
@@ -118,6 +129,7 @@ describe('support-bot gateway routes tenant isolation', () => {
           : [],
     );
     mocks.listActiveByCarrier.mockResolvedValue([]);
+    mocks.listActiveForSupportBot.mockResolvedValue([]);
     mocks.resolveCaller.mockResolvedValue({ registration: {}, role: 'owner' });
     mocks.recallMemory.mockResolvedValue([]);
     mocks.commitMemory.mockResolvedValue(true);
@@ -191,27 +203,79 @@ describe('support-bot gateway routes tenant isolation', () => {
     expect(mocks.autoBindChat).not.toHaveBeenCalled();
   });
 
+  it('disables a chat mapping only with admin authority and audits it', async () => {
+    mocks.disableChat.mockResolvedValue({
+      id: 'chat-a',
+      tenantId: 'tenant-a',
+      chatId: '-1001',
+      carrierId: 'carrier-a',
+      enabled: false,
+      createdBy: 'admin',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const server = await app();
+
+    const denied = await server.inject({
+      method: 'DELETE',
+      url: '/support-bot/chat-map/-1001',
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(mocks.disableChat).not.toHaveBeenCalled();
+
+    requestContext = { ...requestContext, role: 'admin' };
+    const disabled = await server.inject({
+      method: 'DELETE',
+      url: '/support-bot/chat-map/-1001',
+    });
+    await server.close();
+
+    expect(disabled.statusCode).toBe(204);
+    expect(mocks.disableChat).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      '-1001',
+    );
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+      expect.objectContaining({
+        action: 'support_bot.chat_map.disable',
+        resourceId: '-1001',
+      }),
+    );
+  });
+
   it('proxies metrics and preserves monitor query parameters', async () => {
-    const fetchMock = vi.fn(async () =>
+    const previousUrl = env.SUPPORT_BOT_GATEWAY_MONITOR_URL;
+    const previousToken = env.SUPPORT_BOT_GATEWAY_MONITOR_TOKEN;
+    env.SUPPORT_BOT_GATEWAY_MONITOR_URL = 'https://gateway.internal.example';
+    env.SUPPORT_BOT_GATEWAY_MONITOR_TOKEN = 'backend-owned-monitor-secret';
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({ pid: 42 }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const server = await app();
-    const response = await server.inject({
-      method: 'GET',
-      url: '/support-bot/monitor/api/metrics?token=secret&since=2026-07-28T00%3A00%3A00.000Z',
-    });
-    await server.close();
+    try {
+      const server = await app();
+      const response = await server.inject({
+        method: 'GET',
+        url: '/support-bot/monitor/api/metrics?token=untrusted&since=2026-07-28T00%3A00%3A00.000Z',
+      });
+      await server.close();
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ pid: 42 });
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8787/api/metrics?token=secret&since=2026-07-28T00%3A00%3A00.000Z',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ pid: 42 });
+      const [target, init] = fetchMock.mock.calls[0] ?? [];
+      expect(target).toBeInstanceOf(URL);
+      expect(String(target)).toBe(
+        'https://gateway.internal.example/api/metrics?since=2026-07-28T00%3A00%3A00.000Z&token=backend-owned-monitor-secret',
+      );
+      expect(init).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    } finally {
+      env.SUPPORT_BOT_GATEWAY_MONITOR_URL = previousUrl;
+      env.SUPPORT_BOT_GATEWAY_MONITOR_TOKEN = previousToken;
+    }
   });
 
   it('recalls memory with authenticated tenant plus carrier/chat/user scope', async () => {
