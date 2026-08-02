@@ -37,7 +37,7 @@ import './dc-clients.css';
 
 import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
-import { TicketsTab } from './tabs/TicketsTab';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import { RetentionTab } from './tabs/RetentionTab';
 import { VerificationTab } from './tabs/VerificationTab';
 import { CallHubTab } from './tabs/CallHubTab';
@@ -133,9 +133,9 @@ export function SalesRedesign() {
   }, []);
 
   // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
-  // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open). Shell-
-  // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
-  const liveBadges = useSidebarBadges(currentUserId, pushToast);
+  // the tab marks them read); Tickets = unread comms messages from /v1/comms. Shell-level (not tab-scoped)
+  // so the toast on a new inbox message fires no matter which tab is open.
+  const liveBadges = useSidebarBadges(currentUserId);
   // Octane /v1/realtime — new retention cases (and pool/ops) push live to this agent.
   useRetentionRealtime(currentUserId, pushToast);
   const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);
@@ -406,7 +406,18 @@ export function SalesRedesign() {
                   {section === 'home' && <HomeTab />}
                   {section === 'inbox' && <InboxTab />}
                   {section === 'tasks' && <TasksTab />}
-                  {section === 'tickets' && <TicketsTab />}
+                  {/* The SHARED console in requester mode: "the tickets and escalations I raised", which
+                      the server's participant arm decides. The same component serves the CS, Billing and
+                      Verification queues — Sales does not have its own chat implementation. */}
+                  {section === 'tickets' && (
+                    <TicketConsole
+                      mode="requester"
+                      title="My tickets & escalations"
+                      // Create → "opening it now" lands on the new ticket with its chat already open.
+                      focusTicketId={focusTicket}
+                      onFocusConsumed={clearFocusTicket}
+                    />
+                  )}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}
                   {section === 'callHub' && <CallHubTab />}

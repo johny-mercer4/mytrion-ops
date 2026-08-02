@@ -123,10 +123,13 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'soon',
     items: [
-      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
-      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
-      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
+      // LIVE on the native comms path (/v1/comms), not Zoho Desk. The old Desk-backed TicketsTab is no
+      // longer rendered; Sales now mounts the shared TicketConsole in requester mode.
+      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
       { id: 'verification', label: 'Verification', icon: 'verification' },
+      // `soon` is now a LAYOUT SLOT, not a status: every tab in it has shipped (My Tasks moved up to
+      // `daily`, Tickets went native, Verification and Call Hub landed). Kept as its own group for
+      // the sidebar divider. Re-parking anything is still a one-word change.
       { id: 'callHub', label: 'Call Hub', icon: 'callHub' },
     ],
   },
@@ -136,10 +139,13 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /**
- * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the
- * shell-level full-ticket paging (sidebarBadges — up to 20 Desk pages for a badge nobody
- * sees while parked), the badge itself, and openTicket navigation. Flip the NAV entry's
- * comingSoon to re-enable everything at once.
+ * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the unread
+ * badge (`/v1/comms/unread`) and openTicket navigation. Flip the NAV entry's comingSoon to park
+ * everything at once.
+ *
+ * Currently TRUE — the native comms queue is live. The old gate existed because the Desk-backed
+ * badge paged up to 20 ticket pages for a number nobody could see while parked; the comms badge is
+ * a single count query, so the cost that motivated the gate is gone.
  */
 export const TICKETS_ENABLED: boolean = !NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
 

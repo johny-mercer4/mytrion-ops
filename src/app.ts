@@ -18,6 +18,8 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { wsHeartbeatPlugin } from './plugins/wsHeartbeat.js';
+import { registerCommsRealtime } from './modules/comms/bootstrap.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
@@ -37,6 +39,13 @@ import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
+import { commsRoutes } from './routes/v1/comms.routes.js';
+import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
+import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
+import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
+import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
+import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
+import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
@@ -212,12 +221,27 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Native WebSocket support (GET /v1/realtime — inbox pub/sub). Registered at the root so
   // the versioned scope's websocket routes can attach; 1 MiB frame cap.
   await app.register(websocket, { options: { maxPayload: 1_048_576 } });
+  // Protocol ping + reaper for both WS endpoints. Must come after the websocket registration
+  // (it reads app.websocketServer) and before any route that attaches sockets.
+  wsHeartbeatPlugin(app);
+  // Hand the hub its row-level thread authorizer. Registered here rather than imported by the hub so
+  // the hub keeps depending only on logger + types; the authorizer reuses the REST reader filter.
+  registerCommsRealtime();
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
-    // Global ceiling; /v1/files/upload additionally enforces FILE_MAX_SIZE_MB per request.
+    // Global ceiling; each route additionally enforces its OWN per-request cap — /v1/files/upload uses
+    // FILE_MAX_SIZE_MB, comms attachments use COMMS_ATTACHMENT_MAX_MB.
+    //
+    // The max() over both is load-bearing: FILE_MAX_SIZE_MB is zod-capped at 200MB, so a larger chat
+    // attachment limit would be silently truncated here — the request would die in the parser with a
+    // generic error before the comms route's own, clearer 413 could ever run.
     limits: {
-      fileSize: Math.max(10_000_000, env.FILE_MAX_SIZE_MB * 1024 * 1024),
+      fileSize: Math.max(
+        10_000_000,
+        env.FILE_MAX_SIZE_MB * 1024 * 1024,
+        env.COMMS_ATTACHMENT_MAX_MB * 1024 * 1024,
+      ),
       files: 20,
       fields: 20,
     },
@@ -299,6 +323,13 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
+      await v1.register(commsRoutes);
+      await v1.register(commsTicketsRoutes);
+      await v1.register(commsThreadsRoutes);
+      await v1.register(commsAttachmentsRoutes);
+      await v1.register(commsEscalationsRoutes);
+      await v1.register(commsQueueRoutes);
+      await v1.register(commsAdminRoutes);
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
       await v1.register(managerRoutes);

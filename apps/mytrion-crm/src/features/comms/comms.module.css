@@ -1,0 +1,816 @@
+/**
+ * Comms console + chat — one stylesheet for every Mytrion that mounts it.
+ *
+ * Built entirely on the Horizon tokens (`--hz-pane`, `--hz-blur-md`, `--hz-glass`, `--hz-ease`, `--tone-*`)
+ * rather than new colours, so light/dark and the accent theme keep working and the surface reads as part of
+ * the app rather than a bolted-on chat widget.
+ *
+ * Layout is a two-pane split: list on the left, conversation on the right. On a narrow viewport the panes
+ * stack and only one is shown at a time — a 320px-wide chat is not a usable chat.
+ */
+
+/* ------------------------------------------------------------------ shell */
+
+.console {
+  display: grid;
+  grid-template-columns: minmax(280px, 22rem) minmax(0, 1fr);
+  gap: 0.85rem;
+  /* Fill the Mytrion content area so only the two inner panes scroll — a page-level scrollbar would move
+     the composer off screen while typing. */
+  height: 100%;
+  min-height: 0;
+}
+
+.consoleSolo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* One pane at a time on mobile: the list until something is selected, then the conversation. */
+  .console[data-mobile-view='chat'] > .listPane {
+    display: none;
+  }
+  .console[data-mobile-view='list'] > .chatPane {
+    display: none;
+  }
+}
+
+.pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  overflow: hidden;
+}
+
+/* A single hairline highlight along the top edge — the house glass treatment. */
+.pane::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: var(--hz-edge, linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent));
+  pointer-events: none;
+}
+
+.listPane {
+  composes: pane;
+}
+.chatPane {
+  composes: pane;
+}
+
+/* ------------------------------------------------------------------ list */
+
+.listHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+.listTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.listTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.count {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.search {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 999px;
+  background: var(--hz-glass);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.chip {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background var(--hz-dur-tone, 0.2s) var(--hz-ease), border-color 0.2s var(--hz-ease);
+}
+
+.chip:hover {
+  background: var(--hz-glass);
+}
+
+.chipOn {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 10px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s var(--hz-ease), border-color 0.16s var(--hz-ease);
+}
+
+.row:hover {
+  background: var(--hz-glass);
+}
+
+.rowActive {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+/* Unread gets a left rail AND a bold subject AND a count — never colour alone. */
+.rowUnread .rowSubject {
+  font-weight: 650;
+}
+
+.rowUnread::before {
+  content: '';
+  position: absolute;
+  inset: 0.55rem auto 0.55rem 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.rowTop {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.rowNumber {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  opacity: 0.55;
+  flex: none;
+}
+
+.rowSubject {
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  opacity: 0.62;
+  min-width: 0;
+}
+
+.rowPreview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowRight {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.time {
+  font-size: 0.6875rem;
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.badge {
+  min-width: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--hz-on-gradient, #fff);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.15rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ status + priority */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tag-tone, var(--tone-slate)) 40%, transparent);
+  background: color-mix(in srgb, var(--tag-tone, var(--tone-slate)) 16%, transparent);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--tag-tone, var(--tone-slate));
+  flex: none;
+}
+
+/* Overdue is a state you must not be able to miss, so it also gets a pulse. */
+.overdue {
+  --tag-tone: var(--tone-rose);
+  animation: overduePulse 2.4s var(--hz-ease) infinite;
+}
+
+@keyframes overduePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone-rose) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone-rose) 0%, transparent);
+  }
+}
+
+/* ------------------------------------------------------------------ chat header */
+
+.chatHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+.backBtn {
+  display: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.2rem;
+  opacity: 0.7;
+}
+
+@media (max-width: 900px) {
+  .backBtn {
+    display: block;
+  }
+}
+
+.chatHeadMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chatSubject {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.chatFacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.factSep {
+  opacity: 0.3;
+}
+
+.people {
+  display: flex;
+  align-items: center;
+}
+
+/* Overlapping avatars: who is in this conversation, at a glance, in ~60px. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: -0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-lift);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.avatar:first-child {
+  margin-left: 0;
+}
+
+.avatarMore {
+  opacity: 0.7;
+  font-size: 0.5625rem;
+}
+
+/* ------------------------------------------------------------------ messages */
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messages {
+    scroll-behavior: auto;
+  }
+  .overdue,
+  .bubble,
+  .row,
+  .chip {
+    animation: none;
+    transition: none;
+  }
+}
+
+.dayRule {
+  align-self: center;
+  margin: 0.5rem 0 0.15rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--hz-glass);
+  border: 1px solid var(--hz-pane-bd);
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+.msgRow {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.msgMine {
+  flex-direction: row-reverse;
+}
+
+.bubbleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  /* 68ch keeps a long paragraph readable instead of stretching to the pane edge. */
+  max-width: min(68ch, 82%);
+  min-width: 0;
+}
+
+.msgMine .bubbleWrap {
+  align-items: flex-end;
+}
+
+.author {
+  font-size: 0.6875rem;
+  opacity: 0.6;
+  padding: 0 0.25rem;
+}
+
+.bubble {
+  position: relative;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 14px;
+  background: var(--hz-pane-lift);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  animation: bubbleIn 0.22s var(--hz-ease);
+}
+
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Own messages take the accent and lose the corner nearest the edge — the conventional cue, so nobody has
+   to learn this UI. */
+.bubbleMine {
+  background: color-mix(in srgb, var(--accent) 20%, var(--hz-pane-lift));
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--hz-pane-bd));
+  border-bottom-right-radius: 5px;
+}
+
+.bubbleTheirs {
+  border-bottom-left-radius: 5px;
+}
+
+/* An internal note must be unmistakable — a hatched edge plus a label, never colour alone. */
+.bubbleNote {
+  background: color-mix(in srgb, var(--tone-amber) 12%, var(--hz-pane-lift));
+  border-color: color-mix(in srgb, var(--tone-amber) 45%, var(--hz-pane-bd));
+  border-style: dashed;
+}
+
+.noteFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.redacted {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.msgFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  opacity: 0.55;
+}
+
+.pending {
+  opacity: 0.75;
+}
+
+.failed {
+  color: var(--tone-rose);
+  opacity: 1;
+}
+
+.retryBtn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.625rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* System events (escalated, handed off, resolved) are the spine of an escalation, not chat. */
+.system {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 90%;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px dashed var(--hz-pane-bd);
+  background: var(--hz-glass);
+  font-size: 0.75rem;
+  opacity: 0.85;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ attachments */
+
+.attachRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 10px;
+  background: var(--hz-glass);
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.16s var(--hz-ease);
+}
+
+.attach:hover {
+  background: var(--hz-pane-lift);
+}
+
+.attach:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.attachName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+}
+
+.attachSize {
+  opacity: 0.55;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ composer */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid var(--hz-pane-bd);
+  background: var(--hz-glass);
+}
+
+.composerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.input {
+  flex: 1;
+  min-height: 2.35rem;
+  max-height: 9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 12px;
+  background: var(--hz-pane);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  resize: none;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  flex: none;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 12px;
+  background: var(--hz-pane);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.16s var(--hz-ease), border-color 0.16s var(--hz-ease);
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd));
+}
+
+.iconBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sendBtn {
+  composes: iconBtn;
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--hz-on-gradient, #fff);
+}
+
+.sendBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--accent);
+}
+
+.composerFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  opacity: 0.6;
+}
+
+.noteToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hint {
+  font-size: 0.6875rem;
+  opacity: 0.55;
+}
+
+/* ------------------------------------------------------------------ states */
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.emptyInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 34ch;
+}
+
+.emptyTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.emptyBody {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+/* One shimmer skeleton, never stacked with a spinner. */
+.skel {
+  border-radius: var(--radius-md, 10px);
+  background: linear-gradient(
+    90deg,
+    var(--hz-glass) 25%,
+    var(--hz-pane-lift) 37%,
+    var(--hz-glass) 63%
+  );
+  background-size: 400% 100%;
+  animation: skelSlide 1.4s ease-in-out infinite;
+}
+
+.skelRow {
+  composes: skel;
+  height: 3.1rem;
+  margin: 0.25rem;
+}
+
+.skelBubble {
+  composes: skel;
+  height: 2.6rem;
+  width: 60%;
+}
+
+.skelBubbleMine {
+  composes: skel;
+  height: 2.6rem;
+  width: 45%;
+  align-self: flex-end;
+}
+
+@keyframes skelSlide {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel,
+  .skelRow,
+  .skelBubble,
+  .skelBubbleMine {
+    animation: none;
+  }
+}
+
+.liveDot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+.liveDot::before {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--tone-emerald);
+}
+
+.liveDotOff::before {
+  background: var(--tone-amber);
+}
+
+.errorNote {
+  margin: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--tone-rose) 45%, var(--hz-pane-bd));
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--tone-rose) 12%, transparent);
+  font-size: 0.8125rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -16,13 +16,11 @@ import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
 import { serverCrmBillingTouchpoints } from './serverCrmBilling.js';
 import { serverCrmFinanceTouchpoints } from './serverCrmFinance.js';
 import { serverCrmMiscTouchpoints } from './serverCrmMisc.js';
-import { ticketsDelugeTouchpoints } from './ticketsDeluge.js';
 import { zapierTouchpoints } from './zapier.js';
 
 const ALL: Touchpoint[] = [
   ...carrierDelugeTouchpoints,
   ...salesDelugeTouchpoints,
-  ...ticketsDelugeTouchpoints,
   ...financeDelugeTouchpoints,
   ...csDelugeTouchpoints,
   ...serverCrmAgentTouchpoints,

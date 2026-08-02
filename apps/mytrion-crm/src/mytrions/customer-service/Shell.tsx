@@ -13,6 +13,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
 import { Applications } from './Applications';
 import { CitiFuel } from './CitiFuel';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import type { CsSectionId } from './csNav';
 import { Home } from './Home';
 import { Maintenance } from './Maintenance';
@@ -111,6 +112,15 @@ const NAV_ITEMS: NavDef[] = [
     iconPath:
       'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4',
     disabled: true,
+  },
+  {
+    id: 'tickets',
+    label: 'Tickets',
+    shortLabel: 'Tickets',
+    // chat bubbles
+    iconPath:
+      'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+    disabled: false,
   },
   {
     id: 'service-center',
@@ -314,6 +324,12 @@ export function CsShell() {
           {panel('citi-fuel', <CitiFuel />)}
           {panel('maintenance', <Maintenance />)}
           {panel('analytics', <Analytics />)}
+          {/* The SHARED console. CS sees its inbound queue through the reader filter's department arm —
+              there is no CS-specific chat code. */}
+          {panel(
+            'tickets',
+            <TicketConsole mode="queue" department="customer-service" title="Customer Service tickets" />,
+          )}
         </main>
       </div>
 

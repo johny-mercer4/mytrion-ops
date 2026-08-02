@@ -118,6 +118,68 @@ export async function fetchDealOwnerId(dealId: string): Promise<string | null> {
   return null;
 }
 
+/** What a native comms ticket snapshots off the Deal it is filed against. */
+export interface DealSnapshot {
+  dealId: string;
+  /** Deal Owner — the ownership check. Null when the deal has no owner (or does not exist). */
+  ownerId: string | null;
+  dealName: string | null;
+  /** `Account_Name` is a lookup: the client's company, and the ticket's `company_name`. */
+  companyName: string | null;
+  carrierId: string | null;
+  applicationId: string | null;
+}
+
+/**
+ * Owner + client linkage for ONE deal, in a single COQL read.
+ *
+ * Deliberately not `fetchDealOwnerId` + trusting the request body for the rest. The Sales wizard sends
+ * `carrierId` / `applicationId` / `accountName` alongside the deal today, but a body-supplied carrier is
+ * a client-chosen client: an agent could file a ticket against their own deal while labelling it with
+ * someone else's carrier, and every downstream reader (the CS queue, the carrier ticket history) would
+ * believe the label. Reading both from the same record makes the snapshot consistent by construction
+ * and costs the same one query the ownership check already needed.
+ *
+ * Returns null when the deal does not exist, so a caller can tell "not yours" apart from "not real".
+ */
+export async function fetchDealSnapshot(dealId: string): Promise<DealSnapshot | null> {
+  const id = assertOwnerId(dealId);
+  const { rows } = await runCoql(
+    `select id, Owner, Deal_Name, Account_Name, Carrier_ID, Application_ID from Deals where id = '${id}' limit 0, 1`,
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  const owner = row.Owner;
+  const ownerId =
+    owner && typeof owner === 'object' && 'id' in owner
+      ? String((owner as { id: unknown }).id ?? '') || null
+      : null;
+
+  const account = row.Account_Name;
+  const companyName =
+    account && typeof account === 'object' && 'name' in account
+      ? (String((account as { name: unknown }).name ?? '') || null)
+      : typeof account === 'string' && account.length > 0
+        ? account
+        : null;
+
+  const text = (v: unknown): string | null => {
+    if (typeof v === 'string') return v.trim().length > 0 ? v.trim() : null;
+    if (typeof v === 'number') return String(v);
+    return null;
+  };
+
+  return {
+    dealId: id,
+    ownerId,
+    dealName: text(row.Deal_Name),
+    companyName,
+    carrierId: text(row.Carrier_ID),
+    applicationId: text(row.Application_ID),
+  };
+}
+
 /**
  * A Lead's Owner id — mirror of {@link fetchDealOwnerId} for the Lead inline-edit ownership check
  * (a non-admin may only edit their own leads). Returns null when the lead doesn't exist.

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { AccessIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
+import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
 import { ClientNews } from './ClientNews';
 import { CmpDatabase } from './CmpDatabase';
 import { Deals } from './Deals';
+import { EscalationRouting } from './EscalationRouting';
 import { DataLoader } from './DataLoader';
 import { DwhDatabase } from './DwhDatabase';
 import { VerificationDatabase } from './VerificationDatabase';
@@ -40,6 +41,7 @@ type Tab =
   | 'kpi-data'
   | 'data-loader'
   | 'access'
+  | 'escalation-routing'
   | 'horizon';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
@@ -175,6 +177,29 @@ export default function AdminMytrion() {
           keywords: ['ownership', 'transfer', 'zoho', 'recovery'],
         },
         {
+          key: 'escalation-routing',
+          tone: 'var(--tone-violet)',
+          label: 'Escalation Routing',
+          icon: <AlertIcon />,
+          active: tab === 'escalation-routing',
+          onClick: () => setTab('escalation-routing'),
+          keywords: [
+            'escalation',
+            'ladder',
+            'levels',
+            'reason',
+            'fall-to',
+            'manager',
+            'head of department',
+            'c-level',
+            'ceo',
+            'coo',
+            'pool',
+            'routing',
+            'assignee',
+          ],
+        },
+        {
           key: 'audit',
           tone: 'var(--tone-pink)',
           label: 'Audit Log',
@@ -268,6 +293,7 @@ export default function AdminMytrion() {
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'news' && <ClientNews />}
       {tab === 'deals' && <Deals />}
+      {tab === 'escalation-routing' && <EscalationRouting />}
       {tab === 'audit' && <AuditLog />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}

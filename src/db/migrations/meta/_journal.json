@@ -638,6 +638,48 @@
       "when": 1785441600000,
       "tag": "0090_verification_sales_responses",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1785477600000,
+      "tag": "0091_comms_presence",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1785481200000,
+      "tag": "0092_comms_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1785484800000,
+      "tag": "0093_comms_c_level_pool",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1785488400000,
+      "tag": "0094_comms_catalog_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1785492000000,
+      "tag": "0095_comms_hr_department_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1785495600000,
+      "tag": "0096_file_assets_storage_provider",
+      "breakpoints": true
     }
   ]
 }

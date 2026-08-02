@@ -46,6 +46,30 @@ export function normalizeDepartment(value?: string | null): string | null {
   return v.length > 0 ? v : null;
 }
 
+/**
+ * Turn an HR department NAME into a routing slug: 'Billing & Accounting' → 'billing-accounting'.
+ *
+ * Departments come from `hr_departments`, but the routing key has to stay a slug — it is stored on
+ * `mytrion_threads.department`, built into the `comms:queue:<department>` WebSocket topic (whose validator
+ * requires `^[a-z][a-z0-9-]{1,40}$`), and held in `TenantContext.departments` for RBAC. A name with a space
+ * or an ampersand would publish to a topic no client could ever subscribe to.
+ *
+ * Every run of non-alphanumerics collapses to one dash and the ends are trimmed, so the output always
+ * satisfies that regex — except for a name with no alphanumerics at all, or one starting with a digit,
+ * which return null rather than an invalid slug. Callers must treat null as "this department cannot be a
+ * routing target until it is renamed", never as a default.
+ */
+export function slugifyDepartment(name: string): string | null {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    // A trailing dash can reappear after the 40-char truncation.
+    .replace(/-+$/g, '');
+  return /^[a-z][a-z0-9-]*$/.test(slug) ? slug : null;
+}
+
 /** Normalize a list of allowed tags: trim + lowercase, drop blanks, dedupe. */
 export function normalizeDepartments(values?: readonly string[] | null): string[] {
   if (!values) return [];

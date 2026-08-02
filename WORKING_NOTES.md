@@ -9774,3 +9774,644 @@ Fixes: Call Hub + RingCentral call-events now run through `buildCallerContext` a
 attribute / filter by the effective agent (View-as target). Added `countForCaller`,
 page/`page_size` merge pagination (25/page), SWR cache key includes agent+page, UI shows
 agent name + pager. Tests cover View-as scoping and pagination.
+## 2026-07-31 — Native ticket path: the reachable half of the comms substrate (`feature/Communication`)
+
+`b501390` landed 14 tables, the thread/member/message/presence repos, `publish.ts` and the comms WS
+topic grammar — but nothing above that line, so none of it was reachable. Two dead ends in particular:
+`canSubscribeCommsThread` was exported with no production caller (the synchronous `canSubscribe`
+hard-refuses the `comms:thread:` prefix, so the live chat feed could not be subscribed at all), and
+`mytrion_comms_number_seq` existed with no formatter, so no ticket could be numbered.
+
+This session builds the Sales create-ticket path end to end on the server. Still backend-only —
+nothing under `apps/` is touched and the Zoho Desk routes are untouched and still serve every live
+flow, so this is a parallel path with no consumer yet.
+
+**Config read layer.** `commsCatalogRepo` / `commsSettingsRepo` / `commsDepartmentRepo` +
+`GET /v1/comms/catalog`, which returns the 49 ticket types, 11 escalation reasons, the department
+options and the SLA maps in one request — the wizard cannot render its first step until all of it has
+arrived, so three requests would only add two more chances for a half-rendered picker. Gated by a new
+`requireInternal` (internal audience, no department): `requireDepartment` takes exactly one department,
+so gating shared metadata with it would mean locking Sales out of a CS-owned list or the reverse.
+
+**Two security properties, both structural rather than conventional.**
+1. `target_department` is read off the catalog row and never from the request body — there is no
+   `department` field on `POST /v1/comms/tickets` at all. The Desk route accepted one, which meant an
+   agent could file into any queue they chose. Retargeting a family of types is now a catalog UPDATE.
+2. An agent may only file against a deal they own, AND the client snapshot comes from that same deal
+   record. Added `fetchDealSnapshot` (one COQL for Owner + Account_Name + Carrier_ID + Application_ID)
+   replacing `fetchDealOwnerId` + trusting the body: a body-supplied carrier is a client-chosen client,
+   so an agent could file on their own deal while labelling it with someone else's carrier and every
+   downstream reader would believe the label. Reading both from one record costs the same one query.
+
+**Create is one transaction.** `commsTicketRepo.createWithThread` writes thread + opening message +
+requester member + ticket with all ids generated up front, so the thread is inserted with its final
+message counters already set. `commsMessageRepo.append` is deliberately NOT reused: it opens its own
+`db.transaction`, which would take a second pool connection and block on the very thread row this
+transaction holds — a self-deadlock, not a slow path. Proved on `xmin` in the smoke script.
+
+**Idempotency is select-then-insert, not ON CONFLICT.** `mytrion_tickets_idem_uk` is partial
+(`WHERE idempotency_key IS NOT NULL`) and Postgres refuses a partial index as an arbiter unless the
+statement restates the predicate, which Drizzle cannot express. The lookup is also scoped to the
+REQUESTER: it runs before any row exists so no reader filter applies, and an idempotency key is a
+client-chosen string rather than a secret — without the requester bound, guessing or replaying another
+agent's key returned their ticket in full. A key taken by someone else now 409s.
+
+**Reads.** All three ticket reads share one `selectTicketWithThread` builder, because those joins ARE
+the authorization surface (the thread join is what lets `commsThreadReaderFilter` apply); three copies
+would be three chances for one to drift and read unfiltered. The reader's own member row is LEFT
+joined so unread is arithmetic on data the list already has — left, not inner, because a CS agent must
+see a queue ticket they have never opened. Keyset paging over `(created_at, id)` via a row comparison;
+offset paging silently re-shows or skips rows the moment anything is filed. Non-readable ids answer
+404, never 403.
+
+**Conversation is thread-keyed**, not ticket-keyed (`/v1/comms/threads/:id/...`): an escalation's whole
+ladder talks in one thread and a DM has no ticket, so ticket-keyed message routes would need a second
+copy of this the moment either lands. First response is stamped only by a non-requester, non-internal
+reply, with the `IS NULL` guard in the WHERE so two simultaneous replies cannot move it.
+
+**WebSocket.** The subscribe branch is now async and routes `comms:thread:*` to
+`canSubscribeCommsThread`, so the live feed is reachable. Topic accounting became a Set rather than a
+per-frame counter — the counter burned budget every time a client re-subscribed to a topic it already
+held, which every reconnect does, until it was refused for topics it was already on. The comms lane is
+auto-subscribed and advertised in `hello` (a client cannot construct it itself: `commsUserTopicOf`
+returns null under view-as). The socket is re-checked for closure after the await.
+
+**Verification.** Typecheck clean; lint clean on every new file (the 24 repo-wide warnings are
+pre-existing non-null assertions elsewhere). 181 new unit tests across six suites, 222 including the
+existing comms/realtime ones. `scripts/comms-repo-smoke.ts` extended and run green end to end against
+a throwaway local Postgres — the transaction proved on `xmin`, 25 concurrent creates yielding 25
+distinct numbers, sequential AND raced idempotency replays, "another Sales agent sees NOTHING" while
+the CS agent sees it via the department arm, and paging walking every row exactly once.
+
+The security tests were mutation-verified rather than assumed: disabling the ownership check and adding
+the full card to the DTO failed exactly 7 tests, then both files were restored and re-checksummed.
+`.env` still points at Render prod, so every DB command above ran against an explicitly overridden
+local throwaway database.
+
+Known and deliberately deferred: a CRM lookup failure surfaces as 400 rather than 502 (the message is
+clear and exposed, and all three outcomes stay distinguishable); there is no
+`(tenant_id, created_at DESC, id DESC)` index yet, which the keyset walk will want once volume exists;
+`GET /threads/:id/messages` enrolls the reader as a watcher, which is a read-state side effect on a GET.
+
+Not built yet, in dependency order: Dropbox attachments, round-robin assignment over the department
+pool (the pools are empty and `FF_COMMS_PRESENCE` is still off), the Tickets console — which must mount
+in Sales AND the receiving CS/Billing/Verification queue in the SAME release, or native tickets land in
+a table nobody is watching — and escalations, which cannot route at all until the NULL
+`default_assignee_zoho_user_id` / `manager_zoho_user_id` / `c-level` pool config is filled.
+
+## 2026-08-01 — Escalations, and the Mytrion Admin routing config that makes them possible
+
+The user's decision: escalation-level assignees must be **dynamic from Mytrion Admin**, and they will
+choose the reason defaults, the department managers and the C-Level themselves. So this session builds
+both halves — the admin config surface and the escalation engine that reads it.
+
+**The ladder, and where each rung comes from.** All four are config rows, none are constants:
+```
+level 1  requester           the person raising it (not a hop — `requester_zoho_user_id`)
+level 2  agent               mytrion_ticket_types.default_assignee_zoho_user_id  (per REASON)
+level 3  department manager  mytrion_department_config.manager_zoho_user_id
+level 4  C-Level             an explicit pick from the `c-level` pool in mytrion_department_agents
+```
+Every one ships NULL/empty. A NULL is "unrouted, refuse loudly" and never a wildcard: raising on an
+unconfigured reason is refused with a message that names the admin screen, because an escalation with a
+null assignee sits in nobody's inbox while looking submitted to the person who raised it. HR remains
+CANDIDATES only — `/comms/admin/candidates` returns employees who have a `zoho_user_id` (that id IS the
+routing key, so offering anyone without one would let an admin save a row that can never receive
+anything) and marks `hr_departments.lead_employee_id` holders so the manager picker can pre-select the
+likely answer. HR suggests; the config row decides. `resolveDepartmentManager` deliberately does NOT
+fall back through the HR lead link, and there is a test asserting it never calls HR at all.
+
+**Admin surface** (`/v1/comms/admin`, all-department admin, every write audited with before AND after —
+one row here can silently redirect every escalation in the company): `GET /routing` returns the whole
+picture plus a `readiness` block (`unroutedReasons`, `departmentsMissingManager`, `cLevelConfigured`)
+computed server-side so the screen and the refusal messages cannot disagree. Then
+`PATCH /departments/:department`, `PUT|PATCH|DELETE /departments/:department/pool/...` and
+`PATCH /escalation-reasons/:code`. `code` and `kind` are immutable in the catalog patch allowlist:
+every historical ticket snapshots the code, and `kind` decides whether a row is a ticket type or a
+reason. Deleting a pool seat is distinct from `active:false` — deactivating keeps the rotation history,
+which is what you want for someone on leave.
+
+**Engine.** `escalationRouting` (config reads) → `escalationService` (raise) →
+`escalationTransitions` (up / sideways / terminal) → `escalationNotify` (deadlines, fan-out, the
+act-on gate). Split four ways because the two service halves together came to 732 lines.
+
+Decisions worth keeping:
+- **Hop 1 is the level-2 landing, not the requester** — which is why its `decided_by` is NULL: nobody
+  moved it there. `current_hop_index` defaults to 1 while `current_level` defaults to 2, and this is
+  what that combination means.
+- **Growing group.** Every hop `transferAssignee`s (moving the ROLE, demoting the previous holder to
+  participant) and never evicts, so requester + agent + manager + C-Level all end up in one chat and
+  all keep replying. `visibility` stays `'participants'` for life — flipping it to `'department'` on a
+  hand-off would expose the whole history to everyone holding the receiving department.
+- **A sideways hand-off RESETS to level 2**, so a chain handed off by a manager can still rise to the
+  NEW department's manager. Carrying level 3 across would skip that person entirely.
+- **Level 4 is an explicit, pool-validated pick.** "Escalate to C-Level" must not become "assign to
+  anyone I name", and the same check makes a deactivated CEO seat unescalatable while leaving the
+  historical hop that named them untouched.
+- **A reason that falls to the requester** rises straight to their department manager with
+  `skip_reason='is_requester'` rather than routing someone's escalation to themselves.
+- The cursor moves BEFORE the hop is closed, because the cursor carries the optimistic-version check:
+  closing first would mark a hop decided on a chain someone else moved a different way.
+
+**One real dead end found by the end-to-end check and fixed.** When the level-2 assignee IS the
+department manager — normal in a small department — `escalateUp` refused with "escalate to C-Level or
+hand off instead", but level 2 had no path to C-Level, so a lone department head was stuck holding their
+own escalation. Level 3 is now treated as a rung that exists only when the department has a manager who
+is not the current holder; otherwise C-Level is reachable directly from level 2 with an explicit pick,
+and the refusal message says which case you are in.
+
+**Verification.** Typecheck and lint clean, every new file under the 600-line cap. 31 new routing unit
+tests (each mocked so "nothing routes when nothing is configured" cannot pass vacuously) and 10 new
+RBAC-leakage assertions covering `commsEscalationRepo.buildListQuery` / `buildHopsQuery` and
+`commsDepartmentRepo.buildPoolQuery` — 56 in that suite now. A 74-check end-to-end run against a fresh
+throwaway local Postgres proves the whole ladder over real rows: the unrouted refusal writes no ticket,
+level 2 lands on the configured default, an uninvolved worker and the CS manager both cannot read it
+before being brought in, the manager can after, the demoted level-2 agent can still reply, level 4
+refuses an unnamed and an off-pool pick, hop levels run 2→3→4 with the right `decided_by` on each closed
+hop, resolve clears the inbox while the chain stays readable, a hand-off resets to level 2 without
+evicting anyone and keeps the thread participants-only, withdraw works from three hops away and mirrors
+as cancelled rather than resolved, and a deactivated C-Level seat stops being escalatable without
+rewriting history.
+
+Full suite: 35 failures across 10 suites. 34 are the same pre-existing ones verified against a clean
+b501390 worktree last session; the 35th is `retention-phase1.test.ts > stamps a 2BD agent-action
+deadline`, which hardcodes 2026-07-20 and asserts the deadline falls within the last 10 days of
+`Date.now()` — it decayed when the calendar reached 2026-08-01 and is untouched by this work
+(commit 49b1d8a). Worth fixing with a fake timer, separately.
+
+Still to come: the Mytrion Admin screen itself (this session shipped its API), Dropbox attachments,
+round-robin assignment, and the Tickets/Escalations console.
+
+### Mytrion Admin → Escalation Routing (the screen)
+
+Admin → CRM & Ops → **Escalation Routing**. Three sections matching the three configurable rungs, plus a
+readiness strip: reasons routed `N/M`, departments with a manager `N/M`, C-Level member count. The
+readiness numbers come from the server, not from counting rows in the browser, so what the screen calls a
+gap and what an agent's refusal message says are the same computation.
+
+- **Level 2** — one row per escalation reason, each with a person picker. An unrouted row is marked
+  structurally (amber left rail + `gap` pill), not by hue alone, and its subtitle says what the
+  consequence is: "escalations on this reason are refused".
+- **Level 3** — one row per department, with the manager picker and the sideways hand-off target.
+- **Level 4** — the C-Level pool, with a role-title field, because the seat label is what makes
+  "Escalate to CEO" distinguishable from "Escalate to COO" in the agent's picker.
+
+The picker is fed by `GET /comms/admin/candidates` and marks whoever HR has as a department lead with a
+"Dept lead" chip. That chip only ORDERS and labels — it never pre-selects, because HR's lead link resolves
+through a nullable heuristic `zoho_user_id` and a silent default there is exactly what this config exists
+to avoid.
+
+Saves are per row: each row awaits its own request and shows its own busy text, so one slow save never
+blocks the screen and there is no second page-level spinner (one `aria-busy` region, asserted in the
+component test). After a save the screen refetches rather than patching local state — a locally-patched
+copy would drift from the server-derived readiness.
+
+Two bugs the tests caught, both fixed:
+- `readiness.departmentsMissingManager` included `c-level`. Level 4 is a POOL, so there is no such thing
+  as the C-Level department's manager and it was reporting a gap that could never be closed.
+- The clear-assignee control took its accessible name from its own "×" glyph, so it announced as "×".
+  It now carries an explicit `aria-label`.
+
+CLAUDE.md rule 10 asks for the `modern-web-guidance` skill first. **That skill is not installed in this
+repo** (`.claude/skills/` has the Zoho/LLM/DB ones only), so I matched the existing Mytrion Admin
+conventions instead: `admin.module.css` for every generic element, the house glass tokens
+(`--hz-pane`, `--hz-blur-*`, `--tone-*`) for the new ladder visuals, one skeleton loader, `adminToast` for
+outcomes, and `prefers-reduced-motion` honoured on the picker animation. Worth installing that skill if
+there is guidance it should have followed.
+
+Verification: web typecheck clean, 332/332 web tests pass (9 new), 244/244 comms backend tests pass
+(22 new route tests covering the gate — an ordinary worker AND a department head are both refused on every
+write, not just the read). `pnpm build:widget` rerun and `apps/mytrion-crm/app` committed, since that
+vendored bundle is what actually deploys; confirmed the built output contains the new screen.
+
+## 2026-08-01 (2) — Departments come from HR, escalations are opened against one, and Dropbox
+
+Two changes, both from the same decision: **departments are our own `hr_departments` rows plus Zoho users
+(`hr_employees.zoho_user_id`), not a hardcoded slug list** — and an escalation request names its department
+when it is opened, so level 2 is that department's agent.
+
+### Migration 0089 — routing config is keyed on hr_departments
+
+`mytrion_department_config` gains `hr_department_id` + `label`. Why BOTH the link and the slug:
+
+- `department` stays the ROUTING KEY. It is stored on `mytrion_threads.department`, built into the
+  `comms:queue:<department>` WebSocket topic (validator: `^[a-z][a-z0-9-]{1,40}$`) and held in
+  `TenantContext.departments` for RBAC. Swapping in an `hrd_…` id would break the read gate, the topic
+  grammar and every existing access grant at once.
+- `hr_department_id` makes the ORG identity explicit rather than matching a slugified name — a name match
+  would orphan a department's whole routing config the first time HR renames it. Same reasoning as
+  `hr_employees.zoho_user_id` being chosen explicitly rather than derived.
+
+A one-off backfill links the ten rows 0087 seeded by slugified name, skipping any name that slugifies
+ambiguously — an ambiguous match is a human decision, not a guess. Nothing re-derives the link at runtime.
+`slugifyDepartment()` (lib/department.ts) returns **null** for a name that cannot make a valid slug (no
+letters, or a leading digit), so such a department is surfaced as unconfigurable instead of producing a row
+that publishes to a topic nobody can subscribe to.
+
+0089 also widens `mytrion_escalation_hops_routing_chk` with `department_default` and `department_pool`.
+`routing_source` exists to make a chain explainable, and filing a department-resolved assignee under
+`reason_default` would claim a reason chose someone it never named.
+
+### Level 2 is now department-first
+
+`raiseEscalation` takes an optional `targetDepartment`. Resolution order:
+1. **the target department's own agent** — its `default_assignee_zoho_user_id`, else its
+   least-recently-assigned roster member that still accepts work. "Escalate to Billing" has to reach
+   Billing; deciding from the reason instead would make the department the requester picked irrelevant.
+2. the reason's fall-to user, for a raise with no department in mind.
+3. if either resolves to the requester, rise to that department's manager with
+   `skip_reason='is_requester'`.
+
+The manager is deliberately NOT a fallback at step 1: level 3 exists so an escalation reaches the head only
+after the agent level has had it, and falling straight through would collapse two rungs into one.
+
+Admin `GET /routing` now returns `hrDepartments` (id, name, lead, `suggestedSlug`, `configured`) beside the
+config, so the screen offers departments that have never been configured — the point of driving it from HR.
+The live HR name wins over the stored `label`, so a rename shows immediately, while the snapshot is the
+fallback for a department since deleted from HR (historical escalations must still render). An HR outage
+degrades to an empty list and is logged, rather than failing the whole screen.
+
+### Dropbox
+
+`src/integrations/dropbox.ts` — refresh-token grant via `createTokenProvider` (access tokens last ~4h, so a
+stored access token would break silently); single-shot upload under 120MB and `upload_session/*` above it
+(deliberately below the 150MB vendor hard limit — sitting at the limit means the first oversized production
+file discovers it); `Dropbox-API-Arg` escaped to `\uXXXX` so a Cyrillic or emoji filename cannot produce an
+invalid header; 401 force-refresh **once** (a revoked refresh token also answers 401, so retrying forever
+would hammer auth with a dead credential); 429/5xx retry honouring `Retry-After`, capped at 30s.
+
+`get_temporary_link` rather than a shared link: it serves the BYTES, whereas
+`create_shared_link_with_settings` returns an HTML preview page unless `?dl=1` is appended — and it creates
+a durable PUBLIC link, the wrong default for a client's document.
+
+**The provider travels with the row.** Migration 0090 adds `file_assets.storage_provider` (default `'s3'`,
+CHECK-constrained, backfilled). `storageFor(row.storageProvider)` resolves reads and deletes; the new
+`COMMS_STORAGE_PROVIDER` env only decides where the NEXT comms attachment goes. A single global switch would
+have repointed reads for every existing S3 file and 404'd them — and `deleteFile` previously handed `s3_key`
+to the S3 client unconditionally, which with two providers would report success while leaving the Dropbox
+object behind.
+
+Attachments arrive as ONE bubble: the upload appends a message and links the file to it, so `is_internal` is
+inherited by construction and a file on an internal note cannot become visible on its own. Links are fetched
+on click, not embedded per row — a Dropbox link is a network round trip and expires in ~4h, so a list full of
+them would be slow and hand out links that die in an open tab. `COMMS_ATTACHMENT_MAX_MB` is separate from
+`FILE_MAX_SIZE_MB` (zod-capped at 200) and the global multipart ceiling is now the max of the two, so raising
+the chat limit alone is enough.
+
+### Verification
+
+Typecheck and lint clean (0 errors; the 23 warnings are pre-existing non-null assertions elsewhere). All 84
+migrations apply from scratch against a fresh throwaway Postgres — 95 tables, both new columns, the partial
+`mytrion_department_config_hr_uk` with its predicate intact, the widened routing CHECK with all 8 values, and
+`file_assets_storage_provider_chk`.
+
+A 28-check real-DB run proves the department-first routing: the nominated default wins over a reason that has
+no fall-to user at all; a rota-only department routes to its least-recently-assigned member and skips a
+deactivated one and one with `accepts_new=false`; a configured-but-empty department and an unknown slug are
+both refused naming Mytrion Admin; the department's own agent starts at level 3 with
+`skip_reason='is_requester'`; a reason-only raise still uses `reason_default`; escalating up uses the OPENED
+department's manager; and the HR link survives it all.
+
+Tests: 21 new Dropbox adapter tests (path mapping including `..` traversal, provider-by-row selection, header
+escaping, retry backoff) and 6 new admin-route tests for the HR-driven section — 1543 passing backend, 332
+web. Full suite still shows the same 35 failures across the same 10 suites as the baseline, so zero new
+failures.
+
+**Not verified:** the Dropbox HTTP layer itself has never run against live Dropbox — there are no
+credentials yet. Upload, download, temporary link and the chunked session are unexercised end to end. Once
+`DROPBOX_APP_KEY` / `_APP_SECRET` / `_REFRESH_TOKEN` exist, set `COMMS_STORAGE_PROVIDER=dropbox` and round-trip
+a small file and one over 120MB (the chunked path) before trusting it.
+
+## 2026-08-01 (3) — The chat UI: one reusable console, mounted in four Mytrions
+
+Answering the question directly: before this, **there was no chat UI**. The comms substrate and API were
+backend-only, and the Sales Tickets tab was still the Zoho Desk one, parked behind `comingSoon`. This
+session builds the surface.
+
+### Reuse is the architecture, not a later refactor
+
+```
+apps/mytrion-crm/src/api/comms.ts              one client for tickets + escalations + threads
+apps/mytrion-crm/src/features/comms/
+  useCommsSocket.ts   comms-aware WS with DYNAMIC thread subscribe
+  ChatThread.tsx      THE chat pane — thread-keyed, so it serves any thread kind
+  TicketConsole.tsx   list + chat, `mode: 'requester' | 'queue'`
+  chatFormat.ts       pure presentation helpers (testable without rendering)
+  comms.module.css    one stylesheet on the Horizon tokens
+```
+
+Mounted with a single line each: Sales `<TicketConsole mode="requester" />`, and CS / Billing /
+Verification `<TicketConsole mode="queue" department="…" />`. Vite emits it as ONE shared
+`TicketConsole-*.js` chunk with four importers, so the reuse is real at the bundle level too.
+
+What makes it genuinely reusable is that the console holds **no Mytrion knowledge**. Visibility is decided
+server-side by `commsThreadReaderFilter` — the participant arm gives Sales what it raised, the department arm
+gives CS its inbound queue — and neither is expressed in the component. `mode` changes only defaults and
+copy, never authorization. Adding a fifth Mytrion is a mount, not a fork.
+
+`ChatThread` is keyed on the THREAD, not the ticket, which is why it will serve escalations and DMs with no
+second implementation: everything ticket-specific is passed in as `headerSlot`.
+
+### Chat behaviours that were deliberate, not incidental
+
+- **Optimistic send reconciles on the echoed `clientMsgId`**, never on matching text — two identical
+  messages a second apart must not collapse into one bubble.
+- **A failed send keeps the text** and offers Retry. Losing what someone typed is the worst thing a chat
+  can do; the bubble goes to "Not sent" rather than vanishing.
+- **Realtime is push with a self-heal.** Frames carry `seq`, so the pane fetches only `afterSeq` — that
+  same path is the reconnect gap-fill, so a socket drop cannot leave a hole in the conversation.
+- **Read receipts only while the tab is visible.** Marking a conversation read that nobody is looking at is
+  the one thing that makes an unread badge untrustworthy.
+- **Auto-scroll sticks only near the bottom** (48px of slack), so scrolling up to read history is not
+  yanked away by an incoming message.
+- Enter sends, Shift+Enter is a newline. Internal notes are dashed + amber + labelled "Internal note" —
+  never colour alone. Overdue SLA gets a pulse *and* text. Unread gets a rail, a bold subject *and* a count.
+
+### Attachments
+
+Upload is one bubble: caption and file travel together, so a chat never shows a comment beside an orphan
+file the way the Desk path forced. Download links are fetched **on click** — a Dropbox temporary link is a
+round trip that expires in ~4h, so embedding one per row would be slow and would hand out links that die in
+an open tab.
+
+### Two inconsistencies this exposed, both fixed
+
+1. **The Create wizard still wrote to Zoho Desk.** A new ticket would not have appeared in the native list
+   it now reads. Both submits are repointed: `createTicket` (no `department` field — the queue comes from the
+   catalog code; no contact/email/phone — there is no contact record) and `createEscalation`. Attachments
+   became a second call against the new thread, and a failed attach no longer reads as "the ticket failed".
+2. **The sidebar Tickets badge counted the Desk queue.** Unparking the tab flipped `TICKETS_ENABLED` true,
+   which would have newly switched ON a Desk page-warm this hook used to skip. The badge now reads
+   `GET /comms/unread`; the Desk machinery is gated off behind an explicit `DESK_TICKET_BADGE = false`
+   rather than deleted, since it still drives the servercrm ticket socket that retires with the Desk reads.
+
+The escalation form also gained the **department picker** the routing now needs, with reasons loaded from
+`/comms/catalog` — an unrouted reason is disabled with "· not set up" so the agent learns that before typing
+the request rather than from a refusal.
+
+Every WRITE in the Sales UI is now native. The only remaining `api/desk` imports are READS in
+`live.ts` and the orphaned `TicketsTab.tsx`, kept for the rollback path.
+
+### Design
+
+Built on the Horizon tokens (`--hz-pane`, `--hz-blur-md`, `--hz-glass`, `--hz-ease`, `--tone-*`) — no new
+colours, so light/dark and the accent theme keep working. Two-pane split that stacks to one pane on a narrow
+viewport (a 320px-wide chat is not a chat). One shimmer skeleton per pane, never stacked with a spinner.
+`prefers-reduced-motion` disables the bubble entrance, the overdue pulse and smooth scroll.
+
+Still no `modern-web-guidance` skill in this repo (CLAUDE.md rule 10) — worth installing before the next UI
+push if it carries guidance this should have followed.
+
+### Verification
+
+Web typecheck clean, backend typecheck clean, **352 web tests pass (20 new ChatThread tests)**. The new
+tests cover the things a backend test cannot see: clientMsgId reconciliation, a failed send keeping its text,
+`afterSeq` gap-fill, a frame for a different thread being ignored, full state reset on thread switch, the
+internal-note label, a redacted placeholder, and links fetched only on click. `build:widget` rerun and
+`apps/mytrion-crm/app` committed. One real a11y bug found by the tests and fixed in the component (the file
+input and its button shared the accessible name "Attach a file").
+
+**Not verified:** nothing has been exercised against a running backend + browser — no end-to-end pass of
+"Sales files a ticket → it appears in the CS queue within one frame → CS replies → Sales sees it live". That
+needs `pnpm dev:all` plus two signed-in sessions, and the routing config filled in. Dropbox is still
+credential-blocked.
+
+## 2026-08-02 — Round-robin ticket assignment
+
+The Tickets tab was already live in all four Mytrions (Sales in requester mode; CS, Billing and
+Verification in queue mode, one shared `TicketConsole` chunk). What was missing was assignment: a client
+ticket landed in the department queue with nobody on it. This session builds the rotation, configurable
+from Mytrion Admin.
+
+### The roster is explicit, never derived
+
+`mytrion_department_agents` rows an admin manages — NOT everyone holding the department grant. Deriving it
+would auto-assign live client tickets to every admin and every read-only viewer who can merely open the
+Mytrion; deriving from `hr_employees.department_id` would conflate being *in* a department with being *on
+the rota* (a head, a trainee and someone on parental leave are all "in" CS).
+
+### Selection
+
+One statement, and it has to stay one: `UPDATE … WHERE id = (SELECT … ORDER BY … LIMIT 1 FOR UPDATE SKIP
+LOCKED)`. The obvious SELECT-then-UPDATE hands the same person to two tickets filed in the same instant,
+which is the exact failure round-robin exists to prevent.
+
+Ordering IS the strategy — `round_robin` = `last_assigned_at ASC NULLS FIRST` (a new member goes first;
+they are owed work), `least_open` = fewest open tickets first. Filters: `active`, `accepts_new`, and
+`max_open` counted against the agent's OPEN tickets.
+
+### Three real bugs the real-DB run caught
+
+1. **The rotation never rotated.** Every ticket went to the same agent. The subquery used the Drizzle
+   column helpers, which render `"mytrion_department_agents"."last_assigned_at"` — inside a subquery over
+   the SAME table that is a CORRELATED reference to the outer UPDATE row, so `ORDER BY` was constant per
+   row. Every reference inside the subquery is now written against the alias `a` literally.
+2. **`SKIP LOCKED` starved under a burst.** Twelve concurrent creates over three agents left most tickets
+   unassigned: a claim that walks past every locked row finds nothing. Bounded retry (5 attempts, ~10ms
+   apart) fixes it — the locks are held only for the length of one UPDATE.
+3. **`require_online` would have starved everything.** 0087 seeds it TRUE for customer-service, billing and
+   verification, while `FF_COMMS_PRESENCE=0` means nothing is ever written to `mytrion_agent_presence`. The
+   eligible set would have been permanently empty. Presence is now ignored while the flag is off, and
+   logged. When it IS on, eligibility needs socket liveness AND declared availability — connected-but-away
+   is the common case an hour before end of shift.
+
+### Fairness is approximate, and that is the design
+
+`SKIP LOCKED` trades exact evenness for throughput: a burst lands within about one of the mean (12 over 3
+came out 4/5/3). The guarantee is that nobody is starved and the skew SELF-CORRECTS, because
+`last_assigned_at ASC` pulls whoever fell behind to the front next — asserted directly rather than
+asserting an even split that would only ever be a coincidence.
+
+### Assignment never fails a create
+
+A ticket that could not be assigned is still a filed ticket: it stays visible to the whole department
+through the queue and a `assignment_failed` journal row records why (`empty_roster`, `nobody_eligible`,
+`nobody_online`, `department_not_configured`). `manual` is the configured intent for c-level and sales, so
+it is deliberately NOT journalled as a failure. The claim happens before the ticket is stamped, and is
+released if the stamp loses a race — an agent must not go to the back of the rotation for work they never
+received.
+
+### Surface
+
+`/v1/comms/queue/:id/assign` (claim, or assign to someone who holds a seat on that roster),
+`/release` (only the holder or an admin), `/comms/queue/:department/roster` (read-only, visible to anyone
+who can see the queue — "why did that go to her" is a fair question to answer by looking).
+
+Repos split: `commsTicketStateRepo` now owns the contended writes (transition, assign, unassign,
+first-response) while `commsTicketRepo` keeps create and the reader-filtered reads. Each of those is a write
+whose correctness lives in its WHERE clause, which is worth having in one place.
+
+Admin screen gained a per-department **ticket rota** editor: add/remove people, take someone off without
+losing their rotation history, switch strategy, and a `next` chip on whoever the next ticket goes to. A
+fourth readiness tile flags any auto-assigning queue with an empty rota.
+
+### Verification
+
+20/20 against a fresh throwaway Postgres: exact 3/3/3 rotation, 12 concurrent creates all assigned with
+self-correction proven, `accepts_new=false` and `active=false` skipped, `max_open` capping at 2 and freeing
+when a ticket resolves, empty roster and manual both behaving correctly, `least_open` picking the smallest
+backlog, and two simultaneous claims yielding exactly one winner. Typecheck and lint clean (0 errors).
+Backend 1543 passing with the same 35 pre-existing failures as baseline; web 357 (5 new rota tests).
+
+## 2026-08-02 (2) — Can Sales keep talking in a ticket after creating it?
+
+Asked directly, so verified directly rather than reasoned about. **Backend: yes, fully.** A 16-check run
+against a fresh throwaway Postgres proves the requester path end to end:
+
+- The creator holds `role='requester'` on the thread, so the reader filter's PARTICIPANT arm keeps the
+  ticket visible to them after filing — while another Sales agent still cannot see it.
+- They can post replies into it, attributed to their own id.
+- CS replies in the same thread and the requester sees the whole conversation in order (1,2,3).
+- Assignment does not disturb it: after CS is auto-assigned, the requester still holds `requester` and CS
+  holds `assignee` — `transferAssignee` moves the role without evicting anyone.
+- Unread works both ways: the CS reply shows unread to Sales, and opening it clears the badge.
+- `first_response_at` is set by the CS reply, not by the requester's own follow-up.
+
+**One real UI gap found and fixed.** `openTicket()` (Create → "opening it now") set `focusTicketId` and
+navigated to the Tickets tab, but `TicketConsole` never consumed it — the old Desk-era `TicketsTab` did, and
+that wiring was lost in the swap. The agent landed on the list with nothing selected, having to hunt for the
+ticket they had just filed. The console now takes `focusTicketId` / `onFocusConsumed`: it selects the ticket
+if it is already listed, and FETCHES it if the active filter excludes it (a resolved ticket reached from a
+link), prepending rather than silently changing the user's filter. A failed focus is consumed anyway so it
+cannot loop.
+
+**Worth knowing, by design:** an INTERNAL NOTE written by CS on a Sales ticket IS visible to the Sales
+requester. `is_internal` means "never shown to a CARRIER" — both parties here are staff, and the filter is
+`excludeInternal` only for a customer audience. If notes should be hidden from the requesting Mytrion too,
+that is a different rule and a deliberate change, not a bug fix.
+
+Verification: web typecheck clean, 364 web tests (7 new console tests covering focus-when-listed,
+focus-with-fetch, focus-when-gone, and the queue/requester scoping difference). Bundle rebuilt.
+
+## 2026-08-02 (3) — Sales is now ZERO-dependent on Zoho Desk
+
+Audited rather than assumed, then deleted what was left. Sales had been repointed to `/v1/comms` for every
+WRITE, but the Desk code was still in the tree — dead, and one import away from being live again.
+
+### Deleted from the Sales UI
+
+`api/desk.ts` (the whole web client), `tabs/TicketsTab.tsx`, `TicketsBootSkeleton.tsx`, `useTicketsFeed.ts`,
+`ticketOptimistic.ts`, `ticketListCache.ts`, `ticketListMeta.ts`, `ticketStatus.ts`,
+`ticketSubscribeRegistry.ts`, `ticketUnread.ts`, `ticketDirectory.ts`, `ticketLiveBus.ts`, and 315 lines of
+Desk ticket adapters out of `live.ts` (`TicketVM`, `mapTicket`, `loadTicketsPage`, `loadTicketById`,
+`loadTickets`, `loadTicketMessages`).
+
+The cluster rooted at exactly two entry points: the already-orphaned `TicketsTab`, and `sidebarBadges`.
+`sidebarBadges` was rewritten to the two badges it actually serves — the servercrm INBOX socket (unrelated
+to Desk) and `GET /comms/unread`. The previous commit had gated the Desk half off behind
+`DESK_TICKET_BADGE = false`; leaving it would have meant a second, divergent idea of "unread tickets" one
+boolean away from being switched back on, so it is gone. Its subscribe frame no longer carries ticket ids,
+so servercrm stops broadcasting ticket comment events to this client entirely.
+
+### Deleted from the backend
+
+`POST /v1/desk/tickets`, `POST /v1/desk/escalations`, `POST /v1/desk/tickets/:id/reply` — every WRITE on the
+Sales-gated Desk surface. With them went `src/modules/touchpoints/catalog/ticketsDeluge.ts` and all four
+Deluge touchpoints: `tickets.create_in_crm` (`createticketincrm`), `tickets.create_escalation`
+(`createescalationticket`), and the two `tickets.upload_*` attachment ones that had already lost their
+callers. **No Deluge function is invoked for ticketing any more, from anywhere.**
+
+### What deliberately REMAINS, and why
+
+Four `GET /v1/desk/*` read routes. They are unreferenced by any UI, but they are the only route back to
+tickets filed in Zoho Desk BEFORE the migration, and there is no history import. Deleting them makes that
+history unreachable from the app — a product decision, not a cleanup, so it is flagged rather than taken.
+The file header says exactly that.
+
+The `zohoDesk` integration itself stays for three consumers that are NOT Sales ticketing:
+`modules/carrier/serviceRequest.ts` (the mini-app / support-bot service requests, 9 keys),
+`csAnalytics.routes.ts` + `csAnalyticsScope.ts` (CS dashboards over the Desk agent id space), and the
+`zoho_desk.search_tickets` agent tool.
+
+### Dependence level, measured
+
+| Surface | Zoho Desk |
+|---|---|
+| Sales Mytrion (UI) | **0** — no import, no client, no URL |
+| Sales ticketing (backend) | **0 writes**, 4 read routes for pre-migration history only |
+| Deluge (ticketing) | **0** — catalog file deleted |
+| CS / Billing / Verification ticketing | **0** — native from the start |
+| CS analytics dashboards | still Desk (out of scope — only ticketing was being replaced) |
+| Carrier mini-app service requests | still Desk (out of scope) |
+
+### Verification
+
+Typecheck clean, lint 0 errors. Backend back to the EXACT baseline failure set — 10 files / 35 tests, all
+pre-existing — after updating `touchpoints-catalog.test.ts` for the intentional change (deluge count 19→15,
+and the four removed function names). `desk-routes.test.ts` lost the create/reply/escalation cases along
+with their routes rather than being skipped; its 12 remaining tests still cover the ownership gate on the
+historical reads. Web 364/364. Bundle rebuilt.
+
+## 2026-08-02 — Merging feature/Communication into feature/Mytrion: migration ordering
+
+Merged `feature/Mytrion` (27 commits) **into** `feature/Communication` here, so the final step in the
+main worktree is a pure fast-forward and every conflict got resolved with full context. Merge commit
+`b3ceda0b`; migration renumber `93f0e9e7`.
+
+### Two migration-number collisions git could not see
+
+Git treats `0085_a.sql` and `0085_b.sql` as unrelated adds, so a duplicate migration number merges
+clean and breaks at `db:migrate` time.
+
+1. **Committed collision** — both branches claimed 0085-0088 (HR/loyalty vs comms). Comms moved to
+   0089-0094.
+2. **Uncommitted collision** — the main worktree has ~176 uncommitted changes including
+   `0089_hr_attendance_shift_grace` and `0090_verification_sales_responses`. Comms moved again to
+   **0091-0096**, leaving 89/90 reserved. The journal now has a deliberate gap at 89/90 that their
+   commit fills.
+
+### The `when` timestamp is load-bearing, and failure is SILENT
+
+`drizzle-orm/pg-core/dialect.js:56`:
+
+```js
+const lastDbMigration = dbMigrations[0];   // order by created_at desc limit 1 — the MAX, read ONCE
+…
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { …apply… }
+```
+
+A migration is applied only when its journal `when` exceeds the **maximum** `created_at` already
+recorded. So **`when` must increase along journal idx**, or a later-numbered migration is skipped —
+with no error, no warning, and a green `migrations applied successfully`.
+
+Renaming files is therefore only half a renumber. The comms set was stamped 7/30 19:00-7/31 00:00,
+which *straddled* their 0089 (7/30 17:00) and 0090 (7/30 20:00): `0091_comms_presence` at 19:00 sorted
+before their 0090. Comms is now **7/31 06:00-11:00**, strictly after everything on `feature/Mytrion`.
+
+Reproduced against real throwaway Postgres, on a simulated post-merge tree (their two in-flight `.sql`
+files spliced into the merged journal):
+
+| Scenario | Result |
+|---|---|
+| Fresh DB, 97 migrations | both feature sets present |
+| DB at their idx≤90, then comms lands | 91 → 97, all six apply |
+| **Reverse: comms first, their 0089/0090 committed after** | **95 stays 95, `verification_sales_responses` never created, exit 0** |
+
+### Rule this implies
+
+**Whichever branch's migrations land second must carry the later `when` timestamps.** Comms is merging
+*into* `feature/Mytrion`, and the fast-forward requires a clean tree — so their WIP is committed first
+and comms follows, which is exactly how it is now stamped. If that order is ever reversed (comms merged
+before their WIP is committed), their `0089`/`0090` `when` values must be bumped past 7/31 11:00 or
+those two migrations will silently never run.
+
+One pre-existing inversion remains at `0078_support_bot_memories` (09:00) → `0079_maintenance_cases`
+(08:00.001), inherited from `feature/Mytrion`. Harmless in practice — the two were committed together,
+so no DB stops between them — and left alone rather than restamped, since rewriting the `when` of an
+already-applied migration is its own hazard.
+
+### Merge conflicts resolved
+
+`drizzle.config.ts` (union of both schema lists) · `src/app.ts` (kept the comms multipart ceiling — a
+`max()` over both caps subsumes theirs) · `WORKING_NOTES.md` (both sections) ·
+`tests/unit/touchpoints-catalog.test.ts` (each branch removed a *different* set of Deluge entries, so
+the union removes both; count **13**, computed rather than guessed) · `meta/_journal.json` · plus 110
+rename/rename conflicts in the committed `apps/mytrion-crm/app` bundle, resolved by deleting it and
+rebuilding from merged source.
+
+### Verification
+
+95 migrations apply from scratch → 101 tables carrying **both** feature sets. Journal cross-check clean
+(95 entries, 95 files, no orphans, no duplicate idx). Backend + web typecheck clean; lint 0 errors.
+Backend tests **identical to `feature/Mytrion`'s own baseline** measured in a scratch worktree at
+`bdf23883` — zero new failures, +285 passing (1380 → 1665). Web 383/383.
