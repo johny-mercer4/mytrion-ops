@@ -10,6 +10,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { env, isDev, isProduction, isTest } from './config/env.js';
 import { isAllowedOrigin } from './lib/cors.js';
+import { safeEqual } from './lib/crypto.js';
 import { logger } from './lib/logger.js';
 import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
@@ -18,6 +19,7 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { supportBotGatewayAuthPlugin } from './plugins/supportBotGatewayAuth.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
@@ -84,6 +86,7 @@ const LOG_REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.headers["x-api-key"]',
+  'req.headers["x-support-bot-key"]',
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
   'req.headers["x-rejection-secret"]',
@@ -167,6 +170,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   authPlugin(app);
   apiKeyAuthPlugin(app);
   combinedAuthPlugin(app);
+  supportBotGatewayAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, {
@@ -191,6 +195,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       'Content-Type',
       'Authorization',
       'x-api-key',
+      'x-support-bot-key',
       'x-request-id',
       'x-department-access',
       'x-all-departments',
@@ -204,6 +209,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-webhook-timestamp',
       'x-webhook-signature',
       'idempotency-key',
+      'x-support-bot-confirmation-id',
+      'x-support-bot-turn-id',
+      'x-support-bot-write-occurrence',
+      'x-support-bot-session-key',
+      'x-support-bot-fencing-token',
     ],
     credentials: true,
   });
@@ -211,7 +221,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Native WebSocket support (GET /v1/realtime — inbox pub/sub). Registered at the root so
   // the versioned scope's websocket routes can attach; 1 MiB frame cap.
   await app.register(websocket, { options: { maxPayload: 1_048_576 } });
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    max: 120,
+    timeWindow: '1 minute',
+    // One gateway fronts up to 800 groups behind one IP. Its dedicated credential bypasses the
+    // browser/IP bucket; support-bot handlers apply carrier-aware limits and RBAC themselves.
+    allowList: (request) => {
+      const key = request.headers['x-support-bot-key'];
+      return (
+        request.url.startsWith(`${API_PREFIX}/support-bot`) &&
+        typeof key === 'string' &&
+        env.SUPPORT_BOT_GATEWAY_API_KEY.length > 0 &&
+        safeEqual(key, env.SUPPORT_BOT_GATEWAY_API_KEY)
+      );
+    },
+  });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
     // Global ceiling; /v1/files/upload additionally enforces FILE_MAX_SIZE_MB per request.

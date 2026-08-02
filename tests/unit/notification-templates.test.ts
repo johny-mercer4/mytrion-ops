@@ -19,11 +19,17 @@ describe('normalizeLang', () => {
 
 describe('renderNotification', () => {
   it('renders a fixed-input type in the recipient language', () => {
-    const payload = { last6: '123456', prev: 'Active', status: 'Hold' };
-    expect(renderNotification('cardStatus', 'ru', payload)).toContain('Статус карты');
-    expect(renderNotification('cardStatus', 'uz', payload)).toContain('karta holati');
+    const payload = {
+      card: '7083051234567890',
+      unit: '1991',
+      driverName: 'Driver One',
+      prev: 'Active',
+      status: 'Hold',
+    };
+    expect(renderNotification('cardStatus', 'ru', payload)).toContain('Статус изменился');
+    expect(renderNotification('cardStatus', 'uz', payload)).toContain("Holat o'zgardi");
     // Language-neutral interpolated values survive into any locale.
-    expect(renderNotification('cardStatus', 'ru', payload)).toContain('•••• 123456');
+    expect(renderNotification('cardStatus', 'ru', payload)).toContain('7083051234567890');
   });
 
   it('picks the locale out of a per-locale payload map (news title/body)', () => {

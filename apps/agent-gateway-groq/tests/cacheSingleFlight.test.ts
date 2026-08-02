@@ -13,7 +13,7 @@ describe('backend cache refresh single-flight', () => {
     const fetchMock = vi.fn(async () =>
       new Response(
         JSON.stringify({
-          users: [{ telegramUserId: '42', profile: 'manager' }],
+          users: [{ carrierId: 'carrier-1', telegramUserId: '42', profile: 'manager' }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
@@ -36,9 +36,9 @@ describe('backend cache refresh single-flight', () => {
         new Response(
           JSON.stringify({
             users: [
-              { telegramUserId: '41' },
-              { telegramUserId: '42', profile: 'unexpected' },
-              { telegramUserId: '43', profile: 'driver' },
+              { carrierId: 'carrier-2', telegramUserId: '41' },
+              { carrierId: 'carrier-2', telegramUserId: '42', profile: 'unexpected' },
+              { carrierId: 'carrier-2', telegramUserId: '43', profile: 'driver' },
             ],
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },

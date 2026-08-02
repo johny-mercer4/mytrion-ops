@@ -15,13 +15,16 @@ import {
 } from '../../modules/carrier/supportBotCaller.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { supportBotGatewayRepo } from '../../repos/supportBotGatewayRepo.js';
+import { supportBotConfirmationRepo } from '../../repos/supportBotConfirmationRepo.js';
 import { requireContext } from './helpers.js';
 
 const messagesBatchSchema = z.object({
-  carrierId: z.string().min(1),
+  // Legacy development gateway compatibility; new gateways bind carrier per row.
+  carrierId: z.string().min(1).max(40).optional(),
   messages: z
     .array(
       z.object({
+        carrierId: z.string().min(1).max(40).optional(),
         ts: z.string().max(40),
         chatId: z.union([z.string(), z.number()]),
         msgId: z.union([z.string(), z.number()]).optional(),
@@ -35,7 +38,19 @@ const messagesBatchSchema = z.object({
     )
     .min(1)
     .max(200),
+}).superRefine((value, ctx) => {
+  value.messages.forEach((message, index) => {
+    if (!message.carrierId && !value.carrierId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['messages', index, 'carrierId'],
+        message: 'carrierId is required per message',
+      });
+    }
+  });
 });
+
+let lastMessageRetentionAt = 0;
 
 const memoryScopeSchema = supportBotCallerSchema.extend({
   chatId: z.union([z.string(), z.number()]).transform(String),
@@ -55,9 +70,10 @@ const supportKnowledgeSearchSchema = z.object({
 export async function supportBotGatewayRoutes(
   app: FastifyInstance,
 ): Promise<void> {
-  const guard = { onRequest: [app.sessionOrApiKey] };
+  const serviceGuard = { onRequest: [app.supportBotGatewayAuth] };
+  const adminOrServiceGuard = { onRequest: [app.supportBotGatewayOrAdmin] };
 
-  app.get('/support-bot/dm-access', guard, async (request) => {
+  app.get('/support-bot/dm-access', serviceGuard, async (request) => {
     const query = z
       .object({ telegramUserId: z.string().min(1).max(40) })
       .parse(request.query);
@@ -68,12 +84,12 @@ export async function supportBotGatewayRoutes(
     return { access };
   });
 
-  app.post('/support-bot/messages', guard, async (request, reply) => {
+  app.post('/support-bot/messages', serviceGuard, async (request, reply) => {
     const body = messagesBatchSchema.parse(request.body);
     const inserted = await supportBotGatewayRepo.insertMessages(
       requireContext(request),
       body.messages.map((message) => ({
-        carrierId: body.carrierId,
+        carrierId: message.carrierId ?? body.carrierId ?? '',
         chatId: String(message.chatId),
         ...(message.msgId != null ? { msgId: String(message.msgId) } : {}),
         telegramUserId: String(message.userId),
@@ -85,10 +101,25 @@ export async function supportBotGatewayRoutes(
         sentAt: new Date(message.ts),
       })),
     );
+    if (Date.now() - lastMessageRetentionAt > 24 * 60 * 60_000) {
+      lastMessageRetentionAt = Date.now();
+      const ctx = requireContext(request);
+      void Promise.all([
+        supportBotGatewayRepo.deleteMessagesOlderThan(
+          ctx,
+          new Date(Date.now() - env.SUPPORT_BOT_MESSAGE_RETENTION_DAYS * 86_400_000),
+        ),
+        supportBotConfirmationRepo.deleteResolvedBefore(
+          ctx,
+          new Date(Date.now() - env.SUPPORT_BOT_CONFIRMATION_RETENTION_DAYS * 86_400_000),
+        ),
+      ])
+        .catch((error: unknown) => request.log.warn({ error }, 'support-bot message retention failed'));
+    }
     return reply.code(201).send({ inserted });
   });
 
-  app.post('/support-bot/memory/recall', guard, async (request) => {
+  app.post('/support-bot/memory/recall', serviceGuard, async (request) => {
     const body = memoryScopeSchema
       .extend({
         query: z.string().trim().min(1).max(4000),
@@ -111,7 +142,7 @@ export async function supportBotGatewayRoutes(
     return { memories };
   });
 
-  app.post('/support-bot/memory/commit', guard, async (request, reply) => {
+  app.post('/support-bot/memory/commit', serviceGuard, async (request, reply) => {
     const body = memoryScopeSchema
       .extend({
         question: z.string().min(1).max(6000),
@@ -147,7 +178,7 @@ export async function supportBotGatewayRoutes(
     return reply.code(202).send({ stored });
   });
 
-  app.post('/support-bot/knowledge/search', guard, async (request) => {
+  app.post('/support-bot/knowledge/search', serviceGuard, async (request) => {
     const body = supportKnowledgeSearchSchema.parse(request.body);
     const ctx = requireContext(request);
     const articles = await searchSupportBotKnowledge(
@@ -173,7 +204,6 @@ export async function supportBotGatewayRoutes(
     return { articles };
   });
 
-  const monitorUpstream = `http://localhost:${process.env['MONITOR_PORT'] ?? '8787'}`;
   async function proxyMonitor(
     path: string,
     request: { query: unknown },
@@ -182,18 +212,26 @@ export async function supportBotGatewayRoutes(
       header: (key: string, value: string) => void;
     },
   ): Promise<unknown> {
-    const params = new URLSearchParams();
+    const monitorUpstream = env.SUPPORT_BOT_GATEWAY_MONITOR_URL.replace(/\/+$/u, '');
+    if (!monitorUpstream) {
+      throw new AppError('Support-bot monitor upstream is not configured', {
+        statusCode: 503,
+        code: 'SUPPORT_BOT_MONITOR_UNAVAILABLE',
+        expose: true,
+      });
+    }
+    const target = new URL(path, `${monitorUpstream}/`);
     for (const [key, value] of Object.entries(
       (request.query as Record<string, unknown>) ?? {},
     )) {
-      if (typeof value === 'string' || typeof value === 'number') {
-        params.set(key, String(value));
+      if (key !== 'token' && (typeof value === 'string' || typeof value === 'number')) {
+        target.searchParams.set(key, String(value));
       }
     }
-    const response = await fetch(
-      `${monitorUpstream}${path}?${params.toString()}`,
-      { signal: AbortSignal.timeout(10_000) },
-    );
+    if (env.SUPPORT_BOT_GATEWAY_MONITOR_TOKEN) {
+      target.searchParams.set('token', env.SUPPORT_BOT_GATEWAY_MONITOR_TOKEN);
+    }
+    const response = await fetch(target, { signal: AbortSignal.timeout(10_000) });
     reply.header(
       'content-type',
       response.headers.get('content-type') ?? 'text/plain',
@@ -203,23 +241,23 @@ export async function supportBotGatewayRoutes(
       .send(Buffer.from(await response.arrayBuffer()));
   }
 
-  app.get('/support-bot/monitor', async (request, reply) => {
+  app.get('/support-bot/monitor', adminOrServiceGuard, async (request, reply) => {
     const query = request.url.includes('?')
       ? request.url.slice(request.url.indexOf('?'))
       : '';
     return reply.redirect(`/v1/support-bot/monitor/${query}`);
   });
-  app.get('/support-bot/monitor/', async (request, reply) =>
+  app.get('/support-bot/monitor/', adminOrServiceGuard, async (request, reply) =>
     proxyMonitor('/', request, reply),
   );
-  app.get('/support-bot/monitor/api/turns', async (request, reply) =>
+  app.get('/support-bot/monitor/api/turns', adminOrServiceGuard, async (request, reply) =>
     proxyMonitor('/api/turns', request, reply),
   );
-  app.get('/support-bot/monitor/api/metrics', async (request, reply) =>
+  app.get('/support-bot/monitor/api/metrics', adminOrServiceGuard, async (request, reply) =>
     proxyMonitor('/api/metrics', request, reply),
   );
 
-  app.get('/support-bot/chat-map', guard, async (request) => {
+  app.get('/support-bot/chat-map', adminOrServiceGuard, async (request) => {
     const rows = await supportBotGatewayRepo.listEnabledChats(
       requireContext(request),
     );
@@ -231,7 +269,7 @@ export async function supportBotGatewayRoutes(
     };
   });
 
-  app.post('/support-bot/chat-map', guard, async (request, reply) => {
+  app.post('/support-bot/chat-map', adminOrServiceGuard, async (request, reply) => {
     const ctx = requireContext(request);
     if (ctx.role !== 'admin' && !ctx.bypassRbac) {
       throw new RBACError('Mapping bot chats requires admin access');
@@ -245,7 +283,7 @@ export async function supportBotGatewayRoutes(
     const row = await supportBotGatewayRepo.setChat(ctx, {
       ...body,
       createdBy: ctx.userId,
-    });
+    }, env.SUPPORT_BOT_MAX_GROUPS);
     await auditFromContext(ctx, {
       action: 'support_bot.chat_map.set',
       status: 'ok',
@@ -256,7 +294,33 @@ export async function supportBotGatewayRoutes(
     return reply.status(201).send(row);
   });
 
-  app.post('/support-bot/chat-map/auto-bind', guard, async (request, reply) => {
+  app.delete('/support-bot/chat-map/:chatId', adminOrServiceGuard, async (request, reply) => {
+    const ctx = requireContext(request);
+    if (ctx.role !== 'admin' && !ctx.bypassRbac) {
+      throw new RBACError('Disabling bot chats requires admin access');
+    }
+    const { chatId } = z
+      .object({ chatId: z.string().min(1).max(40) })
+      .parse(request.params);
+    const row = await supportBotGatewayRepo.disableChat(ctx, chatId);
+    if (!row) {
+      throw new AppError('Support-bot chat mapping not found', {
+        statusCode: 404,
+        code: 'SUPPORT_BOT_CHAT_NOT_FOUND',
+        expose: true,
+      });
+    }
+    await auditFromContext(ctx, {
+      action: 'support_bot.chat_map.disable',
+      status: 'ok',
+      resourceType: 'support_bot_chat',
+      resourceId: chatId,
+      detail: { carrierId: row.carrierId },
+    });
+    return reply.status(204).send();
+  });
+
+  app.post('/support-bot/chat-map/auto-bind', serviceGuard, async (request, reply) => {
     const ctx = requireContext(request);
     const body = z
       .object({
@@ -283,7 +347,7 @@ export async function supportBotGatewayRoutes(
       chatId: body.chatId,
       carrierId: registration.carrierId,
       createdBy: `auto:tg:${body.telegramUserId}`,
-    });
+    }, env.SUPPORT_BOT_MAX_GROUPS);
     if (result.bound) {
       await auditFromContext(ctx, {
         action: 'support_bot.chat_map.auto_bind',
@@ -303,7 +367,7 @@ export async function supportBotGatewayRoutes(
     });
   });
 
-  app.get('/support-bot/access', guard, async (request) => {
+  app.get('/support-bot/access', serviceGuard, async (request) => {
     const query = z
       .object({ carrierId: z.string().min(1).max(40) })
       .parse(request.query);
@@ -318,6 +382,36 @@ export async function supportBotGatewayRoutes(
         profile: row.profile,
         name: row.driverName,
       })),
+    };
+  });
+
+  app.get('/support-bot/access-snapshot', serviceGuard, async (request) => {
+    const max = env.SUPPORT_BOT_ACCESS_SNAPSHOT_MAX;
+    const rows = await registeredMiniAppCompanyRepo.listActiveForSupportBot(
+      requireContext(request),
+      max + 1,
+    );
+    if (rows.length > max) {
+      throw new AppError('Support-bot access snapshot exceeds the configured safety cap', {
+        statusCode: 503,
+        code: 'SUPPORT_BOT_ACCESS_SNAPSHOT_TOO_LARGE',
+        expose: true,
+      });
+    }
+    return {
+      generatedAt: new Date().toISOString(),
+      users: rows.flatMap((row) =>
+        row.carrierId
+          ? [
+              {
+                carrierId: row.carrierId,
+                telegramUserId: row.telegramUserId,
+                profile: row.profile,
+                name: row.driverName,
+              },
+            ]
+          : [],
+      ),
     };
   });
 }

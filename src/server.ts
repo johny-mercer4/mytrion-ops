@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
-import { assertRuntimeSecrets, env } from './config/env.js';
+import { env } from './config/env.js';
+import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { closeCmpTunnel } from './integrations/cmpTunnel.js';
 import { runMigrationsOnBoot } from './db/migrate.js';

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   registeredMiniAppCompanies,
@@ -153,6 +153,36 @@ export const registeredMiniAppCompanyRepo = {
           eq(registeredMiniAppCompanies.status, 'active'),
         ),
       );
+  },
+
+  /** One bounded tenant snapshot for the multi-group gateway's registration cache. */
+  async listActiveForSupportBot(
+    ctx: TenantContext,
+    limit: number,
+  ): Promise<
+    Array<{
+      carrierId: string | null;
+      telegramUserId: string;
+      profile: 'owner' | 'manager' | 'driver';
+      driverName: string | null;
+    }>
+  > {
+    return db
+      .select({
+        carrierId: registeredMiniAppCompanies.carrierId,
+        telegramUserId: registeredMiniAppCompanies.telegramUserId,
+        profile: registeredMiniAppCompanies.profile,
+        driverName: registeredMiniAppCompanies.driverName,
+      })
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.status, 'active'),
+          isNotNull(registeredMiniAppCompanies.carrierId),
+        ),
+      )
+      .limit(limit);
   },
 
   /**

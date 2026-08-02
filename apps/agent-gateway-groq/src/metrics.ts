@@ -10,6 +10,16 @@ export type CounterName =
   | 'turn_rejected_total'
   | 'openai_429_total'
   | 'openai_error_total'
+  | 'openai_rate_wait_total'
+  | 'openai_rate_limited_total'
+  | 'openai_retry_total'
+  | 'openai_circuit_open_total'
+  | 'openai_overload_rejected_total'
+  | 'request_admission_rejected_total'
+  | 'stale_request_total'
+  | 'ai_router_input_tokens_total'
+  | 'ai_router_output_tokens_total'
+  | 'ai_router_cached_tokens_total'
   | 'ai_router_calls_total'
   | 'ai_router_engaged_total'
   | 'ai_router_silent_total'
@@ -19,15 +29,21 @@ export type CounterName =
   | 'tg_send_fail_total'
   | 'tg_poll_fail_total'
   | 'backend_error_total'
+  | 'write_replayed_total'
+  | 'idempotency_conflict_total'
   | 'tool_unknown_total'
   | 'tool_disabled_total'
+  | 'principal_tool_denied_total'
+  | 'tool_confirmation_denied_total'
   | 'tool_invalid_args_total'
   | 'service_disabled_total'
   | 'capability_fast_path_total'
   | 'greeting_fast_path_total'
   | 'ambient_engagement_total'
+  | 'ingress_policy_dropped_total'
   | 'message_burst_total'
   | 'message_burst_messages_total'
+  | 'message_burst_overflow_total'
   | 'memory_recall_total'
   | 'memory_recall_hit_total'
   | 'memory_commit_total'
@@ -48,6 +64,16 @@ const COUNTERS: CounterName[] = [
   'turn_rejected_total',
   'openai_429_total',
   'openai_error_total',
+  'openai_rate_wait_total',
+  'openai_rate_limited_total',
+  'openai_retry_total',
+  'openai_circuit_open_total',
+  'openai_overload_rejected_total',
+  'request_admission_rejected_total',
+  'stale_request_total',
+  'ai_router_input_tokens_total',
+  'ai_router_output_tokens_total',
+  'ai_router_cached_tokens_total',
   'ai_router_calls_total',
   'ai_router_engaged_total',
   'ai_router_silent_total',
@@ -57,15 +83,21 @@ const COUNTERS: CounterName[] = [
   'tg_send_fail_total',
   'tg_poll_fail_total',
   'backend_error_total',
+  'write_replayed_total',
+  'idempotency_conflict_total',
   'tool_unknown_total',
   'tool_disabled_total',
+  'principal_tool_denied_total',
+  'tool_confirmation_denied_total',
   'tool_invalid_args_total',
   'service_disabled_total',
   'capability_fast_path_total',
   'greeting_fast_path_total',
   'ambient_engagement_total',
+  'ingress_policy_dropped_total',
   'message_burst_total',
   'message_burst_messages_total',
+  'message_burst_overflow_total',
   'memory_recall_total',
   'memory_recall_hit_total',
   'memory_commit_total',
@@ -122,16 +154,15 @@ export interface MetricTurnStats {
 
 export interface TurnLifecycle {
   started(): number;
-  wrapStats<T extends MetricTurnStats>(
-    callback?: (stats: T) => void,
-  ): (stats: T) => void;
+  wrapStats<T extends MetricTurnStats>(callback?: (stats: T) => void): (stats: T) => void;
   wrapReply<T extends (text: string) => Promise<void>>(reply: T): T;
   settle(error?: unknown): void;
 }
 
-const counters = Object.fromEntries(
-  COUNTERS.map((name) => [name, 0]),
-) as Record<CounterName, number>;
+const counters = Object.fromEntries(COUNTERS.map((name) => [name, 0])) as Record<
+  CounterName,
+  number
+>;
 const histograms: Record<HistogramName, number[]> = {
   turn_total_ms: [],
   queue_wait_ms: [],
@@ -214,9 +245,7 @@ export function turnEnqueued(now = Date.now()): TurnLifecycle {
       observe('queue_wait_ms', queueWaitMs);
       return queueWaitMs;
     },
-    wrapStats<T extends MetricTurnStats>(
-      callback?: (stats: T) => void,
-    ): (stats: T) => void {
+    wrapStats<T extends MetricTurnStats>(callback?: (stats: T) => void): (stats: T) => void {
       return (stats: T): void => {
         sawStats = true;
         statsErrored = stats.isError;

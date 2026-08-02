@@ -6,19 +6,29 @@
 import { config } from './config.js';
 import {
   enqueueTurn,
+  flushSessions,
   maxConcurrentTurns,
   routingHistoryFor,
+  waitForTurnDrain,
 } from './sessions.js';
-import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
+import {
+  getUpdates,
+  sendMessage,
+  sendTyping,
+  setReaction,
+  clearReaction,
+  type TgMessage,
+} from './telegram.js';
 import { buildOctaneTools, noteSender } from './tools.js';
 import { buildTelegramTools, notePhoto } from './telegramTools.js';
 import {
   engagementReason,
   isConversationActive,
   noteEngaged,
+  shouldRouteAtIngress,
 } from './filter.js';
-import { recordTurn, startMonitor } from './monitor.js';
-import { logMessage } from './messageLog.js';
+import { flushTurnLog, startMonitor } from './monitor.js';
+import { flushMessageLogs, logMessage } from './messageLog.js';
 import { registeredRole } from './access.js';
 import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
 import { incrementCounter, startSamplers } from './metrics.js';
@@ -27,6 +37,10 @@ import { processInOrderByKey } from './ingressOrder.js';
 import { MessageBurstBuffer } from './messageBurst.js';
 import type { GatewayRole } from './skillRegistry.js';
 import { classifySupportTurn } from './aiRouter.js';
+import { requestAdmissionSnapshot, tryAdmitRequest } from './requestAdmission.js';
+import { handleCallback } from './callbackHandler.js';
+import { logTurn, sendOverloadReply, stampElapsed } from './turnTelemetry.js';
+import { startGatewayLeaderLease } from './leaderLease.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -36,6 +50,7 @@ import { classifySupportTurn } from './aiRouter.js';
  * registered-only token rule stands.
  */
 const REG_NUDGE_TTL_MS = 24 * 3600_000;
+const REG_NUDGE_MAX_USERS = 100_000;
 const regNudge = new Map<number, number>();
 setInterval(() => {
   const cutoff = Date.now() - REG_NUDGE_TTL_MS;
@@ -52,32 +67,24 @@ function regNudgeText(): string {
   );
 }
 
-/**
- * Long-turn UX. The "still working" line is the MODEL's job now (telegram_progress tool —
- * contextual, in the user's own language, names the task), because a canned harness string is
- * not the reply a client wants. The harness keeps only the honest part it alone can know: a
- * final reply that took over REPORT_ELAPSED_OVER_MS carries its ⏱ duration.
- */
-const REPORT_ELAPSED_OVER_MS = Number(process.env['REPORT_ELAPSED_OVER_MS'] ?? '120000');
-const ingressConcurrency = Number(
+function noteRegistrationNudge(userId: number): void {
+  if (!regNudge.has(userId) && regNudge.size >= REG_NUDGE_MAX_USERS) {
+    const oldest = regNudge.keys().next().value as number | undefined;
+    if (oldest !== undefined) regNudge.delete(oldest);
+  }
+  regNudge.delete(userId);
+  regNudge.set(userId, Date.now());
+}
+
+const configuredIngressConcurrency = Number(
   process.env['TELEGRAM_INGRESS_CONCURRENCY'] ?? '32',
 );
 const INGRESS_CONCURRENCY =
-  Number.isSafeInteger(ingressConcurrency) && ingressConcurrency > 0
-    ? ingressConcurrency
+  Number.isSafeInteger(configuredIngressConcurrency) &&
+  configuredIngressConcurrency > 0 &&
+  configuredIngressConcurrency <= 128
+    ? configuredIngressConcurrency
     : 32;
-
-function fmtElapsed(ms: number): string {
-  const m = Math.floor(ms / 60_000);
-  const sec = Math.round((ms % 60_000) / 1000);
-  return m > 0 ? `${m} min ${sec} s` : `${sec} s`;
-}
-
-/** Stamp a long turn's reply with how long it actually took. */
-function stampElapsed(text: string, startedAt: number): string {
-  const elapsed = Date.now() - startedAt;
-  return elapsed > REPORT_ELAPSED_OVER_MS ? `${text}\n\n⏱ ${fmtElapsed(elapsed)}` : text;
-}
 
 /** One-time announcement when an owner's message auto-binds a fresh group. */
 function bindAnnounceText(companyName: string | null): string {
@@ -87,6 +94,7 @@ function bindAnnounceText(companyName: string | null): string {
 
 interface BufferedMessage {
   message: TgMessage;
+  updateId: number;
   carrierId: string;
   role: GatewayRole;
   receivedAt: number;
@@ -132,54 +140,28 @@ function formatPrompt(messages: readonly TgMessage[]): string {
   return `[msg ${last.message_id} from ${name} (id ${last.from?.id ?? 0})]: The user sent these messages in sequence. Treat them as one request:\n${body}`;
 }
 
-/** Bridge a finished turn into the web monitor (question, wait, exec, tokens). */
-function logTurn(
-  kind: 'message' | 'button',
-  chatId: number,
-  userId: number,
-  name: string,
-  question: string,
-  enqueuedAt: number,
-  replyRef: { text: string },
-) {
-  return (stats: import('./sessions.js').TurnStats): void => {
-    const un = (k: string): number => Number(stats.usage?.[k] ?? 0) || 0;
-    recordTurn({
-      ts: new Date(enqueuedAt).toISOString(),
-      chatId,
-      userId,
-      name,
-      kind,
-      question: question.slice(0, 300),
-      reply: stats.isError && stats.errMsg ? `⚠ ${stats.errMsg}`.slice(0, 300) : replyRef.text.slice(0, 300),
-      waitMs:
-        stats.queueWaitMs ??
-        Math.max(0, Date.now() - enqueuedAt - stats.durationMs),
-      execMs: stats.durationMs,
-      ...(stats.totalMs !== undefined ? { totalMs: stats.totalMs } : {}),
-      ...(stats.sendMs !== undefined ? { sendMs: stats.sendMs } : {}),
-      numTurns: stats.numTurns,
-      inTok: un('input_tokens'),
-      outTok: un('output_tokens'),
-      cacheRead: un('cache_read_input_tokens'),
-      cacheWrite: un('cache_creation_input_tokens'),
-      isError: stats.isError,
-    });
-  };
-}
-
 async function main(): Promise<void> {
+  const leaderLease = await startGatewayLeaderLease();
+  const admission = requestAdmissionSnapshot();
   console.log(
-    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · maxConcurrent=${maxConcurrentTurns()} · services=${enabledServiceSummary()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
+    `octane-agent-gateway-openai up · model=${config.openaiModel} · vision=${config.openaiModel} · engagement=${config.telegramEngagementMode} · leaderLease=${config.gatewayLeaseEnabled ? 'on' : 'off'} · maxConcurrent=${maxConcurrentTurns()} · maxPending=${admission.maxPending} · maxPendingPerUser=${admission.maxPendingPerUser} · maxPendingPerCarrier=${admission.maxPendingPerCarrier} · services=${enabledServiceSummary()} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`,
   );
   startSamplers();
-  startMonitor();
+  const monitor = startMonitor();
+  const shutdownController = new AbortController();
+  let stopping = false;
+  const beginShutdown = (): void => {
+    stopping = true;
+    shutdownController.abort();
+  };
+  process.once('SIGTERM', beginShutdown);
+  process.once('SIGINT', beginShutdown);
   const messageBursts = new MessageBurstBuffer<BufferedMessage>({
     quietMs: config.telegramBurstQuietMs,
-    maxWaitMs: Math.max(
-      config.telegramBurstQuietMs,
-      config.telegramBurstMaxMs,
-    ),
+    maxWaitMs: Math.max(config.telegramBurstQuietMs, config.telegramBurstMaxMs),
+    maxKeys: config.telegramBurstMaxKeys,
+    maxItemsPerKey: config.telegramBurstMaxItemsPerKey,
+    onOverflow: () => incrementCounter('message_burst_overflow_total'),
     onError: (error) => {
       console.error(
         '[messageBurst] flush failed',
@@ -199,84 +181,163 @@ async function main(): Promise<void> {
       const userId = message.from?.id ?? 0;
       const name = message.from?.first_name ?? message.from?.username ?? 'user';
       const question = currentMessages
-        .map(
-          (item) =>
-            (item.text ?? item.caption ?? '') + (item.photo ? ' [photo]' : ''),
-        )
+        .map((item) => (item.text ?? item.caption ?? '') + (item.photo ? ' [photo]' : ''))
         .join('\n');
-      const manifests = [
-        ...buildOctaneTools(chatId, last.carrierId, userId),
-        ...buildTelegramTools(chatId, userId),
-      ];
-      const route = await classifySupportTurn({
-        role: last.role,
-        direct: items.some((item) => item.direct),
-        conversationActive: items.some((item) => item.conversationActive),
-        trustedConfirmation: false,
-        currentText: question,
-        context: [
-          ...routingHistoryFor(chatId, userId),
-          ...contextItems.map((item) => ({
-            role: 'user' as const,
-            content:
-              (item.message.text ?? item.message.caption ?? '') +
-              (item.message.photo ? ' [photo]' : ''),
-          })),
-        ],
-        manifests,
-      });
-      if (!route.engage) return;
-      recentContext.delete(contextKey);
-      incrementCounter('ambient_engagement_total');
-      const reply = { text: '' };
-      const baseStats = logTurn(
-        'message',
-        chatId,
-        userId,
-        name,
-        question,
-        first.receivedAt,
-        reply,
-      );
-      const stats: typeof baseStats = (turnStats) => {
-        baseStats(turnStats);
+      const requestLease = tryAdmitRequest(String(userId), last.carrierId, first.receivedAt);
+      if (!requestLease) {
+        recentContext.delete(contextKey);
+        await sendOverloadReply({
+          kind: 'message',
+          chatId,
+          carrierId: last.carrierId,
+          userId,
+          name,
+          question,
+          receivedAt: first.receivedAt,
+          replyToMessageId: message.message_id,
+        });
         for (const item of currentMessages) {
           void clearReaction(chatId, item.message_id).catch(() => undefined);
         }
-      };
-      if (items.length > 1) {
-        incrementCounter('message_burst_total');
-        incrementCounter('message_burst_messages_total', items.length);
+        return;
       }
-      enqueueTurn(
-        chatId,
-        userId,
-        last.carrierId,
-        last.role,
-        route,
-        formatPrompt(messages),
-        async (text) => {
-          const finalText = stampElapsed(text, first.receivedAt);
-          reply.text = finalText;
-          await sendMessage(chatId, finalText, message.message_id);
-          logMessage({
-            ts: new Date().toISOString(),
+      let handedToTurnQueue = false;
+      try {
+        const manifests = [
+          ...buildOctaneTools(chatId, last.carrierId, userId, `tg:${last.updateId}`),
+          ...buildTelegramTools(chatId, userId),
+        ];
+        const route = await classifySupportTurn({
+          role: last.role,
+          direct: items.some((item) => item.direct),
+          conversationActive: items.some((item) => item.conversationActive),
+          trustedConfirmation: false,
+          currentText: question,
+          context: [
+            ...routingHistoryFor(chatId, userId),
+            ...contextItems.map((item) => ({
+              role: 'user' as const,
+              content:
+                (item.message.text ?? item.message.caption ?? '') +
+                (item.message.photo ? ' [photo]' : ''),
+            })),
+          ],
+          manifests,
+          deadlineAt: requestLease.deadlineAt,
+        });
+        if (!route.engage) return;
+        recentContext.delete(contextKey);
+        if (route.source === 'overload-fallback') {
+          await sendOverloadReply({
+            kind: 'message',
             chatId,
-            userId: 0,
-            name: 'bot',
-            dir: 'out',
-            text: finalText,
+            carrierId: last.carrierId,
+            userId,
+            name,
+            question,
+            receivedAt: first.receivedAt,
+            replyToMessageId: message.message_id,
           });
-        },
-        stats,
-      );
+          return;
+        }
+        if (config.messageLogMode === 'engaged') {
+          for (const bufferedItem of items) {
+            const item = bufferedItem.message;
+            logMessage({
+              ts: new Date(bufferedItem.receivedAt).toISOString(),
+              carrierId: last.carrierId,
+              chatId,
+              msgId: item.message_id,
+              userId,
+              name,
+              dir: 'in',
+              text: item.text ?? item.caption ?? '',
+              ...(item.photo ? { photo: true } : {}),
+              engaged: true,
+            });
+          }
+        }
+        incrementCounter('ambient_engagement_total');
+        const reply = { text: '' };
+        const baseStats = logTurn(
+          'message',
+          chatId,
+          userId,
+          name,
+          question,
+          first.receivedAt,
+          reply,
+        );
+        const stats: typeof baseStats = (turnStats) => {
+          try {
+            baseStats(turnStats);
+            for (const item of currentMessages) {
+              void clearReaction(chatId, item.message_id).catch(() => undefined);
+            }
+          } finally {
+            requestLease.release();
+          }
+        };
+        if (items.length > 1) {
+          incrementCounter('message_burst_total');
+          incrementCounter('message_burst_messages_total', items.length);
+        }
+        enqueueTurn(
+          chatId,
+          userId,
+          last.carrierId,
+          last.role,
+          route,
+          formatPrompt(messages),
+          async (text) => {
+            const finalText = stampElapsed(text, first.receivedAt);
+            reply.text = finalText;
+            await sendMessage(chatId, finalText, message.message_id);
+            logMessage({
+              ts: new Date().toISOString(),
+              carrierId: last.carrierId,
+              chatId,
+              userId: 0,
+              name: 'bot',
+              dir: 'out',
+              text: finalText,
+            });
+          },
+          stats,
+          {
+            deadlineAt: requestLease.deadlineAt,
+            receivedAt: first.receivedAt,
+            turnId: `tg:${last.updateId}`,
+          },
+        );
+        handedToTurnQueue = true;
+      } finally {
+        if (!handedToTurnQueue) {
+          requestLease.release();
+          for (const item of currentMessages) {
+            void clearReaction(chatId, item.message_id).catch(() => undefined);
+          }
+        }
+      }
     },
   });
   let offset = 0;
-  for (;;) {
+  while (!stopping) {
+    if (!leaderLease.isLeader()) {
+      await leaderLease.waitForLeadership(shutdownController.signal);
+      if (stopping) break;
+    }
     try {
-      const updates = await getUpdates(offset);
+      const updates = await getUpdates(
+        offset,
+        AbortSignal.any([shutdownController.signal, leaderLease.pollSignal]),
+      );
+      let processedAll = true;
       for (let start = 0; start < updates.length; start += INGRESS_CONCURRENCY) {
+        if (!leaderLease.isLeader()) {
+          processedAll = false;
+          break;
+        }
         const batch = updates.slice(start, start + INGRESS_CONCURRENCY);
         await processInOrderByKey(
           batch,
@@ -288,130 +349,131 @@ async function main(): Promise<void> {
             return `update:${u.update_id}`;
           },
           async (u) => {
-        // Button taps: ack instantly, gate by registration, then feed the tap into the session
-        // as a structured line — the tapper's id comes from Telegram itself (sender-verified by
-        // construction), so tools may act on it like any spoken message.
-        const cb = u.callback_query;
-        const cbCarrier = cb?.message ? await carrierFor(cb.message.chat.id) : null;
-        if (cb?.message && cbCarrier) {
-          await messageBursts.flush(`${cb.message.chat.id}:${cb.from.id}`);
-          void answerCallback(cb.id);
-          const cbRole = await registeredRole(cbCarrier, cb.from.id);
-          if (!cbRole) return;
-          const chatId = cb.message.chat.id;
-          noteSender(chatId, cb.from.id);
-          noteEngaged(chatId, cb.from.id);
-          void sendTyping(chatId);
-          const name = cb.from.first_name ?? cb.from.username ?? 'user';
-          const cbReply = { text: '' };
-          const cbAt = Date.now();
-          logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
-          const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          const cbPrompt = `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`;
-          const cbManifests = [
-            ...buildOctaneTools(chatId, cbCarrier, cb.from.id),
-            ...buildTelegramTools(chatId, cb.from.id),
-          ];
-          const cbRoute = await classifySupportTurn({
-            role: cbRole,
-            direct: true,
-            conversationActive: true,
-            trustedConfirmation: cb.data?.split(':').at(-1) === 'yes',
-            currentText: cb.data ?? '',
-            context: routingHistoryFor(chatId, cb.from.id),
-            manifests: cbManifests,
-          });
-          enqueueTurn(chatId, cb.from.id, cbCarrier, cbRole, cbRoute, cbPrompt, async (text) => {
-            const finalText = stampElapsed(text, cbAt);
-            cbReply.text = finalText;
-            noteEngaged(chatId, cb.from.id);
-            await sendMessage(chatId, finalText, cb.message?.message_id);
-            logMessage({ ts: new Date().toISOString(), chatId, userId: 0, name: 'bot', dir: 'out', text: finalText });
-          }, cbStats);
-          return;
-        }
-        const m = u.message;
-        if (!m || m.from?.is_bot) return;
-        if (!m.text && !m.caption && !m.photo) return;
-        let carrier = await carrierFor(m.chat.id);
-        if (!carrier) {
-          // Unmapped chat. AUTO-BIND: in a group, any message from a registered active owner
-          // binds the chat to their carrier (server-verified) — announce once, then serve this
-          // very message. Private chats and strangers' groups stay invisible (zero tokens).
-          const uid = m.from?.id ?? 0;
-          const isGroup = m.chat.type === 'group' || m.chat.type === 'supergroup';
-          if (uid !== 0 && isGroup) {
-            const boundNow = await tryAutoBind(m.chat.id, uid);
-            if (boundNow) {
-              carrier = boundNow.carrierId;
-              await sendMessage(m.chat.id, bindAnnounceText(boundNow.companyName), m.message_id).catch(() => undefined);
-              logMessage({ ts: new Date().toISOString(), chatId: m.chat.id, userId: 0, name: 'bot', dir: 'out', text: '[auto-bind announcement]' });
-            } else {
-              carrier = await carrierFor(m.chat.id); // already-bound race: map may have refreshed
+            if (await handleCallback(u, (key) => messageBursts.flush(key))) return;
+            const m = u.message;
+            if (!m || m.from?.is_bot) return;
+            if (!m.text && !m.caption && !m.photo) return;
+            let carrier = await carrierFor(m.chat.id);
+            if (!carrier) {
+              // Unmapped chat. AUTO-BIND: in a group, any message from a registered active owner
+              // binds the chat to their carrier (server-verified) — announce once, then serve this
+              // very message. Private chats and strangers' groups stay invisible (zero tokens).
+              const uid = m.from?.id ?? 0;
+              const isGroup = m.chat.type === 'group' || m.chat.type === 'supergroup';
+              if (uid !== 0 && isGroup) {
+                const boundNow = await tryAutoBind(m.chat.id, uid);
+                if (boundNow) {
+                  carrier = boundNow.carrierId;
+                  await sendMessage(
+                    m.chat.id,
+                    bindAnnounceText(boundNow.companyName),
+                    m.message_id,
+                  ).catch(() => undefined);
+                  logMessage({
+                    ts: new Date().toISOString(),
+                    carrierId: boundNow.carrierId,
+                    chatId: m.chat.id,
+                    userId: 0,
+                    name: 'bot',
+                    dir: 'out',
+                    text: '[auto-bind announcement]',
+                  });
+                } else {
+                  carrier = await carrierFor(m.chat.id); // already-bound race: map may have refreshed
+                }
+              }
+              if (!carrier) return;
             }
-          }
-          if (!carrier) return;
-        }
-        // Full history, PRE-gate — ordinary chatter is data too (the whole 54k-message analysis
-        // came from exactly this kind of log). `engaged` is patched on below when a message
-        // actually reaches the model.
-        const engagement = engagementReason(m, config.botUsername);
-        const direct = engagement === 'mention' || engagement === 'reply';
-        const conversationActive = isConversationActive(
-          m.chat.id,
-          m.from?.id ?? 0,
-        );
-        const role = await registeredRole(carrier, m.from?.id ?? 0);
-        const registered = role !== null;
-        logMessage({
-          ts: new Date().toISOString(),
-          chatId: m.chat.id,
-          msgId: m.message_id,
-          userId: m.from?.id ?? 0,
-          name: m.from?.first_name ?? m.from?.username ?? 'user',
-          dir: 'in',
-          text: m.text ?? m.caption ?? '',
-          ...(m.photo ? { photo: true } : {}),
-        });
-        noteSender(m.chat.id, m.from?.id ?? 0);
-        // Photo cache runs BEFORE gate 1 (drivers post the photo first, tag next message) but
-        // still only for REGISTERED users — an outsider's image never enters the cache. The
-        // photo message itself costs zero LLM tokens either way.
-        if (m.photo && registered) notePhoto(m.chat.id, m.from?.id ?? 0, m.photo);
-        // Only registered users reach the AI router. Explicit outsiders get one signpost.
-        if (!registered) {
-          const uid = m.from?.id ?? 0;
-          if (direct && uid !== 0 && Date.now() - (regNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS) {
-            regNudge.set(uid, Date.now());
-            await sendMessage(m.chat.id, regNudgeText(), m.message_id).catch(() => undefined);
-            logMessage({ ts: new Date().toISOString(), chatId: m.chat.id, userId: 0, name: 'bot', dir: 'out', text: '[registration signpost]' });
-          }
-          return;
-        }
-        const contextKey = `${m.chat.id}:${m.from?.id ?? 0}`;
-        const buffered = {
-          message: m,
-          carrierId: carrier,
-          role,
-          receivedAt: Date.now(),
-          direct,
-          conversationActive,
-        };
-        noteEngaged(m.chat.id, m.from?.id ?? 0);
-        void setReaction(m.chat.id, m.message_id, '👀').catch(() => undefined);
-        void sendTyping(m.chat.id);
-        rememberContext(contextKey, buffered);
-        messageBursts.push(contextKey, buffered);
+            // Telegram-verifiable routing runs before any model call. Production's `direct` mode
+            // ignores ambient group chatter; `MESSAGE_LOG_MODE=all` remains an explicit opt-in.
+            const engagement = engagementReason(m, config.botUsername);
+            const direct = engagement === 'mention' || engagement === 'reply';
+            const conversationActive = isConversationActive(m.chat.id, m.from?.id ?? 0);
+            const role = await registeredRole(carrier, m.from?.id ?? 0);
+            const registered = role !== null;
+            logMessage({
+              ts: new Date().toISOString(),
+              carrierId: carrier,
+              chatId: m.chat.id,
+              msgId: m.message_id,
+              userId: m.from?.id ?? 0,
+              name: m.from?.first_name ?? m.from?.username ?? 'user',
+              dir: 'in',
+              text: m.text ?? m.caption ?? '',
+              ...(m.photo ? { photo: true } : {}),
+            });
+            // Photo cache runs BEFORE gate 1 (drivers post the photo first, tag next message) but
+            // still only for REGISTERED users — an outsider's image never enters the cache. The
+            // photo message itself costs zero LLM tokens either way.
+            if (m.photo && registered) notePhoto(m.chat.id, m.from?.id ?? 0, m.photo);
+            // Only registered users reach the AI router. Explicit outsiders get one signpost.
+            if (!registered) {
+              const uid = m.from?.id ?? 0;
+              if (direct && uid !== 0 && Date.now() - (regNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS) {
+                noteRegistrationNudge(uid);
+                await sendMessage(m.chat.id, regNudgeText(), m.message_id).catch(() => undefined);
+                logMessage({
+                  ts: new Date().toISOString(),
+                  carrierId: carrier,
+                  chatId: m.chat.id,
+                  userId: 0,
+                  name: 'bot',
+                  dir: 'out',
+                  text: '[registration signpost]',
+                });
+              }
+              return;
+            }
+            if (!shouldRouteAtIngress(config.telegramEngagementMode, engagement)) {
+              incrementCounter('ingress_policy_dropped_total');
+              return;
+            }
+            const contextKey = `${m.chat.id}:${m.from?.id ?? 0}`;
+            const buffered = {
+              message: m,
+              updateId: u.update_id,
+              carrierId: carrier,
+              role,
+              receivedAt: Date.now(),
+              direct,
+              conversationActive,
+            };
+            noteSender(m.chat.id, m.from?.id ?? 0);
+            noteEngaged(m.chat.id, m.from?.id ?? 0);
+            void setReaction(m.chat.id, m.message_id, '👀').catch(() => undefined);
+            void sendTyping(m.chat.id);
+            rememberContext(contextKey, buffered);
+            if (!messageBursts.push(contextKey, buffered)) {
+              recentContext.delete(contextKey);
+              await clearReaction(m.chat.id, m.message_id).catch(() => undefined);
+              await sendOverloadReply({
+                kind: 'message',
+                chatId: m.chat.id,
+                carrierId: carrier,
+                userId: m.from?.id ?? 0,
+                name: m.from?.first_name ?? m.from?.username ?? 'user',
+                question: m.text ?? m.caption ?? '[photo]',
+                receivedAt: buffered.receivedAt,
+                replyToMessageId: m.message_id,
+              });
+            }
           },
         );
       }
       const newest = updates.at(-1);
-      if (newest) offset = newest.update_id + 1;
+      if (newest && processedAll) offset = newest.update_id + 1;
     } catch (err) {
+      if (stopping) break;
+      if (!leaderLease.isLeader()) continue;
       console.error('poll error', err);
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
+  await messageBursts.flushAll();
+  await waitForTurnDrain(25_000);
+  await leaderLease.stop();
+  await Promise.all([flushSessions(), flushMessageLogs(), flushTurnLog()]);
+  await new Promise<void>((resolve) => monitor.close(() => resolve()));
 }
 
 void main();

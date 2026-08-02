@@ -1,13 +1,12 @@
 import { z, type ZodRawShape } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { incrementCounter } from './metrics.js';
+import { isGatewayOverloadError } from './overload.js';
 import { isToolEnabled, serviceForTool } from './serviceRegistry.js';
-import {
-  isToolAllowedForRole,
-  type GatewayRole,
-} from './skillRegistry.js';
+import { isToolAllowedForRole, type GatewayRole } from './skillRegistry.js';
 
 export type RiskClass = 'read' | 'write';
+export type ToolPrincipalRole = 'user' | 'admin';
 
 export interface ToolResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -24,13 +23,22 @@ export interface ToolManifest {
   /** UX hints may be called automatically, but must never invalidate completed business work. */
   requirementMode?: 'must' | 'best_effort';
   authorize?: (input: Record<string, unknown>) => string | null;
+  validate?: (
+    input: Record<string, unknown>,
+  ) => { ok: true; value: Record<string, unknown> } | { ok: false; message: string };
   execute: (input: Record<string, unknown>) => Promise<ToolResult>;
 }
 
 export interface ToolAuditContext {
   chatId: number;
   carrierId: string;
+  /** Executing machine principal; gateway writes use its dedicated admin-scoped service identity. */
+  principalRole: ToolPrincipalRole;
+  /** Verified end-user role used for carrier and skill scoping. */
   role: GatewayRole;
+  telegramUserId?: number;
+  turnId?: string;
+  confirmationId?: string;
 }
 
 type ToolHandler<TShape extends ZodRawShape> = (
@@ -63,6 +71,17 @@ export function defineTool<TShape extends ZodRawShape>(
     description,
     parameters: jsonParameters(shape),
     riskClass,
+    validate(input) {
+      const parsed = schema.safeParse(input);
+      return parsed.success
+        ? { ok: true, value: parsed.data }
+        : {
+            ok: false,
+            message: parsed.error.issues
+              .map((issue) => `${issue.path.join('.') || 'input'} ${issue.message}`)
+              .join('; '),
+          };
+    },
     async execute(input) {
       const parsed = schema.safeParse(input);
       if (!parsed.success) {
@@ -84,9 +103,7 @@ export function defineTool<TShape extends ZodRawShape>(
   };
 }
 
-export function modelToolDefinitions(
-  manifests: readonly ToolManifest[],
-): Array<{
+export function modelToolDefinitions(manifests: readonly ToolManifest[]): Array<{
   type: 'function';
   function: {
     name: string;
@@ -133,6 +150,16 @@ export async function toolDispatcher(
     audit(name, 'unknown', false, startedAt, context);
     return `error: unknown tool "${name}"`;
   }
+  if (manifest.riskClass === 'write' && context.principalRole !== 'admin') {
+    incrementCounter('principal_tool_denied_total');
+    audit(name, manifest.riskClass, false, startedAt, context);
+    return `error: write tool "${name}" requires the admin service principal`;
+  }
+  if (manifest.confirmationMode === 'trusted_button' && !context.confirmationId) {
+    incrementCounter('tool_confirmation_denied_total');
+    audit(name, manifest.riskClass, false, startedAt, context);
+    return `error: tool "${name}" requires a server-confirmed Telegram button`;
+  }
 
   const refusal = manifest.authorize?.(input);
   if (refusal) {
@@ -143,9 +170,13 @@ export async function toolDispatcher(
   try {
     const result = await manifest.execute(input);
     audit(name, manifest.riskClass, !result.isError, startedAt, context);
-    return result.content.map((item) => item.text).join('\n').slice(0, 20_000);
+    return result.content
+      .map((item) => item.text)
+      .join('\n')
+      .slice(0, 20_000);
   } catch (error) {
     audit(name, manifest.riskClass, false, startedAt, context);
+    if (isGatewayOverloadError(error)) throw error;
     return `error: ${error instanceof Error ? error.message : String(error)}`.slice(0, 2000);
   }
 }
@@ -167,7 +198,13 @@ function audit(
       durationMs: Date.now() - startedAt,
       chatId: context.chatId,
       carrierId: context.carrierId,
+      principalRole: context.principalRole,
       role: context.role,
+      ...(context.telegramUserId !== undefined
+        ? { telegramUserId: context.telegramUserId }
+        : {}),
+      ...(context.turnId ? { turnId: context.turnId } : {}),
+      ...(context.confirmationId ? { confirmationId: context.confirmationId } : {}),
     }),
   );
 }

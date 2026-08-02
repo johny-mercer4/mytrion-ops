@@ -5,6 +5,8 @@ import { getOpenAIClient } from './openaiClient.js';
 import { modelToolDefinitions, type ToolManifest } from './toolRuntime.js';
 import { incrementCounter } from './metrics.js';
 import { filterEnabledTools } from './serviceRegistry.js';
+import { approximateTokens, executeOpenAIRequest } from './openaiResilience.js';
+import { isGatewayOverloadError } from './overload.js';
 
 export interface ModelToolCall {
   id: string;
@@ -33,9 +35,7 @@ export interface ModelCompletion {
 }
 
 /** Convert the gateway's small common message format to Responses API input items. */
-export function toOpenAIInput(
-  messages: readonly ModelMessage[],
-): OpenAI.Responses.ResponseInput {
+export function toOpenAIInput(messages: readonly ModelMessage[]): OpenAI.Responses.ResponseInput {
   const input: OpenAI.Responses.ResponseInput = [];
   for (const message of messages) {
     if (message.role === 'tool') {
@@ -91,22 +91,30 @@ async function completeWithOpenAI(
   requiredTool: string | undefined,
 ): Promise<ModelCompletion> {
   const tools = toOpenAITools(manifests);
-  const response = await getOpenAIClient().responses.create({
-    model: config.openaiModel,
-    input: toOpenAIInput(messages),
-    ...(tools.length
-      ? {
-          tools,
-          tool_choice: requiredTool
-            ? { type: 'function' as const, name: requiredTool }
-            : ('auto' as const),
-          parallel_tool_calls: false,
-        }
-      : {}),
-    reasoning: { effort: config.openaiReasoningEffort },
-    max_output_tokens: config.openaiMaxOutputTokens,
-    safety_identifier: safetyIdentifier,
-    store: false,
+  const input = toOpenAIInput(messages);
+  const estimatedTokens =
+    approximateTokens(JSON.stringify({ input, tools })) + config.openaiMaxOutputTokens;
+  const response = await executeOpenAIRequest({
+    estimatedTokens,
+    operation: () =>
+      getOpenAIClient().responses.create({
+        model: config.openaiModel,
+        input,
+        ...(tools.length
+          ? {
+              tools,
+              tool_choice: requiredTool
+                ? { type: 'function' as const, name: requiredTool }
+                : ('auto' as const),
+              parallel_tool_calls: false,
+            }
+          : {}),
+        reasoning: { effort: config.openaiReasoningEffort },
+        max_output_tokens: config.openaiMaxOutputTokens,
+        safety_identifier: safetyIdentifier,
+        store: false,
+      }),
+    usageTokens: (result) => (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0),
   });
   const toolCalls = response.output
     .filter((item) => item.type === 'function_call')
@@ -142,26 +150,20 @@ export async function completeModel(
   requiredTool?: string,
 ): Promise<ModelCompletion> {
   const enabledManifests = filterEnabledTools(manifests);
-  if (
-    requiredTool &&
-    !enabledManifests.some((manifest) => manifest.name === requiredTool)
-  ) {
+  if (requiredTool && !enabledManifests.some((manifest) => manifest.name === requiredTool)) {
     throw new Error(`Required tool "${requiredTool}" is not available for this turn`);
   }
   try {
-    return await completeWithOpenAI(
-      messages,
-      enabledManifests,
-      safetyIdentifier,
-      requiredTool,
-    );
+    return await completeWithOpenAI(messages, enabledManifests, safetyIdentifier, requiredTool);
   } catch (error) {
     const status =
-      error instanceof OpenAI.APIError
-        ? error.status
-        : typeof error === 'object' && error !== null && 'status' in error
+      isGatewayOverloadError(error) && error.kind === 'provider_429'
+        ? 429
+        : error instanceof OpenAI.APIError
           ? error.status
-          : undefined;
+          : typeof error === 'object' && error !== null && 'status' in error
+            ? error.status
+            : undefined;
     incrementCounter(status === 429 ? 'openai_429_total' : 'openai_error_total');
     throw error;
   }

@@ -135,6 +135,7 @@ function customerContext(request: FastifyRequest, body: CallerIdentityBody): Ten
 
 /** Worker context — the trusted-frontend merge (previous chatContext behavior, verbatim). */
 function workerContext(request: FastifyRequest, body: CallerIdentityBody): TenantContext {
+  const base = requireContext(request);
   const workerName = body.user_name?.trim();
   const departmentAccess = [
     ...toArray(body.department_scope),
@@ -149,7 +150,7 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
     role: body.role,
     userName: workerName,
   });
-  const ctx = withDepartmentAccess(requireContext(request), request, { departmentAccess, allDepartments });
+  const ctx = withDepartmentAccess(base, request, { departmentAccess, allDepartments });
   // Conversation owner: worker by zoho id / name; customer by chat_id (legacy shape).
   const merged = ownerCtx(
     ctx,
@@ -161,13 +162,21 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
   if (profiles.length > 0) merged.profiles = profiles;
   if (callerRole) merged.callerRole = callerRole;
   
-  const computedRole = workerRoleFor({
-    profile: toArray(body.profile)[0],
-    zohoRole: toArray(body.role)[0],
-    userName: workerName,
-  });
+  // A bare static API key is the trusted system identity. Re-derive authority only when the
+  // request actually asserts a worker identity; otherwise an empty body would silently demote
+  // the system admin to `viewer` and make API-key discovery/writes fail with 403.
+  const hasWorkerIdentity = Boolean(
+    body.zoho_user_id || workerName || body.email || body.profile || body.role,
+  );
+  const computedRole = hasWorkerIdentity
+    ? workerRoleFor({
+        profile: toArray(body.profile)[0],
+        zohoRole: toArray(body.role)[0],
+        userName: workerName,
+      })
+    : base.role;
   merged.role = computedRole;
-  merged.scopes = scopesForRole(computedRole);
+  merged.scopes = hasWorkerIdentity ? scopesForRole(computedRole) : base.scopes;
 
   const displayName = workerName ?? body.company_name?.trim();
   if (displayName) merged.userName = displayName;

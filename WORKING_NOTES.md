@@ -9577,3 +9577,251 @@ than reasoned about: 89 entries applied, 87 tables, and `maintenance_cases`,
 `hr_leave_*` tables, `loyalty_client_overrides`, and the `hr_attendance_ganga_only_trg` trigger all
 verified present.
 
+## 2026-07-31 — OpenAI-only gateway overload control
+
+Added pre-router admission to `apps/agent-gateway-groq`: at most 200 authenticated requests may be
+pending across router wait, model wait, and active execution, with a default cap of 3 per Telegram
+user. Admission is acquired before any OpenAI routing call and released only after final turn stats.
+Both the router queue and model queue remove requests that exceed the configurable 45-second
+deadline; rejected or stale requests receive a static bilingual high-demand reply without an
+OpenAI call.
+
+All OpenAI paths (semantic router, main Responses loop, and vision extraction) now share RPM/TPM
+token buckets. Reservations use conservative estimates and reconcile against response usage.
+The gateway disables SDK retries, honors `Retry-After` itself, retries once by default, and opens a
+30-second circuit after 3 consecutive 429 responses. Calls reaching an open circuit are rejected
+before network I/O. Router usage is included in each turn's monitor/cost totals, including greeting
+and capability fast paths; limiter, circuit, admission, stale, and router-token counters are exposed
+through `/api/metrics`.
+
+Added deterministic tests for global/per-user admission, stale FIFO removal, Retry-After handling,
+deadline rejection, and circuit-open short-circuiting. Gateway verification after implementation:
+TypeScript clean and 18 files / 66 tests passing.
+
+Repository validation: lint completed with 0 errors (24 pre-existing non-null warnings), root
+typecheck and build passed. The full root suite remained at its known branch baseline of 11 failures
+across 7 files (1,398 passed); no gateway test failed. The required live behavioral eval ran against
+the configured local/scratch database: 31/43 passed, 12 failed, $0.392 total. Several failures were
+caused by the existing root harness hitting the account's 200k TPM limit and surfacing raw 429s,
+which is direct production evidence for the gateway-level limiter/circuit work in this session.
+The remaining eval failures concern the separate root orchestrator's routing/grounding/browser
+behavior, not `apps/agent-gateway-groq`.
+
+## 2026-07-31 — Gateway overload-control review and local smoke
+
+Reviewed the uncommitted `apps/agent-gateway-groq` overload-control changes. Gateway strict
+TypeScript and all 18 gateway test files / 66 tests passed. The concurrency stress harness passed
+300 requests across 100 users with a maximum of 8 active turns, zero same-user overlap, zero
+out-of-order turns, and empty queues at completion. Root lint and typecheck passed (the same 24
+pre-existing lint warnings). The full root suite remained red in unrelated areas and was
+load-sensitive: the unrestricted rerun reported 60 failures across 11 files, while all gateway and
+cross-tenant RBAC leakage tests passed.
+
+Started the full gateway locally on an isolated port with dummy Telegram/OpenAI credentials and an
+unreachable local backend, avoiding production polling and model calls. Startup completed, `/health`
+returned `{ "ok": true }`, and `/api/metrics` exposed the expected admission and OpenAI resilience
+snapshots. The local browser and gateway processes were stopped afterward.
+
+Deployment blocker found in review: `MAX_PENDING_PER_USER` is documented and described as a global
+Telegram-user cap, but both message and callback admission pass a `chatId:userId` key. A single user
+can therefore hold up to the configured limit independently in every chat. Add a cross-chat test and
+key per-user admission by verified Telegram user id before deployment.
+
+## 2026-07-31 — Agent gateway 800-group production/security audit
+
+Audited `apps/agent-gateway-groq` plus its `/v1/support-bot/*` backend trust boundary for the planned
+customer-service rollout to roughly 800 client groups. This was a read-only audit; no application
+code was changed. The local gateway and backend were left running and both returned HTTP 200. The
+local chat map currently contains one mapped chat / one carrier plus the env fallback, so it is a
+single-client smoke environment, not an 800-group proof.
+
+Release decision: **no-go for the 800-group production rollout until the P0/P1 findings are fixed.**
+The strongest existing controls are sender-derived Telegram identity, carrier binding outside model
+arguments, backend carrier/registration revalidation on business calls, role-filtered `ToolManifest`
+tools, runtime Zod validation, disabled-tool fail-closed behavior, private delivery for money/PII,
+and bounded router/model admission with 429 handling.
+
+P0/P1 findings:
+
+- Support-bot backend routes use `sessionOrApiKey`, although handlers trust payload
+  `telegramUserId` as the acting customer. A normal authenticated session can reach chat-map/access
+  endpoints and the same business endpoints; the gateway also holds the general backend API key,
+  which becomes an admin system identity for the whole API. Replace this with a dedicated,
+  least-privilege service principal and deny user sessions on service-only routes.
+- Central message batches assign every row to `config.carrierId` instead of the chat-resolved carrier.
+  In true multi-chat mode this either rejects all batches (empty fallback) or misattributes every
+  client's messages to one carrier. Carry carrier per row, batch by carrier, and validate the
+  chat-to-carrier mapping server-side.
+- A callback is considered trusted confirmation solely when callback data ends in `:yes`. It is not
+  bound to the requester, tool, canonical arguments, message, expiry, or one-time nonce. A stale or
+  cross-user button can expose a different write selected by the model. Persist and atomically
+  consume a signed/opaque confirmation record bound to all of those fields.
+- Telegram updates and write tools lack end-to-end idempotency. The backend has a card-action
+  idempotency slice behind `FF_SUPPORT_BOT_IDEMPOTENCY`, but the gateway sends none of its required
+  fence/idempotency headers; other money-code/card/ticket writes remain uncovered. A crash before
+  long-poll offset acknowledgement can replay a completed mutation.
+- Every mapped-group message, including unregistered ordinary chatter, is copied in full to local
+  monthly JSONL and central Postgres without an explicit retention/deletion policy. At 800 groups
+  this is broad incidental PII collection. Minimize to support-relevant events, redact, encrypt,
+  define consent/retention/deletion controls, and isolate monitor access.
+
+Capacity evidence also blocks a direct 800-group rollout. The router intentionally calls OpenAI for
+every registered message and forces engagement. Current 24-hour local data was 26 turns, 7,801 input
+tokens/turn on average, 10.2s median total latency, 44.9s p95, and 66.9s max. With the configured
+100k TPM, that is only about 12 full average turns/minute. A single registered message per hour in
+each of 800 groups is already 13.3 messages/minute. There is no per-carrier fair queue or budget, the
+backend's global Fastify limit is 120 requests/minute from the gateway IP, and the 30-second
+per-carrier access cache can itself create up to 1,600 refreshes/minute across 800 active carriers.
+Long polling is a single-consumer SPOF; outbound Telegram work is one unbounded global chain; burst
+buffers are admitted only after buffering; and session persistence rewrites the complete session map
+roughly every 500ms with no hard session/byte cap.
+
+Validation: gateway strict typecheck passed; all 18 gateway files / 66 tests passed; the network-free
+stress harness passed 300 requests / 100 users with max 8 active, zero same-user overlaps, zero
+ordering errors, and empty queues. Six targeted backend RBAC/support-bot/idempotency files passed all
+57 tests. The existing gateway test suite has no coverage for multi-carrier message logging,
+confirmation nonce/replay/cross-user behavior, Telegram poll replay, or monitor-token enforcement.
+The gateway production dependency audit reported no known vulnerabilities. The backend production
+audit reported 29 advisories (16 high, 12 moderate, 1 low), including direct Fastify and Drizzle
+advisories; these require remediation/risk review before production exposure.
+
+## 2026-07-31 — 800-group gateway production blockers implemented
+
+Implemented the production-safety pass for `apps/agent-gateway-groq` and its backend trust
+boundary. The gateway and backend now use a dedicated service credential; user sessions and the
+broad API key cannot call service-only support routes in production. Chat capacity is enforced at
+800 inside an advisory-locked transaction. Access resolution is one bounded tenant-wide snapshot,
+and production ingress defaults to mentions/replies plus active follow-ups instead of routing
+ambient group chatter.
+
+State-changing tools now require a durable opaque Telegram confirmation bound to tenant, carrier,
+chat, actor, message, tool, canonical arguments, expiry, and one-time resolution. The central
+gateway dispatcher rejects confirmed-write manifests without confirmation context. The backend
+also checks the consumed confirmation ID, exact argument hash, stable confirmation turn, and the
+single write occurrence before it crosses the external side-effect boundary. All six mutations use
+stable idempotency keys and session fencing. Confirmed update handling waits for the durable turn to
+finish before Telegram offset acknowledgement, so a crash redelivers into safe replay or
+reconciliation rather than silently losing a consumed write.
+
+Added a DB-backed renewable leader lease for warm standby gateway replicas, conservative local
+lease deadlines, and process-unique holder IDs. Added fair per-carrier scheduling, global/user/
+carrier admission, OpenAI limiter/circuit behavior, bounded buffers/sessions/log queues, graceful
+drain, and health reporting. Message retention defaults to model-engaged traffic, pseudonymizes
+names, masks contiguous or formatted PAN/account digit runs, caps payloads, and validates every
+central log row against the enabled chat/carrier mapping. Migration
+`0083_support_bot_production_safety.sql` adds message replay dedupe, durable confirmations, and
+gateway leases; it was intentionally not applied automatically because it removes pre-existing
+duplicate message-log rows before creating the unique index. `drizzle-kit check` also still reports
+the repository's pre-existing `0022_snapshot.json` / `0023_snapshot.json` parent-snapshot collision;
+that metadata issue is separate from migration 0083 but should be repaired before future generated
+migrations.
+
+Upgraded Drizzle to the patched 0.45 line and Fastify plus official plugins to the Fastify 5
+compatible lines. Production audit findings dropped from 29 to 3. The gateway package reports zero
+known production vulnerabilities. The remaining root findings (2 high, 1 moderate) are all under
+ExcelJS's currently-unfixed legacy archive/UUID dependency tree; forced cross-major overrides were
+not used. Excel generation/parsing tests pass with the safe patch-level overrides that were added.
+
+Validation: root lint has 0 errors (24 pre-existing warnings); root and gateway typecheck/build
+pass; the final multi-stage Docker image builds; all 23 gateway files / 80 tests pass; targeted
+support/security/file tests pass. The full root
+suite is at the existing unrelated branch baseline: 1,421 passed, 11 failed, 1 skipped (no gateway
+or new support-bot failure). The 800-user stress profile completed 1,600 requests at max concurrency
+8 with zero same-user overlaps, zero ordering errors, empty queues, 455 ms duration, 10.77 ms max
+event-loop lag, and 4.58 MB RSS growth. The final local gateway reports healthy Telegram polling
+with no poll error; backend `/health` and the public ngrok `/mini-app/` both return HTTP 200. Local
+chat-map data remains one mapped chat plus the development fallback, so adding the planned ten
+groups still requires their real Telegram chat mappings.
+
+## 2026-07-31 — support-bot release blockers resolved
+
+Completed the five follow-up production blockers. Before migration work, created an ignored,
+mode-0600 custom-format backup of `support_bot_messages` and a full local database backup under
+`backups/`; `pg_restore --list` validated the table backup. The pre-migration table contained 188
+rows and no duplicate replay rows, so migration `0083_support_bot_production_safety.sql` deleted
+nothing. The local migration ledger had historical hash drift that had skipped the physical 0058
+and 0059 tables; after the full backup, applied only those idempotent create-only schema repairs,
+then ran the standard migrator successfully through 0084. The final support table still has 188
+rows, zero replay duplicates, and the confirmation, gateway-lease, and replay-unique-index objects
+are present.
+
+Repaired the Drizzle metadata parent chain for snapshots 0022 through 0024, expanded the Drizzle
+schema list to include the existing support-bot and HR tables, and generated
+`0084_snapshot.json` as the current 85-table baseline. Its paired SQL migration is intentionally a
+documented no-op because hand-authored migrations 0025 through 0083 already materialized that
+schema. `drizzle-kit check` passes, and a clean temporary generation probe reports no schema
+changes instead of a snapshot collision.
+
+Replaced the stale/inaccessible Telegram mapping through the authenticated, tenant-scoped gateway
+API and added an audited admin/service DELETE route for disabling mappings. The single verified
+enabled mapping is now the accessible `TEST - Bot` group bound to its server-verified active owner;
+the duplicate local environment fallback was removed. New groups auto-bind only when an active
+registered owner first messages the bot, while the advisory-locked backend cap remains 800. Nine
+more real groups must still complete that onboarding step to reach the planned initial ten.
+
+Fixed the eleven root-suite failures: static service-key identity fallback, retention ownership
+conflict enforcement, and stale stream/tool/Zoho/template/sales test contracts. Final root results
+are 154 files passed plus 1 skipped, 1,434 tests passed plus 1 skipped, and zero failures. Root lint
+has zero errors (24 pre-existing warnings); root typecheck/build pass. Gateway typecheck/build and
+all 23 files / 80 tests pass.
+
+Moved ExcelJS's vulnerable transitive archive tree onto audited versions and patched
+`archiver-utils@5.0.2` for ExcelJS's custom stream compatibility. Added streaming writer and reader
+coverage alongside the ordinary workbook round trip. Frozen-lockfile install passes and the root
+production dependency audit now reports zero advisories. The gateway production audit also remains
+at zero advisories.
+
+## 2026-08-02 — current worktree production-readiness audit
+
+Verdict: not ready for production or PR in its current state. The feature branch is six commits
+behind `origin/build` and has no commits unique from the already-merged branch head. Its new 0083
+and 0084 migrations collide with 0083 through 0088 now present on `build`; the 0084 baseline
+snapshot also predates the recruit and loyalty schema additions. Rebase the work onto a fresh
+branch from current `build`, renumber the support-bot migrations, and regenerate/validate the
+Drizzle metadata before rollout. Migration 0083 also deletes duplicate rows and creates a unique
+index non-concurrently, so production needs a data preflight, backup, and reviewed lock window.
+
+The real root suite (rerun with local database/socket access) has one failure, 1,433 passing tests,
+and one skipped test: `retention-phase1.test.ts` compares a fixed July 2026 fixture with `Date.now()`, so it
+became stale. The 22 RBAC cross-tenant leakage tests pass. Root lint, typecheck, build,
+frozen-lockfile install, current-state `drizzle-kit check`, and both production dependency audits
+pass; lint reports 24 warnings. Gateway typecheck/build and all 80 gateway tests pass.
+
+Additional blockers: gateway monitoring only masks contiguous 12–19 digit strings, leaving spaced
+or hyphenated PAN/account-number forms in the in-memory turn feed; `src/config/env.ts` is now 721
+lines, above the hard 600-line cap; and customer write tools, although classified as writes and
+protected by durable confirmation, are executable by owner/driver roles rather than the hard-rule
+admin role. Resolve the redaction defect and file-size violation, and explicitly reconcile the
+write-role product policy before release.
+
+## 2026-08-02 — support-bot production-readiness blockers resolved
+
+Preserved the original dirty worktree in `stash@{0}`, created
+`fix/support-bot-production-readiness` from current `origin/build`, and reapplied the gateway work.
+Resolved the three expected overlaps without dropping the new Recruit, HR, Loyalty, or CS build
+changes. Support-bot production safety is now migration 0089 after build-owned migrations 0083–0088.
+The paired 0089 snapshot is a regenerated 89-table baseline containing support confirmations,
+gateway leases, Recruit, and Loyalty. `drizzle-kit check` passes.
+
+Migration 0089 no longer deletes duplicate message rows. It fails closed with a duplicate preflight,
+uses a five-second lock timeout and two-minute statement timeout, then creates the replay index and
+new tables idempotently. A throwaway database successfully applied all 90 ledger entries and
+contained the replay index plus confirmation, lease, Recruit, and Loyalty tables; the uniquely named
+test database was dropped afterward. A read-only preflight of the configured Render database found
+188 support-message rows, zero duplicate replay groups, a 163,840-byte table, and all three support
+objects already present.
+
+The monitor now reuses the formatted PAN/account-number masker. The gateway dispatcher records both
+the admin service principal and the scoped owner/driver subject, refuses writes without the admin
+principal, and still requires durable Telegram confirmation for customer mutations. The backend
+monitor proxy now targets the separately deployed Render gateway, strips caller-provided monitor
+tokens, and injects its server-owned token. Production startup requires the gateway monitor URL and
+an independent token of at least 32 characters. The global rate-limit bypass is restricted to
+`/v1/support-bot` routes.
+
+Split runtime and operational configuration out of `src/config/env.ts`, reducing it from 721 to the
+580-line target (579 lines). Replaced the date-dependent retention assertion with a deterministic
+contract and updated the build branch's stale transient-database-code bound. Final validation:
+frozen-lockfile install, root lint (0 errors, 23 existing warnings), root typecheck/build, Drizzle
+metadata check, root tests (160 files and 1,466 tests passed; 1 file/test skipped), gateway
+typecheck/build and all 23 files / 80 tests, and both production dependency audits (zero advisories).
