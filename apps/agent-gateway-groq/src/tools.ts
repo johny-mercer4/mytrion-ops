@@ -8,11 +8,18 @@
 import { z } from 'zod';
 import { config } from './config.js';
 import { searchSupportKb } from './kb/search.js';
-import { sendButtons, sendMessage, setReaction } from './telegram.js';
+import { clearButtons, sendButtons, sendMessage, setReaction } from './telegram.js';
 import { logMessage } from './messageLog.js';
 import { defineTool as tool, type ToolManifest } from './toolRuntime.js';
 import { incrementCounter } from './metrics.js';
 import { enabledServiceSummary } from './serviceRegistry.js';
+import { backendErrorInfo, supportBotHeaders } from './octaneClient.js';
+import {
+  CONFIRMABLE_TOOL_NAMES,
+  createConfirmation,
+  newConfirmationToken,
+} from './confirmations.js';
+import { gatewayOperationKey, gatewaySessionKeyHash } from './operationIdentity.js';
 
 /** chatId → (userId → last-seen ms). Filled by the poll loop for every inbound message. */
 export const recentSenders = new Map<number, Map<number, number>>();
@@ -39,17 +46,26 @@ function senderOk(chatId: number, userId: number): boolean {
   return ts != null && Date.now() - ts <= RECENT_MS;
 }
 
-async function backend(path: string, payload: Record<string, unknown>, carrierId: string) {
+async function backend(
+  path: string,
+  payload: Record<string, unknown>,
+  carrierId: string,
+  extraHeaders: Readonly<Record<string, string>> = {},
+) {
   const res = await fetch(`${config.octaneBase}/v1${path}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.octaneKey}`, 'Content-Type': 'application/json' },
+    headers: supportBotHeaders(true, extraHeaders),
     body: JSON.stringify({ carrierId, ...payload }),
     signal: AbortSignal.timeout(30_000),
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     incrementCounter('backend_error_total');
-    return { error: true, status: res.status, message: String(data.message ?? '') };
+    const error = backendErrorInfo(data, res.status);
+    if (error.code === 'SUPPORT_BOT_IDEMPOTENCY_CONFLICT') {
+      incrementCounter('idempotency_conflict_total');
+    }
+    return { error: true, status: res.status, ...error };
   }
   return data;
 }
@@ -87,6 +103,15 @@ const TRUSTED_CONFIRMATION_TOOLS = new Set([
 
 const BEST_EFFORT_TOOLS = new Set(['telegram_progress', 'telegram_react']);
 
+const MUTATION_PATHS = new Map<string, string>([
+  ['/support-bot/money-code/draw', 'money_code'],
+  ['/support-bot/card-action', 'card_action'],
+  ['/support-bot/card-limits', 'card_limits'],
+  ['/support-bot/card-info', 'card_info'],
+  ['/support-bot/service-request', 'service_request'],
+  ['/support-bot/override', 'override'],
+]);
+
 /**
  * One registry per turn: carrierId and the verified Telegram asker are closed over. The model
  * cannot redirect a valid tool call to another recently-active member of the same group.
@@ -95,8 +120,28 @@ export function buildOctaneTools(
   chatId: number,
   carrierId: string,
   askerId: number,
+  turnId = `local:${chatId}:${askerId}:${Date.now()}`,
+  confirmationId?: string,
 ): ToolManifest[] {
   const enabledServices = enabledServiceSummary().split(',').filter(Boolean);
+  const sessionKeyHash = gatewaySessionKeyHash(
+    config.environment,
+    config.botIdentity,
+    chatId,
+    askerId,
+  );
+  let fencePromise: Promise<number | null> | null = null;
+  let writeOccurrence = 0;
+  const sessionFence = (): Promise<number | null> => {
+    fencePromise ??= backend(
+      '/support-bot/session-fence',
+      { sessionKeyHash },
+      carrierId,
+    ).then((result) =>
+      result['enabled'] === true ? Number(result['fencingToken']) : null,
+    );
+    return fencePromise;
+  };
   const guard = (userId: number): string | null =>
     userId !== askerId
       ? 'refused: telegram_user_id does not match the current message sender'
@@ -106,7 +151,41 @@ export function buildOctaneTools(
   const run = async (path: string, userId: number, extra: Record<string, unknown> = {}) => {
     const g = guard(userId);
     if (g) return { content: [{ type: 'text' as const, text: g }], isError: true };
-    const data = await backend(path, { telegramUserId: String(userId), ...extra }, carrierId);
+    const payload = { telegramUserId: String(userId), ...extra };
+    const operationType = MUTATION_PATHS.get(path);
+    let headers: Record<string, string> = {};
+    if (operationType) {
+      const fencingToken = await sessionFence();
+      if (fencingToken == null && config.nodeEnv === 'production') {
+        throw new Error('support-bot idempotency is not enabled on the backend');
+      }
+      if (fencingToken != null) {
+        const occurrence = writeOccurrence;
+        writeOccurrence += 1;
+        headers = {
+          'Idempotency-Key': gatewayOperationKey({
+            environment: config.environment,
+            botIdentity: config.botIdentity,
+            turnId,
+            writeOccurrence: occurrence,
+            tenantId: config.tenantId,
+            carrierId,
+            telegramUserId: askerId,
+            operationType,
+            arguments: payload,
+          }),
+          ...(confirmationId
+            ? { 'X-Support-Bot-Confirmation-Id': confirmationId }
+            : {}),
+          'X-Support-Bot-Turn-Id': turnId,
+          'X-Support-Bot-Write-Occurrence': String(occurrence),
+          'X-Support-Bot-Session-Key': sessionKeyHash,
+          'X-Support-Bot-Fencing-Token': String(fencingToken),
+        };
+      }
+    }
+    const data = await backend(path, payload, carrierId, headers);
+    if (data['replayed'] === true) incrementCounter('write_replayed_total');
     return { content: [{ type: 'text' as const, text: JSON.stringify(data) }], isError: Boolean((data as { error?: boolean }).error) };
   };
 
@@ -117,7 +196,15 @@ export function buildOctaneTools(
         { text: z.string().min(1).max(200) },
         async ({ text }) => {
           await sendMessage(chatId, text).catch(() => undefined);
-          logMessage({ ts: new Date().toISOString(), chatId, userId: 0, name: 'bot', dir: 'out', text });
+          logMessage({
+            ts: new Date().toISOString(),
+            carrierId,
+            chatId,
+            userId: 0,
+            name: 'bot',
+            dir: 'out',
+            text,
+          });
           return { content: [{ type: 'text' as const, text: 'progress line sent — continue the task' }] };
         },
       ),
@@ -222,17 +309,106 @@ export function buildOctaneTools(
       tool('octane_billing_form', "Show the OWNER their billing form + verification status (the same info the mini-app billing-form sheet shows). Owner-only. To SUBMIT/file a billing form for a service charge, use octane_service_request(billing-form) instead.", asker, ({ telegram_user_id }) => run('/support-bot/billing-form', telegram_user_id)),
       tool(
         'telegram_buttons',
-        'Send a message WITH TAPPABLE BUTTONS — the preferred UX for confirmations and choices. Use for: write confirms (✅ Ha / ❌ Yo\'q), offering the service menu, picking a report period, choosing between matched cards. Button data comes back to you as a [button tap ...] message. After calling this, output SILENT (the buttons message IS your reply).',
+        'Send a message WITH TAPPABLE BUTTONS. For ANY write confirmation, set confirmation.tool_name + its exact arguments (omit telegram_user_id; the gateway binds it) and labels; callback data is server-generated. For non-write choices, use buttons. Never put a write confirmation in arbitrary button data. After calling this, output SILENT.',
         {
           text: z.string().min(1).max(500).describe("The message above the buttons, in the user's language"),
           buttons: z
             .array(z.object({ label: z.string().min(1).max(40), data: z.string().min(1).max(64).describe('What you receive back when tapped, e.g. confirm:override:yes') }))
             .min(1)
-            .max(8),
+            .max(8)
+            .optional()
+            .describe('Non-write choices only'),
+          confirmation: z
+            .object({
+              tool_name: z.enum(CONFIRMABLE_TOOL_NAMES),
+              arguments: z.record(z.unknown()),
+              confirm_label: z.string().min(1).max(40).default('✅ Ha'),
+              cancel_label: z.string().min(1).max(40).default("❌ Yo'q"),
+            })
+            .optional()
+            .describe('Required for a state-changing action; exact action and args to bind'),
           reply_to_message_id: z.number().optional(),
         },
-        async ({ text, buttons, reply_to_message_id }) => {
-          await sendButtons(chatId, text, buttons, reply_to_message_id);
+        async ({ text, buttons, confirmation, reply_to_message_id }) => {
+          if (confirmation) {
+            const target = tools.find((manifest) => manifest.name === confirmation.tool_name);
+            if (!target || target.confirmationMode !== 'trusted_button') {
+              return {
+                content: [{ type: 'text' as const, text: 'invalid confirmation target' }],
+                isError: true,
+              };
+            }
+            const boundArguments = {
+              ...confirmation.arguments,
+              telegram_user_id: askerId,
+            };
+            const validated = target.validate?.(boundArguments);
+            if (!validated) {
+              return {
+                content: [{ type: 'text' as const, text: 'confirmation target cannot be validated' }],
+                isError: true,
+              };
+            }
+            if (!validated.ok) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `invalid confirmation arguments: ${validated.message}`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+            const refusal = target.authorize?.(validated.value);
+            if (refusal) {
+              return {
+                content: [{ type: 'text' as const, text: `confirmation refused: ${refusal}` }],
+                isError: true,
+              };
+            }
+            const token = newConfirmationToken();
+            const messageId = await sendButtons(
+              chatId,
+              text,
+              [
+                { label: confirmation.confirm_label, data: `c:${token}` },
+                { label: confirmation.cancel_label, data: `x:${token}` },
+              ],
+              reply_to_message_id,
+            );
+            try {
+              await createConfirmation({
+                token,
+                carrierId,
+                chatId,
+                telegramUserId: askerId,
+                messageId,
+                toolName: confirmation.tool_name,
+                arguments: validated.value,
+              });
+            } catch (error) {
+              await clearButtons(chatId, messageId);
+              throw error;
+            }
+          } else {
+            if (!buttons?.length) {
+              return {
+                content: [{ type: 'text' as const, text: 'buttons or confirmation is required' }],
+                isError: true,
+              };
+            }
+            await sendButtons(chatId, text, buttons, reply_to_message_id);
+          }
+          logMessage({
+            ts: new Date().toISOString(),
+            carrierId,
+            chatId,
+            userId: 0,
+            name: 'bot',
+            dir: 'out',
+            text,
+          });
           return { content: [{ type: 'text' as const, text: 'buttons sent — now output SILENT and wait for the tap' }] };
         },
       ),
@@ -245,7 +421,7 @@ export function buildOctaneTools(
           return { content: [{ type: 'text' as const, text: 'reacted' }] };
         },
       ),
-      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id)),
+      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id, { requestId: turnId })),
   ];
 
   return tools.map((manifest) => {

@@ -18,29 +18,28 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
-import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env } from '../../config/env.js';
 import { findDealOwnerForCarrier } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
 import { listLiveCardRows as listCardsLive } from '../../modules/carrier/liveCards.js';
-import { requireDriverCardNumber, telegramCtx } from '../../modules/carrier/miniAppAuth.js';
+import { requireDriverCardNumber } from '../../modules/carrier/miniAppAuth.js';
 import {
-  requireSupportBotWrites as requireWrites,
   resolveSupportBotCaller as resolveCaller,
   resolveSupportBotCardByLast6 as resolveCardByLast6,
-  sendSupportBotPrivate as dmOrThrow,
   supportBotCallerSchema as callerSchema,
-  takeSupportBotWrite as takeWrite,
 } from '../../modules/carrier/supportBotCaller.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { supportBotCardActionRoutes } from './supportBotCardAction.routes.js';
+import { supportBotConfirmationRoutes } from './supportBotConfirmation.routes.js';
 import { supportBotDocumentRoutes } from './supportBotDocuments.routes.js';
 import { supportBotGatewayRoutes } from './supportBotGateway.routes.js';
+import { supportBotGatewayLeaseRoutes } from './supportBotGatewayLease.routes.js';
 import { supportBotPrivateRoutes } from './supportBotPrivate.routes.js';
+import { supportBotMutationRoutes } from './supportBotMutation.routes.js';
 import { requireContext } from './helpers.js';
 
 function takeReadToken(carrierId: string): void {
@@ -55,12 +54,15 @@ function takeReadToken(carrierId: string): void {
 
 export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   await supportBotCardActionRoutes(app);
+  await supportBotConfirmationRoutes(app);
+  await supportBotGatewayLeaseRoutes(app);
 
   await supportBotGatewayRoutes(app);
   await supportBotDocumentRoutes(app);
   await supportBotPrivateRoutes(app);
+  await supportBotMutationRoutes(app);
 
-  const guard = { onRequest: [app.sessionOrApiKey] };
+  const guard = { onRequest: [app.supportBotGatewayAuth] };
 
   /** Who is asking — lets the bot address the person correctly and offer the right menu. */
   app.post('/support-bot/whoami', guard, async (request) => {
@@ -403,114 +405,6 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       feeSchedule: { perIncrementUsd: 3.5, incrementUsd: 500, additionalUseUsd: 0.75 },
       note: '`available` is the ONLY limit source. Fee = $3.50 per $500 (rounded up) + $0.75 per additional use of a code. Amounts may be spoken to the OWNER; the code value itself never goes to the group.',
     };
-  });
-
-  /**
-   * Money code — FULL service through the bot (prod parity), with the standing rule intact:
-   * the CODE VALUE never appears in the group. It is drawn here and delivered to the OWNER'S
-   * private Octane bot chat; the group only hears "sent to your private chat".
-   */
-  app.post('/support-bot/money-code/draw', guard, async (request) => {
-    if (!env.FF_MINIAPP_MONEY_CODE_ENABLED) {
-      throw new AppError('Money code is not enabled yet.', { statusCode: 503, code: 'MINIAPP_MONEY_CODE_DISABLED', expose: true });
-    }
-    const body = callerSchema
-      .extend({ amount: z.coerce.number().positive(), unitNumber: z.string().trim().min(1).max(60), reason: z.string().trim().min(1).max(120) })
-      .parse(request.body);
-    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
-    if (role !== 'owner') {
-      throw new AppError('Money codes are issued by the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
-    }
-    takeWrite(body.carrierId);
-    const result = (await serverCrmWrapper.drawMoneyCode(body.carrierId, {
-      amount: body.amount,
-      unitNumber: body.unitNumber,
-      reason: body.reason,
-      requestedBy: `support-bot: ${registration.companyName ?? 'owner'} (telegram:${registration.telegramUserId})`,
-    })) as Record<string, unknown>;
-    const code = [result['code'], result['money_code'], result['moneyCode'], result['express_code']]
-      .map((v) => (v == null ? '' : String(v)))
-      .find((v) => v.length >= 4);
-    await dmOrThrow(
-      registration,
-      code
-        ? `💵 Money code (unit ${body.unitNumber}, $${body.amount}):\n${code}\n${body.reason}`
-        : `💵 Money code issued (unit ${body.unitNumber}, $${body.amount}) — open the mini-app to view it.`,
-    );
-    await auditFromContext(telegramCtx('owner', registration.telegramUserId), {
-      action: 'carrier.support_bot.money_code_draw',
-      status: 'ok',
-      resourceType: 'money_code',
-      resourceId: String(body.carrierId),
-      detail: { carrierId: body.carrierId, amount: body.amount, unitNumber: body.unitNumber, via: 'support-bot' },
-    });
-    return { success: true, deliveredTo: 'private_bot_chat' };
-  });
-
-  /** Gallon limit change — owner, capped like the mini-app (MINIAPP_LIMIT_CHANGE_MAX). */
-  app.post('/support-bot/card-limits', guard, async (request) => {
-    requireWrites();
-    const body = callerSchema
-      .extend({
-        cardLast6: z.string().trim().min(4).max(19),
-        limitId: z.enum(['ULSD', 'DEFD']),
-        action: z.enum(['increase', 'decrease']),
-        value: z.coerce.number().positive().max(env.MINIAPP_LIMIT_CHANGE_MAX),
-      })
-      .parse(request.body);
-    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
-    if (role !== 'owner') {
-      throw new AppError('Limit changes are an owner action.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
-    }
-    takeWrite(body.carrierId);
-    const cardNumber = await resolveCardByLast6(body.carrierId, body.cardLast6);
-    const result = await efsWrapper.setCardLimits(body.carrierId, cardNumber, { limitId: body.limitId, value: body.value, action: body.action });
-    await auditFromContext(telegramCtx('owner', registration.telegramUserId), {
-      action: 'carrier.support_bot.card_limits_change',
-      status: 'ok',
-      resourceType: 'efs_card',
-      resourceId: cardNumber.slice(-6),
-      detail: { carrierId: body.carrierId, limitId: body.limitId, action: body.action, value: body.value, via: 'support-bot' },
-    });
-    return { success: true, last6: cardNumber.slice(-6), raw: result };
-  });
-
-  /** Unit / Driver ID / (owner-only) driver name — same rules as the mini-app's card/info. */
-  app.post('/support-bot/card-info', guard, async (request) => {
-    requireWrites();
-    const body = callerSchema
-      .extend({
-        cardLast6: z.string().trim().min(4).max(19).optional(),
-        unitNumber: z.string().trim().min(1).max(60).optional(),
-        driverId: z.string().trim().min(1).max(60).optional(),
-        driverName: z.string().trim().min(1).max(120).optional(),
-      })
-      .parse(request.body);
-    if (!body.unitNumber && !body.driverId && !body.driverName) {
-      throw new AppError('Provide a unit number, driver ID, or driver name to change.', { statusCode: 400, code: 'CARD_INFO_EMPTY', expose: true });
-    }
-    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
-    if (role === 'driver' && body.driverName) {
-      throw new AppError('The driver name on the card is managed by your company owner.', { statusCode: 403, code: 'DRIVER_NAME_OWNER_ONLY', expose: true });
-    }
-    takeWrite(body.carrierId);
-    const cardNumber =
-      role === 'driver'
-        ? await requireDriverCardNumber(registration)
-        : await resolveCardByLast6(body.carrierId, body.cardLast6 ?? '');
-    const result = await efsWrapper.updateCardInfo(body.carrierId, cardNumber, {
-      ...(body.unitNumber ? { unitNumber: body.unitNumber } : {}),
-      ...(body.driverId ? { driverId: body.driverId } : {}),
-      ...(body.driverName ? { driverName: body.driverName } : {}),
-    });
-    await auditFromContext(telegramCtx(registration.profile, registration.telegramUserId), {
-      action: 'carrier.support_bot.card_info_change',
-      status: 'ok',
-      resourceType: 'efs_card',
-      resourceId: cardNumber.slice(-6),
-      detail: { carrierId: body.carrierId, role, fields: Object.keys(body).filter((k) => ['unitNumber', 'driverId', 'driverName'].includes(k)), via: 'support-bot' },
-    });
-    return { success: true, last6: cardNumber.slice(-6), raw: result };
   });
 
 }

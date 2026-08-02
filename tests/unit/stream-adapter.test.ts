@@ -77,7 +77,7 @@ describe('consumeAgentStream', () => {
 
     expect(outcome.finalText).toBe('Final answer: 3 debtors.');
     expect(outcome.agentPath).toEqual(['billing']);
-    expect(outcome.toolCalls).toEqual([{ name: 'agent__debtors', status: 'ok' }]);
+    expect(outcome.toolCalls).toEqual([{ name: 'agent__debtors', status: 'ok', args: {} }]);
 
     const kinds = events.map((e) => e.event);
     expect(kinds).toEqual(['token', 'agent', 'tool_call', 'tool_result', 'agent', 'token']);
@@ -107,7 +107,7 @@ describe('consumeAgentStream', () => {
       ]),
       sink,
     );
-    expect(outcome.toolCalls).toEqual([{ name: 'zoho_crm__query', status: 'error' }]);
+    expect(outcome.toolCalls).toEqual([{ name: 'zoho_crm__query', status: 'error', args: {} }]);
     expect(events.map((e) => e.event)).toEqual(['tool_call', 'tool_result']);
   });
 

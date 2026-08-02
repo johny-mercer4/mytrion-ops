@@ -1,30 +1,12 @@
-/**
- * Registered-user gate at the GATEWAY level — zero tokens for anyone not in the mini-app
- * registration table. The mytrion /support-bot/access list is the single source of truth
- * (a mini-app registration IS the grant); we read it live off a SHORT refresh window so a
- * fresh registration / revoke lands almost immediately.
- *
- * The AI ingress router evaluates all registered senders, so this lookup may run per message.
- * A ~30s per-carrier cache plus single-flight refresh keeps that bounded to one backend fetch.
- *
- * Two independent clocks:
- *  - REFRESH_MS: how stale the cache may get before we refetch (near-instant registration).
- *  - STALE_GRACE_MS: how long we keep serving a cache when the backend is UNREACHABLE before
- *    failing closed (deny all) — a bot that can't verify identity must not answer. Decoupled
- *    from REFRESH_MS so a short refresh window doesn't shorten outage tolerance.
- */
+/** Tenant-wide, single-flight registration snapshot for up to 800 mapped groups. */
 import { config } from './config.js';
 import { incrementCounter } from './metrics.js';
+import { supportBotHeaders } from './octaneClient.js';
 import type { GatewayRole } from './skillRegistry.js';
 
-const REFRESH_MS = 30_000; // near-instant: a new registration is visible within ~30s
-const STALE_GRACE_MS = 30 * 60_000; // backend-down tolerance before fail-closed
 type RegisteredRole = Exclude<GatewayRole, 'guest'>;
-const caches = new Map<
-  string,
-  { at: number; users: Map<string, RegisteredRole> }
->();
-const refreshes = new Map<string, Promise<void>>();
+let cache: { at: number; users: Map<string, RegisteredRole> } | null = null;
+let refreshInFlight: Promise<void> | null = null;
 
 function normalizeRole(profile: unknown): RegisteredRole | null {
   if (profile === 'driver') return 'driver';
@@ -32,36 +14,48 @@ function normalizeRole(profile: unknown): RegisteredRole | null {
   return null;
 }
 
-async function refreshCarrier(carrierId: string, now: number): Promise<void> {
-  const existing = refreshes.get(carrierId);
-  if (existing) return existing;
-  const refresh = (async () => {
+function accessKey(carrierId: string, telegramUserId: string): string {
+  return `${carrierId}\u0000${telegramUserId}`;
+}
+
+async function refreshSnapshot(): Promise<void> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
     try {
-      const res = await fetch(
-        `${config.octaneBase}/v1/support-bot/access?carrierId=${encodeURIComponent(carrierId)}`,
-        { headers: { Authorization: `Bearer ${config.octaneKey}` }, signal: AbortSignal.timeout(15_000) },
-      );
-      if (res.ok) {
-        const data = (await res.json()) as {
-          users?: Array<{ telegramUserId: string; profile?: unknown }>;
-        };
-        const users = new Map<string, RegisteredRole>();
-        for (const user of data.users ?? []) {
-          const role = normalizeRole(user.profile);
-          if (role) users.set(user.telegramUserId, role);
-        }
-        caches.set(carrierId, {
-          at: now,
-          users,
-        });
+      const response = await fetch(`${config.octaneBase}/v1/support-bot/access-snapshot`, {
+        headers: supportBotHeaders(),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) throw new Error(`support access HTTP ${response.status}`);
+      const payload = (await response.json()) as {
+        users?: Array<{
+          carrierId?: unknown;
+          telegramUserId?: unknown;
+          profile?: unknown;
+        }>;
+      };
+      const rows = payload.users ?? [];
+      if (rows.length > config.accessSnapshotMaxUsers) {
+        throw new Error('support access snapshot exceeds the gateway safety cap');
       }
-    } catch {
+      const users = new Map<string, RegisteredRole>();
+      for (const row of rows) {
+        if (typeof row.carrierId !== 'string' || typeof row.telegramUserId !== 'string') continue;
+        const role = normalizeRole(row.profile);
+        if (role) users.set(accessKey(row.carrierId, row.telegramUserId), role);
+      }
+      cache = { at: Date.now(), users };
+    } catch (error) {
       incrementCounter('role_resolution_error_total');
-      /* backend blip — keep serving the stale cache until STALE_GRACE_MS */
+      console.warn(
+        '[access] snapshot refresh failed; retaining bounded stale cache',
+        error instanceof Error ? error.message : String(error),
+      );
     }
-  })().finally(() => refreshes.delete(carrierId));
-  refreshes.set(carrierId, refresh);
-  return refresh;
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 export async function registeredRole(
@@ -69,23 +63,20 @@ export async function registeredRole(
   userId: number,
 ): Promise<RegisteredRole | null> {
   const now = Date.now();
-  let cache = caches.get(carrierId) ?? null;
-  if (!cache || now - cache.at > REFRESH_MS) {
-    await refreshCarrier(carrierId, now);
-    cache = caches.get(carrierId) ?? cache;
-  }
-  if (!cache || Date.now() - cache.at > STALE_GRACE_MS) {
+  if (!cache || now - cache.at > config.accessSnapshotRefreshMs) await refreshSnapshot();
+  if (!cache || Date.now() - cache.at > config.accessSnapshotStaleGraceMs) {
     incrementCounter('role_guest_total');
     return null;
   }
-  const role = cache.users.get(String(userId)) ?? null;
+  const role = cache.users.get(accessKey(carrierId, String(userId))) ?? null;
   incrementCounter(role ? 'role_resolution_total' : 'role_guest_total');
   return role;
 }
 
-export async function isRegistered(
-  carrierId: string,
-  userId: number,
-): Promise<boolean> {
+export async function isRegistered(carrierId: string, userId: number): Promise<boolean> {
   return (await registeredRole(carrierId, userId)) !== null;
+}
+
+export function accessSnapshotStats(): { ageMs: number | null; users: number } {
+  return { ageMs: cache ? Date.now() - cache.at : null, users: cache?.users.size ?? 0 };
 }

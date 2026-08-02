@@ -73,7 +73,7 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
       index: ['index.html'],
       // index.html must revalidate so a redeploy is picked up; vite's hashed assets cache hard.
       setHeaders: (res, filePath) => {
-        res.setHeader(
+        res.header(
           'Cache-Control',
           filePath.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable',
         );

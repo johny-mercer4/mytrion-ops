@@ -28,7 +28,14 @@ describe('isTransientBootDbError', () => {
   });
 
   it('treats socket/DNS failures during a failover as transient', () => {
-    for (const code of ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN']) {
+    for (const code of [
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'CONNECTION_CLOSED',
+      'CONNECT_TIMEOUT',
+    ]) {
       expect(isTransientBootDbError(pgError(code)), code).toBe(true);
     }
   });

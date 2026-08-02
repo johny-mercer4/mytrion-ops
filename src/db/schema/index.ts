@@ -10,6 +10,8 @@ export * from './support_bot_messages.js';
 export * from './support_bot_memories.js';
 export * from './support_bot_knowledge_articles.js';
 export * from './support_bot_operations.js';
+export * from './support_bot_confirmations.js';
+export * from './support_bot_gateway_leases.js';
 export * from './conversations.js';
 export * from './messages.js';
 export * from './tool_calls.js';

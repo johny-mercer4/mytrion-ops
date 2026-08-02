@@ -10,6 +10,7 @@
  * hammering the backend.
  */
 import { config } from './config.js';
+import { supportBotHeaders } from './octaneClient.js';
 
 const REFRESH_MS = 5 * 60_000;
 const BIND_COOLDOWN_MS = 60_000;
@@ -37,12 +38,16 @@ async function refresh(force = false): Promise<void> {
   refreshInFlight = (async () => {
     try {
       const res = await fetch(`${config.octaneBase}/v1/support-bot/chat-map`, {
-        headers: { Authorization: `Bearer ${config.octaneKey}` },
+        headers: supportBotHeaders(),
         signal: AbortSignal.timeout(15_000),
       });
       if (res.ok) {
         const data = (await res.json()) as { chats?: Array<{ chatId: string; carrierId: string }> };
-        map = new Map((data.chats ?? []).map((chat) => [chat.chatId, chat.carrierId]));
+        const chats = data.chats ?? [];
+        if (chats.length > config.maxManagedGroups) {
+          throw new Error(`chat map exceeds MAX_MANAGED_GROUPS=${config.maxManagedGroups}`);
+        }
+        map = new Map(chats.map((chat) => [chat.chatId, chat.carrierId]));
         fetchedAt = Date.now();
       }
     } catch {
@@ -69,8 +74,14 @@ export async function carrierFor(chatId: number): Promise<string | null> {
     await refresh(true);
     hit = map.get(String(chatId));
   }
-  if (hit) return hit;
-  if (config.groupChatId && String(chatId) === config.groupChatId && config.carrierId) return config.carrierId;
+  if (Date.now() - fetchedAt <= config.chatMapStaleGraceMs && hit) return hit;
+  if (
+    config.allowLegacyChatFallback &&
+    config.groupChatId &&
+    String(chatId) === config.groupChatId &&
+    config.carrierId
+  ) return config.carrierId;
+  if (Date.now() - fetchedAt > config.chatMapStaleGraceMs) return null;
   return null;
 }
 
@@ -89,13 +100,14 @@ export async function tryAutoBind(
   try {
     const res = await fetch(`${config.octaneBase}/v1/support-bot/chat-map/auto-bind`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.octaneKey}`, 'Content-Type': 'application/json' },
+      headers: supportBotHeaders(true),
       body: JSON.stringify({ chatId: String(chatId), telegramUserId: String(userId) }),
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { carrierId?: string; bound?: boolean; companyName?: string | null };
     if (!data.carrierId) return null;
+    if (!map.has(String(chatId)) && map.size >= config.maxManagedGroups) return null;
     map.set(String(chatId), data.carrierId);
     bindTried.delete(chatId);
     return data.bound ? { carrierId: data.carrierId, companyName: data.companyName ?? null } : null;

@@ -7,6 +7,7 @@
 import type { TgMessage } from './telegram.js';
 
 export type EngagementReason = 'mention' | 'reply' | 'followup';
+export type TelegramEngagementMode = 'direct' | 'all_registered';
 
 const engagedAt = new Map<number, Map<number, number>>();
 const FOLLOWUP_MS = 10 * 60_000;
@@ -60,4 +61,15 @@ export function shouldEngage(
   botUsername: string,
 ): boolean {
   return engagementReason(message, botUsername) !== null;
+}
+
+/**
+ * Production defaults to direct threads so ambient chatter across hundreds of groups cannot
+ * consume model capacity. Once a verified mention/reply starts a thread, follow-ups remain natural.
+ */
+export function shouldRouteAtIngress(
+  mode: TelegramEngagementMode,
+  reason: EngagementReason | null,
+): boolean {
+  return mode === 'all_registered' || reason !== null;
 }

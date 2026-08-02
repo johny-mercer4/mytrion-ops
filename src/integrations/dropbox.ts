@@ -123,9 +123,11 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  */
 async function call(
   url: string,
-  // `Uint8Array` alongside BodyInit: Node's Buffer IS a Uint8Array at runtime and fetch accepts it, but the
-  // DOM BodyInit union in this TS lib does not name it, so a raw Buffer body fails to typecheck without it.
-  init: { method: string; headers?: Record<string, string>; body?: BodyInit | Uint8Array | undefined },
+  // Narrowed to what this module actually sends (a JSON string, or a Buffer for file content) rather
+  // than the DOM `BodyInit` union: that global is not in scope under `lib: ES2022` + @types/node once
+  // undici's DOM shims stopped being pulled in transitively (Fastify 5 upgrade), and nothing here
+  // needs Blob/FormData/streams anyway.
+  init: { method: string; headers?: Record<string, string>; body?: string | Uint8Array | undefined },
 ): Promise<Response> {
   let refreshed = false;
   for (let attempt = 0; ; attempt += 1) {
@@ -133,7 +135,7 @@ async function call(
     const res = await fetch(url, {
       method: init.method,
       headers: { ...(init.headers ?? {}), authorization: `Bearer ${token}` },
-      ...(init.body === undefined ? {} : { body: init.body as BodyInit }),
+      ...(init.body === undefined ? {} : { body: init.body }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 

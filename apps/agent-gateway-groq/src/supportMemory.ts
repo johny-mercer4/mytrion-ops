@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { incrementCounter } from './metrics.js';
+import { supportBotHeaders } from './octaneClient.js';
 
 interface MemoryScope {
   chatId: number;
@@ -41,10 +42,7 @@ function isRecalledMemory(value: unknown): value is RecalledMemory {
 async function post(path: string, body: Record<string, unknown>): Promise<unknown> {
   const response = await fetch(`${config.octaneBase}/v1${path}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.octaneKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: supportBotHeaders(true),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(8_000),
   });

@@ -10,6 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { env, isDev, isProduction, isTest } from './config/env.js';
 import { isAllowedOrigin } from './lib/cors.js';
+import { safeEqual } from './lib/crypto.js';
 import { logger } from './lib/logger.js';
 import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
@@ -21,6 +22,7 @@ import { requestContextPlugin } from './plugins/requestContext.js';
 import { wsHeartbeatPlugin } from './plugins/wsHeartbeat.js';
 import { registerCommsRealtime } from './modules/comms/bootstrap.js';
 import { requireCommsSchema } from './modules/comms/readiness.js';
+import { supportBotGatewayAuthPlugin } from './plugins/supportBotGatewayAuth.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
@@ -96,6 +98,7 @@ const LOG_REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.headers["x-api-key"]',
+  'req.headers["x-support-bot-key"]',
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
   'req.headers["x-rejection-secret"]',
@@ -199,6 +202,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   authPlugin(app);
   apiKeyAuthPlugin(app);
   combinedAuthPlugin(app);
+  supportBotGatewayAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, {
@@ -223,6 +227,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       'Content-Type',
       'Authorization',
       'x-api-key',
+      'x-support-bot-key',
       'x-request-id',
       'x-department-access',
       'x-all-departments',
@@ -236,6 +241,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-webhook-timestamp',
       'x-webhook-signature',
       'idempotency-key',
+      'x-support-bot-confirmation-id',
+      'x-support-bot-turn-id',
+      'x-support-bot-write-occurrence',
+      'x-support-bot-session-key',
+      'x-support-bot-fencing-token',
     ],
     credentials: true,
   });
@@ -262,6 +272,23 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
     timeWindow: '1 minute',
     cache: 10_000,
+    // One support-bot gateway fronts up to 800 Telegram groups behind a single IP. Its dedicated
+    // credential bypasses the browser/IP bucket entirely; the support-bot handlers apply their own
+    // carrier-aware limits and RBAC. (From build — kept alongside the per-budget buckets below.)
+    allowList: (request) => {
+      // Tests drive a whole suite through ONE in-process app instance, which is not a client: this
+      // branch tightened writes to 30/min, so a 110-case file 429s partway through and the failure
+      // reads as a route bug. Route-level guards (SELF_REGISTER_RATE_LIMITED, MINIAPP_WRITE_RATE_
+      // LIMITED) are unaffected and still assert in tests — only the global abuse bucket is off.
+      if (isTest) return true;
+      const key = request.headers['x-support-bot-key'];
+      return (
+        request.url.startsWith(`${API_PREFIX}/support-bot`) &&
+        typeof key === 'string' &&
+        env.SUPPORT_BOT_GATEWAY_API_KEY.length > 0 &&
+        safeEqual(key, env.SUPPORT_BOT_GATEWAY_API_KEY)
+      );
+    },
     keyGenerator: (request) => {
       const ctx = request.ctx;
       const budget = rateBudget(request);

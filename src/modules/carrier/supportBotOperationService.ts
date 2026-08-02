@@ -22,12 +22,14 @@ interface OperationRepo {
     operationId: string,
     response: Record<string, unknown>,
   ): Promise<void>;
+  markFailedSafe(ctx: TenantContext, operationId: string, errorCode: string): Promise<void>;
   markUnknown(ctx: TenantContext, operationId: string, errorCode: string): Promise<void>;
 }
 
 export interface ExecuteSupportBotOperationInput<TOutput extends Record<string, unknown>>
   extends ClaimSupportBotOperationInput {
   execute: () => Promise<TOutput>;
+  prepare?: () => void | Promise<void>;
   sanitize: (output: TOutput) => Record<string, unknown>;
 }
 
@@ -88,6 +90,20 @@ export function createSupportBotOperationExecutor(repo: OperationRepo) {
     }
 
     const operation = claim.operation;
+    if (input.prepare) {
+      try {
+        await input.prepare();
+      } catch (error) {
+        await repo
+          .markFailedSafe(
+            ctx,
+            operation.id,
+            error instanceof Error ? error.name : 'PRE_EXTERNAL_CHECK_FAILED',
+          )
+          .catch(() => undefined);
+        throw error;
+      }
+    }
     const started = await repo.markExternalStarted(
       ctx,
       operation.id,
