@@ -4,7 +4,7 @@
  * every REST call carries the legacy department header (ignored for verified sessions —
  * kept for the FF_SESSION_DEPT_AUTHORITATIVE=0 rollback and unverified dev calls).
  */
-import { request } from './transport';
+import { request, requestMultipart } from './transport';
 import { callTouchpoint } from './touchpoints';
 import type { TouchpointKey, TouchpointMap } from './touchpointTypes';
 
@@ -184,6 +184,8 @@ export interface MaintenanceRecord {
   leadCompensation: string | null;
   ownerZohoUserId: string | null;
   ownerName: string | null;
+  /** Second agent on a jointly worked case — splits the bonus 50/50 with the Owner. */
+  bonusCompletionUserId: string | null;
   bonusCompletionName: string | null;
   bonusLeadName: string | null;
   createdTime: string | null;
@@ -314,6 +316,78 @@ export function updateMaintenance(
     headers: CS_HEADERS,
     body: data,
   }) as Promise<MaintenanceRecord>;
+}
+
+// ---- Maintenance attachments (CS feedback 2026-07-31 — the CRM has this on every record) ----
+
+export interface MaintenanceAttachment {
+  id: string;
+  caseId: string;
+  fileName: string;
+  mime: string;
+  sizeBytes: number;
+  uploadedByName: string | null;
+  createdAt: string;
+}
+
+export function listMaintenanceAttachments(caseId: string): Promise<{ attachments: MaintenanceAttachment[] }> {
+  return request('GET', `/cs/maintenance/${encodeURIComponent(caseId)}/attachments`, {
+    headers: CS_HEADERS,
+  }) as Promise<{ attachments: MaintenanceAttachment[] }>;
+}
+
+export function uploadMaintenanceAttachment(caseId: string, file: File): Promise<MaintenanceAttachment> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return requestMultipart(`/cs/maintenance/${encodeURIComponent(caseId)}/attachments`, form, {
+    headers: CS_HEADERS,
+  }) as Promise<MaintenanceAttachment>;
+}
+
+export function getMaintenanceAttachmentDownloadUrl(
+  caseId: string,
+  attachmentId: string,
+): Promise<{ id: string; name: string; url: string; expiresAt: string }> {
+  return request(
+    'GET',
+    `/cs/maintenance/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
+    { headers: CS_HEADERS },
+  ) as Promise<{ id: string; name: string; url: string; expiresAt: string }>;
+}
+
+export function deleteMaintenanceAttachment(
+  caseId: string,
+  attachmentId: string,
+): Promise<{ id: string; deleted: boolean }> {
+  return request(
+    'DELETE',
+    `/cs/maintenance/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { headers: CS_HEADERS },
+  ) as Promise<{ id: string; deleted: boolean }>;
+}
+
+// ---- Maintenance Timeline History (CS feedback 2026-07-31) ----
+
+export interface MaintenanceHistoryChange {
+  field: string;
+  label: string;
+  from: string | null;
+  to: string | null;
+}
+
+export interface MaintenanceHistoryEntry {
+  id: string;
+  caseId: string;
+  action: 'created' | 'updated';
+  changedByName: string | null;
+  changes: MaintenanceHistoryChange[];
+  changedAt: string;
+}
+
+export function listMaintenanceHistory(caseId: string): Promise<{ history: MaintenanceHistoryEntry[] }> {
+  return request('GET', `/cs/maintenance/${encodeURIComponent(caseId)}/history`, {
+    headers: CS_HEADERS,
+  }) as Promise<{ history: MaintenanceHistoryEntry[] }>;
 }
 
 // ---- Analytics ----

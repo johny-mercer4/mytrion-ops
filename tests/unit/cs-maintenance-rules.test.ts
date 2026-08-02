@@ -11,13 +11,18 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { searchCompaniesMock } = vi.hoisted(() => ({ searchCompaniesMock: vi.fn() }));
+const { searchCompaniesMock, pgMock } = vi.hoisted(() => ({
+  searchCompaniesMock: vi.fn(),
+  pgMock: vi.fn(),
+}));
 vi.mock('../../src/integrations/dwhCompanies.js', () => ({ searchCompanies: searchCompaniesMock }));
+vi.mock('../../src/db/client.js', () => ({ pg: pgMock }));
 
 import {
   COMPENSATION_DEFAULTS,
   withCompensationDefaults,
   withCompensationRefill,
+  withGeneratedReferenceNumber,
   withResolvedCompany,
 } from '../../src/modules/customerService/maintenanceRules.js';
 import { BONUS_FULL_USD, BONUS_HALF_USD } from '../../src/integrations/csMaintenance.js';
@@ -26,6 +31,7 @@ import type { NewMaintenanceCase } from '../../src/db/schema/maintenance_cases.j
 beforeEach(() => {
   vi.clearAllMocks();
   searchCompaniesMock.mockResolvedValue([]);
+  pgMock.mockResolvedValue([{ v: '500000001' }]);
 });
 
 describe('rule 1 — Compensation Prepopulation, on create', () => {
@@ -154,5 +160,33 @@ describe('rule 2 — UpdateCompanyForMaintenance, on create', () => {
     const out = await withResolvedCompany({ carrierId: '5000010' });
     expect(out.companyName).toBeUndefined();
     expect(searchCompaniesMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Reference Number auto-generation — no Zoho equivalent, Mytrion-only', () => {
+  it('fills a blank reference number from the sequence', async () => {
+    pgMock.mockResolvedValue([{ v: '500000007' }]);
+    const out = await withGeneratedReferenceNumber({ name: 'ACME' });
+    expect(out.referenceNumber).toBe('500000007');
+    expect(pgMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats null and a cleared input as empty, same rule as the compensation fields', async () => {
+    const out = await withGeneratedReferenceNumber({ referenceNumber: null });
+    expect(out.referenceNumber).toBe('500000001');
+    const out2 = await withGeneratedReferenceNumber({ referenceNumber: '  ' });
+    expect(out2.referenceNumber).toBe('500000001');
+  });
+
+  it('leaves an agent-entered reference number untouched and never queries the sequence', async () => {
+    const out = await withGeneratedReferenceNumber({ referenceNumber: '7000001' });
+    expect(out.referenceNumber).toBe('7000001');
+    expect(pgMock).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate the caller\'s object', async () => {
+    const input = { name: 'ACME' };
+    await withGeneratedReferenceNumber(input);
+    expect(input).toEqual({ name: 'ACME' });
   });
 });

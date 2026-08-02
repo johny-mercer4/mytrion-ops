@@ -14,9 +14,11 @@ let queued: unknown[][] = [];
 let calls = 0;
 
 /**
- * The module issues 6 independent selects concurrently. This builder hands each `.select()` chain the
+ * The module issues 5 independent selects concurrently. This builder hands each `.select()` chain the
  * next queued result set, so a test declares results in the same order the module declares queries:
- * status, caseType, daily, owner, prev, full.
+ * status, caseType, daily, owner, prev. (There used to be a 6th, `full` — an org-wide count of
+ * signed-off cases — but it's gone: `totals.fullComplete` is now accumulated inside the same loop
+ * that reads `owner`, so it can't disagree with the per-owner gate. See csMaintenance.ts.)
  */
 function makeBuilder(): Record<string, unknown> {
   const chain = (idx: number): Record<string, unknown> => {
@@ -47,14 +49,13 @@ beforeEach(() => {
   calls = 0;
 });
 
-/** status, caseType, daily, owner, prev, full — the module's Promise.all order. */
+/** status, caseType, daily, owner, prev — the module's Promise.all order. */
 function seed(sets: {
   status?: unknown[];
   caseType?: unknown[];
   daily?: unknown[];
   owner?: unknown[];
   prev?: number;
-  full?: number;
 }) {
   queued = [
     sets.status ?? [],
@@ -62,7 +63,6 @@ function seed(sets: {
     sets.daily ?? [],
     sets.owner ?? [],
     [{ n: sets.prev ?? 0 }],
-    [{ n: sets.full ?? 0 }],
   ];
 }
 
@@ -93,7 +93,14 @@ describe('totals', () => {
         { status: 'Cancelled', n: 1 },
       ],
       prev: 295,
-      full: 253,
+      // fullComplete is no longer a separate query — it's accumulated from the SAME owner rows
+      // the leaderboard reads, gated the same way (see 'per-owner bonus arithmetic' below). 253 of
+      // the 261 Completed cases were signed off; none of the 7 In Process or 1 Cancelled were.
+      owner: [
+        { ownerId: 'u1', ownerName: 'A', status: 'Completed', n: 261, signed: 253 },
+        { ownerId: 'u1', ownerName: 'A', status: 'In Process', n: 7, signed: 0 },
+        { ownerId: 'u1', ownerName: 'A', status: 'Cancelled', n: 1, signed: 0 },
+      ],
     });
     const a = await fetchMaintenanceAnalytics(WINDOW);
     expect(a.totals.current).toBe(269);
@@ -146,7 +153,6 @@ describe('per-owner bonus arithmetic', () => {
   it('sums totals.halfComplete from byOwner so headline and leaderboard cannot disagree', async () => {
     seed({
       status: [{ status: 'Completed', n: 6 }],
-      full: 2, // an org-wide subtraction would say 6-2=4
       owner: [
         { ownerId: 'u1', ownerName: 'A', status: 'Completed', n: 3, signed: 1 }, // half 2
         { ownerId: 'u2', ownerName: 'B', status: 'Completed', n: 3, signed: 2 }, // half 1
@@ -182,6 +188,173 @@ describe('per-owner bonus arithmetic', () => {
     const a = await fetchMaintenanceAnalytics(WINDOW);
     expect(BONUS_HALF_USD).toBe(2.5);
     expect(a.byOwner[0]!.bonusUsd).toBe(7.5);
+  });
+});
+
+describe('the Cancelled bonus bug (fixed, CS feedback 2026-07-31)', () => {
+  it('a Cancelled case with a completion date earns nothing, even though it is "signed"', async () => {
+    seed({
+      owner: [{ ownerId: 'u1', ownerName: 'A', status: 'Cancelled', n: 1, signed: 1 }],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    expect(a.byOwner[0]!.fullComplete).toBe(0);
+    expect(a.byOwner[0]!.halfComplete).toBe(0);
+    expect(a.byOwner[0]!.bonusUsd).toBe(0);
+    expect(a.totals.fullComplete).toBe(0);
+  });
+
+  it('does not swallow a real bonus on the same owner in the same window', async () => {
+    // One legitimate Completed+signed case alongside the Cancelled+signed one above — the fix must
+    // gate the Cancelled row specifically, not the owner or the window.
+    seed({
+      owner: [
+        { ownerId: 'u1', ownerName: 'A', status: 'Cancelled', n: 1, signed: 1 },
+        { ownerId: 'u1', ownerName: 'A', status: 'Completed', n: 1, signed: 1 },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    expect(a.byOwner[0]!.fullComplete).toBe(1);
+    expect(a.byOwner[0]!.bonusUsd).toBe(BONUS_FULL_USD);
+  });
+});
+
+describe('second agent — 50/50 bonus split (CS feedback 2026-07-31)', () => {
+  it('splits a full-complete case evenly between owner and second agent', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'Completed', n: 1, signed: 1,
+          secondId: 'u2', secondName: 'Second',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    expect(a.byOwner).toHaveLength(2);
+    for (const o of a.byOwner) {
+      expect(o.count).toBe(0.5);
+      expect(o.fullComplete).toBe(0.5);
+      expect(o.halfComplete).toBe(0);
+      expect(o.bonusUsd).toBe(2.5);
+    }
+    // Org-wide, the case still counts as exactly one — only the per-agent attribution is fractional.
+    expect(a.totals.fullComplete).toBe(1);
+  });
+
+  it('splits a half-complete case evenly', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'Completed', n: 1, signed: 0,
+          secondId: 'u2', secondName: 'Second',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    for (const o of a.byOwner) {
+      expect(o.halfComplete).toBe(0.5);
+      expect(o.fullComplete).toBe(0);
+      expect(o.bonusUsd).toBe(1.25);
+    }
+  });
+
+  it('a jointly-worked Cancelled case earns neither agent anything, but count still splits', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'Cancelled', n: 1, signed: 1,
+          secondId: 'u2', secondName: 'Second',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    for (const o of a.byOwner) {
+      expect(o.fullComplete).toBe(0);
+      expect(o.halfComplete).toBe(0);
+      expect(o.bonusUsd).toBe(0);
+      expect(o.count).toBe(0.5);
+    }
+  });
+
+  it('a jointly-worked case still In Process but signed off gives BOTH agents full credit — the exact ' +
+    'case a naive two-pass split (gated on the closed bucket only) would get wrong', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'In Process', n: 1, signed: 1,
+          secondId: 'u2', secondName: 'Second',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    for (const o of a.byOwner) {
+      expect(o.fullComplete).toBe(0.5);
+      expect(o.bonusUsd).toBe(2.5);
+    }
+  });
+
+  it('a second agent identical to the owner is a no-op — no split, integral values', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'Completed', n: 4, signed: 4,
+          secondId: 'u1', secondName: 'Owner',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    expect(a.byOwner).toHaveLength(1);
+    expect(a.byOwner[0]!.fullComplete).toBe(4);
+    expect(a.byOwner[0]!.bonusUsd).toBe(20);
+  });
+
+  it('a null owner with a real second agent still splits — null-safe, unlike SQL `<>`', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: null, ownerName: null, status: 'Completed', n: 1, signed: 1,
+          secondId: 'u2', secondName: 'Second',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    const unknown = a.byOwner.find((o) => o.id === 'unknown')!;
+    const second = a.byOwner.find((o) => o.id === 'u2')!;
+    expect(unknown.fullComplete).toBe(0.5);
+    expect(second.fullComplete).toBe(0.5);
+    expect(second.name).toBe('Second');
+  });
+
+  it('a second agent with no other cases of their own still appears, named from secondName', async () => {
+    seed({
+      owner: [
+        {
+          ownerId: 'u1', ownerName: 'Owner', status: 'Completed', n: 1, signed: 1,
+          secondId: 'brand-new-agent', secondName: 'Fresh Face',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    const second = a.byOwner.find((o) => o.id === 'brand-new-agent')!;
+    expect(second).toBeDefined();
+    expect(second.name).toBe('Fresh Face');
+    expect(second.fullComplete).toBe(0.5);
+  });
+
+  it('preserves sum(byOwner.count) === totals.current even with a joint row', async () => {
+    seed({
+      status: [{ status: 'Completed', n: 3 }],
+      owner: [
+        { ownerId: 'u1', ownerName: 'A', status: 'Completed', n: 2, signed: 2 },
+        {
+          ownerId: 'u3', ownerName: 'C', status: 'Completed', n: 1, signed: 1,
+          secondId: 'u4', secondName: 'D',
+        },
+      ],
+    });
+    const a = await fetchMaintenanceAnalytics(WINDOW);
+    const total = a.byOwner.reduce((s, o) => s + o.count, 0);
+    expect(total).toBe(a.totals.current);
+    expect(total).toBe(3);
   });
 });
 

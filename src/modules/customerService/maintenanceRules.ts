@@ -1,5 +1,7 @@
 /**
- * The two Zoho workflow rules that used to run on the `Maintenance` module, reimplemented here.
+ * The two Zoho workflow rules that used to run on the `Maintenance` module, reimplemented here —
+ * plus one new Mytrion-only default (`withGeneratedReferenceNumber`, at the bottom) with no Zoho
+ * equivalent at all.
  *
  * Zoho workflow rules fire on Zoho RECORDS. Freezing Zoho and moving the data to Postgres therefore
  * dropped the module's automation on the floor — silently, because a rule that never runs raises no
@@ -44,6 +46,7 @@
  */
 import type { NewMaintenanceCase } from '../../db/schema/maintenance_cases.js';
 import { searchCompanies } from '../../integrations/dwhCompanies.js';
+import { pg } from '../../db/client.js';
 
 /**
  * The three static values from the Zoho field-update actions, at NUMERIC(14,2) scale so they match
@@ -145,4 +148,23 @@ export async function withResolvedCompany<T extends Partial<NewMaintenanceCase>>
     }
   }
   return out;
+}
+
+/**
+ * Reference Number auto-generation on CREATE — NOT a Zoho port (no such automation exists on the
+ * live module; `Reference_Number` is a plain integer field, and the 2,719 migrated values range
+ * 1..400,826,792 with no discernible sequence — manually-entered shop/work-order numbers). This
+ * is a new Mytrion-only default: an agent who leaves the field blank gets a fresh internal number
+ * instead of an empty identifier (CS feedback 2026-07-31). Typing a real one still sticks — same
+ * "override wins" rule as `withCompensationDefaults`.
+ *
+ * CREATE-only, unlike compensation (which also refills on a clearing edit): clearing this field
+ * on an edit is a deliberate correction, not something to silently regenerate.
+ */
+export async function withGeneratedReferenceNumber<T extends Partial<NewMaintenanceCase>>(
+  data: T,
+): Promise<T & Pick<NewMaintenanceCase, 'referenceNumber'>> {
+  if (!isEmpty(data.referenceNumber)) return data as T & Pick<NewMaintenanceCase, 'referenceNumber'>;
+  const rows = await pg<{ v: string }[]>`select nextval('maintenance_reference_number_seq')::text as v`;
+  return { ...data, referenceNumber: rows[0]?.v ?? null };
 }

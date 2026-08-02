@@ -701,6 +701,27 @@
       "when": 1785694675951,
       "tag": "0099_inbox_keyset_index",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1785698275951,
+      "tag": "0100_maintenance_reference_number_seq",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1785701875951,
+      "tag": "0101_maintenance_case_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1785705475951,
+      "tag": "0102_maintenance_case_history",
+      "breakpoints": true
     }
   ]
 }

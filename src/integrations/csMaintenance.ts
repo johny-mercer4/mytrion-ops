@@ -25,7 +25,7 @@
  *     NAME ONLY). `owner_name` is denormalized on the row, resolved once at migration time.
  *   - COQL's mandatory-WHERE and binary-AND contortions.
  */
-import { and, gte, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { maintenanceCases } from '../db/schema/index.js';
 import { AppError } from '../lib/errors.js';
@@ -130,12 +130,35 @@ export function bucketStatus(raw: string): 'open' | 'closed' | 'cancelled' | 'ot
 
 const countInt = sql<number>`count(*)::int`;
 
+/**
+ * A case earns a bonus split between two agents when it names a "second agent" for a jointly
+ * worked case (`bonus_completion_user_id`, distinct from the owner) — CS feedback 2026-07-31.
+ * Each side gets half of whatever the case earns.
+ */
+const SPLIT_SHARE = 0.5;
+
+/**
+ * `bonus_completion_user_id`/`bonus_completion_name` are migrated Zoho columns (`Bonus_for
+ * Completion`) that already carry real historical data for 83 of 2,719 rows, whose original Zoho
+ * meaning is unknown (the field is not documented as a split, and a `Bonus_Calc` subform that
+ * might have explained it was never migrated). Applying 50/50-split semantics retroactively would
+ * silently recompute every past analytics window a manager has already seen, so the split only
+ * applies to cases dated on/after this ship date — a case backdated before it is treated as if it
+ * had no second agent at all.
+ */
+const SECOND_AGENT_SPLIT_FROM = '2026-08-01';
+
 /** Every figure the Maintenance tab needs, in the shape the panel already consumes. */
 export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<MaintenanceAnalytics> {
   const cur = windowWhere(w.from, w.to);
   const prev = windowWhere(w.prevFrom, w.prevTo);
 
-  const [statusRows, caseTypeRows, dailyRows, ownerRows, prevRows, fullRows] = await Promise.all([
+  // Reused (not rebuilt) in both the SELECT and the GROUP BY below so the two render
+  // byte-identical SQL — Postgres requires a grouped expression to match its projection exactly.
+  const secondIdExpr = sql<string | null>`case when ${maintenanceCases.caseDate} >= ${SECOND_AGENT_SPLIT_FROM} then ${maintenanceCases.bonusCompletionUserId} else null end`;
+  const secondNameExpr = sql<string | null>`case when ${maintenanceCases.caseDate} >= ${SECOND_AGENT_SPLIT_FROM} then ${maintenanceCases.bonusCompletionName} else null end`;
+
+  const [statusRows, caseTypeRows, dailyRows, ownerRows, prevRows] = await Promise.all([
     db
       .select({ status: maintenanceCases.status, n: countInt })
       .from(maintenanceCases)
@@ -153,18 +176,24 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
       .groupBy(maintenanceCases.caseDate)
       .orderBy(maintenanceCases.caseDate),
     /*
-     * One pass for the whole leaderboard, grouped by (owner, status).
+     * One pass for the whole leaderboard, grouped by (owner, status, second agent).
      *
      * Grouping by owner ALONE gave only their total, and deriving half-completions from that counted
      * an agent's open/cancelled cases as half-paid work — per-agent halves summed to 11 against an
-     * org total of 8. `signed` rides along in the same pass; note it is deliberately NOT status-gated,
-     * exactly as the COQL predicate was.
+     * org total of 8. `signed` rides along in the same pass.
+     *
+     * `signed` (has a Case_Completion date) is deliberately NOT status-gated here in the SELECT —
+     * gating happens once, below, in the accumulation loop, so a Cancelled case with a completion
+     * date can never earn a bonus (CS bug report 2026-07-31: it did, before this fix) and a jointly
+     * worked case can never disagree with a solo case of the same shape (see SPLIT_SHARE below).
      */
     db
       .select({
         ownerId: maintenanceCases.ownerZohoUserId,
         ownerName: maintenanceCases.ownerName,
         status: maintenanceCases.status,
+        secondId: secondIdExpr,
+        secondName: secondNameExpr,
         n: countInt,
         signed: sql<number>`count(${maintenanceCases.caseCompletion})::int`,
       })
@@ -174,12 +203,10 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
         maintenanceCases.ownerZohoUserId,
         maintenanceCases.ownerName,
         maintenanceCases.status,
+        secondIdExpr,
+        secondNameExpr,
       ),
     db.select({ n: countInt }).from(maintenanceCases).where(prev),
-    db
-      .select({ n: countInt })
-      .from(maintenanceCases)
-      .where(and(cur, isNotNull(maintenanceCases.caseCompletion))),
   ]);
 
   const byStatus: CountedSlice[] = statusRows.map((r) => ({
@@ -205,15 +232,42 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
     full: number;
   }
   const agg = new Map<string, OwnerAgg>();
-  for (const r of ownerRows) {
-    const id = r.ownerId ?? 'unknown';
-    const row = agg.get(id) ?? { id, name: r.ownerName ?? 'Unknown', total: 0, closed: 0, full: 0 };
-    row.total += r.n;
-    if (bucketStatus(r.status ?? '') === 'closed') row.closed += r.n;
-    row.full += r.signed;
-    // A blank owner_name on one status row must not blank a name another row supplied.
-    if (row.name === 'Unknown' && r.ownerName) row.name = r.ownerName;
+  /** Get-or-create, applying the existing rule that a blank name on one group must not blank a
+   *  name another group supplied — also lets a second agent's name come from `secondName` even if
+   *  they own no cases of their own in this window. */
+  const entry = (id: string, name: string | null | undefined): OwnerAgg => {
+    const row = agg.get(id) ?? { id, name: name || 'Unknown', total: 0, closed: 0, full: 0 };
+    if (row.name === 'Unknown' && name) row.name = name;
     agg.set(id, row);
+    return row;
+  };
+
+  // Unsplit, status-gated org-wide count — accumulated here (not a separate query) so it cannot
+  // drift from the per-owner gate below. A jointly-worked case still counts as exactly one case
+  // org-wide; only the per-owner attribution is split.
+  let orgFull = 0;
+
+  for (const r of ownerRows) {
+    const bucket = bucketStatus(r.status ?? '');
+    // Plain `!==` is correctly null-safe HERE (a null owner with a real second agent is a genuine
+    // split), unlike SQL's `<>`, which silently drops a null-owner row — that null-owner bucket is
+    // real, live data (see tests). This is why the split decision is made in JS, not a SQL predicate.
+    const secondId = r.secondId ?? null;
+    const shared = secondId !== null && secondId !== r.ownerId;
+    const share = shared ? SPLIT_SHARE : 1;
+    const credited = shared
+      ? [entry(r.ownerId ?? 'unknown', r.ownerName), entry(secondId as string, r.secondName)]
+      : [entry(r.ownerId ?? 'unknown', r.ownerName)];
+
+    if (bucket !== 'cancelled') orgFull += r.signed;
+
+    for (const a of credited) {
+      a.total += r.n * share;
+      if (bucket === 'closed') a.closed += r.n * share;
+      // THE FIX: a Cancelled case earns nothing, even carrying a completion date. Gated here and
+      // nowhere else, so a solo case and a jointly-shared case of the same shape can't disagree.
+      if (bucket !== 'cancelled') a.full += r.signed * share;
+    }
   }
 
   const byOwner: OwnerSlice[] = [...agg.values()].map((o) => {
@@ -237,7 +291,7 @@ export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<M
       previous: prevRows[0]?.n ?? 0,
       open,
       closed,
-      fullComplete: fullRows[0]?.n ?? 0,
+      fullComplete: orgFull,
       /*
        * Closed but with no completion date — finished, not signed off.
        *

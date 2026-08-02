@@ -210,6 +210,7 @@ const CARD_COLUMNS = {
   leadCompensation: maintenanceCases.leadCompensation,
   ownerZohoUserId: maintenanceCases.ownerZohoUserId,
   ownerName: maintenanceCases.ownerName,
+  bonusCompletionUserId: maintenanceCases.bonusCompletionUserId,
   bonusCompletionName: maintenanceCases.bonusCompletionName,
   bonusLeadName: maintenanceCases.bonusLeadName,
   createdTime: maintenanceCases.createdTime,

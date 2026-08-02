@@ -12,12 +12,17 @@
  * ledger, so removing a case is an irreversible accounting hole; setting `status` to 'Cancelled' is
  * the reversible path and drops the case out of the active filters.
  */
+import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { searchCompanies } from '../../integrations/dwhCompanies.js';
-import { AppError } from '../../lib/errors.js';
+import { AppError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { maxFileBytes } from '../../modules/files/fileService.js';
+import { getStorage } from '../../modules/files/storage/index.js';
 import {
+  diffMaintenanceCase,
   MAINTENANCE_EDITABLE,
   MAINTENANCE_PICKLISTS,
   money,
@@ -26,9 +31,12 @@ import {
   COMPENSATION_DEFAULTS,
   withCompensationDefaults,
   withCompensationRefill,
+  withGeneratedReferenceNumber,
   withResolvedCompany,
 } from '../../modules/customerService/maintenanceRules.js';
+import { maintenanceAttachmentRepo } from '../../repos/maintenanceAttachmentRepo.js';
 import { maintenanceCaseRepo, type MaintenanceFilters } from '../../repos/maintenanceCaseRepo.js';
+import { maintenanceCaseHistoryRepo } from '../../repos/maintenanceCaseHistoryRepo.js';
 import type { NewMaintenanceCase } from '../../db/schema/maintenance_cases.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -39,6 +47,34 @@ function requireCsAccess(request: FastifyRequest): TenantContext {
 
 /** Our own cuid2, not Zoho's 18-digit id — Postgres owns these rows. */
 const idParam = z.object({ id: z.string().regex(/^mtc_[a-z0-9]+$/, 'not a maintenance case id') });
+const attachmentIdParam = idParam.extend({
+  attId: z.string().regex(/^mca_[a-z0-9]+$/, 'not an attachment id'),
+});
+
+/**
+ * R2/S3 isn't gated by a feature flag for Maintenance attachments (unlike the generic
+ * FF_FILES_ENABLED file system) — so an unconfigured environment must fail with a clear message
+ * here rather than an opaque 500 from deep inside the AWS SDK (`AuthorizationHeaderMalformed`,
+ * which reveals nothing about WHY to whoever is looking at the browser network tab).
+ */
+function requireStorageConfigured(): void {
+  if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY || !env.S3_BUCKET) {
+    throw new AppError(
+      'File storage is not configured in this environment (S3_ENDPOINT/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY/S3_BUCKET) — attachments are unavailable here.',
+      { statusCode: 503, code: 'STORAGE_NOT_CONFIGURED', expose: true },
+    );
+  }
+}
+
+/** Strips path separators and traversal sequences — this name becomes part of an R2 object key. */
+function sanitizeFileName(name: string): string {
+  const base =
+    name
+      .replace(/[/\\]/g, '_')
+      .replace(/\.{2,}/g, '.')
+      .trim() || 'file';
+  return base.slice(0, 200);
+}
 
 /** `a,b,c` → ['a','b','c']. Empty segments dropped so a trailing comma is harmless. */
 const csvList = z
@@ -238,8 +274,10 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     // The two Zoho workflow rules this module used to rely on, applied server-side so they hold for
     // every create path (tab, API, a future widget) rather than only where a form remembered to.
     const withCompany = await withResolvedCompany(data);
+    const withReference = await withGeneratedReferenceNumber(withCompany);
+    const resolvedFields = withCompensationDefaults(withReference);
     const row = await maintenanceCaseRepo.insert({
-      ...withCompensationDefaults(withCompany),
+      ...resolvedFields,
       source: 'mytrion',
       createdByUserId: ctx.userId,
       ...(ctx.userName !== undefined ? { createdByName: ctx.userName } : {}),
@@ -255,6 +293,21 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
         carrierId: String(data.carrierId ?? ''),
       },
     });
+    // Timeline History (CS feedback 2026-07-31) — diffed against the FULLY resolved fields (company
+    // + reference number + compensation), not just what the agent typed, so the entry shows the
+    // case's whole initial state in one place rather than needing a second "auto-filled" entry.
+    if (row?.id !== undefined) {
+      const changes = diffMaintenanceCase(null, resolvedFields);
+      if (changes.length > 0) {
+        await maintenanceCaseHistoryRepo.insert({
+          caseId: row.id,
+          action: 'created',
+          changedByUserId: ctx.userId,
+          ...(ctx.userName !== undefined ? { changedByName: ctx.userName } : {}),
+          changes,
+        });
+      }
+    }
     return reply.code(201).send(row);
   });
 
@@ -263,9 +316,14 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireCsAccess(request);
     const { id } = idParam.parse(request.params);
     const data = pickEditable(writeBody.parse(request.body));
+    // For the Timeline diff only — the 404 decision below still comes from update()'s own result,
+    // exactly as before, so a stale/missing read here can never change whether the edit itself
+    // succeeds; it can only make one history entry less precise than it ideally would be.
+    const before = await maintenanceCaseRepo.getById(id);
+    const refilled = withCompensationRefill(data);
     const row = await maintenanceCaseRepo.update(id, {
       // Zoho's rule also re-fired on edit: clearing a compensation put the default back.
-      ...withCompensationRefill(data),
+      ...refilled,
       updatedByUserId: ctx.userId,
       ...(ctx.userName !== undefined ? { updatedByName: ctx.userName } : {}),
     });
@@ -283,6 +341,108 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
       resourceId: id,
       detail: { fields: Object.keys(data) },
     });
+    const changes = diffMaintenanceCase(before ?? null, refilled);
+    if (changes.length > 0) {
+      await maintenanceCaseHistoryRepo.insert({
+        caseId: id,
+        action: 'updated',
+        changedByUserId: ctx.userId,
+        ...(ctx.userName !== undefined ? { changedByName: ctx.userName } : {}),
+        changes,
+      });
+    }
     return row;
+  });
+
+  /** Attachments — the CRM has this on every record; the Postgres-backed case didn't (CS feedback
+   *  2026-07-31). Metadata in Postgres, bytes in R2 via the same object-storage seam `files.routes.ts`
+   *  uses. Unlike the case itself, an attachment carries no accounting weight — deleting one has no
+   *  ledger impact, so (unlike `maintenance_cases`) a real delete is safe here. */
+  app.post('/cs/maintenance/:id/attachments', guard, async (request, reply) => {
+    const ctx = requireCsAccess(request);
+    requireStorageConfigured();
+    const { id } = idParam.parse(request.params);
+    const caseRow = await maintenanceCaseRepo.getById(id);
+    if (!caseRow) {
+      throw new AppError('Maintenance case not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+    }
+    const part = await request.file({ limits: { fileSize: maxFileBytes() } });
+    if (!part) throw new ValidationError('Expected a multipart file field');
+    const buffer = await part.toBuffer();
+    if (buffer.length === 0) {
+      throw new AppError('Refusing to store an empty file', { statusCode: 400, code: 'EMPTY_FILE', expose: true });
+    }
+    const fileName = sanitizeFileName(part.filename || 'attachment');
+    const mime = part.mimetype || 'application/octet-stream';
+    const s3Key = `maintenance/${id}/${createId()}-${fileName}`;
+    await getStorage().put(s3Key, buffer, { contentType: mime });
+    const row = await maintenanceAttachmentRepo.insert({
+      caseId: id,
+      fileName,
+      mime,
+      sizeBytes: buffer.length,
+      s3Key,
+      uploadedByUserId: ctx.userId,
+      ...(ctx.userName !== undefined ? { uploadedByName: ctx.userName } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'cs.maintenance.attachment_upload',
+      status: 'ok',
+      resourceType: 'maintenance_case',
+      resourceId: id,
+      detail: { fileName, sizeBytes: buffer.length, ...(row?.id !== undefined ? { attachmentId: row.id } : {}) },
+    });
+    return reply.code(201).send(row);
+  });
+
+  app.get('/cs/maintenance/:id/attachments', guard, async (request) => {
+    requireCsAccess(request);
+    const { id } = idParam.parse(request.params);
+    return { attachments: await maintenanceAttachmentRepo.listByCaseId(id) };
+  });
+
+  app.get('/cs/maintenance/:id/attachments/:attId/download', guard, async (request) => {
+    requireCsAccess(request);
+    requireStorageConfigured();
+    const { id, attId } = attachmentIdParam.parse(request.params);
+    const attachment = await maintenanceAttachmentRepo.getById(attId);
+    if (!attachment || attachment.caseId !== id) {
+      throw new AppError('Attachment not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+    }
+    const { url, expiresAt } = await getStorage().presignGet(attachment.s3Key, {
+      filename: attachment.fileName,
+    });
+    return { id: attachment.id, name: attachment.fileName, url, expiresAt };
+  });
+
+  app.delete('/cs/maintenance/:id/attachments/:attId', guard, async (request) => {
+    const ctx = requireCsAccess(request);
+    requireStorageConfigured();
+    const { id, attId } = attachmentIdParam.parse(request.params);
+    const attachment = await maintenanceAttachmentRepo.getById(attId);
+    if (!attachment || attachment.caseId !== id) {
+      throw new AppError('Attachment not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+    }
+    await maintenanceAttachmentRepo.delete(attId);
+    // Best-effort: the metadata row is the source of truth for the UI, so it's gone either way. A
+    // failed blob delete here just leaves an orphaned object in storage, not a broken reference.
+    await getStorage()
+      .delete(attachment.s3Key)
+      .catch(() => undefined);
+    await auditFromContext(ctx, {
+      action: 'cs.maintenance.attachment_delete',
+      status: 'ok',
+      resourceType: 'maintenance_case',
+      resourceId: id,
+      detail: { fileName: attachment.fileName, attachmentId: attachment.id },
+    });
+    return { id: attId, deleted: true };
+  });
+
+  /** Timeline History — newest first, matching the CRM's Timeline reading order. */
+  app.get('/cs/maintenance/:id/history', guard, async (request) => {
+    requireCsAccess(request);
+    const { id } = idParam.parse(request.params);
+    return { history: await maintenanceCaseHistoryRepo.listByCaseId(id) };
   });
 }
