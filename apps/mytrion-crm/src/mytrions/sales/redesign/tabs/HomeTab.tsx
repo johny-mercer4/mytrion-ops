@@ -5,7 +5,7 @@
  * full-page HomePageSkeleton; the page reveals once they settle. Live reloads (WS / refresh)
  * still use per-block useLoad. Quick Actions = static CALL_TO_ACTIONS catalog.
  */
-import { useEffect, useRef, useState} from 'react';
+import { useEffect, useState } from 'react';
 import { getSession } from '@/api/session';
 import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -165,10 +165,8 @@ export function HomeTab() {
   // Progressive per-block loading (dcCache SWR) — no whole-page gate; each block owns its skeleton.
   /** Transient goal/personal-best celebration overlay (auto-dismissed). */
   const [celebration, setCelebration] = useState<{ emoji: string; title: string; msg: string } | null>(null);
-  /** Set while a user-initiated snapshot refresh is in flight, so we can confirm it on completion. */
-  const snapRefreshPending = useRef(false);
   /** Real "fetched at" NY time for the snapshot caption — stamped when snap.data lands (NOT the live
-   *  clock, which never changed on refresh and made the refresh look dead). */
+   *  clock, which never changed on background revalidation and made the stamp look dead). */
   const [snapFetchedAt, setSnapFetchedAt] = useState<string>('');
 
   // The "Your Activity" block is hidden for now and its range fetch (loadActivity by range) is
@@ -194,14 +192,6 @@ export function HomeTab() {
     },
   });
   useEffect(() => subscribeInboxLive(() => inbox.reload()), [inbox.reload]);
-
-  const refreshSnapshot = (): void => {
-    snapRefreshPending.current = true;
-    // reload() forces a background revalidation (dcCache) — keeps tiles visible while refetching.
-    snap.reload();
-    dailyAct.reload();
-    appStats.reload();
-  };
 
   const openInbox = (i: InboxItem): void => {
     markInboxRead(i.id);
@@ -245,8 +235,6 @@ export function HomeTab() {
   const workdayEndLabel = hourLabel(WORKDAY_END_HOUR);
   const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
-  const snapSpinCss = snap.revalidating || snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
-
   // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
   const appsLoading = appStats.loading && !appStats.data;
   const appDays = appStats.data?.days ?? {};
@@ -288,9 +276,7 @@ export function HomeTab() {
     return () => clearTimeout(t);
   }, [celebration]);
 
-  // Stamp the real fetched-at time whenever fresh snapshot data lands (initial + refresh), and
-  // confirm a user-initiated refresh. Watch the data reference changing (useLoad doesn't flip
-  // `loading` on refresh of already-present data).
+  // Stamp the real fetched-at time whenever fresh snapshot data lands (initial + SWR revalidate).
   useEffect(() => {
     if (!snap.data) return;
     const at = new Date().toLocaleTimeString('en-US', {
@@ -300,10 +286,6 @@ export function HomeTab() {
       hour12: true,
     });
     setSnapFetchedAt(at);
-    if (snapRefreshPending.current) {
-      snapRefreshPending.current = false;
-      pushToast('Snapshot refreshed', `Updated ${at} ET`);
-    }
   }, [snap.data]);
 
   const green = 'var(--ok)';
@@ -525,10 +507,9 @@ export function HomeTab() {
           <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
               <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
-              <div style={s('display:flex;align-items:center;gap:10px')}>
-                <span style={s('font-size:12px;color:var(--muted)')}>{snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
-                <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
-              </div>
+              <span style={s('font-size:12px;color:var(--muted)')}>
+                {snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}
+              </span>
             </div>
             <div style={s('padding:18px 20px')}>
               {snap.loading ? (

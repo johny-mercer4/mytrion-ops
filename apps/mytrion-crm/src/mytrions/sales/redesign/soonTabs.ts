@@ -33,7 +33,7 @@ export const SOON_TABS: Record<string, SoonTabMeta> = {
   },
   callHub: {
     title: 'Call Hub',
-    blurb: 'Click-to-dial history, callbacks, and call notes will land here next.',
+    blurb: 'Your Mytrion and Zoho call history lives here. Callbacks queue and richer notes are next.',
     icon: 'callHub',
     hue: 'var(--ok)',
   },

@@ -40,7 +40,6 @@ export function TicketsTab() {
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('all');
   const [ticketSearch, setTicketSearch] = useState<string>('');
   const [ticketReply, setTicketReply] = useState<string>('');
-  const [ticketsSpin, setTicketsSpin] = useState<boolean>(false);
   const [ticketDetailsOpen, setTicketDetailsOpen] = useState<boolean>(false);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [sending, setSending] = useState<boolean>(false);
@@ -48,7 +47,6 @@ export function TicketsTab() {
   const [pendingMsgs, setPendingMsgs] = useState<PendingTicketMsg[]>([]);
   const unreadCounts = useTicketUnread();
 
-  const spinRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -133,8 +131,6 @@ export function TicketsTab() {
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [selectedTicket, msgsLoad.data, pendingMsgs.length]);
 
-  useEffect(() => () => { if (spinRef.current) clearTimeout(spinRef.current); }, []);
-
   // ---------- handlers ----------
   const selectTicket = (id: string): void => {
     clearTicketUnread(id);
@@ -143,14 +139,6 @@ export function TicketsTab() {
     // Keep WS subscribe scope in sync (ticketdashboard userTicketIds grows as you open tickets).
     const row = allTickets.find((t) => t.id === id);
     if (row) upsertTicketSubscribeRows([row]);
-  };
-
-  const refreshTickets = (): void => {
-    setTicketsSpin(true);
-    feed.reload();
-    msgsLoad.reload();
-    if (spinRef.current) clearTimeout(spinRef.current);
-    spinRef.current = setTimeout(() => setTicketsSpin(false), 900);
   };
 
   /** Reference handleScroll — near bottom loads the next page of 20. */
@@ -266,8 +254,6 @@ export function TicketsTab() {
       ]
     : [];
 
-  const ticketsSpinStyle =
-    ticketsSpin || feed.revalidating ? 'animation:ss-spin .9s linear infinite' : '';
   const detailsOpen = ticketDetailsOpen && !!tkSel;
 
   return (
@@ -306,9 +292,6 @@ export function TicketsTab() {
                     />
                     {live ? 'LIVE' : 'OFFLINE'}
                   </span>
-                  <button type="button" onClick={refreshTickets} aria-label="Refresh" className="ss-tk-tool ss-ico-btn">
-                    <Icon name="refresh" size={14} style={s(ticketsSpinStyle)} />
-                  </button>
                   <button type="button" onClick={() => go('create')} aria-label="New ticket" title="New ticket" className="ss-tk-tool ss-tk-tool--primary ss-ico-btn">
                     <Icon name="plus" size={15} strokeWidth={2.4} />
                   </button>

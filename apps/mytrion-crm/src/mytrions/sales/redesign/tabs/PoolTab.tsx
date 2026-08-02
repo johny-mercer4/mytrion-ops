@@ -2,7 +2,7 @@
  * Open Pool — other agents' retention cases in p1_open_pool (never your own former deals).
  * Instant claim (reason required) → Zoho ownership + Kanban New. Max 2 claims / UTC day.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { getImpersonation } from '../../../../api/impersonation';
 import { s } from '../dc';
@@ -146,10 +146,8 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [spin, setSpin] = useState(false);
   /** Immediate post-claim quota so the badge does not wait on a second fetch. */
   const [quotaSnap, setQuotaSnap] = useState<PoolQuota | null>(null);
-  const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     setQuotaSnap(null);
@@ -171,11 +169,8 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   }, [claimable.length, feed.loading, onAvailableCount]);
 
   const refresh = (): void => {
-    setSpin(true);
     feed.reload();
     quota.reload();
-    clearTimeout(spinTimer.current);
-    spinTimer.current = setTimeout(() => setSpin(false), 900);
   };
 
   useEffect(
@@ -372,21 +367,6 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                   {submitting
                     ? 'Claiming…'
                     : `Claim${selected.length ? ` (${selected.length})` : ''}`}
-                </button>
-                <button
-                  type="button"
-                  onClick={refresh}
-                  aria-label="Refresh"
-                  className="ss-ico-btn"
-                  style={s(
-                    'width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center',
-                  )}
-                >
-                  <Icon
-                    name="refresh"
-                    size={16}
-                    style={s(spin || feed.loading ? 'animation:ss-spin .9s linear infinite' : '')}
-                  />
                 </button>
               </>
             }

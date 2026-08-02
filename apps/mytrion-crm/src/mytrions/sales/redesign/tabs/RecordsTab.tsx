@@ -456,21 +456,6 @@ export function RecordsTab() {
             })}
           </div>
         )}
-        {activeLoad && (
-          <button
-            type="button"
-            onClick={() => activeLoad.reload()}
-            disabled={activeLoad.revalidating}
-            title="Refresh"
-            className="ss-ico-btn"
-            style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${activeLoad.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${activeLoad.revalidating ? '.7' : '1'}`)}
-          >
-            <span style={s(`display:inline-flex${activeLoad.revalidating ? ';animation:ss-spin .8s linear infinite' : ''}`)}>
-              <Icon name="refresh" size={15} />
-            </span>
-            Refresh
-          </button>
-        )}
       </div>
       {activeLoad?.cachedAt && (
         <div style={s('margin-bottom:16px;font-size:12px;color:var(--faint)')}>

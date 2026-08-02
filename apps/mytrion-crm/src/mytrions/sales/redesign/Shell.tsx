@@ -40,6 +40,7 @@ import { InboxTab } from './tabs/InboxTab';
 import { TicketsTab } from './tabs/TicketsTab';
 import { RetentionTab } from './tabs/RetentionTab';
 import { VerificationTab } from './tabs/VerificationTab';
+import { CallHubTab } from './tabs/CallHubTab';
 import { RecordsTab } from './tabs/RecordsTab';
 import { CreateTab } from './tabs/CreateTab';
 import { AutoTab } from './tabs/AutoTab';
@@ -408,6 +409,7 @@ export function SalesRedesign() {
                   {section === 'tickets' && <TicketsTab />}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}
+                  {section === 'callHub' && <CallHubTab />}
                   {section === 'records' && <RecordsTab />}
                   {section === 'create' && <CreateTab />}
                   {section === 'auto' && <AutoTab />}

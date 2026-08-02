@@ -166,29 +166,17 @@ export function TasksTab() {
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px;min-height:0')}>
       <div className="ss-ret-hero ss-tasks-hero">
-        <div style={s('display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap')}>
-          <div>
-            <div className="ss-ret-hero-kicker">
-              <Icon name="clipboardCheck" size={13} /> Assignments
-              {newCount > 0 ? (
-                <span className="ss-tasks-new-pill">{newCount} new</span>
-              ) : null}
-            </div>
-            <div className="ss-ret-hero-title">My Tasks</div>
-            <p className="ss-ret-hero-sub">
-              Drag cards across columns to update status. Open any card for full detail and history.
-            </p>
+        <div>
+          <div className="ss-ret-hero-kicker">
+            <Icon name="clipboardCheck" size={13} /> Assignments
+            {newCount > 0 ? (
+              <span className="ss-tasks-new-pill">{newCount} new</span>
+            ) : null}
           </div>
-          <button
-            type="button"
-            className="ss-ico-btn ss-tasks-refresh"
-            onClick={() => void tasksLoad.reload()}
-            style={s(
-              'height:36px;padding:0 13px;display:flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text2);font-weight:700;cursor:pointer',
-            )}
-          >
-            <Icon name="refresh" size={14} /> Refresh
-          </button>
+          <div className="ss-ret-hero-title">My Tasks</div>
+          <p className="ss-ret-hero-sub">
+            Drag cards across columns to update status. Open any card for full detail and history.
+          </p>
         </div>
         <div className="ss-ret-metrics" style={{ marginTop: 4 }}>
           <div className="ss-ret-metric">

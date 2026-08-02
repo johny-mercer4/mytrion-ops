@@ -176,19 +176,6 @@ export function MoneyCodesView({ search }: { search: string }) {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => void load({ page: 1, append: false, status, search: deferredSearch })}
-            disabled={loading}
-            title="Refresh"
-            className="ss-ico-btn"
-            style={s(`height:32px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${loading ? 'default' : 'pointer'};display:flex;align-items:center;gap:7px;opacity:${loading ? '.7' : '1'}`)}
-          >
-            <span style={s(`display:inline-flex${loading ? ';animation:ss-spin .8s linear infinite' : ''}`)}>
-              <Icon name="refresh" size={14} />
-            </span>
-            Refresh
-          </button>
         </div>
       </div>
 

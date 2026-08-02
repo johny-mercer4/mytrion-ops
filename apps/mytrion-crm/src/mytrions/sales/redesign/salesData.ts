@@ -127,7 +127,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
       { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
       { id: 'verification', label: 'Verification', icon: 'verification' },
-      { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
+      { id: 'callHub', label: 'Call Hub', icon: 'callHub' },
     ],
   },
 ];

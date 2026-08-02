@@ -3,7 +3,8 @@ import { soonHue, soonTabMeta, SOON_TABS } from './soonTabs';
 
 describe('soonTabs', () => {
   it('covers every parked Sales nav id with matching hue helpers', () => {
-    for (const id of ['tickets', 'verification', 'callHub'] as const) {
+    // Tickets remains parked; Verification + Call Hub are live (meta may still exist for reuse).
+    for (const id of ['tickets'] as const) {
       expect(SOON_TABS[id]).toBeDefined();
       expect(soonHue(id)).toBe(SOON_TABS[id]!.hue);
       expect(soonTabMeta(id).title.length).toBeGreaterThan(0);

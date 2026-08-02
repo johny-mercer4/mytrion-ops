@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lte } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionCalls,
@@ -116,5 +116,55 @@ export const mytrionCallRepo = {
       .orderBy(desc(mytrionCalls.createdAt))
       .limit(limit)
       .offset(offset);
+  },
+
+  /** Agent call history for Call Hub (tenant + caller scoped), newest first. */
+  async listForCaller(
+    ctx: TenantContext,
+    callerZohoUserId: string,
+    opts?: {
+      from?: Date;
+      to?: Date;
+      /** SQL-side status filter (Mytrion statuses only). */
+      callStatus?: MytrionCall['callStatus'];
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<MytrionCall[]> {
+    const { limit, offset } = normalizePagination(opts);
+    const clauses = [
+      eq(mytrionCalls.tenantId, ctx.tenantId),
+      eq(mytrionCalls.callerZohoUserId, callerZohoUserId),
+    ];
+    if (opts?.from) clauses.push(gte(mytrionCalls.callTime, opts.from));
+    if (opts?.to) clauses.push(lte(mytrionCalls.callTime, opts.to));
+    if (opts?.callStatus) clauses.push(eq(mytrionCalls.callStatus, opts.callStatus));
+    return db
+      .select()
+      .from(mytrionCalls)
+      .where(and(...clauses))
+      .orderBy(desc(mytrionCalls.callTime))
+      .limit(limit)
+      .offset(offset);
+  },
+
+  /** Count agent calls for Call Hub pagination totals (tenant + caller scoped). */
+  async countForCaller(
+    ctx: TenantContext,
+    callerZohoUserId: string,
+    opts?: { from?: Date; to?: Date; callStatus?: MytrionCall['callStatus'] },
+  ): Promise<number> {
+    const clauses = [
+      eq(mytrionCalls.tenantId, ctx.tenantId),
+      eq(mytrionCalls.callerZohoUserId, callerZohoUserId),
+    ];
+    if (opts?.from) clauses.push(gte(mytrionCalls.callTime, opts.from));
+    if (opts?.to) clauses.push(lte(mytrionCalls.callTime, opts.to));
+    if (opts?.callStatus) clauses.push(eq(mytrionCalls.callStatus, opts.callStatus));
+    const rows = await db
+      .select({ n: count() })
+      .from(mytrionCalls)
+      .where(and(...clauses));
+    return Number(rows[0]?.n ?? 0);
   },
 };

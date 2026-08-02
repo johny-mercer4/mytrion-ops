@@ -179,21 +179,6 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
     </div>
   );
 
-  const refreshBtn = (
-    <button
-      type="button"
-      onClick={refresh}
-      aria-label="Refresh"
-      disabled={feed.loading && cases.length === 0}
-      className="ss-ico-btn"
-      style={s(
-        'width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center',
-      )}
-    >
-      <Icon name="refresh" size={16} style={s(feed.loading ? 'animation:ss-spin .9s linear infinite' : '')} />
-    </button>
-  );
-
   return (
     <div style={s('display:flex;flex-direction:column;gap:14px;min-height:0')}>
       <RetentionHero
@@ -201,12 +186,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
         title="My cases"
         sub="New → call → stage · Out of Reach = up to 5 attempts → Open Pool"
         subSize="lg"
-        actions={
-          <>
-            {viewToggle}
-            {refreshBtn}
-          </>
-        }
+        actions={viewToggle}
       >
         {!initialLoad && <RetentionCasesMetrics stats={stats} />}
       </RetentionHero>

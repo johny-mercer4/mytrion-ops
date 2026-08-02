@@ -19,13 +19,16 @@ import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import type { MytrionCallSourceType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { buildCallerContext } from './callerIdentity.js';
 
-/** Softphone is used from Sales + Customer Service Mytrions. */
-function requireSoftphoneAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') throw new RBACError('RingCentral phone is internal-only');
-  const ctx = withDepartmentAccess(base, request);
+/**
+ * Softphone is used from Sales + Customer Service Mytrions.
+ * Applies View-as (x-act-as-*) so call-log rows attribute to the desk agent, not the admin.
+ */
+async function requireSoftphoneAccess(request: FastifyRequest): Promise<TenantContext> {
+  const ctx = await buildCallerContext(request, {});
+  request.ctx = ctx;
+  if (ctx.audience !== 'internal') throw new RBACError('RingCentral phone is internal-only');
   const ok =
     ctx.role === 'admin' ||
     ctx.bypassRbac === true ||
@@ -69,10 +72,15 @@ function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; s
   return null;
 }
 
-/** Authenticated actor, never the View-as subject. */
+/**
+ * Effective agent on the request (View-as target when impersonating). Call Hub is agent-scoped,
+ * so dials made while viewing as a rep must land on that rep's `mytrion_calls` rows.
+ */
 function callerZohoUserId(ctx: TenantContext): string {
-  const actorId = ctx.impersonatorUserId ?? ctx.userId;
-  return actorId.startsWith('zoho:') ? actorId.slice('zoho:'.length) : actorId;
+  if (!ctx.userId.startsWith('zoho:')) {
+    throw new RBACError('A verified Zoho worker session is required to log calls');
+  }
+  return ctx.userId.slice('zoho:'.length);
 }
 
 /**
@@ -91,7 +99,7 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
   app.get('/ringcentral/embed-config', guard, async (request) => {
-    const ctx = requireSoftphoneAccess(request);
+    const ctx = await requireSoftphoneAccess(request);
     if (!ringcentral.isConfigured()) {
       throw new NotFoundError(
         'RingCentral is not configured (set FF_RINGCENTRAL_ENABLED=1 and RINGCENTRAL_CLIENT_ID).',
@@ -120,7 +128,7 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
   // the audit trail. Best-effort, sales-guarded; the widget forwards each postMessage event here so
   // there is a server-side record of who called which number and when it ended.
   app.post('/ringcentral/call-events', guard, async (request, reply) => {
-    const ctx = requireSoftphoneAccess(request);
+    const ctx = await requireSoftphoneAccess(request);
     const body = callEventSchema.parse(request.body ?? {});
     await auditFromContext(ctx, {
       action: 'ringcentral.call_event',

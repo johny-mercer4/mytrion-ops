@@ -7,7 +7,7 @@
  * read-state kept local in localStorage; live toast + push are shell-owned
  * (`useSidebarBadges`); this tab refetches via `inboxLiveBus` and keeps a socket only for Live/OFFLINE.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -16,7 +16,7 @@ import { Icon, type IconName } from '../icons';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
 import { useLoad, loadInbox, deleteInboxMessage, invalidateInboxCache, type InboxVM } from '../live';
-import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
+import { subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
 
@@ -47,12 +47,6 @@ export function InboxTab() {
   const read = useInboxRead();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [wsReady, setWsReady] = useState(false);
-  const [refreshSpin, setRefreshSpin] = useState(false);
-  const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => () => {
-    if (spinTimer.current) clearTimeout(spinTimer.current);
-  }, []);
 
   // The effective CRM user this inbox belongs to (the acted-as agent for an admin, else the
   // signed-in worker) — the same id the fetch is scoped to and that WS events must match.
@@ -105,17 +99,6 @@ export function InboxTab() {
     markInboxReadMany(items.map((i) => i.id));
     pushToast('All caught up', 'Marked everything as read');
   };
-  const refreshInbox = (): void => {
-    if (refreshSpin) return;
-    setRefreshSpin(true);
-    // Bypass the shared 30s cache; the badge's bus-triggered reload joins this one POST.
-    invalidateInboxCache();
-    reload();
-    publishInboxReload();
-    if (spinTimer.current) clearTimeout(spinTimer.current);
-    spinTimer.current = setTimeout(() => setRefreshSpin(false), 900);
-  };
-  const refreshSpinCss = refreshSpin ? 'animation:ss-spin .9s linear infinite' : '';
   const markReadOnly = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     markInboxRead(i.id);
@@ -161,17 +144,6 @@ export function InboxTab() {
           <span style={s(`display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
             <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
-          <button
-            type="button"
-            onClick={refreshInbox}
-            disabled={refreshSpin}
-            aria-label="Refresh inbox"
-            title="Fetch latest messages"
-            className="ss-ico-btn"
-            style={s('width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
-          >
-            <Icon name="refresh" size={15} style={s(refreshSpinCss)} />
-          </button>
           {inboxUnreadHas && (
             <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer')}>Mark all read</button>
           )}

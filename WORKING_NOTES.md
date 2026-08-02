@@ -9748,3 +9748,29 @@ Finished Sales My Tasks setup: cold-load board skeleton (hero + 4 columns), side
 badge for `open` tasks never opened in the detail modal (local opened set + shared SWR
 cache with the tab), Switch Mytrion icon corrected to ArrowLeftRight swap (TopBar +
 MytrionSwitchLink), and light-mode board/card/hero polish under `.ss-tasks-*`.
+
+## 2026-08-02 — Call Hub Phase 1 (Mytrion + Zoho)
+
+Shipped agent Call Hub as a standard Sales tab (not full-bleed). Backend:
+`mytrionCallRepo.listForCaller`, merged list module (`modules/sales/callHub.ts`),
+`GET /v1/sales/call-hub/calls` (session Zoho identity, View-as aware via JWT), audit
+`call_hub.list`. Zoho COQL filters Calls by Owner; unified DTO with source badges.
+Gong scaffold only: `FF_GONG_ENABLED` + `GONG_*` env + fail-closed `integrations/gong.ts`
+(empty list until REST client lands). Softphone stays global Embeddable — hub does not remount it.
+
+Frontend: enabled `callHub` nav, `CallHubTab` + `CallDetailModal` (Horizon hero/filters/
+skeleton/list → detail, redial via `clickToDial`), API client, light `.ss-call-*` tokens.
+Route + merge unit tests pin identity scoping (no query spoof) and DTO merge order.
+
+## 2026-08-02 — Call Hub agent identity + pagination
+
+Root cause of "other agents' calls" in Call Hub under Admin View-as: the route used
+JWT `request.ctx` only and never applied `buildCallerContext` / `x-act-as-*`, so the
+list was scoped to the admin's own `caller_zoho_user_id` (every dial they placed while
+working other desks). Softphone logging also preferred `impersonatorUserId`, compounding
+mis-attribution.
+
+Fixes: Call Hub + RingCentral call-events now run through `buildCallerContext` and
+attribute / filter by the effective agent (View-as target). Added `countForCaller`,
+page/`page_size` merge pagination (25/page), SWR cache key includes agent+page, UI shows
+agent name + pager. Tests cover View-as scoping and pagination.

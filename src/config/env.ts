@@ -350,6 +350,12 @@ const EnvSchema = z.object({
   // auto-login). Set to 1 only as a deliberate decision; every fetch is then audited.
   RINGCENTRAL_BROWSER_CREDS_ACK: flag('0'),
 
+  // --- Gong (Call Hub Phase 2 — recordings/transcripts). Off until credentials + client land. ---
+  FF_GONG_ENABLED: flag('0'),
+  GONG_ACCESS_KEY: z.string().default(''),
+  GONG_ACCESS_KEY_SECRET: z.string().default(''),
+  GONG_BASE_URL: z.string().default('https://api.gong.io'),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),

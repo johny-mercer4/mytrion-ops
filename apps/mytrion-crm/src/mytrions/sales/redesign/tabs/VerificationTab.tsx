@@ -367,10 +367,6 @@ export function VerificationTab() {
             Newest applications first. Review live compliance stages and answer Verification requests.
           </div>
         </div>
-        <button type="button" onClick={() => load.reload()} disabled={load.revalidating} title="Refresh verification applications" className="ss-ico-btn" style={s(`height:42px;padding:0 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:var(--ss-text-xs);font-weight:700;cursor:${load.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${load.revalidating ? '.7' : '1'}`)}>
-          <span style={s(`display:inline-flex${load.revalidating ? ';animation:ss-spin .8s linear infinite' : ''}`)}><Icon name="refresh" size={15} /></span>
-          {load.revalidating ? 'Refreshing…' : 'Refresh'}
-        </button>
       </div>
 
       <div className="ss-verification-toolbar">
