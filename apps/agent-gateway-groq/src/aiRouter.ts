@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { incrementCounter } from './metrics.js';
 import { getOpenAIClient } from './openaiClient.js';
+import { approximateTokens, executeOpenAIRequest } from './openaiResilience.js';
+import { GatewayOverloadError, isGatewayOverloadError } from './overload.js';
 import {
   SERVICE_CATALOG,
   isServiceEnabled,
@@ -12,11 +14,7 @@ import {
   type ServiceAvailability,
   type ServiceId,
 } from './serviceRegistry.js';
-import {
-  filterToolsForRole,
-  isToolAllowedForRole,
-  type GatewayRole,
-} from './skillRegistry.js';
+import { filterToolsForRole, isToolAllowedForRole, type GatewayRole } from './skillRegistry.js';
 import type { ToolManifest } from './toolRuntime.js';
 
 const RouteDecisionSchema = z.object({
@@ -43,7 +41,16 @@ type RawRouteDecision = z.infer<typeof RouteDecisionSchema>;
 
 export interface AiRouteDecision extends RawRouteDecision {
   trustedConfirmation: boolean;
-  source: 'openai' | 'safe-fallback';
+  source: 'openai' | 'safe-fallback' | 'overload-fallback';
+  routerUsage?: RouterUsage;
+}
+
+export interface RouterUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheWriteInputTokens: number;
+  openaiCalls: number;
 }
 
 export interface RouterMessage {
@@ -60,6 +67,7 @@ export interface ClassifySupportTurnInput {
   context: readonly RouterMessage[];
   manifests: readonly ToolManifest[];
   availability?: ServiceAvailability;
+  deadlineAt?: number;
 }
 
 export interface AiToolPlan {
@@ -84,7 +92,7 @@ Return only the supplied structured schema.
 - serviceIds describe the user's requested business capability; do not select infrastructure-only core or memory services as user intent.
 - Select live-data tools for factual account/card/report requests and the knowledge tool for Octane policy/how-to questions.
 - requiredToolNames are tools that must run before an answer can be reliable. Keep the set minimal.
-- Before a trusted confirmation, do not select a tool marked trusted_button; select the relevant read prerequisite and telegram_buttons so the user can confirm. For a trusted affirmative button tap, select the mutation as required.
+- Before a server-bound confirmation, do not select a tool marked trusted_button; select the relevant read prerequisite and telegram_buttons with the exact target tool and arguments. Typed yes is never trusted. Confirmed actions bypass this router and execute only their stored arguments.
 - Disabled and role-forbidden entries may be identified so the server can explain denial, but never claim they are authorized.
 - Set handoff=sales for product, pricing, onboarding, account-growth, or commercial questions that need the assigned sales agent.
 - Set handoff=customer_service for unresolved operational support, exceptions, complaints, or requests that need a human support ticket. Use none when you can answer directly.
@@ -136,17 +144,29 @@ export function sanitizeRouteDecision(
   return {
     ...raw,
     engage: input.role !== 'guest',
-    serviceIds: unique(raw.serviceIds).filter((id) =>
-      knownServices.has(id as ServiceId),
-    ),
+    serviceIds: unique(raw.serviceIds).filter((id) => knownServices.has(id as ServiceId)),
     toolNames,
     requiredToolNames,
     trustedConfirmation: input.trustedConfirmation,
     source: 'openai',
+    routerUsage: emptyRouterUsage(),
   };
 }
 
-function safeFallback(input: ClassifySupportTurnInput): AiRouteDecision {
+function emptyRouterUsage(): RouterUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    openaiCalls: 0,
+  };
+}
+
+function safeFallback(
+  input: ClassifySupportTurnInput,
+  source: 'safe-fallback' | 'overload-fallback' = 'safe-fallback',
+): AiRouteDecision {
   const engage = input.role !== 'guest';
   const safeTools = input.manifests
     .filter(
@@ -167,80 +187,137 @@ function safeFallback(input: ClassifySupportTurnInput): AiRouteDecision {
     handoff: engage ? 'customer_service' : 'none',
     confidence: 0,
     trustedConfirmation: input.trustedConfirmation,
-    source: 'safe-fallback',
+    source,
+    routerUsage: emptyRouterUsage(),
   };
 }
 
 let activeRouters = 0;
-const routerWaiters: Array<() => void> = [];
+interface RouterWaiter {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const routerWaiters: RouterWaiter[] = [];
 
-async function acquireRouterSlot(): Promise<void> {
+async function acquireRouterSlot(deadlineAt?: number): Promise<void> {
   if (activeRouters < config.openaiRouterMaxConcurrent) {
     activeRouters += 1;
     return;
   }
-  await new Promise<void>((resolve) => routerWaiters.push(resolve));
-  activeRouters += 1;
+  if (routerWaiters.length >= config.openaiRouterQueueMax) {
+    incrementCounter('openai_overload_rejected_total');
+    throw new GatewayOverloadError('capacity', 'OpenAI router queue capacity exceeded');
+  }
+  const waitMs = deadlineAt === undefined ? undefined : deadlineAt - Date.now();
+  if (waitMs !== undefined && waitMs <= 0) {
+    incrementCounter('stale_request_total');
+    throw new GatewayOverloadError('stale', 'OpenAI router request became stale');
+  }
+  await new Promise<void>((resolve, reject) => {
+    const waiter: RouterWaiter = { resolve, reject, timer: null };
+    if (waitMs !== undefined) {
+      waiter.timer = setTimeout(() => {
+        const index = routerWaiters.indexOf(waiter);
+        if (index >= 0) routerWaiters.splice(index, 1);
+        incrementCounter('stale_request_total');
+        reject(new GatewayOverloadError('stale', 'OpenAI router queue wait exceeded'));
+      }, waitMs);
+    }
+    routerWaiters.push(waiter);
+  });
 }
 
 function releaseRouterSlot(): void {
+  const waiter = routerWaiters.shift();
+  if (waiter) {
+    // Transfer the existing slot directly; a new caller cannot slip in before
+    // the waiter's promise resumes and temporarily exceed the concurrency cap.
+    if (waiter.timer) clearTimeout(waiter.timer);
+    waiter.resolve();
+    return;
+  }
   activeRouters = Math.max(0, activeRouters - 1);
-  routerWaiters.shift()?.();
 }
 
 export async function classifySupportTurn(
   input: ClassifySupportTurnInput,
 ): Promise<AiRouteDecision> {
-  await acquireRouterSlot();
-  incrementCounter('ai_router_calls_total');
+  let acquired = false;
   try {
+    await acquireRouterSlot(input.deadlineAt);
+    acquired = true;
+    incrementCounter('ai_router_calls_total');
     const availability = input.availability ?? runtimeServiceAvailability;
-    const response = await getOpenAIClient().responses.parse({
-      model: config.openaiRouterModel,
-      input: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            transport: {
-              direct: input.direct,
-              conversationActive: input.conversationActive,
-              trustedConfirmation: input.trustedConfirmation,
-            },
-            verifiedRole: input.role,
-            currentText: input.currentText.slice(0, 5_000),
-            recentContext: input.context.slice(-12),
-            catalog: routerCatalog(input.manifests, input.role, availability),
-          }),
-        },
-      ],
-      text: {
-        format: zodTextFormat(RouteDecisionSchema, 'octane_support_route'),
+    const requestInput = [
+      { role: 'system' as const, content: SYSTEM_PROMPT },
+      {
+        role: 'user' as const,
+        content: JSON.stringify({
+          transport: {
+            direct: input.direct,
+            conversationActive: input.conversationActive,
+            trustedConfirmation: input.trustedConfirmation,
+          },
+          verifiedRole: input.role,
+          currentText: input.currentText.slice(0, 5_000),
+          recentContext: input.context.slice(-12),
+          catalog: routerCatalog(input.manifests, input.role, availability),
+        }),
       },
-      reasoning: { effort: 'none' },
-      max_output_tokens: config.openaiRouterMaxOutputTokens,
-      store: false,
+    ];
+    const estimatedTokens =
+      approximateTokens(requestInput.map((item) => item.content).join('\n')) +
+      config.openaiRouterMaxOutputTokens;
+    const response = await executeOpenAIRequest({
+      estimatedTokens,
+      deadlineAt: input.deadlineAt,
+      operation: () =>
+        getOpenAIClient().responses.parse({
+          model: config.openaiRouterModel,
+          input: requestInput,
+          text: {
+            format: zodTextFormat(RouteDecisionSchema, 'octane_support_route'),
+          },
+          reasoning: { effort: 'none' },
+          max_output_tokens: config.openaiRouterMaxOutputTokens,
+          store: false,
+        }),
+      usageTokens: (result) =>
+        (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0),
     });
     if (!response.output_parsed) {
       throw new Error('OpenAI router returned no parsed decision');
     }
     const decision = sanitizeRouteDecision(response.output_parsed, input);
-    incrementCounter(
-      decision.engage ? 'ai_router_engaged_total' : 'ai_router_silent_total',
-    );
+    decision.routerUsage = response.usage
+      ? {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+          cacheReadInputTokens: response.usage.input_tokens_details.cached_tokens,
+          cacheWriteInputTokens: response.usage.input_tokens_details.cache_write_tokens,
+          openaiCalls: 1,
+        }
+      : { ...emptyRouterUsage(), openaiCalls: 1 };
+    incrementCounter('ai_router_input_tokens_total', decision.routerUsage.inputTokens);
+    incrementCounter('ai_router_output_tokens_total', decision.routerUsage.outputTokens);
+    incrementCounter('ai_router_cached_tokens_total', decision.routerUsage.cacheReadInputTokens);
+    incrementCounter(decision.engage ? 'ai_router_engaged_total' : 'ai_router_silent_total');
     return decision;
   } catch (error) {
+    if (isGatewayOverloadError(error)) {
+      if (error.kind === 'provider_429') {
+        incrementCounter('ai_router_429_total');
+      }
+      return safeFallback(input, 'overload-fallback');
+    }
     const status = error instanceof OpenAI.APIError ? error.status : undefined;
-    incrementCounter(
-      status === 429 ? 'ai_router_429_total' : 'ai_router_error_total',
-    );
+    incrementCounter(status === 429 ? 'ai_router_429_total' : 'ai_router_error_total');
     const fallback = safeFallback(input);
-    incrementCounter(
-      fallback.engage ? 'ai_router_engaged_total' : 'ai_router_silent_total',
-    );
+    incrementCounter(fallback.engage ? 'ai_router_engaged_total' : 'ai_router_silent_total');
     return fallback;
   } finally {
-    releaseRouterSlot();
+    if (acquired) releaseRouterSlot();
   }
 }
 
@@ -250,9 +327,8 @@ export function selectAiToolPlan(
   role: GatewayRole,
   availability: ServiceAvailability = runtimeServiceAvailability,
 ): AiToolPlan {
-  const requestedServices = decision.serviceIds.filter(
-    (serviceId): serviceId is ServiceId =>
-      serviceIds.includes(serviceId as ServiceId),
+  const requestedServices = decision.serviceIds.filter((serviceId): serviceId is ServiceId =>
+    serviceIds.includes(serviceId as ServiceId),
   );
   const unavailableService = requestedServices.find(
     (serviceId) => !isServiceEnabled(serviceId, availability),
@@ -278,9 +354,7 @@ export function selectAiToolPlan(
       return service === null || isServiceEnabled(service, availability);
     })
     .filter(
-      (manifest) =>
-        manifest.confirmationMode !== 'trusted_button' ||
-        decision.trustedConfirmation,
+      (manifest) => manifest.confirmationMode !== 'trusted_button' || decision.trustedConfirmation,
     );
 
   let tools = filterToolsForRole(requested, role);
@@ -292,9 +366,7 @@ export function selectAiToolPlan(
     const safeFallbackNames = new Set(['octane_kb_search', 'octane_whoami']);
     tools = filterToolsForRole(
       manifests.filter(
-        (manifest) =>
-          safeFallbackNames.has(manifest.name) &&
-          manifest.riskClass === 'read',
+        (manifest) => safeFallbackNames.has(manifest.name) && manifest.riskClass === 'read',
       ),
       role,
     );
@@ -303,10 +375,7 @@ export function selectAiToolPlan(
   const requiredSequence = unique([
     ...(decision.handoff === 'none' ? [] : ['octane_whoami']),
     ...decision.requiredToolNames,
-  ]).filter(
-    (name) =>
-      allowed.has(name) && byName.get(name)?.requirementMode !== 'best_effort',
-  );
+  ]).filter((name) => allowed.has(name) && byName.get(name)?.requirementMode !== 'best_effort');
   return {
     tools,
     requiredSequence,

@@ -11,15 +11,21 @@
  * in memory. Internal tool: bind stays 0.0.0.0 for docker port-mapping; do NOT expose the
  * port publicly (set MONITOR_TOKEN to require ?token= on every request if you must).
  */
-import { createServer, type ServerResponse } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createBufferedJsonlWriter } from './bufferedJsonl.js';
 import { metricsSnapshot, percentile } from './metrics.js';
+import { requestAdmissionSnapshot } from './requestAdmission.js';
+import { openAIResilienceSnapshot } from './openaiResilience.js';
+import { runtimeHealthSnapshot } from './runtimeHealth.js';
+import { config } from './config.js';
+import { maskSensitiveDigitRuns } from './messagePrivacy.js';
 
 export interface TurnLog {
   ts: string;
-  chatId: number;
-  userId: number;
+  chatId: string;
+  userId: string;
   name: string;
   kind: 'message' | 'button';
   question: string;
@@ -36,6 +42,11 @@ export interface TurnLog {
   isError: boolean;
 }
 
+export interface TurnLogInput extends Omit<TurnLog, 'chatId' | 'userId'> {
+  chatId: number;
+  userId: number;
+}
+
 const FILE = 'data/turns.jsonl';
 const MAX_MEM = 1000;
 let recent: TurnLog[] = [];
@@ -46,6 +57,7 @@ const turnWriter = createBufferedJsonlWriter();
  *  only appended to the file (not via our recordTurn) is still reflected live. mtime-guarded so a
  *  steady dashboard poll is a cheap stat(), not a full parse. */
 function syncFromFile(): void {
+  if (!config.turnLogLocalEnabled) return;
   try {
     // Avoid replacing newer in-memory turns with an older on-disk snapshot
     // while the asynchronous writer still has data waiting to flush.
@@ -57,17 +69,35 @@ function syncFromFile(): void {
     const next: TurnLog[] = [];
     for (const ln of readFileSync(FILE, 'utf8').trim().split('\n').slice(-MAX_MEM)) {
       if (!ln) continue;
-      try { next.push(JSON.parse(ln) as TurnLog); } catch { /* skip corrupt line */ }
+      try {
+        next.push(JSON.parse(ln) as TurnLog);
+      } catch {
+        /* skip corrupt line */
+      }
     }
     recent = next;
-  } catch { /* first boot / transient read race — keep what we have */ }
+  } catch {
+    /* first boot / transient read race — keep what we have */
+  }
 }
 syncFromFile();
 
-export function recordTurn(e: TurnLog): void {
-  recent.push(e);
+function pseudonym(kind: 'chat' | 'user', id: number): string {
+  return `${kind}:${createHash('sha256').update(`${kind}:${id}`).digest('hex').slice(0, 12)}`;
+}
+
+export function recordTurn(e: TurnLogInput): void {
+  const safe: TurnLog = {
+    ...e,
+    chatId: pseudonym('chat', e.chatId),
+    userId: pseudonym('user', e.userId),
+    name: pseudonym('user', e.userId),
+    question: maskSensitiveDigitRuns(e.question),
+    reply: maskSensitiveDigitRuns(e.reply),
+  };
+  recent.push(safe);
   if (recent.length > MAX_MEM) recent.shift();
-  turnWriter.append(FILE, e);
+  if (config.turnLogLocalEnabled) turnWriter.append(FILE, safe);
 }
 
 function aggregates() {
@@ -76,7 +106,7 @@ function aggregates() {
   const sum = (rows: TurnLog[], f: (r: TurnLog) => number) => rows.reduce((s, r) => s + f(r), 0);
   const execs = day.map((r) => r.execMs);
   const waits = day.map((r) => r.waitMs);
-  const totals = day.flatMap((row) => row.totalMs === undefined ? [] : [row.totalMs]);
+  const totals = day.flatMap((row) => (row.totalMs === undefined ? [] : [row.totalMs]));
   const cacheRead = sum(day, (r) => r.cacheRead);
   const inputTokens = sum(day, (r) => r.inTok);
   return {
@@ -96,8 +126,11 @@ function aggregates() {
   };
 }
 
-function json(res: ServerResponse, body: unknown): void {
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+function json(res: ServerResponse, body: unknown, status = 200): void {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
   res.end(JSON.stringify(body));
 }
 
@@ -149,13 +182,14 @@ async function load(){
 load();setInterval(load,5000);
 </script></body></html>`;
 
-export function startMonitor(): void {
+export function startMonitor(): Server {
   const port = Number(process.env['PORT'] ?? process.env['MONITOR_PORT'] ?? '8787');
-  const token = process.env['MONITOR_TOKEN'] ?? '';
-  createServer((req, res) => {
+  const token = config.monitorToken;
+  const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (url.pathname === '/health') {
-      json(res, { ok: true });
+      const health = runtimeHealthSnapshot();
+      json(res, health, health.ok ? 200 : 503);
       return;
     }
     if (token && url.searchParams.get('token') !== token) {
@@ -170,7 +204,12 @@ export function startMonitor(): void {
     }
     if (url.pathname === '/api/metrics') {
       syncFromFile();
-      json(res, { ...metricsSnapshot(), window24h: aggregates() });
+      json(res, {
+        ...metricsSnapshot(),
+        admission: requestAdmissionSnapshot(),
+        openaiResilience: openAIResilienceSnapshot(),
+        window24h: aggregates(),
+      });
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -178,9 +217,16 @@ export function startMonitor(): void {
   })
     .on('error', (err: NodeJS.ErrnoException) => {
       // A second process on the same port must not crash the bot — log and carry on.
-      console.error(`[monitor] not started on :${port} — ${err.code === 'EADDRINUSE' ? 'port busy' : err.message}`);
+      console.error(
+        `[monitor] not started on :${port} — ${err.code === 'EADDRINUSE' ? 'port busy' : err.message}`,
+      );
     })
-    .listen(port, '0.0.0.0', () => console.log(`[monitor] http://localhost:${port}`));
+    .listen(port, config.monitorHost, () => console.log(`[monitor] http://localhost:${port}`));
+  return server;
 }
 
 process.once('beforeExit', () => void turnWriter.flush());
+
+export async function flushTurnLog(): Promise<void> {
+  await turnWriter.flush();
+}

@@ -1,115 +1,220 @@
 /**
- * Shared week day-list + totals used by My Data and the Team detail panel.
+ * Shared attendance week used by My Data and the Team detail panel.
+ * The emphasis is the real office visit: check-in, check-out, and elapsed time.
  */
-import { ArrowRight, LogIn, LogOut, Timer } from 'lucide-react';
-import type { AttendanceSummaryDto } from '../../api/hr';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock3, DoorOpen, LogIn, LogOut } from 'lucide-react';
+import type { AttendanceDayRow, AttendanceSummaryDto } from '../../api/hr';
+
+const MAX_LIVE_SESSION_MS = 16 * 60 * 60 * 1000;
 
 function weekdayLabel(iso: string, today: string): string {
   const [y, m, d] = iso.split('-').map(Number);
-  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
-  if (iso === today) return `Today ${String(d).padStart(2, '0')}`;
-  return `${names[dow]} ${String(d).padStart(2, '0')}`;
+  return iso === today
+    ? `Today · ${String(d).padStart(2, '0')}`
+    : `${names[dow]} · ${String(d).padStart(2, '0')}`;
 }
 
-function shiftTimelineTicks(startLocal: string, endLocal: string): string[] {
-  const toMin = (s: string): number => {
-    const [h, m] = s.split(':').map(Number);
-    return (h ?? 0) * 60 + (m ?? 0);
-  };
-  const start = toMin(startLocal);
-  let end = toMin(endLocal);
-  if (end <= start) end += 24 * 60;
-  const ticks: string[] = [];
-  for (let t = start; t <= end; t += 60) {
-    const mins = t % (24 * 60);
-    const h = Math.floor(mins / 60);
-    const am = h < 12;
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    ticks.push(`${String(h12).padStart(2, '0')}${am ? 'AM' : 'PM'}`);
+function durationLabel(ms: number, includeSeconds = false): string {
+  const safe = Math.max(0, Number.isFinite(ms) ? ms : 0);
+  const totalSeconds = Math.floor(safe / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (includeSeconds) {
+    return hours > 0
+      ? `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+      : `${minutes}m ${String(seconds).padStart(2, '0')}s`;
   }
-  return ticks;
+  return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 }
 
-export function HrAttendanceWeek({
-  data,
-  today,
-}: {
-  data: AttendanceSummaryDto;
-  today: string;
-}) {
-  const ticks = data.shift
-    ? shiftTimelineTicks(data.shift.startLocal, data.shift.endLocal)
-    : ['07PM', '09PM', '11PM', '01AM', '03AM'];
+function sessionDurationMs(session: AttendanceDayRow['sessions'][number], nowMs: number): number {
+  if (session.status === 'complete') return session.durationMs;
+  if (session.status === 'needs_review') return 0;
+  const elapsed = nowMs - Date.parse(session.checkInAt);
+  return elapsed >= 0 && elapsed <= MAX_LIVE_SESSION_MS ? elapsed : 0;
+}
+
+function dayDurationMs(day: AttendanceDayRow, nowMs: number): number {
+  return day.sessions.reduce((total, session) => total + sessionDurationMs(session, nowMs), 0);
+}
+
+function statusLabel(day: AttendanceDayRow): string {
+  if (day.currentState === 'in_office') return 'Inside now';
+  if (day.currentState === 'needs_review') return 'Needs review';
+  return day.status;
+}
+
+export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; today: string }) {
+  const [nowMs, setNowMs] = useState(() => Date.parse(data.calculatedAt) || Date.now());
+  const hasOpenSession = data.days.some((day) =>
+    day.sessions.some((session) => session.status === 'open'),
+  );
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    if (!hasOpenSession) return undefined;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [data.calculatedAt, hasOpenSession]);
+
+  const activeVisit = useMemo(() => {
+    for (const day of data.days) {
+      const session = day.sessions.find((item) => item.status === 'open');
+      if (session) return { day, session };
+    }
+    return null;
+  }, [data.days]);
+
+  const todayRow = data.days.find((day) => day.date === today);
+  const weeklyMs = data.days.reduce((total, day) => total + dayDurationMs(day, nowMs), 0);
+  const activeMs = activeVisit ? sessionDurationMs(activeVisit.session, nowMs) : 0;
+  const presenceTitle = activeVisit
+    ? 'Currently in the office'
+    : data.currentState === 'needs_review'
+      ? 'Checkout needs review'
+      : data.currentState === 'out_of_office'
+        ? 'Currently out of office'
+        : 'No office activity yet';
 
   return (
     <>
-      {data.lastPunch ? (
-        <p className="hr-att-last">
-          Last Ganga punch · {data.lastPunch.kind === 'check_in' ? 'checked in' : 'checked out'} ·{' '}
-          {data.lastPunch.localDateTime} UZT
-          {data.lastPunch.doorName ? ` · ${data.lastPunch.doorName}` : ''}
-        </p>
-      ) : null}
+      <section
+        className="hr-att-presence"
+        data-state={data.currentState}
+        aria-label="Current office presence"
+      >
+        <div className="hr-att-presence-icon" aria-hidden="true">
+          {activeVisit ? (
+            <DoorOpen size={24} />
+          ) : data.currentState === 'needs_review' ? (
+            <AlertTriangle size={24} />
+          ) : (
+            <CheckCircle2 size={24} />
+          )}
+        </div>
+        <div className="hr-att-presence-copy">
+          <span className="hr-att-eyebrow">Live presence · Tashkent time</span>
+          <h2>{presenceTitle}</h2>
+          <p>
+            {activeVisit
+              ? `Checked in at ${activeVisit.session.checkIn} · ${activeVisit.session.checkInDoor ?? 'Ganga entry'}`
+              : data.lastPunch
+                ? `Last scan ${data.lastPunch.localDateTime} · ${data.lastPunch.doorName ?? 'Ganga reader'}`
+                : 'A Ganga entry scan will start the tracker automatically.'}
+          </p>
+        </div>
+        <div className="hr-att-live-clock">
+          <span>{activeVisit ? 'This visit' : 'Today in office'}</span>
+          <strong>
+            {durationLabel(
+              activeVisit ? activeMs : todayRow ? dayDurationMs(todayRow, nowMs) : 0,
+              true,
+            )}
+          </strong>
+          <small>{activeVisit ? 'Counting live' : 'Completed visits'}</small>
+        </div>
+        <div className="hr-att-week-clock">
+          <span>This week</span>
+          <strong>{durationLabel(weeklyMs)}</strong>
+        </div>
+      </section>
 
       <ul className="hr-att-days">
         {data.days.map((day) => {
           const isToday = day.date === today;
+          const workedMs = dayDurationMs(day, nowMs);
           return (
-            <li
-              key={day.date}
-              className={`hr-att-day${isToday ? ' is-today' : ''} is-${day.status.toLowerCase()}`}
-            >
-              <span className="hr-att-daylabel">{weekdayLabel(day.date, today)}</span>
-              <div className="hr-att-track">
-                <div className="hr-att-bar" data-status={day.status}>
-                  <span className="hr-att-badge">{day.status}</span>
-                  {day.currentState !== 'no_activity' ? (
-                    <span className="hr-att-state" data-state={day.currentState}>
-                      {day.currentState === 'in_office' ? 'In office' : 'Out of office'}
-                    </span>
+            <li key={day.date} className={`hr-att-day${isToday ? ' is-today' : ''}`}>
+              <header className="hr-att-day-head">
+                <div>
+                  <span className="hr-att-daylabel">{weekdayLabel(day.date, today)}</span>
+                  <span className="hr-att-date">{day.date}</span>
+                </div>
+                <span className="hr-att-day-status" data-state={day.currentState}>
+                  {statusLabel(day)}
+                </span>
+                <div className="hr-att-day-total">
+                  <Clock3 size={15} aria-hidden="true" />
+                  <span>In office</span>
+                  <strong>{durationLabel(workedMs)}</strong>
+                </div>
+              </header>
+
+              {day.sessions.length > 0 ? (
+                <div className="hr-att-visits">
+                  {day.sessions.map((session, index) => {
+                    const visitMs = sessionDurationMs(session, nowMs);
+                    return (
+                      <article
+                        className="hr-att-visit"
+                        data-status={session.status}
+                        key={`${day.date}-${session.checkInAt}-${index}`}
+                      >
+                        <div className="hr-att-event">
+                          <span className="hr-att-event-icon">
+                            <LogIn size={15} aria-hidden="true" />
+                          </span>
+                          <div>
+                            <small>Check in</small>
+                            <strong>{session.checkIn}</strong>
+                            <span>{session.checkInDoor ?? 'Ganga entry'}</span>
+                          </div>
+                        </div>
+                        <span className="hr-att-visit-line" aria-hidden="true" />
+                        <div className="hr-att-event">
+                          <span className="hr-att-event-icon">
+                            <LogOut size={15} aria-hidden="true" />
+                          </span>
+                          <div>
+                            <small>Check out</small>
+                            <strong>
+                              {session.checkOut ??
+                                (session.status === 'needs_review'
+                                  ? 'Missing checkout'
+                                  : 'Still inside')}
+                            </strong>
+                            <span>
+                              {session.checkOutDoor ??
+                                (session.status === 'open'
+                                  ? 'Waiting for Ganga exit'
+                                  : 'Needs manual review')}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="hr-att-visit-duration">
+                          <small>
+                            {session.status === 'open' ? 'Live duration' : 'Visit duration'}
+                          </small>
+                          <strong>
+                            {session.status === 'needs_review'
+                              ? '—'
+                              : durationLabel(visitMs, session.status === 'open')}
+                          </strong>
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {day.unmatchedPunches > 0 ? (
+                    <p className="hr-att-unmatched">
+                      <AlertTriangle size={13} aria-hidden="true" />
+                      {day.unmatchedPunches} standalone scan{day.unmatchedPunches === 1 ? '' : 's'}{' '}
+                      kept in the audit log but not counted as a complete visit.
+                    </p>
                   ) : null}
                 </div>
-                <div className="hr-att-ticks" aria-hidden="true">
-                  {ticks.map((t) => (
-                    <span key={`${day.date}-${t}`}>{t}</span>
-                  ))}
-                </div>
-                {day.sessions.length ? (
-                  <div className="hr-att-session-list">
-                    {day.sessions.map((session, index) => (
-                      <div
-                        className={`hr-att-session${session.checkOut ? '' : ' is-open'}`}
-                        key={`${day.date}-${session.checkIn}-${index}`}
-                      >
-                        <span title={session.checkInDoor ?? 'Ganga entry'}>
-                          <LogIn size={13} aria-hidden="true" />
-                          {session.checkIn}
-                        </span>
-                        <ArrowRight size={12} aria-hidden="true" />
-                        <span title={session.checkOutDoor ?? 'Awaiting a Ganga exit punch'}>
-                          <LogOut size={13} aria-hidden="true" />
-                          {session.checkOut ?? 'Still inside'}
-                        </span>
-                        <em>
-                          <Timer size={12} aria-hidden="true" />
-                          {session.checkOut ? session.duration : 'Open'}
-                        </em>
-                      </div>
-                    ))}
-                    {day.unmatchedPunches > 0 ? (
-                      <span className="hr-att-unmatched">
-                        {day.unmatchedPunches} repeated or unmatched scan
-                        {day.unmatchedPunches === 1 ? '' : 's'} ignored in worked time
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <span className="hr-att-hours">
-                <strong>{day.hoursWorked}</strong>
-                In office
-              </span>
+              ) : (
+                <p className="hr-att-no-visits">
+                  {day.status === 'Weekend'
+                    ? 'Weekend · no visit expected'
+                    : day.status === 'Unscheduled'
+                      ? 'No shift scheduled'
+                      : 'No Ganga entry recorded'}
+                </p>
+              )}
             </li>
           );
         })}
@@ -117,28 +222,20 @@ export function HrAttendanceWeek({
 
       <footer className="hr-att-totals">
         <div>
-          <strong>{data.totals.payableDays}</strong>
-          <span>Payable Days</span>
-        </div>
-        <div>
           <strong>{data.totals.present}</strong>
-          <span>Present</span>
+          <span>Days present</span>
         </div>
         <div>
-          <strong>{data.totals.onDuty}</strong>
-          <span>On Duty</span>
-        </div>
-        <div>
-          <strong>{data.totals.paidLeave}</strong>
-          <span>Paid leave</span>
-        </div>
-        <div>
-          <strong>{data.totals.holidays}</strong>
-          <span>Holidays</span>
+          <strong>{data.totals.absent}</strong>
+          <span>Days absent</span>
         </div>
         <div>
           <strong>{data.totals.weekend}</strong>
-          <span>Weekend</span>
+          <span>Weekend days</span>
+        </div>
+        <div>
+          <strong>{durationLabel(weeklyMs)}</strong>
+          <span>Time in office</span>
         </div>
         {data.totals.unscheduled > 0 ? (
           <div>
@@ -148,7 +245,7 @@ export function HrAttendanceWeek({
         ) : null}
         {data.shift ? (
           <div className="hr-att-totals-shift">
-            {data.shift.name} [ {data.shift.startLocal} – {data.shift.endLocal} ]
+            {data.shift.name} · {data.shift.startLocal}–{data.shift.endLocal} UZT
           </div>
         ) : null}
       </footer>

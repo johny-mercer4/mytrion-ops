@@ -1,6 +1,7 @@
 /** Raw Telegram Bot API over fetch — no SDK dependency for an MVP this small. */
 import { config } from './config.js';
 import { incrementCounter } from './metrics.js';
+import { noteTelegramPollFailure, noteTelegramPollSuccess } from './runtimeHealth.js';
 
 const API = `https://api.telegram.org/bot${config.botToken}`;
 const SEND_MIN_GAP_MS = Number(process.env['TELEGRAM_MIN_GAP_MS'] ?? '40');
@@ -8,10 +9,11 @@ const CHAT_MESSAGE_MIN_GAP_MS = Number(
   process.env['TELEGRAM_CHAT_MESSAGE_MIN_GAP_MS'] ?? '3100',
 );
 const SEND_TIMEOUT_MS = Number(process.env['TELEGRAM_SEND_TIMEOUT_MS'] ?? '10000');
+const SEND_QUEUE_MAX = Number(process.env['TELEGRAM_SEND_QUEUE_MAX'] ?? '1000');
 
 let sendChain: Promise<unknown> = Promise.resolve();
 let lastSendAt = 0;
-let blockedUntil = 0;
+let pendingSends = 0;
 const chatMessageChains = new Map<number, Promise<unknown>>();
 const lastChatMessageAt = new Map<number, number>();
 setInterval(() => {
@@ -34,16 +36,17 @@ function tgPost(method: string, payload: Record<string, unknown>): Promise<Respo
 
 async function tgSend(method: string, payload: Record<string, unknown>): Promise<Response> {
   try {
-    let response = await tgPost(method, payload);
+    let response = await queued(() => tgPost(method, payload));
     if (response.status === 429) {
       incrementCounter('tg_429_total');
       const body = (await response.json().catch(() => null)) as {
         parameters?: { retry_after?: number };
       } | null;
       const waitMs = Math.max(1, body?.parameters?.retry_after ?? 1) * 1000;
-      blockedUntil = Date.now() + waitMs;
       await new Promise((resolve) => setTimeout(resolve, waitMs));
-      response = await tgPost(method, payload);
+      // The retry sleeps outside the global lane, so one rate-limited chat cannot freeze every
+      // other carrier's outbound messages.
+      response = await queued(() => tgPost(method, payload));
       if (response.status === 429) incrementCounter('tg_429_total');
     }
     if (!response.ok) incrementCounter('tg_send_fail_total');
@@ -55,8 +58,13 @@ async function tgSend(method: string, payload: Record<string, unknown>): Promise
 }
 
 function queued<T>(operation: () => Promise<T>): Promise<T> {
+  if (pendingSends >= SEND_QUEUE_MAX) {
+    incrementCounter('tg_send_fail_total');
+    return Promise.reject(new Error('Telegram send queue capacity exceeded'));
+  }
+  pendingSends += 1;
   const run = sendChain.then(async () => {
-    const waitMs = Math.max(lastSendAt + SEND_MIN_GAP_MS, blockedUntil) - Date.now();
+    const waitMs = lastSendAt + SEND_MIN_GAP_MS - Date.now();
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
     try {
       return await operation();
@@ -64,8 +72,11 @@ function queued<T>(operation: () => Promise<T>): Promise<T> {
       lastSendAt = Date.now();
     }
   });
-  sendChain = run.catch(() => undefined);
-  return run;
+  const settled = run.finally(() => {
+    pendingSends = Math.max(0, pendingSends - 1);
+  });
+  sendChain = settled.catch(() => undefined);
+  return settled;
 }
 
 /** Per-chat spacing happens outside the global lane, preventing one busy group blocking others. */
@@ -90,10 +101,10 @@ function queuedMessage<T>(chatId: number, operation: () => Promise<T>): Promise<
 
 function bestEffort(operation: () => Promise<void>): Promise<void> {
   const now = Date.now();
-  if (now - lastSendAt < SEND_MIN_GAP_MS || now < blockedUntil) {
+  if (now - lastSendAt < SEND_MIN_GAP_MS || pendingSends >= SEND_QUEUE_MAX) {
     return Promise.resolve();
   }
-  return operation().catch(() => undefined);
+  return queued(operation).catch(() => undefined);
 }
 
 export interface TgMessage {
@@ -113,16 +124,27 @@ export interface TgCallbackQuery {
   data?: string;
 }
 
-export async function getUpdates(offset: number): Promise<Array<{ update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery }>> {
+export interface TgUpdate {
+  update_id: number;
+  message?: TgMessage;
+  callback_query?: TgCallbackQuery;
+}
+
+export async function getUpdates(offset: number, shutdownSignal?: AbortSignal): Promise<TgUpdate[]> {
   try {
     const res = await fetch(`${API}/getUpdates?timeout=50&offset=${offset}&allowed_updates=%5B%22message%22%2C%22callback_query%22%5D`, {
-      signal: AbortSignal.timeout(60_000),
+      signal: shutdownSignal
+        ? AbortSignal.any([AbortSignal.timeout(60_000), shutdownSignal])
+        : AbortSignal.timeout(60_000),
     });
-    if (!res.ok) incrementCounter('tg_poll_fail_total');
-    const body = (await res.json()) as { ok: boolean; result?: Array<{ update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery }> };
-    return body.ok ? (body.result ?? []) : [];
+    if (!res.ok) throw new Error(`Telegram getUpdates HTTP ${res.status}`);
+    const body = (await res.json()) as { ok: boolean; result?: TgUpdate[] };
+    if (!body.ok) throw new Error('Telegram getUpdates returned ok=false');
+    noteTelegramPollSuccess();
+    return body.result ?? [];
   } catch (error) {
     incrementCounter('tg_poll_fail_total');
+    noteTelegramPollFailure(error);
     throw error;
   }
 }
@@ -160,23 +182,19 @@ export function pickPhotoSize(photos: Array<{ file_id: string; width: number }>)
 
 /** Emoji reaction — the cheapest possible ack (the human agents' "done ✅" habit). */
 export async function setReaction(chatId: number, messageId: number, emoji: string): Promise<void> {
-  await queued(async () => {
-    await tgSend('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji }],
-    });
+  await tgSend('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [{ type: 'emoji', emoji }],
   });
 }
 
 /** Remove any reaction the bot put on a message — an empty reaction array clears it. */
 export async function clearReaction(chatId: number, messageId: number): Promise<void> {
-  await queued(async () => {
-    await tgSend('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [],
-    });
+  await tgSend('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [],
   });
 }
 
@@ -187,7 +205,7 @@ export async function sendButtons(
   text: string,
   buttons: Array<{ label: string; data: string }>,
   replyTo?: number,
-): Promise<void> {
+): Promise<number> {
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const b of buttons.slice(0, 8)) {
     const btn = { text: b.label.slice(0, 40), callback_data: b.data.slice(0, 64) };
@@ -195,26 +213,56 @@ export async function sendButtons(
     if (last && last.length < 2) last.push(btn);
     else rows.push([btn]);
   }
-  await queuedMessage(chatId, async () => {
-    await tgSend('sendMessage', {
+  return queuedMessage(chatId, async () => {
+    const response = await tgSend('sendMessage', {
       chat_id: chatId,
       text,
       reply_markup: { inline_keyboard: rows },
       ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
     });
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      result?: { message_id?: number };
+      description?: string;
+    } | null;
+    const messageId = body?.result?.message_id;
+    if (
+      !response.ok ||
+      body?.ok !== true ||
+      typeof messageId !== 'number' ||
+      !Number.isSafeInteger(messageId)
+    ) {
+      throw new Error(body?.description ?? `Telegram sendButtons HTTP ${response.status}`);
+    }
+    return messageId;
   });
 }
 
+/** Remove buttons from a message that could not be durably registered. */
+export async function clearButtons(chatId: number, messageId: number): Promise<void> {
+  await tgSend('editMessageReplyMarkup', {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] },
+  }).catch(() => undefined);
+}
+
 /** Ack a button tap so Telegram stops the spinner on the client. */
-export async function answerCallback(callbackId: string): Promise<void> {
-  await queued(async () => {
-    await tgSend('answerCallbackQuery', { callback_query_id: callbackId });
+export async function answerCallback(
+  callbackId: string,
+  text?: string,
+  showAlert = false,
+): Promise<void> {
+  await tgSend('answerCallbackQuery', {
+    callback_query_id: callbackId,
+    ...(text ? { text: text.slice(0, 200), show_alert: showAlert } : {}),
   }).catch(() => undefined);
 }
 
 export async function sendTyping(chatId: number): Promise<void> {
   await bestEffort(async () => {
-    await tgPost('sendChatAction', { chat_id: chatId, action: 'typing' });
+    const response = await tgPost('sendChatAction', { chat_id: chatId, action: 'typing' });
+    if (!response.ok) incrementCounter('tg_send_fail_total');
   });
 }
 

@@ -4,7 +4,8 @@
  * running the same image with `node dist/worker.js`) executes jobs + cron schedules.
  * No Fastify — just pg-boss workers.
  */
-import { assertRuntimeSecrets, env } from './config/env.js';
+import { env } from './config/env.js';
+import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { logger } from './lib/logger.js';
 import { startJobs, stopJobs } from './modules/jobs/boss.js';

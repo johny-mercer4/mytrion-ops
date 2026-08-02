@@ -279,9 +279,18 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
  * Intentionally parked queues — not cron-scheduled, not Admin-triggerable, no worker.
  * Boot unschedules any leftover pg-boss cron for these names.
  */
+export const KPI_JOB_QUEUES = new Set<string>([
+  kpiSalesHourlySyncJob.name,
+  kpiSalesReconcileJob.name,
+  kpiSalesDailyRollupJob.name,
+  kpiSalesMonthCloseJob.name,
+]);
+
 export const DISABLED_JOB_QUEUES = new Set<string>([
   // Finish Sales Mytrion retention (deterministic case-sync + deadline-sweep), then CS; LLM later.
   retentionScanJob.name,
+  // Temporary collection pause: protect Zoho API capacity while KPI request volume is reviewed.
+  ...KPI_JOB_QUEUES,
 ]);
 
 /** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */
@@ -320,7 +329,4 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,
-  kpiSalesReconcileJob.name,
-  kpiSalesDailyRollupJob.name,
-  kpiSalesMonthCloseJob.name,
 ]);

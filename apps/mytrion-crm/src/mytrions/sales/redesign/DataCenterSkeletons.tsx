@@ -1,5 +1,11 @@
 /**
- * Data Center cold-load skeletons — Home `ss-skel` language shaped as kanban / list.
+ * Data Center cold-load skeletons that are NOT covered by the shared `SalesBodySkeleton`:
+ * the verification detail rail and the small related-records panels inside modals.
+ *
+ * The kanban / card-grid / list variants that used to live here moved into
+ * `SalesTabSkeleton.tsx`, so the shell's chunk fallback and a tab's data fallback are the same
+ * component (they used to be two different shapes, which is what made a cold open look like it
+ * loaded twice).
  */
 import { s } from './dc';
 
@@ -7,125 +13,31 @@ function Skel({ w, h, extra = '' }: { w: string; h: string; extra?: string }) {
   return <div className="ss-skel" style={s(`width:${w};height:${h};border-radius:var(--radius-md);${extra}`)} />;
 }
 
-/** Horizontal columns with stacked cards — matches Leads/Deals kanban chrome. */
-export function DcKanbanSkeleton({ label }: { label: string }) {
+/** Verification detail placeholder: same glass sections and nine-stage rhythm as the loaded page. */
+export function VerificationDetailSkeleton() {
   return (
     <div
-      className="ss-fu"
+      className="ss-verification-detail-skeleton"
       aria-busy="true"
-      aria-label={`Loading ${label} board`}
-      style={s('display:flex;gap:14px;overflow:hidden;padding:4px 2px 12px;min-height:420px')}
+      aria-label="Loading verification detail"
     >
-      {[0, 1, 2, 3, 4].map((col) => (
-        <div
-          key={col}
-          style={s(
-            'flex:0 0 264px;display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)',
-          )}
-        >
-          <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}>
-            <Skel w="96px" h="12px" />
-            <Skel w="28px" h="20px" extra="border-radius:99px" />
-          </div>
-          {[0, 1, 2].map((c) => (
-            <div
-              key={c}
-              style={s(
-                'padding:12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;gap:8px',
-              )}
-            >
-              <Skel w="78%" h="13px" />
-              <Skel w="52%" h="11px" />
-              <div style={s('display:flex;gap:8px;margin-top:2px')}>
-                <Skel w="54px" h="18px" extra="border-radius:99px" />
-                <Skel w="40px" h="18px" extra="border-radius:99px" />
-              </div>
-            </div>
-          ))}
+      <div className="ss-verification-detail-summary">
+        <div style={s('display:flex;flex-direction:column;gap:8px;flex:1')}>
+          <Skel w="138px" h="12px" />
+          <Skel w="62%" h="15px" />
         </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * 3-up card grid — the Clients roster. Mirrors the real card's box model (18px padding, 3 columns,
- * 14px gap, avatar + title/carrier, a badge row, a figure row) so the grid does not jump when the
- * data lands. Clients previously fell back to Gate's bare centred ring while Leads/Deals both had a
- * shaped skeleton; this is the standardized loader for that tab.
- */
-export function DcCardGridSkeleton({ label, count = 6 }: { label: string; count?: number }) {
-  return (
-    <div
-      className="ss-fu"
-      aria-busy="true"
-      aria-label={`Loading ${label}`}
-      style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}
-    >
-      {Array.from({ length: count }, (_, i) => (
-        <div
-          key={i}
-          style={s(
-            'padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)',
-          )}
-        >
-          <div style={s('display:flex;align-items:center;gap:12px')}>
-            <Skel w="40px" h="40px" />
-            <div style={s('flex:1;min-width:0;display:flex;flex-direction:column;gap:6px')}>
-              <Skel w="72%" h="14px" />
-              <Skel w="44%" h="11px" />
-            </div>
+        <Skel w="112px" h="28px" extra="border-radius:99px" />
+      </div>
+      <div className="ss-verification-stage-skeleton">
+        {Array.from({ length: 9 }, (_, index) => (
+          <div key={index} className="ss-verification-stage-skeleton-row">
+            <Skel w="24px" h="24px" extra="border-radius:50%" />
+            <Skel w={`${44 + (index % 3) * 8}%`} h="14px" />
+            <Skel w="82px" h="22px" extra="border-radius:99px;margin-left:auto" />
           </div>
-          <div style={s('margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px')}>
-            <Skel w="76px" h="20px" extra="border-radius:99px" />
-            <Skel w="62px" h="20px" extra="border-radius:99px" />
-          </div>
-          <div style={s('display:flex;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border2)')}>
-            {[0, 1, 2].map((c) => (
-              <div key={c} style={s('display:flex;flex-direction:column;gap:6px')}>
-                <Skel w="46px" h="17px" />
-                <Skel w="62px" h="11px" />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Table-style rows for Leads/Deals list view. */
-export function DcListSkeleton({ label, cols = 5 }: { label: string; cols?: number }) {
-  return (
-    <div
-      className="ss-fu"
-      aria-busy="true"
-      aria-label={`Loading ${label} list`}
-      style={s(
-        'border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;min-height:360px',
-      )}
-    >
-      <div
-        style={s(
-          `display:grid;grid-template-columns:repeat(${cols},1fr);gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--alt)`,
-        )}
-      >
-        {Array.from({ length: cols }, (_, i) => (
-          <Skel key={i} w="70%" h="11px" />
         ))}
       </div>
-      {Array.from({ length: 8 }, (_, r) => (
-        <div
-          key={r}
-          style={s(
-            `display:grid;grid-template-columns:repeat(${cols},1fr);gap:12px;padding:16px 18px;border-bottom:1px solid var(--border2)`,
-          )}
-        >
-          {Array.from({ length: cols }, (_, c) => (
-            <Skel key={c} w={c === 0 ? '85%' : '60%'} h="12px" />
-          ))}
-        </div>
-      ))}
+      <Skel w="100%" h="88px" />
     </div>
   );
 }

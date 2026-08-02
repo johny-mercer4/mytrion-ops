@@ -16,6 +16,7 @@ import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { requireContext } from './helpers.js';
+import { executeSupportBotWrite } from './supportBotOperation.js';
 
 function takeReadToken(carrierId: string): void {
   if (!takeToken(`support-bot-read:${carrierId}`, 30)) {
@@ -31,7 +32,7 @@ function takeReadToken(carrierId: string): void {
 export async function supportBotPrivateRoutes(
   app: FastifyInstance,
 ): Promise<void> {
-  const guard = { onRequest: [app.sessionOrApiKey] };
+  const guard = { onRequest: [app.supportBotGatewayAuth] };
 
   app.post('/support-bot/balance', guard, async (request) => {
     const body = supportBotCallerSchema.parse(request.body);
@@ -139,40 +140,56 @@ export async function supportBotPrivateRoutes(
         },
       );
     }
-    if (!takeToken(`support-bot-write:${body.carrierId}`, 5)) {
-      throw new AppError(
-        'Too many card actions right now — try again in a minute.',
-        {
-          statusCode: 429,
-          code: 'SUPPORT_BOT_RATE_LIMITED',
-          expose: true,
-        },
-      );
-    }
     const cardNumber = await requireDriverCardNumber(registration);
     const ctx = telegramCtx('driver', registration.telegramUserId);
     const mock = !isProduction && env.FF_DEV_MOCK_TELEGRAM_ENABLED;
     if (!mock) {
       await efsWrapper.assertCardFraudHeld(body.carrierId, cardNumber);
     }
-    const result = mock
-      ? {
-          success: true,
-          cardNumber,
-          previousStatus: 'Hold',
-          override: true,
-          message: 'DEV MOCK — EFS not called',
+    const execution = await executeSupportBotWrite(request, {
+      operationType: 'override',
+      actorTelegramUserId: body.telegramUserId,
+      carrierId: body.carrierId,
+      validatedArguments: {
+        carrierId: body.carrierId,
+        telegramUserId: body.telegramUserId,
+        requestId: body.requestId,
+        cardLast6: cardNumber.slice(-6),
+      },
+      confirmationArguments: {
+        telegram_user_id: body.telegramUserId,
+      },
+      prepare: () => {
+        if (!takeToken(`support-bot-write:${body.carrierId}`, 5)) {
+          throw new AppError('Too many card actions right now — try again in a minute.', {
+            statusCode: 429,
+            code: 'SUPPORT_BOT_RATE_LIMITED',
+            expose: true,
+          });
         }
-      : await efsWrapper.overrideCard(body.carrierId, cardNumber);
+      },
+      execute: async () => {
+        if (!mock) await efsWrapper.overrideCard(body.carrierId, cardNumber);
+        return { success: true, last6: cardNumber.slice(-6), minutes: 30 };
+      },
+      sanitize: (output) => output,
+    });
     await auditFromContext(ctx, {
-      action: 'carrier.support_bot.card_override',
+      action: execution.replayed
+        ? 'carrier.support_bot.card_override_replay'
+        : 'carrier.support_bot.card_override',
       status: 'ok',
       resourceType: 'efs_card',
       resourceId: registration.cardId ?? cardNumber.slice(-6),
-      detail: { carrierId: body.carrierId, via: 'support-bot' },
+      detail: {
+        carrierId: body.carrierId,
+        operationId: execution.operationId,
+        replayed: execution.replayed,
+        via: 'support-bot',
+      },
     });
 
-    void (async () => {
+    if (!execution.replayed) void (async () => {
       const identity = env.DWH_DATABASE_URL
         ? await getCardEfsIdentity(body.carrierId, cardNumber).catch(() => ({
             unit: null,
@@ -200,10 +217,8 @@ export async function supportBotPrivateRoutes(
       });
     })();
     return {
-      success: true,
-      last6: cardNumber.slice(-6),
-      minutes: 30,
-      raw: result,
+      ...execution.result,
+      ...(execution.replayed ? { replayed: true } : {}),
     };
   });
 }

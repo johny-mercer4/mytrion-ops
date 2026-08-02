@@ -16,6 +16,9 @@ vi.mock('../../src/repos/mytrionInboxMessageRepo.js', () => ({
   mytrionInboxMessageRepo: {
     create: vi.fn(),
     listForOwner: vi.fn(async () => []),
+    countsForOwner: vi.fn(async () => ({ all: 0, unread: 0, task: 0, alert: 0, reminder: 0 })),
+    markAllRead: vi.fn(async () => 0),
+    setRead: vi.fn(async () => undefined),
     deleteForOwner: vi.fn(async () => true),
     findByZohoRecordId: vi.fn(async () => undefined),
   },
@@ -45,6 +48,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.listForOwner.mockResolvedValue([]);
+  repo.countsForOwner.mockResolvedValue({ all: 0, unread: 0, task: 0, alert: 0, reminder: 0 });
   repo.deleteForOwner.mockResolvedValue(true);
 });
 
@@ -192,6 +196,7 @@ describe('inbox messages — list (owner-scoped)', () => {
 
   it('a worker lists ONLY their own inbox — an owner_id override is ignored', async () => {
     repo.listForOwner.mockResolvedValueOnce([messageRow({ ownerZohoUserId: '42' })]);
+    repo.countsForOwner.mockResolvedValueOnce({ all: 1, unread: 1, task: 1, alert: 0, reminder: 0 });
     const token = await workerToken('Sales Rep', '42');
     const res = await app.inject({
       method: 'GET',
@@ -202,6 +207,44 @@ describe('inbox messages — list (owner-scoped)', () => {
     expect(repo.listForOwner).toHaveBeenCalledWith(expect.anything(), '42', expect.anything());
     const body = res.json() as { messages: Array<{ id: string }> };
     expect(body.messages).toHaveLength(1);
+  });
+
+  it('returns an opaque keyset cursor and forwards it on the next page', async () => {
+    const rows = Array.from({ length: 26 }, (_, index) =>
+      messageRow({
+        id: `mim_${String(index).padStart(2, '0')}`,
+        createdAt: new Date(Date.parse('2026-07-23T10:00:00.000Z') - index * 1_000),
+      }),
+    );
+    repo.listForOwner.mockResolvedValueOnce(rows);
+    repo.countsForOwner.mockResolvedValue({ all: 30, unread: 30, task: 30, alert: 0, reminder: 0 });
+    const token = await workerToken('Sales Rep', '42');
+    const first = await app.inject({
+      method: 'GET',
+      url: '/v1/inbox/messages?limit=25',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json() as {
+      messages: Array<{ id: string }>;
+      pagination: { nextCursor: string | null; hasMore: boolean };
+    };
+    expect(firstBody.messages).toHaveLength(25);
+    expect(firstBody.pagination).toMatchObject({ hasMore: true });
+    expect(firstBody.pagination.nextCursor).toEqual(expect.any(String));
+
+    repo.listForOwner.mockResolvedValueOnce([rows[25]!]);
+    const second = await app.inject({
+      method: 'GET',
+      url: `/v1/inbox/messages?limit=25&cursor=${encodeURIComponent(firstBody.pagination.nextCursor!)}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(repo.listForOwner).toHaveBeenLastCalledWith(
+      expect.anything(),
+      '42',
+      expect.objectContaining({ cursor: firstBody.pagination.nextCursor, limit: 26 }),
+    );
   });
 });
 

@@ -1,0 +1,238 @@
+/* Attendance v2: live presence and exact check-in/check-out visits. */
+.hr-root .hr-att-weeklabel {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.hr-root .hr-att-presence {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  margin: 0 0 16px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--hz-pane-bd, var(--border)));
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--success) 11%, var(--hz-pane, var(--surface))),
+    var(--hz-pane, var(--surface)) 64%
+  );
+  box-shadow: 0 12px 30px color-mix(in srgb, #000 10%, transparent);
+}
+.hr-root .hr-att-presence[data-state='out_of_office'],
+.hr-root .hr-att-presence[data-state='no_activity'] {
+  border-color: var(--hz-pane-bd, var(--border));
+  background: var(--hz-pane, var(--surface));
+}
+.hr-root .hr-att-presence[data-state='needs_review'] {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--hz-pane-bd, var(--border)));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--warning) 9%, var(--hz-pane, var(--surface))),
+    var(--hz-pane, var(--surface)) 64%
+  );
+}
+.hr-root .hr-att-presence-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.hr-root [data-state='needs_review'] > .hr-att-presence-icon {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.hr-root .hr-att-presence-copy { min-width: 0; }
+.hr-root .hr-att-eyebrow {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.hr-root .hr-att-presence-copy h2 {
+  margin: 3px 0;
+  font-size: 19px;
+  font-weight: 730;
+  letter-spacing: -0.02em;
+}
+.hr-root .hr-att-presence-copy p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.hr-root .hr-att-live-clock,
+.hr-root .hr-att-week-clock {
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  padding-left: 18px;
+  border-left: 1px solid var(--hz-pane-bd, var(--border));
+}
+.hr-root .hr-att-live-clock span,
+.hr-root .hr-att-week-clock span,
+.hr-root .hr-att-live-clock small {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.hr-root .hr-att-live-clock strong {
+  margin: 1px 0;
+  font-size: 25px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-att-week-clock strong {
+  margin-top: 2px;
+  font-size: 17px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-att-day {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 14px;
+}
+.hr-root .hr-att-day.is-today {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--hz-pane-bd, var(--border)));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 78%, transparent);
+}
+.hr-root .hr-att-day-head {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(155px, auto);
+  align-items: center;
+  gap: 14px;
+}
+.hr-root .hr-att-day-head > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hr-root .hr-att-daylabel { padding: 0; font-size: 13.5px; font-weight: 720; }
+.hr-root .hr-att-date { color: var(--text-muted); font-size: 11px; }
+.hr-root .hr-att-day-status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 720;
+}
+.hr-root .hr-att-day-status[data-state='in_office'] {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.hr-root .hr-att-day-status[data-state='needs_review'] {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.hr-root .hr-att-day-total {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  justify-content: end;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.hr-root .hr-att-day-total strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-att-visits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hz-pane-bd, var(--border));
+}
+.hr-root .hr-att-visit {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(36px, 0.35fr) minmax(170px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--text-muted) 5%, transparent);
+}
+.hr-root .hr-att-visit[data-status='open'] {
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+.hr-root .hr-att-visit[data-status='needs_review'] {
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.hr-root .hr-att-event { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.hr-root .hr-att-event-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.hr-root .hr-att-event > div { display: flex; flex-direction: column; min-width: 0; }
+.hr-root .hr-att-event small,
+.hr-root .hr-att-visit-duration small { color: var(--text-muted); font-size: 10px; }
+.hr-root .hr-att-event strong {
+  font-size: 13px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-att-event span:last-child {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-att-visit-line { height: 1px; background: var(--hz-pane-bd, var(--border)); }
+.hr-root .hr-att-visit-duration {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 90px;
+}
+.hr-root .hr-att-visit-duration strong {
+  font-size: 14px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+.hr-root .hr-att-unmatched {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--warning);
+  font-size: 10.5px;
+}
+.hr-root .hr-att-no-visits { margin: 9px 0 0; color: var(--text-muted); font-size: 11.5px; }
+.hr-root .hr-att-totals { gap: 16px 26px; }
+.hr-root .hr-att-totals strong { font-variant-numeric: tabular-nums; }
+.hr-root .hr-att-person-presence[data-state='needs_review'] {
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  color: var(--warning);
+}
+@media (max-width: 920px) {
+  .hr-root .hr-att-presence { grid-template-columns: auto 1fr; }
+  .hr-root .hr-att-live-clock,
+  .hr-root .hr-att-week-clock {
+    padding: 10px 0 0;
+    border-top: 1px solid var(--hz-pane-bd, var(--border));
+    border-left: 0;
+  }
+}
+@media (max-width: 720px) {
+  .hr-root .hr-att-presence { grid-template-columns: 1fr; padding: 16px; }
+  .hr-root .hr-att-day-head,
+  .hr-root .hr-att-visit { grid-template-columns: 1fr; }
+  .hr-root .hr-att-day-total { justify-content: start; }
+  .hr-root .hr-att-visit-line { display: none; }
+  .hr-root .hr-att-visit-duration { align-items: flex-start; }
+}

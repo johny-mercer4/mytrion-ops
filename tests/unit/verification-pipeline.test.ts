@@ -1,11 +1,11 @@
 /**
- * Verification pipeline provider (mock, no DB) + stage-status normalization. Pins: deterministic
- * per-client snapshots, a coherent decision (LOC always carries score+limit+cycle; undecided until
- * every stage resolves), the 9-stage business-ordered catalog, and the credit_platform status vocab
- * mapping the future live provider will reuse.
+ * Verification pipeline fallback + shared normalization/requirement parsing. Pins deterministic
+ * development snapshots, coherent decisions, the business-ordered stage catalog, credit_platform
+ * status normalization, and the payload-driven Sales action contract used by the live provider.
  */
 import { describe, expect, it } from 'vitest';
 import { mockPipelineProvider } from '../../src/modules/verificationPipeline/provider.js';
+import { extractSalesRequirements } from '../../src/modules/verificationPipeline/requirements.js';
 import { STAGE_CATALOG, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
 
 describe('STAGE_CATALOG', () => {
@@ -78,5 +78,64 @@ describe('mockPipelineProvider', () => {
         expect(decision.billingCycle).toBeTruthy();
       }
     }
+  });
+});
+
+describe('extractSalesRequirements', () => {
+  it('turns an MC/DOT-needed event into a required red-flag form', () => {
+    const result = extractSalesRequirements([
+      {
+        id: 41,
+        status: 'NEEDS_INPUT',
+        title: 'MC DOT needed from Sales',
+        payload: { audience: 'sales', message: 'Please confirm both identifiers.' },
+        createdAt: '2026-08-01T10:00:00.000Z',
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.fields.map((field) => field.id)).toEqual(['mc_number', 'dot_number']);
+    expect(result[0]?.detail).toBe('Please confirm both identifiers.');
+  });
+
+  it('uses payload-defined fields, choices, and attachment requirements', () => {
+    const result = extractSalesRequirements([
+      {
+        id: 'evt-2',
+        status: 'ACTION_REQUIRED',
+        title: 'Insurance document required',
+        payload: {
+          target_department: 'sales',
+          required_fields: [
+            { key: 'policy_number', label: 'Policy number', type: 'text' },
+            { key: 'coverage', type: 'select', options: ['Primary', 'Excess'] },
+          ],
+          attachment_required: true,
+        },
+        createdAt: '2026-08-01T10:00:00.000Z',
+      },
+    ]);
+    expect(result[0]?.attachmentRequired).toBe(true);
+    expect(result[0]?.fields[1]).toMatchObject({ id: 'coverage', type: 'select' });
+  });
+
+  it('ignores ordinary pipeline events and requests for another department', () => {
+    expect(
+      extractSalesRequirements([
+        {
+          id: 1,
+          status: 'SUBMITTED',
+          title: 'External applicant creation requested',
+          payload: {},
+          createdAt: '',
+        },
+        {
+          id: 2,
+          status: 'ACTION_REQUIRED',
+          title: 'Review required',
+          payload: { audience: 'verification', fields: ['answer'] },
+          createdAt: '',
+        },
+      ]),
+    ).toEqual([]);
   });
 });

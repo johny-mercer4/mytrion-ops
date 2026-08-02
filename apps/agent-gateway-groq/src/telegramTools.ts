@@ -5,6 +5,7 @@ import { getOpenAIClient } from './openaiClient.js';
 import { fetchPhotoBase64 } from './telegram.js';
 import { defineTool, type ToolManifest } from './toolRuntime.js';
 import { visionStarted } from './metrics.js';
+import { executeOpenAIRequest } from './openaiResilience.js';
 
 /** The image is bound to its Telegram sender so one group member cannot inspect another's photo. */
 const latestPhoto = new Map<number, { photo: unknown[]; userId: number; at: number }>();
@@ -30,31 +31,38 @@ async function extractWithOpenAI(
   image: { mediaType: string; data: string },
   chatId: number,
 ): Promise<string> {
-  const response = await getOpenAIClient().responses.create({
-    model: config.openaiModel,
-    input: [
-      {
-        role: 'user',
-        content: [
+  const response = await executeOpenAIRequest({
+    // High-detail image tokenization depends on image dimensions. Reserve a
+    // conservative allowance, then reconcile from the API's actual usage.
+    estimatedTokens: 3_000,
+    operation: () =>
+      getOpenAIClient().responses.create({
+        model: config.openaiModel,
+        input: [
           {
-            type: 'input_text',
-            text:
-              'Transcribe this support image literally in 1-3 short lines. Include visible text, ' +
-              'numbers, dates, amounts, and errors. If it is a card, return only its last 6 digits, ' +
-              'never the full card number. No preamble.',
-          },
-          {
-            type: 'input_image',
-            image_url: `data:${image.mediaType};base64,${image.data}`,
-            detail: 'high',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  'Transcribe this support image literally in 1-3 short lines. Include visible text, ' +
+                  'numbers, dates, amounts, and errors. If it is a card, return only its last 6 digits, ' +
+                  'never the full card number. No preamble.',
+              },
+              {
+                type: 'input_image',
+                image_url: `data:${image.mediaType};base64,${image.data}`,
+                detail: 'high',
+              },
+            ],
           },
         ],
-      },
-    ],
-    reasoning: { effort: 'low' },
-    max_output_tokens: 300,
-    safety_identifier: safetyIdentifierForChat(chatId),
-    store: false,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 300,
+        safety_identifier: safetyIdentifierForChat(chatId),
+        store: false,
+      }),
+    usageTokens: (result) => (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0),
   });
   return response.output_text.trim().slice(0, 600);
 }
@@ -69,7 +77,7 @@ async function extractImageText(chatId: number, userId: number): Promise<ImageTe
   }
   if (entry.userId !== userId) {
     return {
-      text: "The recent image belongs to a different user — do not read it. Ask this user to send their own photo.",
+      text: 'The recent image belongs to a different user — do not read it. Ask this user to send their own photo.',
       isError: true,
     };
   }

@@ -1,10 +1,15 @@
 import { buildApp } from './app.js';
-import { assertRuntimeSecrets, env } from './config/env.js';
+import { env } from './config/env.js';
+import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { closeCmpTunnel } from './integrations/cmpTunnel.js';
 import { runMigrationsOnBoot } from './db/migrate.js';
 import { logger } from './lib/logger.js';
 import { seedMytrionAccessOnBoot } from './modules/access/bootstrap.js';
+import {
+  releasePresenceOnShutdown,
+  sweepStalePresenceOnBoot,
+} from './modules/realtime/presence.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
 
 // Last-resort guards (incident 2026-07-13: Render Postgres went into recovery and a background
@@ -27,6 +32,9 @@ async function main(): Promise<void> {
   await runMigrationsOnBoot();
   // Profile-default access seeding (idempotent) — fail-open, see modules/access/bootstrap.ts.
   await seedMytrionAccessOnBoot();
+  // Clear presence leases no live process can still own (a hard crash leaves them behind).
+  // Idempotent, fail-open: the staleness cutoff already makes stale rows harmless.
+  if (env.FF_COMMS_PRESENCE) await sweepStalePresenceOnBoot();
   const app = await buildApp();
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -47,6 +55,11 @@ async function main(): Promise<void> {
       // Order matters: finish in-flight jobs first (Render allows ~30s after SIGTERM),
       // then stop accepting HTTP, then release the DB pool.
       await stopJobs();
+      // Release presence BEFORE app.close(): @fastify/websocket closes every client during
+      // shutdown, and once those sockets are gone we no longer know which agents to release.
+      // Doing it here means a normal deploy leaves zero window where someone looks online on a
+      // process that no longer exists. Emits reason 'shutdown', which reassignment must ignore.
+      if (env.FF_COMMS_PRESENCE) await releasePresenceOnShutdown();
       await app.close();
       closeCmpTunnel();
       await closeDb();

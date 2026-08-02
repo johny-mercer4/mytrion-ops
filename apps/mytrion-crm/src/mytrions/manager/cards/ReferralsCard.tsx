@@ -20,7 +20,6 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { getReferralWorkspace } from '../../../api/referrals';
-import { MytrionPageLoader } from '../../_shared/MytrionPageLoader';
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
 import { ReferralDetailModal } from './ReferralDetailModal';
 import { downloadReferralCsv, downloadReferralExcel } from './referralExport';
@@ -471,11 +470,12 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
         </div>
       </section>
 
-      {loading ? (
-        <MytrionPageLoader
-          label="Calculating referral workspace…"
-          detail="Connecting Zoho relationships with MART transaction history"
-        />
+      {loading && !data ? (
+        <div className="mg-lty-grid" role="status" aria-busy="true" aria-label="Loading referrals">
+          {Array.from({ length: 9 }, (_, index) => (
+            <div key={index} className="mg-lty-sk" />
+          ))}
+        </div>
       ) : error && !data ? (
         <div className="mg-error">
           <p>{error}</p>

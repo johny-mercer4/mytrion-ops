@@ -10,7 +10,7 @@ import { fileRepo } from '../../repos/fileRepo.js';
 import type { FileAsset } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
-import { getStorage } from './storage/index.js';
+import { storageFor, type StorageProvider } from './storage/index.js';
 
 export interface StoreFileInput {
   name: string;
@@ -21,6 +21,11 @@ export interface StoreFileInput {
   department?: string | null;
   conversationId?: string;
   agentTaskId?: string;
+  /**
+   * Where to put the bytes. Defaults to S3 — the general pipeline is unchanged. Comms attachments pass
+   * `commsStorageProvider()` so chat files land on Dropbox without moving anything else.
+   */
+  storageProvider?: StorageProvider | undefined;
 }
 
 export interface StoredFile {
@@ -61,7 +66,11 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
   const name = sanitizeName(input.name);
   const month = new Date().toISOString().slice(0, 7);
   const key = `${ctx.tenantId}/${input.kind}/${month}/${fileId}/${name}`;
-  await getStorage().put(key, input.buffer, { contentType: input.mime });
+  // The provider is decided ONCE per file and then recorded, so every later read and delete resolves the
+  // same store regardless of what the env says by then.
+  const provider = input.storageProvider ?? 's3';
+  const storage = storageFor(provider);
+  await storage.put(key, input.buffer, { contentType: input.mime });
   await fileRepo.create(ctx, {
     id: fileId,
     audience: ctx.audience,
@@ -73,6 +82,7 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
     mime: input.mime,
     sizeBytes: input.buffer.length,
     s3Key: key,
+    storageProvider: provider,
     kind: input.kind,
     createdBy: input.createdBy,
     ...(input.conversationId ? { conversationId: input.conversationId } : {}),
@@ -85,7 +95,7 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
     resourceId: fileId,
     detail: { name, kind: input.kind, sizeBytes: input.buffer.length, by: input.createdBy },
   });
-  const link = await getStorage().presignGet(key, { filename: name });
+  const link = await storage.presignGet(key, { filename: name });
   return {
     fileId,
     name,
@@ -103,7 +113,7 @@ export async function presignFile(
 ): Promise<{ file: FileAsset; url: string; expiresAt: string }> {
   const file = await fileRepo.findVisible(ctx, fileId);
   if (!file) throw new NotFoundError('File not found');
-  const link = await getStorage().presignGet(file.s3Key, { filename: file.name });
+  const link = await storageFor(file.storageProvider).presignGet(file.s3Key, { filename: file.name });
   return { file, url: link.url, expiresAt: link.expiresAt.toISOString() };
 }
 
@@ -111,7 +121,7 @@ export async function presignFile(
 export async function readFileBuffer(ctx: TenantContext, fileId: string): Promise<{ file: FileAsset; buffer: Buffer }> {
   const file = await fileRepo.findVisible(ctx, fileId);
   if (!file) throw new NotFoundError('File not found');
-  const buffer = await getStorage().getBuffer(file.s3Key, env.PARSE_MAX_BYTES);
+  const buffer = await storageFor(file.storageProvider).getBuffer(file.s3Key, env.PARSE_MAX_BYTES);
   return { file, buffer };
 }
 
@@ -119,7 +129,7 @@ export async function deleteFile(ctx: TenantContext, fileId: string): Promise<vo
   const removed = await fileRepo.markDeleted(ctx, fileId);
   if (!removed) throw new NotFoundError('File not found (or not yours to delete)');
   try {
-    await getStorage().delete(removed.s3Key);
+    await storageFor(removed.storageProvider).delete(removed.s3Key);
   } catch {
     // Row is authoritative; a dangling object is cleaned up by bucket lifecycle rules.
   }

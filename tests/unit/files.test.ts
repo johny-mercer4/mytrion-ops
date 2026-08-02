@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 import { parse as parseCsvSync } from 'csv-parse/sync';
+import { PassThrough, Readable } from 'node:stream';
 
 vi.mock('../../src/repos/fileRepo.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../src/repos/fileRepo.js')>();
@@ -64,6 +65,28 @@ describe('generators produce valid artifacts', () => {
     const ws = wb.getWorksheet('Debtors')!;
     expect(ws.getRow(1).values).toContain('carrier');
     expect(ws.getRow(2).values).toContain('Acme');
+  });
+
+  it('xlsx streaming writer/reader work with the patched archive stack', async () => {
+    const output = new PassThrough();
+    const chunks: Buffer[] = [];
+    output.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    const writer = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: output });
+    const sheet = writer.addWorksheet('Streamed');
+    sheet.addRow(['carrier', 'debt']).commit();
+    sheet.addRow(['Acme', 99]).commit();
+    await writer.commit();
+
+    const buffer = Buffer.concat(chunks);
+    expect(buffer.subarray(0, 2).toString()).toBe('PK');
+
+    const values: string[] = [];
+    const reader = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from([buffer]), {});
+    for await (const worksheet of reader) {
+      for await (const row of worksheet) values.push(row.getCell(1).text);
+    }
+    expect(values).toEqual(['carrier', 'Acme']);
   });
 
   it('pdf output is a real PDF document', async () => {

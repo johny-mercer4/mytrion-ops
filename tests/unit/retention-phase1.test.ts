@@ -82,7 +82,7 @@ describe('addBusinessDays', () => {
   it('stamps a 2BD agent-action deadline', () => {
     const d = initialPhase1Deadline(new Date('2026-07-20T12:00:00Z'));
     expect(d.currentDeadlineType).toBe('2BD_agent_action');
-    expect(d.currentDeadlineAt.getTime()).toBeGreaterThan(Date.now() - 86_400_000 * 10);
+    expect(d.currentDeadlineAt).toEqual(new Date('2026-07-22T12:00:00Z'));
   });
 });
 

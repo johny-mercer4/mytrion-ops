@@ -1,11 +1,12 @@
-import { bigserial, boolean, index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigserial, boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 // NOTE: no DB foreign keys by design; no sibling value imports (drizzle-kit loads standalone).
 
 /**
  * support_bot_messages — the agent bot's full group-message history, hamroh-v1-style but in the
- * CENTRAL Postgres instead of a per-instance SQLite. Every inbound group message (pre-gate, so
- * ordinary chatter included — analysis raw material) and every outbound bot reply.
+ * CENTRAL Postgres instead of a per-instance SQLite. Only model-engaged inbound messages are
+ * retained by default; ordinary client-group chatter is outside the bot's data boundary.
  *
  * Written by the gateway in BATCHES via POST /v1/support-bot/messages (internal key); the
  * gateway also keeps a local JSONL append as the never-fails fallback, so a mytrion outage
@@ -37,5 +38,8 @@ export const supportBotMessages = pgTable(
   (table) => ({
     byChatTime: index('ix_support_bot_messages_chat_time').on(table.chatId, table.sentAt),
     byCarrierTime: index('ix_support_bot_messages_carrier_time').on(table.carrierId, table.sentAt),
+    inboundReplayUq: uniqueIndex('support_bot_messages_inbound_replay_uq')
+      .on(table.tenantId, table.chatId, table.msgId, table.direction)
+      .where(sql`${table.msgId} IS NOT NULL`),
   }),
 );

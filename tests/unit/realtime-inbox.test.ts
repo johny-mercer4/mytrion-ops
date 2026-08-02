@@ -39,9 +39,11 @@ import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import {
+  INBOX_ALL_TOPIC,
   canSubscribe,
   inboxTopicFor,
   ownTopicOf,
+  publishInboxEvent,
   realtimeHub,
   type RealtimeSocket,
 } from '../../src/modules/realtime/hub.js';
@@ -197,6 +199,57 @@ describe('realtime hub — pub/sub semantics', () => {
     expect(canSubscribe(client, 'inbox:client:cu_9')).toBe(true);
     expect(canSubscribe(client, 'inbox:client:cu_1')).toBe(false);
     expect(canSubscribe(client, 'inbox:worker:42')).toBe(false);
+  });
+});
+
+describe('realtime hub — frame envelope', () => {
+  it("publish() emits the frozen 'event' envelope byte-for-byte", () => {
+    const a = fakeSocket();
+    realtimeHub.subscribe(a, 'inbox:worker:42');
+    realtimeHub.publish('inbox:worker:42', { id: 'ie_1', type: 'demo' });
+    // Key ORDER is the wire format. Any client parsing by position, or any snapshot of these
+    // bytes, must keep working across the frame-kind refactor.
+    expect(a.frames[0]).toBe(
+      '{"kind":"event","topic":"inbox:worker:42","event":{"id":"ie_1","type":"demo"}}',
+    );
+    realtimeHub.dropSocket(a);
+  });
+
+  it('publishFrame() lets the caller own the kind and can exclude the sender', () => {
+    const sender = fakeSocket();
+    const peer = fakeSocket();
+    realtimeHub.subscribe(sender, 'inbox:worker:42');
+    realtimeHub.subscribe(peer, 'inbox:worker:42');
+
+    const delivered = realtimeHub.publishFrame(
+      'inbox:worker:42',
+      { kind: 'signal', topic: 'inbox:worker:42', type: 'typing.start', userId: '42' },
+      { exclude: sender },
+    );
+
+    expect(delivered).toBe(1);
+    expect(sender.frames).toHaveLength(0);
+    expect(JSON.parse(peer.frames[0]!)).toMatchObject({ kind: 'signal', type: 'typing.start' });
+    realtimeHub.dropSocket(sender);
+    realtimeHub.dropSocket(peer);
+  });
+
+  it('publishInboxEvent double-publishes to the firehose by default, and can opt out', () => {
+    const owner = fakeSocket();
+    const firehose = fakeSocket();
+    realtimeHub.subscribe(owner, 'inbox:worker:42');
+    realtimeHub.subscribe(firehose, INBOX_ALL_TOPIC);
+
+    expect(publishInboxEvent({ ownerKind: 'worker', ownerId: '42' })).toBe(2);
+    expect(firehose.frames).toHaveLength(1);
+
+    // High-volume feeds (chat) must not put every message on the admin topic.
+    expect(publishInboxEvent({ ownerKind: 'worker', ownerId: '42' }, { firehose: false })).toBe(1);
+    expect(firehose.frames).toHaveLength(1);
+    expect(owner.frames).toHaveLength(2);
+
+    realtimeHub.dropSocket(owner);
+    realtimeHub.dropSocket(firehose);
   });
 });
 

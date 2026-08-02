@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
 import {
@@ -20,7 +20,7 @@ import {
   type RingCentralCallEvent,
 } from './ringcentralEvents';
 import { nextSignInPrompt } from './signInPrompt';
-import { X, AlertCircle, Phone, RotateCw } from 'lucide-react';
+import { X, AlertCircle, Phone } from 'lucide-react';
 import './ringcentralHost.css';
 
 // Install as soon as this module loads — Embeddable can emit AGW-401 before the mount effect
@@ -41,9 +41,6 @@ const LOGOUT_TOAST_GRACE_MS = 2500;
  * below the vendor's restore window.
  */
 const SIGNED_OUT_CONFIRM_MS = 6000;
-
-/** How often the sign-in card is re-evaluated against the widget's reported state. */
-const SIGNED_OUT_POLL_MS = 1500;
 
 /** How long to wait for the vendor iframe after injecting adapter.js. */
 const FRAME_WAIT_MS = 12_000;
@@ -207,16 +204,6 @@ export function RingCentralPhone() {
    * Center Leads/Deals, Retention calls) silently does nothing in that state, so it has to be loud.
    */
   const [showSignIn, setShowSignIn] = useState(false);
-  /** Manual "reload softphone" spinner — brief, so the click reads as having done something. */
-  const [reloading, setReloading] = useState(false);
-
-  /**
-   * The current effect run's `boot`, so the manual reload control (below, in the render) can call it
-   * without duplicating the boot/mount logic. Only ever set while `allowed`; null on a disallowed
-   * Mytrion or before the first run, which is exactly when there is nothing to reload.
-   */
-  const bootRef = useRef<((reason: string) => Promise<void>) | null>(null);
-
   const addToast = (type: ToastType, title: string, message: string) => {
     const id = ++toastId;
     setToasts((prev) => [...prev, { id, type, title, message }]);
@@ -227,21 +214,6 @@ export function RingCentralPhone() {
 
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  /**
-   * Manual recovery: tear the adapter down and reboot it from scratch.
-   *
-   * The one gap the automatic recovery (visibilitychange/pageshow watchers) can't cover: the vendor
-   * iframe rendering BLANK while our own `ringCentralLoginState()` still reports signed-in — there is
-   * nothing to react to, because nothing told us anything is wrong. This gives an agent an immediate
-   * fix for that without a full page reload.
-   */
-  const reloadPhone = (): void => {
-    if (reloading || !bootRef.current) return;
-    setReloading(true);
-    teardownAdapter();
-    void bootRef.current('manual').finally(() => setReloading(false));
   };
 
   useEffect(() => {
@@ -313,11 +285,6 @@ export function RingCentralPhone() {
       }
     };
 
-    // Exposed for the manual "reload softphone" control (rendered below) — the vendor iframe is
-    // cross-origin, so we cannot detect a blank/stuck render from here; this is the recovery path for
-    // when an agent notices it themselves without needing a full page reload.
-    bootRef.current = boot;
-
     void boot('mount');
 
     /**
@@ -331,6 +298,11 @@ export function RingCentralPhone() {
      * session.
      */
     let signedOutSince: number | null = null;
+    let signInTimer: number | null = null;
+    const clearSignInTimer = (): void => {
+      if (signInTimer !== null) window.clearTimeout(signInTimer);
+      signInTimer = null;
+    };
     const evaluateSignIn = (): void => {
       if (cancelled) return;
       const next = nextSignInPrompt({
@@ -343,9 +315,14 @@ export function RingCentralPhone() {
       signedOutSince = next.signedOutSince;
       signInCardMuted = next.muted;
       setShowSignIn(next.show);
+      clearSignInTimer();
+      // Event-first, with one bounded confirmation timer. The old 1.5s interval ran for the
+      // lifetime of every Sales/CS/Collection page even while the phone was healthy.
+      if (!next.show && ringCentralLoginState() !== true) {
+        signInTimer = window.setTimeout(evaluateSignIn, SIGNED_OUT_CONFIRM_MS);
+      }
     };
     evaluateSignIn();
-    const signedOutTimer = window.setInterval(evaluateSignIn, SIGNED_OUT_POLL_MS);
 
     const unsubscribe = subscribeRingCentral((event: RingCentralCallEvent) => {
       if (cancelled) return;
@@ -354,11 +331,14 @@ export function RingCentralPhone() {
         // A fresh session re-arms the prompt for a future genuine logout.
         signInCardMuted = false;
         setShowSignIn(false);
+        clearSignInTimer();
         // Don't pop the widget open on login — leave it docked; the agent opens it when they want.
         clearPendingLogoutToast();
         return;
       }
       if (event.kind !== 'logout') return;
+      signedOutSince = Date.now();
+      evaluateSignIn();
       // Deliberately does NOT show the card: Embeddable flaps logged-out during session restore
       // (exactly why the toast below is debounced), and reacting to the raw event is what put
       // "Phone not signed in" in front of signed-in agents. evaluateSignIn() prompts if it holds.
@@ -382,7 +362,8 @@ export function RingCentralPhone() {
       if (frame) forceRcFrameCursor(frame);
     };
     lockCursor();
-    const cursorTimer = window.setInterval(lockCursor, 800);
+    // Host CSS keeps the cursor correct. Observe only frame insertion; never observe every style
+    // mutation in the whole document and never run a permanent 800ms polling loop.
     const cursorObs = new MutationObserver((mutations) => {
       for (const m of mutations) {
         if (m.type === 'childList') {
@@ -397,20 +378,11 @@ export function RingCentralPhone() {
             }
           }
         }
-        if (
-          m.type === 'attributes' &&
-          m.target instanceof HTMLElement &&
-          m.target.id === 'rc-widget-adapter-frame'
-        ) {
-          lockCursor();
-        }
       }
     });
     cursorObs.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['style'],
     });
 
     /** Prod Zoho: tab blur / bfcache / CRM soft-nav can drop the iframe while the script stays. */
@@ -428,11 +400,9 @@ export function RingCentralPhone() {
 
     return () => {
       cancelled = true;
-      if (bootRef.current === boot) bootRef.current = null;
-      window.clearInterval(signedOutTimer);
+      clearSignInTimer();
       clearPendingLogoutToast();
       unsubscribe();
-      window.clearInterval(cursorTimer);
       cursorObs.disconnect();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pageshow', onPageShow);
@@ -443,10 +413,8 @@ export function RingCentralPhone() {
   // Full unmount (logout / leave worker portal) always tears down the vendor iframe.
   useEffect(() => () => teardownAdapter(), []);
 
-  // Nothing to show only when the widget isn't even mounted here (!allowed) and there's no toast or
-  // sign-in card left over. Whenever `allowed`, the stack always renders — that's what gives the quiet
-  // reload control below a permanent, discoverable home instead of appearing only when something's wrong.
-  if (!allowed && toasts.length === 0 && !showSignIn) return null;
+  // The host stack exists only for actionable UI. The vendor's own dock remains mounted separately.
+  if (toasts.length === 0 && !showSignIn) return null;
 
   return (
     <div
@@ -474,43 +442,6 @@ export function RingCentralPhone() {
         gap: '10px',
       }}
     >
-      {allowed && (
-        /*
-         * Quiet by design — low opacity until hover/focus, same "furniture, not an alert" treatment
-         * the vendor's own dock uses. This is the only recovery path for a widget that LOOKS fine to
-         * us (ringCentralLoginState() says signed in) but renders blank inside the cross-origin vendor
-         * iframe, which we have no way to detect or react to automatically.
-         */
-        <button
-          type="button"
-          onClick={reloadPhone}
-          disabled={reloading}
-          aria-label="Reload softphone"
-          title="Reload softphone — use if the phone widget looks stuck or blank"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '28px',
-            height: '28px',
-            borderRadius: '50%',
-            border: '1px solid var(--border, rgba(255,255,255,.12))',
-            background: 'var(--surface)',
-            color: 'var(--muted)',
-            cursor: reloading ? 'default' : 'pointer',
-            opacity: 0.55,
-            transition: 'opacity 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = '1';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = '0.55';
-          }}
-        >
-          <RotateCw size={13} style={reloading ? { animation: 'rc-spin 0.8s linear infinite' } : undefined} />
-        </button>
-      )}
       {showSignIn && (
         /* Persistent on purpose — not a toast. Every phone-backed feature is inert until the agent
            signs in, so this stays put until they do. Clicking EXPANDS the vendor widget, which is the

@@ -39,12 +39,13 @@ docker compose up --build
 The local monitor is available at `http://localhost:8787` when running directly, or
 `http://localhost:8788` through Docker Compose. Set `MONITOR_TOKEN` outside local development.
 
-In mapped support groups, every registered owner or driver message reaches the semantic router and
-receives a response without requiring a bot tag. It understands multilingual requests, slang,
-unseen wording, fragments, and ordinary conversation from context. In-scope Octane requests use
-live tools; commercial/product questions resolve the assigned Sales agent; unresolved operational
-questions offer a confirmed Customer Service ticket. Unregistered users never consume router
-tokens; only an explicit mention/reply may receive the rate-limited registration signpost.
+In production, mapped groups default to `TELEGRAM_ENGAGEMENT_MODE=direct`: a registered owner or
+driver starts a support thread by mentioning or replying to the bot, then gets natural follow-ups
+for ten minutes. This prevents ambient chatter across hundreds of groups from consuming model
+capacity. `all_registered` preserves the original ambient behavior when deliberately configured.
+In-scope requests use live tools; unresolved operational questions can create a server-bound,
+confirmed Customer Service ticket. Unregistered users never consume router tokens; only an
+explicit mention/reply may receive the rate-limited registration signpost.
 
 Telegram update preprocessing preserves source order per `(chatId, userId)` even when role lookups
 have different latency. Different users and companies still preprocess concurrently.
@@ -55,9 +56,9 @@ a 120-second hard cap (`TELEGRAM_BURST_QUIET_MS`, `TELEGRAM_BURST_MAX_MS`). A fi
 the requested action. When a request is admitted, that pending context is cleared so a new problem
 does not inherit an unanswered question. Different clients remain independent.
 
-Never run the Claude and OpenAI gateways at the same time with the same Telegram bot token:
-Telegram long polling permits only one consumer. Use a separate test-bot token for side-by-side
-comparison.
+Never run the legacy Claude and this OpenAI gateway with the same Telegram bot token. Replicas of
+this gateway may share one token only with `GATEWAY_LEASE_ENABLED=1`; the DB lease keeps exactly one
+poller active and the others warm. Use a separate test-bot token for side-by-side implementations.
 
 ## Required production environment
 
@@ -65,8 +66,21 @@ comparison.
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_BOT_USERNAME`
 - `OCTANE_API_BASE`
-- `OCTANE_INTERNAL_API_KEY`
-- Either the backend chat map or the `OCTANE_GROUP_CHAT_ID` / `OCTANE_CARRIER_ID` fallback
+- `OCTANE_SUPPORT_BOT_API_KEY`
+- `MONITOR_TOKEN` (at least 32 characters)
+- `GATEWAY_LEASE_ENABLED=1`
+- A backend chat map (legacy single-group environment fallback is development-only)
+
+The backend must use the same dedicated `SUPPORT_BOT_GATEWAY_API_KEY`, enable
+`FF_SUPPORT_BOT_IDEMPOTENCY=1`, and apply migration `0083_support_bot_production_safety.sql` before
+the gateway starts. Production writes fail closed unless they carry a consumed server confirmation,
+stable idempotency metadata, and the current session fence.
+
+An unmapped Telegram group is auto-bound only after an active registered company owner sends the
+first message. This keeps onboarding tenant-safe without preloading guessed chat IDs. Disable a
+stale mapping with `DELETE /v1/support-bot/chat-map/:chatId` using admin or gateway-service auth;
+the action is tenant-scoped and audit-logged. The backend enforces the 800-enabled-group cap while
+holding a transaction-scoped advisory lock, so concurrent onboarding cannot exceed the limit.
 
 Useful defaults are documented in `.env.example`.
 
@@ -142,10 +156,20 @@ user text can never grant a role.
 The gateway is bounded by default for multi-company bursts:
 
 - Up to 32 Telegram updates are preprocessed concurrently.
-- Semantic router calls are independently capped at 16 (`OPENAI_ROUTER_MAX_CONCURRENT`).
+- Production drops ambient chatter before the router; mentions/replies and active follow-ups pass.
+- Every authenticated request is admitted before the semantic router. The full request
+  lifecycle is capped globally, per user, and per carrier.
+- Semantic router calls are independently capped at 16 (`OPENAI_ROUTER_MAX_CONCURRENT`), with
+  a hard 200-item router queue guard (`OPENAI_ROUTER_QUEUE_MAX`).
 - OpenAI/tool work is capped at 8 active turns globally.
 - Turns stay ordered per `(chatId, userId)` while different users in one group run in parallel.
-- The queue accepts up to 2,000 turns globally and 5 per user before returning a capacity nudge.
+- The admitted-request cap covers router wait, model wait, and active execution, so the
+  downstream model queue cannot grow beyond the same bound.
+- Requests that cannot start within 45 seconds (`MAX_REQUEST_QUEUE_WAIT_MS`) are discarded as
+  stale without calling OpenAI and receive the static high-demand reply.
+- Router, main-model, and vision calls share configurable RPM/TPM token buckets. OpenAI 429
+  responses honor `Retry-After`; 3 consecutive 429s open a 30-second circuit breaker. Set
+  `OPENAI_RPM_LIMIT` and `OPENAI_TPM_LIMIT` to the production OpenAI project's real limits.
 - Access-list and chat-map refreshes are single-flight to avoid backend request stampedes.
 - The access-list cache carries roles, so role-aware tool filtering does not add a per-turn
   `/whoami` lookup.
@@ -164,10 +188,15 @@ This folder can run as a Render Web Service using its Dockerfile:
 1. Set the service root directory to `apps/agent-gateway-groq`.
 2. Choose the Docker runtime and add the required environment variables above.
 3. Mount a persistent disk at `/app/data` if chat history and monitor logs must survive deploys.
-4. Keep only one production gateway polling the Telegram bot token.
+4. One replica is enough initially. Multiple replicas are supported as warm standbys when all use
+   the DB-backed gateway lease; never mix this service with another poller implementation.
 
 Render provides `PORT`; the monitor/health page binds to it automatically. OpenAI handles
 inference remotely, so Render does not need a GPU.
+
+Set the backend's `SUPPORT_BOT_GATEWAY_MONITOR_URL` to this Render service URL and
+`SUPPORT_BOT_GATEWAY_MONITOR_TOKEN` to the same value as this service's `MONITOR_TOKEN`. The
+backend authenticates the admin first and injects that token server-side; browsers never need it.
 
 ## Migration differences
 

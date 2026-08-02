@@ -5,6 +5,7 @@ import { defineTool, toolDispatcher } from '../src/toolRuntime.js';
 const context = {
   chatId: -1001,
   carrierId: 'carrier-1',
+  principalRole: 'admin' as const,
   role: 'owner' as const,
 };
 
@@ -113,5 +114,52 @@ describe('toolDispatcher', () => {
       'error: tool "octane_invoice" is not allowed for role "driver"',
     );
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('refuses a write manifest unless dispatch carries a server confirmation', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const execute = vi.fn(() => ({
+      content: [{ type: 'text' as const, text: 'changed' }],
+    }));
+    const manifest = {
+      ...defineTool(
+        'octane_card_action',
+        'Change card status',
+        { telegram_user_id: z.number() },
+        execute,
+        'write',
+      ),
+      confirmationMode: 'trusted_button' as const,
+    };
+
+    await expect(
+      toolDispatcher(
+        [manifest],
+        'octane_card_action',
+        { telegram_user_id: 9 },
+        context,
+      ),
+    ).resolves.toContain('requires a server-confirmed Telegram button');
+    expect(execute).not.toHaveBeenCalled();
+
+    await expect(
+      toolDispatcher(
+        [manifest],
+        'octane_card_action',
+        { telegram_user_id: 9 },
+        { ...context, principalRole: 'user', confirmationId: 'sbcf_test' },
+      ),
+    ).resolves.toContain('requires the admin service principal');
+    expect(execute).not.toHaveBeenCalled();
+
+    await expect(
+      toolDispatcher(
+        [manifest],
+        'octane_card_action',
+        { telegram_user_id: 9 },
+        { ...context, confirmationId: 'sbcf_test' },
+      ),
+    ).resolves.toBe('changed');
+    expect(execute).toHaveBeenCalledOnce();
   });
 });

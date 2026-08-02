@@ -118,7 +118,10 @@ export class ZohoCrmWrapper extends ZohoWrapper {
   /** Run a COQL SELECT. Returns rows (possibly empty on HTTP 204) plus pagination info. */
   async runCoql(selectQuery: string): Promise<CoqlResult> {
     const query = assertReadOnlyCoql(selectQuery);
-    const res = await this.requestRaw('POST', '/coql', { body: { select_query: query } });
+    const res = await this.requestRaw('POST', '/coql', {
+      body: { select_query: query },
+      retryTransient: true,
+    });
     // 204 = the query is valid but matched no rows.
     if (res.status === 204) return { rows: [], count: 0, moreRecords: false };
     const text = await res.text();

@@ -1,14 +1,25 @@
 /**
  * Escalate Request + Create Lead forms (Create tab siblings of the ticket wizard).
+ *
+ * The escalation form is NATIVE (/v1/comms/escalations). Two changes that matter:
+ *   * Reasons come from `GET /comms/catalog`, not a hardcoded array — the server needs a CODE (ESC-01),
+ *     and a reason with nobody configured is disabled here rather than submitted into a refusal.
+ *   * A DEPARTMENT is chosen when the request is opened, because level 2 is that department's own agent.
+ *     Leaving it blank falls back to the reason's configured fall-to user.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
-import { createEscalation } from '@/api/desk';
+import {
+  createEscalation,
+  getCommsCatalog,
+  uploadThreadAttachment,
+  type DepartmentOptionDto,
+  type EscalationReasonDto,
+} from '@/api/comms';
 import { callTouchpoint } from '@/api/touchpoints';
 import { invalidateDcCache } from './dcCache';
-import { invalidateDeduped } from './fetchDedupe';
 import { resolveCreateLeadOutcome } from './createLeadOutcome';
 import { leadShortId, zohoLeadUrl } from './crmUrls';
 import {
@@ -22,10 +33,7 @@ import {
   SELECT_BTN,
 } from './createTicketShared';
 
-const ESCALATION_REASONS = [
-  'Problem with the client', 'Question', 'Personal Request', 'CITI Fuel Duplicate', 'CRM Question',
-  'Lead Transfer', 'Deal Transfer', 'Mobile App Issue', 'RingCentral Number Issue', 'Additional Discounts', 'Other',
-];
+// The reason list is admin-owned now; this array only existed because it used to be hardcoded.
 const SALUTATIONS = ['Mr', 'Ms'];
 
 export function EscalationForm() {
@@ -34,28 +42,64 @@ export function EscalationForm() {
   const [body, setBody] = useState('');
   const [reason, setReason] = useState('');
   const [reasonOpen, setReasonOpen] = useState(false);
+  const [dept, setDept] = useState('');
+  const [reasons, setReasons] = useState<EscalationReasonDto[]>([]);
+  const [depts, setDepts] = useState<DepartmentOptionDto[]>([]);
   const [att, setAtt] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // The same key is replayed after a network failure; rotate it only after confirmed creation.
+  const idempotencyKey = useRef(`sales-escalation:${crypto.randomUUID()}`);
   const canSubmit = !!(subject.trim() && body.trim() && reason) && !submitting;
+
+  useEffect(() => {
+    void getCommsCatalog()
+      .then((cat) => {
+        setReasons(cat.escalationReasons);
+        setDepts(cat.departments.filter((d) => d.acceptsEscalations));
+      })
+      // A catalog failure leaves the pickers empty and the submit disabled, which is the honest outcome:
+      // guessing a reason code would submit into a refusal.
+      .catch(() => undefined);
+  }, []);
+
+  const chosen = reasons.find((r) => r.code === reason);
 
   const submit = async (): Promise<void> => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
       const hadFile = !!att;
-      const res = await createEscalation({ subject: subject.trim(), description: body.trim(), reason }, att);
-      setSubject(''); setBody(''); setReason(''); setAtt(null);
+      const res = await createEscalation({
+        reasonCode: reason,
+        ...(dept ? { targetDepartment: dept } : {}),
+        subject: subject.trim(),
+        description: body.trim(),
+        sourceMytrion: 'sales',
+        idempotencyKey: idempotencyKey.current,
+      });
+      // A separate call, against the new escalation's thread: an attachment belongs to a message.
+      let attached = false;
+      if (att) {
+        try {
+          await uploadThreadAttachment(res.threadId, att);
+          attached = true;
+        } catch {
+          attached = false;
+        }
+      }
+      setSubject(''); setBody(''); setReason(''); setDept(''); setAtt(null);
+      idempotencyKey.current = `sales-escalation:${crypto.randomUUID()}`;
+      const landed = res.escalation.assignee?.name ?? res.escalation.department ?? 'the escalation team';
       pushToast(
-        'Escalation created',
+        `Escalation ${res.number} created`,
         hadFile
-          ? res.attached
-            ? 'Routed to the escalation team — file attached.'
-            : 'Routed to the escalation team — the file couldn’t be attached.'
-          : 'Routed to the escalation team — opening it now.',
+          ? attached
+            ? `With ${landed} — file attached.`
+            : `With ${landed} — attach the file in the chat.`
+          : `With ${landed} — opening it now.`,
       );
       invalidateDcCache('sales:tickets');
-      invalidateDeduped('desk:tickets:');
-      if (res.ticketId) openTicket(res.ticketId);
+      if (res.escalation.ticketId) openTicket(res.escalation.ticketId);
     } catch (e) {
       pushToast('Couldn’t create escalation', e instanceof Error ? e.message : 'Please try again.');
     } finally {
@@ -79,25 +123,36 @@ export function EscalationForm() {
               onClick={() => setReasonOpen((o) => !o)}
               style={s(`${SELECT_BTN};color:${reason ? 'var(--text)' : 'var(--muted)'};font-weight:${reason ? '600' : '400'}`)}
             >
-              <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{reason || 'Select a reason'}</span>
+              <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{chosen?.label ?? 'Select a reason'}</span>
               <Icon name="chevronDown" size={16} color="var(--muted)" style={{ flexShrink: 0 }} />
             </button>
             {reasonOpen && (
               <>
                 <div onClick={() => setReasonOpen(false)} style={s('position:fixed;inset:0;z-index:8')} />
                 <div className="ss-scroll" role="listbox" style={s(DROP_PANEL)}>
-                  {ESCALATION_REASONS.map((r) => {
-                    const on = reason === r;
+                  {reasons.length === 0 && (
+                    <div style={s('padding:10px 12px;font-size:13px;color:var(--muted)')}>
+                      No escalation reasons are configured yet.
+                    </div>
+                  )}
+                  {reasons.map((r) => {
+                    const on = reason === r.code;
                     return (
                       <button
-                        key={r}
+                        key={r.code}
                         type="button"
                         role="option"
                         aria-selected={on}
-                        onClick={() => { setReason(r); setReasonOpen(false); }}
+                        // An unrouted reason has nobody to receive it, so the server refuses it. Disabling
+                        // it here means the agent finds that out before typing the whole request.
+                        disabled={!r.routed}
+                        title={r.routed ? r.label : `${r.label} — no assignee configured yet`}
+                        onClick={() => { setReason(r.code); setReasonOpen(false); }}
                         className={`ss-menu-i${on ? ' is-on' : ''}`}
+                        style={r.routed ? undefined : s('opacity:.45;cursor:not-allowed')}
                       >
-                        {r}
+                        {r.label}
+                        {!r.routed && <span style={s('margin-left:6px;font-size:11px')}>· not set up</span>}
                       </button>
                     );
                   })}
@@ -105,6 +160,29 @@ export function EscalationForm() {
               </>
             )}
           </div>
+        </div>
+        <div>
+          <div style={s(LABEL)}>
+            Escalate to{' '}
+            <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>
+              · optional — leave blank to use the reason&rsquo;s default
+            </span>
+          </div>
+          {/* The department decides LEVEL 2: an escalation aimed at Billing goes to Billing's own agent. */}
+          <select
+            value={dept}
+            onChange={(e) => setDept(e.currentTarget.value)}
+            className="ss-in"
+            style={s(FIELD)}
+            aria-label="Escalate to department"
+          >
+            <option value="">Use the reason&rsquo;s default assignee</option>
+            {depts.map((d) => (
+              <option key={d.department} value={d.department}>
+                {d.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div><div style={s(LABEL)}>Attachment <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>· max 20MB</span></div><AttachZone id="esc-att" file={att} onFile={setAtt} /></div>
         <div style={s('display:flex;justify-content:flex-end;padding-top:2px')}>

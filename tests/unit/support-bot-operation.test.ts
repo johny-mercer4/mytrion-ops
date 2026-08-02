@@ -69,6 +69,7 @@ function fakeRepo(claim: ClaimSupportBotOperationResult) {
     claim: vi.fn(async () => claim),
     markExternalStarted: vi.fn(async () => true),
     markSucceeded: vi.fn(async () => undefined),
+    markFailedSafe: vi.fn(async () => undefined),
     markUnknown: vi.fn(async () => undefined),
   };
 }
@@ -204,6 +205,28 @@ describe('support-bot operation executor', () => {
       }),
     ).rejects.toMatchObject({ code: 'SUPPORT_BOT_STALE_FENCE' });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('marks pre-provider validation failures retryable without crossing the external boundary', async () => {
+    const repo = fakeRepo({ kind: 'claimed', operation: operation() });
+    const prepare = vi.fn(async () => {
+      throw new Error('carrier rate limit reached');
+    });
+    const execute = vi.fn(async () => ({ success: true }));
+    const run = createSupportBotOperationExecutor(repo);
+
+    await expect(
+      run(ctx, {
+        ...claimInput,
+        prepare,
+        execute,
+        sanitize: (output) => output,
+      }),
+    ).rejects.toThrow('carrier rate limit reached');
+    expect(repo.markFailedSafe).toHaveBeenCalledWith(ctx, 'sbo-1', 'Error');
+    expect(repo.markExternalStarted).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(repo.markUnknown).not.toHaveBeenCalled();
   });
 
   it('marks an ambiguous provider failure unknown and never retries it', async () => {

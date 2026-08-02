@@ -17,11 +17,12 @@ import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
+import { TicketConsole } from '@/features/comms/TicketConsole';
 import { Prepay } from './Prepay';
 import { Returns } from './Returns';
 import { Transactions } from './Transactions';
 
-type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns';
+type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns' | 'tickets';
 
 interface NavDef {
   id: SectionId;
@@ -72,6 +73,15 @@ const NAV_ITEMS: NavDef[] = [
     iconPath: 'M3 10h10a5 5 0 015 5v1M3 10l4-4M3 10l4 4',
     disabled: false,
   },
+  {
+    id: 'tickets',
+    label: 'Tickets',
+    shortLabel: 'Tickets',
+    // chat bubbles
+    iconPath:
+      'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+    disabled: false,
+  },
 ];
 
 
@@ -111,6 +121,9 @@ export function BillingShell() {
       debtors: <Debtors />,
       prepay: <Prepay />,
       returns: <Returns />,
+      // The SHARED console — Billing works its own inbound queue. No Billing-specific chat code exists:
+      // visibility is decided server-side by the thread reader filter's department arm.
+      tickets: <TicketConsole mode="queue" department="billing" title="Billing tickets" />,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [actAsKey],

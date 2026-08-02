@@ -16,6 +16,23 @@ interface ErrorResponse {
 
 const GENERIC_MESSAGE = 'Internal server error';
 
+/**
+ * Vitest and some bundled entrypoints can load more than one physical Zod copy. In that case an
+ * otherwise genuine ZodError fails `instanceof ZodError`, which used to turn malformed requests
+ * into an HTTP 500. Keep the nominal check, then use Zod's stable error shape as a cross-realm
+ * fallback.
+ */
+function isZodValidationError(error: unknown): error is ZodError {
+  if (error instanceof ZodError) return true;
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: unknown; issues?: unknown; flatten?: unknown };
+  return (
+    candidate.name === 'ZodError' &&
+    Array.isArray(candidate.issues) &&
+    typeof candidate.flatten === 'function'
+  );
+}
+
 /** Backend paths that must NEVER fall back to the SPA — they return a real JSON 404 instead. */
 const API_PREFIXES = ['/v1', '/health', '/docs', '/documentation', '/realtime', '/mini-app', '/widget'];
 
@@ -65,7 +82,7 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
     let details: unknown;
     let expose = false;
 
-    if (error instanceof ZodError) {
+    if (isZodValidationError(error)) {
       statusCode = 400;
       code = 'VALIDATION_ERROR';
       message = 'Request validation failed';
@@ -87,6 +104,7 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
       statusCode = error.statusCode;
       code = error.code ?? 'REQUEST_ERROR';
       message = error.message;
+      details = (error as FastifyError & { details?: unknown }).details;
       expose = true;
     }
 

@@ -14,11 +14,13 @@ import { actAsHeaders } from './impersonation';
 export class ApiError extends Error {
   code: string;
   status: number;
-  constructor(message: string, code = 'ERROR', status = 0) {
+  retryAfterMs: number | null;
+  constructor(message: string, code = 'ERROR', status = 0, retryAfterMs: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -33,6 +35,53 @@ export interface RequestOptions {
    * aborted fetch surfaces as an ApiError('NETWORK'), so callers check `signal.aborted` before
    * treating the rejection as a real failure. */
   signal?: AbortSignal | undefined;
+  /** Per-request timeout. Defaults to 20s; expensive exports should opt into a larger value. */
+  timeoutMs?: number | undefined;
+  /** Disable the one controlled retry for idempotent GET requests. */
+  retry?: boolean | undefined;
+}
+
+const DEFAULT_TIMEOUT_MS = 20_000;
+const READ_RETRY_STATUSES = new Set([429, 502, 503, 504]);
+const getInflight = new Map<string, Promise<unknown>>();
+
+function retryAfterMs(response: Response): number | null {
+  const raw = response.headers.get('retry-after');
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = (): void => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) onAbort();
+  else externalSignal?.addEventListener('abort', onAbort, { once: true });
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new ApiError('The backend took too long to respond.', 'TIMEOUT', 0);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', onAbort);
+  }
 }
 
 /** Session Bearer (else dev API key). No impersonation headers — the base principal. */
@@ -132,21 +181,33 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
 export async function requestMultipart(
   path: string,
   form: FormData,
-  opts: { headers?: Record<string, string>; impersonate?: boolean } = {},
+  opts: {
+    headers?: Record<string, string>;
+    impersonate?: boolean;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
 ): Promise<unknown> {
   const url = buildUrl(path);
   const doFetch = (): Promise<Response> =>
-    fetch(url, {
+    fetchWithTimeout(url, {
       method: 'POST',
       headers: { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) },
       credentials: 'same-origin',
       body: form,
-    });
+    }, opts.timeoutMs ?? 45_000, opts.signal);
   let res: Response;
   try {
     res = await doFetch();
     if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
   } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if (
+      (e instanceof DOMException && e.name === 'AbortError') ||
+      (e instanceof Error && e.name === 'AbortError')
+    ) {
+      throw e;
+    }
     throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
   }
   const raw = await res.text();
@@ -160,24 +221,51 @@ export async function requestMultipart(
   }
   if (!res.ok) {
     const err = json && typeof json === 'object' ? (json as { error?: { message?: string; code?: string } }).error : null;
-    throw new ApiError(err?.message ?? `Backend returned HTTP ${res.status}.`, err?.code ?? `HTTP_${res.status}`, res.status);
+    throw new ApiError(
+      err?.message ?? `Backend returned HTTP ${res.status}.`,
+      err?.code ?? `HTTP_${res.status}`,
+      res.status,
+      retryAfterMs(res),
+    );
   }
   return json;
 }
 
 /** GET a binary response (attachment download) as a Blob, with the same auth + 401-refresh. */
-export async function requestBlob(path: string, opts: { headers?: Record<string, string> } = {}): Promise<Blob> {
+export async function requestBlob(
+  path: string,
+  opts: { headers?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<Blob> {
   const url = buildUrl(path);
   const doFetch = (): Promise<Response> =>
-    fetch(url, { headers: { ...authHeaders(true), ...(opts.headers ?? {}) }, credentials: 'same-origin' });
+    fetchWithTimeout(
+      url,
+      { headers: { ...authHeaders(true), ...(opts.headers ?? {}) }, credentials: 'same-origin' },
+      opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      opts.signal,
+    );
   let res: Response;
   try {
     res = await doFetch();
     if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
   } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if (
+      (e instanceof DOMException && e.name === 'AbortError') ||
+      (e instanceof Error && e.name === 'AbortError')
+    ) {
+      throw e;
+    }
     throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
   }
-  if (!res.ok) throw new ApiError(`Download failed (HTTP ${res.status}).`, `HTTP_${res.status}`, res.status);
+  if (!res.ok) {
+    throw new ApiError(
+      `Download failed (HTTP ${res.status}).`,
+      `HTTP_${res.status}`,
+      res.status,
+      retryAfterMs(res),
+    );
+  }
   return res.blob();
 }
 
@@ -188,16 +276,42 @@ export async function request(
 ): Promise<unknown> {
   const url = buildUrl(path, opts.query);
 
+  // Join identical GETs across shell badges and tabs. Requests with caller-owned AbortSignals stay
+  // independent so cancelling a search never cancels another consumer's valid read.
+  if (method === 'GET' && !opts.signal) {
+    const identityHeaders = authHeaders(opts.impersonate !== false);
+    const identity = Object.entries(identityHeaders)
+      .filter(([key]) => key !== 'Authorization' && key !== 'x-api-key')
+      .sort(([a], [b]) => a.localeCompare(b));
+    const principal = getSession()?.worker.zohoUserId ?? 'anonymous';
+    const key = `${principal}:${url}:${JSON.stringify(identity)}:${JSON.stringify(opts.headers ?? {})}`;
+    const running = getInflight.get(key);
+    if (running) return running;
+    const promise = requestOnce(method, path, opts).finally(() => {
+      if (getInflight.get(key) === promise) getInflight.delete(key);
+    });
+    getInflight.set(key, promise);
+    return promise;
+  }
+  return requestOnce(method, path, opts);
+}
+
+async function requestOnce(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  opts: RequestOptions,
+): Promise<unknown> {
+  const url = buildUrl(path, opts.query);
+
   const doFetch = async (): Promise<Response> => {
     const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) };
     if (method !== 'GET') headers['Content-Type'] = 'application/json';
-    return fetch(url, {
+    return fetchWithTimeout(url, {
       method,
       headers,
       credentials: 'same-origin',
-      ...(opts.signal ? { signal: opts.signal } : {}),
       ...(method !== 'GET' ? { body: JSON.stringify(opts.body ?? {}) } : {}),
-    });
+    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, opts.signal);
   };
 
   let res: Response;
@@ -207,7 +321,18 @@ export async function request(
     if (res.status === 401 && getSession() && (await refreshBearer())) {
       res = await doFetch();
     }
+    if (
+      method === 'GET' &&
+      opts.retry !== false &&
+      !opts.signal &&
+      READ_RETRY_STATUSES.has(res.status)
+    ) {
+      const vendorDelay = retryAfterMs(res);
+      await wait(Math.min(5_000, vendorDelay ?? 450 + Math.floor(Math.random() * 250)));
+      res = await doFetch();
+    }
   } catch (e) {
+    if (e instanceof ApiError) throw e;
     // Preserve abort so callers (search-as-you-type) can ignore cancelled requests.
     if (
       (e instanceof DOMException && e.name === 'AbortError') ||
@@ -235,6 +360,7 @@ export async function request(
       err?.message ?? `Backend returned HTTP ${res.status}.`,
       err?.code ?? `HTTP_${res.status}`,
       res.status,
+      retryAfterMs(res),
     );
   }
   return json;

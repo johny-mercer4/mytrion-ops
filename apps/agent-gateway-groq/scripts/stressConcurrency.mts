@@ -40,11 +40,11 @@ const initialRss = process.memoryUsage().rss;
 const loopDelay = monitorEventLoopDelay({ resolution: 10 });
 loopDelay.enable();
 
-function enqueue(key: string, sequence: number): Promise<void> {
+function enqueue(key: string, carrierId: string, sequence: number): Promise<void> {
   const previous = chains.get(key) ?? Promise.resolve();
   const next = previous
     .then(async () => {
-      await acquireTurnSlot();
+      await acquireTurnSlot(carrierId);
       maxActive = Math.max(maxActive, activeTurnCount());
       if (userActive.has(key)) sameUserOverlaps += 1;
       userActive.add(key);
@@ -54,7 +54,7 @@ function enqueue(key: string, sequence: number): Promise<void> {
         lastSequence.set(key, sequence);
       } finally {
         userActive.delete(key);
-        releaseTurnSlot();
+        releaseTurnSlot(carrierId);
       }
     })
     .finally(() => {
@@ -67,8 +67,9 @@ function enqueue(key: string, sequence: number): Promise<void> {
 const work: Array<Promise<void>> = [];
 for (let user = 0; user < users; user += 1) {
   const key = `-1001:${user + 1}`;
+  const carrierId = `carrier-${(user % 10) + 1}`;
   for (let sequence = 0; sequence < turnsPerUser; sequence += 1) {
-    work.push(enqueue(key, sequence));
+    work.push(enqueue(key, carrierId, sequence));
   }
 }
 await Promise.all(work);

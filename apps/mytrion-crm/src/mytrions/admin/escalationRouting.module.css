@@ -1,0 +1,456 @@
+/**
+ * Escalation routing — ladder-specific visuals only.
+ *
+ * Everything generic (cards, inputs, pills, buttons, skeletons) comes from admin.module.css so this
+ * screen cannot drift from the rest of Mytrion Admin. What lives here is the one thing that screen does
+ * not already have a vocabulary for: a FOUR-RUNG LADDER whose rungs are either configured or not, which
+ * is the single fact an admin opens this page to see.
+ *
+ * Built on the existing tokens (--hz-pane, --hz-blur-*, --tone-*) rather than new colours, so light/dark
+ * and the accent theme keep working untouched.
+ */
+
+/* ------------------------------------------------------------------ readiness */
+
+.readiness {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.readyTile {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.readyTile:hover {
+  background: var(--hz-pane-lift);
+  transform: var(--hz-hover-lift-sm);
+}
+
+/* A left rail carries the state, so the tile reads at a glance without relying on colour alone —
+   the count and the label say the same thing in text. */
+.readyTile::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--rail, var(--tone-slate));
+}
+
+.readyTileOk {
+  --rail: var(--tone-emerald);
+}
+.readyTileGap {
+  --rail: var(--tone-amber);
+}
+
+.readyNum {
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.readyBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.readyLabel {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.readyHint {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ ladder legend */
+
+.ladder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm, 6px));
+  font-size: 0.8125rem;
+}
+
+.rung {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone, var(--tone-slate)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone, var(--tone-slate)) 32%, transparent);
+  white-space: nowrap;
+}
+
+.rungNum {
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone, var(--tone-slate)) 30%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rungArrow {
+  opacity: 0.45;
+}
+
+/* ------------------------------------------------------------------ rows */
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.sectionSub {
+  font-size: 0.8125rem;
+  opacity: 0.72;
+  max-width: 68ch;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 22rem) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm, 6px));
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.row:hover {
+  background: var(--hz-pane-lift);
+}
+
+/* Unrouted is the state that matters, so it is marked structurally rather than by hue alone. */
+.rowGap {
+  border-color: color-mix(in srgb, var(--tone-amber) 45%, var(--hz-pane-bd));
+}
+
+.rowGap::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--tone-amber);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.rowCode {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  opacity: 0.62;
+}
+
+.rowMeta {
+  font-size: 0.75rem;
+  opacity: 0.68;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rowActions {
+    justify-content: flex-end;
+  }
+}
+
+/* ------------------------------------------------------------------ person picker */
+
+.picker {
+  position: relative;
+  min-width: 0;
+}
+
+.pickerValue {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-md, 8px);
+  background: var(--hz-input-bg, var(--hz-pane));
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.pickerValue:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+}
+
+.pickerValue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pickerValue:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.pickerEmpty {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerCaret {
+  opacity: 0.5;
+  flex: none;
+}
+
+.pickerPanel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 19rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  background: var(--hz-pane-solid, var(--hz-pane));
+  backdrop-filter: blur(var(--hz-blur-lg, 16px));
+  box-shadow: var(--hz-shadow-lift);
+  overflow: hidden;
+  animation: pickerIn 130ms ease;
+}
+
+@keyframes pickerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Respect a reduced-motion preference — the panel still appears, it just does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .pickerPanel {
+    animation: none;
+  }
+  .readyTile,
+  .row {
+    transition: none;
+  }
+}
+
+.pickerSearch {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+
+.pickerList {
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+.pickerOpt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pickerOpt:hover,
+.pickerOptActive {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.pickerOptBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pickerOptName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerOptMeta {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* HR thinks this person leads the department — a suggestion, never a silent default. */
+.leadHint {
+  flex: none;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone-emerald) 20%, transparent);
+}
+
+.pickerNone {
+  padding: 0.75rem 0.5rem;
+  font-size: 0.8125rem;
+  opacity: 0.65;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ pool */
+
+.poolWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  grid-column: 1 / -1;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: 1px dashed var(--hz-pane-bd);
+}
+
+.poolHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.6rem;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 999px;
+  background: var(--hz-pane);
+  font-size: 0.8125rem;
+}
+
+.seatOff {
+  opacity: 0.5;
+}
+
+.seatRole {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone-violet) 22%, transparent);
+}
+
+.seatX {
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.seatX:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--tone-rose) 22%, transparent);
+}

@@ -45,7 +45,11 @@ export function carrierToCreatePayload(c: CarrierSearchVM): Record<string, strin
 }
 
 export async function createLeadFromCarrier(c: CarrierSearchVM): Promise<CarrierLeadOutcome> {
-  const res = await callTouchpoint('leads.create', { createPayload: carrierToCreatePayload(c) });
+  const res = await callTouchpoint(
+    'leads.create',
+    { createPayload: carrierToCreatePayload(c) },
+    { idempotencyKey: `sales-lead:${c.id}` },
+  );
   const outcome = resolveCreateLeadOutcome(res);
   // A freshly created lead should show up in the Data Center Leads list without a manual refresh.
   if (outcome.ok && !outcome.duplicate) invalidateDcCache('sales:leads');

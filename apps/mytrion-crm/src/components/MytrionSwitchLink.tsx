@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import { Grid2x2 } from 'lucide-react';
 import { useUserContext } from '../context/UserContextProvider';
 import { resolveAccessibleMytrions } from '../access/resolveAccess';
+import { SwitchIcon } from './icons';
 
 /**
  * "Switch Mytrion" — a route back to the picker at /main.
@@ -40,7 +40,7 @@ export function MytrionSwitchLink({
       aria-label="Switch Mytrion"
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', ...style }}
     >
-      <Grid2x2 size={14} />
+      <SwitchIcon size={14} />
       {label}
     </Link>
   );

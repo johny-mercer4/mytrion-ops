@@ -5,9 +5,12 @@
 export interface MessageBurstOptions<T> {
   quietMs: number;
   maxWaitMs: number;
+  maxKeys?: number;
+  maxItemsPerKey?: number;
   quietMsFor?: (items: readonly T[]) => number;
   onFlush: (items: readonly T[]) => Promise<void> | void;
   onError?: (error: unknown) => void;
+  onOverflow?: (kind: 'keys' | 'items', key: string) => void;
 }
 
 interface PendingBurst<T> {
@@ -29,13 +32,22 @@ export class MessageBurstBuffer<T> {
     return this.pending.has(key);
   }
 
-  push(key: string, item: T): void {
+  push(key: string, item: T): boolean {
     const existing = this.pending.get(key);
     if (existing) {
+      if (existing.items.length >= (this.options.maxItemsPerKey ?? Number.MAX_SAFE_INTEGER)) {
+        existing.items.shift();
+        this.options.onOverflow?.('items', key);
+      }
       existing.items.push(item);
       if (existing.timer) clearTimeout(existing.timer);
       existing.timer = this.schedule(key, existing);
-      return;
+      return true;
+    }
+
+    if (this.pending.size >= (this.options.maxKeys ?? Number.MAX_SAFE_INTEGER)) {
+      this.options.onOverflow?.('keys', key);
+      return false;
     }
 
     const startedAt = Date.now();
@@ -48,6 +60,7 @@ export class MessageBurstBuffer<T> {
     if (created) {
       created.timer = this.schedule(key, created);
     }
+    return true;
   }
 
   async flush(key: string): Promise<void> {
@@ -56,6 +69,10 @@ export class MessageBurstBuffer<T> {
     this.pending.delete(key);
     if (burst.timer) clearTimeout(burst.timer);
     await this.options.onFlush(burst.items);
+  }
+
+  async flushAll(): Promise<void> {
+    for (const key of [...this.pending.keys()]) await this.flush(key);
   }
 
   private schedule(key: string, burst: PendingBurst<T>): NodeJS.Timeout {
