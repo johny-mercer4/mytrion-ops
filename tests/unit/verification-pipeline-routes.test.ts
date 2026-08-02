@@ -121,12 +121,12 @@ describe('Sales Verification clients dependency isolation', () => {
     expect(response.json().clients[0]).toMatchObject({ attentionCount: 0, verificationStatus: null });
   });
 
-  it('uses 502 only for an actual DWH roster failure', async () => {
-    mocks.clients.mockRejectedValue(new Error('DWH unavailable'));
+  it('uses 502 only for an actual CRM roster failure', async () => {
+    mocks.clients.mockRejectedValue(new Error('Zoho CRM unavailable'));
 
     const response = await app.inject({
       method: 'GET',
-      url: '/v1/verification/clients',
+      url: '/v1/verification/clients?q=actual-crm-failure',
       headers: await headers(),
     });
 
@@ -134,7 +134,7 @@ describe('Sales Verification clients dependency isolation', () => {
     expect(mocks.responses).not.toHaveBeenCalled();
   });
 
-  it('passes bounded server pagination and search to the DWH roster', async () => {
+  it('scopes the roster by Zoho user id alone and passes bounded pagination + search', async () => {
     const response = await app.inject({
       method: 'GET',
       url: '/v1/verification/clients?page=3&page_size=9&q=acme',
@@ -142,7 +142,9 @@ describe('Sales Verification clients dependency isolation', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mocks.clients).toHaveBeenCalledWith('42', 'Sales Worker', {
+    // No display name: the Zoho source scopes on `Owner = '<id>'`. The old DWH source keyed on an
+    // agent NAME, so a rename or a warehouse mismatch silently emptied an agent's pipeline.
+    expect(mocks.clients).toHaveBeenCalledWith('42', {
       page: 3,
       pageSize: 9,
       search: 'acme',

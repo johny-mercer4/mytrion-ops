@@ -1,7 +1,9 @@
 /**
  * Sales My Tasks — status kanban (Open → In progress → Completed → Cancelled).
  * Cards drag between columns to PATCH `/sales/tasks/:id/status`; click opens detail modal.
- * Reuses Retention board chrome (`.ss-ret-*`) so the desk matches Horizon patterns.
+ * Board chrome is the shared Retention board (`.ss-ret-*`); page chrome is the shared
+ * `SalesPage`/`SalesPageHead` — the tab no longer prints its own "My Tasks" heading, which the
+ * top bar already shows.
  */
 import {
   useCallback,
@@ -12,21 +14,32 @@ import {
   type DragEvent,
 } from 'react';
 import {
-  listMyTasks,
+  listMyTasksPage,
   moveMyTask,
+  type WorkerTaskCounts,
   type WorkerTaskDto,
+  type WorkerTaskPage,
   type WorkerTaskStatus,
 } from '@/api/salesKpi';
 import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { useCachedLoad, writeDcCache } from '../dcCache';
+import { invalidateDcCache, useCachedLoad, writeDcCache } from '../dcCache';
 import { TaskDetailModal } from '../TaskDetailModal';
-import { TasksBoardSkeleton } from '../TasksBoardSkeleton';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
 import { markTaskOpened, useTaskOpened } from '../taskOpened';
 import { tasksBadgeCacheKey } from '../tasksLiveBus';
+import { NAV_DESC } from '../salesData';
+import {
+  SalesEmpty,
+  SalesErrorNote,
+  SalesPage,
+  SalesPageHead,
+  SalesPager,
+  type SalesMetric,
+} from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
 
 const COLUMNS: Array<{
   id: WorkerTaskStatus;
@@ -41,6 +54,7 @@ const COLUMNS: Array<{
 ];
 
 const MIME = 'application/x-mytrion-task-id';
+const PAGE_SIZE = 50;
 
 function deadlineLabel(value: string | null): string {
   if (!value) return 'No deadline';
@@ -70,18 +84,22 @@ export function TasksTab() {
   const { actingAs } = useImpersonation();
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
   const openedSet = useTaskOpened();
-  const cacheKey = tasksBadgeCacheKey(currentUserId);
-  const tasksLoad = useCachedLoad(cacheKey, () => listMyTasks(), { staleMs: 60_000 });
-  const tasks = tasksLoad.data ?? [];
+  const [page, setPage] = useState(1);
+  const cacheKey = `sales:tasks:page:${currentUserId}:${page}:${PAGE_SIZE}`;
+  const tasksLoad = useCachedLoad(
+    cacheKey,
+    () => listMyTasksPage({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    { staleMs: 60_000 },
+  );
+  const tasks = tasksLoad.data?.tasks ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<WorkerTaskStatus | null>(null);
 
   const syncCache = useCallback(
-    (rows: WorkerTaskDto[]) => {
-      // Shared SWR key with the shell badge — write adopts instantly (no refetch race).
-      writeDcCache(cacheKey, rows);
+    (value: WorkerTaskPage) => {
+      writeDcCache(cacheKey, value);
     },
     [cacheKey],
   );
@@ -104,22 +122,36 @@ export function TasksTab() {
     return map;
   }, [tasks]);
 
-  const openCount = byStatus.open.length + byStatus.in_progress.length;
   const overdueCount = tasks.filter(isOverdue).length;
   const newCount = byStatus.open.filter((task) => !openedSet[task.id]).length;
+  const counts = tasksLoad.data?.counts ?? {
+    open: byStatus.open.length,
+    in_progress: byStatus.in_progress.length,
+    completed: byStatus.completed.length,
+    cancelled: byStatus.cancelled.length,
+  };
+  const total = tasksLoad.data?.pagination.total ?? tasks.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const move = async (task: WorkerTaskDto, status: WorkerTaskStatus): Promise<void> => {
     if (task.status === status) return;
+    const previous = tasksLoad.data;
+    if (!previous) return;
     setMoving(true);
-    const previous = tasks;
     const optimistic = tasks.map((row) =>
       row.id === task.id ? { ...row, status, version: row.version + 1 } : row,
     );
-    syncCache(optimistic);
+    const optimisticCounts: WorkerTaskCounts = {
+      ...previous.counts,
+      [task.status]: Math.max(0, previous.counts[task.status] - 1),
+      [status]: previous.counts[status] + 1,
+    };
+    syncCache({ ...previous, tasks: optimistic, counts: optimisticCounts });
     try {
       const updated = await moveMyTask(task.id, task.version, status);
       const next = optimistic.map((row) => (row.id === updated.id ? updated : row));
-      syncCache(next);
+      syncCache({ ...previous, tasks: next, counts: optimisticCounts });
+      invalidateDcCache(tasksBadgeCacheKey(currentUserId));
       pushToast('Task updated', `${updated.subject} → ${status.replace('_', ' ')}`);
     } catch (error) {
       syncCache(previous);
@@ -159,157 +191,152 @@ export function TasksTab() {
     void move(task, status);
   };
 
-  if (tasksLoad.loading && !tasksLoad.data) {
-    return <TasksBoardSkeleton />;
-  }
+  const cold = tasksLoad.loading && !tasksLoad.data;
+  const metrics: SalesMetric[] = [
+    {
+      label: 'Active',
+      value: counts.open + counts.in_progress,
+      hint: 'Open + in progress',
+      tone: 'accent',
+    },
+    { label: 'Completed', value: counts.completed, hint: 'Finished', tone: 'ok' },
+    {
+      label: 'Overdue',
+      value: overdueCount,
+      hint: 'On this page',
+      ...(overdueCount ? { tone: 'danger' as const } : {}),
+    },
+    { label: 'Total', value: total, hint: 'All assignments' },
+  ];
 
   return (
-    <div style={s('display:flex;flex-direction:column;gap:16px;min-height:0')}>
-      <div className="ss-ret-hero ss-tasks-hero">
-        <div>
-          <div className="ss-ret-hero-kicker">
-            <Icon name="clipboardCheck" size={13} /> Assignments
-            {newCount > 0 ? (
-              <span className="ss-tasks-new-pill">{newCount} new</span>
-            ) : null}
-          </div>
-          <div className="ss-ret-hero-title">My Tasks</div>
-          <p className="ss-ret-hero-sub">
-            Drag cards across columns to update status. Open any card for full detail and history.
-          </p>
-        </div>
-        <div className="ss-ret-metrics" style={{ marginTop: 4 }}>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Active</div>
-            <div className="ss-ret-metric-val is-accent">{openCount}</div>
-            <div className="ss-ret-metric-hint">Open + in progress</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Completed</div>
-            <div className="ss-ret-metric-val is-ok">{byStatus.completed.length}</div>
-            <div className="ss-ret-metric-hint">Finished</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Overdue</div>
-            <div className={`ss-ret-metric-val${overdueCount ? ' is-danger' : ''}`}>{overdueCount}</div>
-            <div className="ss-ret-metric-hint">Past deadline</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Total</div>
-            <div className="ss-ret-metric-val">{tasks.length}</div>
-            <div className="ss-ret-metric-hint">All assignments</div>
-          </div>
-        </div>
-      </div>
+    <SalesPage busy={cold || tasksLoad.revalidating}>
+      <SalesPageHead
+        description={NAV_DESC.tasks}
+        {...(newCount > 0
+          ? { eyebrow: `${newCount} new`, eyebrowIcon: 'clipboardCheck' as const }
+          : {})}
+        metrics={cold ? undefined : metrics}
+      />
 
-      {tasksLoad.error && tasks.length === 0 ? (
-        <div
-          style={s(
-            'padding:28px;border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));border-radius:var(--radius-md);background:var(--surface);color:var(--danger)',
-          )}
-        >
-          {tasksLoad.error}
-        </div>
-      ) : null}
-
-      {tasks.length === 0 && !tasksLoad.error ? (
-        <div className="ss-tasks-empty">
-          <Icon name="clipboardCheck" size={28} color="var(--ok)" />
-          <div style={s('margin-top:10px;font-weight:700')}>No assignments yet</div>
-          <div style={s('margin-top:4px;color:var(--muted);font-size:13px')}>
-            When a manager or automation assigns work, it lands on this board.
-          </div>
-        </div>
+      {cold ? (
+        <SalesBodySkeleton variant="board" />
       ) : (
-        <div className="ss-scroll ss-ret-board ss-tasks-board">
-          {COLUMNS.map((col) => {
-            const rows = byStatus[col.id];
-            const dropActive = overCol === col.id && dragId != null;
-            return (
-              <div key={col.id} className="ss-ret-col">
-                <div className="ss-ret-col-head">
-                  <div>
-                    <div className="ss-ret-col-title" style={{ color: col.color }}>
-                      <span className="ss-ret-col-dot" style={{ background: col.color }} />
-                      {col.label}
+        <>
+        {tasksLoad.error ? <SalesErrorNote>{tasksLoad.error}</SalesErrorNote> : null}
+
+        {tasks.length === 0 && !tasksLoad.error ? (
+          <SalesEmpty
+            icon="clipboardCheck"
+            tone="ok"
+            title="No assignments yet"
+            body="When a manager or automation assigns work, it lands on this board."
+          />
+        ) : (
+          <div className="ss-scroll ss-ret-board ss-tasks-board">
+            {COLUMNS.map((col) => {
+              const rows = byStatus[col.id];
+              const dropActive = overCol === col.id && dragId != null;
+              return (
+                <div key={col.id} className="ss-ret-col">
+                  <div className="ss-ret-col-head">
+                    <div>
+                      <div className="ss-ret-col-title" style={{ color: col.color }}>
+                        <span className="ss-ret-col-dot" style={{ background: col.color }} />
+                        {col.label}
+                      </div>
+                      <div className="ss-ret-col-hint">{col.hint}</div>
                     </div>
-                    <div className="ss-ret-col-hint">{col.hint}</div>
+                    {/* The count of what is ON this column, not the account-wide total: the header
+                        used to print `counts[col.id]` (every page) above a body holding one page's
+                        rows, so a paginated board read "38 cards" over three visible cards. The
+                        all-pages figures live in the header metric strip, which says so. */}
+                    <div className="ss-ret-col-meta">
+                      <strong>{rows.length}</strong>
+                      {rows.length === 1 ? 'card' : 'cards'}
+                    </div>
                   </div>
-                  <div className="ss-ret-col-meta">
-                    <strong>{rows.length}</strong>
-                    cards
-                  </div>
-                </div>
-                <div
-                  className={`ss-ret-col-body${dropActive ? ' is-drop' : ''}`}
-                  style={{
-                    boxShadow: dropActive
-                      ? `inset 0 2px 0 ${col.color}, inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent)`
-                      : `inset 0 2px 0 ${col.color}`,
-                  }}
-                  onDragOver={(event) => onColumnDragOver(col.id, event)}
-                  onDragLeave={() => {
-                    if (overCol === col.id) setOverCol(null);
-                  }}
-                  onDrop={(event) => onColumnDrop(col.id, event)}
-                >
-                  {rows.map((task, index) => {
-                    const dragging = dragId === task.id;
-                    const overdue = isOverdue(task);
-                    const isNew = task.status === 'open' && !openedSet[task.id];
-                    const rail = overdue ? 'var(--danger)' : priorityTone(task.priority);
-                    return (
-                      <button
-                        key={task.id}
-                        type="button"
-                        draggable={!moving}
-                        onDragStart={(event) => onCardDragStart(task.id, event)}
-                        onDragEnd={onCardDragEnd}
-                        onClick={() => setSelectedId(task.id)}
-                        className={`ss-ret-card ss-tasks-card${dragging ? ' is-dragging' : ''}${overdue ? ' is-overdue' : ''}${isNew ? ' is-new' : ''}`}
-                        style={
-                          {
-                            ['--ret-col' as string]: rail,
-                            animationDelay: `${Math.min(index, 8) * 30}ms`,
-                            cursor: moving ? 'wait' : 'grab',
-                          } as CSSProperties
-                        }
-                      >
-                        <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
-                          <div style={s('font-weight:750;font-size:13.5px;line-height:1.35;text-align:left')}>
-                            {task.subject}
+                  <div
+                    className={`ss-ret-col-body${dropActive ? ' is-drop' : ''}`}
+                    style={{
+                      boxShadow: dropActive
+                        ? `inset 0 2px 0 ${col.color}, inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent)`
+                        : `inset 0 2px 0 ${col.color}`,
+                    }}
+                    onDragOver={(event) => onColumnDragOver(col.id, event)}
+                    onDragLeave={() => {
+                      if (overCol === col.id) setOverCol(null);
+                    }}
+                    onDrop={(event) => onColumnDrop(col.id, event)}
+                  >
+                    {rows.map((task, index) => {
+                      const dragging = dragId === task.id;
+                      const overdue = isOverdue(task);
+                      const isNew = task.status === 'open' && !openedSet[task.id];
+                      const rail = overdue ? 'var(--danger)' : priorityTone(task.priority);
+                      return (
+                        <button
+                          key={task.id}
+                          type="button"
+                          draggable={!moving}
+                          onDragStart={(event) => onCardDragStart(task.id, event)}
+                          onDragEnd={onCardDragEnd}
+                          onClick={() => setSelectedId(task.id)}
+                          className={`ss-ret-card ss-tasks-card${dragging ? ' is-dragging' : ''}${overdue ? ' is-overdue' : ''}${isNew ? ' is-new' : ''}`}
+                          style={
+                            {
+                              ['--ret-col' as string]: rail,
+                              animationDelay: `${Math.min(index, 8) * 30}ms`,
+                              cursor: moving ? 'wait' : 'grab',
+                            } as CSSProperties
+                          }
+                        >
+                          <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
+                            <div style={s('font-weight:750;font-size:13.5px;line-height:1.35;text-align:left')}>
+                              {task.subject}
+                            </div>
+                            <span
+                              style={s(
+                                `flex-shrink:0;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${priorityTone(task.priority)} 14%,transparent);color:${priorityTone(task.priority)}`,
+                              )}
+                            >
+                              {task.priority}
+                            </span>
                           </div>
-                          <span
+                          <div className="ss-ret-card-meta">
+                            {task.taskType.replaceAll('_', ' ')} · {task.source}
+                            {isNew ? ' · new' : ''}
+                          </div>
+                          <div
                             style={s(
-                              `flex-shrink:0;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${priorityTone(task.priority)} 14%,transparent);color:${priorityTone(task.priority)}`,
+                              `display:flex;align-items:center;gap:5px;margin-top:2px;font-size:11.5px;font-weight:650;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`,
                             )}
                           >
-                            {task.priority}
-                          </span>
-                        </div>
-                        <div className="ss-ret-card-meta">
-                          {task.taskType.replaceAll('_', ' ')} · {task.source}
-                          {isNew ? ' · new' : ''}
-                        </div>
-                        <div
-                          style={s(
-                            `display:flex;align-items:center;gap:5px;margin-top:2px;font-size:11.5px;font-weight:650;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`,
-                          )}
-                        >
-                          <Icon name="clock" size={12} />
-                          {deadlineLabel(task.deadlineAt)}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {rows.length === 0 ? (
-                    <div className="ss-tasks-col-empty">Drop a card here</div>
-                  ) : null}
+                            <Icon name="clock" size={12} />
+                            {deadlineLabel(task.deadlineAt)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {rows.length === 0 ? (
+                      <div className="ss-tasks-col-empty">Drop a card here</div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
+
+        {total > PAGE_SIZE ? (
+          <SalesPager
+            page={page}
+            pageCount={pageCount}
+            onPage={setPage}
+            summary={`Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total} assignments`}
+          />
+        ) : null}
+        </>
       )}
 
       {selected ? (
@@ -320,6 +347,6 @@ export function TasksTab() {
           onMove={(status) => void move(selected, status)}
         />
       ) : null}
-    </div>
+    </SalesPage>
   );
 }

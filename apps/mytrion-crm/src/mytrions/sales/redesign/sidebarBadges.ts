@@ -19,34 +19,40 @@
  * ticket comment events to this client at all.
  */
 import { useEffect } from 'react';
-import { listMyTasks } from '@/api/salesKpi';
+import { getMyTaskSummary } from '@/api/salesKpi';
 import { getUnreadTotals } from '@/api/comms';
 import { useCachedLoad } from './dcCache';
-import { useLoad, loadInbox } from './live';
-import { useInboxRead, countUnread } from './inboxRead';
+import { loadInboxCounts } from './live';
 import { subscribeInboxReload } from './inboxLiveBus';
-import { countUnopenedTasks, useTaskOpened } from './taskOpened';
 import { subscribeTasksReload, tasksBadgeCacheKey } from './tasksLiveBus';
-import { setSocketConnected } from './socketStatus';
-import { useServerCrmSocket } from './useServerCrmSocket';
 
 /** How often the native unread total is refreshed while the user is on another tab. */
 const UNREAD_POLL_MS = 60_000;
 
+export function inboxBadgeCacheKey(userId: string): string {
+  return `sales:badges:inbox:${userId || 'self'}`;
+}
+
+export function commsBadgeCacheKey(userId: string): string {
+  return `sales:badges:comms:${userId || 'self'}`;
+}
+
 export function useSidebarBadges(
   currentUserId: string,
 ): { inbox: number; tickets: number; tasks: number } {
-  const readSet = useInboxRead();
-  const openedTasks = useTaskOpened();
-  const inboxLoad = useLoad(loadInbox, [currentUserId]);
-  const tasksLoad = useCachedLoad(tasksBadgeCacheKey(currentUserId), () => listMyTasks(), {
+  const inboxLoad = useCachedLoad(inboxBadgeCacheKey(currentUserId), loadInboxCounts, {
+    enabled: !!currentUserId,
+    staleMs: 60_000,
+  });
+  const tasksLoad = useCachedLoad(tasksBadgeCacheKey(currentUserId), () => getMyTaskSummary(), {
     enabled: !!currentUserId,
     staleMs: 60_000,
   });
 
-  const commsUnread = useLoad(
+  const commsUnread = useCachedLoad(
+    commsBadgeCacheKey(currentUserId),
     async () => (currentUserId ? (await getUnreadTotals()).total : 0),
-    [currentUserId],
+    { enabled: !!currentUserId, staleMs: UNREAD_POLL_MS },
   );
 
   // Refresh on focus AND on a slow interval. Both: the interval keeps a long-lived tab roughly honest, and
@@ -65,20 +71,12 @@ export function useSidebarBadges(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
-  useServerCrmSocket({
-    enabled: !!currentUserId,
-    watchKey: currentUserId,
-    subscribe: { type: 'subscribe', userId: currentUserId },
-    onOpen: () => setSocketConnected(true),
-    onClose: () => setSocketConnected(false),
-  });
-
   useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
   useEffect(() => subscribeTasksReload(() => tasksLoad.reload()), [tasksLoad.reload]);
 
   return {
-    inbox: countUnread(inboxLoad.data ?? [], readSet),
+    inbox: inboxLoad.data?.unread ?? 0,
     tickets: commsUnread.data ?? 0,
-    tasks: countUnopenedTasks(tasksLoad.data ?? [], openedTasks),
+    tasks: tasksLoad.data ? tasksLoad.data.counts.open + tasksLoad.data.counts.in_progress : 0,
   };
 }

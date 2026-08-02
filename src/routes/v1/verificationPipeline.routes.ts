@@ -1,11 +1,14 @@
 /**
- * Sales "Verification Pipeline" tab (/v1/verification) — the agent's deal-clients (DWH, freshest
- * application date first) + a per-client compliance-pipeline snapshot.
+ * Sales "Verification Pipeline" tab (/v1/verification) — the agent's applications, read from Zoho
+ * CRM Deals (COQL, freshest application date first) + a per-client compliance-pipeline snapshot.
  *
- * Session-authoritative + owner-scoped exactly like /v1/data-center: a non-admin sees only their
- * own deals; an admin (or act-as) may pass ?zoho_user_id and we resolve that target's display name
- * so the DWH name-fallback arm fires. Pipeline snapshots are read from the credit_platform replica;
- * Sales responses are sent through the source Zoho Deal and journaled in Octane.
+ * Session-authoritative + owner-scoped exactly like /v1/data-center: a non-admin sees only their own
+ * deals; an admin (or act-as) may pass ?zoho_user_id. Scoping is now by Zoho USER ID alone — the old
+ * DWH source keyed on an agent display name, so this route had to resolve a name for the warehouse's
+ * fallback arm and an agent whose name did not match got an empty pipeline.
+ *
+ * Pipeline snapshots are read from the credit_platform replica; Sales responses are sent through the
+ * source Zoho Deal and journaled in Octane.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -17,7 +20,6 @@ import {
   getPipelineProvider,
   type LiveVerificationSummary,
 } from '../../modules/verificationPipeline/provider.js';
-import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
@@ -26,15 +28,18 @@ import { createRecordNote } from '../../modules/sales/recordActivity.js';
 import { verificationSalesResponseRepo } from '../../repos/verificationSalesResponseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
+import { AsyncSWRCache } from '../../lib/asyncSWRCache.js';
+
+const verificationPageCache = new AsyncSWRCache(300);
 
 function requireSalesAccess(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'sales', 'Verification Pipeline');
 }
 
-function dwhError(err: unknown): AppError {
-  return new AppError('Data warehouse request failed', {
+function crmError(err: unknown): AppError {
+  return new AppError('Zoho CRM request failed', {
     statusCode: 502,
-    code: 'DWH_ERROR',
+    code: 'ZOHO_CRM_ERROR',
     cause: err,
     expose: true,
   });
@@ -144,67 +149,87 @@ function noteContent(input: {
 export async function verificationPipelineRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
-  // The caller's deal-clients, freshest application date first, classified + enriched (DWH).
+  // The caller's applications, freshest application date first, classified + enriched (Zoho CRM).
   app.get('/verification/clients', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
     const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
-    const targetZohoUserId = q.zoho_user_id?.trim();
-    const targetingOther = ctx.allDepartmentAccess && Boolean(targetZohoUserId);
-    // Supply the TARGET's name (admin View-as) so the DWH name-fallback arm can fire — matches
-    // /data-center/clients; the id-suffix arm alone misses agents not aligned to the warehouse id.
-    const ownerName = targetingOther && targetZohoUserId
-      ? (await resolveActAsTarget(targetZohoUserId))?.name?.trim() || undefined
-      : ctx.userName?.trim() || undefined;
-    let page;
-    try {
-      page = await getAgentVerificationClients(ownerId, ownerName, {
-        page: q.page,
-        pageSize: q.page_size,
-        ...(q.q ? { search: q.q } : {}),
-      });
-    } catch (err) {
-      throw dwhError(err);
-    }
-    const clients = page.clients;
-    const dealIds = clients.map((client) => client.dealId).filter((id): id is string => Boolean(id));
-    // Cards are fundamentally a DWH roster. Live Verification status and local response history
-    // enrich it, but a temporary replica issue or a deployment waiting on its migration must not
-    // turn a healthy agent_deals read into a misleading DWH 502.
-    const [summaryResult, responseResult] = await Promise.allSettled([
-      getLiveVerificationSummaries(dealIds),
-      verificationSalesResponseRepo.listForRequests(ctx, dealIds),
-    ]);
-    if (summaryResult.status === 'rejected') {
-      request.log.warn({ err: summaryResult.reason }, 'verification card summary unavailable');
-    }
-    if (responseResult.status === 'rejected') {
-      request.log.warn({ err: responseResult.reason }, 'verification response history unavailable');
-    }
-    const summaries = summaryResult.status === 'fulfilled'
-      ? summaryResult.value
-      : new Map<string, LiveVerificationSummary>();
-    const responses = responseResult.status === 'fulfilled' ? responseResult.value : [];
-    const responded = new Set(responses.map((row) => `${row.requestId}:${row.externalEventId}`));
-    return {
-      clients: clients.map((client) => {
-        const summary = client.dealId ? summaries.get(client.dealId) : undefined;
-        return {
-          ...client,
-          attentionCount:
-            summary?.requirementEventIds.filter(
-              (eventId) => !responded.has(`${client.dealId}:${eventId}`),
-            ).length ?? 0,
-          verificationStatus: summary?.status ?? null,
-          verificationUpdatedAt: summary?.updatedAt ?? null,
+    const cacheKey = [
+      'verification',
+      ctx.tenantId,
+      ownerId,
+      q.page,
+      q.page_size,
+      q.q?.toLowerCase() ?? '',
+    ].join(':');
+    const forceRefresh = ctx.allDepartmentAccess && request.headers['x-cache-refresh'] === '1';
+    const cached = await verificationPageCache.getOrLoad(
+      cacheKey,
+      async () => {
+        let page;
+        try {
+          page = await getAgentVerificationClients(ownerId, {
+            page: q.page,
+            pageSize: q.page_size,
+            ...(q.q ? { search: q.q } : {}),
+          });
+        } catch (err) {
+          throw crmError(err);
+        }
+        const clients = page.clients;
+        const dealIds = clients.map((client) => client.dealId).filter((id): id is string => Boolean(id));
+        const [summaryResult, responseResult] = await Promise.allSettled([
+          getLiveVerificationSummaries(dealIds),
+          verificationSalesResponseRepo.listForRequests(ctx, dealIds),
+        ]);
+        if (summaryResult.status === 'rejected') {
+          request.log.warn({ err: summaryResult.reason }, 'verification card summary unavailable');
+        }
+        if (responseResult.status === 'rejected') {
+          request.log.warn({ err: responseResult.reason }, 'verification response history unavailable');
+        }
+        const summaries = summaryResult.status === 'fulfilled'
+          ? summaryResult.value
+          : new Map<string, LiveVerificationSummary>();
+        const responses = responseResult.status === 'fulfilled' ? responseResult.value : [];
+        const responded = new Set(responses.map((row) => `${row.requestId}:${row.externalEventId}`));
+        const sourceHealth = {
+          crm: 'ok' as const,
+          verification: summaryResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
+          responses: responseResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
         };
-      }),
-      pagination: {
-        page: q.page,
-        pageSize: q.page_size,
-        total: page.total,
-        pageCount: Math.max(1, Math.ceil(page.total / q.page_size)),
+        return {
+          clients: clients.map((client) => {
+            const summary = client.dealId ? summaries.get(client.dealId) : undefined;
+            return {
+              ...client,
+              attentionCount:
+                summary?.requirementEventIds.filter(
+                  (eventId) => !responded.has(`${client.dealId}:${eventId}`),
+                ).length ?? 0,
+              verificationStatus: summary?.status ?? null,
+              verificationUpdatedAt: summary?.updatedAt ?? null,
+            };
+          }),
+          pagination: {
+            page: q.page,
+            pageSize: q.page_size,
+            total: page.total,
+            pageCount: Math.max(1, Math.ceil(page.total / q.page_size)),
+            /** The owner's history exceeded the COQL drain cap, so `total` is a floor. */
+            truncated: page.truncated,
+          },
+          sourceHealth,
+          partial: sourceHealth.verification !== 'ok' || sourceHealth.responses !== 'ok',
+        };
       },
+      { ttlMs: 90_000, staleIfErrorMs: 10 * 60_000, force: forceRefresh },
+    );
+    return {
+      ...cached.data,
+      freshness: cached.freshness,
+      generatedAt: cached.generatedAt,
+      ...(cached.staleReason ? { staleReason: cached.staleReason } : {}),
     };
   });
 
@@ -377,6 +402,7 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
         noteId,
       },
     });
+    verificationPageCache.invalidate(`verification:${ctx.tenantId}:`);
     return { response: responseDto(saved), duplicate: false };
   });
 }

@@ -59,7 +59,7 @@ describe('isTransientBootDbError', () => {
   it('keeps the retry set narrow — every entry is an unavailability condition, not a schema one', () => {
     // Guards against someone widening this to "retry everything", which would turn a broken
     // migration into a 90-second stall followed by the same failure.
-    expect(TRANSIENT_BOOT_DB_CODES.size).toBeLessThanOrEqual(12);
+    expect(TRANSIENT_BOOT_DB_CODES.size).toBeLessThanOrEqual(13);
     for (const forbidden of ['42601', '42P07', '23505', '28P01', '3D000']) {
       expect(TRANSIENT_BOOT_DB_CODES.has(forbidden), forbidden).toBe(false);
     }

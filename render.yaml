@@ -13,10 +13,14 @@ services:
     # when the widget changes.)
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
-    healthCheckPath: /health
+    healthCheckPath: /v1/health
     envVars:
       - key: NODE_ENV
         value: production
+      # Committed migrations run before the HTTP listener starts. Advisory locking in the migrator
+      # makes overlapping Render deploys safe; a failed migration fails the deploy closed.
+      - key: DB_MIGRATE_ON_BOOT
+        value: "1"
       # --- Agentic Core v2 feature flags (2026-07-02). Explicit keys override the env group. ---
       # Multi-agent orchestrator endpoint (POST /v1/agent) + department child agents.
       - key: FF_ORCHESTRATOR_ENABLED

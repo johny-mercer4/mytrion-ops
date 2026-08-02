@@ -21,6 +21,7 @@ export interface CallHubItem {
   result: string;
   subject: string | null;
   linked: CallHubLinked | null;
+  sourceRefs?: Array<{ source: CallHubSource; id: string }>;
 }
 
 export interface CallHubListFilter {
@@ -38,6 +39,18 @@ export interface CallHubListResult {
   pageSize: number;
   total: number;
   agentZohoUserId: string;
+  aggregates?: {
+    answered: number;
+    missed: number;
+    unknown: number;
+    mytrion: number;
+    zoho: number;
+    gong: number;
+    exact: boolean;
+  };
+  sourceHealth?: Record<CallHubSource, 'ok' | 'degraded' | 'disabled'>;
+  freshness?: 'fresh' | 'stale';
+  generatedAt?: string;
 }
 
 export async function listCallHubCalls(filter: CallHubListFilter = {}): Promise<CallHubListResult> {

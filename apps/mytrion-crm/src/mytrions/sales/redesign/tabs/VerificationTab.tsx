@@ -1,14 +1,20 @@
 /**
- * Sales "Verification Pipeline" tab — the agent's deal-clients (freshest application date first),
- * each opening to EITHER the 9-stage compliance pipeline + decision (new/in-pipeline clients) OR a
- * read-only current-terms panel (active card-swiping clients). Pipeline data is served by the
- * backend provider; this tab never talks to the verification database directly.
+ * Sales "Verification" tab — the agent's applications straight from Zoho CRM Deals, freshest
+ * application first. A card opens to the full verification record: the credit decision, the three
+ * verification checkpoints, the application facts, and (when Verification has opened a live request)
+ * the 9-stage compliance timeline with any action requests addressed to Sales.
+ *
+ * Data source note: this used to read `octane.agent_deals` in the DWH, which lagged Zoho and carried
+ * almost none of the fields below. Everything on this screen is now a Zoho `Deals` field — see
+ * `src/integrations/salesVerificationDeals.ts`. The compliance TIMELINE is separate: it comes from
+ * the credit_platform provider via /v1/verification/pipeline.
+ *
+ * Chrome is the shared Sales scaffold (SalesPage / SalesPageHead / SalesEmpty / SalesPager).
  */
 import { useEffect, useState } from 'react';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
-import { badge } from '../salesData';
-import { useLoad } from '../live';
+import { badge, NAV_DESC } from '../salesData';
 import { useCachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
 import {
@@ -20,7 +26,22 @@ import {
   type PipelineDecision,
 } from '@/api/verification';
 import { VerificationActionRequest } from '../VerificationActionRequest';
-import { DcCardGridSkeleton, VerificationDetailSkeleton } from '../DataCenterSkeletons';
+import { VerificationDetailSkeleton } from '../DataCenterSkeletons';
+import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, SalesPager } from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
+import {
+  applicationStatusTone,
+  CheckpointRail,
+  creditDecisionTone,
+  creditScoreTone,
+  FactChip,
+  FactTile,
+  gradeTone,
+  money,
+  riskTone,
+  stageTone,
+  TONE_COLOR,
+} from '../verificationFields';
 
 // ---- status → visual ----
 const STAGE_VIS: Record<PipelineStageStatus, { color: string; icon: IconName; label: string }> = {
@@ -50,9 +71,6 @@ function decisionBadge(d: PipelineDecision): { text: string; color: string } {
   }
 }
 
-const money = (n: number | null | undefined): string =>
-  n == null ? '—' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-
 const PAGE_SIZE = 9;
 const PENDING_STAGES = [
   'Pre Stop Factors',
@@ -73,7 +91,7 @@ function PendingPipeline() {
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
         <div>
-          <div style={s('font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800')}>Verification pipeline</div>
+          <div style={s('font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800')}>Compliance pipeline</div>
           <div style={s('font-size:13px;color:var(--text2);margin-top:4px')}>The application is visible to Sales; Verification has not created its live request yet.</div>
         </div>
         <span style={s(`${badge('Awaiting intake', 'var(--warn)').style};font-size:12px;flex-shrink:0`)}>Awaiting intake</span>
@@ -104,18 +122,19 @@ function PendingPipeline() {
   );
 }
 
-// ---- 9-stage vertical timeline + decision ----
-function PipelineTimeline({ client, showStages = true }: { client: VerificationClient; showStages?: boolean }) {
-  const pipe = useLoad(
+// ---- 9-stage vertical timeline + decision (credit_platform provider, NOT Zoho) ----
+function PipelineTimeline({ client }: { client: VerificationClient }) {
+  const pipe = useCachedLoad(
+    `sales:verification:detail:${client.dealId ?? ''}:${client.carrierId ?? ''}:${client.applicationId ?? ''}`,
     () => getPipeline({ dealId: client.dealId, carrierId: client.carrierId, applicationId: client.applicationId, dot: client.dot }),
-    [client.dealId, client.carrierId],
+    { staleMs: 90_000 },
   );
 
   if (pipe.loading && !pipe.data) {
     return <VerificationDetailSkeleton />;
   }
   if (pipe.error) {
-    return <div className="ss-verification-state" style={s('color:var(--danger)')}>{pipe.error}</div>;
+    return <SalesErrorNote>{pipe.error}</SalesErrorNote>;
   }
   if (!pipe.data) {
     return <PendingPipeline />;
@@ -123,6 +142,7 @@ function PipelineTimeline({ client, showStages = true }: { client: VerificationC
 
   const { stages, decision, requirements, attachments, events } = pipe.data;
   const dec = decisionBadge(decision);
+  const openRequirements = requirements.filter((item) => !item.response).length;
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
@@ -132,9 +152,9 @@ function PipelineTimeline({ client, showStages = true }: { client: VerificationC
           <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2);margin-top:4px")}>Request {pipe.data.requestId}</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:8px')}>
-          {requirements.filter((item) => !item.response).length ? (
-            <span style={s(`${badge(`${requirements.filter((item) => !item.response).length} action required`, 'var(--danger)').style};font-size:12px`)}>
-              <Icon name="warn" size={12} /> {requirements.filter((item) => !item.response).length} action required
+          {openRequirements ? (
+            <span style={s(`${badge(`${openRequirements} action required`, 'var(--danger)').style};font-size:12px`)}>
+              <Icon name="warn" size={12} /> {openRequirements} action required
             </span>
           ) : null}
           <span style={s(`${badge(pipe.data.status, 'var(--accent)').style};font-size:12px`)}>{pipe.data.status}</span>
@@ -155,7 +175,7 @@ function PipelineTimeline({ client, showStages = true }: { client: VerificationC
         </div>
       ) : null}
 
-      {showStages ? <div style={s('display:flex;flex-direction:column;gap:2px')}>{stages.map((st, i) => {
+      <div style={s('display:flex;flex-direction:column;gap:2px')}>{stages.map((st, i) => {
         const vis = STAGE_VIS[st.status];
         const last = i === stages.length - 1;
         return (
@@ -178,28 +198,27 @@ function PipelineTimeline({ client, showStages = true }: { client: VerificationC
             </div>
           </div>
         );
-      })}</div> : null}
+      })}</div>
 
-      {/* decision */}
-      {showStages ? <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
+      <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
-          <span style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>Decision</span>
+          <span style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>Platform decision</span>
           <span style={s(`${badge(dec.text, dec.color).style};font-size:13px`)}>{dec.text}</span>
         </div>
         {decision.outcome === 'loc' && (
-          <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px')}>
-            <TermTile label="Credit Score" value={String(decision.creditScore ?? '—')} />
-            <TermTile label="Approved Limit" value={money(decision.approvedLimit)} />
-            <TermTile label="Billing Cycle" value={decision.billingCycle ?? '—'} />
+          <div className="ss-vf-grid" style={{ marginTop: 12 }}>
+            <FactTile label="Credit Score" value={decision.creditScore ?? null} tone={creditScoreTone(decision.creditScore ?? null)} />
+            <FactTile label="Approved Limit" value={decision.approvedLimit != null ? money(decision.approvedLimit) : null} tone="ok" />
+            <FactTile label="Billing Cycle" value={decision.billingCycle ?? null} />
           </div>
         )}
         {decision.reason && decision.outcome !== 'loc' && (
           <div style={s('font-size:13px;color:var(--text2);margin-top:8px')}>{decision.reason}</div>
         )}
-      </div> : null}
+      </div>
 
       {attachments.length || events.length ? (
-        <div style={s('display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px')}>
+        <div style={s('display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px')}>
           <div style={s('padding:14px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt)')}>
             <div style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)')}>Files received</div>
             <div style={s('display:flex;flex-direction:column;gap:8px;margin-top:10px')}>
@@ -229,61 +248,84 @@ function PipelineTimeline({ client, showStages = true }: { client: VerificationC
   );
 }
 
-function TermTile({ label, value }: { label: string; value: string }) {
+/** The Zoho-sourced verification record: decision, checkpoints, application facts, narrative. */
+function CrmVerificationRecord({ client }: { client: VerificationClient }) {
+  const hasNarrative = Boolean(client.rejectReason || client.verificationNotes);
   return (
-    <div style={s('padding:12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border2)')}>
-      <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>{label}</div>
-      <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;margin-top:5px")}>{value}</div>
-    </div>
-  );
-}
-
-// ---- active-client current terms (read-only this phase) ----
-function TermsPanel({ client: c }: { client: VerificationClient }) {
-  const prepay = /prepa/i.test(c.paymentTerms ?? '');
-  const flags = (c.isLocSuspended || c.isDebtor) && (
-    <div style={s('display:flex;gap:8px')}>
-      {c.isLocSuspended && <span style={s(badge('LOC Suspended', 'var(--danger)').style)}>LOC Suspended</span>}
-      {c.isDebtor && <span style={s(badge('Debtor', 'var(--warn)').style)}>Debtor</span>}
-    </div>
-  );
-
-  // Prepay = pay-per-load, no credit line — the credit tiles are all N/A, so don't show them.
-  if (prepay) {
-    return (
-      <div style={s('display:flex;flex-direction:column;gap:14px')}>
-        <div style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
-          <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:13px`)}>Prepay</span>
-          <span style={s('font-size:13px;color:var(--text2)')}>Pay-per-load client — no credit line, limit, or billing cycle.</span>
+    <div style={s('display:flex;flex-direction:column;gap:16px')}>
+      <section className="ss-vf-section">
+        <div className="ss-vf-section-head">
+          <span>Credit decision</span>
+          {client.creditDecision ? (
+            <span
+              className="ss-vf-verdict"
+              style={{ color: TONE_COLOR[creditDecisionTone(client.creditDecision)] }}
+            >
+              {client.creditDecision}
+            </span>
+          ) : (
+            <span className="ss-vf-verdict is-empty">Not decided yet</span>
+          )}
         </div>
-        <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px')}>
-          <TermTile label="Active Cards" value={`${c.totalActiveCards}`} />
-          <TermTile label="Swiped (30d)" value={`${c.activeCardsLast30Days}`} />
-          <TermTile label="First Swipe" value={c.firstSwipeDate ?? '—'} />
+        <div className="ss-vf-grid">
+          <FactTile
+            label="Credit score"
+            value={client.creditScore}
+            tone={creditScoreTone(client.creditScore)}
+            {...(client.creditScore == null ? {} : { hint: 'iSoft pull' })}
+          />
+          <FactTile label="Credit line approved" value={client.creditLineApproved ? money(client.creditLineApproved) : null} tone="ok" />
+          <FactTile label="Credit limit" value={client.creditLimit ? money(client.creditLimit) : null} />
+          <FactTile label="Risk score" value={client.riskScore} tone={riskTone(client.riskScore)} />
+          <FactTile label="CreditSafe grade" value={client.creditSafeGrade} tone={gradeTone(client.creditSafeGrade)} />
+          <FactTile label="Money code limit" value={client.moneyCodeLimit ? money(client.moneyCodeLimit) : null} />
+          <FactTile label="Payment type" value={client.paymentTerms} tone="accent" />
+          <FactTile label="Billing cycle" value={client.billingCycle} />
         </div>
-        {flags}
-      </div>
-    );
-  }
+        <CheckpointRail client={client} />
+      </section>
 
-  return (
-    <div style={s('display:flex;flex-direction:column;gap:14px')}>
-      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px')}>
-        <TermTile label="Credit Limit" value={money(c.creditLimit)} />
-        <TermTile label="Credit Score" value={c.creditScore != null ? String(c.creditScore) : '—'} />
-        <TermTile label="Billing Cycle" value={c.billingCycle ?? '—'} />
-        <TermTile label="Payment Terms" value={c.paymentTerms ?? '—'} />
-        <TermTile label="Payment Day" value={c.paymentDay ?? '—'} />
-        <TermTile label="Min. Balance" value={money(c.minimumRequiredBalance)} />
-        <TermTile label="Active Cards" value={`${c.totalActiveCards}`} />
-        <TermTile label="Swiped (30d)" value={`${c.activeCardsLast30Days}`} />
-        <TermTile label="First Swipe" value={c.firstSwipeDate ?? '—'} />
-      </div>
-      {flags}
-      <div style={s('font-size:12px;color:var(--muted);line-height:1.5')}>
-        Limit-change requests (Credit / Card / Weekly) are coming soon — you'll be able to send them here
-        without contacting Verification.
-      </div>
+      <section className="ss-vf-section">
+        <div className="ss-vf-section-head">
+          <span>Application</span>
+          {client.applicationId ? <span className="ss-vf-verdict is-mono">#{client.applicationId}</span> : null}
+        </div>
+        <div className="ss-vf-grid">
+          <FactTile label="Deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
+          <FactTile label="Application stage" value={client.applicationStage} tone="accent" />
+          <FactTile
+            label="Application status"
+            value={client.applicationStatus}
+            tone={applicationStatusTone(client.applicationStatus)}
+          />
+          <FactTile label="Applied" value={client.appFillDate} />
+          <FactTile label="Stage updated" value={client.stageUpdatedAt} />
+          <FactTile label="Cards requested" value={client.cardsRequested} />
+          <FactTile label="Carrier ID" value={client.carrierId} />
+          <FactTile label="DOT" value={client.dot} />
+          <FactTile label="MC" value={client.mc} />
+        </div>
+      </section>
+
+      {hasNarrative ? (
+        <section className="ss-vf-section">
+          <div className="ss-vf-section-head">
+            <span>From Verification</span>
+          </div>
+          {client.rejectReason ? (
+            <div className="ss-vf-note is-danger">
+              <div className="ss-vf-note-lbl">Reject reason</div>
+              <p>{client.rejectReason}</p>
+            </div>
+          ) : null}
+          {client.verificationNotes ? (
+            <div className="ss-vf-note">
+              <div className="ss-vf-note-lbl">Notes</div>
+              <p>{client.verificationNotes}</p>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -291,39 +333,109 @@ function TermsPanel({ client: c }: { client: VerificationClient }) {
 // ---- in-page detail (replaces the list; the page scrolls naturally — no modal, no inner scrollbox) ----
 function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBack: () => void }) {
   const cls = CLASS_VIS[client.classification];
-  const isActive = client.classification === 'active';
   return (
-    <div className="ss-fu ss-verification-page">
-      <button
-        type="button"
-        onClick={onBack}
-        className="ss-ico-btn"
-        style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px 0 11px;margin-bottom:14px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm)')}
-      >
-        <Icon name="chevronLeft" size={16} strokeWidth={2.4} /> Back to pipeline
-      </button>
+    <SalesPage className="ss-verification-page">
+      {/* A record title IS allowed to be a page title — it names the thing being inspected, which the
+          top bar (still "Verification") cannot. */}
+      <SalesPageHead
+        title={client.companyName}
+        description={
+          <>
+            {client.dealStage}
+            {client.applicationStage ? ` · ${client.applicationStage}` : ''}
+            {client.appFillDate ? ` · applied ${client.appFillDate}` : ''}
+            {client.carrierId ? ` · carrier #${client.carrierId}` : ''}
+          </>
+        }
+        actions={
+          <>
+            <span style={s(`${badge(cls.label, cls.color).style};font-size:12px;flex-shrink:0`)}>{cls.label}</span>
+            <button type="button" onClick={onBack} className="ss-pager-btn" style={s('display:inline-flex;align-items:center;gap:6px;padding:0 15px 0 11px')}>
+              <Icon name="chevronLeft" size={15} strokeWidth={2.4} /> Back to pipeline
+            </button>
+          </>
+        }
+      />
 
-      <div className="ss-verification-detail-header">
-        <div style={s('flex:1;min-width:0')}>
-          <div className="ss-verification-title" style={s('white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.companyName}</div>
-          <div className="ss-verification-meta">
-            {client.dealStage}{client.appFillDate ? ` · applied ${client.appFillDate}` : ''}{client.carrierId ? ` · #${client.carrierId}` : ''}
-          </div>
+      <CrmVerificationRecord client={client} />
+
+      <section className="ss-vf-section">
+        <div className="ss-vf-section-head">
+          <span>Compliance pipeline</span>
         </div>
-        <span style={s(`${badge(cls.label, cls.color).style};font-size:12px;flex-shrink:0`)}>{cls.label}</span>
+        <PipelineTimeline client={client} />
+      </section>
+    </SalesPage>
+  );
+}
+
+/** One roster card — company, where the application sits, and the decision so far. */
+function VerificationCard({
+  client,
+  onOpen,
+}: {
+  client: VerificationClient;
+  onOpen: () => void;
+}) {
+  const cls = CLASS_VIS[client.classification];
+  const tone = client.attentionCount ? 'var(--danger)' : cls.color;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="verification-card"
+      className="ss-verification-card"
+      style={s(`--verification-tone:${tone};border-color:${client.attentionCount ? 'color-mix(in srgb,var(--danger) 48%,var(--border))' : 'var(--border)'}`)}
+    >
+      <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:10px')}>
+        <div className="ss-verification-card-title">{client.companyName}</div>
+        <span style={s(`${badge(cls.label, cls.color).style};flex-shrink:0`)}>{cls.label}</span>
       </div>
 
-      <div className="ss-verification-detail-body">
-        <div className={isActive ? undefined : 'ss-verification-detail-content'}>
-          {isActive ? (
-            <div style={s('display:flex;flex-direction:column;gap:18px')}>
-              <TermsPanel client={client} />
-              <PipelineTimeline client={client} showStages={false} />
-            </div>
-          ) : <PipelineTimeline client={client} />}
-        </div>
+      <div className="ss-vf-chips">
+        <FactChip label="Stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
+        {client.applicationStage ? (
+          <FactChip label="App" value={client.applicationStage} tone="accent" />
+        ) : null}
+        {client.applicationStatus ? (
+          <FactChip
+            label="Status"
+            value={client.applicationStatus}
+            tone={applicationStatusTone(client.applicationStatus)}
+          />
+        ) : null}
       </div>
-    </div>
+
+      {/* The decision line is the reason an agent opens this tab, so it gets its own row rather than
+          being one chip among many. */}
+      <div className="ss-vf-card-decision">
+        {client.creditDecision ? (
+          <span style={{ color: TONE_COLOR[creditDecisionTone(client.creditDecision)] }}>
+            {client.creditDecision}
+          </span>
+        ) : (
+          <span className="is-empty">Awaiting credit decision</span>
+        )}
+        {client.creditScore != null ? (
+          <em style={{ color: TONE_COLOR[creditScoreTone(client.creditScore)] }}>
+            Score {client.creditScore}
+          </em>
+        ) : null}
+        {client.creditLineApproved ? <em>{money(client.creditLineApproved)} line</em> : null}
+      </div>
+
+      {client.attentionCount ? (
+        <div className="ss-vf-card-attention">
+          <Icon name="warn" size={14} /> {client.attentionCount} Verification action
+          {client.attentionCount === 1 ? '' : 's'} required
+        </div>
+      ) : null}
+
+      <div className="ss-vf-card-foot">
+        <span>{client.appFillDate ? `Applied ${client.appFillDate}` : 'No application date'}</span>
+        {client.applicationId ? <span className="is-mono">#{client.applicationId}</span> : null}
+      </div>
+    </button>
   );
 }
 
@@ -351,78 +463,92 @@ export function VerificationTab() {
   const total = load.data?.pagination.total ?? 0;
   const pageCount = load.data?.pagination.pageCount ?? 1;
   const pageStart = (page - 1) * PAGE_SIZE;
+  const degradedSources = load.data?.sourceHealth
+    ? Object.entries(load.data.sourceHealth)
+        .filter(([, health]) => health === 'degraded')
+        .map(([source]) => source)
+    : [];
+  const showingFallback = Boolean(load.data?.partial || load.data?.freshness === 'stale');
 
   if (selected) {
     return <ClientDetailPage client={selected} onBack={() => setSelected(null)} />;
   }
 
-  const emptyMsg = debouncedQuery ? 'No clients match your search.' : 'No verification applications yet.';
+  const emptyMsg = debouncedQuery ? 'No applications match your search.' : 'No verification applications yet.';
 
   return (
-    <div className="ss-fu ss-verification-page">
-      <div className="ss-verification-header">
-        <div>
-          <div className="ss-verification-title">Verification Pipeline</div>
-          <div className="ss-verification-copy">
-            Newest applications first. Review live compliance stages and answer Verification requests.
-          </div>
+    <SalesPage
+      className="ss-verification-page"
+      busy={(load.loading && !load.data) || load.revalidating}
+    >
+      <SalesPageHead description={NAV_DESC.verification} />
+
+      <div className="ss-toolbar">
+        <div className="ss-search">
+          <Icon name="search" size={16} />
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.currentTarget.value); setPage(1); }}
+            aria-label="Search verification applications"
+            placeholder="Search by company, stage, decision, carrier ID or application #…"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="ss-search-clear"
+              aria-label="Clear search"
+              onClick={() => { setQuery(''); setPage(1); }}
+            >
+              <Icon name="close" size={13} strokeWidth={2.4} />
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="ss-verification-toolbar">
-        <div className="ss-verification-search">
-          <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
-          <input value={query} onChange={(e) => { setQuery(e.currentTarget.value); setPage(1); }} placeholder="Search by company, carrier ID or stage…" className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);color:var(--text);font-size:var(--ss-text-sm)')} />
+      {/* Degraded-source notice only when there IS data to qualify — with no data the error state
+          below already says the page could not load, and printing both read as contradictory. */}
+      {showingFallback && load.data ? (
+        <div className="ss-source-health" role="status">
+          <Icon name="warn" size={16} color="var(--warn)" />
+          <span>
+            Showing the latest available pipeline data
+            {degradedSources.length ? ` while ${degradedSources.join(' and ')} recovers` : ''}.
+          </span>
         </div>
-      </div>
+      ) : null}
 
       {/* content */}
       {load.loading && !load.data ? (
-        <DcCardGridSkeleton label="verification applications" count={9} />
+        <SalesBodySkeleton variant="grid" rows={9} label="verification applications" />
       ) : load.error && !load.data ? (
-        <div className="ss-verification-state" style={s('color:var(--danger)')}>{load.error}</div>
+        <SalesErrorNote>{load.error}</SalesErrorNote>
       ) : clients.length === 0 ? (
-        <div className="ss-verification-state">{emptyMsg}</div>
+        <SalesEmpty
+          icon="verification"
+          title={debouncedQuery ? 'No matching applications' : 'No applications yet'}
+          body={emptyMsg}
+        />
       ) : (
         <>
         <div className="ss-verification-grid" data-testid="verification-grid">
-          {clients.map((c, index) => {
-            const cls = CLASS_VIS[c.classification];
-            return (
-              <button key={c.dealId ?? c.carrierId ?? `application-${index}`} type="button" onClick={() => setSelected(c)} data-testid="verification-card" className="ss-verification-card" style={s(`--verification-tone:${c.attentionCount ? 'var(--danger)' : cls.color};border-color:${c.attentionCount ? 'color-mix(in srgb,var(--danger) 48%,var(--border))' : 'var(--border)'}`)}>
-                <div style={s('display:flex;align-items:start;justify-content:space-between;gap:10px')}>
-                  <div className="ss-verification-card-title">{c.companyName}</div>
-                  <span style={s(`${badge(cls.label, cls.color).style};flex-shrink:0`)}>{cls.label}</span>
-                </div>
-                <div className="ss-verification-meta">{c.dealStage}</div>
-                {c.attentionCount ? (
-                  <div style={s('display:flex;align-items:center;gap:7px;margin-top:11px;padding:9px 10px;border-radius:9px;background:color-mix(in srgb,var(--danger) 9%,transparent);color:var(--danger);font-size:12px;font-weight:800')}>
-                    <Icon name="warn" size={14} /> {c.attentionCount} Verification action{c.attentionCount === 1 ? '' : 's'} required
-                  </div>
-                ) : c.verificationStatus ? (
-                  <div style={s('margin-top:10px;font-size:11px;color:var(--muted)')}>Verification · {c.verificationStatus}</div>
-                ) : null}
-                <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:14px;font-size:12px;color:var(--text2)')}>
-                  <span>{c.appFillDate ? `Applied ${c.appFillDate}` : '—'}</span>
-                </div>
-              </button>
-            );
-          })}
+          {clients.map((client, index) => (
+            <VerificationCard
+              key={client.dealId ?? client.carrierId ?? `application-${index}`}
+              client={client}
+              onOpen={() => setSelected(client)}
+            />
+          ))}
         </div>
         {total > 0 ? (
-          <div className="ss-verification-pagination">
-            <span style={s('font-size:var(--ss-text-xs);color:var(--muted)')}>
-              Showing {pageStart + 1}–{Math.min(pageStart + clients.length, total)} of {total} pipeline applications
-            </span>
-            <div className="ss-verification-page-controls">
-              <button type="button" aria-label="Previous verification page" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1} className="ss-ico-btn" style={s(`height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font:inherit;font-size:var(--ss-text-xs);font-weight:700;cursor:${page === 1 ? 'default' : 'pointer'};opacity:${page === 1 ? '.45' : '1'}`)}>Previous</button>
-              <span style={s("font-family:'JetBrains Mono',monospace;font-size:var(--ss-text-2xs);color:var(--text2)")}>Page {page} of {pageCount}</span>
-              <button type="button" aria-label="Next verification page" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={page >= pageCount} className="ss-ico-btn" style={s(`height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font:inherit;font-size:var(--ss-text-xs);font-weight:700;cursor:${page >= pageCount ? 'default' : 'pointer'};opacity:${page >= pageCount ? '.45' : '1'}`)}>Next</button>
-            </div>
-          </div>
+          <SalesPager
+            page={page}
+            pageCount={pageCount}
+            onPage={setPage}
+            summary={`Showing ${pageStart + 1}–${Math.min(pageStart + clients.length, total)} of ${total}${load.data?.pagination.truncated ? '+' : ''} pipeline applications`}
+          />
         ) : null}
         </>
       )}
-    </div>
+    </SalesPage>
   );
 }

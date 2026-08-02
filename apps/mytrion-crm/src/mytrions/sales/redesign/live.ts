@@ -5,7 +5,15 @@
 import { getImpersonation } from '@/api/impersonation';
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
-import { listInboxMessages, deleteInboxMessage as apiDeleteInboxMessage } from '@/api/inbox';
+import {
+  deleteInboxMessage as apiDeleteInboxMessage,
+  getInboxCounts,
+  listInboxMessages,
+  markAllInboxRead,
+  setInboxMessageRead,
+  type InboxCounts,
+  type InboxFilter,
+} from '@/api/inbox';
 import { getClients, type AgentClient } from '@/api/dataCenter';
 import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
 import { loadDebtorsHomeSummary } from './dashDebtorsData';
@@ -93,15 +101,16 @@ export interface SnapshotFields {
   fuel_tx_caption: string;
 }
 
-export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
-  // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
-  const [raw, debtSummary] = await Promise.all([
-    callTouchpoint('dashboard.home_snapshot', {}),
-    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
-  ]);
+export function mapHomeSnapshot(
+  raw: unknown,
+  debtSummary: { totalRemaining: number; debtorCount: number; hardCount: number } | null = null,
+): SnapshotFields {
   const first = Array.isArray(raw) ? raw[0] : raw;
-  const s = ((first as { snapshot?: Record<string, unknown> })?.snapshot ?? {}) as Record<string, unknown>;
-  const g = (k: string): number => n(s[k]);
+  const snapshot = ((first as { snapshot?: Record<string, unknown> } | null)?.snapshot ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const g = (key: string): number => n(snapshot[key]);
   const gallonsW = g('gallons_this_week');
   const gallonsLW = g('gallons_last_week');
   const swipesW = g('swipes_this_week');
@@ -109,8 +118,7 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
   const vol = pctChange(gallonsW, gallonsLW);
   const tx = pctChange(swipesW, swipesLW);
   const arrow = tx.dir === 'up' ? '↑' : tx.dir === 'down' ? '↓' : '→';
-  // The arrow carries the direction, so strip the sign from the % (no "↓ -29%").
-  const fuel_tx_caption =
+  const fuelTxCaption =
     tx.dir === 'flat' || tx.text === '0%'
       ? 'Same as last week'
       : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
@@ -118,7 +126,6 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
     stuck_deals_count: g('stuck_deals_count'),
-    // Prefer client Billing floors so Home “Money Owed” matches Dashboard → Debtors.
     total_debt_amount: debtSummary?.totalRemaining ?? g('total_debt_amount'),
     total_debtors: debtSummary?.debtorCount ?? g('total_debtors'),
     total_hard_debtors: debtSummary?.hardCount ?? g('total_hard_debtors'),
@@ -132,8 +139,17 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
     new_cards_today: g('new_cards_today'),
     volume_trend: vol.text,
     volume_trend_dir: vol.dir,
-    fuel_tx_caption,
+    fuel_tx_caption: fuelTxCaption,
   };
+}
+
+export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
+  // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
+  const [raw, debtSummary] = await Promise.all([
+    callTouchpoint('dashboard.home_snapshot', {}),
+    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
+  ]);
+  return mapHomeSnapshot(raw, debtSummary);
 }
 
 // ---- Home: announcements (inbox.announcements) → ANN shape ----
@@ -155,8 +171,7 @@ const ANN_META: Record<string, { color: string; icon: IconName }> = {
   analytics: { color: 'var(--accent)', icon: ICO.trend },
   security: { color: 'var(--danger)', icon: ICO.warn },
 };
-export async function loadAnnouncements(): Promise<AnnVM[]> {
-  const raw = await callTouchpoint('inbox.announcements', {});
+export function mapAnnouncements(raw: unknown): AnnVM[] {
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   return list.map((a) => {
     const type = String((a as { Type?: string }).Type ?? '').toLowerCase();
@@ -174,6 +189,10 @@ export async function loadAnnouncements(): Promise<AnnVM[]> {
   });
 }
 
+export async function loadAnnouncements(): Promise<AnnVM[]> {
+  return mapAnnouncements(await callTouchpoint('inbox.announcements', {}));
+}
+
 // ---- Inbox (inbox.list) → INBOX shape ----
 
 export interface InboxVM {
@@ -184,6 +203,7 @@ export interface InboxVM {
   desc: string;
   time: string;
   tag: string;
+  read: boolean;
 }
 // Matches the reference self-service InboxPanel._mapType exactly: only 'assignment' becomes a
 // (yellow, record-linked) reminder; task/warning/critical map through; everything else → info.
@@ -202,6 +222,27 @@ function effUserId(): string {
 
 const INBOX_TTL_MS = 30_000;
 
+function mapInboxMessages(messages: Awaited<ReturnType<typeof listInboxMessages>>['messages']): InboxVM[] {
+  return messages.map((message) => {
+    const priority = message.priority.toLowerCase();
+    return {
+      id: message.id,
+      type: mapInboxType(message.type),
+      prio:
+        priority === 'high' || priority === 'critical'
+          ? 'high'
+          : priority === 'low' || priority === 'small'
+            ? 'small'
+            : 'medium',
+      title: message.subject || message.name || '(no subject)',
+      desc: stripHtml(message.content ?? ''),
+      time: relTime(message.createdTime),
+      tag: message.tag ?? '',
+      read: message.readAt != null,
+    };
+  });
+}
+
 /** One shared inbox fetch for its three consumers (sidebar badge, Home preview, Inbox tab). Now
  *  reads our own mytrion_inbox_messages table via /v1/inbox/messages (was the Zoho `inbox.list`
  *  touchpoint). Under admin View-as, the impersonated agent's id scopes the query. */
@@ -209,19 +250,9 @@ export async function loadInbox(fresh = false): Promise<InboxVM[]> {
   return dedupedFetch(
     `inbox:${effUserId()}`,
     async () => {
-      const res = await listInboxMessages(getImpersonation()?.zohoUserId);
-      return res.messages.map((m) => {
-        const p = m.priority.toLowerCase();
-        return {
-          id: m.id,
-          type: mapInboxType(m.type),
-          prio: p === 'high' || p === 'critical' ? 'high' : p === 'low' || p === 'small' ? 'small' : 'medium',
-          title: m.subject || m.name || '(no subject)',
-          desc: stripHtml(m.content ?? ''),
-          time: relTime(m.createdTime),
-          tag: m.tag ?? '',
-        } as InboxVM;
-      });
+      const actAsId = getImpersonation()?.zohoUserId;
+      const res = await listInboxMessages({ ...(actAsId ? { actAsId } : {}), limit: 6 });
+      return mapInboxMessages(res.messages);
     },
     { ttlMs: INBOX_TTL_MS, fresh },
   );
@@ -232,7 +263,49 @@ export function invalidateInboxCache(): void {
   invalidateDeduped('inbox:');
 }
 export function deleteInboxMessage(recordId: string): Promise<unknown> {
-  return apiDeleteInboxMessage(recordId);
+  return apiDeleteInboxMessage(recordId, getImpersonation()?.zohoUserId);
+}
+
+export async function loadInboxPage(input: {
+  page: number;
+  pageSize: number;
+  filter: InboxFilter;
+  query: string;
+  cursor?: string;
+}): Promise<{
+  items: InboxVM[];
+  counts: InboxCounts;
+  total: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}> {
+  const actAsId = getImpersonation()?.zohoUserId;
+  const result = await listInboxMessages({
+    ...(actAsId ? { actAsId } : {}),
+    limit: input.pageSize,
+    ...(input.cursor ? { cursor: input.cursor } : {}),
+    filter: input.filter,
+    query: input.query,
+  });
+  return {
+    items: mapInboxMessages(result.messages),
+    counts: result.counts,
+    total: result.pagination.total,
+    hasMore: result.pagination.hasMore,
+    nextCursor: result.pagination.nextCursor,
+  };
+}
+
+export function loadInboxCounts(): Promise<InboxCounts> {
+  return getInboxCounts(getImpersonation()?.zohoUserId);
+}
+
+export function setInboxRead(recordId: string, read: boolean): Promise<void> {
+  return setInboxMessageRead(recordId, read, getImpersonation()?.zohoUserId);
+}
+
+export function setAllInboxRead(): Promise<void> {
+  return markAllInboxRead(getImpersonation()?.zohoUserId);
 }
 
 // ---- Home/Dashboard: activity (activity.agent) ----
@@ -256,6 +329,11 @@ export async function loadActivity(range: 'today' | 'week' | 'month', fresh = fa
 async function fetchActivity(range: 'today' | 'week' | 'month'): Promise<ActivityCounts> {
   const map = { today: 'daily', week: 'weekly', month: 'monthly' } as const;
   const res = await callTouchpoint('activity.agent', { range: map[range] });
+  return mapActivity(res);
+}
+
+export function mapActivity(raw: unknown): ActivityCounts {
+  const res = (raw ?? {}) as { metrics?: Record<string, Record<string, unknown>> };
   const m = res.metrics ?? {};
   const mv = (k: string, f: 'count' | 'completed' = 'count'): number => {
     const e = m[k];
@@ -456,8 +534,16 @@ function mapCarrierSearchRow(c: {
   };
 }
 
-export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchPage> {
-  const res = await callTouchpoint('sales.carriers_search', { query, limit });
+export async function searchCarriers(
+  query: string,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<CarrierSearchPage> {
+  const res = await callTouchpoint(
+    'sales.carriers_search',
+    { query, limit },
+    signal ? { signal } : {},
+  );
   const rows = (res.carriers ?? []).map(mapCarrierSearchRow);
   const total = Number(res.total);
   return {

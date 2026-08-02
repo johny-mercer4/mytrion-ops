@@ -6,7 +6,7 @@ import sensible from '@fastify/sensible';
 import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { env, isDev, isProduction, isTest } from './config/env.js';
 import { isAllowedOrigin } from './lib/cors.js';
@@ -20,6 +20,7 @@ import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
 import { wsHeartbeatPlugin } from './plugins/wsHeartbeat.js';
 import { registerCommsRealtime } from './modules/comms/bootstrap.js';
+import { requireCommsSchema } from './modules/comms/readiness.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
@@ -84,6 +85,7 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { salesBootstrapRoutes } from './routes/v1/salesBootstrap.routes.js';
 import { callHubRoutes } from './routes/v1/callHub.routes.js';
 import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
@@ -113,6 +115,26 @@ function loggerOption() {
     };
   }
   return { level: env.LOG_LEVEL, redact: LOG_REDACT_PATHS };
+}
+
+type RateBudget = 'auth' | 'webhook' | 'cached-read' | 'upstream-read' | 'touchpoint' | 'write';
+
+/** Keep read/write/provider budgets independent even when every office user shares one NAT. */
+function rateBudget(request: Pick<FastifyRequest, 'method' | 'url'>): RateBudget {
+  const path = request.url.split('?')[0] ?? request.url;
+  if (path.includes('/auth/')) return 'auth';
+  if (path.includes('/webhook') || path.includes('/ingest')) return 'webhook';
+  if (path.includes('/touchpoints/')) return 'touchpoint';
+  if (request.method !== 'GET' && request.method !== 'HEAD') return 'write';
+  if (
+    path.includes('/verification/') ||
+    path.includes('/call-hub/') ||
+    path.includes('/data-center/') ||
+    path.includes('/dashboard')
+  ) {
+    return 'upstream-read';
+  }
+  return 'cached-read';
 }
 
 async function registerDocs(app: FastifyInstance): Promise<void> {
@@ -227,7 +249,48 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Hand the hub its row-level thread authorizer. Registered here rather than imported by the hub so
   // the hub keeps depending only on logger + types; the authorizer reuses the REST reader filter.
   registerCommsRealtime();
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    // Authentication guards run in onRequest. Limiting in preHandler lets authenticated office
+    // users receive their own bucket instead of 30–40 people sharing one NAT/IP bucket.
+    hook: 'preHandler',
+    max: (request) => {
+      const budget = rateBudget(request);
+      if (budget === 'auth') return 20;
+      if (budget === 'write') return request.url.includes('/kpi/') ? 120 : 30;
+      if (budget === 'upstream-read') return 60;
+      return 120;
+    },
+    timeWindow: '1 minute',
+    cache: 10_000,
+    keyGenerator: (request) => {
+      const ctx = request.ctx;
+      const budget = rateBudget(request);
+      // Use the authenticated ACTOR. An admin viewing as an agent must not consume the target's
+      // budget; effective identity still belongs in data-cache keys, not abuse-control keys.
+      if (ctx?.sessionVerified) return `${budget}:principal:${ctx.tenantId}:${ctx.userId}`;
+      return `${budget}:ip:${request.ip}`;
+    },
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+      'retry-after': true,
+    },
+    onExceeded: (request, key) => {
+      request.log.warn({ key, route: request.routeOptions.url, method: request.method }, 'rate limit exceeded');
+    },
+    errorResponseBuilder: (_request, context) => {
+      const retryAfterSeconds = Math.max(1, Math.ceil(context.ttl / 1000));
+      // @fastify/rate-limit throws this object into the app error handler. statusCode must live at
+      // the top level or a customized response is accidentally converted to an HTTP 500.
+      return {
+        statusCode: 429,
+        code: 'RATE_LIMITED',
+        message: `Too many requests. Try again in ${retryAfterSeconds} seconds.`,
+        details: { retryAfterSeconds },
+      };
+    },
+  });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
     // Global ceiling; each route additionally enforces its OWN per-request cap — /v1/files/upload uses
@@ -323,13 +386,18 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
-      await v1.register(commsRoutes);
-      await v1.register(commsTicketsRoutes);
-      await v1.register(commsThreadsRoutes);
-      await v1.register(commsAttachmentsRoutes);
-      await v1.register(commsEscalationsRoutes);
-      await v1.register(commsQueueRoutes);
-      await v1.register(commsAdminRoutes);
+      await v1.register(async (comms) => {
+        // Auth runs in each route's onRequest guard; schema readiness is checked immediately after
+        // it, before any repository query can turn a missing migration into an opaque HTTP 500.
+        comms.addHook('preHandler', requireCommsSchema);
+        await comms.register(commsRoutes);
+        await comms.register(commsTicketsRoutes);
+        await comms.register(commsThreadsRoutes);
+        await comms.register(commsAttachmentsRoutes);
+        await comms.register(commsEscalationsRoutes);
+        await comms.register(commsQueueRoutes);
+        await comms.register(commsAdminRoutes);
+      });
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
       await v1.register(managerRoutes);
@@ -358,6 +426,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
       await v1.register(salesKpiRoutes);
+      await v1.register(salesBootstrapRoutes);
       await v1.register(callHubRoutes);
       await v1.register(managerTasksRoutes);
       await v1.register(kpiAdminRoutes);

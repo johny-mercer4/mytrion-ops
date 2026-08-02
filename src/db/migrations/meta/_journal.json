@@ -680,6 +680,20 @@
       "when": 1785495600000,
       "tag": "0096_file_assets_storage_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1785625200000,
+      "tag": "0097_inbox_unread_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1785628800000,
+      "tag": "0098_inbox_keyset_index",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,8 @@ import {
   type TicketDto,
   type ListTicketsParams,
 } from '@/api/comms';
+import { ApiError } from '@/api/transport';
+import { ChevronLeft, Inbox, MessageSquare, RefreshCw, Search, Ticket, TriangleAlert, X } from 'lucide-react';
 import { ChatThread } from './ChatThread';
 import { useCommsSocket, type CommsFrame } from './useCommsSocket';
 import {
@@ -59,6 +61,7 @@ export interface TicketConsoleProps {
 type StatusFilter = 'open' | 'all' | 'mine';
 
 const REFRESH_DEBOUNCE_MS = 400;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function TicketConsole({
   mode,
@@ -73,8 +76,10 @@ export function TicketConsole({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>('open');
   const [term, setTerm] = useState('');
+  const [debouncedTerm, setDebouncedTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const [frame, setFrame] = useState<CommsFrame | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [cursor, setCursor] = useState<string | null>(null);
@@ -82,6 +87,12 @@ export function TicketConsole({
   const [loadingMore, setLoadingMore] = useState(false);
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedTerm(term.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [term]);
 
   const params = useMemo((): ListTicketsParams => {
     const p: ListTicketsParams = { limit: 30 };
@@ -91,23 +102,33 @@ export function TicketConsole({
     // would allow more (anything they participate in), and mixing the two makes a queue unusable.
     if (mode === 'queue' && department) p.department = department;
     if (!includeEscalations) p.kind = 'ticket';
-    if (term.trim()) p.q = term.trim();
+    if (debouncedTerm) p.q = debouncedTerm;
     return p;
-  }, [filter, mode, department, includeEscalations, term]);
+  }, [filter, mode, department, includeEscalations, debouncedTerm]);
 
   const load = useCallback(
     async (opts: { quiet?: boolean } = {}) => {
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
       if (!opts.quiet) setLoading(true);
       setError('');
+      setErrorCode('');
       try {
-        const page = await listTickets(params);
+        const page = await listTickets(params, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setTickets(page.tickets);
         setCursor(page.nextCursor);
         setHasMore(page.hasMore);
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : String(err));
+        setErrorCode(err instanceof ApiError ? err.code : 'UNKNOWN');
       } finally {
-        setLoading(false);
+        if (requestRef.current === controller) {
+          requestRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [params],
@@ -170,6 +191,7 @@ export function TicketConsole({
   useEffect(
     () => () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      requestRef.current?.abort();
     },
     [],
   );
@@ -218,13 +240,14 @@ export function TicketConsole({
 
   const heading = title ?? (mode === 'queue' ? 'Inbound tickets' : 'My tickets');
   const openCount = tickets.filter((t) => isOpen(t.status)).length;
+  const unavailable = errorCode === 'COMMS_SCHEMA_NOT_READY';
 
   return (
     <div className={`${c.console}`} data-mobile-view={mobileView}>
       <div className={c.listPane}>
         <div className={c.listHead}>
           <div className={c.listTitleRow}>
-            <span className={c.listTitle}>{heading}</span>
+            <h2 className={c.listTitle}>{heading}</h2>
             <span
               className={socketStatus === 'live' ? c.liveDot : `${c.liveDot} ${c.liveDotOff}`}
               title={
@@ -236,49 +259,78 @@ export function TicketConsole({
               {socketStatus === 'live' ? 'Live' : 'Reconnecting'}
             </span>
           </div>
-          <input
-            className={c.search}
-            value={term}
-            onChange={(ev) => setTerm(ev.target.value)}
-            placeholder="Search number, subject, company…"
-            aria-label="Search tickets"
-          />
-          <div className={c.filters}>
-            {(
-              [
-                ['open', 'Open'],
-                ['all', 'All'],
-                ...(mode === 'queue' ? ([['mine', 'Raised by me']] as const) : []),
-              ] as [StatusFilter, string][]
-            ).map(([key, label]) => (
+          <div className={c.searchWrap}>
+            <Search className={c.searchIcon} size={15} aria-hidden="true" />
+            <input
+              className={c.search}
+              value={term}
+              onChange={(ev) => setTerm(ev.target.value)}
+              placeholder="Search number, subject, company…"
+              aria-label="Search tickets"
+            />
+            {term ? (
               <button
-                key={key}
                 type="button"
-                className={filter === key ? `${c.chip} ${c.chipOn}` : c.chip}
-                onClick={() => setFilter(key)}
-                aria-pressed={filter === key}
+                className={c.searchClear}
+                onClick={() => setTerm('')}
+                aria-label="Clear search"
               >
-                {label}
+                <X size={13} strokeWidth={2.4} aria-hidden="true" />
               </button>
-            ))}
+            ) : null}
+          </div>
+          <div className={c.filterRow}>
+            <div className={c.filters} role="tablist" aria-label="Ticket filter">
+              {(
+                [
+                  ['open', 'Open'],
+                  ['all', 'All'],
+                  ...(mode === 'queue' ? ([['mine', 'Raised by me']] as const) : []),
+                ] as [StatusFilter, string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  className={filter === key ? `${c.chip} ${c.chipOn}` : c.chip}
+                  onClick={() => setFilter(key)}
+                  aria-selected={filter === key}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* The count keeps its line while loading — it used to blank, so the header jumped by a
+                row on every filter change and every background refresh. */}
             <span className={c.count}>
-              {loading ? '' : `${openCount} open · ${tickets.length} shown`}
+              {loading && tickets.length === 0 ? 'Loading…' : `${openCount} open · ${tickets.length} shown`}
             </span>
           </div>
         </div>
 
-        {error && (
+        {error && !unavailable && (
           <p className={c.errorNote} role="alert">
             {error}
           </p>
         )}
 
         <div className={c.list}>
-          {loading ? (
-            <div aria-busy="true">
-              <span className={c.srOnly} role="status">
-                Loading tickets…
+          {unavailable ? (
+            <div className={c.unavailable} role="status">
+              <span className={c.unavailableEyebrow}>
+                <TriangleAlert size={12} aria-hidden="true" /> Communications is being prepared
               </span>
+              <strong className={c.unavailableTitle}>Tickets are temporarily unavailable</strong>
+              <span className={c.unavailableBody}>
+                The required database migration has not completed yet. Existing features remain
+                available; Tickets will enable automatically after the schema readiness check passes.
+              </span>
+              <button type="button" className={c.ghostBtn} onClick={() => void load()}>
+                <RefreshCw size={13} aria-hidden="true" /> Check again
+              </button>
+            </div>
+          ) : loading && tickets.length === 0 ? (
+            <div aria-busy="true" aria-label="Loading tickets">
               <div className={c.skelRow} />
               <div className={c.skelRow} />
               <div className={c.skelRow} />
@@ -287,17 +339,25 @@ export function TicketConsole({
           ) : tickets.length === 0 ? (
             <div className={c.empty}>
               <div className={c.emptyInner}>
+                <span className={c.emptyIcon} aria-hidden="true">
+                  {debouncedTerm ? <Search size={22} /> : <Inbox size={22} />}
+                </span>
                 <span className={c.emptyTitle}>
-                  {term.trim() ? 'Nothing matches that search' : 'Nothing here yet'}
+                  {debouncedTerm ? 'Nothing matches that search' : 'Nothing here yet'}
                 </span>
                 <span className={c.emptyBody}>
-                  {term.trim()
+                  {debouncedTerm
                     ? 'Try a ticket number, a company or a word from the subject.'
                     : (emptyHint ??
                       (mode === 'queue'
                         ? 'Tickets filed to this department will appear here the moment they are raised.'
                         : 'Tickets you raise will appear here.'))}
                 </span>
+                {debouncedTerm ? (
+                  <button type="button" className={c.ghostBtn} onClick={() => setTerm('')}>
+                    Clear search
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -366,8 +426,7 @@ export function TicketConsole({
               {hasMore && (
                 <button
                   type="button"
-                  className={c.chip}
-                  style={{ margin: '0.4rem auto' }}
+                  className={c.loadMore}
                   onClick={() => void loadMore()}
                   disabled={loadingMore}
                 >
@@ -380,9 +439,18 @@ export function TicketConsole({
       </div>
 
       <div className={c.chatPane}>
-        {!selected ? (
+        {unavailable ? (
           <div className={c.empty}>
             <div className={c.emptyInner}>
+              <span className={c.emptyIcon} aria-hidden="true"><Ticket size={22} /></span>
+              <span className={c.emptyTitle}>No ticket selected</span>
+              <span className={c.emptyBody}>Conversation access resumes when Tickets is ready.</span>
+            </div>
+          </div>
+        ) : !selected ? (
+          <div className={c.empty}>
+            <div className={c.emptyInner}>
+              <span className={c.emptyIcon} aria-hidden="true"><MessageSquare size={22} /></span>
               <span className={c.emptyTitle}>Pick a ticket</span>
               <span className={c.emptyBody}>
                 Its conversation opens here — everyone assigned can reply, attach files and see updates live.
@@ -403,9 +471,9 @@ export function TicketConsole({
                   type="button"
                   className={c.backBtn}
                   onClick={() => setMobileView('list')}
-                  aria-label="Back to the list"
+                  aria-label="Back to the ticket list"
                 >
-                  ←
+                  <ChevronLeft size={17} strokeWidth={2.4} aria-hidden="true" />
                 </button>
                 <div className={c.chatHeadMain}>
                   <span className={c.chatSubject}>{selected.subject}</span>

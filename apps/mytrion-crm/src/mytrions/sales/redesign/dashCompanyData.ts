@@ -35,7 +35,7 @@ export async function loadCompanyDashRaw(opts: { force?: boolean } = {}): Promis
     const hit = readDashCache<CompanyDashRaw>(CACHE_PREFIX, COMPANY_DASH_TTL_MS);
     if (hit) return { ...hit.data, cachedAt: hit.cachedAt.toISOString(), fromCache: true };
   }
-  const res = await callTouchpoint('dashboard.company', {});
+  const res = await callTouchpoint('dashboard.company', {}, { force: opts.force === true });
   if (res.status && res.status !== 'success') {
     throw new Error('Company dashboard failed to load');
   }

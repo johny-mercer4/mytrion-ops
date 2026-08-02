@@ -23,6 +23,7 @@ import { systemContext } from '../../modules/auth/authService.js';
 import { createInboxMessage, toInboxMessageDto } from '../../modules/inbox/service.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { mytrionInboxMessageRepo } from '../../repos/mytrionInboxMessageRepo.js';
+import { encodeKeysetCursor } from '../../repos/keysetCursor.js';
 import { requireContext } from './helpers.js';
 
 const SECRET_HEADER = 'x-inbox-secret';
@@ -47,9 +48,14 @@ const webhookSchema = z.object({
 
 const listQuerySchema = z.object({
   owner_id: z.string().max(64).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).default(0),
+  cursor: z.string().max(300).optional(),
+  q: z.string().trim().max(120).optional(),
+  filter: z.enum(['all', 'unread', 'task', 'alert', 'reminder']).default('all'),
 });
+const ownerQuerySchema = z.object({ owner_id: z.string().max(64).optional() });
+const readBodySchema = z.object({ read: z.boolean() });
 
 /** Read a string-ish field from the raw body under any of the accepted key spellings. */
 function pickString(body: Record<string, unknown>, ...keys: string[]): string | undefined {
@@ -156,19 +162,69 @@ export async function inboxMessagesRoutes(app: FastifyInstance): Promise<void> {
     // Non-admins are locked to self; admins/all-department may View-as via ?owner_id (same rule the
     // Data Center / tickets use). resolveZohoUserId throws if the session carries no Zoho id.
     const ownerId = resolveZohoUserId(ctx, query.owner_id);
-    const rows = await mytrionInboxMessageRepo.listForOwner(ctx, ownerId, {
-      ...(query.limit !== undefined ? { limit: query.limit } : { limit: 200 }),
-      ...(query.offset !== undefined ? { offset: query.offset } : {}),
-    });
+    const category = query.filter === 'unread' ? 'all' : query.filter;
+    const [pageRows, counts] = await Promise.all([
+      mytrionInboxMessageRepo.listForOwner(ctx, ownerId, {
+        limit: query.limit + 1,
+        offset: query.offset,
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+        category,
+        ...(query.filter === 'unread' ? { unread: true } : {}),
+        ...(query.q ? { query: query.q } : {}),
+      }),
+      mytrionInboxMessageRepo.countsForOwner(ctx, ownerId, query.q),
+    ]);
+    const hasMore = pageRows.length > query.limit;
+    const rows = hasMore ? pageRows.slice(0, query.limit) : pageRows;
     const messages = rows.map(toInboxMessageDto);
-    return { messages, total: messages.length, userId: ownerId };
+    const total = counts[query.filter];
+    const boundary = rows.at(-1);
+    return {
+      messages,
+      counts,
+      pagination: {
+        limit: query.limit,
+        offset: query.offset,
+        total,
+        hasMore,
+        cursor: query.cursor ?? null,
+        nextCursor: hasMore && boundary ? encodeKeysetCursor(boundary) : null,
+      },
+      userId: ownerId,
+    };
+  });
+
+  app.get('/inbox/messages/counts', guard, async (request) => {
+    const ctx = requireContext(request);
+    const query = ownerQuerySchema.parse(request.query ?? {});
+    const ownerId = resolveZohoUserId(ctx, query.owner_id);
+    return { counts: await mytrionInboxMessageRepo.countsForOwner(ctx, ownerId), userId: ownerId };
+  });
+
+  app.post('/inbox/messages/read-all', guard, async (request) => {
+    const ctx = requireContext(request);
+    const query = ownerQuerySchema.parse(request.query ?? {});
+    const ownerId = resolveZohoUserId(ctx, query.owner_id);
+    const updated = await mytrionInboxMessageRepo.markAllRead(ctx, ownerId);
+    return { updated };
+  });
+
+  app.post('/inbox/messages/:id/read', guard, async (request) => {
+    const ctx = requireContext(request);
+    const { id } = request.params as { id: string };
+    const query = ownerQuerySchema.parse(request.query ?? {});
+    const body = readBodySchema.parse(request.body ?? {});
+    const ownerId = resolveZohoUserId(ctx, query.owner_id);
+    const message = await mytrionInboxMessageRepo.setRead(ctx, id, ownerId, body.read);
+    if (!message) throw new NotFoundError('Inbox message not found');
+    return { message: toInboxMessageDto(message) };
   });
 
   /** Delete one message the caller owns (owner-scoped). */
   app.post('/inbox/messages/:id/delete', guard, async (request) => {
     const ctx = requireContext(request);
     const { id } = request.params as { id: string };
-    const ownerId = resolveZohoUserId(ctx, (request.query as { owner_id?: string }).owner_id);
+    const ownerId = resolveZohoUserId(ctx, ownerQuerySchema.parse(request.query ?? {}).owner_id);
     const removed = await mytrionInboxMessageRepo.deleteForOwner(ctx, id, ownerId);
     if (!removed) throw new NotFoundError('Inbox message not found');
     await auditFromContext(ctx, {

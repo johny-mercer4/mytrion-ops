@@ -11,7 +11,7 @@
  * An attachment is a SECOND call now (upload into the new ticket's thread) rather than multipart on
  * create, because a chat attachment belongs to a message. Escalate / Lead live in createTicketOtherForms.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon, type IconName } from './icons';
 import { ICO } from './salesData';
@@ -127,6 +127,8 @@ export function TicketWizard() {
   const { pushToast, openTicket, openAutomation } = useSales();
   const [cr, setCr] = useState<CrState>(CR0);
   const [att, setAtt] = useState<File | null>(null);
+  // Kept stable across retries so a timeout cannot create the same ticket twice.
+  const idempotencyKey = useRef(`sales-ticket:${crypto.randomUUID()}`);
   const patch = (p: Partial<CrState>): void => setCr((c) => ({ ...c, ...p }));
 
   // Selecting a ticket type: if the type is already covered by an available automation, steer the
@@ -184,6 +186,7 @@ export function TicketWizard() {
         description: cr.body.trim(),
         ...(cr.card ? { cardNumber: cr.card } : {}),
         sourceMytrion: 'sales',
+        idempotencyKey: idempotencyKey.current,
       };
       const { ticket } = await createTicket(input);
 
@@ -201,6 +204,7 @@ export function TicketWizard() {
       const hadFile = !!att;
       setCr(CR0);
       setAtt(null);
+      idempotencyKey.current = `sales-ticket:${crypto.randomUUID()}`;
       pushToast(
         `Ticket ${ticket.number} created`,
         hadFile

@@ -190,7 +190,10 @@ export interface TicketPage {
   nextCursor: string | null;
 }
 
-export async function listTickets(params: ListTicketsParams = {}): Promise<TicketPage> {
+export async function listTickets(
+  params: ListTicketsParams = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<TicketPage> {
   return (await request('GET', '/comms/tickets', {
     query: {
       ...(params.kind ? { kind: params.kind } : {}),
@@ -204,6 +207,7 @@ export async function listTickets(params: ListTicketsParams = {}): Promise<Ticke
       ...(params.limit ? { limit: params.limit } : {}),
       ...(params.scope ? { scope: params.scope } : {}),
     },
+    signal: options.signal,
   })) as TicketPage;
 }
 

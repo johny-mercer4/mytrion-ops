@@ -1,8 +1,12 @@
 /**
- * Sales Verification Pipeline (GET /v1/verification/*) — the agent's deal-clients (DWH, freshest
- * application date first) + a per-client compliance-pipeline snapshot. Owner-scoped server-side;
- * admins pass ?zoho_user_id (View-as). Pipeline data comes from live Verification when configured,
- * with a deterministic development fallback.
+ * Sales Verification Pipeline (GET /v1/verification/*) — the agent's applications, read from Zoho
+ * CRM Deals (freshest application date first) + a per-client compliance-pipeline snapshot.
+ * Owner-scoped server-side; admins pass ?zoho_user_id (View-as). Pipeline data comes from live
+ * Verification when configured, with a deterministic development fallback.
+ *
+ * These fields mirror Zoho `Deals` API names one-for-one — see
+ * `src/integrations/salesVerificationDeals.ts` for the field list and its two traps (`DOT1`, and
+ * `Verification_Decision` being a FILE, not a decision value).
  */
 import { request, requestMultipart } from './transport';
 
@@ -14,28 +18,47 @@ export interface VerificationClient {
   dealId: string | null;
   carrierId: string | null;
   companyName: string;
+  /** `Application_Date` — may be null even on a filled application. */
   appFillDate: string | null;
+  /** `Stage` — the deal's position in the sales pipeline. */
   dealStage: string;
+  /** `Application_Stage` — where the application sits (Adjudication, Implementation, …). */
+  applicationStage: string | null;
+  /** `Application_Status` — the WEX-side status (Pending Decision, Decisioned, …). */
+  applicationStatus: string | null;
+  stageUpdatedAt: string | null;
   classification: VerificationClientStage;
+  // ---- credit decision ----
+  /** `Credit_Decision` ("Approved-Requested", "Declined-Prepay/Secured Only", …). */
+  creditDecision: string | null;
+  /** `Credit_Score`. Null when unscored — the CRM 0-fills undecided applications. */
   creditScore: number | null;
   creditLimit: number | null;
+  creditLineApproved: number | null;
+  /** `Risk_Score`: High / Medium / Low. */
+  riskScore: string | null;
+  /** `CreditSafe_Grade`: A–E. */
+  creditSafeGrade: string | null;
+  moneyCodeLimit: number | null;
+  // ---- billing terms ----
   billingCycle: string | null;
+  /** `Payment_Type_Billing`: Line of Credit / Prepay / Deposit / Secured Line of Credit. */
   paymentTerms: string | null;
-  paymentDay: string | null;
-  minimumRequiredBalance: number | null;
-  firstSwipeDate: string | null;
-  lastTransactionDate: string | null;
-  totalActiveCards: number;
-  totalSwipedCards: number;
-  activeCardsLast30Days: number;
-  isActive: boolean;
-  isLocSuspended: boolean;
-  isDebtor: boolean;
+  // ---- verification checkpoints ----
+  companyVerification: string | null;
+  billingVerification: string | null;
+  lovesVerification: string | null;
+  verified: boolean;
+  limitsAdded: boolean;
+  // ---- narrative + identity ----
+  rejectReason: string | null;
+  verificationNotes: string | null;
+  cardsRequested: number | null;
   applicationId: string | null;
   dot: string | null;
-  country: string | null;
-  contactSource: string | null;
+  mc: string | null;
   agentName: string;
+  modifiedAt: string | null;
   attentionCount: number;
   verificationStatus: string | null;
   verificationUpdatedAt: string | null;
@@ -48,7 +71,18 @@ export interface VerificationClientPage {
     pageSize: number;
     total: number;
     pageCount: number;
+    /** The owner's history exceeded the COQL drain cap, so `total` is a floor. */
+    truncated?: boolean;
   };
+  sourceHealth?: {
+    crm: 'ok' | 'degraded';
+    verification: 'ok' | 'degraded';
+    responses: 'ok' | 'degraded';
+  };
+  partial?: boolean;
+  freshness?: 'fresh' | 'stale';
+  generatedAt?: string;
+  staleReason?: string;
 }
 
 export type PipelineStageStatus = 'done' | 'failed' | 'skipped' | 'pending' | 'not_started';
@@ -146,6 +180,11 @@ export async function getVerificationClients(input: {
       total: clients.length,
       pageCount: 1,
     },
+    ...(res.sourceHealth ? { sourceHealth: res.sourceHealth } : {}),
+    ...(res.partial != null ? { partial: res.partial } : {}),
+    ...(res.freshness ? { freshness: res.freshness } : {}),
+    ...(res.generatedAt ? { generatedAt: res.generatedAt } : {}),
+    ...(res.staleReason ? { staleReason: res.staleReason } : {}),
   };
 }
 
@@ -183,7 +222,12 @@ export async function sendVerificationResponse(input: {
   form.set('values', JSON.stringify(input.values));
   if (input.note?.trim()) form.set('note', input.note.trim());
   if (input.file) form.set('file', input.file, input.file.name);
-  return (await requestMultipart('/verification/responses', form, { headers: V_HEADERS })) as {
+  return (await requestMultipart('/verification/responses', form, {
+    headers: {
+      ...V_HEADERS,
+      'idempotency-key': `verification:${input.requestId}:${input.externalEventId}`,
+    },
+  })) as {
     response: PipelineRequirementResponse;
     duplicate: boolean;
   };

@@ -126,7 +126,11 @@ export async function loadDebtorsRaw(
       return { ...hit.data, cachedAt: hit.cachedAt.toISOString(), fromCache: true };
     }
   }
-  const res = await callTouchpoint('dashboard.debtors', opts.summaryOnly ? { summaryOnly: true } : {});
+  const res = await callTouchpoint(
+    'dashboard.debtors',
+    opts.summaryOnly ? { summaryOnly: true } : {},
+    { force: opts.force === true },
+  );
   const mapped = mapDebtorsPayload(res);
   const cachedAt = writeDashCache(cacheKey, mapped);
   return { ...mapped, cachedAt: cachedAt.toISOString(), fromCache: false };

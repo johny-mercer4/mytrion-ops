@@ -7,7 +7,7 @@
  *   * A DEPARTMENT is chosen when the request is opened, because level 2 is that department's own agent.
  *     Leaving it blank falls back to the reason's configured fall-to user.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
@@ -47,6 +47,8 @@ export function EscalationForm() {
   const [depts, setDepts] = useState<DepartmentOptionDto[]>([]);
   const [att, setAtt] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // The same key is replayed after a network failure; rotate it only after confirmed creation.
+  const idempotencyKey = useRef(`sales-escalation:${crypto.randomUUID()}`);
   const canSubmit = !!(subject.trim() && body.trim() && reason) && !submitting;
 
   useEffect(() => {
@@ -73,6 +75,7 @@ export function EscalationForm() {
         subject: subject.trim(),
         description: body.trim(),
         sourceMytrion: 'sales',
+        idempotencyKey: idempotencyKey.current,
       });
       // A separate call, against the new escalation's thread: an attachment belongs to a message.
       let attached = false;
@@ -85,6 +88,7 @@ export function EscalationForm() {
         }
       }
       setSubject(''); setBody(''); setReason(''); setDept(''); setAtt(null);
+      idempotencyKey.current = `sales-escalation:${crypto.randomUUID()}`;
       const landed = res.escalation.assignee?.name ?? res.escalation.department ?? 'the escalation team';
       pushToast(
         `Escalation ${res.number} created`,

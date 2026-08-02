@@ -182,8 +182,6 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
   return (
     <div style={s('display:flex;flex-direction:column;gap:14px;min-height:0')}>
       <RetentionHero
-        kicker="Retention workflow"
-        title="My cases"
         sub="New → call → stage · Out of Reach = up to 5 attempts → Open Pool"
         subSize="lg"
         actions={viewToggle}

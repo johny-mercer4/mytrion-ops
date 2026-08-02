@@ -50,6 +50,13 @@ html,body{height:100%;margin:0}
     --tier-gold-text:#b45309; --tier-silver-text:#475569; --tier-bronze-text:#c2410c;
     color-scheme:light;
   }
+  .ss-root button:disabled{cursor:not-allowed}
+  .ss-root .ss-source-health{
+    display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:var(--radius-md);
+    border:1px solid color-mix(in srgb,var(--warn) 34%,var(--border));
+    background:color-mix(in srgb,var(--warn) 8%,var(--surface));color:var(--text2);
+    font-size:var(--ss-text-xs);line-height:1.45;
+  }
   /* One global keyboard focus ring for every focusable control (buttons, links, and role="button"
      cards). Components with their own :focus/:focus-visible rule below win via equal specificity +
      later source order, so inputs and picklist rows keep their bespoke focus treatment. */
@@ -361,30 +368,10 @@ html,body{height:100%;margin:0}
     background:
       linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--surface)),var(--surface));
   }
-  .ss-tasks-new-pill{
-    margin-left:6px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:800;
-    letter-spacing:.04em;text-transform:uppercase;
-    color:var(--accent-text);
-    background:color-mix(in srgb,var(--accent) 16%,transparent);
-    border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);
-  }
-  .ss-tasks-empty{
-    padding:42px 24px;text-align:center;border:1px solid var(--border);border-radius:var(--radius-md);
-    background:var(--surface);box-shadow:var(--shadow-sm);
-  }
   .ss-tasks-col-empty{
     padding:28px 8px;text-align:center;font-size:12px;color:var(--faint);font-weight:600;
   }
   /* Light: soft paper board — avoid muddy dark-hero gradients on white surfaces. */
-  .ss-root.light .ss-tasks-hero.ss-ret-hero,
-  .ss-root.light .ss-tasks-skel .ss-ret-hero{
-    background:
-      radial-gradient(120% 80% at 0% 0%,rgba(var(--accent-rgb),.08),transparent 55%),
-      radial-gradient(90% 70% at 100% 0%,rgba(37,99,235,.04),transparent 50%),
-      var(--surface);
-    border-color:rgba(15,23,42,.08);
-    box-shadow:var(--shadow-sm);
-  }
   .ss-root.light .ss-tasks-board .ss-ret-col-body{
     background:color-mix(in srgb,var(--alt) 92%,#fff);
     border-color:rgba(15,23,42,.07);
@@ -408,14 +395,6 @@ html,body{height:100%;margin:0}
   }
   .ss-root.light .ss-tasks-card.is-dragging{
     box-shadow:0 10px 24px rgba(15,23,42,.12),inset 3px 0 0 var(--ret-col,var(--accent));
-  }
-  .ss-root.light .ss-tasks-empty{
-    background:var(--surface);
-    border-color:rgba(15,23,42,.08);
-  }
-  .ss-root.light .ss-tasks-refresh{
-    background:var(--surface-2)!important;
-    color:var(--text2)!important;
   }
 
   /* ── Call Hub (agent call history) ───────────────────────────────────────── */
@@ -444,19 +423,6 @@ html,body{height:100%;margin:0}
     font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border:1px solid;
   }
   .ss-call-dur{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:650;color:var(--text2);min-width:3ch}
-  .ss-call-empty{
-    padding:48px 24px;text-align:center;border:1px solid var(--border);border-radius:var(--radius-md);
-    background:var(--surface);box-shadow:var(--shadow-sm);
-  }
-  .ss-root.light .ss-call-hero.ss-ret-hero,
-  .ss-root.light .ss-call-skel .ss-ret-hero{
-    background:
-      radial-gradient(120% 80% at 0% 0%,rgba(var(--accent-rgb),.08),transparent 55%),
-      radial-gradient(90% 70% at 100% 0%,rgba(16,185,129,.05),transparent 50%),
-      var(--surface);
-    border-color:rgba(15,23,42,.08);
-    box-shadow:var(--shadow-sm);
-  }
   .ss-root.light .ss-call-row{
     background:var(--surface);
     border-color:rgba(15,23,42,.08);
@@ -465,14 +431,6 @@ html,body{height:100%;margin:0}
   .ss-root.light .ss-call-row:hover{
     border-color:color-mix(in srgb,var(--call-src,var(--accent)) 35%,rgba(15,23,42,.12));
     box-shadow:0 4px 14px rgba(15,23,42,.08),inset 3px 0 0 var(--call-src,var(--accent));
-  }
-  .ss-root.light .ss-call-empty{
-    background:var(--surface);
-    border-color:rgba(15,23,42,.08);
-  }
-  .ss-root.light .ss-call-refresh{
-    background:var(--surface-2)!important;
-    color:var(--text2)!important;
   }
 
   /* ── Retention board (Sales Phase 1) ─────────────────────────────────────── */
@@ -1041,4 +999,27 @@ html,body{height:100%;margin:0}
 }
 @media (prefers-reduced-motion: reduce) {
   .ss-sweep::after { animation-duration: 2.6s; }
+}
+
+/* Shell responsiveness + RingCentral safe area. The sidebar already has an explicit collapse control;
+   narrow screens keep the collapsed rail visible instead of allowing the content pane to clip. */
+.ss-root .ss-main-column{padding-right:0}
+@media (max-width:900px){
+  .ss-root .ss-sidebar{max-width:68px!important;width:68px!important}
+  .ss-root .ss-sidebar-brand,.ss-root .ss-sidebar-search{display:none!important}
+  .ss-root .ss-sidebar nav{padding-left:9px!important;padding-right:9px!important}
+  .ss-root .ss-sidebar nav button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-sidebar nav button>span:not(.ss-tab-ico){display:none!important}
+  .ss-root .ss-sidebar-footer{padding-left:9px!important;padding-right:9px!important}
+  .ss-root .ss-sidebar-footer>a,.ss-root .ss-sidebar-footer>button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-sidebar-footer>a>span,.ss-root .ss-sidebar-footer>button>span,.ss-root .ss-sidebar-footer>div>div:last-child{display:none!important}
+  .ss-root .ss-sidebar-footer>div{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-main-topbar{padding-left:16px!important;padding-right:16px!important}
+  .ss-root .ss-panels{padding-left:16px!important;padding-right:16px!important}
+}
+@media (max-width:640px){
+  .ss-root .ss-sidebar{max-width:56px!important;width:56px!important}
+  .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
+  .ss-root .ss-main-topbar>div:last-child{display:none}
+  .ss-root .ss-panels{padding:16px 12px 132px!important}
 }

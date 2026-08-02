@@ -35,6 +35,7 @@ export interface InboxMessageDto {
   ownerId: string;
   ownerName: string | null;
   ownerEmail: string | null;
+  readAt: string | null;
 }
 
 export function toInboxMessageDto(row: MytrionInboxMessage): InboxMessageDto {
@@ -52,6 +53,7 @@ export function toInboxMessageDto(row: MytrionInboxMessage): InboxMessageDto {
     ownerId: row.ownerZohoUserId,
     ownerName: row.ownerName,
     ownerEmail: row.ownerEmail,
+    readAt: row.readAt?.toISOString() ?? null,
   };
 }
 

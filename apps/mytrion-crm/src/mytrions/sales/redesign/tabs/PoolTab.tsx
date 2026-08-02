@@ -324,13 +324,14 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
 
   return (
     <>
+      {/* No `ss-fu`: the pane sits inside the tab's `.ss-page`, which already runs the entrance
+          animation — two nested ones read as a stutter. */}
       <div
-        className="ss-fu ss-pool"
+        className="ss-pool"
         style={s('display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:480px')}
       >
         <div style={s('margin-bottom:14px')}>
           <RetentionHero
-            title="Open Pool"
             sub="Take quiet deals. Max 2 per day. Cycle up to 3. Unclaimed 3 BD → Retention."
             actions={
               <>

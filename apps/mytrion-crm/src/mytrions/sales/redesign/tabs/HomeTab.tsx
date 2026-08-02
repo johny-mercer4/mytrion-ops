@@ -1,9 +1,10 @@
 /**
- * Sales Mytrion redesign — Home tab. Ported verbatim from the reference prototype's `isHome`
- * slice + `renderVals()` view-model: hero briefing, workday progress, Updates & Announcements,
- * Today's Snapshot, Quick Actions / Recent Inbox. Primary fetches run in parallel behind a
- * full-page HomePageSkeleton; the page reveals once they settle. Live reloads (WS / refresh)
- * still use per-block useLoad. Quick Actions = static CALL_TO_ACTIONS catalog.
+ * Sales Mytrion redesign — Home tab: hero briefing, workday progress, Updates & Announcements,
+ * Today's Snapshot, Quick Actions / Recent Inbox.
+ *
+ * Home has no page header: its own greeting hero ("Good morning, …") is the headline, and the top
+ * bar already reads "HOME". Each block owns a per-block skeleton behind the SWR cache, so a
+ * revalidation never blanks the page.
  */
 import { useEffect, useState } from 'react';
 import { getSession } from '@/api/session';
@@ -14,13 +15,11 @@ import { StateNote } from '../SalesStates';
 import { Icon, type IconName } from '../icons';
 import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_END_HOUR } from '../salesData';
 import { useSessionUser } from '../sessionUser';
-import { markInboxRead } from '../inboxRead';
 import { CALL_TO_ACTIONS } from '../../data';
-import { loadSnapshot, loadAnnouncements, loadActivity, loadInbox, numFmt, money, type AnnVM, type InboxVM } from '../live';
+import { invalidateInboxCache, loadSnapshot, loadAnnouncements, loadActivity, loadInbox, numFmt, money, setInboxRead, type AnnVM, type InboxVM } from '../live';
 import { getAppStats } from '@/api/dataCenter';
 import { useCachedLoad } from '../dcCache';
-import { subscribeInboxLive } from '../inboxLiveBus';
-import { useServerCrmSocket } from '../useServerCrmSocket';
+import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
 import { useSales } from '../ctx';
 import {
   DAILY_APPS_GOAL,
@@ -33,6 +32,7 @@ import {
   claimCelebration,
 } from '../streakStore';
 import { AnnouncementsRailSkeleton, SnapshotCardsSkeleton, InboxListSkeleton } from './HomeSkeleton';
+import { SalesPage } from '../SalesPage';
 
 type AnnItem = AnnVM;
 type InboxItem = InboxVM;
@@ -181,20 +181,18 @@ export function HomeTab() {
 
   // (progressive per-block loading — no whole-page gate)
 
-  // Real-time: announcements on this tab's socket; inbox toast/reload are shell-level
-  // (`useSidebarBadges` → toast on every tab + `inboxLiveBus` for the Home preview list).
-  useServerCrmSocket({
-    enabled: !!currentUserId,
-    watchKey: currentUserId,
-    subscribe: { type: 'subscribe', userId: currentUserId },
-    onMessage: (msg) => {
-      if (msg.type === 'sales_announcement') ann.reload();
-    },
-  });
+  // Inbox and retention updates share the shell's single native realtime connection. Announcements
+  // are short-lived cached reads and revalidate when Home remounts instead of opening another socket.
   useEffect(() => subscribeInboxLive(() => inbox.reload()), [inbox.reload]);
 
   const openInbox = (i: InboxItem): void => {
-    markInboxRead(i.id);
+    if (!i.read) {
+      void setInboxRead(i.id, true).then(() => {
+        invalidateInboxCache();
+        publishInboxReload();
+        inbox.reload();
+      });
+    }
     openDetail({
       title: i.title,
       body: i.desc,
@@ -383,7 +381,10 @@ export function HomeTab() {
   const goInbox = (): void => go('inbox');
 
   return (
-    <div className="ss-fu">
+    <SalesPage>
+      {/* One wrapper so Home keeps its own vertical rhythm (each block sets its own margin) rather
+          than also picking up `.ss-page`'s 16px flex gap between every block. */}
+      <div>
       {/* hero */}
       <div style={s('display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-bottom:18px')}>
         <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
@@ -596,6 +597,7 @@ export function HomeTab() {
             </div>
           </div>
       </>
-    </div>
+      </div>
+    </SalesPage>
   );
 }

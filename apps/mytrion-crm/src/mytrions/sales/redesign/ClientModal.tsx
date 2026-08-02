@@ -16,6 +16,7 @@ import type { ClientRecord } from './ctx';
 import { s } from './dc';
 import { Icon, type IconName } from './icons';
 import { LoyaltyOverrideNotice } from './LoyaltyOverrideNotice';
+import { useAccessibleDialog } from './useAccessibleDialog';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import {
@@ -186,6 +187,7 @@ export function ClientModal({
   const [actLoading, setActLoading] = useState(false);
   const [actLoadingMore, setActLoadingMore] = useState(false);
   const [actError, setActError] = useState<string | null>(null);
+  const dialogRef = useAccessibleDialog(true, onClose);
 
   useEffect(() => {
     let off = false;
@@ -226,14 +228,6 @@ export function ClientModal({
       .finally(() => setActLoadingMore(false));
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 18%,var(--surface));color:${col};border:1px solid color-mix(in srgb,${col} 28%,transparent)`;
   const tile = 'padding:14px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
   const tLbl = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
@@ -247,10 +241,12 @@ export function ClientModal({
       )}
     >
       <div
+        ref={dialogRef}
         className="dc-lty"
         role="dialog"
         aria-modal="true"
         aria-label={`Client ${client.name}`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={s(
           'width:100%;max-width:820px;max-height:90vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',

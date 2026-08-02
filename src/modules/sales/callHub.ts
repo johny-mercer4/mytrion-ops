@@ -5,11 +5,12 @@
  * Identity: callers MUST pass the effective agent Zoho id (session user, or View-as target after
  * buildCallerContext). Never trust a client-supplied assignee override.
  */
-import { env } from '../../config/env.js';
+import { env, isTest } from '../../config/env.js';
 import { listGongCallsForAgent } from '../../integrations/gong.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { AsyncSWRCache } from '../../lib/asyncSWRCache.js';
 
 export type CallHubSource = 'mytrion' | 'zoho' | 'gong';
 export type CallHubStatus = 'answered' | 'missed' | 'unknown';
@@ -33,6 +34,8 @@ export interface CallHubItem {
   linked: CallHubLinked | null;
   /** Epoch ms for sort / filters. */
   startedTs: number;
+  /** Every provider row represented by this normalized call. */
+  sourceRefs: Array<{ source: CallHubSource; id: string }>;
 }
 
 export interface CallHubListFilter {
@@ -52,10 +55,23 @@ export interface CallHubListResult {
   total: number;
   /** Effective agent the list is scoped to (after View-as). */
   agentZohoUserId: string;
+  aggregates: {
+    answered: number;
+    missed: number;
+    unknown: number;
+    mytrion: number;
+    zoho: number;
+    gong: number;
+    exact: boolean;
+  };
+  sourceHealth: Record<CallHubSource, 'ok' | 'degraded' | 'disabled'>;
+  freshness: 'fresh' | 'stale';
+  generatedAt: string;
 }
 
 const MAX_PAGE_SIZE = 50;
 const MAX_SOURCE_WINDOW = 200;
+const callHubCache = new AsyncSWRCache(240);
 
 function tsOf(v: unknown): number {
   const t = Date.parse(v == null ? '' : String(v));
@@ -133,6 +149,7 @@ function mapMytrionRow(
     subject: null,
     linked,
     startedTs: tsOf(startedAt),
+    sourceRefs: [{ source: 'mytrion', id: r.id }],
   };
 }
 
@@ -150,7 +167,46 @@ function mapZohoRow(r: Record<string, unknown>): CallHubItem {
     subject: typeof r.Subject === 'string' ? r.Subject : null,
     linked: linkedFromZoho(r),
     startedTs: tsOf(startedAt),
+    sourceRefs: [{ source: 'zoho', id: String(r.id ?? '') }],
   };
+}
+
+function callFingerprint(item: CallHubItem): string {
+  const phone = item.phone.replace(/\D/g, '').slice(-10);
+  const linked = item.linked ? `${item.linked.type}:${item.linked.id}` : '';
+  const subject = (item.subject ?? item.result).trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 80);
+  const identity = phone || linked || subject;
+  if (!identity || item.startedTs <= 0) return `${item.source}:${item.id}`;
+  const minute = Math.floor(item.startedTs / 60_000);
+  const durationBucket = item.durationSeconds == null ? 'na' : Math.round(item.durationSeconds / 10);
+  return `${identity}:${minute}:${durationBucket}:${item.direction.toLowerCase()}`;
+}
+
+function dedupeCalls(items: CallHubItem[]): CallHubItem[] {
+  const priority: Record<CallHubSource, number> = { mytrion: 3, zoho: 2, gong: 1 };
+  const byFingerprint = new Map<string, CallHubItem>();
+  for (const item of items) {
+    const key = callFingerprint(item);
+    const existing = byFingerprint.get(key);
+    if (!existing) {
+      byFingerprint.set(key, item);
+      continue;
+    }
+    const preferred = priority[item.source] > priority[existing.source] ? item : existing;
+    const refs = new Map(
+      [...existing.sourceRefs, ...item.sourceRefs].map((ref) => [`${ref.source}:${ref.id}`, ref]),
+    );
+    byFingerprint.set(key, { ...preferred, sourceRefs: [...refs.values()] });
+  }
+  return [...byFingerprint.values()].sort((a, b) => b.startedTs - a.startedTs);
+}
+
+interface SourceChunk {
+  source: CallHubSource;
+  items: CallHubItem[];
+  total: number;
+  exact: boolean;
+  health: 'ok' | 'degraded';
 }
 
 async function fetchMytrionCalls(
@@ -210,70 +266,134 @@ export async function listCallHubCalls(
   const statusFilter = filter.status ?? 'all';
   const pageSize = Math.min(Math.max(filter.pageSize ?? 25, 1), MAX_PAGE_SIZE);
   const page = Math.max(filter.page ?? 1, 1);
-  // Enough rows from each source to fill this page after merge (cap per source).
-  const window = Math.min(page * pageSize, MAX_SOURCE_WINDOW);
+  // Fetch only enough rows to build the requested merged page. The old fixed 200-row probe made
+  // every first-page visit needlessly expensive. Later pages widen the bounded source window just
+  // enough to merge/sort correctly while the response remains explicit when aggregates are only
+  // estimates.
+  const sourceWindow = Math.min(page * pageSize, MAX_SOURCE_WINDOW);
+  const cacheKey = [
+    'call-hub',
+    ctx.tenantId,
+    callerZohoUserId,
+    want,
+    statusFilter,
+    filter.from?.toISOString() ?? '',
+    filter.to?.toISOString() ?? '',
+    sourceWindow,
+  ].join(':');
+  const cached = await callHubCache.getOrLoad(
+    cacheKey,
+    async () => {
+      const tasks: Array<Promise<SourceChunk>> = [];
+      if (want === 'all' || want === 'mytrion') {
+        tasks.push(
+          fetchMytrionCalls(ctx, callerZohoUserId, filter, sourceWindow)
+            .then((chunk) => ({
+              source: 'mytrion' as const,
+              ...chunk,
+              exact: chunk.total <= sourceWindow,
+              health: 'ok' as const,
+            }))
+            .catch(() => ({
+              source: 'mytrion' as const,
+              items: [],
+              total: 0,
+              exact: false,
+              health: 'degraded' as const,
+            })),
+        );
+      }
+      if (want === 'all' || want === 'zoho') {
+        tasks.push(
+          fetchZohoCalls(callerZohoUserId, filter, sourceWindow)
+            .then((chunk) => ({
+              source: 'zoho' as const,
+              ...chunk,
+              exact: chunk.total <= sourceWindow,
+              health: 'ok' as const,
+            }))
+            .catch(() => ({
+              source: 'zoho' as const,
+              items: [],
+              total: 0,
+              exact: false,
+              health: 'degraded' as const,
+            })),
+        );
+      }
+      if ((want === 'all' || want === 'gong') && env.FF_GONG_ENABLED) {
+        tasks.push(
+          listGongCallsForAgent(callerZohoUserId, {
+            ...(filter.from ? { from: filter.from } : {}),
+            ...(filter.to ? { to: filter.to } : {}),
+            limit: sourceWindow,
+          })
+            .then((rows) => {
+              let items = rows.map(
+                (r): CallHubItem => ({
+                  id: r.id,
+                  source: 'gong',
+                  direction: r.direction || 'Outbound',
+                  status: r.durationSeconds && r.durationSeconds > 0 ? 'answered' : 'unknown',
+                  phone: r.phone,
+                  startedAt: r.startedAt,
+                  durationSeconds: r.durationSeconds,
+                  result: r.result,
+                  subject: r.subject,
+                  linked: null,
+                  startedTs: tsOf(r.startedAt),
+                  sourceRefs: [{ source: 'gong', id: r.id }],
+                }),
+              );
+              if (statusFilter !== 'all') {
+                items = items.filter((c) => c.status === statusFilter);
+              }
+              return {
+                source: 'gong' as const,
+                items,
+                total: items.length,
+                exact: items.length < sourceWindow,
+                health: 'ok' as const,
+              };
+            })
+            .catch(() => ({
+              source: 'gong' as const,
+              items: [] as CallHubItem[],
+              total: 0,
+              exact: false,
+              health: 'degraded' as const,
+            })),
+        );
+      }
+      const chunks = await Promise.all(tasks);
+      let merged = dedupeCalls(chunks.flatMap((chunk) => chunk.items));
+      if (statusFilter !== 'all') merged = merged.filter((call) => call.status === statusFilter);
+      return { chunks, merged };
+    },
+    { ttlMs: 60_000, staleIfErrorMs: 10 * 60_000, force: isTest },
+  );
 
-  const tasks: Array<Promise<{ items: CallHubItem[]; total: number }>> = [];
-  if (want === 'all' || want === 'mytrion') {
-    tasks.push(
-      fetchMytrionCalls(ctx, callerZohoUserId, filter, window).catch(() => ({
-        items: [] as CallHubItem[],
-        total: 0,
-      })),
-    );
-  }
-  if (want === 'all' || want === 'zoho') {
-    tasks.push(
-      fetchZohoCalls(callerZohoUserId, filter, window).catch(() => ({
-        items: [] as CallHubItem[],
-        total: 0,
-      })),
-    );
-  }
-  if ((want === 'all' || want === 'gong') && env.FF_GONG_ENABLED) {
-    tasks.push(
-      listGongCallsForAgent(callerZohoUserId, {
-        ...(filter.from ? { from: filter.from } : {}),
-        ...(filter.to ? { to: filter.to } : {}),
-        limit: window,
-      })
-        .then((rows) => {
-          let items = rows.map(
-            (r): CallHubItem => ({
-              id: r.id,
-              source: 'gong',
-              direction: r.direction || 'Outbound',
-              status: r.durationSeconds && r.durationSeconds > 0 ? 'answered' : 'unknown',
-              phone: r.phone,
-              startedAt: r.startedAt,
-              durationSeconds: r.durationSeconds,
-              result: r.result,
-              subject: r.subject,
-              linked: null,
-              startedTs: tsOf(r.startedAt),
-            }),
-          );
-          if (statusFilter !== 'all') {
-            items = items.filter((c) => c.status === statusFilter);
-          }
-          return { items, total: items.length };
-        })
-        .catch(() => ({ items: [] as CallHubItem[], total: 0 })),
-    );
-  }
-
-  const chunks = await Promise.all(tasks);
-  let merged = chunks
-    .flatMap((c) => c.items)
-    .sort((a, b) => b.startedTs - a.startedTs);
-  // Mytrion already SQL-filtered by status; Zoho/Gong may still need it when mixed.
-  if (statusFilter !== 'all' && want !== 'mytrion') {
-    merged = merged.filter((c) => c.status === statusFilter);
-  }
-
-  const total = chunks.reduce((sum, c) => sum + c.total, 0);
+  const { chunks, merged } = cached.data;
+  const exact = chunks.every((chunk) => chunk.exact && chunk.health === 'ok');
+  const sourceTotal = chunks.reduce((sum, chunk) => sum + chunk.total, 0);
+  const total = exact ? merged.length : Math.max(merged.length, sourceTotal);
   const offset = (page - 1) * pageSize;
   const calls = merged.slice(offset, offset + pageSize);
+  const sourceHealth: CallHubListResult['sourceHealth'] = {
+    mytrion: 'disabled',
+    zoho: 'disabled',
+    gong: 'disabled',
+  };
+  for (const chunk of chunks) sourceHealth[chunk.source] = chunk.health;
+  const aggregates = {
+    answered: merged.filter((call) => call.status === 'answered').length,
+    missed: merged.filter((call) => call.status === 'missed').length,
+    unknown: merged.filter((call) => call.status === 'unknown').length,
+    mytrion: merged.filter((call) => call.sourceRefs.some((ref) => ref.source === 'mytrion')).length,
+    zoho: merged.filter((call) => call.sourceRefs.some((ref) => ref.source === 'zoho')).length,
+    gong: merged.filter((call) => call.sourceRefs.some((ref) => ref.source === 'gong')).length,
+    exact,
+  };
 
   return {
     calls,
@@ -281,5 +401,9 @@ export async function listCallHubCalls(
     pageSize,
     total,
     agentZohoUserId: callerZohoUserId,
+    aggregates,
+    sourceHealth,
+    freshness: cached.freshness,
+    generatedAt: cached.generatedAt,
   };
 }

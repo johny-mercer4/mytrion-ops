@@ -43,6 +43,7 @@ function callDto(item: Awaited<ReturnType<typeof listCallHubCalls>>['calls'][num
     result: item.result,
     subject: item.subject,
     linked: item.linked,
+    sourceRefs: item.sourceRefs,
   };
 }
 
@@ -83,6 +84,10 @@ export async function callHubRoutes(app: FastifyInstance): Promise<void> {
       pageSize: result.pageSize,
       total: result.total,
       agentZohoUserId: result.agentZohoUserId,
+      aggregates: result.aggregates,
+      sourceHealth: result.sourceHealth,
+      freshness: result.freshness,
+      generatedAt: result.generatedAt,
     };
   });
 }

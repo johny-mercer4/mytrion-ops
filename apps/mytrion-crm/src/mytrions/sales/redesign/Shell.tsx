@@ -3,16 +3,19 @@
  * prototype): sidebar with nav badges, top bar + live clock, theme toggle, user card, the
  * shared detail + client modals, and the toast. Owns cross-tab chrome; each tab is a
  * self-contained component under ./tabs. (AI chat launcher is disabled for now.)
- * Home gates on a full-page skeleton until primary fetches settle (see HomeTab);
- * other tabs own their own skeletons (no shell-level boot splash).
+ *
+ * Two chrome invariants live here:
+ *  - the top bar is the ONLY place a section is named, so no tab repeats its own title;
+ *  - the Suspense fallback is the SAME skeleton shape the tab shows while its data loads, so a cold
+ *    open plays one loading state instead of spinner → skeleton → content.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesData';
+import { NAV, NAV_GROUPS, TICKETS_ENABLED, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { MytrionSwitchLink } from '@/components/MytrionSwitchLink';
@@ -34,22 +37,62 @@ import './ss-horizon.css';
 import './verification.css';
 // After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
 import './dc-clients.css';
+// Last: the shared page scaffold (head / metrics / sub-tabs / empty / pager) wins over the
+// per-tab surfaces it replaces.
+import './sales-page.css';
 
 import { HomeTab } from './tabs/HomeTab';
-import { InboxTab } from './tabs/InboxTab';
-import { TicketConsole } from '@/features/comms/TicketConsole';
-import { RetentionTab } from './tabs/RetentionTab';
-import { VerificationTab } from './tabs/VerificationTab';
-import { CallHubTab } from './tabs/CallHubTab';
-import { RecordsTab } from './tabs/RecordsTab';
-import { CreateTab } from './tabs/CreateTab';
-import { AutoTab } from './tabs/AutoTab';
-import { DashTab } from './tabs/DashTab';
-import { CarriersTab } from './tabs/CarriersTab';
 import { ComingSoonPanel } from './tabs/ComingSoonPanel';
-import { TasksTab } from './tabs/TasksTab';
 import { soonHue } from './soonTabs';
 import { emitKpiActivity, useKpiPresence } from './kpiTelemetry';
+import { useAccessibleDialog } from './useAccessibleDialog';
+import { SalesTabSkeleton, type SalesSkeletonVariant } from './SalesTabSkeleton';
+
+// Home is above-the-fold and ships with the shell. Every other Sales workspace is split into its
+// own chunk so a cold Home visit does not parse Verification, Tickets, exports, dashboards and the
+// automation catalog before the user asks for them.
+const InboxTab = lazy(() => import('./tabs/InboxTab').then((module) => ({ default: module.InboxTab })));
+const TasksTab = lazy(() => import('./tabs/TasksTab').then((module) => ({ default: module.TasksTab })));
+const TicketConsole = lazy(() => import('@/features/comms/TicketConsole').then((module) => ({ default: module.TicketConsole })));
+const RetentionTab = lazy(() => import('./tabs/RetentionTab').then((module) => ({ default: module.RetentionTab })));
+const VerificationTab = lazy(() => import('./tabs/VerificationTab').then((module) => ({ default: module.VerificationTab })));
+const CallHubTab = lazy(() => import('./tabs/CallHubTab').then((module) => ({ default: module.CallHubTab })));
+const RecordsTab = lazy(() => import('./tabs/RecordsTab').then((module) => ({ default: module.RecordsTab })));
+const CreateTab = lazy(() => import('./tabs/CreateTab').then((module) => ({ default: module.CreateTab })));
+const AutoTab = lazy(() => import('./tabs/AutoTab').then((module) => ({ default: module.AutoTab })));
+const DashTab = lazy(() => import('./tabs/DashTab').then((module) => ({ default: module.DashTab })));
+const CarriersTab = lazy(() => import('./tabs/CarriersTab').then((module) => ({ default: module.CarriersTab })));
+
+/**
+ * Chunk-load placeholder per section — the SAME shape the tab itself shows while its data loads,
+ * so a cold open reads as one skeleton filling in rather than spinner → skeleton → content.
+ * `metrics` mirrors whether that tab's header carries a metric strip.
+ */
+const TAB_SKELETON: Record<string, { variant: SalesSkeletonVariant; metrics?: boolean; width?: 'narrow' }> = {
+  inbox: { variant: 'rows' },
+  tasks: { variant: 'board', metrics: true },
+  tickets: { variant: 'rows' },
+  retention: { variant: 'board', metrics: true },
+  verification: { variant: 'grid' },
+  callHub: { variant: 'rows', metrics: true },
+  records: { variant: 'grid' },
+  create: { variant: 'form', width: 'narrow' },
+  auto: { variant: 'grid' },
+  dash: { variant: 'panels' },
+  carriers: { variant: 'rows' },
+};
+
+function SalesTabLoader({ section, label }: { section: string; label: string }): JSX.Element {
+  const shape = TAB_SKELETON[section] ?? { variant: 'rows' as SalesSkeletonVariant };
+  return (
+    <SalesTabSkeleton
+      variant={shape.variant}
+      metrics={shape.metrics === true}
+      label={label}
+      {...(shape.width ? { width: shape.width } : {})}
+    />
+  );
+}
 
 /** Wayfinding hue per nav id — the shared --tone-* scale (theme-aware; see styles/horizon.css). */
 const NAV_TONE: Record<string, string> = {
@@ -114,6 +157,8 @@ export function SalesRedesign() {
     null,
   );
   const [navQuery, setNavQuery] = useState('');
+  const closeDetail = useCallback(() => setDetail(null), []);
+  const detailDialogRef = useAccessibleDialog(detail !== null, closeDetail);
 
   useEffect(() => {
     const clock = setInterval(() => tick((n) => n + 1), 30_000);
@@ -139,8 +184,12 @@ export function SalesRedesign() {
   // Octane /v1/realtime — new retention cases (and pool/ops) push live to this agent.
   useRetentionRealtime(currentUserId, pushToast);
   const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);
-  // Wayfinding: the top bar leads with the label the user actually clicked, then the author's
-  // descriptive title as a muted secondary — so "Data Center" no longer silently becomes "Pipeline Hub".
+  /**
+   * The top bar is the ONLY place a section is named — it prints exactly the label the user clicked
+   * in the sidebar. It used to append a second, author-written title ("MY TASKS · Assignments") while
+   * the page below printed the same pair again as a chip over a heading; three renderings of two
+   * words. Tabs now open straight into their content (see SalesPage/SalesPageHead).
+   */
   const activeLabel = NAV.find((n) => n.id === section)?.label ?? '';
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
@@ -254,8 +303,8 @@ export function SalesRedesign() {
             all in-flow content, so it can never cover a panel. */}
         <div className="ss-ambience" aria-hidden="true" style={{ zIndex: -1 }} />
         {/* SIDEBAR */}
-        <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
-          <div style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
+        <aside className="ss-sidebar" style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
+          <div className="ss-sidebar-brand" style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
             {!navCollapsed && (
               <>
                 <div style={s('line-height:1.05;min-width:0;flex:1')}>
@@ -278,14 +327,14 @@ export function SalesRedesign() {
             )}
           </div>
           {navCollapsed && (
-            <div style={s('display:flex;justify-content:center;padding:0 0 8px')}>
+            <div className="ss-sidebar-expand" style={s('display:flex;justify-content:center;padding:0 0 8px')}>
               <button onClick={toggleNav} aria-label="Expand sidebar" title="Expand sidebar" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                 <Icon name="panel" size={15} />
               </button>
             </div>
           )}
           {!navCollapsed && (
-            <div style={s('padding:0 12px 8px')}>
+            <div className="ss-sidebar-search" style={s('padding:0 12px 8px')}>
               <div style={s('display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
                 <Icon name="search" size={14} color="var(--muted)" />
                 <input
@@ -329,6 +378,7 @@ export function SalesRedesign() {
                     <button
                       key={n.id}
                       onClick={() => go(n.id)}
+                      aria-current={active ? 'page' : undefined}
                       title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
                       className={`ss-tab-x${active ? ' is-active' : ''}`}
                       style={{ ...s(style), ['--ss-tone' as string]: NAV_TONE[n.id] ?? 'var(--accent)' }}
@@ -354,7 +404,7 @@ export function SalesRedesign() {
               </div>
             ))}
           </nav>
-          <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
+          <div className="ss-sidebar-footer" style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
             {/* Route back to the Mytrion picker. Sales agents now hold more than one Mytrion, and the
                 sidebar was a dead end — the only exit was the top bar, which the full-bleed tabs cover.
                 Hidden automatically for anyone with a single Mytrion (see MytrionSwitchLink). */}
@@ -380,14 +430,9 @@ export function SalesRedesign() {
         </aside>
 
         {/* MAIN COLUMN */}
-        <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
-          <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <div style={s('display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden')}>
-              <span style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{activeLabel || NAVLABEL[section] || ''}</span>
-              {activeLabel && NAVLABEL[section] && NAVLABEL[section] !== activeLabel && (
-                <span style={s('font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap;flex-shrink:0')}>{NAVLABEL[section]}</span>
-              )}
-            </div>
+        <div className="ss-main-column" style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
+          <div className="ss-main-topbar" style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
+            <h1 style={s("margin:0;font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{activeLabel}</h1>
             {admin && <ViewAsPicker />}
             <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>
@@ -397,12 +442,13 @@ export function SalesRedesign() {
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
             {/* A Coming-soon placeholder is chrome, not reading content, so it takes the FULL panel
                 width rather than the 1180px measure — clamped, it read as a small card floating in a
-                large empty page. */}
-            <div id="ss-panels" key={actAsKey} style={s((fullBleed || sectionComingSoon) ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+                large empty page. Its vertical padding matches a normal tab so navigating in and out
+                of a parked section doesn't nudge everything up by 8px. */}
+            <div id="ss-panels" className="ss-panels" key={actAsKey} style={s(fullBleed ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : sectionComingSoon ? 'min-width:0;padding:24px 24px 90px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {sectionComingSoon ? (
                 <ComingSoonPanel sectionId={section} />
               ) : (
-                <>
+                <Suspense fallback={<SalesTabLoader section={section} label={activeLabel || 'workspace'} />}>
                   {section === 'home' && <HomeTab />}
                   {section === 'inbox' && <InboxTab />}
                   {section === 'tasks' && <TasksTab />}
@@ -426,7 +472,7 @@ export function SalesRedesign() {
                   {section === 'auto' && <AutoTab />}
                   {section === 'dash' && <DashTab />}
                   {section === 'carriers' && <CarriersTab />}
-                </>
+                </Suspense>
               )}
             </div>
           </main>
@@ -434,17 +480,25 @@ export function SalesRedesign() {
 
         {/* DETAIL MODAL */}
         {detail && (
-          <div onClick={() => setDetail(null)} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-            <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:520px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+          <div onClick={closeDetail} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+            <div
+              ref={detailDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sales-detail-title"
+              tabIndex={-1}
+              onClick={(e) => e.stopPropagation()}
+              style={s('width:100%;max-width:520px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+            >
               <div style={s('display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:17px;font-weight:700;line-height:1.3')}>{detail.title}</div>
+                  <div id="sales-detail-title" style={s('font-size:17px;font-weight:700;line-height:1.3')}>{detail.title}</div>
                   <div style={s('display:flex;gap:6px;margin-top:8px;flex-wrap:wrap')}>
                     {detail.badges.map((b, i) => <span key={i} style={s(b.style)}>{b.text}</span>)}
                   </div>
                 </div>
-                <button onClick={() => setDetail(null)} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+                <button onClick={closeDetail} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
                   <Icon name="close" size={15} strokeWidth={2.4} />
                 </button>
               </div>
@@ -455,7 +509,7 @@ export function SalesRedesign() {
                 </div>
               </div>
               <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
-                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
+                <button onClick={closeDetail} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
               </div>
             </div>
           </div>

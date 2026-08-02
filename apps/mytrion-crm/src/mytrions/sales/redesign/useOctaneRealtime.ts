@@ -27,6 +27,8 @@ export interface OctaneRealtimeOptions {
   /** Extra topics (admins only) — e.g. inbox:worker:<actedAsZohoId>. */
   extraTopics?: string[];
   onInboxEvent?: (event: OctaneInboxEvent) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
 }
 
 function wsUrlForToken(token: string): string {
@@ -69,6 +71,7 @@ export function useOctaneRealtime(opts: OctaneRealtimeOptions): void {
 
       sock.onopen = () => {
         retries = 1;
+        optsRef.current.onOpen?.();
         const extras = optsRef.current.extraTopics ?? [];
         for (const topic of extras) {
           try {
@@ -92,6 +95,7 @@ export function useOctaneRealtime(opts: OctaneRealtimeOptions): void {
 
       sock.onclose = () => {
         sock = null;
+        optsRef.current.onClose?.();
         if (!destroyed) scheduleReconnect();
       };
 
@@ -125,6 +129,7 @@ export function useOctaneRealtime(opts: OctaneRealtimeOptions): void {
         /* noop */
       }
       sock = null;
+      optsRef.current.onClose?.();
     };
     // Reconnect when acted-as target changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

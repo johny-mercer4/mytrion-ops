@@ -13,11 +13,12 @@
  * sheet renders with global tokens and ignores light mode. Same fix, same reason, as Finance's
  * ClientModal.
  */
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '@/hooks/useTheme';
 import { s } from './dc';
 import { Icon } from './icons';
+import { useAccessibleDialog } from './useAccessibleDialog';
 
 const BACKDROP =
   'position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -52,13 +53,7 @@ export function DetailSheet({
   children: ReactNode;
   ariaLabel: string;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, saving]);
+  const dialogRef = useAccessibleDialog(true, onClose, { dismissible: !saving });
 
   const { theme } = useTheme();
 
@@ -72,10 +67,12 @@ export function DetailSheet({
       style={s(BACKDROP)}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
         aria-busy={saving || undefined}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={s(`${SHEET};border-top:3px solid ${accent}`)}
       >

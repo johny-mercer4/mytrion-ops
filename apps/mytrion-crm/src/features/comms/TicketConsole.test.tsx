@@ -148,7 +148,10 @@ describe('TicketConsole — queue vs requester', () => {
   it('a queue console scopes the list to its own department', async () => {
     render(<TicketConsole mode="queue" department="billing" />);
     await waitFor(() =>
-      expect(api.listTickets).toHaveBeenCalledWith(expect.objectContaining({ department: 'billing' })),
+      expect(api.listTickets).toHaveBeenCalledWith(
+        expect.objectContaining({ department: 'billing' }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
     );
   });
 

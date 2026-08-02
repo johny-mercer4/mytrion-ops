@@ -1,8 +1,11 @@
 /**
  * Sales Call Hub — agent call history (Mytrion + Zoho). Softphone stays global.
  * Always scoped to the signed-in / View-as agent (backend honors x-act-as-*).
+ *
+ * Page chrome is the shared `SalesPage`; the tab no longer prints a "Call Hub" heading under the
+ * top bar's "CALL HUB", nor a "Call workspace" chip beside it.
  */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   listCallHubCalls,
   type CallHubItem,
@@ -13,8 +16,17 @@ import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { CallDetailModal } from '../CallDetailModal';
 import { useCachedLoad } from '../dcCache';
-import { s } from '../dc';
-import { Icon } from '../icons';
+import {
+  SalesEmpty,
+  SalesErrorNote,
+  SalesPage,
+  SalesPageHead,
+  SalesPager,
+  SalesSubTabs,
+  type SalesMetric,
+  type SalesSubTab,
+} from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
 
 type SourceFilter = CallHubSource | 'all';
 type StatusFilter = CallHubStatus | 'all';
@@ -46,36 +58,17 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${String(sRem).padStart(2, '0')}`;
 }
 
-function CallHubSkeleton() {
-  return (
-    <div className="ss-fu ss-call-skel" aria-busy="true" aria-label="Loading Call Hub">
-      <div className="ss-ret-hero ss-call-hero">
-        <div style={s('display:flex;flex-direction:column;gap:8px')}>
-          <div className="ss-skel" style={s('width:110px;height:26px;border-radius:99px')} />
-          <div className="ss-skel" style={s('width:180px;height:28px')} />
-          <div className="ss-skel" style={s('width:340px;height:14px')} />
-        </div>
-        <div className="ss-ret-metrics" style={{ marginTop: 12 }}>
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="ss-ret-metric">
-              <div className="ss-skel" style={s('width:54px;height:11px')} />
-              <div className="ss-skel" style={s('width:40px;height:22px;margin-top:6px')} />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:8px')}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="ss-skel"
-            style={s('height:72px;border-radius:var(--radius-md)')}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
+const SOURCE_TABS: ReadonlyArray<SalesSubTab<SourceFilter>> = [
+  { id: 'all', label: 'All sources' },
+  { id: 'mytrion', label: 'Mytrion' },
+  { id: 'zoho', label: 'Zoho' },
+];
+
+const STATUS_TABS: ReadonlyArray<SalesSubTab<StatusFilter>> = [
+  { id: 'all', label: 'Any status' },
+  { id: 'answered', label: 'Answered' },
+  { id: 'missed', label: 'Missed' },
+];
 
 export function CallHubTab() {
   const { actingAs } = useImpersonation();
@@ -103,221 +96,169 @@ export function CallHubTab() {
   const calls = load.data?.calls ?? [];
   const total = load.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const stats = useMemo(() => {
-    const answered = calls.filter((c) => c.status === 'answered').length;
-    const missed = calls.filter((c) => c.status === 'missed').length;
-    const mytrion = calls.filter((c) => c.source === 'mytrion').length;
-    const zoho = calls.filter((c) => c.source === 'zoho').length;
-    return { answered, missed, mytrion, zoho };
-  }, [calls]);
+  const stats = load.data?.aggregates ?? {
+    answered: 0,
+    missed: 0,
+    unknown: 0,
+    mytrion: 0,
+    zoho: 0,
+    gong: 0,
+    exact: true,
+  };
+  const degradedSources = load.data
+    ? Object.entries(load.data.sourceHealth ?? {})
+        .filter(([, health]) => health === 'degraded')
+        .map(([name]) => name)
+    : [];
 
-  if (load.loading && !load.data) return <CallHubSkeleton />;
+  const cold = load.loading && !load.data;
+  const metrics: SalesMetric[] = [
+    {
+      label: 'Total',
+      value: total,
+      hint: stats.exact ? 'All matching calls' : 'At least this many',
+    },
+    { label: 'Answered', value: stats.answered, hint: 'All matching calls', tone: 'ok' },
+    {
+      label: 'Missed',
+      value: stats.missed,
+      hint: 'All matching calls',
+      ...(stats.missed ? { tone: 'danger' as const } : {}),
+    },
+    {
+      label: 'Sources',
+      value: `${stats.mytrion}/${stats.zoho}`,
+      hint: 'Mytrion / Zoho · deduplicated',
+      tone: 'accent',
+    },
+  ];
 
   return (
-    <div className="ss-call-page" style={s('display:flex;flex-direction:column;gap:16px;min-height:0')}>
-      <div className="ss-ret-hero ss-call-hero">
-        <div>
-          <div className="ss-ret-hero-kicker">
-            <Icon name="callHub" size={13} /> Call workspace
-          </div>
-          <div className="ss-ret-hero-title">Call Hub</div>
-          <p className="ss-ret-hero-sub">
-            Calls for <strong style={{ color: 'var(--text)' }}>{agentLabel}</strong> only — Mytrion and
-            Zoho history merged. Softphone stays in the corner; open a row to redial.
-          </p>
-        </div>
-        <div className="ss-ret-metrics" style={{ marginTop: 4 }}>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Total</div>
-            <div className="ss-ret-metric-val">{total}</div>
-            <div className="ss-ret-metric-hint">Agent scope</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Answered</div>
-            <div className="ss-ret-metric-val is-ok">{stats.answered}</div>
-            <div className="ss-ret-metric-hint">This page</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Missed</div>
-            <div className={`ss-ret-metric-val${stats.missed ? ' is-danger' : ''}`}>{stats.missed}</div>
-            <div className="ss-ret-metric-hint">This page</div>
-          </div>
-          <div className="ss-ret-metric">
-            <div className="ss-ret-metric-lbl">Sources</div>
-            <div className="ss-ret-metric-val is-accent">
-              {stats.mytrion}/{stats.zoho}
-            </div>
-            <div className="ss-ret-metric-hint">Mytrion / Zoho</div>
-          </div>
-        </div>
-      </div>
+    <SalesPage className="ss-call-page" busy={cold || load.revalidating}>
+      <SalesPageHead
+        description={
+          <>
+            Calls for <strong>{agentLabel}</strong> only — Mytrion and Zoho history merged. Softphone
+            stays in the corner; open a row to redial.
+          </>
+        }
+        metrics={cold ? undefined : metrics}
+      />
 
-      <div className="ss-call-filters">
-        <div className="ss-ret-tabs" role="tablist" aria-label="Call source">
-          {(
-            [
-              ['all', 'All'],
-              ['mytrion', 'Mytrion'],
-              ['zoho', 'Zoho'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={source === id}
-              className={`ss-ret-tab${source === id ? ' is-on' : ''}`}
-              onClick={() => {
-                setSource(id);
-                setPage(1);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="ss-ret-tabs" role="tablist" aria-label="Call status">
-          {(
-            [
-              ['all', 'Any status'],
-              ['answered', 'Answered'],
-              ['missed', 'Missed'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={status === id}
-              className={`ss-ret-tab${status === id ? ' is-on' : ''}`}
-              onClick={() => {
-                setStatus(id);
-                setPage(1);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {load.error && calls.length === 0 ? (
-        <div className="ss-call-empty" style={s('color:var(--danger)')}>
-          {load.error}
-        </div>
-      ) : null}
-
-      {calls.length === 0 && !load.error ? (
-        <div className="ss-call-empty">
-          <Icon name="callHub" size={28} color="var(--accent)" />
-          <div style={s('margin-top:10px;font-weight:700')}>No calls for {agentLabel}</div>
-          <div style={s('margin-top:4px;color:var(--muted);font-size:13px;max-width:42ch;margin-left:auto;margin-right:auto')}>
-            Outbound clicks from Data Center and Retention land in Mytrion under this agent; Zoho Call
-            rows owned by them show up here too.
-          </div>
-        </div>
+      {cold ? (
+        <SalesBodySkeleton variant="rows" />
       ) : (
         <>
-          <div className="ss-call-list">
-            {calls.map((call) => {
-              const tone = SOURCE_TONE[call.source];
-              const statusTone =
-                call.status === 'answered'
-                  ? 'var(--ok)'
-                  : call.status === 'missed'
-                    ? 'var(--danger)'
-                    : 'var(--muted)';
-              return (
-                <button
-                  key={`${call.source}:${call.id}`}
-                  type="button"
-                  className="ss-call-row"
-                  onClick={() => setSelected(call)}
-                  style={{ ['--call-src' as string]: tone }}
-                >
-                  <div className="ss-call-row-main">
-                    <div className="ss-call-row-title">
-                      {call.subject?.trim() || call.result || call.direction || 'Call'}
-                    </div>
-                    <div className="ss-call-row-meta">
-                      {formatWhen(call.startedAt)}
-                      {call.phone ? ` · ${call.phone}` : ''}
-                      {call.linked
-                        ? ` · ${call.linked.type.replaceAll('_', ' ')}${call.linked.label ? ` ${call.linked.label}` : ''}`
-                        : ''}
-                    </div>
-                  </div>
-                  <div className="ss-call-row-side">
-                    <span
-                      className="ss-call-chip"
-                      style={{
-                        color: tone,
-                        borderColor: `color-mix(in srgb,${tone} 40%,transparent)`,
-                        background: `color-mix(in srgb,${tone} 12%,transparent)`,
-                      }}
-                    >
-                      {call.source}
-                    </span>
-                    <span
-                      className="ss-call-chip"
-                      style={{
-                        color: statusTone,
-                        borderColor: `color-mix(in srgb,${statusTone} 40%,transparent)`,
-                        background: `color-mix(in srgb,${statusTone} 12%,transparent)`,
-                      }}
-                    >
-                      {call.status}
-                    </span>
-                    <span className="ss-call-dur">{formatDuration(call.durationSeconds)}</span>
-                  </div>
-                </button>
-              );
-            })}
+        {degradedSources.length ? (
+          <div className="ss-source-health" role="status">
+            Showing available call history. {degradedSources.join(', ')} is temporarily unavailable.
           </div>
+        ) : null}
 
-          {total > PAGE_SIZE ? (
-            <div
-              className="ss-call-pager"
-              style={s(
-                'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:4px 2px',
-              )}
-            >
-              <div style={s('font-size:12px;color:var(--muted);font-weight:600')}>
-                Page {page} of {pageCount}
-                {total ? ` · ${total} calls` : ''}
-              </div>
-              <div style={s('display:flex;gap:8px')}>
-                <button
-                  type="button"
-                  aria-label="Previous call page"
-                  disabled={page <= 1}
-                  className="ss-ico-btn"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  style={s(
-                    `height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font:inherit;font-size:12px;font-weight:700;cursor:${page <= 1 ? 'default' : 'pointer'};opacity:${page <= 1 ? '.45' : '1'}`,
-                  )}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  aria-label="Next call page"
-                  disabled={page >= pageCount}
-                  className="ss-ico-btn"
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  style={s(
-                    `height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font:inherit;font-size:12px;font-weight:700;cursor:${page >= pageCount ? 'default' : 'pointer'};opacity:${page >= pageCount ? '.45' : '1'}`,
-                  )}
-                >
-                  Next
-                </button>
-              </div>
+        <div className="ss-call-filters">
+          <SalesSubTabs
+            items={SOURCE_TABS}
+            value={source}
+            label="Call source"
+            size="sm"
+            onChange={(next) => {
+              setSource(next);
+              setPage(1);
+            }}
+          />
+          <SalesSubTabs
+            items={STATUS_TABS}
+            value={status}
+            label="Call status"
+            size="sm"
+            onChange={(next) => {
+              setStatus(next);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {load.error ? <SalesErrorNote>{load.error}</SalesErrorNote> : null}
+
+        {calls.length === 0 && !load.error ? (
+          <SalesEmpty
+            icon="callHub"
+            title={`No calls for ${agentLabel}`}
+            body="Outbound clicks from Data Center and Retention land in Mytrion under this agent; Zoho Call rows owned by them show up here too."
+          />
+        ) : (
+          <>
+            <div className="ss-call-list">
+              {calls.map((call) => {
+                const tone = SOURCE_TONE[call.source];
+                const statusTone =
+                  call.status === 'answered'
+                    ? 'var(--ok)'
+                    : call.status === 'missed'
+                      ? 'var(--danger)'
+                      : 'var(--muted)';
+                return (
+                  <button
+                    key={`${call.source}:${call.id}`}
+                    type="button"
+                    className="ss-call-row"
+                    onClick={() => setSelected(call)}
+                    style={{ ['--call-src' as string]: tone }}
+                  >
+                    <div className="ss-call-row-main">
+                      <div className="ss-call-row-title">
+                        {call.subject?.trim() || call.result || call.direction || 'Call'}
+                      </div>
+                      <div className="ss-call-row-meta">
+                        {formatWhen(call.startedAt)}
+                        {call.phone ? ` · ${call.phone}` : ''}
+                        {call.linked
+                          ? ` · ${call.linked.type.replaceAll('_', ' ')}${call.linked.label ? ` ${call.linked.label}` : ''}`
+                          : ''}
+                      </div>
+                    </div>
+                    <div className="ss-call-row-side">
+                      <span
+                        className="ss-call-chip"
+                        style={{
+                          color: tone,
+                          borderColor: `color-mix(in srgb,${tone} 40%,transparent)`,
+                          background: `color-mix(in srgb,${tone} 12%,transparent)`,
+                        }}
+                      >
+                        {call.source}
+                      </span>
+                      <span
+                        className="ss-call-chip"
+                        style={{
+                          color: statusTone,
+                          borderColor: `color-mix(in srgb,${statusTone} 40%,transparent)`,
+                          background: `color-mix(in srgb,${statusTone} 12%,transparent)`,
+                        }}
+                      >
+                        {call.status}
+                      </span>
+                      <span className="ss-call-dur">{formatDuration(call.durationSeconds)}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          ) : null}
+
+            {total > PAGE_SIZE ? (
+              <SalesPager
+                page={page}
+                pageCount={pageCount}
+                onPage={setPage}
+                summary={`${total} call${total === 1 ? '' : 's'} matching these filters`}
+              />
+            ) : null}
+        </>
+      )}
         </>
       )}
 
       {selected ? <CallDetailModal call={selected} onClose={() => setSelected(null)} /> : null}
-    </div>
+    </SalesPage>
   );
 }

@@ -10415,3 +10415,285 @@ rebuilding from merged source.
 (95 entries, 95 files, no orphans, no duplicate idx). Backend + web typecheck clean; lint 0 errors.
 Backend tests **identical to `feature/Mytrion`'s own baseline** measured in a scratch worktree at
 `bdf23883` — zero new failures, +285 passing (1380 → 1665). Web 383/383.
+
+## 2026-08-02 — Sales Mytrion production audit implementation
+
+Implemented the Sales audit plan directly on `feature/Mytrion`, with production safety taking
+priority over surface-only polish.
+
+### Request architecture, caching, and rate control
+
+- Added `/v1/sales/bootstrap`: one agent/view-as-scoped bootstrap for identity, permissions, sidebar
+  counts, Home metrics, source health, partial state, and freshness. The Sales shell primes its SWR
+  caches from this response and lazy-loads every non-Home tab.
+- Added bounded process-local SWR with in-flight coalescing and stale-if-error fallback. Touchpoint
+  reads now cache normalized, server-injected parameters; successful writes invalidate the tenant's
+  read cache.
+- RBAC is deliberately evaluated **before** touchpoint cache lookup. This closed a cross-department
+  cache-leak path found by the test suite: an unauthorized caller can never receive a previously
+  cached authorized response.
+- Rate-limit keys now use actor `tenant:user` plus independent budgets for cached reads, expensive
+  provider reads, writes, auth, webhooks, and touchpoints. View-as does not charge the target user's
+  abuse budget. Fixed custom rate-limit responses so 429s cannot be transformed into opaque 500s.
+- Browser transport now deduplicates idempotent in-flight requests, supports cancellation, honors
+  `Retry-After`, and avoids blind rate-limit retries. Provider guards add bounded concurrency,
+  timeout/circuit-breaker behavior, and controlled retries.
+- Consolidated Sales realtime consumption to one session connection and paused nonessential
+  refresh/telemetry while the page is hidden.
+
+### Tickets and deployment readiness
+
+- Added boot migration execution with a Postgres advisory lock, transient startup retry, and
+  fail-closed behavior. Render enables `DB_MIGRATE_ON_BOOT=1` before the listener starts.
+- Added communications schema readiness through a repo-backed catalog probe. Ticket routes return
+  `COMMS_SCHEMA_NOT_READY` (503) instead of table-not-found 500s, the Sales UI renders a useful
+  unavailable state, and `/v1/health` blocks readiness when the communications schema is incomplete.
+- Registered `0097_inbox_unread_index` and `0098_inbox_keyset_index` in the Drizzle journal. Verified
+  99 numbered SQL files match 99 journal entries with no orphaned migration.
+
+### Sales tabs and UI
+
+- Removed the floating RingCentral reload control. Reduced the softphone's polling/DOM observation;
+  recovery remains inside the RingCentral panel and the host reserves its action-safe area.
+- Applied the Sales glass hierarchy and Space Grotesk/Space Mono typography across shared surfaces,
+  with calmer light-mode neutrals, stronger dark-mode separation, standardized loaders, status
+  states, controls, focus treatment, and accessible dialog behavior.
+- Inbox now has server search/filtering, 25-row keyset pages, realtime invalidation, optimistic
+  read/unread/delete with rollback, and a composite feed index.
+- My Tasks now separates counts from paginated rows and uses optimistic versioned status changes.
+- Verification keeps existing cards while revalidating, lazy-loads detail/attachments, reports
+  partial/source-health state, and uses responsive equal-height cards plus standardized skeletons.
+- Call Hub normalizes and deduplicates Mytrion/Zoho/Gong references, prefers Mytrion records, exposes
+  source health and exact/estimated aggregates, and probes only enough source rows for the requested
+  bounded page instead of always reading 200.
+- Carrier search is debounced/cancellable and bounded to 25/50-row presentation; duplicate lead
+  outcomes are explicit and writes carry replay protection.
+- Retention, Automations, dashboards, Create, Data Center, and Tickets preserve visible data during
+  background refresh, share cached lookups where possible, and use standardized mutation feedback.
+
+### Verification
+
+- Backend build and typecheck pass.
+- Frontend typecheck and production build pass; Sales tabs are emitted as separate lazy chunks.
+- Lint passes with 0 errors (22 pre-existing non-null assertion warnings outside this change).
+- Frontend: **60 files / 396 tests passed**.
+- Browser QA completed against the signed-in local Sales workspace in dark/light modes and at
+  desktop, 800 px, and 390 px widths; no document-level horizontal overflow was present.
+- Focused Sales/backend: bootstrap, touchpoint RBAC/cache, Inbox, KPI/tasks, Call Hub, Verification,
+  Data Center, RingCentral, communications/RBAC, dashboards, invoices, rejection reports and
+  provider guards all pass. The broader repository suite still contains previously documented
+  unrelated HR/Customer-Service expectation drift plus socket/DNS tests that cannot run in the
+  restricted local sandbox; those are not hidden as Sales regressions.
+
+## 2026-08-02 — Sales presentation rollback and refresh correction
+
+- Removed the blocking frontend bootstrap gate from the Sales entry path. The combined bootstrap
+  endpoint remains available, but a browser refresh now mounts the Sales shell immediately instead
+  of waiting for all Home/provider sources to settle.
+- Kept tab-level code splitting, but replaced the newly introduced shell/tab skeleton fallback with
+  the established `MytrionPageLoader` presentation.
+- Restored the original Sales typography system: Inter body copy, Rajdhani display headings, and
+  JetBrains Mono identifiers/metrics. Restored the previous light surfaces/shadow strength and
+  removed the global 40px control rule that changed compact-control proportions.
+- Fixed the Sales Admin View Exit control's event handling and compact sizing. Added a focused
+  regression test proving Exit clears the active impersonation.
+- Verification: frontend typecheck, production build, and the focused ViewAsPicker test pass.
+
+## 2026-08-02 — Sales Mytrion: one page header, one loader (UI/UX consistency pass)
+
+Scope: `apps/mytrion-crm/src/mytrions/sales/redesign` only. Every tab reviewed individually.
+
+### The "double shell" — one title per screen
+
+The top bar printed the nav label **and** a second author-written title (`NAVLABEL`), and each tab
+then printed its own heading plus description. My Tasks read `MY TASKS · Assignments` in the chrome
+over the chip `ASSIGNMENTS` and the heading `MY TASKS` in the page — two words, three times. Call Hub
+had the same shape.
+
+- Top bar is now the **only** place a section is named, and it is an `<h1>` carrying exactly the label
+  the user clicked. The secondary title is gone.
+- `NAVLABEL` (a second set of titles) became `NAV_DESC` — one sentence per tab, the single source for
+  the line under a page header. Tabs no longer hard-code their own copy.
+- New `SalesPage` / `SalesPageHead` / `SalesMetrics` / `SalesSubTabs` / `SalesEmpty` /
+  `SalesErrorNote` / `SalesPager` (`SalesPage.tsx` + `sales-page.css`). `SalesPageHead` takes
+  `description` / `actions` / `metrics`; `title` is reserved for a genuine sub-view (a record being
+  inspected, e.g. the Verification detail's company name) and is never the section name.
+- Removed the in-page headings from Tasks, Call Hub, Inbox, Data Center, Automations, Carriers,
+  Dashboard, Verification, and both Retention panes ("My cases" / "Open Pool" — the sub-tab already
+  names the pane).
+
+### The double loader
+
+`Suspense fallback={<MytrionPageLoader/>}` (a spinner) ran while a tab's chunk downloaded, then the
+tab showed its own shaped skeleton, then the content — three states per navigation.
+
+- The Suspense fallback is now `SalesTabSkeleton`, which renders the **same shape** the tab shows
+  while its data loads (`TAB_SKELETON` maps section → variant). One skeleton that fills in.
+  This intentionally reverses this morning's "replace the skeleton fallback with MytrionPageLoader"
+  note: the problem was never the skeleton, it was having a spinner *and* a skeleton with different
+  shapes. `MytrionPageLoader` is untouched and still used by HR/Recruit.
+- Deleted the now-duplicate skeletons: `TasksBoardSkeleton`, `DcKanbanSkeleton`,
+  `DcCardGridSkeleton`, `DcListSkeleton`, `HomePageSkeleton`, `HomeBelowFoldSkeleton`,
+  `ActivityTilesSkeleton`, the inline `CallHubSkeleton`, and `Gate`'s spinner fallback in Data Center.
+- Money Codes was the last sub-tab loading with a **spinner** while its siblings used skeletons — now
+  a skeleton.
+- The page shell is the single `aria-busy` owner (cold load *and* background revalidation); skeletons
+  under it are `aria-hidden`, so assistive tech hears "busy" once, not once per placeholder block.
+
+### Flicker
+
+- `.ss-fu` (the `ss-up` slide-in) ran on the skeleton root **and** again on the content root, so the
+  page slid in twice per load. Only `.ss-page` carries it now, and it survives the loading→loaded
+  swap, so the entrance animation plays exactly once per tab open. Skeletons never animate their
+  entrance.
+- Carriers gave **every result row** `className="ss-fu"`, re-running the animation on all 25 rows on
+  every filter/page/page-size change. Removed.
+- Debtors dashboard and Open Pool were nested `ss-fu` inside an animated page — removed.
+- Data Center's freshness caption now keeps a fixed line box, and the loyalty tier bar has a
+  placeholder, so the client grid no longer shifts when the first fetch lands.
+
+### Bugs fixed
+
+- **My Tasks column counts were wrong when paginated.** Each column header printed
+  `counts[col.id]` — the account-wide total — above a body holding only the current page's rows
+  ("38 cards" over three visible cards). Headers now count what they render; all-pages figures stay
+  in the metric strip, which says so.
+- **Inbox hid working rows on a failed refresh.** `load.error && !load.data` meant a background
+  failure with data on screen showed nothing at all. The error is now an inline note above the list.
+- **Verification showed contradictory states.** The "showing the latest available pipeline data"
+  banner rendered alongside the hard error state when there was no data; it is now gated on data.
+- **Content width jumped between tabs** — the shell clamps to 1180px but Dashboard nested 1100,
+  Create 1080, Carriers a redundant 1180. One measure now, with `width="narrow"` (1080) as the single
+  sanctioned exception for form screens.
+- Coming-soon panels used 16px vertical padding against every other tab's 24px, nudging the layout.
+- Data Center's filter select and Meta toggle were 44px next to a 42px search field.
+
+### Consistency
+
+- Five different sub-tab controls (pills with `aria-pressed`, a boxed segment group, a bare button
+  row, two hand-rolled `role="tablist"`s) → one `SalesSubTabs` with counts, SOON tags and proper
+  `role="tab"` / `aria-selected`. Used by Data Center, Create, Dashboard, Retention, Inbox filters,
+  Call Hub filters, Money Codes.
+- Four page-header implementations, four empty-state treatments, three pagers and three error
+  presentations → one each.
+- Sidebar items carry `aria-current="page"`; search fields share one field with hover/focus
+  affordance and a clear button.
+- `prefers-reduced-motion` disables the page entrance and the skeleton shimmer.
+- Deleted the CSS left stranded by the above (`.ss-verification-header/-copy/-toolbar/-search/
+  -pagination/-page-controls/-state/-title`, `.ss-tasks-empty/-new-pill/-hero`, `.ss-call-empty/-hero`,
+  `.ss-*-refresh`, `.ss-card-grid-skeleton`).
+
+### Verification
+
+- `npx tsc --noEmit` clean; `npx vitest run` 62 files / 401 tests pass (up from 397 — new
+  `SalesPage.test.tsx` asserts no duplicate section title in a tab body and exactly one loading
+  region, cold and loaded).
+- `vite build --mode production` clean; every changed module fetched through the dev server with no
+  transform errors.
+- `apps/mytrion-crm/app/` (the committed bundle) was rebuilt as a side effect of the production
+  build. It was already in a half-deleted state in the working tree before this session.
+
+## 2026-08-02 — Verification onto Zoho Deals; Tickets inherits the parent design
+
+### Verification — data source moved off the DWH onto Zoho CRM
+
+`octane.agent_deals` (+ `octane.dim_company`) is gone from this path. Two reasons, both load-bearing:
+
+- **It was keyed on an agent DISPLAY NAME.** The warehouse has no Zoho user id, so the route had to
+  resolve a name and pass it as the scope. An agent whose warehouse name did not match got a silently
+  EMPTY pipeline. Scoping is now `Owner = '<zoho_user_id>'` — an id, like every other Sales pull.
+- **It did not carry the fields verification turns on.** Stage, Application_Stage, Application_Status,
+  Credit_Decision, Credit_Score, Risk_Score, CreditSafe_Grade and the three *_Verification picklists
+  are Zoho fields; the warehouse had none of them or a lagging copy.
+
+New `src/integrations/salesVerificationDeals.ts`: one COQL select over `Deals`, filtered
+`Owner = '<uid>' and Application_ID > 0`, ordered `Application_Date desc, id desc`, drained in
+**200-row pages** (`runCoqlAll`, capped at 1000 rows / 5 calls). The service then serves the UI's
+9-per-page requests out of that drained set, which is what makes an exact `total` possible. The
+existing `AsyncSWRCache` still fronts it.
+
+Field metadata was read from the live org (`getFields` on Deals, 153 fields) and every query probed
+through `/coql` before shipping. Three findings worth keeping:
+
+- **`Verification_Decision` is a `fileupload`** — the decision DOCUMENT, not a decision value. The
+  decision an agent needs is `Credit_Decision` (text: "Approved-Requested",
+  "Declined-Prepay/Secured Only", "Declined") plus `Application_Status`.
+- **DOT on Deals is `DOT1`**; a bare `DOT` is a Leads field and 400s the whole query.
+- **`Stage_Modified_Time` is in field metadata but is NOT COQL-queryable** (`INVALID_QUERY`). Use
+  `Stage_Last_Updated`.
+
+Filtering on `Application_ID > 0` rather than `Application_Date is not null`: deals sitting in
+"Application Filled" with a null Application_Date exist in the live org, and dropping them would hide
+real work. `> 0` also sidesteps this org's COQL parser rejecting a trailing `is not null`.
+
+Mapping rules the tests pin:
+- `Credit_Score` of **0 means "not scored"** — the CRM 0-fills undecided applications, and rendering
+  "0" beside a real 688 reads as a catastrophic score.
+- `Credit_Limit` is a **TEXT** field, so "$15,000" has to parse.
+- `"-None-"` is Zoho's unset-picklist marker, not a value.
+- `MC` is free text agents also use for notes-to-self ("DOT", "No assigned number") — only kept when
+  it looks like an identifier.
+- Classification comes from `Stage`: closed-lost → closed; card swiped/funded/activated/delivered or
+  closed won → active; everything else → in pipeline.
+
+The 9-stage compliance TIMELINE is unchanged — it still comes from the credit_platform provider via
+`/v1/verification/pipeline`. Only the roster/record moved.
+
+### Verification — the tab redesigned on the design system
+
+The card now answers "where is this application and what did credit decide" without opening it:
+company + classification, Stage / Application stage / Application status chips, then a dedicated
+decision line (decision text, credit score, approved line). New `verificationFields.tsx` derives every
+tone from the VALUE, so an unrecognised picklist option degrades to neutral instead of rendering as
+"good".
+
+The detail page is three token-built sections — Credit decision (score, line approved, limit, risk,
+CreditSafe grade, money-code limit, payment type, billing cycle + a pass/fail checkpoint rail for
+Company / Billing / Love's / Verified / Limits added), Application (stage, status, dates, cards
+requested, carrier / DOT / MC), and From Verification (reject reason, notes) — followed by the live
+compliance pipeline. Tiles with no value render nothing rather than a grid of em dashes.
+
+### Tickets — inherits the parent design instead of bringing its own
+
+`comms.module.css` was built on its own rem type scale and pill shapes, so the console read as a chat
+widget dropped inside a Mytrion rather than a page of it. Everything now resolves through the HOST's
+tokens with a Horizon fallback (`var(--surface, var(--hz-pane))`, `var(--ss-text-xs, 13px)`, …) —
+mounted under Sales' `.ss-root` it picks up Sales' glass surfaces and px type scale; mounted by CS /
+Billing / Verification it falls back exactly as before. Specifically:
+
+- panes take the host card surface (`--surface` + `--border` + `--shadow-sm`);
+- the list heading is the host's display face, and wraps to two lines instead of truncating
+  "My tickets & escalations" into "My tickets & escal…";
+- "Live" became the host's eyebrow pill; the loose outlined filter pills became the host's segmented
+  control with `role="tab"` / `aria-selected`;
+- the search is the host's field (38px, `--radius-md`, same hover/focus) and gained a clear button;
+- empty states gained the host's icon well (a bare heading with no mark read as an error), plus a
+  "Clear search" action when a search is what emptied the list;
+- rows, tags, unread badge, skeleton, error note, bubbles and the composer all moved onto the shared
+  tokens and control sizing (38px, `--radius-md`), so nothing sits a few pixels off its neighbours.
+
+Functional fixes: the count line no longer blanks while loading (the header jumped a row on every
+filter change and background refresh), the mobile back control is a real icon button with a proper
+label instead of a bare "←" glyph, and "Check again" / "Load more" use one button treatment.
+
+### Verification
+
+- Backend: `tsc --noEmit` clean, `eslint` clean on all changed files, `verification-pipeline-service`
+  (7 tests, rewritten for the Zoho source) and `verification-pipeline-routes` (4) pass.
+- Frontend: `tsc --noEmit` clean, 62 files / 401 tests pass, production build clean, every changed
+  module fetched through the dev server with no transform errors.
+- The wider backend suite still has 9 unrelated failing files (carrier-mini-app, retention-phase1,
+  stream-adapter, realtime-heartbeat, zoho-crm, tools, retention-cs-caps, notification-templates).
+  None of them import `verificationPipeline` or `salesVerificationDeals`; they are the previously
+  documented drift + sandbox socket/DNS failures, not regressions from this change.
+## 2026-08-02 — Platform scaling and vendor best-practices handbook
+
+- Added `docs/platform-scaling-best-practices.html`, a self-contained engineering handbook covering
+  Zoho CRM API selection/COQL/credits, read-only DWH access, application PostgreSQL, PgVector,
+  pg-boss queues, WebSocket/pub-sub, external-vendor adapters, security, scale stages, SLOs, and a
+  production release checklist.
+- Grounded vendor limits and delivery semantics in primary Zoho, PostgreSQL, pgvector, pg-boss,
+  Redis, RFC 6455, and AWS documentation; included the source links in the handbook.
+- Documented repository-specific strengths and risks, including bounded DWH access, dedicated job
+  workers, tenant-scoped repositories, TLS verification gaps, and the transition from process-local
+  caching to Redis/Valkey when multiple application instances are introduced.

@@ -15,18 +15,104 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, RBACError } from '../../lib/errors.js';
+import { AsyncSWRCache } from '../../lib/asyncSWRCache.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
-  dispatchTouchpoint,
+  dispatchPreparedTouchpoint,
   listTouchpointsFor,
+  prepareTouchpointInvocation,
 } from '../../modules/touchpoints/dispatcher.js';
 import { getTouchpoint } from '../../modules/touchpoints/catalog/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import type { TouchpointResult } from '../../modules/touchpoints/types.js';
 import { buildCallerContext, callerIdentitySchema } from './callerIdentity.js';
 
 const dispatchSchema = callerIdentitySchema.extend({
   params: z.record(z.unknown()).default({}),
 });
+
+const touchpointReadCache = new AsyncSWRCache(500);
+const TOUCHPOINT_READ_TTL_MS = 90_000;
+const TOUCHPOINT_READ_STALE_MS = 10 * 60_000;
+const MUTATION_REPLAY_TTL_MS = 15 * 60_000;
+const MUTATION_REPLAY_MAX = 1_000;
+
+interface MutationReplay {
+  signature: string;
+  expiresAt: number;
+  result: Promise<TouchpointResult>;
+}
+
+const mutationReplays = new Map<string, MutationReplay>();
+
+/** Reads whose payload is identical for every user in a tenant can share one cache entry. */
+const TENANT_SCOPED_READS = new Set(['dashboard.company']);
+
+function readCachePrincipal(ctx: TenantContext, key: string): string {
+  return TENANT_SCOPED_READS.has(key) ? 'tenant' : ctx.userId;
+}
+
+/** Stable cache identity for the flat/nested JSON params accepted by the touchpoint catalog. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function dispatchMutation(
+  ctx: TenantContext,
+  key: string,
+  params: Record<string, unknown>,
+  rawIdempotencyKey: string | string[] | undefined,
+  run: () => Promise<TouchpointResult>,
+): Promise<TouchpointResult> {
+  const idempotencyKey = Array.isArray(rawIdempotencyKey) ? rawIdempotencyKey[0] : rawIdempotencyKey;
+  if (!idempotencyKey) return run();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
+    throw new AppError('Idempotency-Key must contain 8–200 characters.', {
+      statusCode: 400,
+      code: 'INVALID_IDEMPOTENCY_KEY',
+      expose: true,
+    });
+  }
+  const now = Date.now();
+  for (const [replayKey, replay] of mutationReplays) {
+    if (replay.expiresAt <= now) mutationReplays.delete(replayKey);
+  }
+  const replayKey = `${ctx.tenantId}:${ctx.userId}:${key}:${idempotencyKey}`;
+  const signature = stableJson(params);
+  const existing = mutationReplays.get(replayKey);
+  if (existing) {
+    if (existing.signature !== signature) {
+      throw new AppError('That idempotency key was already used with a different request.', {
+        statusCode: 409,
+        code: 'IDEMPOTENCY_CONFLICT',
+        expose: true,
+      });
+    }
+    return existing.result;
+  }
+  const result = run().catch((error: unknown) => {
+    mutationReplays.delete(replayKey);
+    throw error;
+  });
+  mutationReplays.set(replayKey, {
+    signature,
+    expiresAt: now + MUTATION_REPLAY_TTL_MS,
+    result,
+  });
+  while (mutationReplays.size > MUTATION_REPLAY_MAX) {
+    const oldest = mutationReplays.keys().next().value as string | undefined;
+    if (!oldest) break;
+    mutationReplays.delete(oldest);
+  }
+  return result;
+}
 
 /** Mask full card numbers (PAN) in audited params — keep the last 4 for traceability. */
 function redactParams(params: unknown): unknown {
@@ -161,11 +247,64 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
         }
       : {};
     try {
-      const result = await dispatchTouchpoint(ctx, key, params);
+      // This always runs, including on an eventual cache hit. It is the security boundary that
+      // prevents a cached Sales result from being served to a caller whose department view is not
+      // authorized for that touchpoint.
+      const invocation = await prepareTouchpointInvocation(ctx, key, params);
+      const normalizedParams = invocation.params;
+      const forceRequested = request.headers['x-cache-refresh'] === '1';
+      // A user may refresh their own cache. Tenant-wide Company snapshots are shared between every
+      // Sales user, so only an administrator may bypass that cache and trigger an upstream refresh.
+      const force =
+        forceRequested && (!TENANT_SCOPED_READS.has(key) || ctx.allDepartmentAccess);
+      const execute = (): Promise<TouchpointResult> =>
+        dispatchPreparedTouchpoint(ctx, invocation);
+      const run = (): Promise<TouchpointResult> =>
+        tp?.riskClass === 'read'
+          ? execute()
+          : dispatchMutation(
+              ctx,
+              key,
+              normalizedParams,
+              request.headers['idempotency-key'],
+              execute,
+            );
+      const cached =
+        tp?.riskClass === 'read'
+          ? await touchpointReadCache.getOrLoad(
+              `${ctx.tenantId}:${readCachePrincipal(ctx, key)}:${key}:${stableJson(normalizedParams)}`,
+              run,
+              {
+                ttlMs: TOUCHPOINT_READ_TTL_MS,
+                staleIfErrorMs: TOUCHPOINT_READ_STALE_MS,
+                force,
+              },
+            )
+          : null;
+      const result = cached?.data ?? (await run());
+      if (tp?.riskClass !== 'read') {
+        // Mutations are uncommon and can affect multiple read models (case list + detail + counts).
+        // Tenant-wide invalidation is intentionally conservative: it prevents a successful write
+        // from being hidden behind a 90-second read cache without requiring every catalog entry to
+        // maintain a fragile list of dependent keys.
+        touchpointReadCache.invalidate(`${ctx.tenantId}:`);
+      }
       if (shouldAudit) {
         await auditInvocation(ctx, key, 'ok', { ...baseDetail, params });
       }
-      return { key: result.key, data: result.data };
+      return {
+        key: result.key,
+        data: result.data,
+        ...(cached
+          ? {
+              freshness: cached.freshness,
+              generatedAt: cached.generatedAt,
+              partial: cached.freshness === 'stale',
+              sourceHealth: { [result.kind]: cached.freshness === 'stale' ? 'degraded' : 'ok' },
+              ...(cached.staleReason ? { staleReason: cached.staleReason } : {}),
+            }
+          : {}),
+      };
     } catch (err) {
       if (err instanceof RBACError) {
         await auditInvocation(ctx, key, 'denied', {
@@ -184,11 +323,23 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
   };
 
   // `:key` with an explicit regex so dotted keys (clients.by_agent) always bind as one segment.
+  // The catalog risk class is authoritative; client-provided headers cannot select a cheaper bucket.
   app.route({
     method: ['GET', 'POST'],
     url: '/touchpoints/:key(.*)',
     ...guard,
-    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    config: {
+      rateLimit: {
+        max: (request: FastifyRequest) => {
+          const raw = (request.params as { key?: string } | undefined)?.key ?? '';
+          const touchpoint = getTouchpoint(decodeURIComponent(raw).replace(/^\//, ''));
+          if (touchpoint?.riskClass === 'read') return 120;
+          if (touchpoint?.riskClass === 'destructive') return 5;
+          return 10;
+        },
+        timeWindow: '1 minute',
+      },
+    },
     handler: dispatchHandler,
   });
 }

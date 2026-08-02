@@ -60,6 +60,10 @@ const listTaskQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
+const myTaskQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
 /** Assignee kanban may land on any board column (incl. reopen from terminal). */
 const workerStatusSchema = z.object({
   version: z.number().int().positive(),
@@ -313,8 +317,32 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/sales/tasks', guard, async (request) => {
     const ctx = salesContext(request);
-    const tasks = await workerTaskRepo.list(ctx, { assigneeZohoUserId: zohoUserId(ctx), limit: 200 });
-    return { tasks: tasks.map((task) => taskDto(task)) };
+    const query = myTaskQuerySchema.parse(request.query ?? {});
+    const assigneeZohoUserId = zohoUserId(ctx);
+    const [tasks, counts] = await Promise.all([
+      workerTaskRepo.list(ctx, {
+        assigneeZohoUserId,
+        limit: query.limit,
+        offset: query.offset,
+      }),
+      workerTaskRepo.countByStatus(ctx, assigneeZohoUserId),
+    ]);
+    const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    return {
+      tasks: tasks.map((task) => taskDto(task)),
+      counts,
+      pagination: {
+        limit: query.limit,
+        offset: query.offset,
+        total,
+        hasMore: query.offset + tasks.length < total,
+      },
+    };
+  });
+  app.get('/sales/tasks/summary', guard, async (request) => {
+    const ctx = salesContext(request);
+    const counts = await workerTaskRepo.countByStatus(ctx, zohoUserId(ctx));
+    return { counts, total: Object.values(counts).reduce((sum, value) => sum + value, 0) };
   });
   app.get('/sales/tasks/:taskId/events', guard, async (request) => {
     const ctx = salesContext(request);

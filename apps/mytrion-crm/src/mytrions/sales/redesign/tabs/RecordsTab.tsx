@@ -8,7 +8,17 @@
 import { useMemo, useState } from 'react';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
-import { badge, type BadgeVM } from '../salesData';
+import { badge, NAV_DESC, type BadgeVM } from '../salesData';
+import {
+  SalesEmpty,
+  SalesErrorNote,
+  SalesPage,
+  SalesPageHead,
+  SalesSubTabs,
+  Skel,
+  type SalesSubTab,
+} from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import {
   tierBucketOf,
   resolveTierForRow,
@@ -34,7 +44,6 @@ import { compareClients } from '../clientSort';
 import { getImpersonation } from '@/api/impersonation';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
-import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 import { RejectionDetailModal } from '../RejectionDetailModal';
@@ -59,7 +68,7 @@ function DcSelect({
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         aria-label={label}
-        style={s("height:44px;padding:0 34px 0 34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);-webkit-appearance:none;-moz-appearance:none;appearance:none;max-width:220px;font-family:inherit")}
+        style={s("height:42px;padding:0 34px 0 34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);-webkit-appearance:none;-moz-appearance:none;appearance:none;max-width:220px;font-family:inherit")}
       >
         {options.map((o) => (
           <option key={o.v} value={o.v}>
@@ -76,23 +85,13 @@ type DcSub = 'clients' | 'leads' | 'deals' | 'rejections' | 'money';
 type RecStatus = 'active' | 'attention' | 'debtor';
 type PipeView = 'kanban' | 'list';
 
-interface DcTabDef {
-  id: DcSub;
-  label: string;
-  icon: IconName;
-  /** Rendered disabled with a "Coming soon" tag; not navigable (mirrors NAV's comingSoon). */
-  disabled?: boolean;
-}
-
-const DC_TABS: DcTabDef[] = [
+const DC_TABS: ReadonlyArray<SalesSubTab<DcSub>> = [
   { id: 'clients', label: 'Clients', icon: 'clients' },
-  // Leads + Deals parked as "Coming soon". Drop `disabled` to re-enable — LeadsView / DealsView and
+  // Leads + Deals parked as "Coming soon". Drop `soon` to re-enable — LeadsView / DealsView and
   // loadLeads() / loadDeals() stay wired, and the COQL loads are `enabled`-gated on dcSub so nothing
   // fetches while parked.
-  { id: 'leads', label: 'Leads', icon: 'leads', disabled: true },
-  { id: 'deals', label: 'Deals', icon: 'deals', disabled: true },
-  // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
-  // RejectionsView component + loadRejections() stay wired for when the redesign ships.
+  { id: 'leads', label: 'Leads', icon: 'leads', soon: true },
+  { id: 'deals', label: 'Deals', icon: 'deals', soon: true },
   { id: 'rejections', label: 'Rejection Reports', icon: 'rejections' },
   { id: 'money', label: 'Money Codes', icon: 'moneyCodes' },
 ];
@@ -105,9 +104,9 @@ const SEARCH_PLACEHOLDER: Record<DcSub, string> = {
   money: 'Search by company or carrier ID…',
 };
 
-const VIEW_BTNS: { v: PipeView; label: string; icon: IconName }[] = [
-  { v: 'kanban', label: 'Board', icon: 'board' },
-  { v: 'list', label: 'List', icon: 'list' },
+const VIEW_TABS: ReadonlyArray<SalesSubTab<PipeView>> = [
+  { id: 'kanban', label: 'Board', icon: 'board' },
+  { id: 'list', label: 'List', icon: 'list' },
 ];
 
 /**
@@ -175,7 +174,7 @@ function TierDistribution({
 }) {
   return (
     // .dc-lty carries the --lty-* palette these chips read (see dc-clients.css).
-    <div className="dc-lty" style={s('margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:14px 16px;box-shadow:var(--shadow-sm)')}>
+    <div className="dc-lty" style={s('border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:14px 16px;box-shadow:var(--shadow-sm)')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:12px')}>
         <span style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Loyalty distribution</span>
         <span style={s('display:flex;align-items:center;gap:10px')}>
@@ -231,11 +230,40 @@ function TierDistribution({
   );
 }
 
-/** Skeleton / spinner (loading) / red line (error) / muted line (empty) in the ss-* look. */
+/** Same box as `TierDistribution`, so the roster grid doesn't jump when the real bar arrives. */
+function TierDistributionSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      style={s('border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:14px 16px;box-shadow:var(--shadow-sm)')}
+    >
+      <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:12px')}>
+        <Skel w="140px" h="11px" />
+        <Skel w="70px" h="11px" />
+      </div>
+      <Skel w="100%" h="8px" radius="99px" />
+      <div style={s('display:flex;gap:8px;margin-top:11px;flex-wrap:wrap')}>
+        {TIER_ORDER.map((b) => (
+          <Skel key={b} w="104px" h="30px" radius="99px" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading / error / empty gate for one sub-tab's content slot.
+ *
+ * `skeleton` is required: the old signature made it optional and fell back to a centred spinner,
+ * which is how Data Center ended up showing a spinner on one sub-tab and a shaped skeleton on the
+ * next. There is one loading idiom in Sales now, and it is the skeleton.
+ */
 function Gate({
   loading,
   error,
   empty,
+  emptyIcon,
+  emptyTitle,
   emptyMsg,
   children,
   skeleton,
@@ -243,21 +271,15 @@ function Gate({
   loading: boolean;
   error: string | null;
   empty: boolean;
+  emptyIcon: IconName;
+  emptyTitle: string;
   emptyMsg: string;
   children: React.ReactNode;
-  skeleton?: React.ReactNode;
+  skeleton: React.ReactNode;
 }) {
-  if (loading) {
-    if (skeleton) return <>{skeleton}</>;
-    return (
-      <div style={s('display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 20px')}>
-        <span style={s('width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite')} />
-        <span style={s('font-size:14px;color:var(--muted)')}>Loading…</span>
-      </div>
-    );
-  }
-  if (error) return <div style={s('padding:44px 20px;text-align:center;color:var(--danger);font-size:14px')}>{error}</div>;
-  if (empty) return <div style={s('padding:44px 20px;text-align:center;color:var(--muted);font-size:14px')}>{emptyMsg}</div>;
+  if (loading) return <>{skeleton}</>;
+  if (error) return <SalesErrorNote>{error}</SalesErrorNote>;
+  if (empty) return <SalesEmpty icon={emptyIcon} title={emptyTitle} body={emptyMsg} />;
   return <>{children}</>;
 }
 
@@ -365,40 +387,31 @@ export function RecordsTab() {
   const clientTotal = (recsLoad.data ?? []).length;
 
   return (
-    <div className="ss-fu">
-      <div style={s('margin-bottom:14px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Data Center</div>
-        <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>Everything about your pipeline — clients, leads, deals, rejections &amp; money codes.</div>
-      </div>
+    <SalesPage busy={activeLoad?.loading === true || activeLoad?.revalidating === true}>
+      <SalesPageHead description={NAV_DESC.records} />
 
-      {/* sub-tabs */}
-      <div style={s('display:flex;gap:6px;margin-bottom:16px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%;overflow-x:auto')}>
-        {DC_TABS.map((t) => {
-          const on = dcSub === t.id;
-          const soon = t.disabled === true;
-          return (
+      <SalesSubTabs items={DC_TABS} value={dcSub} onChange={setDcSub} label="Data Center section" />
+
+      {/* toolbar: search + filters + view toggle */}
+      <div className="ss-toolbar">
+        <div className="ss-search">
+          <Icon name="search" size={16} />
+          <input
+            value={search[dcSub]}
+            onChange={(e) => setSearchVal(e.currentTarget.value)}
+            aria-label={SEARCH_PLACEHOLDER[dcSub]}
+            placeholder={SEARCH_PLACEHOLDER[dcSub]}
+          />
+          {search[dcSub] ? (
             <button
-              key={t.id}
-              onClick={soon ? undefined : () => setDcSub(t.id)}
-              disabled={soon}
-              title={soon ? `${t.label} — coming soon` : undefined}
-              style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};white-space:nowrap;transition:all .14s`)}
+              type="button"
+              className="ss-search-clear"
+              aria-label="Clear search"
+              onClick={() => setSearchVal('')}
             >
-              <Icon name={t.icon} size={16} style={{ flexShrink: 0 }} />
-              {t.label}
-              {soon && (
-                <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
-              )}
+              <Icon name="close" size={13} strokeWidth={2.4} />
             </button>
-          );
-        })}
-      </div>
-
-      {/* toolbar: search + filters + view toggle + refresh */}
-      <div style={s('display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;align-items:center')}>
-        <div style={s('position:relative;flex:1;min-width:240px')}>
-          <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
-          <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)')} />
+          ) : null}
         </div>
         {dcSub === 'clients' && (
           <DcSelect
@@ -428,7 +441,7 @@ export function RecordsTab() {
               onClick={() => setLeadMetaOnly((v) => !v)}
               aria-pressed={leadMetaOnly}
               title="Show only Meta (utm_source) leads"
-              style={s(`display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid ${leadMetaOnly ? 'var(--accent)' : 'var(--border)'};background:${leadMetaOnly ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${leadMetaOnly ? 'var(--accent)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap;transition:all .14s`)}
+              style={s(`display:inline-flex;align-items:center;gap:7px;height:42px;padding:0 16px;border-radius:var(--radius-md);border:1px solid ${leadMetaOnly ? 'var(--accent)' : 'var(--border)'};background:${leadMetaOnly ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${leadMetaOnly ? 'var(--accent)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap;transition:all .14s`)}
             >
               <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0')} />
               Meta
@@ -444,33 +457,44 @@ export function RecordsTab() {
           />
         )}
         {showView && (
-          <div style={s('display:flex;gap:4px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-            {VIEW_BTNS.map((b) => {
-              const on = view === b.v;
-              return (
-                <button key={b.v} onClick={() => setView(b.v)} style={s(`display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:var(--radius-md);border:none;background:${on ? 'rgba(var(--accent-rgb),.14)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;transition:all .14s`)}>
-                  <Icon name={b.icon} size={15} />
-                  {b.label}
-                </button>
-              );
-            })}
-          </div>
+          <SalesSubTabs
+            items={VIEW_TABS}
+            value={view}
+            onChange={setView}
+            label={`${dcSub === 'deals' ? 'Deals' : 'Leads'} layout`}
+            size="sm"
+          />
         )}
       </div>
-      {activeLoad?.cachedAt && (
-        <div style={s('margin-bottom:16px;font-size:12px;color:var(--faint)')}>
-          {activeLoad.revalidating ? 'Refreshing…' : `Updated ${formatCachedAt(activeLoad.cachedAt)}`}
-        </div>
-      )}
-      {!activeLoad?.cachedAt && <div style={s('margin-bottom:16px')} />}
+      {/* The freshness caption keeps a fixed line box whether or not there is a timestamp, so the
+          content below never shifts up by a line when the first fetch lands. */}
+      <div style={s('min-height:15px;margin-top:-6px;font-size:12px;color:var(--faint)')}>
+        {activeLoad?.cachedAt
+          ? activeLoad.revalidating
+            ? 'Refreshing…'
+            : `Updated ${formatCachedAt(activeLoad.cachedAt)}`
+          : ''}
+      </div>
 
       {/* content */}
       {dcSub === 'clients' && (
         <>
-          {clientTotal > 0 && (
+          {/* Reserve the tier bar while the roster loads — it used to pop in above the grid and
+              shove every card down. */}
+          {recsLoad.loading && !recsLoad.data ? (
+            <TierDistributionSkeleton />
+          ) : clientTotal > 0 ? (
             <TierDistribution counts={tierCounts} total={clientTotal} active={clientTierFilter} onPick={setClientTierFilter} />
-          )}
-          <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg={q ? 'No clients match your search.' : 'No clients in this book yet.'} skeleton={<DcCardGridSkeleton label="clients" />}>
+          ) : null}
+          <Gate
+            loading={recsLoad.loading && !recsLoad.data}
+            error={recsLoad.data ? null : recsLoad.error}
+            empty={clients.length === 0}
+            emptyIcon="clients"
+            emptyTitle={q || clientTierFilter || clientStatusFilter !== 'all' ? 'No matching clients' : 'No clients yet'}
+            emptyMsg={q || clientTierFilter || clientStatusFilter !== 'all' ? 'No clients match the current search and filters.' : 'Clients appear here once they are assigned to you.'}
+            skeleton={<SalesBodySkeleton variant="grid" label="clients" />}
+          >
           {/* .dc-lty scopes the tier palette; each card carries its bucket class so the shell (edge,
               wash, rail, glow) reads as the tier while the figures below keep their own semantics. */}
           <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px')}>
@@ -528,13 +552,15 @@ export function RecordsTab() {
           loading={leadsLoad.loading && !leadsLoad.data}
           error={leadsLoad.data ? null : leadsLoad.error}
           empty={(leadsLoad.data?.length ?? 0) === 0}
-          emptyMsg="No leads yet."
+          emptyIcon="leads"
+          emptyTitle="No leads yet"
+          emptyMsg="New leads land here as soon as they are assigned to you."
           skeleton={
-            leadView === 'kanban' ? (
-              <DcKanbanSkeleton label="leads" />
-            ) : (
-              <DcListSkeleton label="leads" cols={5} />
-            )
+            <SalesBodySkeleton
+              variant={leadView === 'kanban' ? 'board' : 'table'}
+              label="leads"
+              cols={5}
+            />
           }
         >
           <LeadsView leads={leadsLoad.data ?? []} search={search.leads} view={leadView} statusFilter={leadStatusFilter} sourceFilter={leadSourceFilter} metaOnly={leadMetaOnly} />
@@ -546,13 +572,15 @@ export function RecordsTab() {
           loading={dealsLoad.loading && !dealsLoad.data}
           error={dealsLoad.data ? null : dealsLoad.error}
           empty={(dealsLoad.data?.length ?? 0) === 0}
-          emptyMsg="No deals yet."
+          emptyIcon="deals"
+          emptyTitle="No deals yet"
+          emptyMsg="Deals appear here once a lead converts."
           skeleton={
-            dealView === 'kanban' ? (
-              <DcKanbanSkeleton label="deals" />
-            ) : (
-              <DcListSkeleton label="deals" cols={5} />
-            )
+            <SalesBodySkeleton
+              variant={dealView === 'kanban' ? 'board' : 'table'}
+              label="deals"
+              cols={5}
+            />
           }
         >
           <DealsView deals={dealsLoad.data ?? []} search={search.deals} view={dealView} stageFilter={dealStageFilter} />
@@ -561,11 +589,13 @@ export function RecordsTab() {
 
       {dcSub === 'rejections' && (
         <Gate
-          loading={rejLoad.loading}
+          loading={rejLoad.loading && !rejLoad.data}
           error={rejLoad.data ? null : rejLoad.error}
           empty={(rejLoad.data?.length ?? 0) === 0}
-          emptyMsg="No card declines recorded for your clients yet."
-          skeleton={<DcListSkeleton label="rejection reports" cols={5} />}
+          emptyIcon="rejections"
+          emptyTitle="No card declines"
+          emptyMsg="Nothing has been declined for your clients yet."
+          skeleton={<SalesBodySkeleton variant="table" label="rejection reports" cols={5} />}
         >
           <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
         </Gate>
@@ -576,6 +606,6 @@ export function RecordsTab() {
       {openRejection && (
         <RejectionDetailModal row={openRejection} onClose={() => setOpenRejection(null)} />
       )}
-    </div>
+    </SalesPage>
   );
 }
