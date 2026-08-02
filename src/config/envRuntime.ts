@@ -55,6 +55,29 @@ export function assertRuntimeSecrets(): void {
     if (!env.S3_BUCKET) missing.push('S3_BUCKET');
   }
 
+  // Only when Dropbox is actually selected: the three credentials are optional otherwise, and warning
+  // about them on every S3 deploy would train people to ignore this list.
+  if (env.COMMS_STORAGE_PROVIDER === 'dropbox') {
+    if (!env.DROPBOX_APP_KEY) missing.push('DROPBOX_APP_KEY');
+    if (!env.DROPBOX_APP_SECRET) missing.push('DROPBOX_APP_SECRET');
+    if (!env.DROPBOX_REFRESH_TOKEN) missing.push('DROPBOX_REFRESH_TOKEN');
+  }
+
+  // Presence timing is a CORRECTNESS invariant, not a missing secret, so it throws in every
+  // environment rather than warning in dev. If the staleness window is not comfortably wider than
+  // the refresh cadence, leases expire between refreshes and connected agents flicker offline —
+  // which silently stops tickets being auto-assigned to anyone. Fail at boot, not at 3am.
+  if (env.PRESENCE_STALE_MS <= 2 * env.PRESENCE_REFRESH_MS) {
+    throw new Error(
+      `PRESENCE_STALE_MS (${env.PRESENCE_STALE_MS}) must be greater than 2x PRESENCE_REFRESH_MS (${env.PRESENCE_REFRESH_MS})`,
+    );
+  }
+  if (env.PRESENCE_REFRESH_MS < env.REALTIME_PING_INTERVAL_MS) {
+    throw new Error(
+      `PRESENCE_REFRESH_MS (${env.PRESENCE_REFRESH_MS}) must be >= REALTIME_PING_INTERVAL_MS (${env.REALTIME_PING_INTERVAL_MS}) so every lease refresh follows a liveness check`,
+    );
+  }
+
   if (missing.length === 0 && invalid.length === 0) return;
   if (isProduction) {
     const parts = [

@@ -1,12 +1,19 @@
 /**
- * Sales Mytrion redesign — live-data adapters. Maps touchpoints + Desk routes onto the shapes
+ * Sales Mytrion redesign — live-data adapters. Maps touchpoints onto the shapes
  * the redesign tabs render. Every array comes from a real backend call (no seed fixtures).
  */
-import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
-import { listInboxMessages, deleteInboxMessage as apiDeleteInboxMessage } from '@/api/inbox';
+import {
+  deleteInboxMessage as apiDeleteInboxMessage,
+  getInboxCounts,
+  listInboxMessages,
+  markAllInboxRead,
+  setInboxMessageRead,
+  type InboxCounts,
+  type InboxFilter,
+} from '@/api/inbox';
 import { getClients, type AgentClient } from '@/api/dataCenter';
 import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
 import { loadDebtorsHomeSummary } from './dashDebtorsData';
@@ -51,11 +58,6 @@ export function relTime(iso: string | undefined): string {
   if (days < 7) return `${days}d ago`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
-function hoursSince(iso: string | undefined): number {
-  if (!iso) return 0;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? 0 : Math.max(0, (Date.now() - d.getTime()) / 3_600_000);
-}
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>(\n)?/gi, '\n')
@@ -99,15 +101,16 @@ export interface SnapshotFields {
   fuel_tx_caption: string;
 }
 
-export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
-  // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
-  const [raw, debtSummary] = await Promise.all([
-    callTouchpoint('dashboard.home_snapshot', {}),
-    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
-  ]);
+export function mapHomeSnapshot(
+  raw: unknown,
+  debtSummary: { totalRemaining: number; debtorCount: number; hardCount: number } | null = null,
+): SnapshotFields {
   const first = Array.isArray(raw) ? raw[0] : raw;
-  const s = ((first as { snapshot?: Record<string, unknown> })?.snapshot ?? {}) as Record<string, unknown>;
-  const g = (k: string): number => n(s[k]);
+  const snapshot = ((first as { snapshot?: Record<string, unknown> } | null)?.snapshot ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const g = (key: string): number => n(snapshot[key]);
   const gallonsW = g('gallons_this_week');
   const gallonsLW = g('gallons_last_week');
   const swipesW = g('swipes_this_week');
@@ -115,8 +118,7 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
   const vol = pctChange(gallonsW, gallonsLW);
   const tx = pctChange(swipesW, swipesLW);
   const arrow = tx.dir === 'up' ? '↑' : tx.dir === 'down' ? '↓' : '→';
-  // The arrow carries the direction, so strip the sign from the % (no "↓ -29%").
-  const fuel_tx_caption =
+  const fuelTxCaption =
     tx.dir === 'flat' || tx.text === '0%'
       ? 'Same as last week'
       : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
@@ -124,7 +126,6 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
     stuck_deals_count: g('stuck_deals_count'),
-    // Prefer client Billing floors so Home “Money Owed” matches Dashboard → Debtors.
     total_debt_amount: debtSummary?.totalRemaining ?? g('total_debt_amount'),
     total_debtors: debtSummary?.debtorCount ?? g('total_debtors'),
     total_hard_debtors: debtSummary?.hardCount ?? g('total_hard_debtors'),
@@ -138,8 +139,17 @@ export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
     new_cards_today: g('new_cards_today'),
     volume_trend: vol.text,
     volume_trend_dir: vol.dir,
-    fuel_tx_caption,
+    fuel_tx_caption: fuelTxCaption,
   };
+}
+
+export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
+  // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
+  const [raw, debtSummary] = await Promise.all([
+    callTouchpoint('dashboard.home_snapshot', {}),
+    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
+  ]);
+  return mapHomeSnapshot(raw, debtSummary);
 }
 
 // ---- Home: announcements (inbox.announcements) → ANN shape ----
@@ -161,8 +171,7 @@ const ANN_META: Record<string, { color: string; icon: IconName }> = {
   analytics: { color: 'var(--accent)', icon: ICO.trend },
   security: { color: 'var(--danger)', icon: ICO.warn },
 };
-export async function loadAnnouncements(): Promise<AnnVM[]> {
-  const raw = await callTouchpoint('inbox.announcements', {});
+export function mapAnnouncements(raw: unknown): AnnVM[] {
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   return list.map((a) => {
     const type = String((a as { Type?: string }).Type ?? '').toLowerCase();
@@ -180,6 +189,10 @@ export async function loadAnnouncements(): Promise<AnnVM[]> {
   });
 }
 
+export async function loadAnnouncements(): Promise<AnnVM[]> {
+  return mapAnnouncements(await callTouchpoint('inbox.announcements', {}));
+}
+
 // ---- Inbox (inbox.list) → INBOX shape ----
 
 export interface InboxVM {
@@ -190,6 +203,7 @@ export interface InboxVM {
   desc: string;
   time: string;
   tag: string;
+  read: boolean;
 }
 // Matches the reference self-service InboxPanel._mapType exactly: only 'assignment' becomes a
 // (yellow, record-linked) reminder; task/warning/critical map through; everything else → info.
@@ -208,6 +222,27 @@ function effUserId(): string {
 
 const INBOX_TTL_MS = 30_000;
 
+function mapInboxMessages(messages: Awaited<ReturnType<typeof listInboxMessages>>['messages']): InboxVM[] {
+  return messages.map((message) => {
+    const priority = message.priority.toLowerCase();
+    return {
+      id: message.id,
+      type: mapInboxType(message.type),
+      prio:
+        priority === 'high' || priority === 'critical'
+          ? 'high'
+          : priority === 'low' || priority === 'small'
+            ? 'small'
+            : 'medium',
+      title: message.subject || message.name || '(no subject)',
+      desc: stripHtml(message.content ?? ''),
+      time: relTime(message.createdTime),
+      tag: message.tag ?? '',
+      read: message.readAt != null,
+    };
+  });
+}
+
 /** One shared inbox fetch for its three consumers (sidebar badge, Home preview, Inbox tab). Now
  *  reads our own mytrion_inbox_messages table via /v1/inbox/messages (was the Zoho `inbox.list`
  *  touchpoint). Under admin View-as, the impersonated agent's id scopes the query. */
@@ -215,19 +250,9 @@ export async function loadInbox(fresh = false): Promise<InboxVM[]> {
   return dedupedFetch(
     `inbox:${effUserId()}`,
     async () => {
-      const res = await listInboxMessages(getImpersonation()?.zohoUserId);
-      return res.messages.map((m) => {
-        const p = m.priority.toLowerCase();
-        return {
-          id: m.id,
-          type: mapInboxType(m.type),
-          prio: p === 'high' || p === 'critical' ? 'high' : p === 'low' || p === 'small' ? 'small' : 'medium',
-          title: m.subject || m.name || '(no subject)',
-          desc: stripHtml(m.content ?? ''),
-          time: relTime(m.createdTime),
-          tag: m.tag ?? '',
-        } as InboxVM;
-      });
+      const actAsId = getImpersonation()?.zohoUserId;
+      const res = await listInboxMessages({ ...(actAsId ? { actAsId } : {}), limit: 6 });
+      return mapInboxMessages(res.messages);
     },
     { ttlMs: INBOX_TTL_MS, fresh },
   );
@@ -238,7 +263,49 @@ export function invalidateInboxCache(): void {
   invalidateDeduped('inbox:');
 }
 export function deleteInboxMessage(recordId: string): Promise<unknown> {
-  return apiDeleteInboxMessage(recordId);
+  return apiDeleteInboxMessage(recordId, getImpersonation()?.zohoUserId);
+}
+
+export async function loadInboxPage(input: {
+  page: number;
+  pageSize: number;
+  filter: InboxFilter;
+  query: string;
+  cursor?: string;
+}): Promise<{
+  items: InboxVM[];
+  counts: InboxCounts;
+  total: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}> {
+  const actAsId = getImpersonation()?.zohoUserId;
+  const result = await listInboxMessages({
+    ...(actAsId ? { actAsId } : {}),
+    limit: input.pageSize,
+    ...(input.cursor ? { cursor: input.cursor } : {}),
+    filter: input.filter,
+    query: input.query,
+  });
+  return {
+    items: mapInboxMessages(result.messages),
+    counts: result.counts,
+    total: result.pagination.total,
+    hasMore: result.pagination.hasMore,
+    nextCursor: result.pagination.nextCursor,
+  };
+}
+
+export function loadInboxCounts(): Promise<InboxCounts> {
+  return getInboxCounts(getImpersonation()?.zohoUserId);
+}
+
+export function setInboxRead(recordId: string, read: boolean): Promise<void> {
+  return setInboxMessageRead(recordId, read, getImpersonation()?.zohoUserId);
+}
+
+export function setAllInboxRead(): Promise<void> {
+  return markAllInboxRead(getImpersonation()?.zohoUserId);
 }
 
 // ---- Home/Dashboard: activity (activity.agent) ----
@@ -262,6 +329,11 @@ export async function loadActivity(range: 'today' | 'week' | 'month', fresh = fa
 async function fetchActivity(range: 'today' | 'week' | 'month'): Promise<ActivityCounts> {
   const map = { today: 'daily', week: 'weekly', month: 'monthly' } as const;
   const res = await callTouchpoint('activity.agent', { range: map[range] });
+  return mapActivity(res);
+}
+
+export function mapActivity(raw: unknown): ActivityCounts {
+  const res = (raw ?? {}) as { metrics?: Record<string, Record<string, unknown>> };
   const m = res.metrics ?? {};
   const mv = (k: string, f: 'count' | 'completed' = 'count'): number => {
     const e = m[k];
@@ -313,6 +385,7 @@ export interface RecordVM {
   activeCardsPrevMonth: number;
   lastTierName: string;
   loyaltyOverride?: AgentClient['loyaltyOverride'];
+  managerControlled?: boolean;
 }
 
 /** DWH roster row → the card/list view-model. Debt/active/gallons are already computed + typed
@@ -348,6 +421,7 @@ function mapRecord(c: AgentClient): RecordVM {
     activeCardsPrevMonth: c.activeCardsPrevMonth,
     lastTierName: c.lastTierName,
     loyaltyOverride: c.loyaltyOverride ?? null,
+    managerControlled: Boolean(c.loyaltyOverride),
   };
 }
 
@@ -460,8 +534,16 @@ function mapCarrierSearchRow(c: {
   };
 }
 
-export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchPage> {
-  const res = await callTouchpoint('sales.carriers_search', { query, limit });
+export async function searchCarriers(
+  query: string,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<CarrierSearchPage> {
+  const res = await callTouchpoint(
+    'sales.carriers_search',
+    { query, limit },
+    signal ? { signal } : {},
+  );
   const rows = (res.carriers ?? []).map(mapCarrierSearchRow);
   const total = Number(res.total);
   return {
@@ -469,321 +551,6 @@ export async function searchCarriers(query: string, limit = 200): Promise<Carrie
     total: Number.isFinite(total) && total > 0 ? total : rows.length,
     moreRecords: !!res.more_records,
   };
-}
-
-// ---- Tickets (Zoho Desk) → TICKETS / TICKET_MSGS shape ----
-
-export interface TicketVM {
-  id: string;
-  num: string;
-  subject: string;
-  company: string;
-  channel: string;
-  dept: string;
-  targetDept: string;
-  contact: string;
-  agent: string;
-  priority: string;
-  status: string;
-  ticketType: string;
-  carrierId: string;
-  description: string;
-  ageHrs: number;
-  unread: number;
-  escalated: boolean;
-  overdue: boolean;
-}
-/** A person's display name from firstName/lastName, tolerating nulls. */
-function fullName(o: { firstName?: string | null; lastName?: string | null } | null | undefined): string {
-  if (!o) return '';
-  return `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim();
-}
-
-function mapTicket(t: DeskTicket): TicketVM {
-  const cf = (t.cf ?? {}) as Record<string, unknown>;
-  const channel = String(t.channel ?? 'Customer Service');
-  const escalated = channel === 'Escalation' || t.channel === 'Escalation';
-  // Company = the contact's account (with ?include=contacts it's nested), then legacy/cf fallbacks.
-  const company =
-    t.contact?.account?.accountName ??
-    (typeof t.accountName === 'string' ? t.accountName : '') ??
-    '';
-  // Contact = the requester (firstName+lastName, or the flat contactName).
-  const contactName = fullName(t.contact) || t.contactName || '';
-  // Department name (object with ?include=departments, else a plain string on older payloads).
-  const deptName = typeof t.department === 'string' ? t.department : (t.department?.name ?? '');
-  // Owner: escalations belong to a team; normal tickets to the assignee (null = unassigned).
-  const owner = escalated
-    ? t.team?.name ?? (typeof cf.cf_original_stream_manager === 'string' ? cf.cf_original_stream_manager : '')
-    : fullName(t.assignee) || t.assignee?.name || '';
-  return {
-    id: String(t.id ?? ''),
-    num: String(t.ticketNumber ?? t.number ?? t.id ?? ''),
-    subject: String(t.subject ?? '(no subject)'),
-    company: company || String(cf.cf_carrier_id_application_id ?? '—'),
-    channel,
-    dept: deptName || String(cf.cf_target_department ?? '—'),
-    targetDept: String(cf.cf_target_department ?? ''),
-    contact: contactName || '—',
-    agent: owner || 'N/A',
-    priority: String(t.priority ?? 'Normal'),
-    status: String(t.status ?? 'Open'),
-    ticketType: String(cf.cf_ticket_type ?? 'N/A'),
-    carrierId: String(cf.cf_carrier_id_application_id ?? '—'),
-    description: stripHtml(String((t as { description?: string }).description ?? '—')),
-    ageHrs: hoursSince(t.createdTime),
-    unread: 0,
-    escalated,
-    overdue: Boolean(t.isOverDue),
-  };
-}
-/** One page of creator-scoped Desk tickets (search `from` is 0-based offset; max `limit` 99). */
-export interface TicketsPageResult {
-  tickets: TicketVM[];
-  scoped: boolean;
-  /** True when Desk.search is unavailable — server still pages via /tickets creator scan. */
-  windowed: boolean;
-  hasMore: boolean;
-  /** Next `from` for infinite-scroll load-more (ticketdashboard.html: from += limit). */
-  nextFrom: number;
-}
-
-const TICKET_PAGE = 20;
-/** Desk search is capped around ~2,000 rows; 99×20 covers that window. */
-const MAX_TICKET_PAGES = 20;
-
-function ticketScope(): { zohoUserId?: string } {
-  // When an admin is "viewing as" an agent, pass that agent's id so ?zoho_user_id scopes to them.
-  const actAsId = getImpersonation()?.zohoUserId;
-  return actAsId ? { zohoUserId: actAsId } : {};
-}
-
-/** Fetch one owned ticket (WS promote for tickets outside the loaded pages). */
-export async function loadTicketById(ticketId: string): Promise<TicketVM> {
-  return mapTicket(await getDeskTicket(ticketId));
-}
-
-/** One page — matches zoho-octane ticketdashboard.html (`from=0`, `limit=20`, from += limit). */
-export async function loadTicketsPage(opts: {
-  from?: number;
-  limit?: number;
-  /** Bypass short in-flight/TTL share (Refresh). */
-  fresh?: boolean;
-} = {}): Promise<TicketsPageResult> {
-  const limit = Math.min(99, Math.max(1, opts.limit ?? TICKET_PAGE));
-  const from = Math.max(0, opts.from ?? 0);
-  const scope = ticketScope();
-  const actor = scope.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'self';
-  return dedupedFetch(
-    `desk:tickets:page:${actor}:${from}:${limit}`,
-    async () => {
-      const res = await listDeskTickets({ from, limit, ...scope });
-      const raw = res.tickets;
-      const hasMore = typeof res.hasMore === 'boolean' ? res.hasMore : raw.length >= limit;
-      const nextFrom = typeof res.nextFrom === 'number' ? res.nextFrom : from + limit;
-      return {
-        tickets: raw.map(mapTicket),
-        scoped: res.scoped,
-        windowed: Boolean(res.windowed),
-        hasMore,
-        nextFrom,
-      };
-    },
-    { ttlMs: 15_000, fresh: opts.fresh === true },
-  );
-}
-
-/**
- * @deprecated Do not call from the shell — paging the full Desk set starves the Tickets tab
- * (ticketdashboard.html only loads `limit=20` on open). Prefer `loadTicketsPage` + the
- * subscribe registry. Kept for rare admin dumps.
- */
-export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
-  const seen = new Set<string>();
-  const rows: TicketVM[] = [];
-  let scoped = true;
-  let from = 0;
-  for (let page = 0; page < MAX_TICKET_PAGES; page++) {
-    const res = await loadTicketsPage({ from, limit: 99 });
-    scoped = res.scoped;
-    for (const t of res.tickets) {
-      if (t.id && seen.has(t.id)) continue;
-      if (t.id) seen.add(t.id);
-      rows.push(t);
-    }
-    if (!res.hasMore) break;
-    from = res.nextFrom;
-  }
-  return { tickets: rows, scoped };
-}
-
-export interface TicketMsgVM {
-  from: string;
-  type: 'comment' | 'attachment';
-  text: string;
-  time: string;
-  /** Epoch ms used to order the thread chronologically. 0 = unknown → sorts to the bottom
-   *  (newest), so a just-sent bubble or an attachment with no server time never jumps to the top. */
-  ts: number;
-  /** Attachment payload (type='attachment') — `attId`/`ticketId` drive the download. */
-  file?: { name: string; size: string; attId: string; ticketId: string };
-}
-
-/**
- * Chronological comparator for a merged thread (server rows + optimistic/live sends). Unknown
- * times (ts 0) are treated as "just now" so they sink to the bottom rather than floating to the top.
- */
-export function byTicketMsgTime(a: { ts: number }, b: { ts: number }): number {
-  const ka = a.ts || Number.MAX_SAFE_INTEGER;
-  const kb = b.ts || Number.MAX_SAFE_INTEGER;
-  return ka - kb;
-}
-
-/** Human-readable byte size for a Desk attachment (`size` is a byte count string). */
-function fmtBytes(raw: string | number | undefined): string {
-  const b = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/\D/g, '')) || 0;
-  if (b <= 0) return '';
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Normalize a person label for fuzzy equality (Komilova vs KOMILOVA vs "A Komilova"). */
-function normPerson(v: string | null | undefined): string {
-  return (v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function personMatches(a: string | null | undefined, b: string | null | undefined): boolean {
-  const x = normPerson(a);
-  const y = normPerson(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  // Last-token match catches "Komilova" vs "Dilnoza Komilova".
-  const xt = x.split(' ');
-  const yt = y.split(' ');
-  const xl = xt[xt.length - 1] ?? '';
-  const yl = yt[yt.length - 1] ?? '';
-  return xl.length >= 3 && xl === yl;
-}
-
-/**
- * Sales-side authorship — reference uses zohoDeskAdminId === commenterId for "me".
- * We also treat the viewing CRM sales agent (session / View-as) as "me", so a thread authored
- * as "Komilova" and an attachment uploaded via the shared Desk agent land on the SAME side.
- */
-function isSalesSideMessage(opts: {
-  mineFlag?: boolean | undefined;
-  authorName?: string | null | undefined;
-  authorEmail?: string | null | undefined;
-}): boolean {
-  if (opts.mineFlag) return true;
-  const imp = getImpersonation();
-  const worker = getSession()?.worker;
-  const selfName = imp?.name ?? worker?.userName ?? null;
-  const selfEmail = worker?.email ?? null;
-  if (personMatches(opts.authorName, selfName)) return true;
-  const email = (opts.authorEmail ?? '').trim().toLowerCase();
-  if (email && selfEmail && email === selfEmail.trim().toLowerCase()) return true;
-  return false;
-}
-
-export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  // Reference ticketdashboard loads comments with limit 100; Desk caps lists at 99.
-  const { threads, comments, attachments } = await listDeskComments(ticketId, 99);
-  const ms = (v: string | undefined): number => {
-    const t = v ? new Date(v).getTime() : 0;
-    return Number.isNaN(t) ? 0 : t;
-  };
-
-  // Placement: sales agent's own posts → "me" (left in our CSS). Everyone else (CS / customer) →
-  // opposite side. Matches ticketdashboard.html's me-vs-other split, plus CRM-name matching so a
-  // sales author isn't split from their Desk-agent uploads.
-  const rows: TicketMsgVM[] = [];
-  const seenAtt = new Set<string>();
-
-  for (const t of threads ?? []) {
-    const text = stripHtml(String(t.content ?? t.summary ?? ''));
-    const authorName = fullName(t.author) || t.author?.name || null;
-    const authorEmail = typeof t.author?.email === 'string' ? t.author.email : null;
-    // Name/email of the viewing sales agent → same side as Desk-agent uploads ("me").
-    const sales = isSalesSideMessage({ authorName, authorEmail });
-    const who = sales ? 'me' : authorName || (t.direction === 'out' ? 'Support' : 'Customer');
-    if (text) {
-      rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), ts: ms(t.createdTime) });
-    }
-    // Thread-inline attachments (reference surfaces files from comments + Attachments tab).
-    for (const a of t.attachments ?? []) {
-      if (!a?.id || seenAtt.has(String(a.id))) continue;
-      seenAtt.add(String(a.id));
-      const aMine = Boolean(a.mine) || sales;
-      rows.push({
-        from: aMine ? 'me' : 'Support',
-        type: 'attachment',
-        text: '',
-        time: relTime(a.createdTime ?? t.createdTime),
-        file: {
-          name: String(a.name ?? 'attachment'),
-          size: fmtBytes(a.size),
-          attId: String(a.id),
-          ticketId,
-        },
-        ts: ms(a.createdTime ?? t.createdTime),
-      });
-    }
-  }
-
-  for (const c of comments ?? []) {
-    const text = stripHtml(String(c.content ?? ''));
-    const cm = c.commenter;
-    const authorName = fullName(cm) || cm?.name || null;
-    const authorEmail = typeof cm?.email === 'string' ? cm.email : null;
-    const sales = isSalesSideMessage({
-      mineFlag: c.mine === true,
-      authorName,
-      authorEmail,
-    });
-    const who = sales ? 'me' : authorName || 'Support';
-    // Older tickets carry a "📎 name" placeholder comment from before attachments got their own
-    // Attachments-tab bubble — drop that placeholder text now that the real file renders separately.
-    const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
-    if (text && !isCaption) {
-      rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), ts: ms(c.commentedTime) });
-    }
-    for (const a of c.attachments ?? []) {
-      if (!a?.id || seenAtt.has(String(a.id))) continue;
-      seenAtt.add(String(a.id));
-      const aMine = Boolean(a.mine) || sales;
-      rows.push({
-        from: aMine ? 'me' : authorName || 'Support',
-        type: 'attachment',
-        text: '',
-        time: relTime(a.createdTime ?? c.commentedTime),
-        file: {
-          name: String(a.name ?? 'attachment'),
-          size: fmtBytes(a.size),
-          attId: String(a.id),
-          ticketId,
-        },
-        ts: ms(a.createdTime ?? c.commentedTime),
-      });
-    }
-  }
-
-  // Ticket-level Attachments tab (Mytrion uploadTicketAttachment + Desk UI uploads).
-  for (const a of attachments ?? []) {
-    if (!a?.id || seenAtt.has(String(a.id))) continue;
-    seenAtt.add(String(a.id));
-    const who = a.mine ? 'me' : 'Support';
-    rows.push({
-      from: who,
-      type: 'attachment',
-      text: '',
-      time: relTime(a.createdTime),
-      file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
-      ts: ms(a.createdTime),
-    });
-  }
-  return rows.sort(byTicketMsgTime);
 }
 
 export {

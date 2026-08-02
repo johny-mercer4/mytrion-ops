@@ -117,6 +117,13 @@ export function RetentionPoolMetrics({
   );
 }
 
+/**
+ * Board hero — the pane's rules, its actions and its metric strip.
+ *
+ * `title` is optional and unused by the Sales panes: the Retention sub-tabs already read
+ * "My cases" / "Open Pool", so a heading repeating them under the top bar's "RETENTION" was the
+ * same word three times. Kept for any caller that renders the hero without a sub-tab above it.
+ */
 export function RetentionHero({
   title,
   sub,
@@ -125,11 +132,11 @@ export function RetentionHero({
   actions,
   children,
 }: {
-  title: string;
+  title?: string | undefined;
   sub: string;
   /** Small label above the title (e.g. “Retention workflow”). */
-  kicker?: string;
-  subSize?: 'sm' | 'lg';
+  kicker?: string | undefined;
+  subSize?: 'sm' | 'lg' | undefined;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -138,7 +145,7 @@ export function RetentionHero({
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div style={s('min-width:0')}>
           {kicker ? <div className="ss-ret-hero-kicker">{kicker}</div> : null}
-          <div className="ss-ret-hero-title">{title}</div>
+          {title ? <div className="ss-ret-hero-title">{title}</div> : null}
           <div className={`ss-ret-hero-sub${subSize === 'lg' ? ' is-lg' : ''}`}>{sub}</div>
         </div>
         {actions ? <div style={s('display:flex;align-items:center;gap:8px;flex-shrink:0')}>{actions}</div> : null}

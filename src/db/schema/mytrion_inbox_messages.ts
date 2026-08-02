@@ -58,6 +58,12 @@ export const mytrionInboxMessages = pgTable(
       table.ownerZohoUserId,
       table.createdAt,
     ),
+    ownerFeedIdx: index('mytrion_inbox_messages_tenant_owner_feed_idx')
+      .on(table.tenantId, table.ownerZohoUserId, table.createdAt.desc(), table.id.desc())
+      .where(sql`${table.recordStatus} <> 'Trash'`),
+    unreadIdx: index('mytrion_inbox_messages_tenant_owner_unread_idx')
+      .on(table.tenantId, table.ownerZohoUserId, table.createdAt)
+      .where(sql`${table.readAt} IS NULL`),
     // Idempotent Zoho retries: at most one row per (tenant, zoho_record_id) when the id is present.
     zohoUnique: uniqueIndex('mytrion_inbox_messages_tenant_zoho_uk')
       .on(table.tenantId, table.zohoRecordId)

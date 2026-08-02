@@ -6,6 +6,8 @@ import { dbSslOption } from '../src/db/client.js';
 import { databaseUrl, env } from '../src/config/env.js';
 import { logger } from '../src/lib/logger.js';
 
+const MIGRATION_LOCK_ID = 8_062_683;
+
 /**
  * Apply committed SQL migrations programmatically (no drizzle-kit needed at runtime).
  * Use as a Render release step: `tsx scripts/migrate.ts`. The first migration creates
@@ -20,9 +22,11 @@ async function main(): Promise<void> {
   try {
     const db = drizzle(sql);
     logger.info('applying migrations...');
+    await sql`select pg_advisory_lock(${MIGRATION_LOCK_ID})`;
     await migrate(db, { migrationsFolder: './src/db/migrations' });
     logger.info('migrations applied');
   } finally {
+    await sql`select pg_advisory_unlock(${MIGRATION_LOCK_ID})`.catch(() => undefined);
     await sql.end();
   }
 

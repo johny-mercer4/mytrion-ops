@@ -7,6 +7,8 @@
 export const UZB_TZ = 'Asia/Tashkent';
 /** Fixed offset — Tashkent has no DST. */
 export const UZB_OFFSET_MS = 5 * 60 * 60 * 1000;
+/** Allow an overnight checkout up to four hours after the scheduled end. */
+export const OVERNIGHT_CHECKOUT_GRACE_MINUTES = 4 * 60;
 
 const HH_MM = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
@@ -64,7 +66,9 @@ export function uzbMinutesSinceMidnight(utc: Date): number {
 
 /**
  * Attendance work date for a punch.
- * Overnight shifts (end < start): times before end_local belong to the previous calendar day.
+ * Overnight shifts (end < start): early-morning punches through the checkout grace window belong
+ * to the previous calendar day. The grace keeps overtime exits (for example 05:00 after a 03:00
+ * shift end) attached to the shift they actually close.
  */
 export function workDateForPunch(
   punchedAtUtc: Date,
@@ -76,8 +80,8 @@ export function workDateForPunch(
   const endM = hhMmToMinutes(shift.endLocal);
   if (endM > startM) return cal; // same-day shift
   const mins = uzbMinutesSinceMidnight(punchedAtUtc);
-  // After midnight and before shift end → previous UZB calendar day.
-  if (mins < endM) {
+  const rolloverM = Math.min(startM, endM + OVERNIGHT_CHECKOUT_GRACE_MINUTES);
+  if (mins < rolloverM) {
     const prev = new Date(punchedAtUtc.getTime() + UZB_OFFSET_MS - 24 * 60 * 60 * 1000);
     const y = prev.getUTCFullYear();
     const mo = String(prev.getUTCMonth() + 1).padStart(2, '0');

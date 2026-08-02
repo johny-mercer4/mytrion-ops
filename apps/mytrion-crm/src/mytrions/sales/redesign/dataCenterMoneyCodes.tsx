@@ -8,6 +8,8 @@ import { callTouchpoint } from '@/api/touchpoints';
 import { useSales } from './ctx';
 import { s } from './dc';
 import { Icon } from './icons';
+import { SalesEmpty, SalesErrorNote, SalesSubTabs } from './SalesPage';
+import { SalesBodySkeleton } from './SalesTabSkeleton';
 
 type StatusFilter = 'all' | 'ISSUED' | 'VOIDED' | 'USED';
 
@@ -162,55 +164,31 @@ export function MoneyCodesView({ search }: { search: string }) {
             Own draws only · code values are never shown (sent to the carrier app)
           </div>
         </div>
-        <div style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
-          <div style={s('display:inline-flex;padding:3px;gap:2px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt)')}>
-            {filters.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setStatus(id)}
-                className={status === id ? 'ss-ret-tab is-on' : 'ss-ret-tab'}
-                style={s('height:30px;padding:0 12px')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => void load({ page: 1, append: false, status, search: deferredSearch })}
-            disabled={loading}
-            title="Refresh"
-            className="ss-ico-btn"
-            style={s(`height:32px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${loading ? 'default' : 'pointer'};display:flex;align-items:center;gap:7px;opacity:${loading ? '.7' : '1'}`)}
-          >
-            <span style={s(`display:inline-flex${loading ? ';animation:ss-spin .8s linear infinite' : ''}`)}>
-              <Icon name="refresh" size={14} />
-            </span>
-            Refresh
-          </button>
-        </div>
+        <SalesSubTabs
+          items={filters.map(([id, label]) => ({ id, label }))}
+          value={status}
+          onChange={setStatus}
+          label="Money code status"
+          size="sm"
+        />
       </div>
 
-      {loading && (
-        <div style={s('display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 20px')}>
-          <span
-            style={s(
-              'width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite',
-            )}
-          />
-          <span style={s('font-size:14px;color:var(--muted)')}>Loading money codes…</span>
-        </div>
-      )}
+      {/* Skeleton, not a spinner: every other Data Center sub-tab loads with a shaped placeholder,
+          and this one used to be the odd tab out. */}
+      {loading && <SalesBodySkeleton variant="table" cols={6} rows={6} label="money codes" />}
 
-      {!loading && error && (
-        <div style={s('padding:36px 20px;text-align:center;color:var(--danger);font-size:14px')}>{error}</div>
-      )}
+      {!loading && error && <SalesErrorNote>{error}</SalesErrorNote>}
 
       {!loading && !error && rows.length === 0 && (
-        <div style={s('padding:40px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.55')}>
-          No money codes yet. Draw one from <strong style={s('color:var(--text2)')}>Automations → Money Code</strong>.
-        </div>
+        <SalesEmpty
+          icon="moneyCodes"
+          title="No money codes yet"
+          body={
+            <>
+              Draw one from <strong>Automations → Money Code</strong>; it appears here once issued.
+            </>
+          }
+        />
       )}
 
       {!loading && !error && rows.length > 0 && (

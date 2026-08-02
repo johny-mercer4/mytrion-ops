@@ -74,6 +74,23 @@ export function withDepartmentAccess(
 }
 
 /**
+ * Internal-audience gate with NO department requirement.
+ *
+ * For cross-Mytrion metadata that every internal worker needs in order to use a shared surface at all
+ * — the comms ticket-type catalog is the case this exists for. `requireDepartment` takes exactly one
+ * department, so gating shared metadata with it would mean either picking a department arbitrarily
+ * (locking Sales out of a CS-owned list, or the reverse) or calling it repeatedly in an OR.
+ *
+ * This is NOT a substitute for a department gate on data: it authorizes reading a catalog, never rows.
+ * Every thread/ticket read still goes through `commsThreadReaderFilter`.
+ */
+export function requireInternal(request: FastifyRequest, resourceLabel: string): TenantContext {
+  const base = requireContext(request);
+  if (base.audience !== 'internal') throw new RBACError(`${resourceLabel} is internal-only`);
+  return withDepartmentAccess(base, request);
+}
+
+/**
  * Shared department gate for the "direct" internal routes (Desk, Data Center, RingCentral,
  * Retention): internal audience only, then admin / bypass / all-department / department-member.
  */

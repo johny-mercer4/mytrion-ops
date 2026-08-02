@@ -50,6 +50,13 @@ html,body{height:100%;margin:0}
     --tier-gold-text:#b45309; --tier-silver-text:#475569; --tier-bronze-text:#c2410c;
     color-scheme:light;
   }
+  .ss-root button:disabled{cursor:not-allowed}
+  .ss-root .ss-source-health{
+    display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:var(--radius-md);
+    border:1px solid color-mix(in srgb,var(--warn) 34%,var(--border));
+    background:color-mix(in srgb,var(--warn) 8%,var(--surface));color:var(--text2);
+    font-size:var(--ss-text-xs);line-height:1.45;
+  }
   /* One global keyboard focus ring for every focusable control (buttons, links, and role="button"
      cards). Components with their own :focus/:focus-visible rule below win via equal specificity +
      later source order, so inputs and picklist rows keep their bespoke focus treatment. */
@@ -321,6 +328,109 @@ html,body{height:100%;margin:0}
   .ss-ret-timeline-skel,.ss-ret-timeline-list{display:flex;flex-direction:column;gap:8px}
   .ss-ret-timeline-item{
     padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface);
+  }
+
+  /* ── My Tasks kanban (reuses Retention board chrome) ─────────────────────── */
+  /* Stretch the 4 columns across the standard tab measure (not full-bleed chrome). */
+  .ss-tasks-board.ss-ret-board{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+    overflow-x:hidden;
+    padding-bottom:10px;
+    min-height:440px;
+  }
+  .ss-tasks-board .ss-ret-col{
+    flex:unset;
+    width:auto;
+    min-width:0;
+  }
+  .ss-tasks-board .ss-ret-col-body.is-drop{
+    border-color:color-mix(in srgb,var(--accent) 55%,var(--border2));
+    background:color-mix(in srgb,var(--accent) 10%,var(--alt));
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent);
+  }
+  .ss-tasks-card{
+    user-select:none;
+    -webkit-user-select:none;
+    transition:border-color .14s,box-shadow .14s,opacity .14s,transform .14s;
+  }
+  .ss-tasks-card:active{cursor:grabbing}
+  .ss-tasks-card.is-dragging{
+    opacity:.55;
+    transform:scale(1.02);
+    border-color:var(--accent);
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--ret-col,var(--accent)),0 10px 24px rgba(0,0,0,.16);
+  }
+  .ss-tasks-card.is-new{
+    border-color:color-mix(in srgb,var(--accent) 40%,var(--border));
+    background:
+      linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--surface)),var(--surface));
+  }
+  .ss-tasks-col-empty{
+    padding:28px 8px;text-align:center;font-size:12px;color:var(--faint);font-weight:600;
+  }
+  /* Light: soft paper board — avoid muddy dark-hero gradients on white surfaces. */
+  .ss-root.light .ss-tasks-board .ss-ret-col-body{
+    background:color-mix(in srgb,var(--alt) 92%,#fff);
+    border-color:rgba(15,23,42,.07);
+  }
+  .ss-root.light .ss-tasks-board .ss-ret-col-body.is-drop{
+    background:color-mix(in srgb,var(--accent) 8%,#fff);
+    border-color:color-mix(in srgb,var(--accent) 40%,var(--border));
+  }
+  .ss-root.light .ss-tasks-card.ss-ret-card{
+    background:var(--surface);
+    border-color:rgba(15,23,42,.08);
+    box-shadow:0 1px 2px rgba(15,23,42,.04),inset 3px 0 0 var(--ret-col,var(--accent));
+  }
+  .ss-root.light .ss-tasks-card.ss-ret-card:hover{
+    border-color:rgba(var(--accent-rgb),.35);
+    box-shadow:0 4px 14px rgba(15,23,42,.08),inset 3px 0 0 var(--ret-col,var(--accent));
+  }
+  .ss-root.light .ss-tasks-card.is-new{
+    background:linear-gradient(180deg,rgba(var(--accent-rgb),.06),#fff);
+    border-color:color-mix(in srgb,var(--accent) 32%,var(--border));
+  }
+  .ss-root.light .ss-tasks-card.is-dragging{
+    box-shadow:0 10px 24px rgba(15,23,42,.12),inset 3px 0 0 var(--ret-col,var(--accent));
+  }
+
+  /* ── Call Hub (agent call history) ───────────────────────────────────────── */
+  .ss-call-filters{
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
+  }
+  .ss-call-list{display:flex;flex-direction:column;gap:8px}
+  .ss-call-row{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    width:100%;text-align:left;padding:14px 16px;border-radius:var(--radius-md);
+    border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);
+    cursor:pointer;font-family:inherit;color:inherit;
+    border-left:3px solid var(--call-src,var(--accent));
+    transition:border-color .15s ease,box-shadow .15s ease,transform .12s ease;
+  }
+  .ss-call-row:hover{
+    border-color:color-mix(in srgb,var(--call-src,var(--accent)) 45%,var(--border));
+    box-shadow:var(--shadow);transform:translateY(-1px);
+  }
+  .ss-call-row-main{min-width:0;flex:1}
+  .ss-call-row-title{font-weight:700;font-size:14px;line-height:1.35}
+  .ss-call-row-meta{margin-top:4px;font-size:12px;color:var(--muted);line-height:1.4}
+  .ss-call-row-side{display:flex;flex-wrap:wrap;align-items:center;gap:7px;flex-shrink:0}
+  .ss-call-chip{
+    display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;
+    font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border:1px solid;
+  }
+  .ss-call-dur{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:650;color:var(--text2);min-width:3ch}
+  .ss-root.light .ss-call-row{
+    background:var(--surface);
+    border-color:rgba(15,23,42,.08);
+    box-shadow:0 1px 2px rgba(15,23,42,.04),inset 3px 0 0 var(--call-src,var(--accent));
+  }
+  .ss-root.light .ss-call-row:hover{
+    border-color:color-mix(in srgb,var(--call-src,var(--accent)) 35%,rgba(15,23,42,.12));
+    box-shadow:0 4px 14px rgba(15,23,42,.08),inset 3px 0 0 var(--call-src,var(--accent));
   }
 
   /* ── Retention board (Sales Phase 1) ─────────────────────────────────────── */
@@ -889,4 +999,27 @@ html,body{height:100%;margin:0}
 }
 @media (prefers-reduced-motion: reduce) {
   .ss-sweep::after { animation-duration: 2.6s; }
+}
+
+/* Shell responsiveness + RingCentral safe area. The sidebar already has an explicit collapse control;
+   narrow screens keep the collapsed rail visible instead of allowing the content pane to clip. */
+.ss-root .ss-main-column{padding-right:0}
+@media (max-width:900px){
+  .ss-root .ss-sidebar{max-width:68px!important;width:68px!important}
+  .ss-root .ss-sidebar-brand,.ss-root .ss-sidebar-search{display:none!important}
+  .ss-root .ss-sidebar nav{padding-left:9px!important;padding-right:9px!important}
+  .ss-root .ss-sidebar nav button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-sidebar nav button>span:not(.ss-tab-ico){display:none!important}
+  .ss-root .ss-sidebar-footer{padding-left:9px!important;padding-right:9px!important}
+  .ss-root .ss-sidebar-footer>a,.ss-root .ss-sidebar-footer>button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-sidebar-footer>a>span,.ss-root .ss-sidebar-footer>button>span,.ss-root .ss-sidebar-footer>div>div:last-child{display:none!important}
+  .ss-root .ss-sidebar-footer>div{justify-content:center!important;padding-left:0!important;padding-right:0!important}
+  .ss-root .ss-main-topbar{padding-left:16px!important;padding-right:16px!important}
+  .ss-root .ss-panels{padding-left:16px!important;padding-right:16px!important}
+}
+@media (max-width:640px){
+  .ss-root .ss-sidebar{max-width:56px!important;width:56px!important}
+  .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
+  .ss-root .ss-main-topbar>div:last-child{display:none}
+  .ss-root .ss-panels{padding:16px 12px 132px!important}
 }

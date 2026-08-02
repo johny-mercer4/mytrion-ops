@@ -26,15 +26,3 @@ iframe#rc-widget-adapter-frame:hover {
 body[data-cs-modal-open] .rc-phone-stack {
   display: none !important;
 }
-
-/* Manual "reload softphone" control's spinner (RingCentralPhone.tsx). */
-@keyframes rc-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rc-phone-stack [style*='rc-spin'] {
-    animation: none !important;
-  }
-}

@@ -3,12 +3,15 @@
  * Search → client filters (status / has contact / min units) → Create Lead per row
  * with DUPLICATE_DATA → "Already exists ↗" / success → Lead #xxxxxx deep link.
  *
- * Fetch 200/500 re-runs the search with that limit (widget `@change="search"`).
+ * Search is debounced and bounded to 50 rows; refine broad terms instead of downloading 200–500
+ * prospects into every browser.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { s, Badge } from '../dc';
 import { Icon } from '../icons';
-import { badge } from '../salesData';
+import { badge, NAV_DESC } from '../salesData';
+import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, SalesPager } from '../SalesPage';
+import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import { searchCarriers, type CarrierSearchVM } from '../live';
 import { createLeadFromCarrier } from '../carrierLead';
 import { leadShortId, zohoLeadUrl } from '../crmUrls';
@@ -36,8 +39,8 @@ function statusKey(status: string): Exclude<CarrierStatusKey, 'all'> | 'other' {
   return 'other';
 }
 
-const FETCH_LIMITS = [200, 500] as const;
-const PAGE_SIZES = [50, 100] as const;
+const PAGE_SIZES = [25, 50] as const;
+const SEARCH_LIMIT = 50;
 
 type LeadResult = {
   ok: boolean;
@@ -143,13 +146,13 @@ export function CarriersTab() {
   const [statusFilter, setStatusFilter] = useState<CarrierStatusKey>('all');
   const [onlyWithContact, setOnlyWithContact] = useState(false);
   const [minUnits, setMinUnits] = useState('');
-  const [fetchLimit, setFetchLimit] = useState<number>(200);
-  const [pageSize, setPageSize] = useState<number>(50);
+  const [pageSize, setPageSize] = useState<number>(25);
   const [page, setPage] = useState(1);
   const [totalMatches, setTotalMatches] = useState(0);
   const [moreRecords, setMoreRecords] = useState(false);
   const [leadLoadingId, setLeadLoadingId] = useState<string | null>(null);
   const [leadResults, setLeadResults] = useState<Record<string, LeadResult>>({});
+  const searchRequest = useRef<AbortController | null>(null);
 
   const all = results ?? [];
   const minU = Number(minUnits);
@@ -185,13 +188,14 @@ export function CarriersTab() {
 
   const carrierIdle = !carrierSearching && !error && !hasSearched;
   const carrierEmpty = !carrierSearching && !error && hasSearched && all.length === 0;
-  const carrierHas = !carrierSearching && !error && all.length > 0;
+  const carrierHas = !error && all.length > 0;
 
-  /** `limitOverride` avoids the React setState race when Fetch 200→500 re-runs search. */
-  const runCarrierSearch = async (limitOverride?: number): Promise<void> => {
+  const runCarrierSearch = useCallback(async (): Promise<void> => {
     const q = carrierQuery.trim();
-    if (!q || carrierSearching) return;
-    const limit = limitOverride ?? fetchLimit;
+    if (q.length < 3) return;
+    searchRequest.current?.abort();
+    const controller = new AbortController();
+    searchRequest.current = controller;
     setCarrierSearching(true);
     setError(null);
     setHasSearched(true);
@@ -199,25 +203,32 @@ export function CarriersTab() {
     setLeadResults({});
     setMoreRecords(false);
     try {
-      const pageRes = await searchCarriers(q, limit);
+      const pageRes = await searchCarriers(q, SEARCH_LIMIT, controller.signal);
+      if (controller.signal.aborted) return;
       setResults(pageRes.rows);
       setTotalMatches(pageRes.total);
       setMoreRecords(pageRes.moreRecords);
     } catch (e) {
+      if (controller.signal.aborted) return;
       setError(e instanceof Error ? e.message : 'Search failed');
       setResults(null);
       setTotalMatches(0);
       setMoreRecords(false);
     } finally {
-      setCarrierSearching(false);
+      if (searchRequest.current === controller) {
+        searchRequest.current = null;
+        setCarrierSearching(false);
+      }
     }
-  };
+  }, [carrierQuery]);
 
-  const onFetchLimitChange = (next: number): void => {
-    setFetchLimit(next);
-    // Widget: changing Fetch immediately re-queries with the new window.
-    if (hasSearched && carrierQuery.trim()) void runCarrierSearch(next);
-  };
+  useEffect(() => {
+    if (carrierQuery.trim().length < 3) return undefined;
+    const timer = window.setTimeout(() => void runCarrierSearch(), 350);
+    return () => window.clearTimeout(timer);
+  }, [carrierQuery, runCarrierSearch]);
+
+  useEffect(() => () => searchRequest.current?.abort(), []);
 
   const onCreateLead = async (c: CarrierSearchVM): Promise<void> => {
     // Block while a create is in flight or already succeeded; a FAILED result may be retried.
@@ -242,94 +253,55 @@ export function CarriersTab() {
   };
 
   return (
-    <div className="ss-fu" style={s('max-width:1180px;margin:0 auto')}>
-      <div style={s('margin-bottom:16px')}>
-        <div
-          style={s(
-            'font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase',
-          )}
-        >
-          Carrier Lookup
-        </div>
-        <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>
-          Search by DOT number, company name, or phone — then create a lead when it’s a fit.
-        </div>
-      </div>
+    <SalesPage>
+      <SalesPageHead description={NAV_DESC.carriers} />
 
-      <div style={s('position:relative;margin-bottom:18px')}>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}
-        >
-          <circle cx="11" cy="11" r="7" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          value={carrierQuery}
-          onChange={(e) => setCarrierQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void runCarrierSearch();
-          }}
-          placeholder="e.g. 98765 · Great Way Inc · 5551234567"
-          className="ss-in"
-          style={s(
-            'width:100%;height:48px;padding:0 120px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)',
-          )}
-        />
-        <button
-          type="button"
-          onClick={() => void runCarrierSearch()}
-          disabled={carrierSearching || !carrierQuery.trim()}
-          className="ss-btn-p"
-          style={s(
-            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer',
-          )}
-        >
-          {carrierSearching ? 'Searching…' : 'Search'}
-        </button>
-      </div>
-
-      {carrierSearching && (
-        <div style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('display:flex;gap:14px;align-items:center')}>
-            <div className="ss-skel" style={s('width:52px;height:52px;border-radius:var(--radius-md)')} />
-            <div style={s('flex:1')}>
-              <div className="ss-skel" style={s('width:44%;height:16px')} />
-              <div className="ss-skel" style={s('width:28%;height:12px;margin-top:8px')} />
-            </div>
-          </div>
-        </div>
-      )}
-      {error && (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>{error}</div>
-      )}
-      {carrierIdle && (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
-          <div
+      <div className="ss-toolbar">
+        <div className="ss-search">
+          <Icon name="search" size={16} />
+          <input
+            value={carrierQuery}
+            onChange={(e) => setCarrierQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void runCarrierSearch();
+            }}
+            aria-label="Search carriers"
+            placeholder="e.g. 98765 · Great Way Inc · 5551234567"
+            style={{ paddingRight: 108 }}
+          />
+          <button
+            type="button"
+            onClick={() => void runCarrierSearch()}
+            disabled={carrierSearching || carrierQuery.trim().length < 3}
+            className="ss-btn-p"
             style={s(
-              'width:64px;height:64px;border-radius:var(--radius-md);background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:var(--accent)',
+              'position:absolute;right:6px;top:50%;transform:translateY(-50%);height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer',
             )}
           >
-            <Icon name="carriers" size={30} strokeWidth={1.6} />
-          </div>
-          <div style={s('font-size:14px')}>Search for a carrier to see their account at a glance.</div>
+            {carrierSearching ? 'Searching…' : 'Search'}
+          </button>
         </div>
+      </div>
+
+      {carrierSearching && all.length === 0 && <SalesBodySkeleton variant="rows" rows={3} label="carriers" />}
+      {error && <SalesErrorNote>{error}</SalesErrorNote>}
+      {carrierIdle && (
+        <SalesEmpty
+          icon="carriers"
+          title="Look up a carrier"
+          body="Search by DOT number, company name or phone to see the account at a glance — then create a lead in one click."
+        />
       )}
       {carrierEmpty && (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:14px')}>
-          No carriers found for “{carrierQuery.trim()}”.
-        </div>
+        <SalesEmpty
+          icon="search"
+          title="No carriers found"
+          body={`Nothing matched “${carrierQuery.trim()}”. Try the DOT number, or a shorter part of the company name.`}
+        />
       )}
 
       {carrierHas && (
-        <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px')}>
+        <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px')}>
           {STATUS_FILTERS.map((f) => {
             const on = statusFilter === f.id;
             return (
@@ -387,25 +359,6 @@ export function CarriersTab() {
               )}
             />
           </div>
-          <div style={s('display:flex;align-items:center;gap:7px')}>
-            <span style={s('font-size:12px;color:var(--muted);font-weight:600')}>Fetch</span>
-            <select
-              value={fetchLimit}
-              onChange={(e) => onFetchLimitChange(Number(e.currentTarget.value))}
-              disabled={carrierSearching}
-              className="ss-in"
-              title="How many matches to load from the server (200 or 500)"
-              style={s(
-                'height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;cursor:pointer',
-              )}
-            >
-              {FETCH_LIMITS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </div>
           {hasActiveFilters && (
             <button
               type="button"
@@ -447,9 +400,10 @@ export function CarriersTab() {
           {paged.map((c) => {
             const statusBadge = badge(c.status, statusColor(c.status));
             return (
+              /* No `ss-fu` here: it re-ran the slide-in animation on all 25 rows every time a
+                 filter, page or page-size changed, which read as the list flickering. */
               <div
                 key={c.id}
-                className="ss-fu"
                 style={s(
                   'padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
                 )}
@@ -508,49 +462,34 @@ export function CarriersTab() {
       )}
 
       {carrierHas && filtered.length > pageSize && (
-        <div style={s('display:flex;align-items:center;justify-content:center;gap:12px;margin-top:18px')}>
-          <button
-            type="button"
-            disabled={safePage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            style={s(
-              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;${safePage <= 1 ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
-            )}
-          >
-            Prev
-          </button>
-          <span style={s('font-size:13px;color:var(--muted)')}>
-            Page <strong style={s('color:var(--text)')}>{safePage}</strong> of {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={safePage >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            style={s(
-              `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;${safePage >= totalPages ? 'color:var(--faint);cursor:not-allowed' : 'color:var(--text);cursor:pointer'}`,
-            )}
-          >
-            Next
-          </button>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.currentTarget.value));
-              setPage(1);
-            }}
-            className="ss-in"
-            style={s(
-              'height:34px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;cursor:pointer',
-            )}
-          >
-            {PAGE_SIZES.map((n) => (
-              <option key={n} value={n}>
-                {n} / page
-              </option>
-            ))}
-          </select>
-        </div>
+        <SalesPager
+          page={safePage}
+          pageCount={totalPages}
+          onPage={setPage}
+          summary={
+            <label style={s('display:inline-flex;align-items:center;gap:8px')}>
+              Rows per page
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.currentTarget.value));
+                  setPage(1);
+                }}
+                className="ss-in"
+                style={s(
+                  'height:30px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;cursor:pointer',
+                )}
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        />
       )}
-    </div>
+    </SalesPage>
   );
 }

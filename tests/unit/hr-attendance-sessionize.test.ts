@@ -3,11 +3,7 @@ import type { HrAttendancePunch } from '../../src/db/schema/index.js';
 import { pairAttendancePunches } from '../../src/modules/hr/attendance/sessionize.js';
 import { parseUzbWallClock } from '../../src/modules/hr/attendance/uzbTime.js';
 
-function punch(
-  kind: 'check_in' | 'check_out',
-  localTime: string,
-  id: string,
-): HrAttendancePunch {
+function punch(kind: 'check_in' | 'check_out', localTime: string, id: string): HrAttendancePunch {
   return {
     id,
     tenantId: 'octane',
@@ -57,5 +53,28 @@ describe('attendance session pairing', () => {
     expect(result.sessions[0]?.checkOut).toBeNull();
     expect(result.totalMs).toBe(0);
     expect(result.currentState).toBe('in_office');
+  });
+
+  it('counts an open visit against the live office total', () => {
+    const result = pairAttendancePunches([punch('check_in', '19:00:00', '1')], {
+      now: parseUzbWallClock('2026-07-30 21:15:00'),
+    });
+
+    expect(result.sessions[0]).toMatchObject({
+      checkOut: null,
+      durationMs: 2.25 * 60 * 60 * 1000,
+      status: 'open',
+    });
+    expect(result.totalMs).toBe(2.25 * 60 * 60 * 1000);
+    expect(result.currentState).toBe('in_office');
+  });
+
+  it('flags a forgotten checkout instead of leaving the employee inside forever', () => {
+    const result = pairAttendancePunches([punch('check_in', '19:00:00', '1')], {
+      now: parseUzbWallClock('2026-07-31 12:00:01'),
+    });
+
+    expect(result.sessions[0]).toMatchObject({ durationMs: 0, status: 'needs_review' });
+    expect(result.currentState).toBe('needs_review');
   });
 });

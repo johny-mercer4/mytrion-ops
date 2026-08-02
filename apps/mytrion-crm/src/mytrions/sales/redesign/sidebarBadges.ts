@@ -1,146 +1,82 @@
 /**
- * Live sidebar badge counts — one shell-level servercrm socket feeding BOTH nav badges so they
- * update in real time from anywhere in the app and reflect UNREAD (not total):
- *   - Inbox   = messages not yet read (marking read in the tab decrements it immediately).
- *   - Tickets = unread ticket messages (a `ticket_comment_added` bumps it; opening a ticket clears).
+ * Live sidebar badge counts.
+ *   - Inbox   = messages not yet read (servercrm socket + servercrm inbox feed).
+ *   - Tickets = unread comms messages, from `GET /comms/unread`.
+ *   - Tasks   = `open` assignments never opened in the detail modal (local opened set).
  *
- * Ticket WS scope matches zoho-octane ticketdashboard.html: subscribe with the creator's currently
- * known ticket ids (first Desk page of 20, then whatever the Tickets tab pages in). We do NOT dump
- * the full Desk queue on shell mount — that starved the Tickets tab and felt like a hang.
+ * ZERO ZOHO DESK. Tickets moved to /v1/comms, so everything that used to live here — the Desk first-page
+ * warm, the per-ticket servercrm subscribe registry, the localStorage unread counter, the ticket toast —
+ * was DELETED rather than left switched off. Keeping it would have meant a second, divergent idea of what
+ * "unread tickets" means, sitting one boolean away from being switched back on. That is also why this hook
+ * no longer takes a `pushToast`: its only caller was the deleted Desk ticket toast.
+ *
+ * The ticket count is a POLL, not a push. The console's own socket updates the list instantly while the
+ * Tickets tab is open, so the sidebar number only has to be right when the user is looking somewhere else —
+ * not worth a second WebSocket for.
+ *
+ * The servercrm socket that remains is the INBOX one. It is unrelated to Desk and stays until the inbox
+ * itself is migrated; its subscribe frame no longer carries ticket ids, so servercrm stops broadcasting
+ * ticket comment events to this client at all.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
+import { getMyTaskSummary } from '@/api/salesKpi';
+import { getUnreadTotals } from '@/api/comms';
 import { useCachedLoad } from './dcCache';
-import { useLoad, loadInbox, loadTicketsPage, type TicketVM } from './live';
-import { TICKETS_ENABLED } from './salesData';
-import { useServerCrmSocket } from './useServerCrmSocket';
-import { useInboxRead, countUnread } from './inboxRead';
+import { loadInboxCounts } from './live';
 import { subscribeInboxReload } from './inboxLiveBus';
-import { setTicketDirectory } from './ticketDirectory';
-import {
-  seedTicketsFeedCache,
-  ticketsWarmCacheKey,
-  TICKETS_FEED_PAGE,
-  TICKETS_FEED_STALE_MS,
-} from './ticketListCache';
-import {
-  findSubscribedTicket,
-  getTicketSubscribeIds,
-  setTicketSubscribeActor,
-  subscribeTicketIds,
-  upsertTicketSubscribeRows,
-} from './ticketSubscribeRegistry';
-import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
-import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
-import { setSocketConnected } from './socketStatus';
+import { subscribeTasksReload, tasksBadgeCacheKey } from './tasksLiveBus';
 
-async function warmFirstTicketPage(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
-  const res = await loadTicketsPage({ from: 0, limit: TICKETS_FEED_PAGE });
-  upsertTicketSubscribeRows(res.tickets);
-  setTicketDirectory(res.tickets);
-  seedTicketsFeedCache(res.tickets, res.scoped);
-  return { tickets: res.tickets, scoped: res.scoped };
+/** How often the native unread total is refreshed while the user is on another tab. */
+const UNREAD_POLL_MS = 60_000;
+
+export function inboxBadgeCacheKey(userId: string): string {
+  return `sales:badges:inbox:${userId || 'self'}`;
+}
+
+export function commsBadgeCacheKey(userId: string): string {
+  return `sales:badges:comms:${userId || 'self'}`;
 }
 
 export function useSidebarBadges(
   currentUserId: string,
-  pushToast?: (title: string, msg: string) => void,
-): { inbox: number; tickets: number } {
-  const readSet = useInboxRead();
-  const ticketCounts = useTicketUnread();
-  const inboxLoad = useLoad(loadInbox, [currentUserId]);
-
-  // First page only — same as ticketdashboard.html open. Seeds feed cache + WS ids.
-  const ticketWarm = useCachedLoad(
-    ticketsWarmCacheKey(currentUserId),
-    () => (TICKETS_ENABLED ? warmFirstTicketPage() : Promise.resolve({ tickets: [] as TicketVM[], scoped: true })),
-    {
-      enabled: TICKETS_ENABLED && !!currentUserId,
-      staleMs: TICKETS_FEED_STALE_MS,
-    },
-  );
-
-  // Progressive ids from shell warm + Tickets tab load-more (registry).
-  const [ticketIds, setTicketIds] = useState<string[]>(() => getTicketSubscribeIds());
-  const idsKey = ticketIds.join(',');
-
-  useEffect(() => {
-    setTicketSubscribeActor(currentUserId || 'self');
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (ticketWarm.data?.tickets?.length) {
-      upsertTicketSubscribeRows(ticketWarm.data.tickets);
-      setTicketDirectory(ticketWarm.data.tickets);
-      seedTicketsFeedCache(
-        ticketWarm.data.tickets,
-        ticketWarm.data.scoped ?? true,
-        currentUserId,
-      );
-    }
-  }, [ticketWarm.data, currentUserId]);
-
-  useEffect(() => subscribeTicketIds(() => setTicketIds(getTicketSubscribeIds())), []);
-
-  const pushToastRef = useRef(pushToast);
-  pushToastRef.current = pushToast;
-  const ticketIdsRef = useRef(ticketIds);
-  ticketIdsRef.current = ticketIds;
-  const ticketReloadRef = useRef(ticketWarm.reload);
-  ticketReloadRef.current = ticketWarm.reload;
-
-  const { resubscribe } = useServerCrmSocket({
+): { inbox: number; tickets: number; tasks: number } {
+  const inboxLoad = useCachedLoad(inboxBadgeCacheKey(currentUserId), loadInboxCounts, {
     enabled: !!currentUserId,
-    watchKey: currentUserId,
-    // Same frame as zoho-octane ticketdashboard.html — userId + known ticket ids.
-    subscribe: { type: 'subscribe', userId: currentUserId, ticketIds },
-    onOpen: () => setSocketConnected(true),
-    onClose: () => setSocketConnected(false),
-    onMessage: (m) => {
-      if (m.type !== 'ticket_comment_added' && m.type !== 'ticket_attachment_added') return;
-
-      const tid = String(m.ticketId ?? '').trim();
-      // Client-side scope filter (servercrm broadcasts org-wide).
-      const ids = ticketIdsRef.current;
-      if (!tid || !ids.includes(tid)) return;
-      publishTicketLive({ ticketId: tid, type: m.type });
-
-      if (tid === getOpenTicketId()) {
-        clearTicketUnread(tid);
-        return;
-      }
-
-      bumpTicketUnread(tid);
-      const t = findSubscribedTicket(tid);
-      const label = m.type === 'ticket_attachment_added' ? 'New attachment' : 'New comment';
-      const detail = t ? `#${t.num} · ${t.subject}` : `Ticket #${tid}`;
-      pushToastRef.current?.(label, detail);
-    },
+    staleMs: 60_000,
+  });
+  const tasksLoad = useCachedLoad(tasksBadgeCacheKey(currentUserId), () => getMyTaskSummary(), {
+    enabled: !!currentUserId,
+    staleMs: 60_000,
   });
 
-  useEffect(() => {
-    resubscribe();
-    // eslint-disable-next-line
-  }, [idsKey]);
+  const commsUnread = useCachedLoad(
+    commsBadgeCacheKey(currentUserId),
+    async () => (currentUserId ? (await getUnreadTotals()).total : 0),
+    { enabled: !!currentUserId, staleMs: UNREAD_POLL_MS },
+  );
 
-  // Visibility soft-refresh of the FIRST page only (reference never re-dumps the full set).
+  // Refresh on focus AND on a slow interval. Both: the interval keeps a long-lived tab roughly honest, and
+  // the visibility hook makes the number correct the moment somebody actually looks at it.
   useEffect(() => {
-    if (!TICKETS_ENABLED || !currentUserId) return undefined;
-    let last = Date.now();
-    const onVisible = (): void => {
-      if (document.visibilityState !== 'visible') return;
-      const now = Date.now();
-      if (now - last < 120_000) return;
-      last = now;
-      ticketReloadRef.current();
+    if (!currentUserId) return undefined;
+    const tick = (): void => {
+      if (document.visibilityState === 'visible') commsUnread.reload();
     };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    const id = setInterval(tick, UNREAD_POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
   useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
+  useEffect(() => subscribeTasksReload(() => tasksLoad.reload()), [tasksLoad.reload]);
 
   return {
-    inbox: countUnread(inboxLoad.data ?? [], readSet),
-    tickets: totalTicketUnread(ticketCounts),
+    inbox: inboxLoad.data?.unread ?? 0,
+    tickets: commsUnread.data ?? 0,
+    tasks: tasksLoad.data ? tasksLoad.data.counts.open + tasksLoad.data.counts.in_progress : 0,
   };
 }

@@ -342,6 +342,12 @@ const EnvSchema = z.object({
   // auto-login). Set to 1 only as a deliberate decision; every fetch is then audited.
   RINGCENTRAL_BROWSER_CREDS_ACK: flag('0'),
 
+  // --- Gong (Call Hub Phase 2 — recordings/transcripts). Off until credentials + client land. ---
+  FF_GONG_ENABLED: flag('0'),
+  GONG_ACCESS_KEY: z.string().default(''),
+  GONG_ACCESS_KEY_SECRET: z.string().default(''),
+  GONG_BASE_URL: z.string().default('https://api.gong.io'),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
@@ -440,8 +446,47 @@ const EnvSchema = z.object({
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
   // Hard cap for uploads AND generated artifacts.
   FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
+
+  // --- Dropbox: the storage for comms chat attachments ---
+  //
+  // Which provider a NEW comms attachment lands on. Per-provider rather than global because every
+  // existing file_assets row is on S3 and must keep resolving there — the row records its own provider, so
+  // flipping this only changes where the next upload goes.
+  COMMS_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
+  // Refresh-token grant. Dropbox access tokens last ~4h, so the refresh token is the durable credential;
+  // there is no place to persist a rotated one, which is why rotation must stay off on the Dropbox app.
+  DROPBOX_APP_KEY: z.string().default(''),
+  DROPBOX_APP_SECRET: z.string().default(''),
+  DROPBOX_REFRESH_TOKEN: z.string().default(''),
+  // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
+  // serve every tenant without their files interleaving.
+  DROPBOX_ROOT_PATH: z.string().default('/comms'),
+  // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
+  // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
+  // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.
+  COMMS_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().max(2048).default(50),
   // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
   PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+
+  // --- Realtime WebSocket (GET /v1/realtime + GET /v1/carrier/mini-app/realtime) ---
+  // Server-side protocol-ping interval, which is also the reap deadline: a socket that has not
+  // answered the PREVIOUS sweep's ping is terminated on the next one (so a dead socket is
+  // dropped within 2 intervals). The browser's WebSocket API answers `pong` at the protocol
+  // level with no JS involvement, so this is how a dead CLIENT is noticed server-side and its
+  // hub subscriptions are freed. Render imposes no fixed WS timeout, but a CDN in front (e.g.
+  // Cloudflare) caps WS at 100s — 25s stays under 75% of that so adding one needs no retune.
+  REALTIME_PING_INTERVAL_MS: z.coerce.number().int().min(1_000).default(25_000),
+  // --- Agent presence (drives ticket round-robin: only an available ONLINE agent is assignable) ---
+  // Ships dark. When off, sockets are not tracked and nothing is written to
+  // mytrion_agent_presence — so the table can land, and the heartbeat can run, well before ticket
+  // assignment exists. Turn on together with the comms ticketing surface.
+  FF_COMMS_PRESENCE: flag('0'),
+  // How often a lease's last_seen_at is refreshed when nothing changed. Must be >= the ping
+  // interval so each refresh follows at least one liveness check.
+  PRESENCE_REFRESH_MS: z.coerce.number().int().min(1_000).default(30_000),
+  // How old a lease may be and still count as online. Must be > 2x PRESENCE_REFRESH_MS or agents
+  // flicker offline between refreshes — enforced as a boot assertion below, not left to a comment.
+  PRESENCE_STALE_MS: z.coerce.number().int().min(3_000).default(90_000),
 
   // --- Browser automation: Browserbase (legacy direct stubs — superseded by Composio toolkits) ---
   BROWSERBASE_API_KEY: z.string().default(''),

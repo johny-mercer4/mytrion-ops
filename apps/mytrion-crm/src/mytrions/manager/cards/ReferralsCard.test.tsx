@@ -23,11 +23,13 @@ describe('Referrals calculation month control', () => {
       configurable: true,
       value: showPicker,
     });
-    render(<ReferralsCard />);
+    const { container } = render(<ReferralsCard />);
 
     fireEvent.click(screen.getByRole('button', { name: /choose calculation month/i }));
 
     expect(showPicker).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Calculation month')).toHaveAttribute('type', 'month');
+    expect(screen.getByRole('status', { name: 'Loading referrals' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.mg-lty-sk')).toHaveLength(9);
   });
 });

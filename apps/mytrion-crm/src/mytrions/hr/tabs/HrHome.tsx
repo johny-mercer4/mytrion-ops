@@ -41,9 +41,8 @@ export function HrHome({ onOpen }: { onOpen: (tab: HrTabId) => void }) {
             HR <span>Mytrion</span>
           </h1>
           <p className="hr-sub">
-            The people side of Octane — who works here, when they work, and what they&apos;re asking
-            for. The employee directory lives in Mytrion&apos;s own database; other people workspaces
-            are still coming online.
+            One place for the employee directory, departments, reporting structure, live Ganga
+            attendance, and time-off approvals. Every workflow is owned by Mytrion HR.
           </p>
         </div>
       </div>

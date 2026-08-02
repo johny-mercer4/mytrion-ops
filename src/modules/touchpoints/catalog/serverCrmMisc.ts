@@ -137,8 +137,8 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     departments: SALES,
     method: 'POST',
     pathTemplate: '/api/sales/carriers/search',
-    // Widget fetch window is 200 or 500 — don't cap below what the UI offers.
-    paramsSchema: z.object({ query: shortText(300), limit: limit(500, 200).optional() }),
+    // Bound interactive search; agents refine the query instead of downloading hundreds of rows.
+    paramsSchema: z.object({ query: shortText(300), limit: limit(100, 50).optional() }),
   },
   {
     kind: 'servercrm',

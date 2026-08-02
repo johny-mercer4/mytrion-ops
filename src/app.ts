@@ -6,7 +6,7 @@ import sensible from '@fastify/sensible';
 import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { env, isDev, isProduction, isTest } from './config/env.js';
 import { isAllowedOrigin } from './lib/cors.js';
@@ -19,6 +19,9 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { wsHeartbeatPlugin } from './plugins/wsHeartbeat.js';
+import { registerCommsRealtime } from './modules/comms/bootstrap.js';
+import { requireCommsSchema } from './modules/comms/readiness.js';
 import { supportBotGatewayAuthPlugin } from './plugins/supportBotGatewayAuth.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
@@ -39,6 +42,13 @@ import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
+import { commsRoutes } from './routes/v1/comms.routes.js';
+import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
+import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
+import { commsEscalationsRoutes } from './routes/v1/commsEscalations.routes.js';
+import { commsQueueRoutes } from './routes/v1/commsQueue.routes.js';
+import { commsThreadsRoutes } from './routes/v1/commsThreads.routes.js';
+import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
@@ -77,6 +87,8 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { salesBootstrapRoutes } from './routes/v1/salesBootstrap.routes.js';
+import { callHubRoutes } from './routes/v1/callHub.routes.js';
 import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
@@ -106,6 +118,26 @@ function loggerOption() {
     };
   }
   return { level: env.LOG_LEVEL, redact: LOG_REDACT_PATHS };
+}
+
+type RateBudget = 'auth' | 'webhook' | 'cached-read' | 'upstream-read' | 'touchpoint' | 'write';
+
+/** Keep read/write/provider budgets independent even when every office user shares one NAT. */
+function rateBudget(request: Pick<FastifyRequest, 'method' | 'url'>): RateBudget {
+  const path = request.url.split('?')[0] ?? request.url;
+  if (path.includes('/auth/')) return 'auth';
+  if (path.includes('/webhook') || path.includes('/ingest')) return 'webhook';
+  if (path.includes('/touchpoints/')) return 'touchpoint';
+  if (request.method !== 'GET' && request.method !== 'HEAD') return 'write';
+  if (
+    path.includes('/verification/') ||
+    path.includes('/call-hub/') ||
+    path.includes('/data-center/') ||
+    path.includes('/dashboard')
+  ) {
+    return 'upstream-read';
+  }
+  return 'cached-read';
 }
 
 async function registerDocs(app: FastifyInstance): Promise<void> {
@@ -221,12 +253,34 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Native WebSocket support (GET /v1/realtime — inbox pub/sub). Registered at the root so
   // the versioned scope's websocket routes can attach; 1 MiB frame cap.
   await app.register(websocket, { options: { maxPayload: 1_048_576 } });
+  // Protocol ping + reaper for both WS endpoints. Must come after the websocket registration
+  // (it reads app.websocketServer) and before any route that attaches sockets.
+  wsHeartbeatPlugin(app);
+  // Hand the hub its row-level thread authorizer. Registered here rather than imported by the hub so
+  // the hub keeps depending only on logger + types; the authorizer reuses the REST reader filter.
+  registerCommsRealtime();
   await app.register(rateLimit, {
-    max: 120,
+    // Authentication guards run in onRequest. Limiting in preHandler lets authenticated office
+    // users receive their own bucket instead of 30–40 people sharing one NAT/IP bucket.
+    hook: 'preHandler',
+    max: (request) => {
+      const budget = rateBudget(request);
+      if (budget === 'auth') return 20;
+      if (budget === 'write') return request.url.includes('/kpi/') ? 120 : 30;
+      if (budget === 'upstream-read') return 60;
+      return 120;
+    },
     timeWindow: '1 minute',
-    // One gateway fronts up to 800 groups behind one IP. Its dedicated credential bypasses the
-    // browser/IP bucket; support-bot handlers apply carrier-aware limits and RBAC themselves.
+    cache: 10_000,
+    // One support-bot gateway fronts up to 800 Telegram groups behind a single IP. Its dedicated
+    // credential bypasses the browser/IP bucket entirely; the support-bot handlers apply their own
+    // carrier-aware limits and RBAC. (From build — kept alongside the per-budget buckets below.)
     allowList: (request) => {
+      // Tests drive a whole suite through ONE in-process app instance, which is not a client: this
+      // branch tightened writes to 30/min, so a 110-case file 429s partway through and the failure
+      // reads as a route bug. Route-level guards (SELF_REGISTER_RATE_LIMITED, MINIAPP_WRITE_RATE_
+      // LIMITED) are unaffected and still assert in tests — only the global abuse bucket is off.
+      if (isTest) return true;
       const key = request.headers['x-support-bot-key'];
       return (
         request.url.startsWith(`${API_PREFIX}/support-bot`) &&
@@ -235,12 +289,49 @@ export async function buildApp(): Promise<FastifyInstance> {
         safeEqual(key, env.SUPPORT_BOT_GATEWAY_API_KEY)
       );
     },
+    keyGenerator: (request) => {
+      const ctx = request.ctx;
+      const budget = rateBudget(request);
+      // Use the authenticated ACTOR. An admin viewing as an agent must not consume the target's
+      // budget; effective identity still belongs in data-cache keys, not abuse-control keys.
+      if (ctx?.sessionVerified) return `${budget}:principal:${ctx.tenantId}:${ctx.userId}`;
+      return `${budget}:ip:${request.ip}`;
+    },
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+      'retry-after': true,
+    },
+    onExceeded: (request, key) => {
+      request.log.warn({ key, route: request.routeOptions.url, method: request.method }, 'rate limit exceeded');
+    },
+    errorResponseBuilder: (_request, context) => {
+      const retryAfterSeconds = Math.max(1, Math.ceil(context.ttl / 1000));
+      // @fastify/rate-limit throws this object into the app error handler. statusCode must live at
+      // the top level or a customized response is accidentally converted to an HTTP 500.
+      return {
+        statusCode: 429,
+        code: 'RATE_LIMITED',
+        message: `Too many requests. Try again in ${retryAfterSeconds} seconds.`,
+        details: { retryAfterSeconds },
+      };
+    },
   });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
-    // Global ceiling; /v1/files/upload additionally enforces FILE_MAX_SIZE_MB per request.
+    // Global ceiling; each route additionally enforces its OWN per-request cap — /v1/files/upload uses
+    // FILE_MAX_SIZE_MB, comms attachments use COMMS_ATTACHMENT_MAX_MB.
+    //
+    // The max() over both is load-bearing: FILE_MAX_SIZE_MB is zod-capped at 200MB, so a larger chat
+    // attachment limit would be silently truncated here — the request would die in the parser with a
+    // generic error before the comms route's own, clearer 413 could ever run.
     limits: {
-      fileSize: Math.max(10_000_000, env.FILE_MAX_SIZE_MB * 1024 * 1024),
+      fileSize: Math.max(
+        10_000_000,
+        env.FILE_MAX_SIZE_MB * 1024 * 1024,
+        env.COMMS_ATTACHMENT_MAX_MB * 1024 * 1024,
+      ),
       files: 20,
       fields: 20,
     },
@@ -322,6 +413,18 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
+      await v1.register(async (comms) => {
+        // Auth runs in each route's onRequest guard; schema readiness is checked immediately after
+        // it, before any repository query can turn a missing migration into an opaque HTTP 500.
+        comms.addHook('preHandler', requireCommsSchema);
+        await comms.register(commsRoutes);
+        await comms.register(commsTicketsRoutes);
+        await comms.register(commsThreadsRoutes);
+        await comms.register(commsAttachmentsRoutes);
+        await comms.register(commsEscalationsRoutes);
+        await comms.register(commsQueueRoutes);
+        await comms.register(commsAdminRoutes);
+      });
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
       await v1.register(managerRoutes);
@@ -350,6 +453,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
       await v1.register(salesKpiRoutes);
+      await v1.register(salesBootstrapRoutes);
+      await v1.register(callHubRoutes);
       await v1.register(managerTasksRoutes);
       await v1.register(kpiAdminRoutes);
     },

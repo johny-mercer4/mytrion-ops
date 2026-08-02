@@ -311,6 +311,12 @@ export async function buildCallerContext(
   // identity fields. Only the department VIEW (which Mytrion) is taken from the request, and only
   // for non-admin workers (admins already see everything). Owner-scoping uses the verified userId.
   const base = requireContext(request);
+  // A static API-key request with no asserted worker/customer identity is the system principal.
+  // Preserve its server-created admin context instead of re-deriving an empty anonymous worker and
+  // accidentally down-ranking the deployment/machine caller to viewer.
+  if (!base.sessionVerified && base.userId === 'system' && Object.keys(body).length === 0) {
+    return base;
+  }
   if (base.sessionVerified) {
     // Carrier-client session (audience 'customer' from verified token claims): the context is
     // already locked to the carrier's own company tags — body identity/scope fields are fully

@@ -65,8 +65,14 @@ export function useKpiPresence(): void {
       if (document.visibilityState !== 'visible') return 'hidden';
       return Date.now() - lastInteractionAt <= IDLE_AFTER_MS ? 'active' : 'idle';
     };
-    const heartbeat = (): void => void sendPresence(state());
-    const onVisibility = (): void => heartbeat();
+    const heartbeat = (): void => {
+      // One visibility event reports `hidden`; recurring presence traffic pauses until the tab is
+      // visible again so an idle Sales session does not consume background network resources.
+      if (document.visibilityState === 'visible') void sendPresence(state());
+    };
+    const onVisibility = (): void => {
+      void sendPresence(state());
+    };
     const onPageHide = (): void => void sendPresence('ended');
     const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'scroll'];
     activityEvents.forEach((name) => window.addEventListener(name, noteInteraction, { passive: true }));

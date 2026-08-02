@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionInboxMessages,
@@ -7,6 +7,7 @@ import {
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow, firstOrUndefined, isUniqueViolation, normalizePagination } from './util.js';
+import { decodeKeysetCursor } from './keysetCursor.js';
 
 /** Caller-supplied fields for one inbox message; tenant + defaults are set by the repo. */
 export interface CreateInboxMessageInput {
@@ -28,6 +29,49 @@ export interface CreateInboxMessageInput {
   /** Zoho `Record_Status__s` (Available/Draft/Trash) — defaults to 'Available'. */
   recordStatus?: string | null;
   zohoCreatedAt?: Date | null;
+}
+
+export type InboxCategory = 'all' | 'task' | 'alert' | 'reminder';
+
+interface InboxListFilter {
+  limit?: number;
+  offset?: number;
+  query?: string;
+  category?: InboxCategory;
+  unread?: boolean;
+  cursor?: string;
+}
+
+function ownerClauses(
+  ctx: TenantContext,
+  ownerZohoUserId: string,
+  filter: Pick<InboxListFilter, 'query' | 'category' | 'unread'> = {},
+) {
+  const clauses = [
+    eq(mytrionInboxMessages.tenantId, ctx.tenantId),
+    eq(mytrionInboxMessages.ownerZohoUserId, ownerZohoUserId),
+    ne(mytrionInboxMessages.recordStatus, 'Trash'),
+  ];
+  const query = filter.query?.trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    const match = or(
+      ilike(mytrionInboxMessages.subject, pattern),
+      ilike(mytrionInboxMessages.content, pattern),
+      ilike(mytrionInboxMessages.name, pattern),
+      ilike(mytrionInboxMessages.tag, pattern),
+    );
+    if (match) clauses.push(match);
+  }
+  if (filter.category === 'task') clauses.push(sql`lower(${mytrionInboxMessages.type}) = 'task'`);
+  if (filter.category === 'alert') {
+    clauses.push(sql`lower(${mytrionInboxMessages.type}) in ('warning', 'critical')`);
+  }
+  if (filter.category === 'reminder') {
+    clauses.push(sql`lower(${mytrionInboxMessages.type}) not in ('task', 'warning', 'critical')`);
+  }
+  if (filter.unread) clauses.push(isNull(mytrionInboxMessages.readAt));
+  return clauses;
 }
 
 /**
@@ -90,22 +134,78 @@ export const mytrionInboxMessageRepo = {
   async listForOwner(
     ctx: TenantContext,
     ownerZohoUserId: string,
-    opts?: { limit?: number; offset?: number },
+    opts: InboxListFilter = {},
   ): Promise<MytrionInboxMessage[]> {
     const { limit, offset } = normalizePagination(opts);
+    const clauses = ownerClauses(ctx, ownerZohoUserId, opts);
+    const cursor = opts.cursor ? decodeKeysetCursor(opts.cursor) : null;
+    if (cursor) {
+      clauses.push(
+        sql`(${mytrionInboxMessages.createdAt}, ${mytrionInboxMessages.id}) < (${cursor.at}::timestamptz, ${cursor.id})`,
+      );
+    }
     return db
       .select()
       .from(mytrionInboxMessages)
+      .where(and(...clauses))
+      .orderBy(desc(mytrionInboxMessages.createdAt), desc(mytrionInboxMessages.id))
+      .limit(limit)
+      // Keep offset for older clients; cursor-based callers always start at the exact boundary.
+      .offset(cursor ? 0 : offset);
+  },
+
+  async countsForOwner(
+    ctx: TenantContext,
+    ownerZohoUserId: string,
+    query?: string,
+  ): Promise<{ all: number; unread: number; task: number; alert: number; reminder: number }> {
+    const rows = await db
+      .select({
+        all: sql<number>`count(*)::int`,
+        unread: sql<number>`count(*) filter (where ${mytrionInboxMessages.readAt} is null)::int`,
+        task: sql<number>`count(*) filter (where lower(${mytrionInboxMessages.type}) = 'task')::int`,
+        alert: sql<number>`count(*) filter (where lower(${mytrionInboxMessages.type}) in ('warning', 'critical'))::int`,
+        reminder: sql<number>`count(*) filter (where lower(${mytrionInboxMessages.type}) not in ('task', 'warning', 'critical'))::int`,
+      })
+      .from(mytrionInboxMessages)
+      .where(and(...ownerClauses(ctx, ownerZohoUserId, query ? { query } : {})));
+    const row = rows[0];
+    return {
+      all: Number(row?.all) || 0,
+      unread: Number(row?.unread) || 0,
+      task: Number(row?.task) || 0,
+      alert: Number(row?.alert) || 0,
+      reminder: Number(row?.reminder) || 0,
+    };
+  },
+
+  async setRead(
+    ctx: TenantContext,
+    id: string,
+    ownerZohoUserId: string,
+    read: boolean,
+  ): Promise<MytrionInboxMessage | undefined> {
+    const rows = await db
+      .update(mytrionInboxMessages)
+      .set({ readAt: read ? new Date() : null, updatedAt: new Date() })
       .where(
         and(
           eq(mytrionInboxMessages.tenantId, ctx.tenantId),
+          eq(mytrionInboxMessages.id, id),
           eq(mytrionInboxMessages.ownerZohoUserId, ownerZohoUserId),
-          ne(mytrionInboxMessages.recordStatus, 'Trash'),
         ),
       )
-      .orderBy(desc(mytrionInboxMessages.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .returning();
+    return rows[0];
+  },
+
+  async markAllRead(ctx: TenantContext, ownerZohoUserId: string): Promise<number> {
+    const rows = await db
+      .update(mytrionInboxMessages)
+      .set({ readAt: new Date(), updatedAt: new Date() })
+      .where(and(...ownerClauses(ctx, ownerZohoUserId, { unread: true })))
+      .returning({ id: mytrionInboxMessages.id });
+    return rows.length;
   },
 
   /** Delete one message the caller owns (tenant + owner scoped). Returns true if a row was removed. */

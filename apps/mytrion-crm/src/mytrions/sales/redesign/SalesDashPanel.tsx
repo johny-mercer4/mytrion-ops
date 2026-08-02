@@ -10,6 +10,7 @@ import { Icon } from './icons';
 import { formatCachedAt } from './dashCache';
 import { currentBillingCycle, msdFmtNum } from './dashFormat';
 import { DashSkeleton } from './DashSkeleton';
+import { SalesEmpty, SalesErrorNote } from './SalesPage';
 import { SalesDashCharts } from './SalesDashCharts';
 import { ICO } from './salesData';
 import { useSales } from './ctx';
@@ -85,20 +86,20 @@ export function SalesDashPanel() {
   if (error && !data) {
     if (NO_CARRIERS.test(error)) {
       return (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:14px')}>
-          No carriers assigned to your account yet.
-        </div>
+        <SalesEmpty
+          icon="clients"
+          title="No carriers yet"
+          body="This dashboard fills in once carriers are assigned to your account."
+        />
       );
     }
     return (
-      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>
+      <SalesErrorNote>
         {error}
-        <div style={s('margin-top:12px')}>
-          <button type="button" onClick={() => void fetch(true)} style={s('padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer')}>
-            Retry
-          </button>
-        </div>
-      </div>
+        <button type="button" onClick={() => void fetch(true)} className="ss-pager-btn" style={{ marginLeft: 10 }}>
+          Retry
+        </button>
+      </SalesErrorNote>
     );
   }
   if (!data) return null;

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CRON_SCHEDULES,
+  DISABLED_JOB_QUEUES,
+  KPI_JOB_QUEUES,
+  MANUAL_TRIGGERABLE_QUEUES,
   kpiSalesDailyRollupJob,
   kpiSalesHourlySyncJob,
   kpiSalesMonthCloseJob,
@@ -8,6 +11,21 @@ import {
 } from '../../src/modules/jobs/catalog.js';
 
 describe('Sales KPI jobs', () => {
+  it('parks every KPI job from cron, workers, and Admin triggers', () => {
+    expect(KPI_JOB_QUEUES).toEqual(
+      new Set([
+        kpiSalesHourlySyncJob.name,
+        kpiSalesReconcileJob.name,
+        kpiSalesDailyRollupJob.name,
+        kpiSalesMonthCloseJob.name,
+      ]),
+    );
+    for (const name of KPI_JOB_QUEUES) {
+      expect(DISABLED_JOB_QUEUES.has(name)).toBe(true);
+      expect(MANUAL_TRIGGERABLE_QUEUES.has(name)).toBe(false);
+    }
+  });
+
   it('uses New York time without changing the global job timezone', () => {
     const names = new Set([
       kpiSalesHourlySyncJob.name,

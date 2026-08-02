@@ -7,6 +7,15 @@
  */
 const inflight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
+const MAX_ENTRIES = 200;
+
+function pruneCache(): void {
+  while (cache.size > MAX_ENTRIES) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) return;
+    cache.delete(oldest);
+  }
+}
 
 export function dedupedFetch<T>(
   key: string,
@@ -16,7 +25,11 @@ export function dedupedFetch<T>(
   const ttlMs = opts.ttlMs ?? 0;
   if (!opts.fresh && ttlMs > 0) {
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.ts < ttlMs) return Promise.resolve(hit.data as T);
+    if (hit && Date.now() - hit.ts < ttlMs) {
+      cache.delete(key);
+      cache.set(key, hit);
+      return Promise.resolve(hit.data as T);
+    }
   }
   const running = inflight.get(key);
   if (running) return running as Promise<T>;
@@ -25,7 +38,11 @@ export function dedupedFetch<T>(
       // Identity guard on the WRITE too: invalidateDeduped() detaches an in-flight promise,
       // and a detached fetch must not re-cache its (now stale) payload — otherwise a delete/
       // WS-event invalidation that races a fetch is silently reverted for the whole TTL.
-      if (inflight.get(key) === p) cache.set(key, { data, ts: Date.now() });
+      if (inflight.get(key) === p) {
+        cache.delete(key);
+        cache.set(key, { data, ts: Date.now() });
+        pruneCache();
+      }
       return data;
     })
     .finally(() => {

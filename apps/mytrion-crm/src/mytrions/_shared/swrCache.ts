@@ -28,6 +28,15 @@ interface Entry<T> {
 
 const store = new Map<string, Entry<unknown>>();
 const listeners = new Map<string, Set<Listener>>();
+const MAX_CACHE_ENTRIES = 240;
+
+function pruneStore(): void {
+  while (store.size > MAX_CACHE_ENTRIES) {
+    const oldest = store.keys().next().value as string | undefined;
+    if (!oldest) return;
+    store.delete(oldest);
+  }
+}
 
 function notify(key: string, kind: NotifyKind): void {
   const set = listeners.get(key);
@@ -35,7 +44,12 @@ function notify(key: string, kind: NotifyKind): void {
 }
 
 export function readSwrCache<T>(key: string): Entry<T> | null {
-  return (store.get(key) as Entry<T> | undefined) ?? null;
+  const hit = store.get(key) as Entry<T> | undefined;
+  if (!hit) return null;
+  // Map insertion order doubles as a tiny LRU without another dependency.
+  store.delete(key);
+  store.set(key, hit);
+  return hit;
 }
 
 /** Subscribe to write/invalidate for one key (Tickets feed SWR, etc.). */
@@ -57,7 +71,9 @@ export function subscribeSwrCache(key: string, fn: Listener): () => void {
 /** Store a freshly-fetched value and tell every mounted hook on this key to adopt it. */
 export function writeSwrCache<T>(key: string, data: T): number {
   const ts = Date.now();
+  store.delete(key);
   store.set(key, { data, ts });
+  pruneStore();
   notify(key, 'write');
   return ts;
 }

@@ -133,9 +133,7 @@ export function HrAttendanceTeam({
         effectiveFrom,
       });
       const assignedShift = shifts.find((shift) => shift.id === assignShiftId);
-      setAssignMessage(
-        `${assignedShift?.name ?? 'Shift'} assigned from ${effectiveFrom}.`,
-      );
+      setAssignMessage(`${assignedShift?.name ?? 'Shift'} assigned from ${effectiveFrom}.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -212,9 +210,11 @@ export function HrAttendanceTeam({
                     <span className="hr-att-person-presence" data-state={item.currentState}>
                       {item.currentState === 'in_office'
                         ? 'In office'
-                        : item.currentState === 'out_of_office'
-                          ? 'Out of office'
-                          : 'No activity'}
+                        : item.currentState === 'needs_review'
+                          ? 'Needs review'
+                          : item.currentState === 'out_of_office'
+                            ? 'Out of office'
+                            : 'No activity'}
                     </span>
                   </button>
                 </li>
@@ -226,13 +226,11 @@ export function HrAttendanceTeam({
             <div className="hr-att-detail" role="region" aria-label="Employee attendance week">
               <header className="hr-att-detail-head">
                 <div>
-                  <h3>
-                    {selected ? `${selected.firstName} ${selected.lastName}` : 'Employee'}
-                  </h3>
+                  <h3>{selected ? `${selected.firstName} ${selected.lastName}` : 'Employee'}</h3>
                   {selected?.shift ? (
                     <p>
-                      {selected.shift.name} [{selected.shift.startLocal} –{' '}
-                      {selected.shift.endLocal}]
+                      {selected.shift.name} [{selected.shift.startLocal} – {selected.shift.endLocal}
+                      ]
                     </p>
                   ) : (
                     <p>No shift assigned</p>

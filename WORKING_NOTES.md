@@ -9825,3 +9825,1124 @@ contract and updated the build branch's stale transient-database-code bound. Fin
 frozen-lockfile install, root lint (0 errors, 23 existing warnings), root typecheck/build, Drizzle
 metadata check, root tests (160 files and 1,466 tests passed; 1 file/test skipped), gateway
 typecheck/build and all 23 files / 80 tests, and both production dependency audits (zero advisories).
+
+## 2026-07-31 — Manager reward controls propagated into Sales
+
+Closed two manual Loyalty control gaps on `feature/Mytrion`. A client without an override was
+incorrectly initialized as a custom checklist because optional chaining produced `undefined`, which
+was compared only against `null`; saving untouched controls could therefore freeze today's automatic
+rewards into an unnecessary exception. The editor now treats both null and undefined as automatic,
+while an explicit empty array still means the Manager intentionally disabled every reward.
+
+Saving or resetting a Manager override now patches the cached company-wide Manager roster and
+invalidates every owner-scoped `sales:clients:*` cache. This prevents old controls from reappearing
+when the Manager card is reopened and guarantees Sales refetches the tenant-scoped override rather
+than retaining a warm pre-save roster. Sales client cards disclose `Manager loyalty controls`, and
+the client Loyalty tab shows a read-only control notice with the active custom/default state,
+manager identity, update date, and note. Tier and projection calculations remain shared through
+`_shared/loyalty.ts`; manual reward selection remains independent from tier thresholds.
+
+Added Manager modal regressions for untouched/default and explicit checkbox saves, cache propagation
+and reset tests, Sales disclosure tests, and repository predicate tests proving reads/deletes include
+tenant plus carrier while upserts take tenant from context. Manager Loyalty + Sales Data Center +
+repository routes pass 48/48, the complete frontend suite passes 348/348, both TypeScript projects
+pass, lint has zero errors and 23 existing warnings, and the production frontend build passes. The
+full backend run is not repository-green: 1,379 tests pass and 62 unrelated baseline/environment
+tests fail across Customer Service authorization fixtures, retention expectations, remote Render DB
+DNS, sandboxed WebSocket binding, and older touchpoint/tool/stream mocks.
+
+## 2026-07-31 — HR attendance live presence and visit timeline
+
+Reworked Mytrion HR Attendance around actual office visits instead of a decorative shift bar. The
+page now leads with the employee's live presence, exact Ganga reader, check-in time, a second-by-second
+time-in-office tracker, and the week's accumulated office time. Every day expands into explicit
+Check in → Check out rows with both doors and the duration of each visit; an open visit says “Still
+inside”, while standalone scans remain visible as an audit-quality note rather than a vague worked-
+time warning. Team and organization rosters also disclose a checkout-needs-review state.
+
+The zero-hour defect was in sessionization: open sessions were deliberately emitted with
+`durationMs = 0` and excluded from `totalMs`. Attendance summaries now use one calculation timestamp,
+include a recent open visit in day/week totals, expose ISO visit timestamps to the frontend, and
+expire a forgotten checkout after 16 hours into `needs_review` so someone cannot remain “in office”
+forever. A read-only production-data diagnostic confirmed the screenshot's mapped employee at
+Ganga 4F Entry now calculates as in-office from 18:51:14 UZT with 02:24 elapsed instead of 00:00.
+
+Added migration `0089_hr_attendance_shift_grace`: overnight punches receive a four-hour checkout
+grace, so an overtime exit such as 05:00 after the 19:00–03:00 shift is re-bucketed onto the shift it
+closes instead of appearing as a standalone checkout on the following day. Application-side
+reconciliation uses the same rule for future Face ID links. Ganga-only ingestion, entry/exit door
+classification, normalized Face ID mapping, manager shift assignment, leave, employee, department,
+and org-structure tests remain green. The HR home copy now describes the native live workspaces,
+and an invalid attendance stylesheet brace discovered by the production build was repaired.
+
+Verification: 13 backend HR files / 84 tests pass; HR frontend tests pass 23/23; the complete
+frontend suite passes 349/349; backend and frontend TypeScript pass; lint has zero errors and 23
+existing warnings; and the production frontend build passes. The in-app preview had no authenticated
+Zoho session, so visual implementation was grounded in the user's current authenticated screenshot
+and component-level rendering; signed-in browser QA remains the final deployment smoke. Migration
+0089 must be applied for already-stored late overnight checkouts to be re-bucketed.
+
+## 2026-08-01 — Sales Verification live pipeline and Referrals loader
+
+Standardized Manager Referrals on the same nine-card skeleton used by Loyalty and kept cached
+results visible during background refreshes. This removes the separate full-page calculation loader
+without changing referral calculations.
+
+Enabled the Sales Verification workspace and changed its roster to start from every caller-owned
+`octane.agent_deals` row, including applications without a carrier yet, ordered by `appfilldate`
+newest first. Card enrichment remains read-only DWH work. Pipeline detail now resolves the direct
+`agent_deals.id` → `credit_platform.requests.request_id` relationship (with carrier/application/DOT
+fallbacks), reads live stages, decisions, tracker events and safe attachment metadata, and loads
+card-level action counts in bulk to avoid an N+1 request pattern.
+
+Verification events can now declare Sales requirements through payload fields, choices, audience,
+instructions, and attachment flags; MC/DOT wording also produces the expected fields when the
+payload is sparse. Sales sees those requests as prominent red flags on cards and in the opened
+pipeline, completes the generated form, optionally/mandatorily attaches a file, and sends the
+response through the owning Zoho Deal. Known MC/DOT fields are updated, the complete response is
+journaled as a Deal note, and attachment metadata plus idempotency history is stored in the new
+tenant-isolated `verification_sales_responses` table. The external Verification database remains
+session-enforced read-only.
+
+Added migration `0090_verification_sales_responses`, payload parser tests, response repository
+tenant-isolation tests, the action-form component test, and the standardized Referrals loader test.
+Backend/frontend typechecks, lint (0 errors / 22 existing warnings), both production builds, all 350
+frontend tests, and the focused Verification + RBAC set (42/42) pass. The full backend baseline is
+not green: 1,387 pass and 63 unrelated tests fail across existing Customer Service authorization
+fixtures, retention/tool expectations, sandboxed WebSocket binding, and unavailable remote Render
+DNS. The new Verification pipeline tests pass within that run.
+
+## 2026-08-02 — Sales Verification 502 recovery and roster simplification
+
+Reproduced the reported `/v1/verification/clients?zoho_user_id=…` 502 against the affected View-as
+user and isolated each dependency. The DWH roster and read-only Verification database were healthy;
+the failure was the local response-history lookup because `verification_sales_responses` did not
+exist. A broad route catch incorrectly relabeled that local migration failure as `DWH_ERROR`.
+
+The card endpoint now treats `agent_deals` as its required source and loads live Verification
+summaries plus tenant response history as optional enrichments with `Promise.allSettled`. Either
+enrichment can fail without hiding the cards, and only an actual DWH roster failure returns 502.
+Pipeline response-history hydration is fail-soft for the same reason. Added route regressions for
+missing history, unavailable Verification, and genuine DWH failure.
+
+The first migration run appeared successful but post-migration verification still found no table.
+Drizzle metadata showed the configured database already had different hashes recorded at the
+timestamps originally assigned to 0089/0090. Moved 0090 beyond the database's current maximum
+timestamp, reran migrations, and verified the table through the tenant-scoped repository. The exact
+authenticated endpoint for Zoho user `6227679000007809267` now returns HTTP 200 with 500 cards,
+newest application first.
+
+Simplified the Verification tab to one complete roster: removed the Active sub-tab and application
+order button, retained the server's fixed newest-first order, and replaced the text loader with the
+shared nine-card Sales skeleton. Added a UI regression pinning those controls and loader. Focused
+backend Verification tests pass 14/14, the complete frontend suite passes 351/351, lint has zero
+errors (22 existing warnings), both typechecks pass, and both production builds pass.
+
+## 2026-08-02 — Sales My Tasks kanban
+
+Shipped assignee **My Tasks** in Sales Horizon as a status kanban (Open / In progress /
+Completed / Cancelled) with HTML5 drag-and-drop status updates and a DetailSheet modal for
+subject, description, deadline, priority, and event history. Reuses Retention board chrome
+(`.ss-ret-*`). Nav item moved into the daily cluster (no longer Coming soon).
+
+Backend: `/v1/sales/tasks/:taskId/status` now accepts all `WorkerTaskStatus` values so board
+drops can reopen or cancel; same-status is a no-op. No new tables — storage remains
+`mytrion_worker_tasks` (+ `mytrion_worker_task_events`, `mytrion_task_types`).
+
+## 2026-08-02 — Sales Verification roster restoration
+
+Confirmed from git history that the full Verification Pipeline UI already existed and had been
+parked behind `comingSoon`. The live-data work extended that implementation rather than replacing
+it, but a later interpretation of “remove Active” incorrectly merged active clients into the
+pipeline roster. Restored the intended pipeline-only roster while retaining live stages, Sales
+action requests, attachments, and activity.
+
+Made the roster a bounded responsive grid using `minmax(0, 1fr)` so long company or billing text
+cannot widen a track and clip the third column. Cards now share one row height and flex layout,
+render nine per page, and collapse to two/one columns at the existing tablet/mobile breakpoints.
+When a DWH application has no live Verification record yet, its detail view now shows the original
+nine stages as “Not started” with an explicit “Awaiting intake” state instead of an empty panel.
+
+Added regressions for pipeline-only filtering, equal-grid contracts, nine-card pagination, and the
+pending nine-stage detail state. Frontend typecheck passes, the focused Verification tests pass
+4/4, the complete frontend suite passes 353/353, and the production frontend build succeeds. A
+browser visual check reached the local Zoho sign-in gate, so signed-in visual QA remains manual.
+
+## 2026-08-02 — Verification pagination, query, and glass workspace
+
+Moved the Verification roster from client-side slicing of a 500-record payload to a true
+server-paginated contract (`page`, `page_size`, debounced `q`). The DWH query now returns one
+pipeline-only page plus a windowed total, uses bound Postgres placeholders for limit/offset/search,
+and replaces the global `dim_company` distinct/sort with a per-deal latest-row lateral lookup.
+Live Verification summaries and local Sales-response enrichment now receive only the nine deal IDs
+on the visible page. A live read-only validation for the affected View-as user returned 9 of 469
+records in 857 ms.
+
+Rebuilt the Verification surface around the Sales Horizon tokens in a dedicated, scoped stylesheet:
+responsive equal-height glass cards, semantic status rail, tokenized type scale, bounded search
+toolbar, stable pagination footer, and a rectangular Refresh action in the page header. Both themes
+inherit the shared translucent surface, border, blur, shadow, radius, focus, and semantic colour
+tokens. Added a shaped nine-stage detail skeleton so opening a card no longer falls back to loader
+text or an empty panel; stale roster pages remain painted while manual refresh revalidates.
+
+Added route, DWH-query, pagination, and detail-loader regressions. Focused Verification tests pass
+19/19 across backend and frontend; the complete frontend suite passes 354/354; both typechecks and
+production builds pass; lint has zero errors (22 unrelated existing warnings). The full backend
+suite still contains unrelated pre-existing CS/retention authorization failures plus the sandboxed
+WebSocket bind failure; the required cross-tenant RBAC leakage suite passes.
+
+## 2026-08-02 — My Tasks polish (skeleton, badge, switch icon, light)
+
+Finished Sales My Tasks setup: cold-load board skeleton (hero + 4 columns), sidebar
+badge for `open` tasks never opened in the detail modal (local opened set + shared SWR
+cache with the tab), Switch Mytrion icon corrected to ArrowLeftRight swap (TopBar +
+MytrionSwitchLink), and light-mode board/card/hero polish under `.ss-tasks-*`.
+
+## 2026-08-02 — Call Hub Phase 1 (Mytrion + Zoho)
+
+Shipped agent Call Hub as a standard Sales tab (not full-bleed). Backend:
+`mytrionCallRepo.listForCaller`, merged list module (`modules/sales/callHub.ts`),
+`GET /v1/sales/call-hub/calls` (session Zoho identity, View-as aware via JWT), audit
+`call_hub.list`. Zoho COQL filters Calls by Owner; unified DTO with source badges.
+Gong scaffold only: `FF_GONG_ENABLED` + `GONG_*` env + fail-closed `integrations/gong.ts`
+(empty list until REST client lands). Softphone stays global Embeddable — hub does not remount it.
+
+Frontend: enabled `callHub` nav, `CallHubTab` + `CallDetailModal` (Horizon hero/filters/
+skeleton/list → detail, redial via `clickToDial`), API client, light `.ss-call-*` tokens.
+Route + merge unit tests pin identity scoping (no query spoof) and DTO merge order.
+
+## 2026-08-02 — Call Hub agent identity + pagination
+
+Root cause of "other agents' calls" in Call Hub under Admin View-as: the route used
+JWT `request.ctx` only and never applied `buildCallerContext` / `x-act-as-*`, so the
+list was scoped to the admin's own `caller_zoho_user_id` (every dial they placed while
+working other desks). Softphone logging also preferred `impersonatorUserId`, compounding
+mis-attribution.
+
+Fixes: Call Hub + RingCentral call-events now run through `buildCallerContext` and
+attribute / filter by the effective agent (View-as target). Added `countForCaller`,
+page/`page_size` merge pagination (25/page), SWR cache key includes agent+page, UI shows
+agent name + pager. Tests cover View-as scoping and pagination.
+## 2026-07-31 — Native ticket path: the reachable half of the comms substrate (`feature/Communication`)
+
+`b501390` landed 14 tables, the thread/member/message/presence repos, `publish.ts` and the comms WS
+topic grammar — but nothing above that line, so none of it was reachable. Two dead ends in particular:
+`canSubscribeCommsThread` was exported with no production caller (the synchronous `canSubscribe`
+hard-refuses the `comms:thread:` prefix, so the live chat feed could not be subscribed at all), and
+`mytrion_comms_number_seq` existed with no formatter, so no ticket could be numbered.
+
+This session builds the Sales create-ticket path end to end on the server. Still backend-only —
+nothing under `apps/` is touched and the Zoho Desk routes are untouched and still serve every live
+flow, so this is a parallel path with no consumer yet.
+
+**Config read layer.** `commsCatalogRepo` / `commsSettingsRepo` / `commsDepartmentRepo` +
+`GET /v1/comms/catalog`, which returns the 49 ticket types, 11 escalation reasons, the department
+options and the SLA maps in one request — the wizard cannot render its first step until all of it has
+arrived, so three requests would only add two more chances for a half-rendered picker. Gated by a new
+`requireInternal` (internal audience, no department): `requireDepartment` takes exactly one department,
+so gating shared metadata with it would mean locking Sales out of a CS-owned list or the reverse.
+
+**Two security properties, both structural rather than conventional.**
+1. `target_department` is read off the catalog row and never from the request body — there is no
+   `department` field on `POST /v1/comms/tickets` at all. The Desk route accepted one, which meant an
+   agent could file into any queue they chose. Retargeting a family of types is now a catalog UPDATE.
+2. An agent may only file against a deal they own, AND the client snapshot comes from that same deal
+   record. Added `fetchDealSnapshot` (one COQL for Owner + Account_Name + Carrier_ID + Application_ID)
+   replacing `fetchDealOwnerId` + trusting the body: a body-supplied carrier is a client-chosen client,
+   so an agent could file on their own deal while labelling it with someone else's carrier and every
+   downstream reader would believe the label. Reading both from one record costs the same one query.
+
+**Create is one transaction.** `commsTicketRepo.createWithThread` writes thread + opening message +
+requester member + ticket with all ids generated up front, so the thread is inserted with its final
+message counters already set. `commsMessageRepo.append` is deliberately NOT reused: it opens its own
+`db.transaction`, which would take a second pool connection and block on the very thread row this
+transaction holds — a self-deadlock, not a slow path. Proved on `xmin` in the smoke script.
+
+**Idempotency is select-then-insert, not ON CONFLICT.** `mytrion_tickets_idem_uk` is partial
+(`WHERE idempotency_key IS NOT NULL`) and Postgres refuses a partial index as an arbiter unless the
+statement restates the predicate, which Drizzle cannot express. The lookup is also scoped to the
+REQUESTER: it runs before any row exists so no reader filter applies, and an idempotency key is a
+client-chosen string rather than a secret — without the requester bound, guessing or replaying another
+agent's key returned their ticket in full. A key taken by someone else now 409s.
+
+**Reads.** All three ticket reads share one `selectTicketWithThread` builder, because those joins ARE
+the authorization surface (the thread join is what lets `commsThreadReaderFilter` apply); three copies
+would be three chances for one to drift and read unfiltered. The reader's own member row is LEFT
+joined so unread is arithmetic on data the list already has — left, not inner, because a CS agent must
+see a queue ticket they have never opened. Keyset paging over `(created_at, id)` via a row comparison;
+offset paging silently re-shows or skips rows the moment anything is filed. Non-readable ids answer
+404, never 403.
+
+**Conversation is thread-keyed**, not ticket-keyed (`/v1/comms/threads/:id/...`): an escalation's whole
+ladder talks in one thread and a DM has no ticket, so ticket-keyed message routes would need a second
+copy of this the moment either lands. First response is stamped only by a non-requester, non-internal
+reply, with the `IS NULL` guard in the WHERE so two simultaneous replies cannot move it.
+
+**WebSocket.** The subscribe branch is now async and routes `comms:thread:*` to
+`canSubscribeCommsThread`, so the live feed is reachable. Topic accounting became a Set rather than a
+per-frame counter — the counter burned budget every time a client re-subscribed to a topic it already
+held, which every reconnect does, until it was refused for topics it was already on. The comms lane is
+auto-subscribed and advertised in `hello` (a client cannot construct it itself: `commsUserTopicOf`
+returns null under view-as). The socket is re-checked for closure after the await.
+
+**Verification.** Typecheck clean; lint clean on every new file (the 24 repo-wide warnings are
+pre-existing non-null assertions elsewhere). 181 new unit tests across six suites, 222 including the
+existing comms/realtime ones. `scripts/comms-repo-smoke.ts` extended and run green end to end against
+a throwaway local Postgres — the transaction proved on `xmin`, 25 concurrent creates yielding 25
+distinct numbers, sequential AND raced idempotency replays, "another Sales agent sees NOTHING" while
+the CS agent sees it via the department arm, and paging walking every row exactly once.
+
+The security tests were mutation-verified rather than assumed: disabling the ownership check and adding
+the full card to the DTO failed exactly 7 tests, then both files were restored and re-checksummed.
+`.env` still points at Render prod, so every DB command above ran against an explicitly overridden
+local throwaway database.
+
+Known and deliberately deferred: a CRM lookup failure surfaces as 400 rather than 502 (the message is
+clear and exposed, and all three outcomes stay distinguishable); there is no
+`(tenant_id, created_at DESC, id DESC)` index yet, which the keyset walk will want once volume exists;
+`GET /threads/:id/messages` enrolls the reader as a watcher, which is a read-state side effect on a GET.
+
+Not built yet, in dependency order: Dropbox attachments, round-robin assignment over the department
+pool (the pools are empty and `FF_COMMS_PRESENCE` is still off), the Tickets console — which must mount
+in Sales AND the receiving CS/Billing/Verification queue in the SAME release, or native tickets land in
+a table nobody is watching — and escalations, which cannot route at all until the NULL
+`default_assignee_zoho_user_id` / `manager_zoho_user_id` / `c-level` pool config is filled.
+
+## 2026-08-01 — Escalations, and the Mytrion Admin routing config that makes them possible
+
+The user's decision: escalation-level assignees must be **dynamic from Mytrion Admin**, and they will
+choose the reason defaults, the department managers and the C-Level themselves. So this session builds
+both halves — the admin config surface and the escalation engine that reads it.
+
+**The ladder, and where each rung comes from.** All four are config rows, none are constants:
+```
+level 1  requester           the person raising it (not a hop — `requester_zoho_user_id`)
+level 2  agent               mytrion_ticket_types.default_assignee_zoho_user_id  (per REASON)
+level 3  department manager  mytrion_department_config.manager_zoho_user_id
+level 4  C-Level             an explicit pick from the `c-level` pool in mytrion_department_agents
+```
+Every one ships NULL/empty. A NULL is "unrouted, refuse loudly" and never a wildcard: raising on an
+unconfigured reason is refused with a message that names the admin screen, because an escalation with a
+null assignee sits in nobody's inbox while looking submitted to the person who raised it. HR remains
+CANDIDATES only — `/comms/admin/candidates` returns employees who have a `zoho_user_id` (that id IS the
+routing key, so offering anyone without one would let an admin save a row that can never receive
+anything) and marks `hr_departments.lead_employee_id` holders so the manager picker can pre-select the
+likely answer. HR suggests; the config row decides. `resolveDepartmentManager` deliberately does NOT
+fall back through the HR lead link, and there is a test asserting it never calls HR at all.
+
+**Admin surface** (`/v1/comms/admin`, all-department admin, every write audited with before AND after —
+one row here can silently redirect every escalation in the company): `GET /routing` returns the whole
+picture plus a `readiness` block (`unroutedReasons`, `departmentsMissingManager`, `cLevelConfigured`)
+computed server-side so the screen and the refusal messages cannot disagree. Then
+`PATCH /departments/:department`, `PUT|PATCH|DELETE /departments/:department/pool/...` and
+`PATCH /escalation-reasons/:code`. `code` and `kind` are immutable in the catalog patch allowlist:
+every historical ticket snapshots the code, and `kind` decides whether a row is a ticket type or a
+reason. Deleting a pool seat is distinct from `active:false` — deactivating keeps the rotation history,
+which is what you want for someone on leave.
+
+**Engine.** `escalationRouting` (config reads) → `escalationService` (raise) →
+`escalationTransitions` (up / sideways / terminal) → `escalationNotify` (deadlines, fan-out, the
+act-on gate). Split four ways because the two service halves together came to 732 lines.
+
+Decisions worth keeping:
+- **Hop 1 is the level-2 landing, not the requester** — which is why its `decided_by` is NULL: nobody
+  moved it there. `current_hop_index` defaults to 1 while `current_level` defaults to 2, and this is
+  what that combination means.
+- **Growing group.** Every hop `transferAssignee`s (moving the ROLE, demoting the previous holder to
+  participant) and never evicts, so requester + agent + manager + C-Level all end up in one chat and
+  all keep replying. `visibility` stays `'participants'` for life — flipping it to `'department'` on a
+  hand-off would expose the whole history to everyone holding the receiving department.
+- **A sideways hand-off RESETS to level 2**, so a chain handed off by a manager can still rise to the
+  NEW department's manager. Carrying level 3 across would skip that person entirely.
+- **Level 4 is an explicit, pool-validated pick.** "Escalate to C-Level" must not become "assign to
+  anyone I name", and the same check makes a deactivated CEO seat unescalatable while leaving the
+  historical hop that named them untouched.
+- **A reason that falls to the requester** rises straight to their department manager with
+  `skip_reason='is_requester'` rather than routing someone's escalation to themselves.
+- The cursor moves BEFORE the hop is closed, because the cursor carries the optimistic-version check:
+  closing first would mark a hop decided on a chain someone else moved a different way.
+
+**One real dead end found by the end-to-end check and fixed.** When the level-2 assignee IS the
+department manager — normal in a small department — `escalateUp` refused with "escalate to C-Level or
+hand off instead", but level 2 had no path to C-Level, so a lone department head was stuck holding their
+own escalation. Level 3 is now treated as a rung that exists only when the department has a manager who
+is not the current holder; otherwise C-Level is reachable directly from level 2 with an explicit pick,
+and the refusal message says which case you are in.
+
+**Verification.** Typecheck and lint clean, every new file under the 600-line cap. 31 new routing unit
+tests (each mocked so "nothing routes when nothing is configured" cannot pass vacuously) and 10 new
+RBAC-leakage assertions covering `commsEscalationRepo.buildListQuery` / `buildHopsQuery` and
+`commsDepartmentRepo.buildPoolQuery` — 56 in that suite now. A 74-check end-to-end run against a fresh
+throwaway local Postgres proves the whole ladder over real rows: the unrouted refusal writes no ticket,
+level 2 lands on the configured default, an uninvolved worker and the CS manager both cannot read it
+before being brought in, the manager can after, the demoted level-2 agent can still reply, level 4
+refuses an unnamed and an off-pool pick, hop levels run 2→3→4 with the right `decided_by` on each closed
+hop, resolve clears the inbox while the chain stays readable, a hand-off resets to level 2 without
+evicting anyone and keeps the thread participants-only, withdraw works from three hops away and mirrors
+as cancelled rather than resolved, and a deactivated C-Level seat stops being escalatable without
+rewriting history.
+
+Full suite: 35 failures across 10 suites. 34 are the same pre-existing ones verified against a clean
+b501390 worktree last session; the 35th is `retention-phase1.test.ts > stamps a 2BD agent-action
+deadline`, which hardcodes 2026-07-20 and asserts the deadline falls within the last 10 days of
+`Date.now()` — it decayed when the calendar reached 2026-08-01 and is untouched by this work
+(commit 49b1d8a). Worth fixing with a fake timer, separately.
+
+Still to come: the Mytrion Admin screen itself (this session shipped its API), Dropbox attachments,
+round-robin assignment, and the Tickets/Escalations console.
+
+### Mytrion Admin → Escalation Routing (the screen)
+
+Admin → CRM & Ops → **Escalation Routing**. Three sections matching the three configurable rungs, plus a
+readiness strip: reasons routed `N/M`, departments with a manager `N/M`, C-Level member count. The
+readiness numbers come from the server, not from counting rows in the browser, so what the screen calls a
+gap and what an agent's refusal message says are the same computation.
+
+- **Level 2** — one row per escalation reason, each with a person picker. An unrouted row is marked
+  structurally (amber left rail + `gap` pill), not by hue alone, and its subtitle says what the
+  consequence is: "escalations on this reason are refused".
+- **Level 3** — one row per department, with the manager picker and the sideways hand-off target.
+- **Level 4** — the C-Level pool, with a role-title field, because the seat label is what makes
+  "Escalate to CEO" distinguishable from "Escalate to COO" in the agent's picker.
+
+The picker is fed by `GET /comms/admin/candidates` and marks whoever HR has as a department lead with a
+"Dept lead" chip. That chip only ORDERS and labels — it never pre-selects, because HR's lead link resolves
+through a nullable heuristic `zoho_user_id` and a silent default there is exactly what this config exists
+to avoid.
+
+Saves are per row: each row awaits its own request and shows its own busy text, so one slow save never
+blocks the screen and there is no second page-level spinner (one `aria-busy` region, asserted in the
+component test). After a save the screen refetches rather than patching local state — a locally-patched
+copy would drift from the server-derived readiness.
+
+Two bugs the tests caught, both fixed:
+- `readiness.departmentsMissingManager` included `c-level`. Level 4 is a POOL, so there is no such thing
+  as the C-Level department's manager and it was reporting a gap that could never be closed.
+- The clear-assignee control took its accessible name from its own "×" glyph, so it announced as "×".
+  It now carries an explicit `aria-label`.
+
+CLAUDE.md rule 10 asks for the `modern-web-guidance` skill first. **That skill is not installed in this
+repo** (`.claude/skills/` has the Zoho/LLM/DB ones only), so I matched the existing Mytrion Admin
+conventions instead: `admin.module.css` for every generic element, the house glass tokens
+(`--hz-pane`, `--hz-blur-*`, `--tone-*`) for the new ladder visuals, one skeleton loader, `adminToast` for
+outcomes, and `prefers-reduced-motion` honoured on the picker animation. Worth installing that skill if
+there is guidance it should have followed.
+
+Verification: web typecheck clean, 332/332 web tests pass (9 new), 244/244 comms backend tests pass
+(22 new route tests covering the gate — an ordinary worker AND a department head are both refused on every
+write, not just the read). `pnpm build:widget` rerun and `apps/mytrion-crm/app` committed, since that
+vendored bundle is what actually deploys; confirmed the built output contains the new screen.
+
+## 2026-08-01 (2) — Departments come from HR, escalations are opened against one, and Dropbox
+
+Two changes, both from the same decision: **departments are our own `hr_departments` rows plus Zoho users
+(`hr_employees.zoho_user_id`), not a hardcoded slug list** — and an escalation request names its department
+when it is opened, so level 2 is that department's agent.
+
+### Migration 0089 — routing config is keyed on hr_departments
+
+`mytrion_department_config` gains `hr_department_id` + `label`. Why BOTH the link and the slug:
+
+- `department` stays the ROUTING KEY. It is stored on `mytrion_threads.department`, built into the
+  `comms:queue:<department>` WebSocket topic (validator: `^[a-z][a-z0-9-]{1,40}$`) and held in
+  `TenantContext.departments` for RBAC. Swapping in an `hrd_…` id would break the read gate, the topic
+  grammar and every existing access grant at once.
+- `hr_department_id` makes the ORG identity explicit rather than matching a slugified name — a name match
+  would orphan a department's whole routing config the first time HR renames it. Same reasoning as
+  `hr_employees.zoho_user_id` being chosen explicitly rather than derived.
+
+A one-off backfill links the ten rows 0087 seeded by slugified name, skipping any name that slugifies
+ambiguously — an ambiguous match is a human decision, not a guess. Nothing re-derives the link at runtime.
+`slugifyDepartment()` (lib/department.ts) returns **null** for a name that cannot make a valid slug (no
+letters, or a leading digit), so such a department is surfaced as unconfigurable instead of producing a row
+that publishes to a topic nobody can subscribe to.
+
+0089 also widens `mytrion_escalation_hops_routing_chk` with `department_default` and `department_pool`.
+`routing_source` exists to make a chain explainable, and filing a department-resolved assignee under
+`reason_default` would claim a reason chose someone it never named.
+
+### Level 2 is now department-first
+
+`raiseEscalation` takes an optional `targetDepartment`. Resolution order:
+1. **the target department's own agent** — its `default_assignee_zoho_user_id`, else its
+   least-recently-assigned roster member that still accepts work. "Escalate to Billing" has to reach
+   Billing; deciding from the reason instead would make the department the requester picked irrelevant.
+2. the reason's fall-to user, for a raise with no department in mind.
+3. if either resolves to the requester, rise to that department's manager with
+   `skip_reason='is_requester'`.
+
+The manager is deliberately NOT a fallback at step 1: level 3 exists so an escalation reaches the head only
+after the agent level has had it, and falling straight through would collapse two rungs into one.
+
+Admin `GET /routing` now returns `hrDepartments` (id, name, lead, `suggestedSlug`, `configured`) beside the
+config, so the screen offers departments that have never been configured — the point of driving it from HR.
+The live HR name wins over the stored `label`, so a rename shows immediately, while the snapshot is the
+fallback for a department since deleted from HR (historical escalations must still render). An HR outage
+degrades to an empty list and is logged, rather than failing the whole screen.
+
+### Dropbox
+
+`src/integrations/dropbox.ts` — refresh-token grant via `createTokenProvider` (access tokens last ~4h, so a
+stored access token would break silently); single-shot upload under 120MB and `upload_session/*` above it
+(deliberately below the 150MB vendor hard limit — sitting at the limit means the first oversized production
+file discovers it); `Dropbox-API-Arg` escaped to `\uXXXX` so a Cyrillic or emoji filename cannot produce an
+invalid header; 401 force-refresh **once** (a revoked refresh token also answers 401, so retrying forever
+would hammer auth with a dead credential); 429/5xx retry honouring `Retry-After`, capped at 30s.
+
+`get_temporary_link` rather than a shared link: it serves the BYTES, whereas
+`create_shared_link_with_settings` returns an HTML preview page unless `?dl=1` is appended — and it creates
+a durable PUBLIC link, the wrong default for a client's document.
+
+**The provider travels with the row.** Migration 0090 adds `file_assets.storage_provider` (default `'s3'`,
+CHECK-constrained, backfilled). `storageFor(row.storageProvider)` resolves reads and deletes; the new
+`COMMS_STORAGE_PROVIDER` env only decides where the NEXT comms attachment goes. A single global switch would
+have repointed reads for every existing S3 file and 404'd them — and `deleteFile` previously handed `s3_key`
+to the S3 client unconditionally, which with two providers would report success while leaving the Dropbox
+object behind.
+
+Attachments arrive as ONE bubble: the upload appends a message and links the file to it, so `is_internal` is
+inherited by construction and a file on an internal note cannot become visible on its own. Links are fetched
+on click, not embedded per row — a Dropbox link is a network round trip and expires in ~4h, so a list full of
+them would be slow and hand out links that die in an open tab. `COMMS_ATTACHMENT_MAX_MB` is separate from
+`FILE_MAX_SIZE_MB` (zod-capped at 200) and the global multipart ceiling is now the max of the two, so raising
+the chat limit alone is enough.
+
+### Verification
+
+Typecheck and lint clean (0 errors; the 23 warnings are pre-existing non-null assertions elsewhere). All 84
+migrations apply from scratch against a fresh throwaway Postgres — 95 tables, both new columns, the partial
+`mytrion_department_config_hr_uk` with its predicate intact, the widened routing CHECK with all 8 values, and
+`file_assets_storage_provider_chk`.
+
+A 28-check real-DB run proves the department-first routing: the nominated default wins over a reason that has
+no fall-to user at all; a rota-only department routes to its least-recently-assigned member and skips a
+deactivated one and one with `accepts_new=false`; a configured-but-empty department and an unknown slug are
+both refused naming Mytrion Admin; the department's own agent starts at level 3 with
+`skip_reason='is_requester'`; a reason-only raise still uses `reason_default`; escalating up uses the OPENED
+department's manager; and the HR link survives it all.
+
+Tests: 21 new Dropbox adapter tests (path mapping including `..` traversal, provider-by-row selection, header
+escaping, retry backoff) and 6 new admin-route tests for the HR-driven section — 1543 passing backend, 332
+web. Full suite still shows the same 35 failures across the same 10 suites as the baseline, so zero new
+failures.
+
+**Not verified:** the Dropbox HTTP layer itself has never run against live Dropbox — there are no
+credentials yet. Upload, download, temporary link and the chunked session are unexercised end to end. Once
+`DROPBOX_APP_KEY` / `_APP_SECRET` / `_REFRESH_TOKEN` exist, set `COMMS_STORAGE_PROVIDER=dropbox` and round-trip
+a small file and one over 120MB (the chunked path) before trusting it.
+
+## 2026-08-01 (3) — The chat UI: one reusable console, mounted in four Mytrions
+
+Answering the question directly: before this, **there was no chat UI**. The comms substrate and API were
+backend-only, and the Sales Tickets tab was still the Zoho Desk one, parked behind `comingSoon`. This
+session builds the surface.
+
+### Reuse is the architecture, not a later refactor
+
+```
+apps/mytrion-crm/src/api/comms.ts              one client for tickets + escalations + threads
+apps/mytrion-crm/src/features/comms/
+  useCommsSocket.ts   comms-aware WS with DYNAMIC thread subscribe
+  ChatThread.tsx      THE chat pane — thread-keyed, so it serves any thread kind
+  TicketConsole.tsx   list + chat, `mode: 'requester' | 'queue'`
+  chatFormat.ts       pure presentation helpers (testable without rendering)
+  comms.module.css    one stylesheet on the Horizon tokens
+```
+
+Mounted with a single line each: Sales `<TicketConsole mode="requester" />`, and CS / Billing /
+Verification `<TicketConsole mode="queue" department="…" />`. Vite emits it as ONE shared
+`TicketConsole-*.js` chunk with four importers, so the reuse is real at the bundle level too.
+
+What makes it genuinely reusable is that the console holds **no Mytrion knowledge**. Visibility is decided
+server-side by `commsThreadReaderFilter` — the participant arm gives Sales what it raised, the department arm
+gives CS its inbound queue — and neither is expressed in the component. `mode` changes only defaults and
+copy, never authorization. Adding a fifth Mytrion is a mount, not a fork.
+
+`ChatThread` is keyed on the THREAD, not the ticket, which is why it will serve escalations and DMs with no
+second implementation: everything ticket-specific is passed in as `headerSlot`.
+
+### Chat behaviours that were deliberate, not incidental
+
+- **Optimistic send reconciles on the echoed `clientMsgId`**, never on matching text — two identical
+  messages a second apart must not collapse into one bubble.
+- **A failed send keeps the text** and offers Retry. Losing what someone typed is the worst thing a chat
+  can do; the bubble goes to "Not sent" rather than vanishing.
+- **Realtime is push with a self-heal.** Frames carry `seq`, so the pane fetches only `afterSeq` — that
+  same path is the reconnect gap-fill, so a socket drop cannot leave a hole in the conversation.
+- **Read receipts only while the tab is visible.** Marking a conversation read that nobody is looking at is
+  the one thing that makes an unread badge untrustworthy.
+- **Auto-scroll sticks only near the bottom** (48px of slack), so scrolling up to read history is not
+  yanked away by an incoming message.
+- Enter sends, Shift+Enter is a newline. Internal notes are dashed + amber + labelled "Internal note" —
+  never colour alone. Overdue SLA gets a pulse *and* text. Unread gets a rail, a bold subject *and* a count.
+
+### Attachments
+
+Upload is one bubble: caption and file travel together, so a chat never shows a comment beside an orphan
+file the way the Desk path forced. Download links are fetched **on click** — a Dropbox temporary link is a
+round trip that expires in ~4h, so embedding one per row would be slow and would hand out links that die in
+an open tab.
+
+### Two inconsistencies this exposed, both fixed
+
+1. **The Create wizard still wrote to Zoho Desk.** A new ticket would not have appeared in the native list
+   it now reads. Both submits are repointed: `createTicket` (no `department` field — the queue comes from the
+   catalog code; no contact/email/phone — there is no contact record) and `createEscalation`. Attachments
+   became a second call against the new thread, and a failed attach no longer reads as "the ticket failed".
+2. **The sidebar Tickets badge counted the Desk queue.** Unparking the tab flipped `TICKETS_ENABLED` true,
+   which would have newly switched ON a Desk page-warm this hook used to skip. The badge now reads
+   `GET /comms/unread`; the Desk machinery is gated off behind an explicit `DESK_TICKET_BADGE = false`
+   rather than deleted, since it still drives the servercrm ticket socket that retires with the Desk reads.
+
+The escalation form also gained the **department picker** the routing now needs, with reasons loaded from
+`/comms/catalog` — an unrouted reason is disabled with "· not set up" so the agent learns that before typing
+the request rather than from a refusal.
+
+Every WRITE in the Sales UI is now native. The only remaining `api/desk` imports are READS in
+`live.ts` and the orphaned `TicketsTab.tsx`, kept for the rollback path.
+
+### Design
+
+Built on the Horizon tokens (`--hz-pane`, `--hz-blur-md`, `--hz-glass`, `--hz-ease`, `--tone-*`) — no new
+colours, so light/dark and the accent theme keep working. Two-pane split that stacks to one pane on a narrow
+viewport (a 320px-wide chat is not a chat). One shimmer skeleton per pane, never stacked with a spinner.
+`prefers-reduced-motion` disables the bubble entrance, the overdue pulse and smooth scroll.
+
+Still no `modern-web-guidance` skill in this repo (CLAUDE.md rule 10) — worth installing before the next UI
+push if it carries guidance this should have followed.
+
+### Verification
+
+Web typecheck clean, backend typecheck clean, **352 web tests pass (20 new ChatThread tests)**. The new
+tests cover the things a backend test cannot see: clientMsgId reconciliation, a failed send keeping its text,
+`afterSeq` gap-fill, a frame for a different thread being ignored, full state reset on thread switch, the
+internal-note label, a redacted placeholder, and links fetched only on click. `build:widget` rerun and
+`apps/mytrion-crm/app` committed. One real a11y bug found by the tests and fixed in the component (the file
+input and its button shared the accessible name "Attach a file").
+
+**Not verified:** nothing has been exercised against a running backend + browser — no end-to-end pass of
+"Sales files a ticket → it appears in the CS queue within one frame → CS replies → Sales sees it live". That
+needs `pnpm dev:all` plus two signed-in sessions, and the routing config filled in. Dropbox is still
+credential-blocked.
+
+## 2026-08-02 — Round-robin ticket assignment
+
+The Tickets tab was already live in all four Mytrions (Sales in requester mode; CS, Billing and
+Verification in queue mode, one shared `TicketConsole` chunk). What was missing was assignment: a client
+ticket landed in the department queue with nobody on it. This session builds the rotation, configurable
+from Mytrion Admin.
+
+### The roster is explicit, never derived
+
+`mytrion_department_agents` rows an admin manages — NOT everyone holding the department grant. Deriving it
+would auto-assign live client tickets to every admin and every read-only viewer who can merely open the
+Mytrion; deriving from `hr_employees.department_id` would conflate being *in* a department with being *on
+the rota* (a head, a trainee and someone on parental leave are all "in" CS).
+
+### Selection
+
+One statement, and it has to stay one: `UPDATE … WHERE id = (SELECT … ORDER BY … LIMIT 1 FOR UPDATE SKIP
+LOCKED)`. The obvious SELECT-then-UPDATE hands the same person to two tickets filed in the same instant,
+which is the exact failure round-robin exists to prevent.
+
+Ordering IS the strategy — `round_robin` = `last_assigned_at ASC NULLS FIRST` (a new member goes first;
+they are owed work), `least_open` = fewest open tickets first. Filters: `active`, `accepts_new`, and
+`max_open` counted against the agent's OPEN tickets.
+
+### Three real bugs the real-DB run caught
+
+1. **The rotation never rotated.** Every ticket went to the same agent. The subquery used the Drizzle
+   column helpers, which render `"mytrion_department_agents"."last_assigned_at"` — inside a subquery over
+   the SAME table that is a CORRELATED reference to the outer UPDATE row, so `ORDER BY` was constant per
+   row. Every reference inside the subquery is now written against the alias `a` literally.
+2. **`SKIP LOCKED` starved under a burst.** Twelve concurrent creates over three agents left most tickets
+   unassigned: a claim that walks past every locked row finds nothing. Bounded retry (5 attempts, ~10ms
+   apart) fixes it — the locks are held only for the length of one UPDATE.
+3. **`require_online` would have starved everything.** 0087 seeds it TRUE for customer-service, billing and
+   verification, while `FF_COMMS_PRESENCE=0` means nothing is ever written to `mytrion_agent_presence`. The
+   eligible set would have been permanently empty. Presence is now ignored while the flag is off, and
+   logged. When it IS on, eligibility needs socket liveness AND declared availability — connected-but-away
+   is the common case an hour before end of shift.
+
+### Fairness is approximate, and that is the design
+
+`SKIP LOCKED` trades exact evenness for throughput: a burst lands within about one of the mean (12 over 3
+came out 4/5/3). The guarantee is that nobody is starved and the skew SELF-CORRECTS, because
+`last_assigned_at ASC` pulls whoever fell behind to the front next — asserted directly rather than
+asserting an even split that would only ever be a coincidence.
+
+### Assignment never fails a create
+
+A ticket that could not be assigned is still a filed ticket: it stays visible to the whole department
+through the queue and a `assignment_failed` journal row records why (`empty_roster`, `nobody_eligible`,
+`nobody_online`, `department_not_configured`). `manual` is the configured intent for c-level and sales, so
+it is deliberately NOT journalled as a failure. The claim happens before the ticket is stamped, and is
+released if the stamp loses a race — an agent must not go to the back of the rotation for work they never
+received.
+
+### Surface
+
+`/v1/comms/queue/:id/assign` (claim, or assign to someone who holds a seat on that roster),
+`/release` (only the holder or an admin), `/comms/queue/:department/roster` (read-only, visible to anyone
+who can see the queue — "why did that go to her" is a fair question to answer by looking).
+
+Repos split: `commsTicketStateRepo` now owns the contended writes (transition, assign, unassign,
+first-response) while `commsTicketRepo` keeps create and the reader-filtered reads. Each of those is a write
+whose correctness lives in its WHERE clause, which is worth having in one place.
+
+Admin screen gained a per-department **ticket rota** editor: add/remove people, take someone off without
+losing their rotation history, switch strategy, and a `next` chip on whoever the next ticket goes to. A
+fourth readiness tile flags any auto-assigning queue with an empty rota.
+
+### Verification
+
+20/20 against a fresh throwaway Postgres: exact 3/3/3 rotation, 12 concurrent creates all assigned with
+self-correction proven, `accepts_new=false` and `active=false` skipped, `max_open` capping at 2 and freeing
+when a ticket resolves, empty roster and manual both behaving correctly, `least_open` picking the smallest
+backlog, and two simultaneous claims yielding exactly one winner. Typecheck and lint clean (0 errors).
+Backend 1543 passing with the same 35 pre-existing failures as baseline; web 357 (5 new rota tests).
+
+## 2026-08-02 (2) — Can Sales keep talking in a ticket after creating it?
+
+Asked directly, so verified directly rather than reasoned about. **Backend: yes, fully.** A 16-check run
+against a fresh throwaway Postgres proves the requester path end to end:
+
+- The creator holds `role='requester'` on the thread, so the reader filter's PARTICIPANT arm keeps the
+  ticket visible to them after filing — while another Sales agent still cannot see it.
+- They can post replies into it, attributed to their own id.
+- CS replies in the same thread and the requester sees the whole conversation in order (1,2,3).
+- Assignment does not disturb it: after CS is auto-assigned, the requester still holds `requester` and CS
+  holds `assignee` — `transferAssignee` moves the role without evicting anyone.
+- Unread works both ways: the CS reply shows unread to Sales, and opening it clears the badge.
+- `first_response_at` is set by the CS reply, not by the requester's own follow-up.
+
+**One real UI gap found and fixed.** `openTicket()` (Create → "opening it now") set `focusTicketId` and
+navigated to the Tickets tab, but `TicketConsole` never consumed it — the old Desk-era `TicketsTab` did, and
+that wiring was lost in the swap. The agent landed on the list with nothing selected, having to hunt for the
+ticket they had just filed. The console now takes `focusTicketId` / `onFocusConsumed`: it selects the ticket
+if it is already listed, and FETCHES it if the active filter excludes it (a resolved ticket reached from a
+link), prepending rather than silently changing the user's filter. A failed focus is consumed anyway so it
+cannot loop.
+
+**Worth knowing, by design:** an INTERNAL NOTE written by CS on a Sales ticket IS visible to the Sales
+requester. `is_internal` means "never shown to a CARRIER" — both parties here are staff, and the filter is
+`excludeInternal` only for a customer audience. If notes should be hidden from the requesting Mytrion too,
+that is a different rule and a deliberate change, not a bug fix.
+
+Verification: web typecheck clean, 364 web tests (7 new console tests covering focus-when-listed,
+focus-with-fetch, focus-when-gone, and the queue/requester scoping difference). Bundle rebuilt.
+
+## 2026-08-02 (3) — Sales is now ZERO-dependent on Zoho Desk
+
+Audited rather than assumed, then deleted what was left. Sales had been repointed to `/v1/comms` for every
+WRITE, but the Desk code was still in the tree — dead, and one import away from being live again.
+
+### Deleted from the Sales UI
+
+`api/desk.ts` (the whole web client), `tabs/TicketsTab.tsx`, `TicketsBootSkeleton.tsx`, `useTicketsFeed.ts`,
+`ticketOptimistic.ts`, `ticketListCache.ts`, `ticketListMeta.ts`, `ticketStatus.ts`,
+`ticketSubscribeRegistry.ts`, `ticketUnread.ts`, `ticketDirectory.ts`, `ticketLiveBus.ts`, and 315 lines of
+Desk ticket adapters out of `live.ts` (`TicketVM`, `mapTicket`, `loadTicketsPage`, `loadTicketById`,
+`loadTickets`, `loadTicketMessages`).
+
+The cluster rooted at exactly two entry points: the already-orphaned `TicketsTab`, and `sidebarBadges`.
+`sidebarBadges` was rewritten to the two badges it actually serves — the servercrm INBOX socket (unrelated
+to Desk) and `GET /comms/unread`. The previous commit had gated the Desk half off behind
+`DESK_TICKET_BADGE = false`; leaving it would have meant a second, divergent idea of "unread tickets" one
+boolean away from being switched back on, so it is gone. Its subscribe frame no longer carries ticket ids,
+so servercrm stops broadcasting ticket comment events to this client entirely.
+
+### Deleted from the backend
+
+`POST /v1/desk/tickets`, `POST /v1/desk/escalations`, `POST /v1/desk/tickets/:id/reply` — every WRITE on the
+Sales-gated Desk surface. With them went `src/modules/touchpoints/catalog/ticketsDeluge.ts` and all four
+Deluge touchpoints: `tickets.create_in_crm` (`createticketincrm`), `tickets.create_escalation`
+(`createescalationticket`), and the two `tickets.upload_*` attachment ones that had already lost their
+callers. **No Deluge function is invoked for ticketing any more, from anywhere.**
+
+### What deliberately REMAINS, and why
+
+Four `GET /v1/desk/*` read routes. They are unreferenced by any UI, but they are the only route back to
+tickets filed in Zoho Desk BEFORE the migration, and there is no history import. Deleting them makes that
+history unreachable from the app — a product decision, not a cleanup, so it is flagged rather than taken.
+The file header says exactly that.
+
+The `zohoDesk` integration itself stays for three consumers that are NOT Sales ticketing:
+`modules/carrier/serviceRequest.ts` (the mini-app / support-bot service requests, 9 keys),
+`csAnalytics.routes.ts` + `csAnalyticsScope.ts` (CS dashboards over the Desk agent id space), and the
+`zoho_desk.search_tickets` agent tool.
+
+### Dependence level, measured
+
+| Surface | Zoho Desk |
+|---|---|
+| Sales Mytrion (UI) | **0** — no import, no client, no URL |
+| Sales ticketing (backend) | **0 writes**, 4 read routes for pre-migration history only |
+| Deluge (ticketing) | **0** — catalog file deleted |
+| CS / Billing / Verification ticketing | **0** — native from the start |
+| CS analytics dashboards | still Desk (out of scope — only ticketing was being replaced) |
+| Carrier mini-app service requests | still Desk (out of scope) |
+
+### Verification
+
+Typecheck clean, lint 0 errors. Backend back to the EXACT baseline failure set — 10 files / 35 tests, all
+pre-existing — after updating `touchpoints-catalog.test.ts` for the intentional change (deluge count 19→15,
+and the four removed function names). `desk-routes.test.ts` lost the create/reply/escalation cases along
+with their routes rather than being skipped; its 12 remaining tests still cover the ownership gate on the
+historical reads. Web 364/364. Bundle rebuilt.
+
+## 2026-08-02 — Merging feature/Communication into feature/Mytrion: migration ordering
+
+Merged `feature/Mytrion` (27 commits) **into** `feature/Communication` here, so the final step in the
+main worktree is a pure fast-forward and every conflict got resolved with full context. Merge commit
+`b3ceda0b`; migration renumber `93f0e9e7`.
+
+### Two migration-number collisions git could not see
+
+Git treats `0085_a.sql` and `0085_b.sql` as unrelated adds, so a duplicate migration number merges
+clean and breaks at `db:migrate` time.
+
+1. **Committed collision** — both branches claimed 0085-0088 (HR/loyalty vs comms). Comms moved to
+   0089-0094.
+2. **Uncommitted collision** — the main worktree has ~176 uncommitted changes including
+   `0089_hr_attendance_shift_grace` and `0090_verification_sales_responses`. Comms moved again to
+   **0091-0096**, leaving 89/90 reserved. The journal now has a deliberate gap at 89/90 that their
+   commit fills.
+
+### The `when` timestamp is load-bearing, and failure is SILENT
+
+`drizzle-orm/pg-core/dialect.js:56`:
+
+```js
+const lastDbMigration = dbMigrations[0];   // order by created_at desc limit 1 — the MAX, read ONCE
+…
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { …apply… }
+```
+
+A migration is applied only when its journal `when` exceeds the **maximum** `created_at` already
+recorded. So **`when` must increase along journal idx**, or a later-numbered migration is skipped —
+with no error, no warning, and a green `migrations applied successfully`.
+
+Renaming files is therefore only half a renumber. The comms set was stamped 7/30 19:00-7/31 00:00,
+which *straddled* their 0089 (7/30 17:00) and 0090 (7/30 20:00): `0091_comms_presence` at 19:00 sorted
+before their 0090. Comms is now **7/31 06:00-11:00**, strictly after everything on `feature/Mytrion`.
+
+Reproduced against real throwaway Postgres, on a simulated post-merge tree (their two in-flight `.sql`
+files spliced into the merged journal):
+
+| Scenario | Result |
+|---|---|
+| Fresh DB, 97 migrations | both feature sets present |
+| DB at their idx≤90, then comms lands | 91 → 97, all six apply |
+| **Reverse: comms first, their 0089/0090 committed after** | **95 stays 95, `verification_sales_responses` never created, exit 0** |
+
+### Rule this implies
+
+**Whichever branch's migrations land second must carry the later `when` timestamps.** Comms is merging
+*into* `feature/Mytrion`, and the fast-forward requires a clean tree — so their WIP is committed first
+and comms follows, which is exactly how it is now stamped. If that order is ever reversed (comms merged
+before their WIP is committed), their `0089`/`0090` `when` values must be bumped past 7/31 11:00 or
+those two migrations will silently never run.
+
+One pre-existing inversion remains at `0078_support_bot_memories` (09:00) → `0079_maintenance_cases`
+(08:00.001), inherited from `feature/Mytrion`. Harmless in practice — the two were committed together,
+so no DB stops between them — and left alone rather than restamped, since rewriting the `when` of an
+already-applied migration is its own hazard.
+
+### Merge conflicts resolved
+
+`drizzle.config.ts` (union of both schema lists) · `src/app.ts` (kept the comms multipart ceiling — a
+`max()` over both caps subsumes theirs) · `WORKING_NOTES.md` (both sections) ·
+`tests/unit/touchpoints-catalog.test.ts` (each branch removed a *different* set of Deluge entries, so
+the union removes both; count **13**, computed rather than guessed) · `meta/_journal.json` · plus 110
+rename/rename conflicts in the committed `apps/mytrion-crm/app` bundle, resolved by deleting it and
+rebuilding from merged source.
+
+### Verification
+
+95 migrations apply from scratch → 101 tables carrying **both** feature sets. Journal cross-check clean
+(95 entries, 95 files, no orphans, no duplicate idx). Backend + web typecheck clean; lint 0 errors.
+Backend tests **identical to `feature/Mytrion`'s own baseline** measured in a scratch worktree at
+`bdf23883` — zero new failures, +285 passing (1380 → 1665). Web 383/383.
+
+## 2026-08-02 — Sales Mytrion production audit implementation
+
+Implemented the Sales audit plan directly on `feature/Mytrion`, with production safety taking
+priority over surface-only polish.
+
+### Request architecture, caching, and rate control
+
+- Added `/v1/sales/bootstrap`: one agent/view-as-scoped bootstrap for identity, permissions, sidebar
+  counts, Home metrics, source health, partial state, and freshness. The Sales shell primes its SWR
+  caches from this response and lazy-loads every non-Home tab.
+- Added bounded process-local SWR with in-flight coalescing and stale-if-error fallback. Touchpoint
+  reads now cache normalized, server-injected parameters; successful writes invalidate the tenant's
+  read cache.
+- RBAC is deliberately evaluated **before** touchpoint cache lookup. This closed a cross-department
+  cache-leak path found by the test suite: an unauthorized caller can never receive a previously
+  cached authorized response.
+- Rate-limit keys now use actor `tenant:user` plus independent budgets for cached reads, expensive
+  provider reads, writes, auth, webhooks, and touchpoints. View-as does not charge the target user's
+  abuse budget. Fixed custom rate-limit responses so 429s cannot be transformed into opaque 500s.
+- Browser transport now deduplicates idempotent in-flight requests, supports cancellation, honors
+  `Retry-After`, and avoids blind rate-limit retries. Provider guards add bounded concurrency,
+  timeout/circuit-breaker behavior, and controlled retries.
+- Consolidated Sales realtime consumption to one session connection and paused nonessential
+  refresh/telemetry while the page is hidden.
+
+### Tickets and deployment readiness
+
+- Added boot migration execution with a Postgres advisory lock, transient startup retry, and
+  fail-closed behavior. Render enables `DB_MIGRATE_ON_BOOT=1` before the listener starts.
+- Added communications schema readiness through a repo-backed catalog probe. Ticket routes return
+  `COMMS_SCHEMA_NOT_READY` (503) instead of table-not-found 500s, the Sales UI renders a useful
+  unavailable state, and `/v1/health` blocks readiness when the communications schema is incomplete.
+- Registered `0097_inbox_unread_index` and `0098_inbox_keyset_index` in the Drizzle journal. Verified
+  99 numbered SQL files match 99 journal entries with no orphaned migration.
+
+### Sales tabs and UI
+
+- Removed the floating RingCentral reload control. Reduced the softphone's polling/DOM observation;
+  recovery remains inside the RingCentral panel and the host reserves its action-safe area.
+- Applied the Sales glass hierarchy and Space Grotesk/Space Mono typography across shared surfaces,
+  with calmer light-mode neutrals, stronger dark-mode separation, standardized loaders, status
+  states, controls, focus treatment, and accessible dialog behavior.
+- Inbox now has server search/filtering, 25-row keyset pages, realtime invalidation, optimistic
+  read/unread/delete with rollback, and a composite feed index.
+- My Tasks now separates counts from paginated rows and uses optimistic versioned status changes.
+- Verification keeps existing cards while revalidating, lazy-loads detail/attachments, reports
+  partial/source-health state, and uses responsive equal-height cards plus standardized skeletons.
+- Call Hub normalizes and deduplicates Mytrion/Zoho/Gong references, prefers Mytrion records, exposes
+  source health and exact/estimated aggregates, and probes only enough source rows for the requested
+  bounded page instead of always reading 200.
+- Carrier search is debounced/cancellable and bounded to 25/50-row presentation; duplicate lead
+  outcomes are explicit and writes carry replay protection.
+- Retention, Automations, dashboards, Create, Data Center, and Tickets preserve visible data during
+  background refresh, share cached lookups where possible, and use standardized mutation feedback.
+
+### Verification
+
+- Backend build and typecheck pass.
+- Frontend typecheck and production build pass; Sales tabs are emitted as separate lazy chunks.
+- Lint passes with 0 errors (22 pre-existing non-null assertion warnings outside this change).
+- Frontend: **60 files / 396 tests passed**.
+- Browser QA completed against the signed-in local Sales workspace in dark/light modes and at
+  desktop, 800 px, and 390 px widths; no document-level horizontal overflow was present.
+- Focused Sales/backend: bootstrap, touchpoint RBAC/cache, Inbox, KPI/tasks, Call Hub, Verification,
+  Data Center, RingCentral, communications/RBAC, dashboards, invoices, rejection reports and
+  provider guards all pass. The broader repository suite still contains previously documented
+  unrelated HR/Customer-Service expectation drift plus socket/DNS tests that cannot run in the
+  restricted local sandbox; those are not hidden as Sales regressions.
+
+## 2026-08-02 — Sales presentation rollback and refresh correction
+
+- Removed the blocking frontend bootstrap gate from the Sales entry path. The combined bootstrap
+  endpoint remains available, but a browser refresh now mounts the Sales shell immediately instead
+  of waiting for all Home/provider sources to settle.
+- Kept tab-level code splitting, but replaced the newly introduced shell/tab skeleton fallback with
+  the established `MytrionPageLoader` presentation.
+- Restored the original Sales typography system: Inter body copy, Rajdhani display headings, and
+  JetBrains Mono identifiers/metrics. Restored the previous light surfaces/shadow strength and
+  removed the global 40px control rule that changed compact-control proportions.
+- Fixed the Sales Admin View Exit control's event handling and compact sizing. Added a focused
+  regression test proving Exit clears the active impersonation.
+- Verification: frontend typecheck, production build, and the focused ViewAsPicker test pass.
+
+## 2026-08-02 — Sales Mytrion: one page header, one loader (UI/UX consistency pass)
+
+Scope: `apps/mytrion-crm/src/mytrions/sales/redesign` only. Every tab reviewed individually.
+
+### The "double shell" — one title per screen
+
+The top bar printed the nav label **and** a second author-written title (`NAVLABEL`), and each tab
+then printed its own heading plus description. My Tasks read `MY TASKS · Assignments` in the chrome
+over the chip `ASSIGNMENTS` and the heading `MY TASKS` in the page — two words, three times. Call Hub
+had the same shape.
+
+- Top bar is now the **only** place a section is named, and it is an `<h1>` carrying exactly the label
+  the user clicked. The secondary title is gone.
+- `NAVLABEL` (a second set of titles) became `NAV_DESC` — one sentence per tab, the single source for
+  the line under a page header. Tabs no longer hard-code their own copy.
+- New `SalesPage` / `SalesPageHead` / `SalesMetrics` / `SalesSubTabs` / `SalesEmpty` /
+  `SalesErrorNote` / `SalesPager` (`SalesPage.tsx` + `sales-page.css`). `SalesPageHead` takes
+  `description` / `actions` / `metrics`; `title` is reserved for a genuine sub-view (a record being
+  inspected, e.g. the Verification detail's company name) and is never the section name.
+- Removed the in-page headings from Tasks, Call Hub, Inbox, Data Center, Automations, Carriers,
+  Dashboard, Verification, and both Retention panes ("My cases" / "Open Pool" — the sub-tab already
+  names the pane).
+
+### The double loader
+
+`Suspense fallback={<MytrionPageLoader/>}` (a spinner) ran while a tab's chunk downloaded, then the
+tab showed its own shaped skeleton, then the content — three states per navigation.
+
+- The Suspense fallback is now `SalesTabSkeleton`, which renders the **same shape** the tab shows
+  while its data loads (`TAB_SKELETON` maps section → variant). One skeleton that fills in.
+  This intentionally reverses this morning's "replace the skeleton fallback with MytrionPageLoader"
+  note: the problem was never the skeleton, it was having a spinner *and* a skeleton with different
+  shapes. `MytrionPageLoader` is untouched and still used by HR/Recruit.
+- Deleted the now-duplicate skeletons: `TasksBoardSkeleton`, `DcKanbanSkeleton`,
+  `DcCardGridSkeleton`, `DcListSkeleton`, `HomePageSkeleton`, `HomeBelowFoldSkeleton`,
+  `ActivityTilesSkeleton`, the inline `CallHubSkeleton`, and `Gate`'s spinner fallback in Data Center.
+- Money Codes was the last sub-tab loading with a **spinner** while its siblings used skeletons — now
+  a skeleton.
+- The page shell is the single `aria-busy` owner (cold load *and* background revalidation); skeletons
+  under it are `aria-hidden`, so assistive tech hears "busy" once, not once per placeholder block.
+
+### Flicker
+
+- `.ss-fu` (the `ss-up` slide-in) ran on the skeleton root **and** again on the content root, so the
+  page slid in twice per load. Only `.ss-page` carries it now, and it survives the loading→loaded
+  swap, so the entrance animation plays exactly once per tab open. Skeletons never animate their
+  entrance.
+- Carriers gave **every result row** `className="ss-fu"`, re-running the animation on all 25 rows on
+  every filter/page/page-size change. Removed.
+- Debtors dashboard and Open Pool were nested `ss-fu` inside an animated page — removed.
+- Data Center's freshness caption now keeps a fixed line box, and the loyalty tier bar has a
+  placeholder, so the client grid no longer shifts when the first fetch lands.
+
+### Bugs fixed
+
+- **My Tasks column counts were wrong when paginated.** Each column header printed
+  `counts[col.id]` — the account-wide total — above a body holding only the current page's rows
+  ("38 cards" over three visible cards). Headers now count what they render; all-pages figures stay
+  in the metric strip, which says so.
+- **Inbox hid working rows on a failed refresh.** `load.error && !load.data` meant a background
+  failure with data on screen showed nothing at all. The error is now an inline note above the list.
+- **Verification showed contradictory states.** The "showing the latest available pipeline data"
+  banner rendered alongside the hard error state when there was no data; it is now gated on data.
+- **Content width jumped between tabs** — the shell clamps to 1180px but Dashboard nested 1100,
+  Create 1080, Carriers a redundant 1180. One measure now, with `width="narrow"` (1080) as the single
+  sanctioned exception for form screens.
+- Coming-soon panels used 16px vertical padding against every other tab's 24px, nudging the layout.
+- Data Center's filter select and Meta toggle were 44px next to a 42px search field.
+
+### Consistency
+
+- Five different sub-tab controls (pills with `aria-pressed`, a boxed segment group, a bare button
+  row, two hand-rolled `role="tablist"`s) → one `SalesSubTabs` with counts, SOON tags and proper
+  `role="tab"` / `aria-selected`. Used by Data Center, Create, Dashboard, Retention, Inbox filters,
+  Call Hub filters, Money Codes.
+- Four page-header implementations, four empty-state treatments, three pagers and three error
+  presentations → one each.
+- Sidebar items carry `aria-current="page"`; search fields share one field with hover/focus
+  affordance and a clear button.
+- `prefers-reduced-motion` disables the page entrance and the skeleton shimmer.
+- Deleted the CSS left stranded by the above (`.ss-verification-header/-copy/-toolbar/-search/
+  -pagination/-page-controls/-state/-title`, `.ss-tasks-empty/-new-pill/-hero`, `.ss-call-empty/-hero`,
+  `.ss-*-refresh`, `.ss-card-grid-skeleton`).
+
+### Verification
+
+- `npx tsc --noEmit` clean; `npx vitest run` 62 files / 401 tests pass (up from 397 — new
+  `SalesPage.test.tsx` asserts no duplicate section title in a tab body and exactly one loading
+  region, cold and loaded).
+- `vite build --mode production` clean; every changed module fetched through the dev server with no
+  transform errors.
+- `apps/mytrion-crm/app/` (the committed bundle) was rebuilt as a side effect of the production
+  build. It was already in a half-deleted state in the working tree before this session.
+
+## 2026-08-02 — Verification onto Zoho Deals; Tickets inherits the parent design
+
+### Verification — data source moved off the DWH onto Zoho CRM
+
+`octane.agent_deals` (+ `octane.dim_company`) is gone from this path. Two reasons, both load-bearing:
+
+- **It was keyed on an agent DISPLAY NAME.** The warehouse has no Zoho user id, so the route had to
+  resolve a name and pass it as the scope. An agent whose warehouse name did not match got a silently
+  EMPTY pipeline. Scoping is now `Owner = '<zoho_user_id>'` — an id, like every other Sales pull.
+- **It did not carry the fields verification turns on.** Stage, Application_Stage, Application_Status,
+  Credit_Decision, Credit_Score, Risk_Score, CreditSafe_Grade and the three *_Verification picklists
+  are Zoho fields; the warehouse had none of them or a lagging copy.
+
+New `src/integrations/salesVerificationDeals.ts`: one COQL select over `Deals`, filtered
+`Owner = '<uid>' and Application_ID > 0`, ordered `Application_Date desc, id desc`, drained in
+**200-row pages** (`runCoqlAll`, capped at 1000 rows / 5 calls). The service then serves the UI's
+9-per-page requests out of that drained set, which is what makes an exact `total` possible. The
+existing `AsyncSWRCache` still fronts it.
+
+Field metadata was read from the live org (`getFields` on Deals, 153 fields) and every query probed
+through `/coql` before shipping. Three findings worth keeping:
+
+- **`Verification_Decision` is a `fileupload`** — the decision DOCUMENT, not a decision value. The
+  decision an agent needs is `Credit_Decision` (text: "Approved-Requested",
+  "Declined-Prepay/Secured Only", "Declined") plus `Application_Status`.
+- **DOT on Deals is `DOT1`**; a bare `DOT` is a Leads field and 400s the whole query.
+- **`Stage_Modified_Time` is in field metadata but is NOT COQL-queryable** (`INVALID_QUERY`). Use
+  `Stage_Last_Updated`.
+
+Filtering on `Application_ID > 0` rather than `Application_Date is not null`: deals sitting in
+"Application Filled" with a null Application_Date exist in the live org, and dropping them would hide
+real work. `> 0` also sidesteps this org's COQL parser rejecting a trailing `is not null`.
+
+Mapping rules the tests pin:
+- `Credit_Score` of **0 means "not scored"** — the CRM 0-fills undecided applications, and rendering
+  "0" beside a real 688 reads as a catastrophic score.
+- `Credit_Limit` is a **TEXT** field, so "$15,000" has to parse.
+- `"-None-"` is Zoho's unset-picklist marker, not a value.
+- `MC` is free text agents also use for notes-to-self ("DOT", "No assigned number") — only kept when
+  it looks like an identifier.
+- Classification comes from `Stage`: closed-lost → closed; card swiped/funded/activated/delivered or
+  closed won → active; everything else → in pipeline.
+
+The 9-stage compliance TIMELINE is unchanged — it still comes from the credit_platform provider via
+`/v1/verification/pipeline`. Only the roster/record moved.
+
+### Verification — the tab redesigned on the design system
+
+The card now answers "where is this application and what did credit decide" without opening it:
+company + classification, Stage / Application stage / Application status chips, then a dedicated
+decision line (decision text, credit score, approved line). New `verificationFields.tsx` derives every
+tone from the VALUE, so an unrecognised picklist option degrades to neutral instead of rendering as
+"good".
+
+The detail page is three token-built sections — Credit decision (score, line approved, limit, risk,
+CreditSafe grade, money-code limit, payment type, billing cycle + a pass/fail checkpoint rail for
+Company / Billing / Love's / Verified / Limits added), Application (stage, status, dates, cards
+requested, carrier / DOT / MC), and From Verification (reject reason, notes) — followed by the live
+compliance pipeline. Tiles with no value render nothing rather than a grid of em dashes.
+
+### Tickets — inherits the parent design instead of bringing its own
+
+`comms.module.css` was built on its own rem type scale and pill shapes, so the console read as a chat
+widget dropped inside a Mytrion rather than a page of it. Everything now resolves through the HOST's
+tokens with a Horizon fallback (`var(--surface, var(--hz-pane))`, `var(--ss-text-xs, 13px)`, …) —
+mounted under Sales' `.ss-root` it picks up Sales' glass surfaces and px type scale; mounted by CS /
+Billing / Verification it falls back exactly as before. Specifically:
+
+- panes take the host card surface (`--surface` + `--border` + `--shadow-sm`);
+- the list heading is the host's display face, and wraps to two lines instead of truncating
+  "My tickets & escalations" into "My tickets & escal…";
+- "Live" became the host's eyebrow pill; the loose outlined filter pills became the host's segmented
+  control with `role="tab"` / `aria-selected`;
+- the search is the host's field (38px, `--radius-md`, same hover/focus) and gained a clear button;
+- empty states gained the host's icon well (a bare heading with no mark read as an error), plus a
+  "Clear search" action when a search is what emptied the list;
+- rows, tags, unread badge, skeleton, error note, bubbles and the composer all moved onto the shared
+  tokens and control sizing (38px, `--radius-md`), so nothing sits a few pixels off its neighbours.
+
+Functional fixes: the count line no longer blanks while loading (the header jumped a row on every
+filter change and background refresh), the mobile back control is a real icon button with a proper
+label instead of a bare "←" glyph, and "Check again" / "Load more" use one button treatment.
+
+### Verification
+
+- Backend: `tsc --noEmit` clean, `eslint` clean on all changed files, `verification-pipeline-service`
+  (7 tests, rewritten for the Zoho source) and `verification-pipeline-routes` (4) pass.
+- Frontend: `tsc --noEmit` clean, 62 files / 401 tests pass, production build clean, every changed
+  module fetched through the dev server with no transform errors.
+- The wider backend suite still has 9 unrelated failing files (carrier-mini-app, retention-phase1,
+  stream-adapter, realtime-heartbeat, zoho-crm, tools, retention-cs-caps, notification-templates).
+  None of them import `verificationPipeline` or `salesVerificationDeals`; they are the previously
+  documented drift + sandbox socket/DNS failures, not regressions from this change.
+## 2026-08-02 — Platform scaling and vendor best-practices handbook
+
+- Added `docs/platform-scaling-best-practices.html`, a self-contained engineering handbook covering
+  Zoho CRM API selection/COQL/credits, read-only DWH access, application PostgreSQL, PgVector,
+  pg-boss queues, WebSocket/pub-sub, external-vendor adapters, security, scale stages, SLOs, and a
+  production release checklist.
+- Grounded vendor limits and delivery semantics in primary Zoho, PostgreSQL, pgvector, pg-boss,
+  Redis, RFC 6455, and AWS documentation; included the source links in the handbook.
+- Documented repository-specific strengths and risks, including bounded DWH access, dedicated job
+  workers, tenant-scoped repositories, TLS verification gaps, and the transition from process-local
+  caching to Redis/Valkey when multiple application instances are introduced.
