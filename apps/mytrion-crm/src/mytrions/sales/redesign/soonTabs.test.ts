@@ -35,6 +35,12 @@ describe('soonTabs', () => {
     expect(soonTabMeta('tickets').title).toBe('Tickets');
   });
 
+  it('parks My Tasks and Verification with shared coming-soon metadata', () => {
+    expect(parked).toEqual(expect.arrayContaining(['tasks', 'verification']));
+    expect(soonTabMeta('tasks').title).toBe('My Tasks');
+    expect(soonTabMeta('verification').title).toBe('Verification Pipeline');
+  });
+
   it('falls back for unknown sections', () => {
     expect(soonTabMeta('nope').title).toBe('Coming soon');
     expect(soonHue('nope')).toBe('var(--warn)');

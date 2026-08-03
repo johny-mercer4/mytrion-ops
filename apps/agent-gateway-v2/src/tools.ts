@@ -81,6 +81,7 @@ const WRITE_TOOLS = new Set([
   'octane_card_action',
   'octane_card_limits',
   'octane_card_info',
+  'octane_card_lookup_report',
   'octane_invoice',
   'octane_invoices',
   'octane_balance_dm',
@@ -271,6 +272,16 @@ export function buildOctaneTools(
             ...(driver_id ? { driverId: driver_id } : {}),
             ...(driver_name ? { driverName: driver_name } : {}),
           }),
+      ),
+      tool(
+        'octane_card_lookup_report',
+        "Build the verified OWNER or MANAGER's live Card Lookup report and send it as PDF or Excel to their PRIVATE Octane bot chat. Use when they ask for a card list, card lookup, or fleet card report. Never send it to the group.",
+        {
+          ...asker,
+          format: z.enum(['pdf', 'xlsx']).default('xlsx'),
+        },
+        ({ telegram_user_id, format }) =>
+          run('/support-bot/card-lookup-report', telegram_user_id, { format }),
       ),
       tool(
         'octane_transactions',

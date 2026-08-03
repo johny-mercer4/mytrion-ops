@@ -444,6 +444,18 @@ export async function sendTransactionsReport(
   })) as TxnExportSent;
 }
 
+/** Owner/manager-only live card lookup report. The backend delivers the protected document to the
+ * caller's private bot chat because Telegram WebViews cannot reliably save browser downloads. */
+export async function sendCardLookupReport(
+  initData: string,
+  format: 'pdf' | 'xlsx',
+): Promise<{ sent: true; fileName: string }> {
+  return (await request('POST', '/carrier/mini-app/card-lookup-report', {
+    initData,
+    format,
+  })) as { sent: true; fileName: string };
+}
+
 /** Accounting bundle — fuel (both price modes) + EFS money-code reports, Excel+PDF, delivered to
  * the bot chat in one tap. Owner-only server-side. */
 export async function sendAccountingBundleReport(

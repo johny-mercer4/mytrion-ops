@@ -41,6 +41,7 @@ import { verificationClientsRoutes } from './routes/v1/verificationClients.route
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
+import { carrierMiniAppReportRoutes } from './routes/v1/carrierMiniAppReports.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
@@ -408,6 +409,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(clientNewsRoutes);
       await v1.register(supportBotRoutes);
       await v1.register(carrierMiniAppRoutes);
+      await v1.register(carrierMiniAppReportRoutes);
       await v1.register(carrierMiniAppActionsRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);

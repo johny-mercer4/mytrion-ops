@@ -21,6 +21,7 @@ import {
   serviceRequestAllows,
 } from '../../modules/carrier/serviceRequest.js';
 import { buildTxnReport } from '../../modules/carrier/txnReport.js';
+import { buildCardLookupReport } from '../../modules/carrier/cardLookupReport.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { requireContext } from './helpers.js';
@@ -41,6 +42,78 @@ export async function supportBotDocumentRoutes(
   app: FastifyInstance,
 ): Promise<void> {
   const guard = { onRequest: [app.supportBotGatewayAuth] };
+
+  app.post('/support-bot/card-lookup-report', guard, async (request) => {
+    const body = supportBotCallerSchema
+      .extend({ format: z.enum(['pdf', 'xlsx']) })
+      .parse(request.body);
+    const { registration, role } = await resolveSupportBotCaller(
+      requireContext(request),
+      body.carrierId,
+      body.telegramUserId,
+    );
+    if (role !== 'owner') {
+      throw new AppError(
+        'Card lookup reports are available to company owners and managers only.',
+        { statusCode: 403, code: 'OWNER_ONLY', expose: true },
+      );
+    }
+    takeReadToken(body.carrierId);
+    try {
+      const report = await buildCardLookupReport(
+        body.carrierId,
+        registration.companyName ?? 'Octane',
+        body.format,
+      );
+      if (report.rows === 0) {
+        throw new AppError('No cards found for this account.', {
+          statusCode: 404,
+          code: 'CARD_LOOKUP_EMPTY',
+          expose: true,
+        });
+      }
+      await sendDocument({
+        chatId: registration.telegramChatId ?? body.telegramUserId,
+        fileName: report.fileName,
+        contentType: report.contentType,
+        bytes: report.bytes,
+        caption: `Octane · Card Lookup Report · ${body.format.toUpperCase()}`,
+      });
+      await auditFromContext(
+        telegramCtx(registration.profile, registration.telegramUserId),
+        {
+          action: 'carrier.support_bot.card_lookup_report_send',
+          status: 'ok',
+          resourceType: 'card_lookup_report',
+          resourceId: body.carrierId,
+          detail: {
+            format: body.format,
+            bytes: report.bytes.length,
+            rows: report.rows,
+          },
+        },
+      );
+      return {
+        sent: true,
+        fileName: report.fileName,
+        rows: report.rows,
+        note: "Live report sent to the asker's PRIVATE bot chat.",
+      };
+    } catch (error) {
+      if (error instanceof TelegramChatUnreachableError) {
+        throw new AppError(
+          'Open a private chat with the Octane bot first, then ask again.',
+          {
+            statusCode: 409,
+            code: 'TELEGRAM_CHAT_UNREACHABLE',
+            expose: true,
+            cause: error,
+          },
+        );
+      }
+      throw error;
+    }
+  });
 
   app.post('/support-bot/invoice', guard, async (request) => {
     const body = supportBotCallerSchema

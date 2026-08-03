@@ -25,4 +25,34 @@ describe('per-turn Telegram sender authorization', () => {
       'refused: telegram_user_id does not match the current message sender',
     );
   });
+
+  it('binds the Card Lookup report to the current sender and report endpoint', async () => {
+    const fetchCalls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+      return new Response(JSON.stringify({ sent: true, rows: 2 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const chatId = -1002;
+    const userId = 11;
+    noteSender(chatId, userId);
+    const manifest = buildOctaneTools(chatId, 'carrier-2', userId).find(
+      (tool) => tool.name === 'octane_card_lookup_report',
+    );
+
+    expect(manifest?.riskClass).toBe('write');
+    expect(manifest?.confirmationMode).toBeUndefined();
+    await manifest?.execute({ telegram_user_id: userId, format: 'xlsx' });
+    expect(String(fetchCalls[0]?.input)).toBe(
+      'http://localhost:3000/v1/support-bot/card-lookup-report',
+    );
+    expect(JSON.parse(String(fetchCalls[0]?.init?.body))).toMatchObject({
+      carrierId: 'carrier-2',
+      telegramUserId: String(userId),
+      format: 'xlsx',
+    });
+  });
 });

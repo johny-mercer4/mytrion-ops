@@ -68,7 +68,11 @@ export const SKILL_CATALOG = {
     label: 'Owner card management',
     service: 'cards',
     roles: ['owner'],
-    tools: ['octane_card_action', 'octane_card_limits'],
+    tools: [
+      'octane_card_action',
+      'octane_card_limits',
+      'octane_card_lookup_report',
+    ],
     instructionsFile: 'card-owner-management/SKILL.md',
   },
   'driver-fraud-override': {
