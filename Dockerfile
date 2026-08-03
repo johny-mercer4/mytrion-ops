@@ -8,6 +8,7 @@ WORKDIR /app
 # --- Build: install all deps, compile TS -> dist ---
 FROM base AS build
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
@@ -30,6 +31,7 @@ COPY apps/agent-gateway/.claude ./.claude
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 RUN pnpm install --prod --frozen-lockfile
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/db/migrations ./src/db/migrations

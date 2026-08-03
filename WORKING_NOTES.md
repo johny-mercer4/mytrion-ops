@@ -10946,3 +10946,10 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
 - Documented repository-specific strengths and risks, including bounded DWH access, dedicated job
   workers, tenant-scoped repositories, TLS verification gaps, and the transition from process-local
   caching to Redis/Valkey when multiple application instances are introduced.
+
+## 2026-08-03 — Docker install fix for pnpm patch files
+
+- Copied the repository `patches/` directory into both Docker dependency-install stages before
+  `pnpm install`, so the frozen lockfile can hash and apply the `archiver-utils@5.0.2` patch.
+- This fixes the Render image build failure in pnpm's `createBase32HashFromFile`; the runtime
+  production-dependency install received the same fix to prevent a later-stage repeat failure.
