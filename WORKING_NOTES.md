@@ -10960,3 +10960,93 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
 - Updated the Render root-directory documentation, root environment guidance, and support-bot
   knowledge seeding import to use the new path.
 - Kept local gateway secrets, runtime data, build output, and dependencies ignored from Git.
+
+## 2026-08-03 — Sales Create back on Zoho Desk; Tickets parked in all four operational Mytrions
+
+Reverses the write half of `030fc352` / `940e8d8e`. The native comms console is parked, so the Create
+tab files into Zoho Desk again — which is where Customer Service, Billing and Verification actually
+work the queue.
+
+### Tickets parked (Sales, CS, Billing, Verification)
+
+Each Mytrion uses its OWN existing coming-soon idiom rather than a new mechanism:
+
+- **Sales** — `comingSoon: true` on the NAV entry. That one flag already drives the sidebar SOON chip,
+  the `ComingSoonPanel` short-circuit, `TICKETS_ENABLED` (which gates the unread badge and the
+  Create → open-ticket jump), so nothing else needed touching. Added the `SOON_TABS` copy it renders.
+- **CS / Billing** — `disabled: true` on the nav item, which both shells already render as a "Soon"
+  chip on a disabled button. The panel is additionally gated on a `TICKETS_PARKED` constant *derived
+  from NAV_ITEMS*, so a deep link cannot open a queue the nav refuses to show and the flag cannot drift.
+- **Verification** — swapped `content:` for the `soon:` slot `ModuleShell` already supports.
+
+`TicketConsole`, `ChatThread`, `useCommsSocket` and the whole /v1/comms backend are UNTOUCHED. Every
+park is one flag/line from returning; nothing was deleted.
+
+Two bugs found while parking:
+- Sales' `FULL_BLEED` was consulted before the coming-soon check, so a parked Tickets tab would have
+  rendered the ComingSoonPanel as a full-height flex child with 16px padding instead of the normal
+  24px page padding. Now `FULL_BLEED.has(section) && !parkedSection`.
+- `soonTabs.test.ts` asserted Tickets is NEVER parked. Replaced with the invariant that actually
+  matters: `comingSoon` and `TICKETS_ENABLED` must agree, so un-parking flips both together.
+
+### Create tab restored to Desk
+
+**Backend** — `POST /desk/tickets` and `POST /desk/escalations` are back in `desk.routes.ts` exactly as
+they were, with `readMultipart` (413 on >20MB) and `attachCreateFile`. Restored
+`catalog/ticketsDeluge.ts` with the TWO touchpoints that have callers — `tickets.create_in_crm`,
+`tickets.create_escalation`. The two `tickets.upload_*` ones did NOT come back: the routes attach
+through the Desk API directly, and those had no callers even before the removal. One deliberate
+difference from the original: `zohoCrm.attachFileToRecord` instead of the deprecated module facade.
+
+**Frontend** — new `api/desk.ts`, CREATE ONLY. The original also carried the ticket-dashboard reads
+(listDeskTickets / getDeskTicket / listDeskComments / replyDeskTicket / downloadDeskAttachment); those
+stay deleted, because no UI reads Desk tickets while the tab is parked and restoring them would mean
+restoring TicketsTab and its whole cache/feed/optimistic cluster as dead code. The backend GET routes
+still exist, so a reader is a client-side change whenever the tab returns.
+
+What the revert changes for the agent:
+- the department step is a real routing choice again (it picks the Desk department), not just a filter;
+- contact / account / email / phone are sent, because a Desk ticket requires a contact;
+- the attachment rides the SAME multipart request, so `attached` is authoritative — there is no window
+  where the ticket exists and the file silently did not arrive;
+- escalation reasons are a fixed list again (Desk's reason is free text on the CRM record — there is no
+  admin catalog behind it to validate a code against) and the department picker is gone (Desk routing
+  is the Deluge's decision, not the caller's);
+- neither submit tries to open the new ticket, since the tab is parked. The toasts say the team picks
+  it up in Zoho Desk rather than promising a jump that cannot happen.
+
+**Kept from the native era, not reverted:** both submits had gained an `idempotencyKey`, which Desk has
+no parameter for. Rather than silently lose double-submit protection, each form now holds a synchronous
+`submitInFlight` ref — `setSubmitting(true)` is a React state update that does not land before the
+handler returns, so without it a fast double-click files two Desk tickets.
+
+### Verified against the LIVE Zoho org (reads only, nothing created)
+
+- all four `DESK_DEPARTMENTS` ids resolve to live enabled departments (Customer Service, Billing and
+  Accounting, Verification, Maintenance) — plus an "Escalation Team" department for the Deluge;
+- all six custom fields the create route stamps exist on the live ticket layout: `cf_ticket_type`,
+  `cf_crm_created_by_id`, `cf_deal_id`, `cf_submitted_by`, `cf_carrier_id_application_id`,
+  `cf_card_number`;
+- `Escalation_Request` exists (the attachment fallback target) and `Escalation_Reason` is a **text**
+  field with no picklist, confirming the fixed list is the only definition of it;
+- every reason in the restored list is in live use. The Deluge is demonstrably alive — escalations were
+  created through it today, minutes before this change. One legacy value, "Lead / Deal Transfer",
+  appears twice in June and has since been split into the separate Lead/Deal Transfer entries that now
+  dominate; not added back.
+
+NOT VERIFIED: no ticket or escalation was actually created. Doing so would write real records into
+production Desk/CRM. The Deluge functions themselves (`createticketincrm`, `createescalationticket`)
+were only ever removed from OUR catalog, never from Zoho, and the escalation one is proven live by
+today's records — but the end-to-end POST is untested and should be exercised once on staging.
+
+### Verification
+
+- Backend: typecheck + `pnpm build` clean, eslint 0 errors (21 pre-existing warnings),
+  **1838 tests pass, 0 failures**. `desk-routes.test.ts` regained the create + escalation coverage
+  (23 tests, 11 new) including: filing on someone else's deal → 403 with no ticket created, a
+  non-numeric dealId rejected before any COQL, admin skipping the ownership lookup, the file landing on
+  Desk, the CRM-Deal fallback when Desk lacks attachment scope, `attached:false` when BOTH refuse (a
+  200 — the ticket exists), and a 502 rather than false success when the Deluge returns no ids.
+- Catalog counts updated for the two restored touchpoints (deluge 13→15, total 99→101).
+- Web: typecheck clean, 401 tests pass, production build clean, bundle rebuilt, every changed module
+  fetched through the dev server with no transform errors.

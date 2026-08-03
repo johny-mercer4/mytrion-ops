@@ -80,9 +80,14 @@ const NAV_ITEMS: NavDef[] = [
     // chat bubbles
     iconPath:
       'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
-    disabled: false,
+    // PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
+    // while the real work sits in Desk. The console itself is untouched — drop this flag to un-park.
+    disabled: true,
   },
 ];
+
+/** Single source for the parked Tickets queue — read from NAV_ITEMS so the flag cannot drift. */
+const TICKETS_PARKED = NAV_ITEMS.some((i) => i.id === 'tickets' && i.disabled);
 
 
 
@@ -121,9 +126,11 @@ export function BillingShell() {
       debtors: <Debtors />,
       prepay: <Prepay />,
       returns: <Returns />,
-      // The SHARED console — Billing works its own inbound queue. No Billing-specific chat code exists:
-      // visibility is decided server-side by the thread reader filter's department arm.
-      tickets: <TicketConsole mode="queue" department="billing" title="Billing tickets" />,
+      // The SHARED console, PARKED — see the NAV_ITEMS entry. Gated on the same flag so a deep link
+      // cannot open a queue the nav refuses to show.
+      ...(TICKETS_PARKED
+        ? {}
+        : { tickets: <TicketConsole mode="queue" department="billing" title="Billing tickets" /> }),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [actAsKey],

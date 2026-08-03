@@ -7,6 +7,8 @@ WORKDIR /app
 
 # --- Build: install all deps, compile TS -> dist ---
 FROM base AS build
+# patchedDependencies (e.g. archiver-utils) must be present before pnpm install —
+# copying only the lockfiles leaves /app/patches missing and Render fails with ENOENT.
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile

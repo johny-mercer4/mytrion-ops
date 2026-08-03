@@ -1,26 +1,29 @@
 /**
- * Create-tab ticket wizard (Department → Deal → Details) — NATIVE (/v1/comms), not Zoho Desk.
+ * Create-tab ticket wizard (Department → Deal → Details). POSTs a Zoho DESK support ticket via
+ * createDeskTicket with an optional attachment. Escalate / Lead live in createTicketOtherForms.
  *
- * Two things the native endpoint deliberately does not take, so they are no longer sent:
- *   * `department` — the QUEUE comes from the catalog row behind `typeCode`. A client-chosen department
- *     would let an agent file into any queue they liked. The wizard's department step is now purely a
- *     filter for which types to show.
- *   * contact / account / email / phone — there is no contact record in this system. A client IS a
- *     carrier, and the carrier + company are snapshotted server-side from the CRM Deal.
- *
- * An attachment is a SECOND call now (upload into the new ticket's thread) rather than multipart on
- * create, because a chat attachment belongs to a message. Escalate / Lead live in createTicketOtherForms.
+ * Back on Desk as of 2026-08-03 (it was briefly native /v1/comms, whose console is now parked).
+ * Consequences worth knowing:
+ *   * the department step is a real routing choice again — it selects the Desk department the ticket
+ *     lands in, rather than only filtering which ticket types are offered;
+ *   * the contact fields are sent, because a Desk ticket requires a contact record;
+ *   * the attachment rides along in the SAME multipart request, so there is no window in which the
+ *     ticket exists without its file, and `attached` from the server is authoritative;
+ *   * the ticket is NOT opened afterwards — the Tickets tab is parked, and the team works the queue in
+ *     Zoho Desk. The toast says so instead of promising a jump that cannot happen.
  */
 import { useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon, type IconName } from './icons';
 import { ICO } from './salesData';
 import { useSales } from './ctx';
+import { useSessionUser } from './sessionUser';
 import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
 import { AUTO_LIST, type Automation } from './autoLive';
-import { createTicket, uploadThreadAttachment, type CreateTicketInput } from '@/api/comms';
+import { createDeskTicket, type CreateTicketInput } from '@/api/desk';
 import { invalidateDcCache } from './dcCache';
+import { invalidateDeduped } from './fetchDedupe';
 import {
   AttachZone,
   BackBtn,
@@ -124,11 +127,17 @@ function dealIdChip(d: DealVM): { text: string; tone: 'carrier' | 'app' | 'none'
 }
 
 export function TicketWizard() {
-  const { pushToast, openTicket, openAutomation } = useSales();
+  const { pushToast, openAutomation } = useSales();
+  const { name: submitterName } = useSessionUser();
   const [cr, setCr] = useState<CrState>(CR0);
   const [att, setAtt] = useState<File | null>(null);
   // Kept stable across retries so a timeout cannot create the same ticket twice.
-  const idempotencyKey = useRef(`sales-ticket:${crypto.randomUUID()}`);
+  /**
+   * Synchronous double-submit latch. The native endpoint took an idempotencyKey; Desk has no such
+   * parameter, and `patch({ submitting: true })` is a React state update that does not land before the
+   * handler returns — so without this a fast double-click files TWO Desk tickets.
+   */
+  const submitInFlight = useRef(false);
   const patch = (p: Partial<CrState>): void => setCr((c) => ({ ...c, ...p }));
 
   // Selecting a ticket type: if the type is already covered by an available automation, steer the
@@ -175,49 +184,46 @@ export function TicketWizard() {
   const canSubmit = !!(cr.dept && cr.dealId && cr.ticketType && cr.subject.trim() && cr.body.trim()) && !cr.submitting;
 
   const submit = async (): Promise<void> => {
-    if (!canSubmit || cr.dept === '') return;
+    if (!canSubmit || cr.dept === '' || submitInFlight.current) return;
+    submitInFlight.current = true;
     patch({ submitting: true });
     try {
       const input: CreateTicketInput = {
-        // The catalog code IS the routing decision — no `department` field exists on the native endpoint.
-        typeCode: cr.ticketType,
+        department: cr.dept,
+        ticketType: cr.ticketType,
         dealId: cr.dealId,
         subject: cr.subject.trim(),
         description: cr.body.trim(),
-        ...(cr.card ? { cardNumber: cr.card } : {}),
-        sourceMytrion: 'sales',
-        idempotencyKey: idempotencyKey.current,
+        carrierId: cr.carrierId,
+        applicationId: cr.app && cr.app !== '—' ? cr.app : undefined,
+        cardNumber: cr.card || undefined,
+        contactName: cr.contact || undefined,
+        accountName: cr.account || undefined,
+        email: cr.email || undefined,
+        phone: cr.phone || undefined,
+        submitterName,
       };
-      const { ticket } = await createTicket(input);
-
-      // The file is a separate call against the new ticket's thread. Failing to attach must NOT read as
-      // "the ticket failed" — the ticket is already filed and the agent can drag the file into the chat.
-      let attached = false;
-      if (att) {
-        try {
-          await uploadThreadAttachment(ticket.threadId, att);
-          attached = true;
-        } catch {
-          attached = false;
-        }
-      }
+      // ONE multipart request: the file goes up with the ticket, so `attached` is authoritative and the
+      // agent is never told "filed" while the file quietly did not make it.
+      const res = await createDeskTicket(input, att);
       const hadFile = !!att;
       setCr(CR0);
       setAtt(null);
-      idempotencyKey.current = `sales-ticket:${crypto.randomUUID()}`;
       pushToast(
-        `Ticket ${ticket.number} created`,
+        'Ticket created',
         hadFile
-          ? attached
-            ? `Routed to ${ticket.targetDepartment ?? 'the right team'} — file attached.`
-            : `Routed to ${ticket.targetDepartment ?? 'the right team'} — attach the file in the chat.`
-          : `Routed to ${ticket.targetDepartment ?? 'the right team'} — opening it now.`,
+          ? res.attached
+            ? 'Routed to the right team in Zoho Desk — file attached.'
+            : 'Routed to the right team in Zoho Desk — the file couldn’t be attached.'
+          : 'Routed to the right team in Zoho Desk.',
       );
       invalidateDcCache('sales:tickets');
-      if (ticket.id) openTicket(ticket.id); // jump to Tickets and open the new ticket
+      invalidateDeduped('desk:tickets:');
     } catch (e) {
       pushToast('Couldn’t create ticket', e instanceof Error ? e.message : 'Please try again.');
       patch({ submitting: false });
+    } finally {
+      submitInFlight.current = false;
     }
   };
 

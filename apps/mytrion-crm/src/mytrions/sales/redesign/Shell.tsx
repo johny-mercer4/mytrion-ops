@@ -110,7 +110,11 @@ const NAV_TONE: Record<string, string> = {
   dash: 'var(--tone-rose)',
 };
 
-/** Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper. */
+/**
+ * Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper.
+ * Only consulted for a LIVE tab — a parked one shows the ComingSoonPanel, which wants the normal
+ * page padding, not a full-height flex child.
+ */
 const FULL_BLEED = new Set(['tickets']);
 
 export function SalesRedesign() {
@@ -143,7 +147,8 @@ export function SalesRedesign() {
   }, []);
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
-  const fullBleed = FULL_BLEED.has(section);
+  const parkedSection = NAV.some((n) => n.id === section && n.comingSoon === true);
+  const fullBleed = FULL_BLEED.has(section) && !parkedSection;
   const [, tick] = useState(0);
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
@@ -183,7 +188,7 @@ export function SalesRedesign() {
   const liveBadges = useSidebarBadges(currentUserId);
   // Octane /v1/realtime — new retention cases (and pool/ops) push live to this agent.
   useRetentionRealtime(currentUserId, pushToast);
-  const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);
+  const sectionComingSoon = parkedSection;
   /**
    * The top bar is the ONLY place a section is named — it prints exactly the label the user clicked
    * in the sidebar. It used to append a second, author-written title ("MY TASKS · Assignments") while
