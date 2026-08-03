@@ -41,11 +41,12 @@ describe('catalog shape', () => {
     // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
     // Then Maintenance moved out of Zoho entirely: cs.analytics.maintenance and maintenance.create went
-    // once maintenance_cases became the source of truth (19 → 17), and TICKETING removed the last four:
-    // `createticketincrm` and `createescalationticket` went with the Zoho Desk create routes when Sales
-    // moved to /v1/comms, and the two `tickets.upload_*` attachment touchpoints had already lost their
-    // only callers (17 → 13).
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(13);
+    // once maintenance_cases became the source of truth (19 → 17), and TICKETING removed the last four
+    // when Sales briefly moved to /v1/comms (17 → 13). Sales then went BACK to filing in Zoho Desk, so
+    // `tickets.create_in_crm` and `tickets.create_escalation` are live again (13 → 15). The two
+    // `tickets.upload_*` attachment touchpoints did NOT come back: the routes attach through the Desk
+    // API directly, and those two had no callers even before the removal.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(15);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
     // BOCA and Close Application are guarded local handlers around Playwright.

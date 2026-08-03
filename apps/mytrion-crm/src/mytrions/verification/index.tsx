@@ -1,6 +1,5 @@
 import { FileCheck2, Home, MessagesSquare, SlidersHorizontal, Users } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
-import { TicketConsole } from '@/features/comms/TicketConsole';
 import { VerificationClients } from './tabs/VerificationClients';
 import './verification.css';
 
@@ -71,9 +70,14 @@ const TABS: ModuleTab[] = [
     icon: MessagesSquare,
     tone: 'var(--tone-cyan)',
     keywords: ['tickets', 'requests', 'chat', 'plaid', 'limit review', 'escalation', 'queue'],
-    // The SHARED console — Verification's inbound queue. Visibility comes from the server's thread reader
-    // filter, so there is no Verification-specific chat code.
-    content: <TicketConsole mode="queue" department="verification" title="Verification tickets" />,
+    // PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
+    // while the real requests sit in Desk. The shared console is untouched — swap `soon` back for
+    // `content: <TicketConsole mode="queue" department="verification" … />` to un-park.
+    soon: {
+      title: 'Verification tickets',
+      body: 'Requests filed to Verification, with the conversation attached. Sales files these into Zoho Desk today, which is where they are worked — reading and replying to them in here comes back once the queue moves across.',
+      sources: ['zoho desk · verification department'],
+    },
   },
 ];
 

@@ -10947,152 +10947,114 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
   workers, tenant-scoped repositories, TLS verification gaps, and the transition from process-local
   caching to Redis/Valkey when multiple application instances are introduced.
 
-## 2026-08-03 — Analyst: double loader + "Coming soon" on a built dashboard
+## 2026-08-03 — Docker install fix for pnpm patch files
 
-Reported from prod (`/main/analystmytrion?category=sales`): two spinners for one wait, and a
-**COMING SOON** badge on a dashboard that exists and was fetching.
+- Copied the repository `patches/` directory into both Docker dependency-install stages before
+  `pnpm install`, so the frozen lockfile can hash and apply the `archiver-utils@5.0.2` patch.
+- This fixes the Render image build failure in pnpm's `createBase32HashFromFile`; the runtime
+  production-dependency install received the same fix to prevent a later-stage repeat failure.
 
-Root cause: `CategoryDashboard` reused `_shared/ComingSoon` for three different situations —
-loading, fetch failure, and no-snapshot. That component hardcodes a "Coming soon" badge and its
-own docstring says it is the "not built yet" surface, so a Sales dashboard that was merely waiting
-on the warehouse announced itself as unbuilt. The header Refresh button spun at the same time as
-the panel glyph, giving two indicators for a single operation (violates CLAUDE.md rule 10).
+## 2026-08-03 — Rename OpenAI gateway package to v2
 
-- New `analyst/DashboardState.tsx` — one panel, three explicit kinds:
-  `loading`, `error` (with Retry), `empty`.
-- `loading` delegates to the shared `_shared/MytrionPageLoader` (the pulsing three-bar mark HR and
-  Recruit already use) rather than a bespoke analyst spinner, so a wait looks the same everywhere.
-  It reads `--accent`, so it takes the analyst hue with no extra wiring — same component renders
-  red under HR.
-- `CategoryDashboard` gained `busy` (first load / filter change with nothing to show). The header
-  Refresh button is disabled and static while `busy`, so exactly one spinner is on screen in every
-  path — including the case where a refresh fails and the block goes back to null.
-- **Empty ≠ error.** `isEmptyBlock()` detects a successful query with nothing in the window (no
-  breakdown rows, no leaderboard rows, flat-zero trend) and says so — "the query succeeded, the
-  window is simply empty, try a wider range" — instead of a wall of zeros or a false Coming soon.
-- `analyst.css` gained `.an-state*` (same Horizon glass language, tone per state, no badge).
-- `DashboardState.test.tsx` — 5 tests pinning the regressions: never renders "Coming soon" in any
-  state, exactly one `.an-spin` while loading and zero afterwards, empty offers no Retry while
-  error does, loading panel is `role="status"`.
+- Renamed `apps/agent-gateway-groq` to `apps/agent-gateway-v2` without changing gateway behavior.
+- Updated the Render root-directory documentation, root environment guidance, and support-bot
+  knowledge seeding import to use the new path.
+- Kept local gateway secrets, runtime data, build output, and dependencies ignored from Git.
 
-`ComingSoon` is untouched and still correct for genuinely unbuilt tabs (collection, sales soonTabs).
+## 2026-08-03 — Fix Telegram outbound queue deadlock
 
-Noticed in passing: `analyst/tabs/AnalystDashboard.tsx` is dead code — nothing imports it — and is
-the last analyst file still using ComingSoon. Flagged as a separate cleanup, not done here.
+- Removed recursive acquisition of the global Telegram send lane from the per-chat message queue;
+  the nested queue previously left the first reply active forever and every later reply waiting.
+- Failed Telegram API responses now throw the server description instead of being counted and
+  silently treated as successful.
+- Added regression coverage for both a completed queued send and a surfaced Telegram API error.
 
-### Checks
-CRM `tsc --noEmit` clean, `pnpm build` green, new tests 5/5. CRM suite 16 failed / 3 files
-(stream, touchpoints, transport.refresh) — all pre-existing; `dashDebtorsData` now passes after the
-build merge. Not visually confirmed in-app (Zoho sign-in required).
+## 2026-08-03 — Sales Create back on Zoho Desk; Tickets parked in all four operational Mytrions
 
-## 2026-08-03 — Analyst: delete the dead AnalystDashboard tab
+Reverses the write half of `030fc352` / `940e8d8e`. The native comms console is parked, so the Create
+tab files into Zoho Desk again — which is where Customer Service, Billing and Verification actually
+work the queue.
 
-Follow-up on the cleanup flagged at the end of the previous entry.
+### Tickets parked (Sales, CS, Billing, Verification)
 
-`analyst/tabs/AnalystDashboard.tsx` deleted. Confirmed unreferenced first: grep for
-`AnalystDashboard` across `apps/mytrion-crm/src` returns exactly one hit — its own `export function`
-declaration. The analyst shell (`analyst/index.tsx`) renders only `AnalystReports` or
-`CategoryDashboard`, and its `setCategory` already deletes the `dimension` search param as a
-"leftover from the old Dashboard tab".
+Each Mytrion uses its OWN existing coming-soon idiom rather than a new mechanism:
 
-This was also the last analyst file importing `_shared/ComingSoon`, so the module is now fully off
-the badge-carrying panel and on `DashboardState`. `ComingSoon` itself stays — still used by
-`_shared/ModuleShell`, collection, trailhead and hr for genuinely unbuilt tabs.
+- **Sales** — `comingSoon: true` on the NAV entry. That one flag already drives the sidebar SOON chip,
+  the `ComingSoonPanel` short-circuit, `TICKETS_ENABLED` (which gates the unread badge and the
+  Create → open-ticket jump), so nothing else needed touching. Added the `SOON_TABS` copy it renders.
+- **CS / Billing** — `disabled: true` on the nav item, which both shells already render as a "Soon"
+  chip on a disabled button. The panel is additionally gated on a `TICKETS_PARKED` constant *derived
+  from NAV_ITEMS*, so a deep link cannot open a queue the nav refuses to show and the flag cannot drift.
+- **Verification** — swapped `content:` for the `soon:` slot `ModuleShell` already supports.
 
-Dead CSS removed from `analyst.css` (each checked against the rest of `src/` before deleting):
-- `.an-dims`, `.an-dim`, `.an-dim:hover`, `.an-dim[aria-pressed='true']` — the dimension switcher,
-  which only ever had this one call site. Nothing renders a dimension pill row any more.
-- `.an-sk` plus its `@keyframes anSheen`, and the `.an-sk` line in the `prefers-reduced-motion`
-  block. The skeleton was AnalystDashboard's pre-first-attempt placeholder; `DashboardState`
-  kind="loading" replaced that role and uses `.an-spin`.
+`TicketConsole`, `ChatThread`, `useCommsSocket` and the whole /v1/comms backend are UNTOUCHED. Every
+park is one flag/line from returning; nothing was deleted.
 
-Everything else the file imported is still live and was left alone: `useAnalyticsSnapshot`,
-`charts.tsx` (`KpiGrid`/`TrendBars`/`Breakdown`/`Leaderboard`), the `AnalyticsDimension` type
-(still used by `useAnalyticsSnapshot.ts`, `api/analytics.ts`, `categories.ts`), and the shared
-`.an-page`/`.an-head`/`.an-card*`/`.an-btn`/`.an-banner`/`.an-grid-2` rules.
+Two bugs found while parking:
+- Sales' `FULL_BLEED` was consulted before the coming-soon check, so a parked Tickets tab would have
+  rendered the ComingSoonPanel as a full-height flex child with 16px padding instead of the normal
+  24px page padding. Now `FULL_BLEED.has(section) && !parkedSection`.
+- `soonTabs.test.ts` asserted Tickets is NEVER parked. Replaced with the invariant that actually
+  matters: `comingSoon` and `TICKETS_ENABLED` must agree, so un-parking flips both together.
 
-### Checks
-CRM `tsc --noEmit` clean, `pnpm build` green, vendored `app/` rebuilt and recommitted (chunk hashes
-churn as usual). Verified in the bundle: the analyst chunk no longer imports the `ComingSoon-*`
-chunk, and `an-dims`/`an-dim`/`an-sk` appear in no emitted asset. CRM suite still 16 failed /
-3 files (stream, touchpoints, transport.refresh) — same pre-existing `localStorage is not defined`
-env failures as the previous entry, none in the analyst module.
+### Create tab restored to Desk
 
-### Reports: catalog → real, date-filtered .xlsx exports
+**Backend** — `POST /desk/tickets` and `POST /desk/escalations` are back in `desk.routes.ts` exactly as
+they were, with `readMultipart` (413 on >20MB) and `attachCreateFile`. Restored
+`catalog/ticketsDeluge.ts` with the TWO touchpoints that have callers — `tickets.create_in_crm`,
+`tickets.create_escalation`. The two `tickets.upload_*` ones did NOT come back: the routes attach
+through the Desk API directly, and those had no callers even before the removal. One deliberate
+difference from the original: `zohoCrm.attachFileToRecord` instead of the deprecated module facade.
 
-Reports was structural only — six cards, every Export disabled with "not built yet". All six now
-run against the warehouse and download a styled workbook.
+**Frontend** — new `api/desk.ts`, CREATE ONLY. The original also carried the ticket-dashboard reads
+(listDeskTickets / getDeskTicket / listDeskComments / replyDeskTicket / downloadDeskAttachment); those
+stay deleted, because no UI reads Desk tickets while the tab is parked and restoring them would mean
+restoring TicketsTab and its whole cache/feed/optimistic cluster as dead code. The backend GET routes
+still exist, so a reader is a client-side change whenever the tab returns.
 
-**Backend** — `src/modules/analytics/reports/`
-- `definitions.ts` — the catalog as a typed contract. Each column carries a `type`
-  (`text|number|money|percent|date`); that is what lets the writer emit real Excel number formats.
-  A money column typed `text` silently produces a sheet nobody can SUM, so the types are the
-  load-bearing part, not decoration.
-- `service.ts` — one parameterized, date-bounded query per report, scoped by the SAME
-  `AnalyticsFilters` the dashboards use, so a report and the dashboard above it cannot disagree
-  about a period. Agent scope goes through `ownedCarrierCteFor` (the one owner authority); only
-  `pipeline` uses `pipelineOwnerPred`, because it is deal-shaped like the pipeline dimension.
-  `ROW_CAP = 5000` with `limit CAP+1` to detect truncation — an export is not a bulk extract, and
-  an uncapped group-by on a bad filter would pin the tiny shared pool. Truncation is reported and
-  printed into the sheet; a partial export must never look complete.
-- Routes: `GET /v1/analytics/reports` (catalog) and `GET /v1/analytics/reports/:reportId`
-  (rows as JSON). Kept JSON rather than streaming a file so the same data is reachable by other
-  consumers without a file-format dependency in the API.
+What the revert changes for the agent:
+- the department step is a real routing choice again (it picks the Desk department), not just a filter;
+- contact / account / email / phone are sent, because a Desk ticket requires a contact;
+- the attachment rides the SAME multipart request, so `attached` is authoritative — there is no window
+  where the ticket exists and the file silently did not arrive;
+- escalation reasons are a fixed list again (Desk's reason is free text on the CRM record — there is no
+  admin catalog behind it to validate a code against) and the department picker is gone (Desk routing
+  is the Deluge's decision, not the caller's);
+- neither submit tries to open the new ticket, since the tab is parked. The toasts say the team picks
+  it up in Zoho Desk rather than promising a jump that cannot happen.
 
-**Frontend**
-- `analyst/reportsExport.ts` — `buildReportWorkbook()` (pure, returns bytes) + `exportReportXlsx()`
-  (build + download). Split deliberately so the sheet can be built and read back in a test; the
-  download half is the only part that touches `document`. ExcelJS is dynamically imported so the
-  ~940kB chunk only loads on an actual export, matching the Billing/Sales export pattern.
-- `AnalystReports.tsx` — Today / Last 7 days / This month / Custom, matching the dashboards, plus
-  per-card running/done/error state. Agent scope follows "View as" (the reports category now
-  declares `filters: ['agent']` purely so the shell folds the identity in — it renders its own
-  date control, not the shared bar).
+**Kept from the native era, not reverted:** both submits had gained an `idempotencyKey`, which Desk has
+no parameter for. Rather than silently lose double-submit protection, each form now holds a synchronous
+`submitInFlight` ref — `setSubmitting(true)` is a React state update that does not land before the
+handler returns, so without it a fast double-click files two Desk tickets.
 
-**Verification that matters:** `reportsExport.test.ts` builds a workbook and *reads it back* with
-ExcelJS — asserting numbers are numbers, dates are `Date` (UTC-anchored, so no ±1 day shift),
-money/percent number formats are applied, nulls stay empty instead of the string "null", the totals
-row carries `SUM()` **and** a cached result, truncation is stated in the sheet, and sheet names with
-`[]:*?/\` are sanitised. 9 tests. All six queries were also run against the live DWH:
-146–780ms, 45–1469 rows. Route registration checked against the running dev API (401 for ours,
-404 for unknown paths — so they are reachable, not shadowed by `/analytics/:dimension`).
+### Verified against the LIVE Zoho org (reads only, nothing created)
 
-Fixed while testing: `overdue` used a bare `FILTER` aggregate, which yields NULL when nothing is
-overdue and would land as a blank cell where the honest answer is 0.
+- all four `DESK_DEPARTMENTS` ids resolve to live enabled departments (Customer Service, Billing and
+  Accounting, Verification, Maintenance) — plus an "Escalation Team" department for the Deluge;
+- all six custom fields the create route stamps exist on the live ticket layout: `cf_ticket_type`,
+  `cf_crm_created_by_id`, `cf_deal_id`, `cf_submitted_by`, `cf_carrier_id_application_id`,
+  `cf_card_number`;
+- `Escalation_Request` exists (the attachment fallback target) and `Escalation_Reason` is a **text**
+  field with no picklist, confirming the fixed list is the only definition of it;
+- every reason in the restored list is in live use. The Deluge is demonstrably alive — escalations were
+  created through it today, minutes before this change. One legacy value, "Lead / Deal Transfer",
+  appears twice in June and has since been split into the separate Lead/Deal Transfer entries that now
+  dominate; not added back.
 
-### Checks
-Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green, 9 new export tests +
-5 state tests pass. CRM suite 16 failed / 3 files and backend best-of 1 failed / 1826 passed — both
-the known pre-existing sets. NOTE: the backend suite reports ~130 failures when run straight after a
-build (the documented timeout flakiness); always re-run it clean before believing a regression.
+NOT VERIFIED: no ticket or escalation was actually created. Doing so would write real records into
+production Desk/CRM. The Deluge functions themselves (`createticketincrm`, `createescalationticket`)
+were only ever removed from OUR catalog, never from Zoho, and the escalation one is proven live by
+today's records — but the end-to-end POST is untested and should be exercised once on staging.
 
-### Reports restricted to management + admin
+### Verification
 
-Reports are the only analytics reads that are not scopable down to one book — an org-wide
-client-health or fuel-volume sheet is every carrier in the company in one downloadable file. Gated
-to the same audience as the Manager Mytrion.
-
-- **Backend** — both routes now go through `requireDepartment(request, 'management', …)`: admin /
-  all-department / bypass / the `management` department. Applied to the CATALOG route as well as
-  the run route, so a rep cannot even enumerate what exists.
-- **Frontend** — `analyst/index.tsx` hides the Reports sidebar card unless
-  `isAdmin(user) || canAccess(user, 'manager')`, and a deep link to `?category=reports` falls back
-  to the first visible category instead of rendering. The card is hidden for tidiness; the route is
-  the boundary.
-- Composes with "View as" on purpose: an admin acting as a sales rep runs with the REP's grant and
-  loses report access — that is what impersonation is for.
-
-**A real leak the test caught.** The handler validated the report id before authorizing, so an
-unauthorized rep got `404` for an unknown id and `403` for a real one — the status code enumerated
-the catalog they were denied. Authorization now runs first; every unauthorized caller gets the same
-403 regardless of whether the id exists.
-
-`tests/unit/analytics-reports-routes.test.ts` (9 tests, CLAUDE.md rule 9): unauthenticated 401 on
-both routes, 403 for sales/billing/CS, catalog hidden too, management + Administrator allowed, 404
-for a bad id only when authorized, and the no-id-oracle case above. Every 403 also asserts the
-warehouse was NEVER queried — not merely that the body was withheld after the rows were pulled.
-
-### Checks
-Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green. CRM 16 failed / 3 files
-(pre-existing). Backend across four runs: 160 / 10 / 9 / 9 failures — the documented post-build
-timeout flakiness; `analytics-reports-routes` passed in every run. Suite total is now 1837 (+9).
+- Backend: typecheck + `pnpm build` clean, eslint 0 errors (21 pre-existing warnings),
+  **1838 tests pass, 0 failures**. `desk-routes.test.ts` regained the create + escalation coverage
+  (23 tests, 11 new) including: filing on someone else's deal → 403 with no ticket created, a
+  non-numeric dealId rejected before any COQL, admin skipping the ownership lookup, the file landing on
+  Desk, the CRM-Deal fallback when Desk lacks attachment scope, `attached:false` when BOTH refuse (a
+  200 — the ticket exists), and a 502 rather than false success when the Deluge returns no ids.
+- Catalog counts updated for the two restored touchpoints (deluge 13→15, total 99→101).
+- Web: typecheck clean, 401 tests pass, production build clean, bundle rebuilt, every changed module
+  fetched through the dev server with no transform errors.

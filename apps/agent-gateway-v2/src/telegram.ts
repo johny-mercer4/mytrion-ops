@@ -49,7 +49,11 @@ async function tgSend(method: string, payload: Record<string, unknown>): Promise
       response = await queued(() => tgPost(method, payload));
       if (response.status === 429) incrementCounter('tg_429_total');
     }
-    if (!response.ok) incrementCounter('tg_send_fail_total');
+    if (!response.ok) {
+      incrementCounter('tg_send_fail_total');
+      const body = (await response.json().catch(() => null)) as { description?: string } | null;
+      throw new Error(body?.description ?? `Telegram ${method} HTTP ${response.status}`);
+    }
     return response;
   } catch (error) {
     incrementCounter('tg_send_fail_total');
@@ -87,7 +91,10 @@ function queuedMessage<T>(chatId: number, operation: () => Promise<T>): Promise<
       (lastChatMessageAt.get(chatId) ?? 0) + CHAT_MESSAGE_MIN_GAP_MS - Date.now();
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
     try {
-      return await queued(operation);
+      // The operation (`tgSend`) enters the global send lane itself. Enqueuing it here as well
+      // deadlocks: the outer lane waits for an inner task that cannot start until the outer task
+      // settles. Keep only the per-chat serialization at this layer.
+      return await operation();
     } finally {
       lastChatMessageAt.set(chatId, Date.now());
     }

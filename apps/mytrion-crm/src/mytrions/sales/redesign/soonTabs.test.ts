@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV } from './salesData';
+import { NAV, TICKETS_ENABLED } from './salesData';
 import { soonHue, soonTabMeta, SOON_TABS } from './soonTabs';
 
 describe('soonTabs', () => {
@@ -26,11 +26,13 @@ describe('soonTabs', () => {
     }
   });
 
-  it('does not park Tickets — the native comms console is live', () => {
-    // If 'tickets' ever reappears here, the sidebar SOON chip and the ComingSoonPanel short-circuit
-    // both come back and TicketConsole silently stops mounting. That is the exact regression this
-    // merge fixed, so it is worth one assertion even while `parked` is empty.
-    expect(parked).not.toContain('tickets');
+  it('parks Tickets, and keeps TICKETS_ENABLED in step with it', () => {
+    // These two must never disagree: `comingSoon` drives the sidebar chip and the ComingSoonPanel
+    // short-circuit, while TICKETS_ENABLED gates the unread badge and the Create → open-ticket jump.
+    // Un-parking by dropping `comingSoon` flips both together; hard-coding either is the bug.
+    expect(parked).toContain('tickets');
+    expect(TICKETS_ENABLED).toBe(false);
+    expect(soonTabMeta('tickets').title).toBe('Tickets');
   });
 
   it('falls back for unknown sections', () => {
