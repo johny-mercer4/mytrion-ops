@@ -65,12 +65,14 @@ describe('runtime skill registry', () => {
     expect(names).not.toContain('octane_invoice');
     expect(names).not.toContain('octane_balance_dm');
     expect(names).not.toContain('octane_card_action');
+    expect(names).not.toContain('octane_card_lookup_report');
     expect(names).not.toContain('octane_money_code');
   });
 
   it('gives an owner company tools but hides the driver-only override', () => {
     expect(isToolAllowedForRole('octane_invoice', 'owner')).toBe(true);
     expect(isToolAllowedForRole('octane_card_action', 'owner')).toBe(true);
+    expect(isToolAllowedForRole('octane_card_lookup_report', 'owner')).toBe(true);
     expect(isToolAllowedForRole('octane_override', 'owner')).toBe(false);
   });
 

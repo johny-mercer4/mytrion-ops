@@ -200,7 +200,9 @@ export function SalesRedesign() {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
     tickets: TICKETS_ENABLED ? liveBadges.tickets || undefined : undefined,
-    tasks: liveBadges.tasks || undefined,
+    tasks: NAV.some((item) => item.id === 'tasks' && item.comingSoon === true)
+      ? undefined
+      : liveBadges.tasks || undefined,
   };
 
   const go = useCallback((next: string) => {

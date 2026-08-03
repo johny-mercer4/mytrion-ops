@@ -13,6 +13,12 @@ export interface SoonTabMeta {
 }
 
 export const SOON_TABS: Record<string, SoonTabMeta> = {
+  tasks: {
+    title: 'My Tasks',
+    blurb: 'Your assigned work queue and task history will return here once the workflow is ready.',
+    icon: 'clipboardCheck',
+    hue: 'var(--cyan)',
+  },
   retention: {
     title: 'Retention',
     blurb: 'Cases and Open Pool will live here — assign, escalate, and work the retention queue in one place.',

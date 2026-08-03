@@ -100,7 +100,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
-      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
     ],
   },
   {
@@ -128,10 +127,10 @@ export const NAV_GROUPS: NavGroup[] = [
       // `TICKETS_ENABLED` below reads this flag, which is what stops the unread badge and the
       // Create → "opening it now" jump from pointing at a tab that will not mount.
       { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
-      { id: 'verification', label: 'Verification', icon: 'verification' },
-      // The group is a LAYOUT SLOT as much as a status — Verification and Call Hub have shipped and
-      // stay here for the sidebar divider. Only Tickets is actually parked. Un-parking is still a
-      // one-word change (drop `comingSoon`).
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
+      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
+      // The group is a layout slot as much as a status. Call Hub stays live here; parked tabs use
+      // the shared SOON chip + ComingSoonPanel and can be restored by dropping `comingSoon`.
       { id: 'callHub', label: 'Call Hub', icon: 'callHub' },
     ],
   },

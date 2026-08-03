@@ -7,10 +7,13 @@ import {
   ANALYTICS_DATE_RANGES,
   type AnalyticsFilters,
 } from '../../modules/analytics/filters.js';
+import { isReportId, listReports } from '../../modules/analytics/reports/definitions.js';
+import { runAnalyticsReport } from '../../modules/analytics/reports/service.js';
 import { isAnalyticsDimension } from '../../modules/analytics/types.js';
-import { requireContext } from './helpers.js';
+import { requireContext, requireDepartment } from './helpers.js';
 
 const paramsSchema = z.object({ dimension: z.string().min(1).max(40) });
+const reportParamsSchema = z.object({ reportId: z.string().min(1).max(40) });
 const querySchema = z.object({
   /** fresh=1 bypasses the snapshot cache (the dashboard's Refresh button). */
   fresh: z.enum(['0', '1']).optional(),
@@ -33,6 +36,59 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     onRequest: [app.sessionOrApiKey],
     preHandler: [app.requireAudience('internal')],
   };
+
+  /**
+   * Reports are management-only.
+   *
+   * They are cross-agent extracts — an org-wide fuel-volume or client-health sheet is every
+   * carrier's book in one file, which is a different exposure from the per-agent dashboards. Same
+   * gate as the Manager Mytrion (`requireDepartment(…, 'management')`): admin / all-department /
+   * bypass / the `management` department. Hiding the sidebar card is NOT the boundary; this is.
+   *
+   * Note this composes with "View as": an admin acting as a sales rep runs with the REP's grant and
+   * loses report access, which is the point of impersonation — you see what they see.
+   */
+  const requireReportsAccess = (request: Parameters<typeof requireContext>[0]) =>
+    requireDepartment(request, 'management', 'Analytics reports');
+
+  /** The standing report catalog — static metadata, no warehouse hit. */
+  app.get('/analytics/reports', guard, async (request) => {
+    requireReportsAccess(request);
+    return { reports: listReports() };
+  });
+
+  /**
+   * Run one standing report for a date window (and the caller's agent scope) and return its rows.
+   * The CRM turns this into an .xlsx client-side; keeping the endpoint JSON means the same data is
+   * available to any other consumer without a file-format dependency here.
+   */
+  app.get('/analytics/reports/:reportId', guard, async (request) => {
+    const { reportId } = reportParamsSchema.parse(request.params);
+    const q = querySchema.parse(request.query);
+    // Authorize BEFORE resolving the id or checking config: if an unknown id 404'd first, an
+    // unauthorized caller could enumerate the catalog by status code (404 = no such report,
+    // 403 = real one they cannot have). Everyone unauthorized gets the same 403.
+    const ctx = requireReportsAccess(request);
+    if (!isReportId(reportId)) throw new NotFoundError(`Unknown report: ${reportId}`);
+    if (!env.DWH_DATABASE_URL) {
+      throw new AppError('Analytics DWH is not configured', {
+        statusCode: 503,
+        code: 'ANALYTICS_UNCONFIGURED',
+      });
+    }
+
+    const filters = resolveFilters(ctx, q);
+    try {
+      return await runAnalyticsReport(reportId, filters);
+    } catch (err) {
+      const causeMsg = err instanceof Error ? err.message : String(err);
+      request.log.error({ err, causeMsg, reportId, filters }, 'analytics report failed');
+      throw new AppError(
+        causeMsg.includes('does not exist') ? `Report query failed: ${causeMsg}` : 'Report source unavailable',
+        { statusCode: 502, code: 'ANALYTICS_DWH_ERROR', cause: err, expose: true },
+      );
+    }
+  });
 
   app.get('/analytics/:dimension', guard, async (request) => {
     const { dimension } = paramsSchema.parse(request.params);

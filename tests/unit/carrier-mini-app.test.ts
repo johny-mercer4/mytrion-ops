@@ -45,6 +45,7 @@ vi.mock('../../src/wrappers/serverCrmWrapper.js', () => ({
 vi.mock('../../src/wrappers/efsWrapper.js', () => ({
   efsWrapper: {
     getCards: vi.fn(),
+    listCards: vi.fn(),
     getCardEfsInfo: vi.fn(),
     overrideCard: vi.fn(),
     // Fraud-only override gate — resolves (= card is fraud-held) by default so the RBAC/pinning
@@ -105,6 +106,18 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/modules/carrier/cardLookupReport.js', () => ({
+  buildCardLookupReport: vi.fn(async (_carrierId: string, _companyName: string, format: 'pdf' | 'xlsx') => ({
+    bytes: Buffer.from('report-bytes'),
+    contentType:
+      format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    fileName: `Octane_Card_Lookup_2026-08-03.${format}`,
+    rows: 1,
+  })),
+}));
+
 vi.mock('../../src/integrations/telegramCarrierBot.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/telegramCarrierBot.js')>();
   return {
@@ -130,6 +143,7 @@ import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
 import { efsWrapper } from '../../src/wrappers/efsWrapper.js';
 import { env } from '../../src/config/env.js';
 import { resetRateBucketsForTests } from '../../src/modules/security/rateBucket.js';
+import { buildCardLookupReport } from '../../src/modules/carrier/cardLookupReport.js';
 
 const inviteRepo = vi.mocked(carrierInvitationRepo);
 const registrationRepo = vi.mocked(registeredMiniAppCompanyRepo);
@@ -139,6 +153,7 @@ const dwhRange = vi.mocked(resolveDwhTxnRange);
 const botSendDocument = vi.mocked(sendDocument);
 const crm = vi.mocked(serverCrmWrapper);
 const efs = vi.mocked(efsWrapper);
+const cardLookupReport = vi.mocked(buildCardLookupReport);
 
 let app: FastifyInstance;
 
@@ -201,6 +216,16 @@ beforeEach(() => {
   env.FF_MINIAPP_MANAGER_INVITES_ENABLED = false;
   resetRateBucketsForTests();
   efs.getCardEfsInfo.mockResolvedValue({ ok: true } as never);
+  efs.listCards.mockResolvedValue({ data: [] });
+  cardLookupReport.mockImplementation(async (_carrierId, _companyName, format) => ({
+    bytes: Buffer.from('report-bytes'),
+    contentType:
+      format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    fileName: `Octane_Card_Lookup_2026-08-03.${format}`,
+    rows: 1,
+  }));
   efs.overrideCard.mockResolvedValue({ ok: true } as never);
   efs.setCardStatus.mockResolvedValue({ ok: true } as never);
   efs.setCardLimits.mockResolvedValue({ ok: true } as never);
@@ -768,6 +793,76 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
     });
     expect(revoke.statusCode).toBe(403);
     expect(registrationRepo.revokeManagerByCarrier).not.toHaveBeenCalled();
+  });
+});
+
+describe('Card Lookup report delivery', () => {
+  const liveCards = {
+    data: [
+      {
+        cardNumber: '708305000000007378',
+        unitNumber: '995',
+        driverId: '995',
+        driverName: 'GIYOSBAKHRIDDIN',
+        status: 'Inactive',
+        override: 0,
+      },
+    ],
+  };
+
+  it.each(['owner', 'manager'] as const)(
+    'sends an XLSX report to a verified %s private chat',
+    async (profile) => {
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+        registrationRow({ profile }),
+      );
+      dwhCards.mockResolvedValueOnce([
+        {
+          cardId: '1000079491580',
+          cardNumber: '708305000000007378',
+          cardType: 'FLEET',
+          status: 'Inactive',
+          balance: null,
+        },
+      ]);
+      efs.listCards.mockResolvedValueOnce(liveCards);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card-lookup-report',
+        payload: { initData: 'signed', format: 'xlsx' },
+      });
+
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ sent: true, rows: 1 });
+      expect(botSendDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: '123456',
+          contentType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          fileName: expect.stringMatching(/Card_Lookup.*\.xlsx$/),
+        }),
+      );
+    },
+  );
+
+  it('refuses a driver before reading fleet cards', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ profile: 'driver', cardId: 'card_driver' }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/card-lookup-report',
+      payload: { initData: 'signed', format: 'pdf' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      error: { code: 'NOT_A_REGISTERED_OWNER_USER' },
+    });
+    expect(efs.listCards).not.toHaveBeenCalled();
+    expect(cardLookupReport).not.toHaveBeenCalled();
+    expect(botSendDocument).not.toHaveBeenCalled();
   });
 });
 

@@ -11058,3 +11058,34 @@ today's records — but the end-to-end POST is untested and should be exercised 
 - Catalog counts updated for the two restored touchpoints (deluge 13→15, total 99→101).
 - Web: typecheck clean, 401 tests pass, production build clean, bundle rebuilt, every changed module
   fetched through the dev server with no transform errors.
+
+## 2026-08-03 — Live Card Lookup exports + parked Sales tabs
+
+### Card Lookup report
+
+- Added one live report pipeline for PDF and XLSX. EFS supplies current card state, unit, driver,
+  X-Ref and override; DWH supplies the stable Card ID and is the read-only fallback when EFS is
+  unavailable. Card numbers are masked in both formats.
+- The approved columns are `Card ID`, `Card #`, `Unit`, `Driver ID`, `Driver Name`, `X-Ref`, `Status`
+  and `Override`. The source sample's `Policy #` and `SmartFunds` columns are intentionally omitted.
+- Added owner/manager-only mini-app delivery and the owner-normalized agent-gateway tool. Both send
+  the generated document to the requester's private Telegram chat and audit the delivery; drivers
+  are rejected before fleet data is read.
+- Added a Card Management panel with PDF / Excel actions and translations in all four mini-app
+  locales. PDF pagination and XLSX layout were visually checked against the supplied reference.
+
+### Sales Mytrion
+
+- Parked `My Tasks` and `Verification` via the existing `comingSoon` source of truth, moved them into
+  the parked nav group, reused the shared disabled/SOON colors and ComingSoonPanel metadata, and hid
+  the task badge while the tab is parked.
+
+### Verification
+
+- Root lint: 0 errors (22 pre-existing non-null-assertion warnings). Root typecheck and production
+  build pass. Feature suites: 118 backend tests, 83 gateway tests, and 416 web tests pass.
+- Full backend suite still has unrelated environment/baseline failures: sandbox WebSocket listeners
+  cannot bind to 127.0.0.1, CS fixtures resolve to 403, retention fixtures depend on unavailable
+  state, and scripted-agent tests cannot reach the blackboard database. The RBAC leakage suite and
+  all Card Lookup tests pass.
+- Rebuilt the mini-app and Mytrion CRM production bundles.

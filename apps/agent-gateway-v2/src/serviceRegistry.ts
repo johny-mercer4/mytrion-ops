@@ -32,6 +32,7 @@ export const SERVICE_CATALOG = {
       'octane_card_action',
       'octane_card_limits',
       'octane_card_info',
+      'octane_card_lookup_report',
       'octane_manual_code',
       'octane_last_used',
       'octane_override',
