@@ -11164,3 +11164,16 @@ today's records — but the end-to-end POST is untested and should be exercised 
   fleet report; legacy arbitrary callback taps now fail closed before access/router/model work.
   Full gateway suite 94/94 and targeted backend report/RBAC tests 12/12 pass; root and
   gateway typechecks/builds pass; lint has 0 errors (22 existing warnings).
+
+## 2026-08-04 — Proactive Telegram request collection
+
+- Extended the existing per-chat/user message burst behavior for natural multi-message intake.
+  Greetings and report starts now wait up to ten seconds for the actual request/details; once a
+  second fragment arrives, the buffer stays open seven seconds after each new fragment.
+- Added agent policy and transaction skill guidance to combine the full sequence into one atomic
+  request, reconcile scope/date/format/column constraints, and ask one focused clarification only
+  when a required detail remains missing or conflicting.
+- Kept ordinary complete requests on the configured three-second quiet window and preserved the
+  existing 120-second hard cap, per-user isolation, bounded item/key limits, and admission control.
+- Verification: full gateway suite 97/97, root/gateway typechecks, and gateway production build
+  pass; root lint has 0 errors (22 pre-existing warnings).

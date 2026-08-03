@@ -51,7 +51,9 @@ Telegram update preprocessing preserves source order per `(chatId, userId)` even
 have different latency. Different users and companies still preprocess concurrently.
 
 Natural Telegram message bursts are combined per chat/user after 3 seconds of typing silence, with
-a 120-second hard cap (`TELEGRAM_BURST_QUIET_MS`, `TELEGRAM_BURST_MAX_MS`). A five-minute,
+a 120-second hard cap (`TELEGRAM_BURST_QUIET_MS`, `TELEGRAM_BURST_MAX_MS`). Obvious greetings,
+report starts, and follow-up fragments receive a bounded 7-10 second collection window so one
+client request is not executed as several partial tasks. A five-minute,
 12-message per-user context window lets the AI join real fragments such as a name/unit followed by
 the requested action. When a request is admitted, that pending context is cleared so a new problem
 does not inherit an unanswered question. Different clients remain independent.

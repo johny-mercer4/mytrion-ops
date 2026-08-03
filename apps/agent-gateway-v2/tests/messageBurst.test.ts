@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MessageBurstBuffer } from '../src/messageBurst.js';
+import { messageCollectionQuietMs } from '../src/messageCollection.js';
 
 describe('Telegram message burst aggregation', () => {
   it('preserves fragments from one user as one request', async () => {
@@ -73,5 +74,25 @@ describe('Telegram message burst aggregation', () => {
     await buffer.flush('chat:user-a');
 
     expect(observedSizes).toEqual([1, 2]);
+  });
+});
+
+describe('Telegram intent-aware collection timing', () => {
+  it('holds greetings and report leads for likely follow-up details', () => {
+    expect(messageCollectionQuietMs(['Assalom aleykum'], 3_000)).toBe(10_000);
+    expect(messageCollectionQuietMs(['Truck 040 ni statement kerak'], 3_000)).toBe(10_000);
+  });
+
+  it('keeps a multi-message request open after every new fragment', () => {
+    expect(
+      messageCollectionQuietMs(
+        ['Truck 040 ni statement kerak', '05/03/2026-05/05/2026 kerak'],
+        3_000,
+      ),
+    ).toBe(7_000);
+  });
+
+  it('does not delay an ordinary complete request beyond the configured quiet time', () => {
+    expect(messageCollectionQuietMs(['check my balance'], 3_000)).toBe(3_000);
   });
 });

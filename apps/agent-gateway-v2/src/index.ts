@@ -35,6 +35,7 @@ import { incrementCounter, startSamplers } from './metrics.js';
 import { enabledServiceSummary } from './serviceRegistry.js';
 import { processInOrderByKey } from './ingressOrder.js';
 import { MessageBurstBuffer } from './messageBurst.js';
+import { messageCollectionQuietMs } from './messageCollection.js';
 import type { GatewayRole } from './skillRegistry.js';
 import { classifySupportTurn } from './aiRouter.js';
 import { requestAdmissionSnapshot, tryAdmitRequest } from './requestAdmission.js';
@@ -154,6 +155,11 @@ async function main(): Promise<void> {
   const messageBursts = new MessageBurstBuffer<BufferedMessage>({
     quietMs: config.telegramBurstQuietMs,
     maxWaitMs: Math.max(config.telegramBurstQuietMs, config.telegramBurstMaxMs),
+    quietMsFor: (items) =>
+      messageCollectionQuietMs(
+        items.map((item) => item.message.text ?? item.message.caption ?? ''),
+        config.telegramBurstQuietMs,
+      ),
     maxKeys: config.telegramBurstMaxKeys,
     maxItemsPerKey: config.telegramBurstMaxItemsPerKey,
     onOverflow: () => incrementCounter('message_burst_overflow_total'),
