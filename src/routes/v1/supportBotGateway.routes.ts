@@ -363,8 +363,37 @@ export async function supportBotGatewayRoutes(
     return reply.status(result.bound ? 201 : 200).send({
       carrierId: result.row.carrierId,
       bound: result.bound,
-      companyName: result.bound ? registration.companyName ?? null : null,
+      companyName: registration.companyName ?? null,
     });
+  });
+
+  /**
+   * Read-only first half of owner/manager auto-bind. The gateway displays this exact company in a
+   * Telegram confirmation before it calls the mutating auto-bind route above. Drivers and revoked
+   * registrations fail closed, and the carrier always comes from the server-owned registration.
+   */
+  app.post('/support-bot/chat-map/auto-bind/preview', serviceGuard, async (request) => {
+    const ctx = requireContext(request);
+    const body = z
+      .object({ telegramUserId: z.string().min(1).max(40) })
+      .parse(request.body);
+    const registration =
+      await registeredMiniAppCompanyRepo.findActiveByTelegramUserId(
+        ctx,
+        body.telegramUserId,
+      );
+    if (!registration?.carrierId || registration.profile === 'driver') {
+      throw new AppError('No active owner or manager registration for this sender.', {
+        statusCode: 404,
+        code: 'SUPPORT_BOT_AUTO_BIND_NO_OWNER',
+        expose: true,
+      });
+    }
+    return {
+      carrierId: registration.carrierId,
+      companyName: registration.companyName ?? null,
+      profile: registration.profile,
+    };
   });
 
   app.get('/support-bot/access', serviceGuard, async (request) => {

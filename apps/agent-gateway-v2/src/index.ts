@@ -30,7 +30,7 @@ import {
 import { flushTurnLog, startMonitor } from './monitor.js';
 import { flushMessageLogs, logMessage } from './messageLog.js';
 import { registeredRole } from './access.js';
-import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
+import { carrierFor, chatMapSize } from './chatMap.js';
 import { incrementCounter, startSamplers } from './metrics.js';
 import { enabledServiceSummary } from './serviceRegistry.js';
 import { processInOrderByKey } from './ingressOrder.js';
@@ -39,6 +39,7 @@ import type { GatewayRole } from './skillRegistry.js';
 import { classifySupportTurn } from './aiRouter.js';
 import { requestAdmissionSnapshot, tryAdmitRequest } from './requestAdmission.js';
 import { handleCallback } from './callbackHandler.js';
+import { requestGroupBindingConfirmation } from './groupBinding.js';
 import { logTurn, sendOverloadReply, stampElapsed } from './turnTelemetry.js';
 import { startGatewayLeaderLease } from './leaderLease.js';
 
@@ -85,12 +86,6 @@ const INGRESS_CONCURRENCY =
   configuredIngressConcurrency <= 128
     ? configuredIngressConcurrency
     : 32;
-
-/** One-time announcement when an owner's message auto-binds a fresh group. */
-function bindAnnounceText(companyName: string | null): string {
-  const co = companyName ? ` — ${companyName}` : '';
-  return `✅ Guruh ulandi${co}. Endi shu yerda savol berishingiz mumkin: karta status, Money Code, hisobotlar. / Group connected${co}. Card status, Money Code, reports — just ask.`;
-}
 
 interface BufferedMessage {
   message: TgMessage;
@@ -353,41 +348,28 @@ async function main(): Promise<void> {
             const m = u.message;
             if (!m || m.from?.is_bot) return;
             if (!m.text && !m.caption && !m.photo) return;
+            const engagement = engagementReason(m, config.botUsername);
+            const direct = engagement === 'mention' || engagement === 'reply';
             let carrier = await carrierFor(m.chat.id);
             if (!carrier) {
-              // Unmapped chat. AUTO-BIND: in a group, any message from a registered active owner
-              // binds the chat to their carrier (server-verified) — announce once, then serve this
-              // very message. Private chats and strangers' groups stay invisible (zero tokens).
+              // Unmapped chat: a direct mention from an active owner/manager opens a server-resolved
+              // company confirmation. The callback performs the DB write only after that same user
+              // taps Yes. Ambient chatter, drivers and strangers remain invisible (zero tokens).
               const uid = m.from?.id ?? 0;
               const isGroup = m.chat.type === 'group' || m.chat.type === 'supergroup';
-              if (uid !== 0 && isGroup) {
-                const boundNow = await tryAutoBind(m.chat.id, uid);
-                if (boundNow) {
-                  carrier = boundNow.carrierId;
-                  await sendMessage(
-                    m.chat.id,
-                    bindAnnounceText(boundNow.companyName),
-                    m.message_id,
-                  ).catch(() => undefined);
-                  logMessage({
-                    ts: new Date().toISOString(),
-                    carrierId: boundNow.carrierId,
-                    chatId: m.chat.id,
-                    userId: 0,
-                    name: 'bot',
-                    dir: 'out',
-                    text: '[auto-bind announcement]',
-                  });
-                } else {
-                  carrier = await carrierFor(m.chat.id); // already-bound race: map may have refreshed
-                }
+              if (uid !== 0 && isGroup && direct) {
+                const prompted = await requestGroupBindingConfirmation({
+                  chatId: m.chat.id,
+                  telegramUserId: uid,
+                  replyToMessageId: m.message_id,
+                });
+                if (prompted) return;
+                carrier = await carrierFor(m.chat.id); // manual-map race while preview was running
               }
               if (!carrier) return;
             }
             // Telegram-verifiable routing runs before any model call. Production's `direct` mode
             // ignores ambient group chatter; `MESSAGE_LOG_MODE=all` remains an explicit opt-in.
-            const engagement = engagementReason(m, config.botUsername);
-            const direct = engagement === 'mention' || engagement === 'reply';
             const conversationActive = isConversationActive(m.chat.id, m.from?.id ?? 0);
             const role = await registeredRole(carrier, m.from?.id ?? 0);
             const registered = role !== null;

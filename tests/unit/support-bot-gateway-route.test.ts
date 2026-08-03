@@ -203,6 +203,104 @@ describe('support-bot gateway routes tenant isolation', () => {
     expect(mocks.autoBindChat).not.toHaveBeenCalled();
   });
 
+  it.each(['owner', 'manager'] as const)(
+    'previews the server-owned company for an active %s without writing the chat map',
+    async (profile) => {
+      mocks.findRegistration.mockResolvedValue({
+        carrierId: 'carrier-a',
+        companyName: 'Fleet A',
+        profile,
+      });
+      const server = await app();
+      const response = await server.inject({
+        method: 'POST',
+        url: '/support-bot/chat-map/auto-bind/preview',
+        payload: { telegramUserId: '9001' },
+      });
+      await server.close();
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        carrierId: 'carrier-a',
+        companyName: 'Fleet A',
+        profile,
+      });
+      expect(mocks.autoBindChat).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not preview auto-bind for a driver', async () => {
+    mocks.findRegistration.mockResolvedValue({
+      carrierId: 'carrier-a',
+      companyName: 'Fleet A',
+      profile: 'driver',
+    });
+    const server = await app();
+    const response = await server.inject({
+      method: 'POST',
+      url: '/support-bot/chat-map/auto-bind/preview',
+      payload: { telegramUserId: '9001' },
+    });
+    await server.close();
+
+    expect(response.statusCode).toBe(404);
+    expect(mocks.autoBindChat).not.toHaveBeenCalled();
+  });
+
+  it.each(['owner', 'manager'] as const)(
+    'persists the confirmed group id for an active %s so Mytrion CRM can display it',
+    async (profile) => {
+      mocks.findRegistration.mockResolvedValue({
+        carrierId: 'carrier-a',
+        companyName: 'Fleet A',
+        profile,
+      });
+      mocks.autoBindChat.mockResolvedValue({
+        bound: true,
+        row: {
+          id: 'chat-new',
+          tenantId: 'tenant-a',
+          chatId: '-1009',
+          carrierId: 'carrier-a',
+          enabled: true,
+          createdBy: 'auto:tg:9001',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const server = await app();
+      const response = await server.inject({
+        method: 'POST',
+        url: '/support-bot/chat-map/auto-bind',
+        payload: { chatId: '-1009', telegramUserId: '9001' },
+      });
+      await server.close();
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({
+        carrierId: 'carrier-a',
+        bound: true,
+        companyName: 'Fleet A',
+      });
+      expect(mocks.autoBindChat).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+        {
+          chatId: '-1009',
+          carrierId: 'carrier-a',
+          createdBy: 'auto:tg:9001',
+        },
+        env.SUPPORT_BOT_MAX_GROUPS,
+      );
+      expect(mocks.audit).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+        expect.objectContaining({
+          action: 'support_bot.chat_map.auto_bind',
+          resourceId: '-1009',
+        }),
+      );
+    },
+  );
+
   it('disables a chat mapping only with admin authority and audits it', async () => {
     mocks.disableChat.mockResolvedValue({
       id: 'chat-a',

@@ -3,6 +3,7 @@ import { classifySupportTurn } from './aiRouter.js';
 import { carrierFor } from './chatMap.js';
 import { parseConfirmationCallback, resolveConfirmation } from './confirmations.js';
 import { noteEngaged } from './filter.js';
+import { handleGroupBindingCallback } from './groupBinding.js';
 import { logMessage } from './messageLog.js';
 import { tryAdmitRequest } from './requestAdmission.js';
 import { enqueueConfirmedTurn, enqueueTurn, routingHistoryFor } from './sessions.js';
@@ -23,6 +24,9 @@ export async function handleCallback(
 ): Promise<boolean> {
   const callback = update.callback_query;
   if (!callback) return false;
+  // Group-bind confirmation must run before carrierFor(): an unbound group intentionally has no
+  // carrier until its requesting owner/manager taps Yes.
+  if (await handleGroupBindingCallback(update)) return true;
   if (!callback.message) {
     await answerCallback(callback.id, 'This action is unavailable.', true);
     return true;
