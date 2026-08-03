@@ -233,9 +233,25 @@ export function buildOctaneTools(
       tool('octane_funds', 'Does the account have funds? Driver gets yes/no only (never figures); owner gets balance figures.', asker, ({ telegram_user_id }) => run('/support-bot/funds', telegram_user_id)),
       tool(
         'octane_txn_report',
-        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: whole fleet, OR one card when they name it — pass card_last6 to scope the report to a single card (e.g. 'shu karta uchun report'). ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
-        { ...asker, range: z.enum(['day', 'week', 'month', 'quarter']).default('week'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx'), card_last6: z.string().min(4).max(19).optional().describe('OWNER only: scope the report to ONE card by its last digits, instead of the whole fleet') },
-        ({ telegram_user_id, range, from, to, format, card_last6 }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}), ...(card_last6 ? { cardLast6: card_last6 } : {}) }),
+        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: whole fleet, one card via card_last6, OR one exact unit via unit_number. Never claim a unit-scoped report unless unit_number was passed and the tool succeeded. ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
+        {
+          ...asker,
+          range: z.enum(['day', 'week', 'month', 'quarter']).default('week'),
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx'),
+          card_last6: z.string().min(4).max(19).optional().describe('OWNER only: scope to one card; never combine with unit_number'),
+          unit_number: z.string().trim().min(1).max(60).optional().describe('OWNER only: scope to one exact unit; never combine with card_last6'),
+        },
+        ({ telegram_user_id, range, from, to, format, card_last6, unit_number }) =>
+          run('/support-bot/txn-report', telegram_user_id, {
+            range,
+            format,
+            ...(from ? { from } : {}),
+            ...(to ? { to } : {}),
+            ...(card_last6 ? { cardLast6: card_last6 } : {}),
+            ...(unit_number ? { unitNumber: unit_number } : {}),
+          }),
       ),
       tool(
         'octane_money_code_quote',
@@ -306,10 +322,10 @@ export function buildOctaneTools(
       tool('octane_manual_code', "LONG (~1 min): send the asker's manual entry code (full card number) to their PRIVATE bot chat. Drivers: own card. Owners: give card_last6. Announce via telegram_progress first (ETA + delivery promise); final reply = delivery confirmation.", { ...asker, card_last6: z.string().min(4).max(19).optional() }, ({ telegram_user_id, card_last6 }) => run('/support-bot/manual-code', telegram_user_id, card_last6 ? { cardLast6: card_last6 } : {})),
       tool(
         'octane_service_request',
-        "File a support ticket with Octane's team for things you cannot do directly: general-support (out-of-scope operational question or human CS handoff), maintenance-roadside, callback, billing-form (owner), card-replace, card-fraud, account-reactivate (owner), dispute-txn, or request fallbacks (money-code, card-activate, card-limit, override-card). Gather the relevant details and confirm a concise summary first; include the user's words as the comment. Tell them the team will follow up only after a real ticket ID is returned; never claim the call itself happened.",
+        "File a support ticket with Octane's team for supported workflows only: general-support (out-of-scope operational question or human CS handoff), maintenance-roadside, billing-form (owner), card-replace, card-fraud, account-reactivate (owner), dispute-txn, or request fallbacks (money-code, card-activate, card-limit, override-card). The bot has no callback/call-request service: never collect a phone number or create buttons for 'call me'. Gather the relevant details and confirm a concise summary first; include the user's words as the comment. Tell them the team will follow up only after a real ticket ID is returned.",
         {
           ...asker,
-          request: z.enum(['general-support', 'maintenance-roadside', 'callback', 'billing-form', 'card-replace', 'card-fraud', 'account-reactivate', 'dispute-txn', 'money-code', 'card-activate', 'card-limit', 'override-card']),
+          request: z.enum(['general-support', 'maintenance-roadside', 'billing-form', 'card-replace', 'card-fraud', 'account-reactivate', 'dispute-txn', 'money-code', 'card-activate', 'card-limit', 'override-card']),
           comment: z.string().max(1500).describe("The user's own description of what they need"),
         },
         ({ telegram_user_id, request, comment }) => run('/support-bot/service-request', telegram_user_id, { request, comment }),
@@ -320,15 +336,9 @@ export function buildOctaneTools(
       tool('octane_billing_form', "Show the OWNER their billing form + verification status (the same info the mini-app billing-form sheet shows). Owner-only. To SUBMIT/file a billing form for a service charge, use octane_service_request(billing-form) instead.", asker, ({ telegram_user_id }) => run('/support-bot/billing-form', telegram_user_id)),
       tool(
         'telegram_buttons',
-        'Send a message WITH TAPPABLE BUTTONS. For ANY write confirmation, set confirmation.tool_name + its exact arguments (omit telegram_user_id; the gateway binds it) and labels; callback data is server-generated. For non-write choices, use buttons. Never put a write confirmation in arbitrary button data. After calling this, output SILENT.',
+        'Send the ONE trusted Yes/No confirmation required for a supported state-changing tool. Set confirmation.tool_name + its complete exact arguments (omit telegram_user_id; the gateway binds it); callback data is server-generated. Never use buttons to gather details, choose urgency, navigate services, request a call, or offer a generic handoff. Ask those questions as plain text. After calling this, output SILENT.',
         {
           text: z.string().min(1).max(500).describe("The message above the buttons, in the user's language"),
-          buttons: z
-            .array(z.object({ label: z.string().min(1).max(40), data: z.string().min(1).max(64).describe('What you receive back when tapped, e.g. confirm:override:yes') }))
-            .min(1)
-            .max(8)
-            .optional()
-            .describe('Non-write choices only'),
           confirmation: z
             .object({
               tool_name: z.enum(CONFIRMABLE_TOOL_NAMES),
@@ -336,80 +346,69 @@ export function buildOctaneTools(
               confirm_label: z.string().min(1).max(40).default('✅ Ha'),
               cancel_label: z.string().min(1).max(40).default("❌ Yo'q"),
             })
-            .optional()
-            .describe('Required for a state-changing action; exact action and args to bind'),
+            .describe('Exact supported state-changing action and args to bind'),
           reply_to_message_id: z.number().optional(),
         },
-        async ({ text, buttons, confirmation, reply_to_message_id }) => {
-          if (confirmation) {
-            const target = tools.find((manifest) => manifest.name === confirmation.tool_name);
-            if (!target || target.confirmationMode !== 'trusted_button') {
-              return {
-                content: [{ type: 'text' as const, text: 'invalid confirmation target' }],
-                isError: true,
-              };
-            }
-            const boundArguments = {
-              ...confirmation.arguments,
-              telegram_user_id: askerId,
+        async ({ text, confirmation, reply_to_message_id }) => {
+          const target = tools.find((manifest) => manifest.name === confirmation.tool_name);
+          if (!target || target.confirmationMode !== 'trusted_button') {
+            return {
+              content: [{ type: 'text' as const, text: 'invalid confirmation target' }],
+              isError: true,
             };
-            const validated = target.validate?.(boundArguments);
-            if (!validated) {
-              return {
-                content: [{ type: 'text' as const, text: 'confirmation target cannot be validated' }],
-                isError: true,
-              };
-            }
-            if (!validated.ok) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `invalid confirmation arguments: ${validated.message}`,
-                  },
-                ],
-                isError: true,
-              };
-            }
-            const refusal = target.authorize?.(validated.value);
-            if (refusal) {
-              return {
-                content: [{ type: 'text' as const, text: `confirmation refused: ${refusal}` }],
-                isError: true,
-              };
-            }
-            const token = newConfirmationToken();
-            const messageId = await sendButtons(
-              chatId,
-              text,
-              [
-                { label: confirmation.confirm_label, data: `c:${token}` },
-                { label: confirmation.cancel_label, data: `x:${token}` },
+          }
+          const boundArguments = {
+            ...confirmation.arguments,
+            telegram_user_id: askerId,
+          };
+          const validated = target.validate?.(boundArguments);
+          if (!validated) {
+            return {
+              content: [{ type: 'text' as const, text: 'confirmation target cannot be validated' }],
+              isError: true,
+            };
+          }
+          if (!validated.ok) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `invalid confirmation arguments: ${validated.message}`,
+                },
               ],
-              reply_to_message_id,
-            );
-            try {
-              await createConfirmation({
-                token,
-                carrierId,
-                chatId,
-                telegramUserId: askerId,
-                messageId,
-                toolName: confirmation.tool_name,
-                arguments: validated.value,
-              });
-            } catch (error) {
-              await clearButtons(chatId, messageId);
-              throw error;
-            }
-          } else {
-            if (!buttons?.length) {
-              return {
-                content: [{ type: 'text' as const, text: 'buttons or confirmation is required' }],
-                isError: true,
-              };
-            }
-            await sendButtons(chatId, text, buttons, reply_to_message_id);
+              isError: true,
+            };
+          }
+          const refusal = target.authorize?.(validated.value);
+          if (refusal) {
+            return {
+              content: [{ type: 'text' as const, text: `confirmation refused: ${refusal}` }],
+              isError: true,
+            };
+          }
+          const token = newConfirmationToken();
+          const messageId = await sendButtons(
+            chatId,
+            text,
+            [
+              { label: confirmation.confirm_label, data: `c:${token}` },
+              { label: confirmation.cancel_label, data: `x:${token}` },
+            ],
+            reply_to_message_id,
+          );
+          try {
+            await createConfirmation({
+              token,
+              carrierId,
+              chatId,
+              telegramUserId: askerId,
+              messageId,
+              toolName: confirmation.tool_name,
+              arguments: validated.value,
+            });
+          } catch (error) {
+            await clearButtons(chatId, messageId);
+            throw error;
           }
           logMessage({
             ts: new Date().toISOString(),

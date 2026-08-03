@@ -7,8 +7,10 @@
  * scoring, collections, agent gradation, competitor intel) are OUT OF SCOPE and never added.
  *
  * SOURCE: verified against OctaneFuel's authoritative client-facing docs (MoneyCodeRules, EFS OTR
- * Transaction Fee Description, ComData limits; April 2026) + the octane-kb skill (KB-1). Anything
- * not confirmed there is omitted rather than guessed — the bot escalates to the client's agent.
+ * Transaction Fee Description, ComData limits; April 2026), the client-communicable portions of
+ * the Customer Support Operations Manual v1.0 (June 2026), and the octane-kb skill (KB-1).
+ * Internal-only procedures, credentials, staff contacts, ticket codes, and exception criteria are
+ * deliberately omitted. Anything not safe and confirmed is escalated to the client's agent.
  *
  * `en` is authoritative; `uz`/`ru` mirror it where provided. For a language with no variant, the
  * model translates the `en` fact (octane-communication) — it never invents new facts.
@@ -80,18 +82,18 @@ export const KB_ARTICLES: KbArticle[] = [
     title: 'Card declined — diagnostics',
     tags: ['card', 'declined', 'hold', 'troubleshooting'],
     triggers: ['declined', 'ishlamayapti', 'card not working', 'karta rad etdi', 'deklayn'],
-    en: `If the card declines: 1) Hold/fraud-lock -> a 30-minute override unlocks it (drivers: ask the bot or the mini-app; it re-locks automatically). 2) Inactive -> the owner activates it in the mini-app (Card management). 3) Daily gallon limit reached -> wait for the daily reset or the owner raises the limit. 4) Out-of-network station -> move to an in-network stop. 5) Company balance empty -> owner tops up. The bot/mini-app shows which case yours is.`,
-    uz: `Karta rad etsa: 1) Hold/fraud -> 30 daqiqalik override ochadi (o'zi qayta yopiladi). 2) Inactive -> owner mini-app'da aktivlashtiradi. 3) Kunlik gallon limiti tugagan -> reset'ni kuting yoki owner oshiradi. 4) Tarmoqdan tashqari -> tarmoq ichiga o'ting. 5) Balans bo'sh -> owner to'ldiradi. Qaysi holat ekanini bot/mini-app ko'rsatadi.`,
-    ru: `Отказ: 1) Hold -> override на 30 мин; 2) Inactive -> владелец активирует; 3) дневной лимит; 4) станция вне сети; 5) пустой баланс. Что именно — покажет бот/мини-апп.`,
+    en: `If the card declines: 1) Inactive -> the owner can activate it, but the PIN resets to the card's last 4 digits and the driver must set it again. 2) Hold for Fraud -> it cannot be permanently reactivated without Verification approval; when the live card result explicitly says an override is available, an eligible one-time override may open it for about 30 minutes. 3) Daily gallon limit reached -> wait for the reset or have the owner raise it. 4) Out-of-network station -> move to an in-network stop. 5) Company balance empty -> the owner tops up. The bot or mini-app can show the current status and whether a temporary override is actually available.`,
+    uz: `Karta rad etsa: 1) Inactive -> owner aktivlashtiradi, lekin PIN kartaning oxirgi 4 raqamiga qaytadi va driver uni qayta o'rnatadi. 2) Hold for Fraud -> Verification tasdig'isiz doimiy aktivlashtirib bo'lmaydi; live natija override mavjudligini aniq ko'rsatsa, mos bir martalik override kartani taxminan 30 daqiqaga ochishi mumkin. 3) Kunlik gallon limiti tugagan -> reset'ni kuting yoki owner oshiradi. 4) Tarmoqdan tashqari -> tarmoq ichiga o'ting. 5) Balans bo'sh -> owner to'ldiradi.`,
+    ru: `Если карта отклонена: 1) Inactive — владелец активирует, но PIN сбрасывается на последние 4 цифры карты. 2) Hold for Fraud нельзя активировать постоянно без одобрения Verification; только если live-статус явно разрешает override, доступен разовый override примерно на 30 минут. Также проверьте дневной лимит, сеть станции и баланс.`,
   },
   {
     id: 'KB-07',
     title: 'Override — what it is',
     tags: ['override', 'hold', 'fraud'],
     triggers: ['override', 'ochib bering', 'unlock card', 'unlock my card'],
-    en: `Override temporarily unlocks a fraud-held card for about 30 minutes — enough for one fueling — then EFS re-locks it automatically. It does NOT change the card's status permanently and only works on held cards. Drivers can trigger it for their own card.`,
-    uz: `Override — fraud-hold'dagi kartani ~30 daqiqaga ochadi (bitta quyishga yetadi), keyin EFS avtomatik qayta yopadi. Statusni doimiy o'zgartirmaydi, faqat hold'dagi kartada ishlaydi. Driver o'z kartasiga o'zi qila oladi.`,
-    ru: `Override открывает карту на ~30 минут (одна заправка), потом EFS сам закрывает. Только для карт на hold.`,
+    en: `Override is an eligible one-time exception shown by the live card result. When available, it temporarily opens the held card for about 30 minutes — enough for one fueling — and EFS re-locks it automatically. It does not permanently reactivate a Hold for Fraud card; permanent restoration still requires Verification approval. Drivers can request an available override for their own card.`,
+    uz: `Override — live karta natijasi ruxsat bergan bir martalik istisno. Mavjud bo'lsa, hold'dagi kartani taxminan 30 daqiqaga, bitta quyish uchun ochadi va EFS avtomatik qayta yopadi. Hold for Fraud kartani doimiy aktivlashtirmaydi; doimiy tiklash uchun Verification tasdig'i kerak. Driver faqat o'z kartasiga mavjud override'ni so'rashi mumkin.`,
+    ru: `Override — разовое исключение, доступность которого показывает live-статус карты. Он открывает карту примерно на 30 минут, затем EFS снова блокирует её. Это не постоянная активация Hold for Fraud; для постоянного восстановления нужно одобрение Verification.`,
   },
   {
     id: 'KB-08',
@@ -196,8 +198,8 @@ export const KB_ARTICLES: KbArticle[] = [
     title: 'How to activate a card (owner)',
     tags: ['how-to', 'activate', 'card', 'deactivate', 'inactive'],
     triggers: ['activate card', 'kartani aktivlashtirish', 'card is inactive', 'turn card on'],
-    en: `Owner: mini-app -> Card management, pick the card and toggle it active/inactive. Or ask the bot to activate/deactivate a card by its last digits (it confirms first). Note: a fraud-held card is different — it can't be activated this way; use a one-time override for a single fueling, or contact your Octane agent.`,
-    uz: `Owner: mini-app -> Card management, kartani tanlab active/inactive qiling. Yoki kartaning oxirgi raqamlarini aytib botdan aktivlashtiring (avval so'raydi). Diqqat: fraud-hold'dagi karta boshqacha — bu yo'l bilan ochilmaydi; bir martalik override qiling yoki Octane agentingizga murojaat qiling.`,
+    en: `Owner: mini-app -> Card management, pick the card and toggle it active/inactive. Or ask the bot to activate/deactivate a card by its last digits (it confirms first). A card on Hold for Fraud cannot be permanently activated this way; permanent restoration requires Verification approval. If its live status explicitly offers a one-time override, that is temporary only.`,
+    uz: `Owner: mini-app -> Card management, kartani tanlab active/inactive qiling. Yoki kartaning oxirgi raqamlarini aytib botdan aktivlashtiring (avval so'raydi). Hold for Fraud'dagi kartani bu yo'l bilan doimiy aktivlashtirib bo'lmaydi; Verification tasdig'i kerak. Live status bir martalik override'ni aniq ko'rsatsa, u faqat vaqtinchalik.`,
   },
   {
     id: 'KB-24',
@@ -224,5 +226,56 @@ export const KB_ARTICLES: KbArticle[] = [
     triggers: ['card not arrived', 'karta kelmadi', 'where is my card', 'card shipping'],
     en: `Regular-mail cards take 7-10 business days (free, no tracking); FedEx Overnight ($21.50) is faster but weather can delay it. Check the mini-app (Track my card) for status. If it's past 10 business days for regular mail, ask the bot to file a card-replace/track request to your Octane agent.`,
     uz: `Oddiy pochta kartasi 7-10 ish kuni (bepul, trekingsiz); FedEx Overnight ($21.50) tezroq, lekin ob-havo kechiktirishi mumkin. Holatini mini-app'da (Track my card) ko'ring. Oddiy pochtada 10 ish kunidan oshsa, botdan Octane agentingizga karta-replace/track so'rovini ochtiring.`,
+  },
+  {
+    id: 'KB-32',
+    title: 'Card statuses and PIN behavior',
+    tags: ['card', 'status', 'active', 'hold', 'inactive', 'fraud', 'pin'],
+    triggers: ['what does hold mean', 'card status', 'inactive pin', 'hold for fraud', 'karta statusi'],
+    en: `Active means the card can be used and its PIN works normally. Standard Hold temporarily blocks the card but preserves the PIN for reactivation. Inactive blocks the card and disables its PIN; after reactivation the PIN resets to the card's last 4 digits and the driver must set it again. Hold for Fraud fully closes the card because of suspected or confirmed fraud and cannot be permanently reactivated without Verification approval. A temporary one-time override is separate and may be offered only when the live card result marks it available.`,
+    uz: `Active — karta ishlaydi va PIN odatdagidek ishlaydi. Oddiy Hold kartani vaqtincha bloklaydi, lekin PIN saqlanadi. Inactive kartani bloklaydi va PIN'ni o'chiradi; qayta aktivlashtirilganda PIN kartaning oxirgi 4 raqamiga qaytadi va driver uni qayta o'rnatadi. Hold for Fraud — fraud sabab to'liq yopilish va Verification tasdig'isiz doimiy aktivlashtirib bo'lmaydi. Vaqtinchalik bir martalik override alohida bo'lib, faqat live natija mavjudligini ko'rsatsa taklif qilinadi.`,
+    ru: `Active — карта работает. Обычный Hold временно блокирует карту, но сохраняет PIN. Inactive отключает PIN; после активации PIN сбрасывается на последние 4 цифры. Hold for Fraud нельзя активировать постоянно без одобрения Verification. Разовый временный override возможен только если live-статус карты явно показывает его доступность.`,
+  },
+  {
+    id: 'KB-33',
+    title: 'Account types and credit routing',
+    tags: ['account type', 'line of credit', 'loc', 'deposit', 'prepay', 'credit'],
+    triggers: ['what account type', 'line of credit', 'prepay or deposit', 'how is loc decided', '21 cards'],
+    en: `Octane accounts use one of three structures: Line of Credit (Octane funds an approved spending limit and invoices the client afterward), Deposit 1:1 (the client provides a security deposit equal to the spending limit), or Prepay (the client funds the balance before card use). Credit checks, LOC decisions, and spending-limit assignments are made only by Verification, not Customer Support. Requests for 1-20 cards follow Octane's Verification review. Requests for 21 or more cards require a WEX-funded application; if that application is declined, the available structures are Prepay or Deposit 1:1.`,
+  },
+  {
+    id: 'KB-34',
+    title: 'Limit increase eligibility',
+    tags: ['credit-limit', 'increase', 'eligibility', 'invoice', 'insurance', 'plaid'],
+    triggers: ['increase my credit limit', 'limit increase requirements', 'why was increase declined', 'oshirish shartlari'],
+    en: `Customer Support can collect a limit-increase request, but Verification makes the decision. Eligibility requires at least 5 fully paid invoices, active insurance shown on FMCSA, fewer than 10 late-payment occurrences, and fresh financial data through new bank statements or a refreshed Plaid/Stripe connection. The maximum increase in one review cycle is $5,000. Fleet expansion also requires proof such as a purchase, lease, or registration document.`,
+  },
+  {
+    id: 'KB-35',
+    title: 'Account reactivation requirements',
+    tags: ['reactivation', 'inactive account', 'fmcsa', 'billing form', 'plaid'],
+    triggers: ['reactivate account', 'account inactive 45 days', 'what do i need to reactivate', 'qayta aktivlashtirish'],
+    en: `An account with no transactions, card use, or confirmed client activity for 45 consecutive days must complete the full reactivation process. Verification confirms active FMCSA authority and checks payment history; the client must sign a new Billing Form and reconnect the bank account through a new Plaid link. All steps are required, and Verification gives final approval. Ask Octane support to send the current form and secure reconnection link.`,
+  },
+  {
+    id: 'KB-36',
+    title: 'Plaid identity and financial verification',
+    tags: ['plaid', 'identity', 'bank', 'selfie', 'verification'],
+    triggers: ['what is plaid', 'plaid link', 'identity check', 'bank verification', 'selfie verification'],
+    en: `Plaid is the third-party verification flow used by WEX and Octane for identity and, when required, financial data. WEX sends a direct secure link that the applicant opens on a mobile browser. The flow may request address, date of birth and the last 4 digits of SSN, a government-issued ID photo, a selfie, or a bank connection. Completion sends the result to WEX's Risk Platform for review; a completed check is not itself a credit approval. Use only the link sent for your application and contact Octane support if it fails.`,
+  },
+  {
+    id: 'KB-37',
+    title: 'Insurance status and FMCSA updates',
+    tags: ['insurance', 'fmcsa', 'frozen', 'card block'],
+    triggers: ['insurance expired', 'why is limit frozen', 'fmcsa update', 'insurance document'],
+    en: `Octane verifies operating insurance status from the FMCSA public record. A certificate, screenshot, insurer email, or verbal confirmation does not replace an active FMCSA record. When an issue is detected, the spending limit may be frozen while the client updates the policy; if FMCSA still does not show the update after the notice period, cards may be blocked. Once FMCSA shows active insurance, Verification reviews restoration of cards and limits.`,
+  },
+  {
+    id: 'KB-38',
+    title: 'Lost, stolen, replacement, and additional cards',
+    tags: ['card', 'lost', 'stolen', 'replace', 'new-card', 'fleet expansion'],
+    triggers: ['lost card', 'stolen card', 'replacement', 'additional card', 'new driver card'],
+    en: `For a lost or stolen card, deactivate the affected card immediately and ask Octane support to open a one-for-one replacement request. Requests for a new driver or fleet expansion are reviewed by Verification and may require proof of the added truck, such as a purchase document, lease agreement, or registration. Customer Support records and routes the request; it does not approve or issue additional cards directly.`,
   },
 ];

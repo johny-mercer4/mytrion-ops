@@ -76,11 +76,12 @@ The backend must use the same dedicated `SUPPORT_BOT_GATEWAY_API_KEY`, enable
 the gateway starts. Production writes fail closed unless they carry a consumed server confirmation,
 stable idempotency metadata, and the current session fence.
 
-An unmapped Telegram group is auto-bound only after an active registered company owner sends the
-first message. This keeps onboarding tenant-safe without preloading guessed chat IDs. Disable a
-stale mapping with `DELETE /v1/support-bot/chat-map/:chatId` using admin or gateway-service auth;
-the action is tenant-scoped and audit-logged. The backend enforces the 800-enabled-group cap while
-holding a transaction-scoped advisory lock, so concurrent onboarding cannot exceed the limit.
+An unmapped Telegram group is bound only after an active registered company owner or manager
+mentions the bot and confirms the server-resolved company with the `Yes` button. Previewing or
+pressing `No` never writes a chat mapping. Disable a stale mapping with
+`DELETE /v1/support-bot/chat-map/:chatId` using admin or gateway-service auth; the action is
+tenant-scoped and audit-logged. The backend enforces the 800-enabled-group cap while holding a
+transaction-scoped advisory lock, so concurrent onboarding cannot exceed the limit.
 
 Useful defaults are documented in `.env.example`.
 
@@ -129,8 +130,10 @@ corepack pnpm smoke:support-kb
 The seed is idempotent. Money Code articles are excluded by default; a deliberate
 `SUPPORT_KB_INCLUDE_MONEY_CODE=1` is required to publish them. Volatile April-2026 station,
 discount, fee, limit, and delivery facts are seeded with an expiry and therefore remain hidden
-until re-verified. If the new backend endpoint is unavailable during rollout, the bundled corpus
-is a bounded fallback and is still filtered by service flags.
+until re-verified. Client-communicable material from the June 2026 Customer Support Operations
+Manual is curated into the same seed and bundled fallback; internal credentials, contacts, ticket
+codes, and exception criteria are never published. If the backend endpoint is unavailable during
+rollout, the bundled corpus is a bounded fallback and is still filtered by service flags.
 
 ## Role-aware skill runtime
 

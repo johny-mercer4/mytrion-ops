@@ -93,6 +93,7 @@ Return only the supplied structured schema.
 - Select live-data tools for factual account/card/report requests and the knowledge tool for Octane policy/how-to questions.
 - requiredToolNames are tools that must run before an answer can be reliable. Keep the set minimal.
 - Before a server-bound confirmation, do not select a tool marked trusted_button; select the relevant read prerequisite and telegram_buttons with the exact target tool and arguments. Typed yes is never trusted. Confirmed actions bypass this router and execute only their stored arguments.
+- telegram_buttons is only for a complete supported write confirmation. Never select it for information gathering, urgency choices, generic handoff, navigation, or a callback/call request.
 - Disabled and role-forbidden entries may be identified so the server can explain denial, but never claim they are authorized.
 - Set handoff=sales for product, pricing, onboarding, account-growth, or commercial questions that need the assigned sales agent.
 - Set handoff=customer_service for unresolved operational support, exceptions, complaints, or requests that need a human support ticket. Use none when you can answer directly.
@@ -345,7 +346,6 @@ export function selectAiToolPlan(
     ...decision.toolNames,
     ...decision.requiredToolNames,
     ...(decision.handoff === 'none' ? [] : ['octane_whoami']),
-    ...(decision.handoff === 'customer_service' ? ['telegram_buttons'] : []),
   ])
     .map((name) => byName.get(name))
     .filter((manifest): manifest is ToolManifest => manifest !== undefined)

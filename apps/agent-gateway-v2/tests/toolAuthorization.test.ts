@@ -55,4 +55,53 @@ describe('per-turn Telegram sender authorization', () => {
       format: 'xlsx',
     });
   });
+
+  it('allows buttons only for a complete supported write confirmation', () => {
+    const manifest = buildOctaneTools(-1003, 'carrier-3', 12).find(
+      (tool) => tool.name === 'telegram_buttons',
+    );
+
+    expect(
+      manifest?.validate?.({
+        text: 'Shoshilinchlikni tanlang',
+        buttons: [
+          { label: '🔴 Shoshilinch', data: 'urgent' },
+          { label: '🟡 Oddiy', data: 'normal' },
+        ],
+      }).ok,
+    ).toBe(false);
+    expect(
+      manifest?.validate?.({
+        text: 'Kartani o‘chiraymi?',
+        confirmation: {
+          tool_name: 'octane_card_action',
+          arguments: { card_last6: '087937', action: 'deactivate' },
+        },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('removes callback tickets and accepts exact unit report scope', () => {
+    const tools = buildOctaneTools(-1004, 'carrier-4', 13);
+    const serviceRequest = tools.find(
+      (tool) => tool.name === 'octane_service_request',
+    );
+    const report = tools.find((tool) => tool.name === 'octane_txn_report');
+
+    expect(
+      serviceRequest?.validate?.({
+        telegram_user_id: 13,
+        request: 'callback',
+        comment: 'Call me urgently',
+      }).ok,
+    ).toBe(false);
+    expect(
+      report?.validate?.({
+        telegram_user_id: 13,
+        range: 'week',
+        format: 'xlsx',
+        unit_number: '040',
+      }).ok,
+    ).toBe(true);
+  });
 });

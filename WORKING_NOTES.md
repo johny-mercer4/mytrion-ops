@@ -11130,3 +11130,37 @@ today's records — but the end-to-end POST is untested and should be exercised 
   throttling, conflict detection, and a short miss-driven access refresh for newly registered users.
 - Verification: confirmation/cache tests 8/8, full gateway suite 88/88, targeted backend route/RBAC
   tests 18/18, root and gateway typechecks/builds pass, and lint has 0 errors (22 existing warnings).
+
+## 2026-08-04 — Customer Support manual knowledge curation
+
+- Reviewed `Octane_CS_Operations_Manual_v3 (2).docx` (Customer Support Operations Manual v1.0,
+  June 2026) for the external owner/manager/driver support bot. Added seven client-communicable
+  articles covering account structures, limit-increase eligibility, reactivation, Plaid, FMCSA
+  insurance status, card replacements, and the exact card-status/PIN behavior.
+- Corrected three existing card articles: Hold for Fraud cannot be permanently reactivated without
+  Verification approval; a one-time temporary override is offered only when live card state marks
+  it available.
+- Did not publish the raw confidential manual or its internal login flow, staff contacts/account
+  number, ticket taxonomy, internal exception criteria, call-scoring rules, or work-order mechanics.
+  Added regression assertions that representative private identifiers never enter the client corpus.
+- The idempotent support-KB seed now records the manual-derived articles as a June 2026 curated
+  source with version bumps for corrected articles; the same bounded content remains available as
+  the gateway's backend-outage fallback.
+- Verification: gateway suite 91/91 and backend KB isolation/fusion tests 5/5 pass; root and gateway
+  typechecks/builds pass; lint has 0 errors (22 existing warnings).
+
+## 2026-08-04 — Support-bot testing corrections
+
+- Removed callback/call requests from the agent gateway's service-request contract. “Call me” now
+  receives a short unsupported explanation plus the assigned agent contact; the bot no longer
+  collects phone/unit/urgency, promises a call, or creates a callback ticket.
+- Made `telegram_buttons` confirmation-only. Arbitrary choices (including Urgent/Normal), menus,
+  missing-detail collection, and generic Customer Service handoffs fail schema validation; the
+  router no longer auto-injects a button tool for every handoff.
+- Added owner/manager transaction-report scoping by exact unit at the DWH SQL layer. Both data and
+  totals use the same unit predicate, driver-selected unit scope is rejected, and report metadata,
+  audit data, filename, and tool result identify the actual unit scope.
+- Tightened prompts against fake plain-text confirmations and false “one unit sent” success after a
+  fleet report; legacy arbitrary callback taps now fail closed before access/router/model work.
+  Full gateway suite 94/94 and targeted backend report/RBAC tests 12/12 pass; root and
+  gateway typechecks/builds pass; lint has 0 errors (22 existing warnings).

@@ -116,6 +116,8 @@ export interface ListDwhTxnOpts {
   carrierId: string;
   /** Driver scoping — filters at the SQL level, so other cards' rows never leave Postgres. */
   cardNumber?: string | undefined;
+  /** Owner-only report scoping — exact unit match, applied to both rows and totals in SQL. */
+  unitNumber?: string | undefined;
   range?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
@@ -135,6 +137,12 @@ export async function listDwhTransactions(opts: ListDwhTxnOpts): Promise<DwhTxnR
   if (opts.cardNumber) {
     params.push(opts.cardNumber);
     where.push(`t.card_number = $${params.length}`);
+  }
+  if (opts.unitNumber) {
+    params.push(opts.unitNumber.trim());
+    where.push(
+      `LOWER(TRIM(COALESCE(t.driver_unit, ''))) = LOWER(TRIM($${params.length}))`,
+    );
   }
   if (resolved.from) {
     params.push(resolved.from);
