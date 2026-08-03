@@ -169,41 +169,6 @@
   cursor: not-allowed;
 }
 
-/* Dimension switcher — one row above the charts (filters live above, per the viz spec). */
-.an-root .an-dims {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-.an-root .an-dim {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 13px;
-  border-radius: var(--an-r-pill);
-  border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane-alt);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    color var(--hz-dur-wash) var(--hz-ease),
-    background var(--hz-dur-wash) var(--hz-ease),
-    border-color var(--hz-dur-wash) var(--hz-ease);
-}
-.an-root .an-dim:hover {
-  color: var(--text-primary);
-  background: var(--hz-pane-lift);
-}
-.an-root .an-dim[aria-pressed='true'] {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-}
-
 /* ── Card ─────────────────────────────────────────────────────────────────── */
 .an-root .an-card {
   display: flex;
@@ -597,28 +562,6 @@
 .an-root .an-banner strong {
   color: var(--text-primary);
 }
-.an-root .an-sk {
-  border-radius: var(--an-r-md);
-  border: 1px solid var(--hz-pane-bd);
-  background:
-    linear-gradient(100deg, transparent 20%, var(--hz-glass-hover) 45%, transparent 70%),
-    var(--hz-pane);
-  background-size: 220% 100%, auto;
-  background-repeat: no-repeat, no-repeat;
-  animation: anSheen 1.25s var(--hz-ease) infinite;
-}
-@keyframes anSheen {
-  from {
-    background-position:
-      130% 0,
-      0 0;
-  }
-  to {
-    background-position:
-      -30% 0,
-      0 0;
-  }
-}
 .an-root .an-spin {
   animation: anSpin 0.9s linear infinite;
 }
@@ -769,7 +712,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .an-root .an-page,
-  .an-root .an-sk,
   .an-root .an-spin {
     animation: none;
   }
@@ -777,4 +719,78 @@
   .an-root .an-btn:hover {
     transform: none;
   }
+}
+
+/* ── Dashboard loading / error / empty ───────────────────────────────────────
+   Replaces the shared ComingSoon panel, which carried a hardcoded "Coming soon"
+   badge and so told the user a built dashboard did not exist. Same Horizon glass
+   language, tone driven by the state instead of a fixed warning amber. */
+.an-root .an-state {
+  --an-state-tone: var(--an-s2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: clamp(44px, 8vh, 82px) 26px;
+  text-align: center;
+  border-radius: var(--an-r-md);
+  border: 1px solid color-mix(in srgb, var(--an-state-tone) 22%, var(--hz-pane-bd));
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--an-state-tone) 9%, transparent),
+      transparent 62%
+    ),
+    var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.an-root .an-state[data-kind='error'] {
+  --an-state-tone: var(--danger, #ef4444);
+}
+.an-root .an-state[data-kind='empty'] {
+  --an-state-tone: var(--text-muted);
+  border-style: dashed;
+}
+.an-root .an-state-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  flex: none;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--an-state-tone) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--an-state-tone) 30%, transparent);
+  color: var(--an-state-tone);
+  box-shadow:
+    0 8px 28px -10px color-mix(in srgb, var(--an-state-tone) 40%, transparent),
+    var(--hz-glass-inset);
+}
+.an-root .an-state-title {
+  margin: 2px 0 0;
+  font-family: var(--font-head);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+}
+.an-root .an-state-body {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* Per-card export result note (row count, or the failure reason). */
+.an-root .an-rep-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.an-root .an-rep-note.is-err {
+  color: var(--danger, #ef4444);
 }

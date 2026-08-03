@@ -1,11 +1,12 @@
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 
 import { useAnalyticsSnapshot } from '@/components/analytics';
-import { ComingSoon } from '../../_shared/ComingSoon';
 
 import type { CategoryDef, DashboardFilterParams } from '../categories';
 import { DashboardFilters } from '../DashboardFilters';
+import { DashboardState } from '../DashboardState';
 import { Breakdown, KpiGrid, Leaderboard, TrendBars } from '../charts';
+import type { AnalyticsBlock } from '../data';
 
 export interface CategoryDashboardProps {
   category: CategoryDef;
@@ -27,7 +28,21 @@ function rangeHint(range: DashboardFilterParams['range']): string {
 }
 
 /**
- * One category dashboard (Sales / CS / Finance / Billing / Transactions).
+ * A block that came back successfully but holds nothing for the window — no breakdown rows, no
+ * leaderboard rows, and a flat-zero trend. Distinct from a failed fetch: the warehouse answered,
+ * the answer is "nothing happened". Rendering the normal grid here would be a wall of zeros and
+ * empty panels that reads like a broken page.
+ */
+function isEmptyBlock(block: AnalyticsBlock): boolean {
+  return (
+    block.breakdown.length === 0 &&
+    block.leaderboard.length === 0 &&
+    block.trend.every((p) => p.value === 0)
+  );
+}
+
+/**
+ * One category dashboard (Sales / CRM / CS / Finance / Billing / Transactions).
  * Filter params are sent to GET /v1/analytics/:dimension → parameterized DWH SQL, so KPIs,
  * trend, breakdown, and leaderboard all reflect the selected agent / date window.
  */
@@ -44,6 +59,8 @@ export function CategoryDashboard({ category, filters, onFiltersChange }: Catego
     },
   });
   const { block, computedAt, error } = snap.current;
+  /** First load (or a filter change) with nothing to show yet — the big panel owns the spinner. */
+  const busy = snap.loading || !snap.hasAttempted;
 
   const appFillsKpi = block?.kpis.find((k) => k.label === 'App Fills');
   const appFillsZero =
@@ -71,13 +88,15 @@ export function CategoryDashboard({ category, filters, onFiltersChange }: Catego
               })}`}
             </span>
           ) : null}
+          {/* Exactly one spinner on screen: while the big loading panel is up this button is
+              inert and static, so it never becomes a second indicator for the same wait. */}
           <button
             type="button"
             className="an-btn"
             onClick={() => void snap.refresh()}
-            disabled={snap.refreshing}
+            disabled={snap.refreshing || busy}
           >
-            <RefreshCw size={15} className={snap.refreshing ? 'an-spin' : ''} />
+            <RefreshCw size={15} className={snap.refreshing && !busy ? 'an-spin' : ''} />
             Refresh
           </button>
         </div>
@@ -107,25 +126,27 @@ export function CategoryDashboard({ category, filters, onFiltersChange }: Catego
       ) : null}
 
       {!block ? (
-        snap.loading || !snap.hasAttempted ? (
-          <ComingSoon
-            icon={<RefreshCw size={26} className="an-spin" />}
-            title="Loading analytics…"
-            body="Pulling KPIs from the warehouse for this agent and date range. Filtered views are cached for a few minutes so switches stay snappy."
-            tone="var(--an-s2)"
-          />
+        busy ? (
+          <DashboardState kind="loading" detail="Pulling the latest warehouse KPIs for this view" />
         ) : (
-          <ComingSoon
-            icon={<TriangleAlert size={26} />}
-            title={error ? 'Analytics unavailable' : 'No snapshot yet'}
-            body={
+          <DashboardState
+            kind="error"
+            detail={
               error
-                ? `The analytics warehouse timed out or is unreachable (${error}). Click Refresh to retry — rapid filter changes can exhaust the shared DWH pool.`
-                : 'The warehouse has not produced a snapshot for this dimension yet.'
+                ? `The warehouse did not answer (${error}). Rapid filter changes can exhaust the shared connection pool — retry in a moment.`
+                : 'The warehouse returned no snapshot for this view.'
             }
-            tone="var(--an-s2)"
+            onRetry={() => void snap.refresh()}
+            retrying={snap.refreshing}
           />
         )
+      ) : isEmptyBlock(block) ? (
+        <DashboardState
+          kind="empty"
+          detail={`${
+            filters.agentName ? `${filters.agentName} has` : 'There is'
+          } no recorded activity for ${rangeHint(filters.range).toLowerCase()}. The query succeeded — the window is simply empty. Try a wider range.`}
+        />
       ) : (
         <>
           <KpiGrid kpis={block.kpis} />
