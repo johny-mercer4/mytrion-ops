@@ -20,7 +20,7 @@ engagement and tool scope without keyword or regex intent tables.
 ## Local setup
 
 ```bash
-cd apps/agent-gateway-groq
+cd apps/agent-gateway-v2
 cp .env.example .env
 # Fill OPENAI_API_KEY, Telegram, and OCTANE_* values.
 corepack pnpm install
@@ -185,7 +185,7 @@ ordering, queue cleanup, event-loop lag, and memory growth.
 
 This folder can run as a Render Web Service using its Dockerfile:
 
-1. Set the service root directory to `apps/agent-gateway-groq`.
+1. Set the service root directory to `apps/agent-gateway-v2`.
 2. Choose the Docker runtime and add the required environment variables above.
 3. Mount a persistent disk at `/app/data` if chat history and monitor logs must survive deploys.
 4. One replica is enough initially. Multiple replicas are supported as warm standbys when all use
