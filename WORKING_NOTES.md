@@ -11089,3 +11089,19 @@ today's records — but the end-to-end POST is untested and should be exercised 
   state, and scripted-agent tests cannot reach the blackboard database. The RBAC leakage suite and
   all Card Lookup tests pass.
 - Rebuilt the mini-app and Mytrion CRM production bundles.
+
+## 2026-08-04 — Sales Card Status Report automation
+
+- Added `Card Status Report` directly after the invoice/transaction reporting actions in Sales
+  Mytrion Automations. The action selects one of the agent's clients, shows the same masked live
+  Card Lookup roster, and downloads the shared PDF or Excel format in the browser.
+- Added Sales-authenticated `/sales/cards` and `/sales/cards/report` reads. Both require the Sales
+  department and prove the carrier belongs to the caller before loading cards; report downloads are
+  audit-logged and never cached.
+- The result table keeps the approved eight columns and points agents to the existing card actions
+  for activation/deactivation, limit, and unit/driver management.
+- Moved the mini-app's private-DM Card Lookup download panel below the searchable card roster, so it
+  follows the same lower-page placement as invoice/transaction download actions.
+- Verification: root + both frontend typechecks pass; root lint has 0 errors (22 existing warnings);
+  backend report/ownership tests 7/7, Sales automation/report UI tests 11/11, and the full Mytrion
+  CRM suite 418/418 pass; all three production builds pass and both frontend bundles were rebuilt.

@@ -53,6 +53,7 @@ import { commsTicketsRoutes } from './routes/v1/commsTickets.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
+import { salesCardReportsRoutes } from './routes/v1/salesCardReports.routes.js';
 import { managerRoutes } from './routes/v1/manager.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
@@ -429,6 +430,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       });
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
+      await v1.register(salesCardReportsRoutes);
       await v1.register(managerRoutes);
       await v1.register(verificationPipelineRoutes);
       await v1.register(verificationClientsRoutes);

@@ -3,6 +3,7 @@ import type { DonePayload, InvRow } from './autoLive';
 import type { TxnReportState } from './txnReport';
 import { AutoStatusResult, isEmptyResultMessage } from './AutoActionResult';
 import { AutoCardLastUsedPanel, AutoLimitUpdatePanel } from './AutoCardResults';
+import { AutoCardLookupPanel } from './AutoCardLookupPanel';
 import { AutoInvoicesPanel, AutoTransactionsPanel } from './AutoResultPanels';
 import { AutoPaymentsPanel, AutoTrackingPanel, AutoWexTasksPanel } from './AutoRichResults';
 
@@ -17,7 +18,8 @@ export function hasWideAutoResult(
   txnReport: TxnReportState | null,
 ): boolean {
   if (result?.kind === 'invoices') return invoiceRows.length > 0;
-  return result?.kind === 'transactions' && Boolean(txnReport?.transactions.length);
+  if (result?.kind === 'transactions') return Boolean(txnReport?.transactions.length);
+  return result?.kind === 'card-lookup' && result.rows.length > 0;
 }
 
 interface AutoDoneStepProps {
@@ -55,32 +57,38 @@ export function AutoDoneStep({
   const payments = result?.kind === 'payments' ? result : null;
   const lastUsed = result?.kind === 'card-last-used' ? result : null;
   const limit = result?.kind === 'limit-update' ? result : null;
+  const cardLookup = result?.kind === 'card-lookup' ? result : null;
   const invoicesEmpty = invoices && invoiceRows.length === 0;
   const transactionsEmpty = transactions && !txnReport?.transactions.length;
+  const cardLookupEmpty = Boolean(cardLookup && cardLookup.rows.length === 0);
   const tableEmpty = Boolean(table && table.rows.length === 0);
   const messageEmpty = result?.kind === 'message' && isEmptyResultMessage(result.message);
-  const empty = invoicesEmpty || transactionsEmpty || tableEmpty || messageEmpty;
+  const empty = invoicesEmpty || transactionsEmpty || cardLookupEmpty || tableEmpty || messageEmpty;
   const rich = (
-    invoices || transactions || table || tracking || wexTasks || payments || lastUsed || limit
+    invoices || transactions || cardLookup || table || tracking || wexTasks || payments || lastUsed || limit
   ) && !empty;
   const emptyTitle = invoicesEmpty
     ? 'No invoices found'
     : transactionsEmpty
       ? 'No transactions found'
-      : tableEmpty
-        ? (table?.title ? `No ${table.title.toLowerCase()}` : 'Nothing found')
-        : messageEmpty
-          ? (successMessage.replace(/\.$/, '') || 'Nothing found')
-          : 'Nothing found';
+      : cardLookupEmpty
+        ? 'No cards found'
+        : tableEmpty
+          ? (table?.title ? `No ${table.title.toLowerCase()}` : 'Nothing found')
+          : messageEmpty
+            ? (successMessage.replace(/\.$/, '') || 'Nothing found')
+            : 'Nothing found';
   const emptyMessage = messageEmpty
     ? undefined
     : invoicesEmpty
       ? 'No invoices found for the selected date range.'
       : transactionsEmpty
         ? 'No transactions in this range. Try a different window or deal.'
-        : tableEmpty
-          ? 'Nothing matched for this carrier.'
-          : 'Try a different search or selection.';
+        : cardLookupEmpty
+          ? 'No cards were returned for this carrier.'
+          : tableEmpty
+            ? 'Nothing matched for this carrier.'
+            : 'Try a different search or selection.';
 
   if (error) {
     return (
@@ -126,6 +134,13 @@ export function AutoDoneStep({
     >
       {invoices && <AutoInvoicesPanel rows={invoiceRows} carrierId={invoiceCarrierId} />}
       {transactions && <AutoTransactionsPanel report={txnReport} splitLayout />}
+      {cardLookup && (
+        <AutoCardLookupPanel
+          carrierId={cardLookup.carrierId}
+          companyName={cardLookup.companyName}
+          rows={cardLookup.rows}
+        />
+      )}
       {tracking && (
         <AutoTrackingPanel
           carrierId={tracking.carrierId}

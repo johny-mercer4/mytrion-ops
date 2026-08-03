@@ -3429,39 +3429,6 @@ function ActionSheet({
                 ];
                 return (
                   <div>
-                    <div style={{ padding: '13px 14px', marginBottom: 12, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--secondary)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
-                        <span style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                          <Icon name="doc" size={17} strokeWidth={2} className="" />
-                        </span>
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', color: 'var(--fg)', fontSize: 14, fontWeight: 700 }}>{t('co.reportTitle')}</span>
-                          <span style={{ display: 'block', color: 'var(--muted-fg)', fontSize: 12, lineHeight: 1.4, marginTop: 2 }}>{t('co.reportHint')}</span>
-                        </span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        {(['pdf', 'xlsx'] as const).map((format) => (
-                          <button
-                            key={format}
-                            type="button"
-                            className="press"
-                            disabled={coReportBusy !== null}
-                            onClick={() => {
-                              haptic('tap');
-                              setCoReportBusy(format);
-                              sendCardLookupReport(initData, format)
-                                .then(() => { haptic('success'); showToast(t('co.reportSent')); })
-                                .catch((error) => { haptic('error'); showToast(error instanceof ApiError ? error.message : t('co.reportError'), 'error'); })
-                                .finally(() => setCoReportBusy(null));
-                            }}
-                            style={{ height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
-                          >
-                            {coReportBusy === format ? <Spinner size={14} color="var(--fg)" /> : <Icon name="doc" size={15} strokeWidth={2} className="" />}
-                            {format === 'pdf' ? t('co.downloadPdf') : t('co.downloadXlsx')}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
                       <SearchGlyph />
                       <input className="selectable" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
@@ -3498,6 +3465,39 @@ function ActionSheet({
                     ))}
                     </div>
                     )}
+                    <div style={{ padding: '13px 14px', marginTop: 12, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--secondary)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+                        <span style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                          <Icon name="doc" size={17} strokeWidth={2} className="" />
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: 'block', color: 'var(--fg)', fontSize: 14, fontWeight: 700 }}>{t('co.reportTitle')}</span>
+                          <span style={{ display: 'block', color: 'var(--muted-fg)', fontSize: 12, lineHeight: 1.4, marginTop: 2 }}>{t('co.reportHint')}</span>
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {(['pdf', 'xlsx'] as const).map((format) => (
+                          <button
+                            key={format}
+                            type="button"
+                            className="press"
+                            disabled={coReportBusy !== null}
+                            onClick={() => {
+                              haptic('tap');
+                              setCoReportBusy(format);
+                              sendCardLookupReport(initData, format)
+                                .then(() => { haptic('success'); showToast(t('co.reportSent')); })
+                                .catch((error) => { haptic('error'); showToast(error instanceof ApiError ? error.message : t('co.reportError'), 'error'); })
+                                .finally(() => setCoReportBusy(null));
+                            }}
+                            style={{ height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                          >
+                            {coReportBusy === format ? <Spinner size={14} color="var(--fg)" /> : <Icon name="doc" size={15} strokeWidth={2} className="" />}
+                            {format === 'pdf' ? t('co.downloadPdf') : t('co.downloadXlsx')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 );
               }

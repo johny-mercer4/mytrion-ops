@@ -20,6 +20,7 @@ import {
   type Addr,
   type Automation,
   type Card,
+  type CardLookupRow,
   type CmpInvoiceRow,
   type Deal,
   type DonePayload,
@@ -171,6 +172,19 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       const report = await fetchTxnReport(cid, input.txnRange, custom);
       input.setTxnReport(report);
       return { kind: 'transactions' };
+    }
+    case 'view-manage-cards': {
+      const carrierId = requireCarrier(deal);
+      const response = await request('GET', '/sales/cards', {
+        query: { carrierId },
+        timeoutMs: 45_000,
+      }) as { rows?: CardLookupRow[] };
+      return {
+        kind: 'card-lookup',
+        carrierId,
+        companyName: deal?.name ?? `Carrier ${carrierId}`,
+        rows: response.rows ?? [],
+      };
     }
     case 'payments': {
       // Widget parity: DWH payment-info (summary/totals) + live CMP invoices are fetched in

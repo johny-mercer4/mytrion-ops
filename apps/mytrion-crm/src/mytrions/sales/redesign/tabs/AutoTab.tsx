@@ -307,7 +307,7 @@ export function AutoTab() {
     || (!cardCredentials.loading && !cardCredentials.error && cardCredentials.data !== null);
   const canRun = !unavailable && wexReady && credentialsReady && (
     kind === 'link' ? true
-      : kind === 'invoices' || kind === 'transactions' || kind === 'simple' || kind === 'wex-tasks' ? hasDeal
+      : kind === 'invoices' || kind === 'transactions' || kind === 'card-report' || kind === 'simple' || kind === 'wex-tasks' ? hasDeal
         : kind === 'money' ? hasDeal && moneyReady
           : kind === 'card' ? hasCard && (!b?.limits || limitReady) && unitReady
             : kind === 'form' || kind === 'ticket' ? hasDeal && addrReady
