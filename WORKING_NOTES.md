@@ -11105,3 +11105,15 @@ today's records — but the end-to-end POST is untested and should be exercised 
 - Verification: root + both frontend typechecks pass; root lint has 0 errors (22 existing warnings);
   backend report/ownership tests 7/7, Sales automation/report UI tests 11/11, and the full Mytrion
   CRM suite 418/418 pass; all three production builds pass and both frontend bundles were rebuilt.
+
+## 2026-08-04 — Card Status Report last-6 and service code
+
+- Changed Card Status Report data to expose only the card's last six digits. The same restriction is
+  enforced again while rendering PDF/XLSX files, and Sales UI adds the masked `••••` presentation.
+- Updated the mini-app Card Management roster and card detail header to show only last-six card
+  identifiers for owners and managers.
+- Registered Card Status Report as Customer Service code `C-30` in both the Sales automation catalog
+  and the admin scope reference.
+- Verification: backend report/RBAC tests 7/7 and Sales report/catalog tests 12/12 pass; root and both
+  frontend typechecks/builds pass; lint has 0 errors (22 pre-existing warnings); frontend bundles
+  were rebuilt.
