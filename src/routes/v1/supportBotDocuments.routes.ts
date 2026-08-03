@@ -290,6 +290,11 @@ export async function supportBotDocumentRoutes(
         to: z.string().max(10).optional(),
         format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
         cardLast6: z.string().trim().min(4).max(19).optional(),
+        unitNumber: z.string().trim().min(1).max(60).optional(),
+      })
+      .refine((value) => !(value.cardLast6 && value.unitNumber), {
+        message: 'Choose either one card or one unit, not both.',
+        path: ['unitNumber'],
       })
       .parse(request.body);
     const { registration, role } = await resolveSupportBotCaller(
@@ -297,6 +302,13 @@ export async function supportBotDocumentRoutes(
       body.carrierId,
       body.telegramUserId,
     );
+    if (role === 'driver' && body.unitNumber) {
+      throw new AppError('Unit-scoped reports are available to owners and managers only.', {
+        statusCode: 403,
+        code: 'OWNER_ONLY',
+        expose: true,
+      });
+    }
     takeReadToken(body.carrierId);
     const cardNumber =
       role === 'driver'
@@ -310,6 +322,9 @@ export async function supportBotDocumentRoutes(
     const result = await listDwhTransactions({
       carrierId: body.carrierId,
       ...(cardNumber ? { cardNumber } : {}),
+      ...(role === 'owner' && body.unitNumber
+        ? { unitNumber: body.unitNumber }
+        : {}),
       range: body.from && body.to ? 'custom' : body.range,
       ...(body.from ? { from: body.from } : {}),
       ...(body.to ? { to: body.to } : {}),
@@ -328,8 +343,15 @@ export async function supportBotDocumentRoutes(
     const report = await buildTxnReport(result.data, body.format, {
       company: registration.companyName ?? 'Octane',
       range: rangeLabel,
-      cardLast4: cardNumber ? cardNumber.slice(-6) : body.carrierId,
+      cardLast4: cardNumber
+        ? cardNumber.slice(-6)
+        : body.unitNumber
+          ? `unit-${body.unitNumber}`
+          : body.carrierId,
       scopedToCard: Boolean(cardNumber),
+      ...(role === 'owner' && body.unitNumber
+        ? { scopeLabel: `Unit ${body.unitNumber}` }
+        : {}),
       priceMode: role === 'driver' ? 'retail' : 'discount',
       detailed: false,
     });
@@ -368,6 +390,10 @@ export async function supportBotDocumentRoutes(
           role,
           range: body.range,
           format: body.format,
+          ...(cardNumber ? { card_last6: cardNumber.slice(-6) } : {}),
+          ...(role === 'owner' && body.unitNumber
+            ? { unit_number: body.unitNumber }
+            : {}),
         },
       },
     );
@@ -375,6 +401,11 @@ export async function supportBotDocumentRoutes(
       success: true,
       deliveredTo: 'private_bot_chat',
       rows: result.data.length,
+      scope: cardNumber
+        ? { type: 'card', value: cardNumber.slice(-6) }
+        : role === 'owner' && body.unitNumber
+          ? { type: 'unit', value: body.unitNumber }
+          : { type: role === 'driver' ? 'driver_card' : 'fleet' },
     };
   });
 

@@ -27,6 +27,8 @@ export interface TxnReportMeta {
   cardLast4: string;
   /** Set for a driver export — the report then states it covers a single card. */
   scopedToCard?: boolean | undefined;
+  /** Exact non-card scope such as `Unit 040`; takes precedence in the rendered subtitle. */
+  scopeLabel?: string | undefined;
   /**
    * 'discount' (default) — today's report: Amount is the funded (discounted) total, Discount shown.
    * 'retail' — EFS "Retail Price Only": Amount is re-priced to funded+discount and the Discount
@@ -213,7 +215,7 @@ function safe(part: string): string {
 }
 
 const subtitle = (meta: TxnReportMeta): string => {
-  const scope = meta.scopedToCard ? `Card •••• ${meta.cardLast4}` : 'All cards';
+  const scope = meta.scopeLabel ?? (meta.scopedToCard ? `Card •••• ${meta.cardLast4}` : 'All cards');
   const price = meta.priceMode === 'retail' ? ' · Retail prices' : '';
   return `${scope} · ${meta.range}${price}`;
 };

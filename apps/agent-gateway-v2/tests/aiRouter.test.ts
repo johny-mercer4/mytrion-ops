@@ -122,10 +122,7 @@ describe('AI semantic router safety boundary', () => {
       }),
       'driver',
     );
-    expect(support.tools.map((tool) => tool.name)).toEqual([
-      'octane_whoami',
-      'telegram_buttons',
-    ]);
+    expect(support.tools.map((tool) => tool.name)).toEqual(['octane_whoami']);
   });
 
   it('never fails completed work because a best-effort UX tool was skipped', () => {

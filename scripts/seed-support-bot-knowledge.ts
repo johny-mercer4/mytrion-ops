@@ -8,10 +8,31 @@ import {
 } from '../src/repos/supportBotKnowledgeRepo.js';
 
 const VERIFIED_AT = new Date('2026-04-01T00:00:00.000Z');
+const OPERATIONS_MANUAL_VERIFIED_AT = new Date('2026-06-01T00:00:00.000Z');
 const VOLATILE_EXPIRES_AT = new Date('2026-07-01T00:00:00.000Z');
 const STATIONS_VERIFIED_AT = new Date('2026-07-30T15:48:00.000Z');
 const STATIONS_EXPIRE_AT = new Date('2026-10-30T00:00:00.000Z');
 const includeMoneyCode = process.env['SUPPORT_KB_INCLUDE_MONEY_CODE'] === '1';
+const OPERATIONS_MANUAL_ARTICLES = new Set([
+  'KB-06',
+  'KB-07',
+  'KB-23',
+  'KB-32',
+  'KB-33',
+  'KB-34',
+  'KB-35',
+  'KB-36',
+  'KB-37',
+  'KB-38',
+]);
+
+function verifiedAtFor(article: KbArticle): Date {
+  if (article.id === 'KB-01') return STATIONS_VERIFIED_AT;
+  if (OPERATIONS_MANUAL_ARTICLES.has(article.id)) {
+    return OPERATIONS_MANUAL_VERIFIED_AT;
+  }
+  return VERIFIED_AT;
+}
 
 function serviceFor(article: KbArticle): string | null {
   const tags = new Set(article.tags);
@@ -99,6 +120,7 @@ async function main(): Promise<void> {
 
   for (const article of KB_ARTICLES) {
     const serviceId = serviceFor(article);
+    const verifiedAt = verifiedAtFor(article);
     if (serviceId === 'money_code' && !includeMoneyCode) {
       skippedMoneyCode += 1;
       continue;
@@ -119,28 +141,33 @@ async function main(): Promise<void> {
       source:
         article.id === 'KB-01'
           ? 'verified-support-conversation-2026-07-30'
-          : 'verified-client-corpus-april-2026',
+          : OPERATIONS_MANUAL_ARTICLES.has(article.id)
+            ? 'octane-cs-operations-manual-v1-june-2026-client-safe-extract'
+            : 'verified-client-corpus-april-2026',
       sourceEvidence: {
         legacyId: article.id,
-        verifiedAt:
-          article.id === 'KB-01'
-            ? STATIONS_VERIFIED_AT.toISOString()
-            : VERIFIED_AT.toISOString(),
+        verifiedAt: verifiedAt.toISOString(),
         ...(article.id === 'KB-01'
           ? { evidence: 'client-safe station list supplied by a support agent' }
+          : OPERATIONS_MANUAL_ARTICLES.has(article.id)
+            ? {
+                evidence:
+                  'client-communicable excerpt curated from the internal operations manual; internal-only details omitted',
+              }
           : {}),
       },
-      version: article.id === 'KB-01' ? 2 : 1,
-      effectiveAt:
-        article.id === 'KB-01' ? STATIONS_VERIFIED_AT : VERIFIED_AT,
+      version:
+        article.id === 'KB-01' || ['KB-06', 'KB-07', 'KB-23'].includes(article.id)
+          ? 2
+          : 1,
+      effectiveAt: verifiedAt,
       expiresAt:
         article.id === 'KB-01'
           ? STATIONS_EXPIRE_AT
           : isVolatile(article)
             ? VOLATILE_EXPIRES_AT
             : null,
-      lastVerifiedAt:
-        article.id === 'KB-01' ? STATIONS_VERIFIED_AT : VERIFIED_AT,
+      lastVerifiedAt: verifiedAt,
     });
   }
 

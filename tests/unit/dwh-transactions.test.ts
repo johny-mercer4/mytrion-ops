@@ -47,6 +47,22 @@ describe('listDwhTransactions', () => {
     expect(params).toContain('7083050030880417593');
   });
 
+  it('scopes rows and totals to one exact unit at the SQL level', async () => {
+    mockPageAndTotals([]);
+    await listDwhTransactions({
+      carrierId: '5765985',
+      unitNumber: '040',
+      range: 'month',
+    });
+
+    const [pageSql, pageParams] = query.mock.calls[0]!;
+    const [totalsSql, totalsParams] = query.mock.calls[1]!;
+    expect(pageSql).toContain("LOWER(TRIM(COALESCE(t.driver_unit, ''))) = LOWER(TRIM($2))");
+    expect(totalsSql).toContain("LOWER(TRIM(COALESCE(t.driver_unit, ''))) = LOWER(TRIM($2))");
+    expect(pageParams).toContain('040');
+    expect(totalsParams).toContain('040');
+  });
+
   it('accumulates totals over the whole window, not just the returned page', async () => {
     query.mockResolvedValueOnce([{ transaction_id: 't1' }]).mockResolvedValueOnce([
       { line_items_total: '9600', transactions_total: '7186', sum_amount: '802136.02', sum_fuel_quantity: '181094.39', sum_discount_amount: '76542.87' },

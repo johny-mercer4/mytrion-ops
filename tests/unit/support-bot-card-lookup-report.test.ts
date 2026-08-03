@@ -6,7 +6,10 @@ import { errorHandlerPlugin } from '../../src/plugins/errorHandler.js';
 const mocks = vi.hoisted(() => ({
   audit: vi.fn(async () => undefined),
   buildReport: vi.fn(),
+  buildTxnReport: vi.fn(),
+  listTransactions: vi.fn(),
   resolveCaller: vi.fn(),
+  resolveCard: vi.fn(),
   sendDocument: vi.fn(async () => undefined),
   takeToken: vi.fn(() => true),
 }));
@@ -21,6 +24,12 @@ vi.mock('../../src/modules/audit/auditLogger.js', () => ({
 vi.mock('../../src/modules/carrier/cardLookupReport.js', () => ({
   buildCardLookupReport: mocks.buildReport,
 }));
+vi.mock('../../src/modules/carrier/txnReport.js', () => ({
+  buildTxnReport: mocks.buildTxnReport,
+}));
+vi.mock('../../src/integrations/dwhTransactions.js', () => ({
+  listDwhTransactions: mocks.listTransactions,
+}));
 vi.mock('../../src/modules/carrier/supportBotCaller.js', async () => {
   const { z } = await import('zod');
   return {
@@ -29,7 +38,7 @@ vi.mock('../../src/modules/carrier/supportBotCaller.js', async () => {
       carrierId: z.string().min(1),
     }),
     resolveSupportBotCaller: mocks.resolveCaller,
-    resolveSupportBotCardByLast6: vi.fn(),
+    resolveSupportBotCardByLast6: mocks.resolveCard,
     sendSupportBotPrivate: vi.fn(),
   };
 });
@@ -60,6 +69,18 @@ describe('support-bot Card Lookup report RBAC', () => {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       fileName: 'Octane_Card_Lookup_2026-08-03.xlsx',
       rows: 2,
+    });
+    mocks.buildTxnReport.mockResolvedValue({
+      bytes: Buffer.from('xlsx'),
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      fileName: 'Octane_Transactions_unit-040_2026-05-03.xlsx',
+    });
+    mocks.listTransactions.mockResolvedValue({
+      data: [{ transaction_id: 'txn-1', driver_unit: '040' }],
+      totals: {},
+      range: { preset: 'custom', from: '2026-05-03', to: '2026-05-05' },
+      pagination: {},
     });
   });
 
@@ -128,5 +149,76 @@ describe('support-bot Card Lookup report RBAC', () => {
     expect(response.json()).toMatchObject({ error: { code: 'OWNER_ONLY' } });
     expect(mocks.buildReport).not.toHaveBeenCalled();
     expect(mocks.sendDocument).not.toHaveBeenCalled();
+  });
+
+  it('delivers an owner report scoped to the exact requested unit', async () => {
+    mocks.resolveCaller.mockResolvedValue({
+      role: 'owner',
+      registration: {
+        profile: 'manager',
+        telegramUserId: '11',
+        telegramChatId: 'private-11',
+        companyName: 'ONZMOVE INC',
+      },
+    });
+    const app = await createApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/support-bot/txn-report',
+      payload: {
+        telegramUserId: '11',
+        carrierId: '5762018',
+        from: '2026-05-03',
+        to: '2026-05-05',
+        format: 'xlsx',
+        unitNumber: '040',
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(mocks.listTransactions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        carrierId: '5762018',
+        unitNumber: '040',
+        range: 'custom',
+      }),
+    );
+    expect(mocks.buildTxnReport).toHaveBeenCalledWith(
+      expect.any(Array),
+      'xlsx',
+      expect.objectContaining({ scopeLabel: 'Unit 040' }),
+    );
+    expect(response.json()).toMatchObject({
+      success: true,
+      scope: { type: 'unit', value: '040' },
+    });
+  });
+
+  it('rejects driver-selected unit scope before querying transactions', async () => {
+    mocks.resolveCaller.mockResolvedValue({
+      role: 'driver',
+      registration: {
+        profile: 'driver',
+        telegramUserId: '12',
+        telegramChatId: 'private-12',
+      },
+    });
+    const app = await createApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/support-bot/txn-report',
+      payload: {
+        telegramUserId: '12',
+        carrierId: '5762018',
+        unitNumber: '040',
+        format: 'xlsx',
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: { code: 'OWNER_ONLY' } });
+    expect(mocks.listTransactions).not.toHaveBeenCalled();
   });
 });
