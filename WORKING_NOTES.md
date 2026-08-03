@@ -10953,3 +10953,10 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
   `pnpm install`, so the frozen lockfile can hash and apply the `archiver-utils@5.0.2` patch.
 - This fixes the Render image build failure in pnpm's `createBase32HashFromFile`; the runtime
   production-dependency install received the same fix to prevent a later-stage repeat failure.
+
+## 2026-08-03 — Rename OpenAI gateway package to v2
+
+- Renamed `apps/agent-gateway-groq` to `apps/agent-gateway-v2` without changing gateway behavior.
+- Updated the Render root-directory documentation, root environment guidance, and support-bot
+  knowledge seeding import to use the new path.
+- Kept local gateway secrets, runtime data, build output, and dependencies ignored from Git.
