@@ -10946,3 +10946,153 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
 - Documented repository-specific strengths and risks, including bounded DWH access, dedicated job
   workers, tenant-scoped repositories, TLS verification gaps, and the transition from process-local
   caching to Redis/Valkey when multiple application instances are introduced.
+
+## 2026-08-03 — Analyst: double loader + "Coming soon" on a built dashboard
+
+Reported from prod (`/main/analystmytrion?category=sales`): two spinners for one wait, and a
+**COMING SOON** badge on a dashboard that exists and was fetching.
+
+Root cause: `CategoryDashboard` reused `_shared/ComingSoon` for three different situations —
+loading, fetch failure, and no-snapshot. That component hardcodes a "Coming soon" badge and its
+own docstring says it is the "not built yet" surface, so a Sales dashboard that was merely waiting
+on the warehouse announced itself as unbuilt. The header Refresh button spun at the same time as
+the panel glyph, giving two indicators for a single operation (violates CLAUDE.md rule 10).
+
+- New `analyst/DashboardState.tsx` — one panel, three explicit kinds:
+  `loading`, `error` (with Retry), `empty`.
+- `loading` delegates to the shared `_shared/MytrionPageLoader` (the pulsing three-bar mark HR and
+  Recruit already use) rather than a bespoke analyst spinner, so a wait looks the same everywhere.
+  It reads `--accent`, so it takes the analyst hue with no extra wiring — same component renders
+  red under HR.
+- `CategoryDashboard` gained `busy` (first load / filter change with nothing to show). The header
+  Refresh button is disabled and static while `busy`, so exactly one spinner is on screen in every
+  path — including the case where a refresh fails and the block goes back to null.
+- **Empty ≠ error.** `isEmptyBlock()` detects a successful query with nothing in the window (no
+  breakdown rows, no leaderboard rows, flat-zero trend) and says so — "the query succeeded, the
+  window is simply empty, try a wider range" — instead of a wall of zeros or a false Coming soon.
+- `analyst.css` gained `.an-state*` (same Horizon glass language, tone per state, no badge).
+- `DashboardState.test.tsx` — 5 tests pinning the regressions: never renders "Coming soon" in any
+  state, exactly one `.an-spin` while loading and zero afterwards, empty offers no Retry while
+  error does, loading panel is `role="status"`.
+
+`ComingSoon` is untouched and still correct for genuinely unbuilt tabs (collection, sales soonTabs).
+
+Noticed in passing: `analyst/tabs/AnalystDashboard.tsx` is dead code — nothing imports it — and is
+the last analyst file still using ComingSoon. Flagged as a separate cleanup, not done here.
+
+### Checks
+CRM `tsc --noEmit` clean, `pnpm build` green, new tests 5/5. CRM suite 16 failed / 3 files
+(stream, touchpoints, transport.refresh) — all pre-existing; `dashDebtorsData` now passes after the
+build merge. Not visually confirmed in-app (Zoho sign-in required).
+
+## 2026-08-03 — Analyst: delete the dead AnalystDashboard tab
+
+Follow-up on the cleanup flagged at the end of the previous entry.
+
+`analyst/tabs/AnalystDashboard.tsx` deleted. Confirmed unreferenced first: grep for
+`AnalystDashboard` across `apps/mytrion-crm/src` returns exactly one hit — its own `export function`
+declaration. The analyst shell (`analyst/index.tsx`) renders only `AnalystReports` or
+`CategoryDashboard`, and its `setCategory` already deletes the `dimension` search param as a
+"leftover from the old Dashboard tab".
+
+This was also the last analyst file importing `_shared/ComingSoon`, so the module is now fully off
+the badge-carrying panel and on `DashboardState`. `ComingSoon` itself stays — still used by
+`_shared/ModuleShell`, collection, trailhead and hr for genuinely unbuilt tabs.
+
+Dead CSS removed from `analyst.css` (each checked against the rest of `src/` before deleting):
+- `.an-dims`, `.an-dim`, `.an-dim:hover`, `.an-dim[aria-pressed='true']` — the dimension switcher,
+  which only ever had this one call site. Nothing renders a dimension pill row any more.
+- `.an-sk` plus its `@keyframes anSheen`, and the `.an-sk` line in the `prefers-reduced-motion`
+  block. The skeleton was AnalystDashboard's pre-first-attempt placeholder; `DashboardState`
+  kind="loading" replaced that role and uses `.an-spin`.
+
+Everything else the file imported is still live and was left alone: `useAnalyticsSnapshot`,
+`charts.tsx` (`KpiGrid`/`TrendBars`/`Breakdown`/`Leaderboard`), the `AnalyticsDimension` type
+(still used by `useAnalyticsSnapshot.ts`, `api/analytics.ts`, `categories.ts`), and the shared
+`.an-page`/`.an-head`/`.an-card*`/`.an-btn`/`.an-banner`/`.an-grid-2` rules.
+
+### Checks
+CRM `tsc --noEmit` clean, `pnpm build` green, vendored `app/` rebuilt and recommitted (chunk hashes
+churn as usual). Verified in the bundle: the analyst chunk no longer imports the `ComingSoon-*`
+chunk, and `an-dims`/`an-dim`/`an-sk` appear in no emitted asset. CRM suite still 16 failed /
+3 files (stream, touchpoints, transport.refresh) — same pre-existing `localStorage is not defined`
+env failures as the previous entry, none in the analyst module.
+
+### Reports: catalog → real, date-filtered .xlsx exports
+
+Reports was structural only — six cards, every Export disabled with "not built yet". All six now
+run against the warehouse and download a styled workbook.
+
+**Backend** — `src/modules/analytics/reports/`
+- `definitions.ts` — the catalog as a typed contract. Each column carries a `type`
+  (`text|number|money|percent|date`); that is what lets the writer emit real Excel number formats.
+  A money column typed `text` silently produces a sheet nobody can SUM, so the types are the
+  load-bearing part, not decoration.
+- `service.ts` — one parameterized, date-bounded query per report, scoped by the SAME
+  `AnalyticsFilters` the dashboards use, so a report and the dashboard above it cannot disagree
+  about a period. Agent scope goes through `ownedCarrierCteFor` (the one owner authority); only
+  `pipeline` uses `pipelineOwnerPred`, because it is deal-shaped like the pipeline dimension.
+  `ROW_CAP = 5000` with `limit CAP+1` to detect truncation — an export is not a bulk extract, and
+  an uncapped group-by on a bad filter would pin the tiny shared pool. Truncation is reported and
+  printed into the sheet; a partial export must never look complete.
+- Routes: `GET /v1/analytics/reports` (catalog) and `GET /v1/analytics/reports/:reportId`
+  (rows as JSON). Kept JSON rather than streaming a file so the same data is reachable by other
+  consumers without a file-format dependency in the API.
+
+**Frontend**
+- `analyst/reportsExport.ts` — `buildReportWorkbook()` (pure, returns bytes) + `exportReportXlsx()`
+  (build + download). Split deliberately so the sheet can be built and read back in a test; the
+  download half is the only part that touches `document`. ExcelJS is dynamically imported so the
+  ~940kB chunk only loads on an actual export, matching the Billing/Sales export pattern.
+- `AnalystReports.tsx` — Today / Last 7 days / This month / Custom, matching the dashboards, plus
+  per-card running/done/error state. Agent scope follows "View as" (the reports category now
+  declares `filters: ['agent']` purely so the shell folds the identity in — it renders its own
+  date control, not the shared bar).
+
+**Verification that matters:** `reportsExport.test.ts` builds a workbook and *reads it back* with
+ExcelJS — asserting numbers are numbers, dates are `Date` (UTC-anchored, so no ±1 day shift),
+money/percent number formats are applied, nulls stay empty instead of the string "null", the totals
+row carries `SUM()` **and** a cached result, truncation is stated in the sheet, and sheet names with
+`[]:*?/\` are sanitised. 9 tests. All six queries were also run against the live DWH:
+146–780ms, 45–1469 rows. Route registration checked against the running dev API (401 for ours,
+404 for unknown paths — so they are reachable, not shadowed by `/analytics/:dimension`).
+
+Fixed while testing: `overdue` used a bare `FILTER` aggregate, which yields NULL when nothing is
+overdue and would land as a blank cell where the honest answer is 0.
+
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green, 9 new export tests +
+5 state tests pass. CRM suite 16 failed / 3 files and backend best-of 1 failed / 1826 passed — both
+the known pre-existing sets. NOTE: the backend suite reports ~130 failures when run straight after a
+build (the documented timeout flakiness); always re-run it clean before believing a regression.
+
+### Reports restricted to management + admin
+
+Reports are the only analytics reads that are not scopable down to one book — an org-wide
+client-health or fuel-volume sheet is every carrier in the company in one downloadable file. Gated
+to the same audience as the Manager Mytrion.
+
+- **Backend** — both routes now go through `requireDepartment(request, 'management', …)`: admin /
+  all-department / bypass / the `management` department. Applied to the CATALOG route as well as
+  the run route, so a rep cannot even enumerate what exists.
+- **Frontend** — `analyst/index.tsx` hides the Reports sidebar card unless
+  `isAdmin(user) || canAccess(user, 'manager')`, and a deep link to `?category=reports` falls back
+  to the first visible category instead of rendering. The card is hidden for tidiness; the route is
+  the boundary.
+- Composes with "View as" on purpose: an admin acting as a sales rep runs with the REP's grant and
+  loses report access — that is what impersonation is for.
+
+**A real leak the test caught.** The handler validated the report id before authorizing, so an
+unauthorized rep got `404` for an unknown id and `403` for a real one — the status code enumerated
+the catalog they were denied. Authorization now runs first; every unauthorized caller gets the same
+403 regardless of whether the id exists.
+
+`tests/unit/analytics-reports-routes.test.ts` (9 tests, CLAUDE.md rule 9): unauthenticated 401 on
+both routes, 403 for sales/billing/CS, catalog hidden too, management + Administrator allowed, 404
+for a bad id only when authorized, and the no-id-oracle case above. Every 403 also asserts the
+warehouse was NEVER queried — not merely that the body was withheld after the rows were pulled.
+
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green. CRM 16 failed / 3 files
+(pre-existing). Backend across four runs: 160 / 10 / 9 / 9 failures — the documented post-build
+timeout flakiness; `analytics-reports-routes` passed in every run. Suite total is now 1837 (+9).

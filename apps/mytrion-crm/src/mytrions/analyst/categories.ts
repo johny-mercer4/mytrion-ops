@@ -102,9 +102,11 @@ export const ANALYTICS_CATEGORIES: CategoryDef[] = [
     label: 'Reports',
     tone: 'var(--tone-violet)',
     icon: FileSpreadsheet,
-    keywords: ['export', 'sheet', 'catalog'],
-    filters: [],
-    description: 'Report catalog and exports.',
+    keywords: ['export', 'sheet', 'catalog', 'excel', 'xlsx', 'download'],
+    // 'agent' so the shell folds the View-as identity into the report queries. Reports renders its
+    // own date control (AnalystReports) rather than the shared DashboardFilters bar.
+    filters: ['agent'],
+    description: 'Standing reports, exported to Excel for any date window.',
   },
 ];
 

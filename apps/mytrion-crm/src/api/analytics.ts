@@ -38,3 +38,40 @@ export async function fetchAnalyticsSnapshot(
 
   return (await request('GET', `/analytics/${dimension}`, { query })) as AnalyticsSnapshot;
 }
+
+/** One column of a standing report — `type` drives the Excel number format. */
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'money' | 'percent' | 'date';
+  width?: number;
+}
+
+export interface ReportResult {
+  reportId: string;
+  title: string;
+  sheet: string;
+  generatedAt: string;
+  columns: ReportColumn[];
+  rows: Array<Record<string, string | number | null>>;
+  /** The warehouse had more rows than the export cap — the sheet is partial. */
+  truncated: boolean;
+}
+
+/**
+ * Run a standing report for a date window. Returns rows as JSON; the .xlsx is written in the
+ * browser (see mytrions/analyst/reportsExport.ts) so the API stays format-agnostic.
+ */
+export async function fetchAnalyticsReport(
+  reportId: string,
+  opts: FetchAnalyticsOpts = {},
+): Promise<ReportResult> {
+  const query: Record<string, string> = {};
+  if (opts.agent) query.agent = opts.agent;
+  if (opts.agentName) query.agent_name = opts.agentName;
+  if (opts.range) query.range = opts.range;
+  if (opts.from) query.from = opts.from;
+  if (opts.to) query.to = opts.to;
+
+  return (await request('GET', `/analytics/reports/${reportId}`, { query })) as ReportResult;
+}

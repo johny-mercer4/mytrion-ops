@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { isAdmin } from '@/access/resolveAccess';
+import { canAccess, isAdmin } from '@/access/resolveAccess';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { useUserContext } from '@/context/UserContextProvider';
 
@@ -32,8 +32,23 @@ export default function AnalystMytrion() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { actingAs } = useImpersonation();
   const user = useUserContext();
-  const category = categoryById(searchParams.get('category'));
+  const requested = categoryById(searchParams.get('category'));
   const urlFilters = useMemo(() => parseFilters(searchParams), [searchParams]);
+
+  /**
+   * Reports are management-only: they are cross-agent extracts (an org-wide client-health sheet is
+   * every carrier's book in one file), unlike the per-agent dashboards. Mirrors the server gate in
+   * `analytics.routes.ts` — `requireDepartment(…, 'management')` — where `manager` is the Mytrion
+   * that maps to the `management` department. Hiding the card is not the boundary; the route is.
+   */
+  const canSeeReports = isAdmin(user) || canAccess(user, 'manager');
+  const visibleCategories = canSeeReports
+    ? ANALYTICS_CATEGORIES
+    : ANALYTICS_CATEGORIES.filter((c) => c.id !== 'reports');
+  /** A deep link to ?category=reports must not render for someone who cannot see the card. */
+  const category =
+    requested.id === 'reports' && !canSeeReports ? visibleCategories[0]! : requested;
+  const showReports = category.id === 'reports';
 
   /**
    * Date window comes from the URL; the agent identity comes from "View as", not a second picker.
@@ -83,7 +98,7 @@ export default function AnalystMytrion() {
     {
       id: 'dashboards',
       label: 'Analytics',
-      items: ANALYTICS_CATEGORIES.map((c) => ({
+      items: visibleCategories.map((c) => ({
         key: c.id,
         label: c.label,
         icon: <c.icon size={19} />,
@@ -99,8 +114,8 @@ export default function AnalystMytrion() {
     <div data-mytrion="analyst" className="contents">
       <MytrionShell id="analyst" navSections={navSections} enableNavSearch>
         <div className="an-root">
-          {category.id === 'reports' ? (
-            <AnalystReports />
+          {showReports ? (
+            <AnalystReports filters={filters} />
           ) : (
             <CategoryDashboard
               category={category}
