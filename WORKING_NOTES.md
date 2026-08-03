@@ -11105,3 +11105,28 @@ today's records — but the end-to-end POST is untested and should be exercised 
 - Verification: root + both frontend typechecks pass; root lint has 0 errors (22 existing warnings);
   backend report/ownership tests 7/7, Sales automation/report UI tests 11/11, and the full Mytrion
   CRM suite 418/418 pass; all three production builds pass and both frontend bundles were rebuilt.
+
+## 2026-08-04 — Card Status Report last-6 and service code
+
+- Changed Card Status Report data to expose only the card's last six digits. The same restriction is
+  enforced again while rendering PDF/XLSX files, and Sales UI adds the masked `••••` presentation.
+- Updated the mini-app Card Management roster and card detail header to show only last-six card
+  identifiers for owners and managers.
+- Registered Card Status Report as Customer Service code `C-30` in both the Sales automation catalog
+  and the admin scope reference.
+- Verification: backend report/RBAC tests 7/7 and Sales report/catalog tests 12/12 pass; root and both
+  frontend typechecks/builds pass; lint has 0 errors (22 pre-existing warnings); frontend bundles
+  were rebuilt.
+
+## 2026-08-04 — Confirmed support-bot group binding
+
+- Replaced silent Telegram group auto-binding with an explicit company confirmation. A registered
+  owner or manager can start the flow by mentioning/replying to the bot in an unmapped group; drivers
+  and unregistered users cannot bind it.
+- The preview is read-only and shows the server-resolved company. Only the same owner/manager can
+  press `Yes`; that action performs the existing audited `support_bot_chats` write, making the group
+  visible in Mytrion CRM. `No`, expiry, another member's click, and gateway restarts do not write.
+- Added actor/chat/message-bound callback tokens, a ten-minute expiry, bounded pending state, prompt
+  throttling, conflict detection, and a short miss-driven access refresh for newly registered users.
+- Verification: confirmation/cache tests 8/8, full gateway suite 88/88, targeted backend route/RBAC
+  tests 18/18, root and gateway typechecks/builds pass, and lint has 0 errors (22 existing warnings).

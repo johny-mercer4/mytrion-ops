@@ -42,10 +42,10 @@ function digits(value: unknown): string {
   return text(value).replace(/\D/g, '');
 }
 
-function maskedCardNumber(value: unknown): string {
+/** Card Status reports identify cards by last-6 only; never expose a full or partially masked PAN. */
+function lastSixCardDigits(value: unknown): string {
   const card = digits(value);
-  if (card.length <= 10) return card;
-  return `${card.slice(0, 6)}${'*'.repeat(Math.max(4, card.length - 10))}${card.slice(-4)}`;
+  return card.slice(-6);
 }
 
 function yesNo(value: unknown): string {
@@ -66,7 +66,7 @@ export async function listCardLookupRows(carrierId: string): Promise<CardLookupR
   if (live.length === 0) {
     return dwhCards.map((card) => ({
       cardId: text(card.cardId),
-      cardNumber: maskedCardNumber(card.cardNumber),
+      cardNumber: lastSixCardDigits(card.cardNumber),
       unit: '',
       driverId: '',
       driverName: '',
@@ -82,7 +82,7 @@ export async function listCardLookupRows(carrierId: string): Promise<CardLookupR
       const dwh = dwhByNumber.get(digits(rawNumber));
       return {
         cardId: text(row['cardId'] ?? row['card_id'] ?? dwh?.cardId),
-        cardNumber: maskedCardNumber(rawNumber),
+        cardNumber: lastSixCardDigits(rawNumber),
         unit: text(row['unitNumber'] ?? row['unit_number']),
         driverId: text(row['driverId'] ?? row['driver_id']),
         driverName: text(row['driverName'] ?? row['driver_name']),
@@ -96,7 +96,7 @@ export async function listCardLookupRows(carrierId: string): Promise<CardLookupR
 function rowValues(row: CardLookupRow): string[] {
   return [
     row.cardId,
-    row.cardNumber,
+    lastSixCardDigits(row.cardNumber),
     row.unit,
     row.driverId,
     row.driverName,

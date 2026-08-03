@@ -36,7 +36,7 @@ import { signAccessToken } from '../../src/modules/auth/jwt.js';
 
 const rows = [{
   cardId: '1001',
-  cardNumber: '708305******7378',
+  cardNumber: '007378',
   unit: '995',
   driverId: '995',
   driverName: 'Driver One',

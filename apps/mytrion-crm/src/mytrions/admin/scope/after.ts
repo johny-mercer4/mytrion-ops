@@ -360,6 +360,7 @@ export const OCT_AFTER_CYCLES: CycleDef[] = [
       { icon: 'user', code: 'C-26', title: 'Unit / Driver ID Change', desc: 'Update unit numbers, driver IDs, or driver names linked to an account.' },
       { icon: 'eye', code: 'C-28', title: 'Account Status Check', desc: 'Combined check across EFS balance, outstanding debt, and EFS card status.' },
       { icon: 'clipboard', code: 'C-29', title: 'WEX Applications', desc: 'Live follow-up read of a WEX application: status, credit decision, and setup details.' },
+      { icon: 'card', code: 'C-30', title: 'Card Status Report', desc: 'View a carrier\'s live card roster and download its status report as PDF or Excel.' },
     ],
     platforms: ['Zoho Desk', 'EFS', 'Zoho CRM', 'Telegram', 'Gmail', 'Outlook', 'WhatsApp', 'Octane App'],
   },

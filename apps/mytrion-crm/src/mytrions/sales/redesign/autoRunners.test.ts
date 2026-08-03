@@ -66,6 +66,12 @@ function input(automation: Automation, patch: Partial<RunInput> = {}): RunInput 
   };
 }
 
+describe('automation catalog', () => {
+  it('publishes Card Status Report under service code C-30', () => {
+    expect(action('view-manage-cards').codes).toEqual(['C-30']);
+  });
+});
+
 describe('limit update runner', () => {
   beforeEach(() => callTouchpointMock.mockReset());
 
@@ -183,7 +189,7 @@ describe('live EFS card state', () => {
   it('loads the owned carrier Card Lookup roster through the Sales route', async () => {
     const reportRows = [{
       cardId: '1001',
-      cardNumber: '708305******7378',
+      cardNumber: '007378',
       unit: '995',
       driverId: '995',
       driverName: 'Driver One',

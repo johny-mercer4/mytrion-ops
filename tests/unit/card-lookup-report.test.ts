@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 describe('Card Lookup report', () => {
-  it('merges live EFS fields with the DWH Card ID and masks the card number', async () => {
+  it('merges live EFS fields with the DWH Card ID and returns only the card last-6', async () => {
     dwh.mockResolvedValue([
       {
         cardId: '1000079491580',
@@ -51,7 +51,7 @@ describe('Card Lookup report', () => {
     await expect(listCardLookupRows('5758544')).resolves.toEqual([
       {
         cardId: '1000079491580',
-        cardNumber: '708305********7378',
+        cardNumber: '007378',
         unit: '995',
         driverId: '995',
         driverName: 'GIYOSBAKHRIDDIN',
@@ -67,7 +67,8 @@ describe('Card Lookup report', () => {
       [
         {
           cardId: '1000079491580',
-          cardNumber: '708305********7378',
+          // Renderer is a second privacy boundary even if a caller passes a raw PAN.
+          cardNumber: '708305000000007378',
           unit: '995',
           driverId: '995',
           driverName: 'GIYOSBAKHRIDDIN',
@@ -96,11 +97,26 @@ describe('Card Lookup report', () => {
     expect(sheet?.getRow(3).values).not.toContain('Policy #');
     expect(sheet?.getRow(3).values).not.toContain('SmartFunds');
     expect(sheet?.getCell('A4').value).toBe('1000079491580');
+    expect(sheet?.getCell('B4').value).toBe('007378');
   });
 
   it('renders a valid PDF report', async () => {
-    const report = await renderCardLookupReport([], 'ONZMOVE INC', 'pdf');
+    const report = await renderCardLookupReport([{
+      cardId: '1000079491580',
+      cardNumber: '708305000000007378',
+      unit: '995',
+      driverId: '995',
+      driverName: 'GIYOSBAKHRIDDIN',
+      xRef: '',
+      status: 'Inactive',
+      override: 'No',
+    }], 'ONZMOVE INC', 'pdf');
     expect(report.contentType).toBe('application/pdf');
     expect(report.bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    const { getDocumentProxy, extractText } = await import('unpdf');
+    const pdf = await getDocumentProxy(new Uint8Array(report.bytes));
+    const { text } = await extractText(pdf, { mergePages: true });
+    expect(text).toContain('007378');
+    expect(text).not.toContain('708305000000007378');
   });
 });

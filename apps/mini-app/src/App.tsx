@@ -3456,7 +3456,7 @@ function ActionSheet({
                           <Icon name="card" size={14} strokeWidth={2} className="" />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
+                          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>•••• {tail6(c.cardNumber, c.cardId)}</span>
                           <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('co.noDriver')].filter(Boolean).join(' · ')}</span>
                         </span>
                         {c.efsStatus && <span style={{ flex: 'none', fontSize: 11, fontWeight: 700, color: stOf(c).includes('active') && !stOf(c).includes('inactive') ? 'var(--success)' : 'var(--muted-fg)', background: 'var(--card)', padding: '3px 8px', borderRadius: 8, textTransform: 'capitalize' }}>{c.efsStatus}</span>}
@@ -3511,7 +3511,7 @@ function ActionSheet({
                     {t('co.allCards')}
                   </button>
                   <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{coCard.cardNumber ? groupCardNumber(coCard.cardNumber) : `•••• ${tail6(coCard.cardNumber, null)}`}</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>•••• {tail6(coCard.cardNumber, coCard.cardId)}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 3 }}>
                       {coEfsLoading ? t('loading') : efsStatus ? `${t('co.efsStatus')}: ${efsStatus}` : coCard.driverName ?? ''}
                     </div>
