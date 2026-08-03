@@ -16,6 +16,7 @@ import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
 import { serverCrmBillingTouchpoints } from './serverCrmBilling.js';
 import { serverCrmFinanceTouchpoints } from './serverCrmFinance.js';
 import { serverCrmMiscTouchpoints } from './serverCrmMisc.js';
+import { ticketsDelugeTouchpoints } from './ticketsDeluge.js';
 import { zapierTouchpoints } from './zapier.js';
 
 const ALL: Touchpoint[] = [
@@ -32,6 +33,7 @@ const ALL: Touchpoint[] = [
   ...retentionTouchpoints,
   ...retentionCsTouchpoints,
   ...moneyCodeTouchpoints,
+  ...ticketsDelugeTouchpoints,
 ];
 
 const byKey = new Map<string, Touchpoint>();
