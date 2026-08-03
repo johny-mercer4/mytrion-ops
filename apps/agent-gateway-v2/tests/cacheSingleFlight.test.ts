@@ -52,6 +52,33 @@ describe('backend cache refresh single-flight', () => {
     await expect(registeredRole('carrier-2', 43)).resolves.toBe('driver');
   });
 
+  it('refreshes a bounded cache miss so a newly registered owner need not wait two minutes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        users: [{ carrierId: 'carrier-3', telegramUserId: '44', profile: 'owner' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { registeredRole } = await import('../src/access.js');
+      await expect(registeredRole('carrier-3', 44)).resolves.toBeNull();
+      vi.advanceTimersByTime(15_000);
+      await expect(registeredRole('carrier-3', 44)).resolves.toBe('owner');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('coalesces concurrent chat-map refreshes', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

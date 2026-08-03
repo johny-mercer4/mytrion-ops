@@ -7,6 +7,8 @@ import type { GatewayRole } from './skillRegistry.js';
 type RegisteredRole = Exclude<GatewayRole, 'guest'>;
 let cache: { at: number; users: Map<string, RegisteredRole> } | null = null;
 let refreshInFlight: Promise<void> | null = null;
+let lastMissRefresh = 0;
+const MISS_REFRESH_MS = 15_000;
 
 function normalizeRole(profile: unknown): RegisteredRole | null {
   if (profile === 'driver') return 'driver';
@@ -63,12 +65,26 @@ export async function registeredRole(
   userId: number,
 ): Promise<RegisteredRole | null> {
   const now = Date.now();
-  if (!cache || now - cache.at > config.accessSnapshotRefreshMs) await refreshSnapshot();
+  let refreshed = false;
+  if (!cache || now - cache.at > config.accessSnapshotRefreshMs) {
+    await refreshSnapshot();
+    refreshed = true;
+  }
   if (!cache || Date.now() - cache.at > config.accessSnapshotStaleGraceMs) {
     incrementCounter('role_guest_total');
     return null;
   }
-  const role = cache.users.get(accessKey(carrierId, String(userId))) ?? null;
+  let role = cache.users.get(accessKey(carrierId, String(userId))) ?? null;
+  // A user may have completed mini-app registration seconds after the last scheduled snapshot.
+  // Refresh a miss promptly, but globally bounded, so onboarding works without turning unknown
+  // group traffic into a backend hot loop.
+  if (!role && !refreshed && now - lastMissRefresh >= MISS_REFRESH_MS) {
+    lastMissRefresh = now;
+    await refreshSnapshot();
+    role = cache?.users.get(accessKey(carrierId, String(userId))) ?? null;
+  } else if (!role && refreshed) {
+    lastMissRefresh = now;
+  }
   incrementCounter(role ? 'role_resolution_total' : 'role_guest_total');
   return role;
 }

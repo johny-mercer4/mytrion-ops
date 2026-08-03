@@ -13,7 +13,7 @@ import { AutoCardLookupPanel } from './AutoCardLookupPanel';
 
 const rows = [{
   cardId: '1001',
-  cardNumber: '708305******7378',
+  cardNumber: '007378',
   unit: '995',
   driverId: '995',
   driverName: 'Driver One',
@@ -37,7 +37,7 @@ describe('AutoCardLookupPanel', () => {
       />,
     );
 
-    expect(screen.getByText('708305******7378')).toBeInTheDocument();
+    expect(screen.getByText('•••• 007378')).toBeInTheDocument();
     expect(screen.getByText('Driver One')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Download Excel Report' }));
 
