@@ -10954,6 +10954,13 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
 - This fixes the Render image build failure in pnpm's `createBase32HashFromFile`; the runtime
   production-dependency install received the same fix to prevent a later-stage repeat failure.
 
+## 2026-08-03 — Rename OpenAI gateway package to v2
+
+- Renamed `apps/agent-gateway-groq` to `apps/agent-gateway-v2` without changing gateway behavior.
+- Updated the Render root-directory documentation, root environment guidance, and support-bot
+  knowledge seeding import to use the new path.
+- Kept local gateway secrets, runtime data, build output, and dependencies ignored from Git.
+
 ## 2026-08-03 — Sales Create back on Zoho Desk; Tickets parked in all four operational Mytrions
 
 Reverses the write half of `030fc352` / `940e8d8e`. The native comms console is parked, so the Create

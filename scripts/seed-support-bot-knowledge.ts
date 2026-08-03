@@ -1,4 +1,4 @@
-import { KB_ARTICLES, type KbArticle } from '../apps/agent-gateway-groq/src/kb/corpus.js';
+import { KB_ARTICLES, type KbArticle } from '../apps/agent-gateway-v2/src/kb/corpus.js';
 import { closeDb } from '../src/db/client.js';
 import { systemContext } from '../src/modules/auth/authService.js';
 import { embedTexts } from '../src/modules/knowledge/embedder.js';
