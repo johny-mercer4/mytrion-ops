@@ -10961,6 +10961,14 @@ label instead of a bare "←" glyph, and "Check again" / "Load more" use one but
   knowledge seeding import to use the new path.
 - Kept local gateway secrets, runtime data, build output, and dependencies ignored from Git.
 
+## 2026-08-03 — Fix Telegram outbound queue deadlock
+
+- Removed recursive acquisition of the global Telegram send lane from the per-chat message queue;
+  the nested queue previously left the first reply active forever and every later reply waiting.
+- Failed Telegram API responses now throw the server description instead of being counted and
+  silently treated as successful.
+- Added regression coverage for both a completed queued send and a surfaced Telegram API error.
+
 ## 2026-08-03 — Sales Create back on Zoho Desk; Tickets parked in all four operational Mytrions
 
 Reverses the write half of `030fc352` / `940e8d8e`. The native comms console is parked, so the Create
