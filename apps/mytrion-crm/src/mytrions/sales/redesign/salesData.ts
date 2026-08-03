@@ -123,13 +123,15 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'soon',
     items: [
-      // LIVE on the native comms path (/v1/comms), not Zoho Desk. The old Desk-backed TicketsTab is no
-      // longer rendered; Sales now mounts the shared TicketConsole in requester mode.
-      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
+      // PARKED (2026-08-03). The native comms console is coming-soon in every Mytrion, so there is
+      // nothing for Sales to read here: Create files into Zoho Desk and the team works the queue there.
+      // `TICKETS_ENABLED` below reads this flag, which is what stops the unread badge and the
+      // Create → "opening it now" jump from pointing at a tab that will not mount.
+      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
       { id: 'verification', label: 'Verification', icon: 'verification' },
-      // `soon` is now a LAYOUT SLOT, not a status: every tab in it has shipped (My Tasks moved up to
-      // `daily`, Tickets went native, Verification and Call Hub landed). Kept as its own group for
-      // the sidebar divider. Re-parking anything is still a one-word change.
+      // The group is a LAYOUT SLOT as much as a status — Verification and Call Hub have shipped and
+      // stay here for the sidebar divider. Only Tickets is actually parked. Un-parking is still a
+      // one-word change (drop `comingSoon`).
       { id: 'callHub', label: 'Call Hub', icon: 'callHub' },
     ],
   },
@@ -139,13 +141,11 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /**
- * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the unread
- * badge (`/v1/comms/unread`) and openTicket navigation. Flip the NAV entry's comingSoon to park
- * everything at once.
+ * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the unread badge
+ * (`/v1/comms/unread`) and openTicket navigation, so parking the tab switches both off in one place.
  *
- * Currently TRUE — the native comms queue is live. The old gate existed because the Desk-backed
- * badge paged up to 20 ticket pages for a number nobody could see while parked; the comms badge is
- * a single count query, so the cost that motivated the gate is gone.
+ * Currently FALSE — the console is parked (2026-08-03) and Create files into Zoho Desk. Keeping the
+ * badge query off matters: it would count a queue the agent has no way to open.
  */
 export const TICKETS_ENABLED: boolean = !NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
 
@@ -165,7 +165,7 @@ export const NAV_DESC = {
   home: 'Your day at a glance — goal, announcements and what needs a call.',
   inbox: 'Reminders, alerts and tasks assigned to you.',
   tasks: 'Drag cards across columns to update status. Open any card for full detail and history.',
-  tickets: 'Tickets and escalations you raised, with their live conversation.',
+  tickets: 'Tickets and escalations you raised. Coming soon — file them from Create; the team works them in Zoho Desk.',
   retention: 'Quiet clients that need winning back — your cases and the shared open pool.',
   verification: 'Newest applications first. Review live compliance stages and answer Verification requests.',
   records: 'Everything about your pipeline — clients, leads, deals, rejections and money codes.',

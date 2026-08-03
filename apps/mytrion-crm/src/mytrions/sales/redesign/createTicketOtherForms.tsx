@@ -1,25 +1,22 @@
 /**
  * Escalate Request + Create Lead forms (Create tab siblings of the ticket wizard).
  *
- * The escalation form is NATIVE (/v1/comms/escalations). Two changes that matter:
- *   * Reasons come from `GET /comms/catalog`, not a hardcoded array — the server needs a CODE (ESC-01),
- *     and a reason with nobody configured is disabled here rather than submitted into a refusal.
- *   * A DEPARTMENT is chosen when the request is opened, because level 2 is that department's own agent.
- *     Leaving it blank falls back to the reason's configured fall-to user.
+ * The escalation form is back on ZOHO DESK as of 2026-08-03 (it was briefly native /v1/comms, whose
+ * console is now parked). It runs the `createescalationticket` Deluge, which creates BOTH the
+ * Escalation_Request CRM record and its Desk ticket, and the attachment goes up in the same multipart
+ * request. Two consequences of leaving the native path:
+ *   * reasons are a fixed list again, because Desk's escalation reason is plain text on the CRM record —
+ *     there is no admin-owned catalog behind it, so there is no routing to validate a code against;
+ *   * there is no department picker, because Desk routing is decided by the Deluge, not by the caller.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
-import {
-  createEscalation,
-  getCommsCatalog,
-  uploadThreadAttachment,
-  type DepartmentOptionDto,
-  type EscalationReasonDto,
-} from '@/api/comms';
+import { createEscalation } from '@/api/desk';
 import { callTouchpoint } from '@/api/touchpoints';
 import { invalidateDcCache } from './dcCache';
+import { invalidateDeduped } from './fetchDedupe';
 import { resolveCreateLeadOutcome } from './createLeadOutcome';
 import { leadShortId, zohoLeadUrl } from './crmUrls';
 import {
@@ -33,76 +30,58 @@ import {
   SELECT_BTN,
 } from './createTicketShared';
 
-// The reason list is admin-owned now; this array only existed because it used to be hardcoded.
+/**
+ * Desk's escalation reason is a free-text field on the Escalation_Request record, so this list is the
+ * only definition of it. Keep it in step with the picklist in Zoho — an unknown value is accepted by the
+ * Deluge but then does not group with the rest in reporting.
+ */
+const ESCALATION_REASONS = [
+  'Problem with the client', 'Question', 'Personal Request', 'CITI Fuel Duplicate', 'CRM Question',
+  'Lead Transfer', 'Deal Transfer', 'Mobile App Issue', 'RingCentral Number Issue', 'Additional Discounts', 'Other',
+];
 const SALUTATIONS = ['Mr', 'Ms'];
 
 export function EscalationForm() {
-  const { pushToast, openTicket } = useSales();
+  const { pushToast } = useSales();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [reason, setReason] = useState('');
   const [reasonOpen, setReasonOpen] = useState(false);
-  const [dept, setDept] = useState('');
-  const [reasons, setReasons] = useState<EscalationReasonDto[]>([]);
-  const [depts, setDepts] = useState<DepartmentOptionDto[]>([]);
   const [att, setAtt] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // The same key is replayed after a network failure; rotate it only after confirmed creation.
-  const idempotencyKey = useRef(`sales-escalation:${crypto.randomUUID()}`);
+  /**
+   * Synchronous double-submit latch. The Deluge takes no idempotency key and `setSubmitting(true)` does
+   * not land before this handler returns, so without it a fast double-click files two escalations.
+   */
+  const submitInFlight = useRef(false);
   const canSubmit = !!(subject.trim() && body.trim() && reason) && !submitting;
 
-  useEffect(() => {
-    void getCommsCatalog()
-      .then((cat) => {
-        setReasons(cat.escalationReasons);
-        setDepts(cat.departments.filter((d) => d.acceptsEscalations));
-      })
-      // A catalog failure leaves the pickers empty and the submit disabled, which is the honest outcome:
-      // guessing a reason code would submit into a refusal.
-      .catch(() => undefined);
-  }, []);
-
-  const chosen = reasons.find((r) => r.code === reason);
-
   const submit = async (): Promise<void> => {
-    if (!canSubmit) return;
+    if (!canSubmit || submitInFlight.current) return;
+    submitInFlight.current = true;
     setSubmitting(true);
     try {
       const hadFile = !!att;
-      const res = await createEscalation({
-        reasonCode: reason,
-        ...(dept ? { targetDepartment: dept } : {}),
-        subject: subject.trim(),
-        description: body.trim(),
-        sourceMytrion: 'sales',
-        idempotencyKey: idempotencyKey.current,
-      });
-      // A separate call, against the new escalation's thread: an attachment belongs to a message.
-      let attached = false;
-      if (att) {
-        try {
-          await uploadThreadAttachment(res.threadId, att);
-          attached = true;
-        } catch {
-          attached = false;
-        }
-      }
-      setSubject(''); setBody(''); setReason(''); setDept(''); setAtt(null);
-      idempotencyKey.current = `sales-escalation:${crypto.randomUUID()}`;
-      const landed = res.escalation.assignee?.name ?? res.escalation.department ?? 'the escalation team';
+      // ONE multipart request — the Deluge creates the Escalation_Request record AND its Desk ticket, and
+      // the file lands on the Desk ticket (CRM Escalation_Request as the fallback), so `attached` is
+      // authoritative rather than a second call that can fail on its own.
+      const res = await createEscalation({ subject: subject.trim(), description: body.trim(), reason }, att);
+      setSubject(''); setBody(''); setReason(''); setAtt(null);
       pushToast(
-        `Escalation ${res.number} created`,
+        'Escalation created',
         hadFile
-          ? attached
-            ? `With ${landed} — file attached.`
-            : `With ${landed} — attach the file in the chat.`
-          : `With ${landed} — opening it now.`,
+          ? res.attached
+            ? 'Routed to the escalation team in Zoho Desk — file attached.'
+            : 'Routed to the escalation team in Zoho Desk — the file couldn’t be attached.'
+          : 'Routed to the escalation team in Zoho Desk.',
       );
       invalidateDcCache('sales:tickets');
-      if (res.escalation.ticketId) openTicket(res.escalation.ticketId);
+      invalidateDeduped('desk:tickets:');
+      void res.escalationId;
     } catch (e) {
       pushToast('Couldn’t create escalation', e instanceof Error ? e.message : 'Please try again.');
     } finally {
+      submitInFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -123,36 +102,25 @@ export function EscalationForm() {
               onClick={() => setReasonOpen((o) => !o)}
               style={s(`${SELECT_BTN};color:${reason ? 'var(--text)' : 'var(--muted)'};font-weight:${reason ? '600' : '400'}`)}
             >
-              <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{chosen?.label ?? 'Select a reason'}</span>
+              <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{reason || 'Select a reason'}</span>
               <Icon name="chevronDown" size={16} color="var(--muted)" style={{ flexShrink: 0 }} />
             </button>
             {reasonOpen && (
               <>
                 <div onClick={() => setReasonOpen(false)} style={s('position:fixed;inset:0;z-index:8')} />
                 <div className="ss-scroll" role="listbox" style={s(DROP_PANEL)}>
-                  {reasons.length === 0 && (
-                    <div style={s('padding:10px 12px;font-size:13px;color:var(--muted)')}>
-                      No escalation reasons are configured yet.
-                    </div>
-                  )}
-                  {reasons.map((r) => {
-                    const on = reason === r.code;
+                  {ESCALATION_REASONS.map((r) => {
+                    const on = reason === r;
                     return (
                       <button
-                        key={r.code}
+                        key={r}
                         type="button"
                         role="option"
                         aria-selected={on}
-                        // An unrouted reason has nobody to receive it, so the server refuses it. Disabling
-                        // it here means the agent finds that out before typing the whole request.
-                        disabled={!r.routed}
-                        title={r.routed ? r.label : `${r.label} — no assignee configured yet`}
-                        onClick={() => { setReason(r.code); setReasonOpen(false); }}
+                        onClick={() => { setReason(r); setReasonOpen(false); }}
                         className={`ss-menu-i${on ? ' is-on' : ''}`}
-                        style={r.routed ? undefined : s('opacity:.45;cursor:not-allowed')}
                       >
-                        {r.label}
-                        {!r.routed && <span style={s('margin-left:6px;font-size:11px')}>· not set up</span>}
+                        {r}
                       </button>
                     );
                   })}
@@ -160,29 +128,6 @@ export function EscalationForm() {
               </>
             )}
           </div>
-        </div>
-        <div>
-          <div style={s(LABEL)}>
-            Escalate to{' '}
-            <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>
-              · optional — leave blank to use the reason&rsquo;s default
-            </span>
-          </div>
-          {/* The department decides LEVEL 2: an escalation aimed at Billing goes to Billing's own agent. */}
-          <select
-            value={dept}
-            onChange={(e) => setDept(e.currentTarget.value)}
-            className="ss-in"
-            style={s(FIELD)}
-            aria-label="Escalate to department"
-          >
-            <option value="">Use the reason&rsquo;s default assignee</option>
-            {depts.map((d) => (
-              <option key={d.department} value={d.department}>
-                {d.label}
-              </option>
-            ))}
-          </select>
         </div>
         <div><div style={s(LABEL)}>Attachment <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>· max 20MB</span></div><AttachZone id="esc-att" file={att} onFile={setAtt} /></div>
         <div style={s('display:flex;justify-content:flex-end;padding-top:2px')}>

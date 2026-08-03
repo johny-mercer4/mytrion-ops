@@ -120,7 +120,9 @@ const NAV_ITEMS: NavDef[] = [
     // chat bubbles
     iconPath:
       'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
-    disabled: false,
+    // PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
+    // while the real work sits in Desk. The console itself is untouched — drop this flag to un-park.
+    disabled: true,
   },
   {
     id: 'service-center',
@@ -131,6 +133,9 @@ const NAV_ITEMS: NavDef[] = [
     disabled: true,
   },
 ];
+
+/** Single source for the parked Tickets queue — read from NAV_ITEMS so the flag cannot drift. */
+const TICKETS_PARKED = NAV_ITEMS.some((i) => i.id === 'tickets' && i.disabled);
 
 export function CsShell() {
   const user = useUserContext();
@@ -324,12 +329,14 @@ export function CsShell() {
           {panel('citi-fuel', <CitiFuel />)}
           {panel('maintenance', <Maintenance />)}
           {panel('analytics', <Analytics />)}
-          {/* The SHARED console. CS sees its inbound queue through the reader filter's department arm —
-              there is no CS-specific chat code. */}
-          {panel(
-            'tickets',
-            <TicketConsole mode="queue" department="customer-service" title="Customer Service tickets" />,
-          )}
+          {/* The SHARED console, PARKED — see the NAV_ITEMS entry. Left mounted-by-id so un-parking is
+              one flag, but gated on the same flag so a deep link cannot open an empty queue. */}
+          {TICKETS_PARKED
+            ? null
+            : panel(
+                'tickets',
+                <TicketConsole mode="queue" department="customer-service" title="Customer Service tickets" />,
+              )}
         </main>
       </div>
 

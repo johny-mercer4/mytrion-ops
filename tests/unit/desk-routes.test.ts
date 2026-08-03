@@ -1,9 +1,14 @@
 /**
- * Desk routes (/v1/desk) — authorization regressions. Two attacks must stay closed:
+ * Desk routes (/v1/desk) — authorization regressions plus the restored create path.
+ *
+ * Three things must stay closed / true:
  *  1. Header elevation: a verified session asserting x-department-access / x-all-departments
  *     must NOT gain sales access or the admin ?zoho_user_id override (session-authoritative).
- *  2. Per-ticket IDOR: comments / reply / attachment-download on a guessable ticket id must
- *     verify the ticket's cf_crm_created_by_id against the caller (assertTicketOwned).
+ *  2. Per-ticket IDOR: comments / attachment-download on a guessable ticket id must verify the
+ *     ticket's cf_crm_created_by_id against the caller (assertTicketOwned).
+ *  3. Create (restored 2026-08-03): a non-admin may only file against a deal they OWN, a dealId is
+ *     rejected before it can reach COQL, and an attachment lands on Desk with the CRM record as the
+ *     documented fallback — the agent is never told "attached" when nothing was.
  */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,7 +44,15 @@ vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
 });
 vi.mock('../../src/integrations/zohoCrm.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoCrm.js')>();
-  return { ...mod, attachFileToRecord: vi.fn(async () => 'crm_att_1') };
+  // The route calls `zohoCrm.attachFileToRecord` — the module-level facade is deprecated, so stubbing
+  // only that export would leave the real (network) method reachable through the instance.
+  return {
+    ...mod,
+    zohoCrm: Object.assign(Object.create(Object.getPrototypeOf(mod.zohoCrm) as object), mod.zohoCrm, {
+      attachFileToRecord: vi.fn(async () => 'crm_att_1'),
+    }),
+    attachFileToRecord: vi.fn(async () => 'crm_att_1'),
+  };
 });
 vi.mock('../../src/modules/touchpoints/dispatcher.js', () => ({
   dispatchTouchpoint: vi.fn(async () => ({ ok: true, data: {} })),
@@ -51,19 +64,47 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { fetchDealOwnerId } from '../../src/integrations/salesDataCenter.js';
+import { zohoCrm } from '../../src/integrations/zohoCrm.js';
 import {
+  createDeskTicket,
   getTicket,
   getTicketAttachmentContent,
   getTicketAttachments,
   searchTicketsByCreator,
+  uploadTicketAttachment,
 } from '../../src/integrations/zohoDesk.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { dispatchTouchpoint } from '../../src/modules/touchpoints/dispatcher.js';
 import { clearTicketOwnerCache } from '../../src/modules/tools/deskScope.js';
 
 const searchMock = vi.mocked(searchTicketsByCreator);
 const getTicketMock = vi.mocked(getTicket);
 const attachmentMock = vi.mocked(getTicketAttachmentContent);
 const getAttachmentsMock = vi.mocked(getTicketAttachments);
+const createTicketMock = vi.mocked(createDeskTicket);
+const uploadAttachmentMock = vi.mocked(uploadTicketAttachment);
+const dealOwnerMock = vi.mocked(fetchDealOwnerId);
+const dispatchMock = vi.mocked(dispatchTouchpoint);
+const crmAttachMock = vi.mocked(zohoCrm.attachFileToRecord);
+
+/** Build a multipart body (fields + one optional file) the way the browser does. */
+function multipart(
+  fields: Record<string, string>,
+  file?: { name: string; content: string; mime?: string },
+): { payload: string; contentType: string } {
+  const boundary = '----vitestboundary';
+  let body = Object.entries(fields)
+    .map(([k, v]) => `--${boundary}\r\ncontent-disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
+    .join('');
+  if (file) {
+    body +=
+      `--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="${file.name}"\r\n` +
+      `content-type: ${file.mime ?? 'text/plain'}\r\n\r\n${file.content}\r\n`;
+  }
+  body += `--${boundary}--\r\n`;
+  return { payload: body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -77,6 +118,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   clearTicketOwnerCache();
   searchMock.mockResolvedValue([]);
+  createTicketMock.mockResolvedValue('tk_new');
+  uploadAttachmentMock.mockResolvedValue({ id: 'att_1' } as never);
+  crmAttachMock.mockResolvedValue('crm_att_1');
+  dealOwnerMock.mockResolvedValue(null);
+  dispatchMock.mockResolvedValue({ ok: true, data: {} } as never);
   getTicketMock.mockResolvedValue({});
 });
 
@@ -248,4 +294,146 @@ describe('per-ticket routes — IDOR regression', () => {
   });
 });
 
+describe('ticket create — deal ownership (restored Desk write path)', () => {
+  const FIELDS = {
+    department: 'cs',
+    ticketType: 'Card Issue',
+    dealId: '5550001',
+    subject: 'Card not working',
+    description: 'Pump declines the card.',
+  };
 
+  const post = async (
+    profile: string,
+    fields: Record<string, string> = FIELDS,
+    file?: { name: string; content: string; mime?: string },
+  ) => {
+    const token = await workerToken(profile);
+    const { payload, contentType } = multipart(fields, file);
+    return app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+  };
+
+  it("filing on someone else's deal → 403 and no ticket is created", async () => {
+    dealOwnerMock.mockResolvedValue('999');
+    const res = await post('Sales Rep');
+    expect(res.statusCode).toBe(403);
+    expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('filing on your own deal → ticket created and mirrored into CRM', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    const res = await post('Sales Rep');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: false });
+    expect(createTicketMock).toHaveBeenCalled();
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tickets.create_in_crm',
+      expect.objectContaining({ dealId: '5550001', deskTicketId: 'tk_new' }),
+    );
+  });
+
+  it('admin skips the deal ownership lookup', async () => {
+    const res = await post('Administrator');
+    expect(res.statusCode).toBe(200);
+    expect(dealOwnerMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-numeric dealId is rejected before any CRM call', async () => {
+    const res = await post('Sales Rep', { ...FIELDS, dealId: "5' or '1'='1" });
+    expect(res.statusCode).toBe(400);
+    expect(dealOwnerMock).not.toHaveBeenCalled();
+    expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('a file rides the SAME request and lands on the Desk ticket', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    const res = await post('Sales Rep', FIELDS, { name: 'photo.png', content: 'png-bytes', mime: 'image/png' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(uploadAttachmentMock).toHaveBeenCalled();
+    expect(crmAttachMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the CRM Deal when the Desk token lacks attachment scope', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockRejectedValue(new Error('403 no attachment scope'));
+    const res = await post('Sales Rep', FIELDS, { name: 'photo.png', content: 'png-bytes' });
+    expect(res.statusCode).toBe(200);
+    // Still `attached: true` — the file IS retrievable, just on the Deal. The warning says where.
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith('Deals', '5550001', 'photo.png', expect.anything(), expect.anything());
+    expect((res.json() as { warnings: string[] }).warnings.join(' ')).toContain('CRM Deals');
+  });
+
+  it('reports attached:false when BOTH Desk and CRM refuse the file', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockRejectedValue(new Error('desk down'));
+    crmAttachMock.mockRejectedValue(new Error('crm down'));
+    const res = await post('Sales Rep', FIELDS, { name: 'photo.png', content: 'png-bytes' });
+    // The TICKET still exists, so this is a 200 with attached:false — not a failed create. The wizard
+    // tells the agent the file did not attach rather than that the ticket did not file.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: false });
+  });
+});
+
+describe('escalation create — Deluge + attachment', () => {
+  const FIELDS = { subject: 'Client dispute', description: 'Needs a manager.', reason: 'Question' };
+
+  const post = async (file?: { name: string; content: string; mime?: string }) => {
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, file);
+    return app.inject({
+      method: 'POST',
+      url: '/v1/desk/escalations',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+  };
+
+  it('creates via the Deluge and returns both ids', async () => {
+    dispatchMock.mockResolvedValue({ ok: true, data: { ticketId: 'tk_e1', escalationId: 'esc_1' } } as never);
+    const res = await post();
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_e1', escalationId: 'esc_1', attached: false });
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tickets.create_escalation',
+      expect.objectContaining({ escalationReason: 'Question', questionSubject: 'Client dispute' }),
+    );
+  });
+
+  it('attaches on Desk when a file is sent', async () => {
+    dispatchMock.mockResolvedValue({ ok: true, data: { ticketId: 'tk_e1', escalationId: 'esc_1' } } as never);
+    const res = await post({ name: 'proof.pdf', content: 'pdf', mime: 'application/pdf' });
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(uploadAttachmentMock).toHaveBeenCalled();
+  });
+
+  it('falls back to the CRM Escalation_Request record', async () => {
+    dispatchMock.mockResolvedValue({ ok: true, data: { ticketId: 'tk_e1', escalationId: 'esc_1' } } as never);
+    uploadAttachmentMock.mockRejectedValue(new Error('403 no attachment scope'));
+    const res = await post({ name: 'proof.pdf', content: 'pdf' });
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith(
+      'Escalation_Request',
+      'esc_1',
+      'proof.pdf',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('502s rather than reporting success when the Deluge returns no ids', async () => {
+    dispatchMock.mockResolvedValue({ ok: true, data: { message: 'Reason not recognised' } } as never);
+    const res = await post();
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: { code: 'ZOHO_ESCALATION_ERROR' } });
+  });
+});
