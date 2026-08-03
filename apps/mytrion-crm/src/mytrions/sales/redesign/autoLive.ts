@@ -47,6 +47,16 @@ export interface Card {
   driverId: string;
   unit: string;
 }
+export interface CardLookupRow {
+  cardId: string;
+  cardNumber: string;
+  unit: string;
+  driverId: string;
+  driverName: string;
+  xRef: string;
+  status: string;
+  override: string;
+}
 export interface CardLastUsedRow {
   cardNumber: string;
   status: string;
@@ -98,6 +108,7 @@ export interface CmpInvoiceRow {
 export type DonePayload =
   | { kind: 'invoices' }
   | { kind: 'transactions' }
+  | { kind: 'card-lookup'; carrierId: string; companyName: string; rows: CardLookupRow[] }
   | { kind: 'message'; message: string }
   | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
   | { kind: 'card-last-used'; rows: CardLastUsedRow[] }
@@ -149,6 +160,7 @@ export const AUTO_LIST: readonly Automation[] = [
   { id: 'invoices', title: 'Request Invoices', codes: ['C-20', 'Q-1'], dept: 'Q', icon: ICO.invoice, color: 'var(--accent)', desc: 'Fetch carrier invoices by date range and download PDF / Excel from WorkDrive.', top: true, kind: 'invoices' },
   // C-15 is a CS code — lives under Customer Service (not Billing).
   { id: 'transactions', title: 'Transactions Report', codes: ['C-15'], dept: 'C', icon: ICO.chart, color: 'var(--cyan)', desc: 'Pull a full fuel-transaction report for any carrier across a custom date window.', top: true, kind: 'transactions' },
+  { id: 'view-manage-cards', title: 'Card Status Report', codes: [], dept: 'C', icon: ICO.card, color: 'var(--accent-2)', desc: 'View a carrier’s live card roster and download the Card Lookup report as PDF or Excel.', top: true, kind: 'card-report', verb: 'Get Report' },
   { id: 'payments', title: 'Check Payment Information', codes: ['C-18', 'Q-2'], dept: 'Q', icon: ICO.card, color: 'var(--ok)', desc: 'View invoices and payments for a carrier over the last 90 days.', kind: 'simple', verb: 'Check Payments' },
   { id: 'billing-form', title: 'Billing Forms', codes: ['Q-9'], dept: 'Q', icon: ICO.doc, color: 'var(--violet)', desc: 'View submitted billing forms and verification notes for a deal.', kind: 'simple', verb: 'Fetch Billing Form' },
   { id: 'balance', title: 'Balance Check', codes: ['C-8', 'Q-8'], dept: 'Q', icon: ICO.money, color: 'var(--orange)', desc: 'Check the current available balance and credit line for a carrier account.', kind: 'simple', verb: 'Check Balance' },
@@ -224,6 +236,7 @@ export const RUNNABLE = new Set(AUTO_LIST.map((a) => a.id));
 export const PHASE_MAP: Record<string, string[]> = {
   invoices: ['Fetching invoices…', 'Formatting results…'],
   transactions: ['Pulling transaction records…', 'Formatting results…'],
+  'card-report': ['Loading live cards…', 'Formatting Card Lookup…'],
   card: ['Connecting to EFS…', 'Locating card record…', 'Applying update…', 'Confirming with EFS…'],
   form: ['Submitting request…', 'Routing to team…'],
   simple: ['Authenticating…', 'Querying account…', 'Formatting response…'],

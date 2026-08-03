@@ -105,7 +105,10 @@ describe('limit update runner', () => {
 });
 
 describe('live EFS card state', () => {
-  beforeEach(() => callTouchpointMock.mockReset());
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+    requestMock.mockReset();
+  });
 
   it('loads the card picker from EFS before considering DWH', async () => {
     callTouchpointMock.mockResolvedValue({
@@ -174,6 +177,31 @@ describe('live EFS card state', () => {
         transactions: 12,
         source: 'dwh',
       }],
+    });
+  });
+
+  it('loads the owned carrier Card Lookup roster through the Sales route', async () => {
+    const reportRows = [{
+      cardId: '1001',
+      cardNumber: '708305******7378',
+      unit: '995',
+      driverId: '995',
+      driverName: 'Driver One',
+      xRef: '',
+      status: 'Active',
+      override: 'No',
+    }];
+    requestMock.mockResolvedValue({ rows: reportRows });
+
+    await expect(runAutomation(input(action('view-manage-cards')))).resolves.toEqual({
+      kind: 'card-lookup',
+      carrierId: deal.carrier,
+      companyName: deal.name,
+      rows: reportRows,
+    });
+    expect(requestMock).toHaveBeenCalledWith('GET', '/sales/cards', {
+      query: { carrierId: deal.carrier },
+      timeoutMs: 45_000,
     });
   });
 });
