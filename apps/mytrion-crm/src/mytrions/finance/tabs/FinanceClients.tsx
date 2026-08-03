@@ -1,8 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { ChevronRight, RefreshCw, Search, Users } from 'lucide-react';
-import { useLoad } from '../../_shared/useLoad';
+import { formatCachedAt, useCachedLoad } from '../../_shared/swrCache';
 import { listFinanceClients, type FinanceClient } from '../../../api/finance';
 import { ClientModal } from '../ClientModal';
+import { financeKeys, STALE } from '../panelBits';
 import { dash, money0, num } from '../financeFormat';
 
 /**
@@ -50,7 +51,14 @@ export function FinanceClients() {
   const [shown, setShown] = useState(PAGE);
   const [openCarrier, setOpenCarrier] = useState<FinanceClient | null>(null);
 
-  const load = useLoad(() => listFinanceClients(), []);
+  /**
+   * Cached: this payload is ~1.6 MB and the API does not gzip, so leaving the tab and coming back used
+   * to re-download all 8k rows. The Refresh button now forces a revalidation instead of being the only
+   * way the list is ever fetched.
+   */
+  const load = useCachedLoad(financeKeys.roster(), () => listFinanceClients(), {
+    staleMs: STALE.ROSTER,
+  });
   const rows = useMemo(() => load.data?.clients ?? [], [load.data]);
 
   // Typing stays responsive: React renders the keystroke immediately and re-filters at lower
@@ -90,7 +98,7 @@ export function FinanceClients() {
   };
 
   const visible = filtered.slice(0, shown);
-  const busy = load.loading || load.refreshing;
+  const busy = load.loading || load.revalidating;
 
   return (
     <div className="fi-page">
@@ -104,7 +112,14 @@ export function FinanceClients() {
           </p>
         </div>
         <div className="fi-head-actions">
-          <button type="button" className="fi-btn" onClick={load.refresh} disabled={busy}>
+          {/* The roster is cached, so say how old it is — a debtor list that is quietly minutes stale
+              is the kind of thing someone acts on. */}
+          {load.cachedAt ? (
+            <span className="fi-cachedat">
+              {load.revalidating ? 'Refreshing…' : `Updated ${formatCachedAt(load.cachedAt)}`}
+            </span>
+          ) : null}
+          <button type="button" className="fi-btn" onClick={load.reload} disabled={busy}>
             <RefreshCw size={15} className={busy ? 'fi-spin' : ''} />
             Refresh
           </button>

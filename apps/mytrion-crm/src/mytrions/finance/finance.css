@@ -367,6 +367,11 @@
   color: var(--text-muted);
 }
 .fi-chip {
+  /* inline-flex so a chip carrying an icon aligns it with the label instead of dropping it on the
+     text baseline — the alternative is a per-icon verticalAlign nudge at every call site. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 11px;
   border-radius: var(--fi-r-pill);
   border: 1px solid var(--hz-pane-bd);
@@ -375,11 +380,15 @@
   font-family: inherit;
   font-size: 11.5px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     color var(--hz-dur-wash) var(--hz-ease),
     background var(--hz-dur-wash) var(--hz-ease),
     border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.fi-chip > svg {
+  flex: none;
 }
 .fi-chip:hover {
   color: var(--text-primary);
@@ -1026,4 +1035,414 @@ table.fi-table {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* ── EFS / Money Codes panels (efsPanels.tsx) ──────────────────────────────────────────────
+   Unscoped like everything else here: these render inside the portalled modal, outside .fi-root. */
+
+/* One line of plain English at the top of a panel. Both tabs show EFS's concepts (top-up, sweep,
+   money code), and a finance reader should not have to already know the vendor's vocabulary. */
+.fi-lede {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.fi-lede strong {
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+/* The two directions get their words tinted the same hues the rows use, so the legend IS the key. */
+.fi-in-w {
+  color: var(--fi-paid) !important;
+}
+.fi-out-w {
+  color: var(--fi-pending) !important;
+}
+
+/* A refetch in flight: dim and lock out input, but DO NOT swap content for a skeleton. Changing a
+   filter should not look like a page reload — see useSticky in efsPanels.tsx. */
+.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--hz-dur-tone) var(--hz-ease);
+}
+.fi-chiprow {
+  display: inline-flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* ── Window picker: presets + a custom from/to range ── */
+.fi-rangebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* The Custom chip doubles as the readout for the applied range, so it runs wider than a preset and
+   sits slightly apart — it is a different KIND of control, not a fourth preset.
+   Separation is GAP ONLY. An earlier version squared the two left corners to suggest a divider, which
+   just read as a broken pill: `.fi-chip` is `border-radius: 999px`, so overriding one side left the
+   button rounded on the right and square on the left. Keep the pill intact. */
+.fi-chip-custom {
+  margin-left: 6px;
+}
+/* Chevron points down when the drawer is shut, up when it is open. */
+.fi-chip-caret {
+  transition: transform var(--hz-dur-tone) var(--hz-ease);
+  opacity: 0.7;
+}
+.fi-chip[aria-expanded='true'] .fi-chip-caret {
+  transform: rotate(180deg);
+}
+/* The applied dates, shown inside the chip in mono so they read as data rather than as a label. */
+.fi-chip-dates {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+/* The custom row only exists while Custom is open, so it reads as a drawer off the chip row. */
+.fi-daterange {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--fi-r-md, 12px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+}
+.fi-daterange-f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fi-daterange-f > span {
+  font-family: var(--font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fi-daterange input[type='date'] {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--fi-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  /* Without this the native picker renders its own light chrome inside a dark panel. */
+  color-scheme: dark;
+}
+[data-theme='light'] .fi-daterange input[type='date'] {
+  color-scheme: light;
+}
+.fi-daterange input[type='date']:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+/* Span readout / rejection reason, on the same baseline as the Apply button. */
+.fi-daterange-n,
+.fi-daterange-err {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding-bottom: 9px;
+}
+.fi-daterange-n {
+  color: var(--text-muted);
+}
+.fi-daterange-err {
+  color: var(--fi-debt);
+}
+
+/* "Updated 12s ago · Refresh". Right-aligned and quiet: it is provenance, not a control anyone needs
+   to find. It exists because every panel is cached and a money figure should never hide its age. */
+.fi-cachebar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: -4px;
+}
+.fi-cachebar-t {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.fi-cachebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--fi-r-pill);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+.fi-cachebtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--hz-pane-lift);
+}
+.fi-cachebtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+/* NOTE: .fi-cachebar is always rendered OUTSIDE the `.is-busy` container, never inside it. A child
+   cannot undo an ancestor's `opacity` — that composites — so a bar nested in the dimmed stack would
+   be greyed and unclickable exactly when someone wants to force a refresh. */
+
+/* ── The flow block: headline figures, then the in/out split ── */
+.fi-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 17px 18px;
+  border-radius: var(--fi-r-md, 12px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: var(--hz-glass-inset);
+}
+.fi-flow-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 14px;
+}
+.fi-bigstat-l {
+  font-family: var(--font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fi-bigstat-v {
+  margin-top: 5px;
+  font-family: var(--font-head);
+  font-size: clamp(21px, 2.5vw, 27px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  /* No --p set = the neutral "Issued" figure; toned stats pass a hue. */
+  color: var(--p, var(--text-primary));
+}
+.fi-bigstat-s {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* Proportion of gross flow. Purely supporting — every segment is also written out in .fi-flowkey,
+   so the split is never carried by colour alone. */
+.fi-flowbar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--fi-r-pill);
+  overflow: hidden;
+  background: var(--hz-pane-alt);
+}
+.fi-flowbar-in,
+.fi-flowbar-out {
+  height: 100%;
+  transition: width var(--hz-dur-lift) var(--hz-ease);
+}
+.fi-flowbar-in {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--fi-paid) 70%, transparent), var(--fi-paid));
+}
+.fi-flowbar-out {
+  background: linear-gradient(
+    90deg,
+    var(--fi-pending),
+    color-mix(in srgb, var(--fi-pending) 70%, transparent)
+  );
+}
+.fi-flowkey {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.fi-flowkey span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.fi-keydot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--p);
+}
+
+/* ── The movement ledger ── */
+/* Direction is a word + an arrow, never colour alone — the two hues are close in greyscale. */
+.fi-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fi-dir.is-in {
+  color: var(--fi-paid);
+}
+.fi-dir.is-out {
+  color: var(--fi-pending);
+}
+/* Sweeps are not a failure, so they read amber like the direction chip — .fi-debt's red is for
+   money we are owed and is deliberately not reused here. */
+.fi-outv {
+  color: var(--fi-pending);
+  font-weight: 600;
+}
+
+/* Day header inside the ledger. A carrier's movements cluster on a few dates, and the day subtotal
+   is the number people actually reconcile against. */
+.fi-table tr.fi-daygroup td {
+  padding: 9px 13px;
+  background: var(--hz-pane-alt);
+  border-top: 1px solid var(--hz-pane-bd);
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.fi-table tr.fi-daygroup:hover td {
+  background: var(--hz-pane-alt);
+}
+/* The day header's own `color` out-specifies the tone classes (0,3,0 vs 0,1,0), which silently
+   drained the subtotal's hue — restate them at matching specificity. */
+.fi-table tr.fi-daygroup td.fi-paid {
+  color: var(--fi-paid);
+}
+.fi-table tr.fi-daygroup td.fi-outv {
+  color: var(--fi-pending);
+}
+.fi-daygroup-n {
+  margin-left: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-muted);
+}
+.fi-time,
+.fi-ref {
+  color: var(--text-muted);
+}
+.fi-ref {
+  font-size: 11px;
+}
+
+/* Secondary line inside a cell: "$40 left", a code's reason, etc. */
+.fi-subnote {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-weight: 400;
+  max-width: 34ch;
+}
+.fi-who {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* An informational note — deliberately NOT .fi-error's red, and deliberately quiet. It explains a
+   design decision (money codes are masked); a loud banner would compete with the figures above it,
+   and styling it as a failure would read as something being broken. */
+.fi-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--hz-pane-bd);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.fi-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fi-paid);
+}
+
+/* Money-code rows expand to their redemptions, so they have to look pressable. */
+.fi-clickrow {
+  cursor: pointer;
+}
+.fi-clickrow[aria-expanded='true'] td {
+  background: var(--hz-glass-hover);
+}
+.fi-clickrow[aria-expanded='true'] td:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* The masked code. Monospace + tracking so the four real digits stay countable next to the dots. */
+.fi-masked {
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* Expanded redemption sub-table: inset, and its own zebra must not fight the parent's. */
+.fi-uses {
+  padding: 0 0 12px 0 !important;
+  background: color-mix(in srgb, var(--hz-pane-alt) 60%, transparent);
+}
+/* Capped: three narrow columns stretched across a 1300px modal put the check number and its amount
+   a third of the screen apart, which is unreadable as a pair. */
+.fi-uses > table {
+  margin: 0 0 0 26px;
+  width: min(calc(100% - 26px), 640px);
+  /* `table.fi-table` floors every table at 720px so the wide 8-column ones scroll instead of
+     crushing. Three columns need no floor, and inheriting it defeats the cap above. */
+  min-width: 0;
+}
+.fi-uses tbody tr:nth-child(even) td,
+.fi-uses tbody tr:hover td {
+  background: transparent;
+}
+.fi-uses-empty {
+  padding: 12px 26px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+/* Caption on the expanded block: answers "how much of this code is gone" before the rows are read. */
+.fi-uses-head {
+  padding: 11px 26px 3px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+/* Skeleton sized to a single expanded row — a .fi-sk-block here would push the table around by
+   200px and then snap back, which is exactly the jump the sticky-data loader avoids elsewhere. */
+.fi-sk-line {
+  height: 46px;
+  margin: 10px 26px;
 }
