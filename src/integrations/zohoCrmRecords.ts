@@ -23,6 +23,42 @@ interface MutationResponse {
   data?: MutationRow[];
 }
 
+export interface BlueprintFieldOption {
+  label: string;
+  value: string;
+}
+
+export interface BlueprintTransitionField {
+  apiName: string;
+  label: string;
+  dataType: string;
+  mandatory: boolean;
+  readOnly: boolean;
+  value: unknown;
+  options: BlueprintFieldOption[];
+}
+
+export interface BlueprintTransition {
+  id: string;
+  name: string;
+  nextValue: string;
+  type: string;
+  criteriaMatched: boolean;
+  criteriaMessage: string;
+  fields: BlueprintTransitionField[];
+}
+
+export interface BlueprintDetails {
+  process: {
+    id: string;
+    name: string;
+    fieldApiName: string;
+    fieldLabel: string;
+    currentValue: string;
+  };
+  transitions: BlueprintTransition[];
+}
+
 export interface CrmFieldMeta {
   api_name: string;
   data_type?: string;
@@ -231,31 +267,116 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     return json.__timeline ?? [];
   }
 
-  /**
-   * Blueprint transitions currently available for a record (empty when it is NOT in an active
-   * blueprint, or when Zoho errors on the lookup). Each transition's `nextValue` is the value its
-   * blueprint field moves to — used to map a target Status to the transition to execute.
-   * `GET /{module}/{id}/actions/blueprint`.
-   */
+  /** The record's live Blueprint state and currently available transitions. */
+  async getBlueprintDetails(module: string, id: string): Promise<BlueprintDetails | null> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}/actions/blueprint`;
+    const res = await this.requestRaw('GET', path);
+    const text = await res.text();
+    if (!res.ok) {
+      let code = '';
+      try {
+        code = String((JSON.parse(text) as { code?: unknown }).code ?? '');
+      } catch {
+        // Preserve Zoho's raw body in the wrapper error when it is not JSON.
+      }
+      if (res.status === 400 && code === 'RECORD_NOT_IN_PROCESS') return null;
+      throw this.httpError('GET', path, res.status, text);
+    }
+    if (!text) return null;
+    const json = JSON.parse(text) as {
+      blueprint?: {
+        process_info?: {
+          id?: unknown;
+          name?: unknown;
+          api_name?: unknown;
+          field_label?: unknown;
+          field_value?: unknown;
+        };
+        transitions?: Array<{
+          id?: unknown;
+          name?: unknown;
+          next_field_value?: unknown;
+          type?: unknown;
+          criteria_matched?: unknown;
+          criteria_message?: unknown;
+          data?: Record<string, unknown>;
+          fields?: Array<{
+            api_name?: unknown;
+            field_label?: unknown;
+            display_label?: unknown;
+            data_type?: unknown;
+            mandatory?: unknown;
+            system_mandatory?: unknown;
+            read_only?: unknown;
+            field_read_only?: unknown;
+            pick_list_values?: Array<{ display_value?: unknown; actual_value?: unknown }>;
+          }>;
+        }>;
+      };
+    };
+    const blueprint = json.blueprint;
+    if (!blueprint?.process_info) return null;
+    const process = blueprint.process_info;
+    const transitions: BlueprintTransition[] = (blueprint.transitions ?? [])
+      .filter((transition) => typeof transition.id === 'string')
+      .map((transition) => ({
+        id: String(transition.id),
+        name: typeof transition.name === 'string' ? transition.name : '',
+        nextValue: typeof transition.next_field_value === 'string' ? transition.next_field_value : '',
+        type: typeof transition.type === 'string' ? transition.type : 'manual',
+        criteriaMatched: transition.criteria_matched !== false,
+        criteriaMessage: typeof transition.criteria_message === 'string' ? transition.criteria_message : '',
+        fields: (transition.fields ?? [])
+          .map((field) => {
+            // Widget/related-list metadata can omit api_name. Keep those fields in the response so
+            // a mandatory unsupported input blocks the transition instead of being silently lost.
+            const apiName = typeof field.api_name === 'string' ? field.api_name : '';
+            return {
+              apiName,
+              label:
+                typeof field.display_label === 'string'
+                  ? field.display_label
+                  : typeof field.field_label === 'string'
+                    ? field.field_label
+                    : apiName,
+              dataType: typeof field.data_type === 'string' ? field.data_type : 'text',
+              mandatory: field.mandatory === true || field.system_mandatory === true,
+              readOnly: field.read_only === true || field.field_read_only === true,
+              value: transition.data?.[apiName] ?? null,
+              options: (field.pick_list_values ?? []).flatMap((option) => {
+                const value = option.actual_value;
+                if (typeof value !== 'string') return [];
+                return [{
+                  label: typeof option.display_value === 'string' ? option.display_value : value,
+                  value,
+                }];
+              }),
+            };
+          }),
+      }));
+    return {
+      process: {
+        id: typeof process.id === 'string' ? process.id : '',
+        name: typeof process.name === 'string' ? process.name : '',
+        fieldApiName: typeof process.api_name === 'string' ? process.api_name : '',
+        fieldLabel: typeof process.field_label === 'string' ? process.field_label : 'Status',
+        currentValue: typeof process.field_value === 'string' ? process.field_value : '',
+      },
+      transitions,
+    };
+  }
+
+  /** Compatibility projection used by status-by-value callers. */
   async getBlueprintTransitions(
     module: string,
     id: string,
   ): Promise<Array<{ id: string; nextValue: string; name: string }>> {
-    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}/actions/blueprint`;
-    const res = await this.requestRaw('GET', path);
-    if (!res.ok) return []; // 204 / "record not in a blueprint" → no transitions
-    const text = await res.text();
-    if (!text) return [];
-    const json = JSON.parse(text) as {
-      blueprint?: { transitions?: Array<{ id?: string; next_field_value?: string; name?: string }> };
-    };
-    return (json.blueprint?.transitions ?? [])
-      .filter((t): t is { id: string; next_field_value?: string; name?: string } => typeof t.id === 'string')
-      .map((t) => ({
-        id: t.id,
-        nextValue: typeof t.next_field_value === 'string' ? t.next_field_value : '',
-        name: typeof t.name === 'string' ? t.name : '',
-      }));
+    const blueprint = await this.getBlueprintDetails(module, id);
+    return blueprint?.transitions.map(({ id: transitionId, nextValue, name }) => ({
+      id: transitionId,
+      nextValue,
+      name,
+    })) ?? [];
   }
 
   /**
@@ -276,8 +397,10 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     });
     const text = await res.text();
     if (!res.ok) throw this.httpError('PUT', path, res.status, text);
-    const json = text ? (JSON.parse(text) as { data?: MutationRow[]; blueprint?: MutationRow[] }) : {};
-    const row = json.data?.[0] ?? json.blueprint?.[0];
+    const json = text
+      ? (JSON.parse(text) as MutationRow & { data?: MutationRow[]; blueprint?: MutationRow[] })
+      : {};
+    const row = json.data?.[0] ?? json.blueprint?.[0] ?? json;
     if (row && row.code && row.code !== 'SUCCESS') {
       throw new Error(`[zoho-crm-records] blueprint transition ${module} failed — ${row.code}: ${row.message ?? ''}`);
     }

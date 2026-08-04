@@ -219,6 +219,62 @@ export interface UpdateResult {
   updatedFields: string[];
 }
 
+export interface LeadBlueprintField {
+  apiName: string;
+  label: string;
+  dataType: string;
+  mandatory: boolean;
+  readOnly: boolean;
+  value: unknown;
+  options: Array<{ label: string; value: string }>;
+}
+
+export interface LeadBlueprintTransition {
+  id: string;
+  name: string;
+  nextValue: string;
+  type: string;
+  criteriaMatched: boolean;
+  criteriaMessage: string;
+  fields: LeadBlueprintField[];
+}
+
+export interface LeadBlueprint {
+  process: {
+    id: string;
+    name: string;
+    fieldApiName: string;
+    fieldLabel: string;
+    currentValue: string;
+  };
+  transitions: LeadBlueprintTransition[];
+}
+
+/** Current Blueprint state and record-specific transitions. Null means Zoho explicitly reported
+ *  that this Lead is not in a Blueprint; vendor/permission failures reject the request. */
+export async function getLeadBlueprint(id: string, zohoUserId?: string): Promise<LeadBlueprint | null> {
+  const res = (await request('GET', `/data-center/leads/${encodeURIComponent(id)}/blueprint`, {
+    query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
+    headers: DC_HEADERS,
+  })) as { blueprint?: LeadBlueprint | null };
+  return res.blueprint ?? null;
+}
+
+/** Execute an id from the latest record-specific Blueprint response. The server re-fetches the
+ *  Blueprint, checks ownership/criteria/required fields, executes it, and audit-logs the write. */
+export function executeLeadBlueprintTransition(
+  id: string,
+  transitionId: string,
+  data: Record<string, string | number | boolean | null>,
+  zohoUserId?: string,
+): Promise<{ id: string; transitionId: string; status: string }> {
+  return request('POST', `/data-center/leads/${encodeURIComponent(id)}/blueprint/${encodeURIComponent(transitionId)}`, {
+    query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
+    headers: DC_HEADERS,
+    body: { data },
+  }) as Promise<{ id: string; transitionId: string; status: string }>;
+}
+
 /** Editable Lead fields (exact Zoho API names). '' clears a field; DOT is numeric-or-string.
  *  Status + the two reason picklists back the post-call status wizard. */
 export type LeadEditFields = Partial<
