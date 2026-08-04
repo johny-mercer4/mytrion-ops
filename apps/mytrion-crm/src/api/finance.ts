@@ -200,3 +200,181 @@ export function getClientTransactions(
     headers: FIN_HEADERS,
   }) as Promise<FinanceTxnResponse>;
 }
+
+// ─── EFS (live vendor state, via servercrm) ──────────────────────────────────────────────────
+
+/**
+ * These four reads go out to EFS through servercrm, so they are SECONDS not milliseconds (the
+ * money-code history is parent-wide upstream and runs ~7s). Each panel fetches on tab open and each
+ * carries its own skeleton — nothing here is loaded with the modal.
+ */
+
+export interface EfsContract {
+  contractId: string;
+  description: string;
+  balance: number;
+}
+
+export interface EfsCard {
+  cardNumber: string;
+  status: string;
+  type: string;
+  balance: number;
+}
+
+export interface EfsSnapshot {
+  carrierId: string;
+  totalBalance: number;
+  contracts: EfsContract[];
+  cards: EfsCard[];
+  cardCount: number;
+  /** Set when EFS answered contracts but not card detail — the balance is real, the cards partial. */
+  cardDetailError: string | null;
+  fetchedAt: string;
+}
+
+export function getClientEfs(carrierId: string): Promise<EfsSnapshot> {
+  return request('GET', `/finance/clients/${encodeURIComponent(carrierId)}/efs`, {
+    headers: FIN_HEADERS,
+  }) as Promise<EfsSnapshot>;
+}
+
+export interface EfsLoad {
+  direction: 'TOPUP' | 'SWEEP';
+  amount: number;
+  amountAbs: number;
+  contractId: string;
+  when: string | null;
+  responseId: string | null;
+  refNum: string | null;
+}
+
+export interface EfsLoadsResponse {
+  window: { from: string; to: string; days: number; custom: boolean };
+  summary: {
+    total: number;
+    topupCount: number;
+    topupAmount: number;
+    sweepCount: number;
+    sweepAmount: number;
+    net: number;
+  };
+  loads: EfsLoad[];
+}
+
+/** EFS caps the window at 90 days — the presets are 7 / 30 / 90 and nothing wider. */
+export type EfsDays = 7 | 30 | 90;
+
+/**
+ * A window is either a rolling preset or an explicit pair of calendar dates (both inclusive).
+ *
+ * EFS's 90-day ceiling applies to both; the server rejects a wider custom span with a 400 rather
+ * than letting the vendor answer with a SOAP fault.
+ */
+export type EfsRange = { kind: 'days'; days: EfsDays } | { kind: 'custom'; from: string; to: string };
+
+export const rollingRange = (days: EfsDays): EfsRange => ({ kind: 'days', days });
+
+/** Query params for a range — the one place the wire shape is built. */
+export function rangeQuery(range: EfsRange): Record<string, string | number> {
+  return range.kind === 'custom' ? { from: range.from, to: range.to } : { days: range.days };
+}
+
+/** Stable, human-readable identity for a range — used in cache keys and captions. */
+export function rangeLabel(range: EfsRange): string {
+  return range.kind === 'custom' ? `${range.from}_${range.to}` : `${range.days}d`;
+}
+
+export function getClientEfsLoads(
+  carrierId: string,
+  range: EfsRange = rollingRange(30),
+): Promise<EfsLoadsResponse> {
+  return request('GET', `/finance/clients/${encodeURIComponent(carrierId)}/efs/loads`, {
+    query: rangeQuery(range),
+    headers: FIN_HEADERS,
+  }) as Promise<EfsLoadsResponse>;
+}
+
+// ─── Money codes ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A money code with the redeemable digits REMOVED — `codeLast4` is all the API returns, by design.
+ * An unredeemed code is a bearer instrument, so the value never reaches a browser; it reaches the
+ * carrier through the CMP notification. See the backend `financeEfs.ts` header.
+ */
+export interface FinanceMoneyCode {
+  id: string;
+  codeLast4: string;
+  status: string;
+  efsStatus: string;
+  amount: number;
+  amountUsed: number;
+  amountRemaining: number;
+  feeAmount: number;
+  contractId: string;
+  issuedTo: string;
+  notes: string;
+  payee: string;
+  issuedBy: string;
+  codeType: string;
+  createdAt: string | null;
+  firstUseAt: string | null;
+  voided: boolean;
+  voidedAt: string | null;
+}
+
+export const MONEY_CODE_STATUSES = ['ALL', 'OPEN', 'USED', 'PARTIAL', 'VOIDED'] as const;
+export type MoneyCodeStatus = (typeof MONEY_CODE_STATUSES)[number];
+
+export interface MoneyCodesResponse {
+  window: { from: string; to: string; days: number; custom: boolean };
+  status: MoneyCodeStatus;
+  summary: {
+    total: number;
+    openCount: number;
+    openAmount: number;
+    usedCount: number;
+    usedAmount: number;
+    partialCount: number;
+    partialAmount: number;
+    voidedCount: number;
+    feeTotal: number;
+  };
+  codes: FinanceMoneyCode[];
+}
+
+export function getClientMoneyCodes(
+  carrierId: string,
+  range: EfsRange = rollingRange(30),
+  status: MoneyCodeStatus = 'ALL',
+): Promise<MoneyCodesResponse> {
+  return request('GET', `/finance/clients/${encodeURIComponent(carrierId)}/money-codes`, {
+    query: { ...rangeQuery(range), status },
+    headers: FIN_HEADERS,
+  }) as Promise<MoneyCodesResponse>;
+}
+
+export interface MoneyCodeUse {
+  amount: number;
+  checkNumber: string;
+  at: string | null;
+}
+
+export interface MoneyCodeDetail {
+  id: string;
+  codeLast4: string;
+  status: string;
+  amount: number;
+  amountUsed: number;
+  uses: MoneyCodeUse[];
+  firstUseAt: string | null;
+  voided: boolean;
+  voidedAt: string | null;
+}
+
+/** Redemption detail by EFS `codeId` — never by the code itself (that call crashes EFS). */
+export function getMoneyCodeDetail(codeId: string): Promise<MoneyCodeDetail> {
+  return request('GET', `/finance/money-codes/${encodeURIComponent(codeId)}`, {
+    headers: FIN_HEADERS,
+  }) as Promise<MoneyCodeDetail>;
+}

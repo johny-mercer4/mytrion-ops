@@ -69,6 +69,30 @@ describe('useCachedLoad', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  /**
+   * The tab-switch case. Finance's client modal mounts ONE panel at a time, so leaving a tab unmounts
+   * its panel and returning mounts a fresh one — which is precisely how the old plain-`useLoad` panels
+   * ended up refetching on every tab press. A remount on a warm, fresh key must cost nothing.
+   */
+  it('a full unmount → remount on a fresh key does not refetch', async () => {
+    const k = uniq();
+    const fn = vi.fn(async () => 'rows');
+    const first = renderHook(() => useCachedLoad(k, fn, { staleMs: 60_000 }));
+    await waitFor(() => expect(first.result.current.data).toBe('rows'));
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    first.unmount();
+    for (let i = 0; i < 3; i += 1) {
+      const again = renderHook(() => useCachedLoad(k, fn, { staleMs: 60_000 }));
+      // Paints from cache on the very first render — no loading state, no request.
+      expect(again.result.current.data).toBe('rows');
+      expect(again.result.current.loading).toBe(false);
+      await waitFor(() => expect(again.result.current.revalidating).toBe(false));
+      again.unmount();
+    }
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it('revalidates a stale entry WITHOUT blanking the visible data', async () => {
     const k = uniq();
     writeSwrCache(k, 'old');

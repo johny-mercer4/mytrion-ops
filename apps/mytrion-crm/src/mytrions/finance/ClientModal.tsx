@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { useLoad } from '../_shared/useLoad';
+import { useCachedLoad } from '../_shared/swrCache';
 import { getFinanceClient, type FinanceClient } from '../../api/finance';
+import { financeKeys, STALE } from './panelBits';
 import {
-  ComingSoonPanel,
   DetailsPanel,
   InvoicesPanel,
   PANEL_ICONS,
   PaymentsPanel,
   TransactionsPanel,
 } from './modalPanels';
+import { EfsPanel, MoneyCodesPanel } from './efsPanels';
 import { money0, num } from './financeFormat';
 
 /**
@@ -31,8 +32,8 @@ const TABS: { id: TabId; label: string; icon: keyof typeof PANEL_ICONS; soon?: b
   { id: 'invoices', label: 'Invoices', icon: 'invoices' },
   { id: 'payments', label: 'Payments', icon: 'payments' },
   { id: 'transactions', label: 'Transactions', icon: 'transactions' },
-  { id: 'efs', label: 'EFS', icon: 'efs', soon: true },
-  { id: 'moneyCodes', label: 'Money Codes', icon: 'moneyCodes', soon: true },
+  { id: 'efs', label: 'EFS', icon: 'efs' },
+  { id: 'moneyCodes', label: 'Money Codes', icon: 'moneyCodes' },
 ];
 
 /** Two initials from the company name — the modal's identity chip. */
@@ -46,8 +47,14 @@ function initials(name: string): string {
 export function ClientModal({ client, onClose }: { client: FinanceClient; onClose: () => void }) {
   const [tab, setTab] = useState<TabId>('details');
 
-  // Details is the landing tab, so its fetch starts with the modal rather than on tab click.
-  const detail = useLoad(() => getFinanceClient(client.carrierId), [client.carrierId]);
+  // Details is the landing tab, so its fetch starts with the modal rather than on tab click. Cached,
+  // so reopening the same carrier — the common case when working down the debtor list and back — is
+  // instant instead of another round-trip.
+  const detail = useCachedLoad(
+    financeKeys.client(client.carrierId),
+    () => getFinanceClient(client.carrierId),
+    { staleMs: STALE.CLIENT },
+  );
 
   // Escape closes, and the page behind must not scroll while the scrim is up.
   useEffect(() => {
@@ -138,18 +145,10 @@ export function ClientModal({ client, onClose }: { client: FinanceClient; onClos
           {tab === 'invoices' ? <InvoicesPanel carrierId={client.carrierId} /> : null}
           {tab === 'payments' ? <PaymentsPanel carrierId={client.carrierId} /> : null}
           {tab === 'transactions' ? <TransactionsPanel carrierId={client.carrierId} /> : null}
-          {tab === 'efs' ? (
-            <ComingSoonPanel
-              title="EFS top-up & sweep"
-              body="Moving funds between the parent account and this carrier will live here. It stays unbuilt until there is an audited, role-gated endpoint behind it — a money-moving button is not something to wire up halfway."
-            />
-          ) : null}
-          {tab === 'moneyCodes' ? (
-            <ComingSoonPanel
-              title="Money codes"
-              body="Issuing and reconciling money codes for this carrier will live here, alongside the existing money-code request flow."
-            />
-          ) : null}
+          {/* Both read live EFS state and are read-only — initiating a load or issuing/voiding a
+              code still needs an audited, role-gated endpoint. See efsPanels.tsx. */}
+          {tab === 'efs' ? <EfsPanel carrierId={client.carrierId} /> : null}
+          {tab === 'moneyCodes' ? <MoneyCodesPanel carrierId={client.carrierId} /> : null}
           </div>
         </div>
       </div>
