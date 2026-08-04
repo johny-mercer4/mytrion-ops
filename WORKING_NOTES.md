@@ -11177,3 +11177,17 @@ today's records — but the end-to-end POST is untested and should be exercised 
   existing 120-second hard cap, per-user isolation, bounded item/key limits, and admission control.
 - Verification: full gateway suite 97/97, root/gateway typechecks, and gateway production build
   pass; root lint has 0 errors (22 pre-existing warnings).
+
+## 2026-08-05 — Sales Data Center Leads + Deals live
+
+- Removed the `soon` gates from the Leads and Deals Data Center sub-tabs. Both existing live Zoho
+  pipelines are selectable again with their lazy loads, search, status/source/stage filters, Meta
+  filter, Board/List layouts, detail sheets, edits, call workflow, notes, and activity history intact.
+- Added a UI regression test that asserts both tabs stay enabled and that each tab exposes its
+  complete search/filter/layout toolbar. Compacted static catalogs to bring `RecordsTab.tsx` back to
+  the repository's 600-line cap, and rebuilt the committed production widget bundle.
+- Verification: cross-tenant/Data Center backend suites 53/53, targeted Sales UI suites 20/20, and
+  the full Mytrion CRM suite 433/433 pass; root + frontend typechecks, root lint (0 errors, 22 existing
+  warnings), and the production build pass. The full backend suite remains red in unrelated CS,
+  Comms Admin, Retention, and agent-blackboard tests because their current fixtures/environment
+  return 403/500 or require the absent localhost test DB on port 5433.
