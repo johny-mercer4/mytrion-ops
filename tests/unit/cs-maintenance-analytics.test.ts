@@ -34,12 +34,17 @@ function makeBuilder(): Record<string, unknown> {
 
 vi.mock('../../src/db/client.js', () => ({ db: makeBuilder() }));
 
+import { PgDialect, QueryBuilder } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { maintenanceCases } from '../../src/db/schema/index.js';
 import {
   BONUS_FULL_USD,
   BONUS_HALF_USD,
   bucketStatus,
   countMaintenanceCases,
   fetchMaintenanceAnalytics,
+  SECOND_ID_SQL,
+  SECOND_NAME_SQL,
 } from '../../src/integrations/csMaintenance.js';
 
 const WINDOW = { from: '2026-07-01', to: '2026-07-31', prevFrom: '2026-06-01', prevTo: '2026-06-30' };
@@ -398,6 +403,69 @@ describe('window validation', () => {
     await expect(
       fetchMaintenanceAnalytics({ ...WINDOW, from: '07/01/2026' }),
     ).rejects.toThrow(/must be YYYY-MM-DD/);
+  });
+});
+
+/**
+ * The leaderboard's second-agent columns sit in BOTH the projection and the GROUP BY, and Postgres
+ * only accepts that when the two render as the same expression.
+ *
+ * This is the one thing the mocked `db` above cannot check — it makes `groupBy` a no-op passthrough
+ * and never renders SQL — and it is exactly what broke: built with drizzle's `sql` template, the same
+ * expression came out qualified differently and with a fresh bind placeholder in each position, so
+ * the whole Analytics → Maintenance tab died on
+ * `42803: column "maintenance_cases.case_date" must appear in the GROUP BY clause`.
+ *
+ * These render the real query through `PgDialect` (no connection needed) and assert the property that
+ * actually matters: the grouped expression is byte-identical to the projected one.
+ */
+describe('the second-agent expressions survive a GROUP BY', () => {
+  const dialect = new PgDialect();
+  const render = (q: { getSQL: () => Parameters<PgDialect['sqlToQuery']>[0] }) =>
+    dialect.sqlToQuery(q.getSQL());
+
+  /** The leaderboard query as csMaintenance builds it, minus the WHERE (not what is under test). */
+  function ownerQuery() {
+    const secondId = sql.raw(SECOND_ID_SQL);
+    const secondName = sql.raw(SECOND_NAME_SQL);
+    return new QueryBuilder()
+      .select({
+        ownerId: maintenanceCases.ownerZohoUserId,
+        status: maintenanceCases.status,
+        secondId,
+        secondName,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(maintenanceCases)
+      .groupBy(maintenanceCases.ownerZohoUserId, maintenanceCases.status, secondId, secondName);
+  }
+
+  it('renders the CASE identically in the projection and the GROUP BY', () => {
+    const { sql: text } = render(ownerQuery());
+    const [projection, grouped] = text.split(/group by/i);
+    for (const expr of [SECOND_ID_SQL, SECOND_NAME_SQL]) {
+      expect(projection, 'projection should contain the raw CASE').toContain(expr);
+      expect(grouped, 'GROUP BY should contain the SAME text').toContain(expr);
+    }
+  });
+
+  it('carries no bind parameters, so no placeholder can be renumbered between positions', () => {
+    // The renumbering ($1 in the projection vs $5 in the GROUP BY) was half of the original bug.
+    expect(SECOND_ID_SQL).not.toMatch(/\$\d/);
+    expect(SECOND_NAME_SQL).not.toMatch(/\$\d/);
+    const { params } = render(ownerQuery());
+    expect(params).toHaveLength(0);
+  });
+
+  it('qualifies its columns, so the two positions cannot disagree on qualification', () => {
+    // The other half: drizzle emitted a bare "case_date" in the projection and
+    // "maintenance_cases"."case_date" in the GROUP BY.
+    for (const expr of [SECOND_ID_SQL, SECOND_NAME_SQL]) {
+      expect(expr).toContain('maintenance_cases.case_date');
+      expect(expr).toContain("date '2026-08-01'");
+    }
+    expect(SECOND_ID_SQL).toContain('maintenance_cases.bonus_completion_user_id');
+    expect(SECOND_NAME_SQL).toContain('maintenance_cases.bonus_completion_name');
   });
 });
 

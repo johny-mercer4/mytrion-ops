@@ -96,6 +96,16 @@ export interface AnalyticsBlock {
   breakdown: BreakdownItem[];
   leaderboardCols: [string, string, string];
   leaderboard: LeaderboardRow[];
+  /**
+   * Why this sub-tab has no figures, when the reason is a failed read rather than an empty window.
+   *
+   * The three blocks are fetched with `Promise.allSettled` so one source going down cannot blank the
+   * whole tab — but that also meant a rejection became `{}` and rendered as a confident row of
+   * zeros. Maintenance sat broken that way (a Postgres 42803) until someone reported the tab, and
+   * these are the numbers agent bonuses are read off, so a silent $0 is the worst possible failure
+   * mode. Set = show the reason instead of the zeros.
+   */
+  error?: string;
 }
 
 // ---- Home view-model ----

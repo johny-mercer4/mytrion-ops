@@ -517,10 +517,17 @@ export function TransactionModal({
   /* ── Derived (already-mapped audit view) ── */
   const parsedSplits = parseSplitAllocations(tx.splitAllocationsRaw);
   const invoiceRefs = parseInvoiceRefs(tx.cmpRef, parsedSplits);
+  // 'Auto-Mapped*' (this system's own CMP-name-resolved mappings, and the legacy Zoho-workflow
+  // label) never carries a cmp_ref/splits — without this, those rows would have no Unmap
+  // affordance at all. The /unmap route already handles the no-ref case correctly (reverseMapping
+  // returns {ok:true, kind:'none'} and clearMapping still runs) — this was purely a UI gate.
   const showUnmap =
     canWrite &&
     tx.isInvoiceMapped &&
-    (!!tx.cmpRef || !!tx.splitAllocationsRaw || tx.mappingType.startsWith('CRM-Sync'));
+    (!!tx.cmpRef ||
+      !!tx.splitAllocationsRaw ||
+      tx.mappingType.startsWith('CRM-Sync') ||
+      tx.mappingType.startsWith('Auto-Mapped'));
   const editable = canWrite && !tx.isInvoiceMapped;
 
   return (
