@@ -69,6 +69,17 @@ const ingestBody = z.object({
   mappingType: z.string().max(60).optional(),
 });
 
+/** A carrier resolved by servercrm's ingest-time auto-map job (jobs/mxAutoMapByName.js), which
+ *  searches CMP directly by company name — see modules/billing/cmpCarrierDiscovery.ts / returnsCmpReversal.ts
+ *  for the same mechanism used by the returns-matching flow. */
+const autoMapBody = z.object({
+  transactionId: z.coerce.number().int().positive(),
+  carrierId: z.string().min(1).max(60),
+  // What resolved it ('name' | 'name+invoice' from cmpCarrierByName.js's `via`) — audit-only.
+  via: z.string().max(60).optional(),
+  companyName: z.string().max(200).optional(),
+});
+
 export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> {
   app.post('/billing/ingest/payment', async (request: FastifyRequest, reply: FastifyReply) => {
     // ── shared-secret auth (Zapier can't present a session/JWT) ──
@@ -139,5 +150,54 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
       sourceRecordId: b.sourceRecordId,
       mapped: !!b.preMapped,
     });
+  });
+
+  /**
+   * Stamp a carrier servercrm's ingest-time auto-map job resolved from CMP directly (company-name
+   * search — no local fuzzy-memory table involved). Same shared-secret auth as the webhook above
+   * (a leaked ingest secret can only touch payment rows, nothing else). Guarded, idempotent: flips
+   * only when the row is still unmapped with no carrier on file (`applyMapping`'s repo guard), so a
+   * retried POST or a race with an agent's own manual map never clobbers anything — `applied: false`
+   * means someone/something else got there first, not an error.
+   */
+  app.post('/billing/transactions/auto-map', async (request: FastifyRequest, reply: FastifyReply) => {
+    const secret = env.BILLING_INGEST_SECRET;
+    if (!secret) {
+      throw new AppError('Payment ingest secret is not configured', {
+        statusCode: 503,
+        code: 'SERVER_MISCONFIGURED',
+      });
+    }
+    const provided = request.headers[SECRET_HEADER];
+    if (typeof provided !== 'string' || !safeEqual(provided, secret)) {
+      throw new AuthError('Invalid or missing ingest secret');
+    }
+
+    const b = autoMapBody.parse(request.body ?? {});
+    const row = await paymentTransactionRepo.applyAutoMap(b.transactionId, {
+      carrierId: b.carrierId,
+      mappingType: 'Auto-Mapped (CMP)',
+      mappedBy: 'CMP auto-map (ingest)',
+    });
+    const applied = row !== undefined;
+
+    if (applied) {
+      await audit({
+        tenantId: DEFAULT_TENANT_ID,
+        action: 'billing.transactions.auto-map',
+        status: 'ok',
+        audience: 'internal',
+        userName: 'cmp-auto-map',
+        resourceType: 'payment_transaction',
+        resourceId: String(b.transactionId),
+        detail: { carrierId: b.carrierId, via: b.via ?? null, companyName: b.companyName ?? null },
+        requestId: request.id,
+      });
+    }
+    request.log.info(
+      { transactionId: b.transactionId, carrierId: b.carrierId, applied },
+      'billing auto-map: transaction stamped',
+    );
+    return reply.send({ status: 'success', transactionId: b.transactionId, applied });
   });
 }

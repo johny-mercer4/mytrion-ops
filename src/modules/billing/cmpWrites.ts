@@ -10,6 +10,9 @@ import { serverCrm } from '../../integrations/serverCrm.js';
 export interface CmpEntry {
   invoiceId: string;
   paymentId: string;
+  /** Present on a resolver-found entry (servercrm's mxCmpRefResolver always sets it); absent on a
+   *  stored ref built from a bare {invoiceId, paymentId} pair with no amount recorded. */
+  amount?: number;
 }
 
 /** Apply a payment to a CMP invoice → the created CMP paymentId. */
@@ -62,6 +65,9 @@ export interface ReverseInput {
   carrierId?: string | null;
   amount?: number | null;
   chargedDay?: string | null;
+  /** MX Merchant's own invoice number (same value CMP uses), if known — scopes the CMP lookup to
+   *  one invoice instead of scanning the carrier's recent paid invoices. */
+  invoiceNumber?: string | null;
   /**
    * Look the payment up in CMP when the row stores NO ref at all — the money bounced, so a payment
    * the portal created on our behalf still has to come back out. RETURNS ONLY: a manual unmap must
@@ -70,6 +76,19 @@ export interface ReverseInput {
   resolveMissingRef?: boolean;
   /** mapping_type. A CRM-Sync mapping deliberately never created a CMP payment. */
   mappingType?: string | null;
+  /**
+   * Called with each resolved entry before it's reversed (resolveMissingRef path only). Return true
+   * if the payment is already attributed elsewhere (e.g. another transaction's own stored cmp_ref) —
+   * this DB-agnostic module has no repo access, so the caller supplies the check. Any claimed entry
+   * aborts the whole reversal rather than deleting a payment that belongs to something else.
+   */
+  isEntryClaimed?: (entry: CmpEntry) => Promise<boolean>;
+  /**
+   * Resolve + verify (amount match, claim check) but stop short of actually deleting anything in
+   * CMP — for a dry-run report (resolveMissingRef path only; a stored ref always reverses for real,
+   * since dryRun only exists for the not-yet-committed backfill script).
+   */
+  dryRun?: boolean | undefined;
 }
 
 export interface ReverseResult {
@@ -180,7 +199,7 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
         message: 'mapped but no CMP reference and no carrier/amount to look one up — reconcile manually',
       };
     }
-    return resolveThenReverse(input, undefined);
+    return resolveThenReverse(input, input.invoiceNumber ?? undefined);
   }
 
   // Unmap path: no ref means nothing this system applied to CMP → nothing to undo.
@@ -192,10 +211,17 @@ function isCrmSyncMapping(mappingType: string | null | undefined): boolean {
   return /crm-sync/i.test(mappingType ?? '');
 }
 
+const AMOUNT_EPS = 0.005;
+
 /**
  * Ask CMP which payment(s) sit behind this charge (carrier + amount + charged day), then delete them.
  * The resolver only accepts an unambiguous match, so a miss returns ok:false with the reason — which
  * surfaces the return as "Reconcile CMP" instead of a silent success.
+ *
+ * The resolver's own "single payment on a known invoice" rule (invoiceNumber given) doesn't itself
+ * verify the amount matches — it trusts the invoice scoping alone. Re-check here before deleting
+ * anything: a resolved entry (or split group) that doesn't sum to the charge is a resolver miss, not
+ * a real match, and must not delete a payment that belongs to something else.
  */
 async function resolveThenReverse(input: ReverseInput, invoiceNumber: string | undefined): Promise<ReverseResult> {
   const res = await resolveRef({
@@ -211,6 +237,30 @@ async function resolveThenReverse(input: ReverseInput, invoiceNumber: string | u
       reversed: [],
       message: res.message || 'could not resolve the CMP payment — reconcile manually',
     };
+  }
+  const resolvedSum = res.entries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  if (Math.abs(resolvedSum - Number(input.amount)) > AMOUNT_EPS) {
+    return {
+      ok: false,
+      kind: 'invoice',
+      reversed: [],
+      message: `resolved payment(s) total ${resolvedSum} but the charge was ${input.amount} — reconcile manually`,
+    };
+  }
+  if (input.isEntryClaimed) {
+    for (const entry of res.entries) {
+      if (await input.isEntryClaimed(entry)) {
+        return {
+          ok: false,
+          kind: 'invoice',
+          reversed: [],
+          message: 'resolved payment is already attributed to another transaction — reconcile manually',
+        };
+      }
+    }
+  }
+  if (input.dryRun) {
+    return { ok: true, kind: 'invoice', reversed: res.entries, message: 'dry run — resolved, not reversed' };
   }
   try {
     await reverseInvoicePayments(res.entries);

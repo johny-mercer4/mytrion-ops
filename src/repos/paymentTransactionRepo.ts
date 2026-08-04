@@ -368,6 +368,39 @@ export const paymentTransactionRepo = {
     return rows[0];
   },
 
+  /**
+   * Stamp a carrier resolved by the CMP-direct name search (servercrm's ingest-time auto-map job,
+   * `jobs/mxAutoMapByName.js`) onto a specific row. Same guarded shape as `markIngestMapped` (flips
+   * only when still unmapped, so a lost race or a re-attempt never clobbers a mapping made since —
+   * by an agent, or by this same job's own previous tick) but keyed on `id` (the job already has it
+   * from its own SELECT) and also requires no `carrier_id` already on file, so a name-guessed
+   * carrier can never override one this system already knows for certain.
+   */
+  async applyAutoMap(
+    id: number,
+    opts: { carrierId: string; mappingType: string; mappedBy: string },
+  ): Promise<PaymentTransaction | undefined> {
+    const rows = await db
+      .update(paymentTransactions)
+      .set({
+        carrierId: opts.carrierId,
+        isInvoiceMapped: true,
+        mappingType: opts.mappingType,
+        mappedBy: opts.mappedBy,
+        mappedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(paymentTransactions.id, id),
+          eq(paymentTransactions.isInvoiceMapped, false),
+          sql`coalesce(${paymentTransactions.carrierId}, '') = ''`,
+        ),
+      )
+      .returning();
+    return rows[0];
+  },
+
   /** Clear all mapping columns after a successful CMP reversal (full unmap). */
   async clearMapping(id: number): Promise<PaymentTransaction | undefined> {
     const rows = await db
@@ -395,6 +428,29 @@ export const paymentTransactionRepo = {
       .where(eq(paymentTransactions.id, id))
       .returning();
     return rows[0];
+  },
+
+  /**
+   * Whether some OTHER transaction's stored CMP reference already points at this exact CMP payment
+   * — guards a resolver-based reversal (returnsCmpReversal.ts) from deleting a payment that's
+   * genuinely the record of a different, already-mapped charge. `excludeId` is the row being
+   * reversed itself (never a false positive against its own, usually-empty, ref).
+   */
+  async isCmpPaymentClaimed(invoiceId: string, paymentId: string, excludeId: number): Promise<boolean> {
+    const rows = await db.execute(sql`
+      select exists (
+        select 1 from payment_transactions
+        where id != ${excludeId}
+          and (
+            (cmp_ref ->> 'paymentId' = ${paymentId} and cmp_ref ->> 'invoiceId' = ${invoiceId})
+            or exists (
+              select 1 from jsonb_array_elements(coalesce(split_allocations, '[]'::jsonb)) as e
+              where e ->> 'paymentId' = ${paymentId} and e ->> 'invoiceId' = ${invoiceId}
+            )
+          )
+      ) as hit
+    `);
+    return Boolean(rows[0]?.hit);
   },
 
   /**

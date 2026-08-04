@@ -14,6 +14,13 @@ export interface FuzzyMatch {
   carrierId: string;
   name: string;
   module: 'memory' | 'dim_company';
+  /**
+   * How confident this candidate is. 'memory'/'contains' are real signal (an exact learned pair, or
+   * the full payer string appearing in a company name). 'token' is a single significant word
+   * matching (e.g. "Hook" in "Drop & Hook LLC") — useful as a suggestion, too weak to justify a
+   * financial action (see returnsCmpReversal.ts, which only accepts memory/contains).
+   */
+  via: 'memory' | 'contains' | 'token';
 }
 
 export interface FuzzyResult {
@@ -62,7 +69,7 @@ export async function fuzzyResolveCarrier(input: {
   // 1) Learned memory (strongest signal).
   try {
     for (const m of await carrierMemoryRepo.findByCompany(raw)) {
-      byCarrier.set(m.carrierId, { carrierId: m.carrierId, name: m.companyName, module: 'memory' });
+      byCarrier.set(m.carrierId, { carrierId: m.carrierId, name: m.companyName, module: 'memory', via: 'memory' });
     }
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'fuzzyCarrier: memory lookup failed');
@@ -75,6 +82,7 @@ export async function fuzzyResolveCarrier(input: {
       [`%${raw}%`],
     );
     let rows = contains;
+    let via: 'contains' | 'token' = 'contains';
     // Broad single-token fallback ONLY when we have no signal at all (no memory hit, no full-string
     // contains match) — otherwise a common industry word like "TRUCKING" floods the suggestions.
     if (rows.length === 0 && byCarrier.size === 0) {
@@ -88,13 +96,14 @@ export async function fuzzyResolveCarrier(input: {
           `select carrier_id, company_name from octane.dim_company where company_name ilike $1 limit ${MAX_MATCHES}`,
           [`%${token}%`],
         );
+        via = 'token';
       }
     }
     for (const r of rows) {
       if (r.carrier_id == null) continue;
       const cid = String(r.carrier_id);
       if (byCarrier.has(cid)) continue; // memory match already wins
-      byCarrier.set(cid, { carrierId: cid, name: r.company_name ?? '', module: 'dim_company' });
+      byCarrier.set(cid, { carrierId: cid, name: r.company_name ?? '', module: 'dim_company', via });
     }
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'fuzzyCarrier: dim_company lookup failed');

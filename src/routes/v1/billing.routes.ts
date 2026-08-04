@@ -24,6 +24,7 @@ import {
 import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
 import { assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
+import { resolveReturnCmpReversal } from '../../modules/billing/returnsCmpReversal.js';
 import {
   getPrepayCompanies,
   getPrepayExternalsBatch,
@@ -441,6 +442,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
     let matchNote = 'not mapped — no CMP payment to reverse';
     let isReversed = false;
+    let cmpDetail: Record<string, unknown> | undefined;
     if (tx.isInvoiceMapped) {
       const rev = await reverseMapping({
         cmpRef: tx.cmpRef,
@@ -461,10 +463,33 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
       } else {
         matchNote = `CMP reverse failed — reconcile manually: ${rev.message ?? ''}`;
       }
+    } else {
+      // Our system never resolved a carrier for this MX charge, but the portal may have paid it
+      // straight through to CMP anyway — try to find the carrier from the payer name and reverse
+      // it there before giving up. See modules/billing/returnsCmpReversal.ts.
+      const resolution = await resolveReturnCmpReversal(tx);
+      matchNote = resolution.matchNote;
+      isReversed = resolution.isReversed;
+      cmpDetail = resolution.detail;
+      if (resolution.mappingPatch) {
+        await paymentTransactionRepo.applyMapping(tx.id, {
+          ...resolution.mappingPatch,
+          isInvoiceMapped: true,
+          mappedBy: actor(ctx),
+          mappedAt: new Date(),
+        });
+      }
     }
     await paymentReturnRepo.linkMatch(id, { originalTransactionId: b.transactionRecordId, matchNote, matchedBy: actor(ctx), isReversed });
     await paymentTransactionRepo.setReturned(b.transactionRecordId, new Date());
-    await auditFromContext(ctx, { action: 'billing.returns.match', status: 'ok', resourceType: 'payment_return', resourceId: String(id), detail: { transactionId: b.transactionRecordId, isReversed, matchNote } });
+    await auditFromContext(ctx, { action: 'billing.returns.match', status: 'ok', resourceType: 'payment_return', resourceId: String(id), detail: { transactionId: b.transactionRecordId, isReversed, matchNote, ...(cmpDetail ? { cmpResolve: cmpDetail } : {}) } });
+    if (cmpDetail && isReversed) {
+      // A distinct row for the case that matters most if something needs reconciling later: real
+      // money was deleted in CMP based on a carrier resolved here (from CMP-by-name or a name
+      // match), not one an agent picked. Action id kept as "fuzzy-reversal" for audit-trail/test
+      // continuity even though carrier resolution no longer uses the local fuzzy-memory match.
+      await auditFromContext(ctx, { action: 'billing.returns.match.fuzzy-reversal', status: 'ok', resourceType: 'payment_transaction', resourceId: String(tx.id), detail: cmpDetail });
+    }
     return { status: 'success', matchNote, isReversed };
   });
 

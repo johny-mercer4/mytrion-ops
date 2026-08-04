@@ -11191,3 +11191,28 @@ today's records — but the end-to-end POST is untested and should be exercised 
   warnings), and the production build pass. The full backend suite remains red in unrelated CS,
   Comms Admin, Retention, and agent-blackboard tests because their current fixtures/environment
   return 403/500 or require the absent localhost test DB on port 5433.
+
+## 2026-08-05 — Zoho Lead Blueprint API discovery
+
+- Verified Zoho CRM v8's record-level Blueprint contract: fetch the record's current process and
+  available transitions with `GET /Leads/{record_id}/actions/blueprint`, then execute exactly one
+  currently available transition with `PUT /Leads/{record_id}/actions/blueprint` and a
+  `transition_id` plus any transition-required field data.
+- Audited the `build` source without switching away from the active feature branch. The integration
+  and owner-scoped Lead PATCH route already contain a basic Blueprint transition path, while the
+  Lead detail UI still derives available statuses from a hardcoded local graph instead of the live
+  per-record Blueprint response.
+- Identified a fail-open gap to fix before live credential testing: the current Blueprint lookup
+  turns every non-2xx response (including OAuth/permission/server failures) into an empty transition
+  list, after which the route attempts a plain `Status` update. Only Zoho's explicit
+  `RECORD_NOT_IN_PROCESS` condition may safely use that fallback.
+- Implemented typed live Blueprint details, fail-closed error handling, official top-level mutation
+  response validation, and an owner-scoped/audited transition endpoint that re-fetches the record's
+  available transitions before accepting an id or field payload.
+- Replaced the Lead detail editor's hardcoded status graph with the record-specific Zoho process,
+  manual transitions, criteria, required fields, and picklist options. Unsupported mandatory complex
+  inputs stop safely and direct the agent to Zoho rather than attempting a partial transition.
+- Verification: Blueprint/Data Center suites 38/38, RBAC/tenant set 131/131, full Mytrion CRM suite
+  435/435, root + frontend typechecks, lint (0 errors, 22 existing warnings), and production build
+  pass. The full backend run has 1,791 passes and the same unrelated CS/Comms/Retention/DB/socket
+  environment failures; the Blueprint/Data Center suites pass independently after that run.

@@ -327,6 +327,16 @@ export function Analytics() {
         ))}
       </div>
 
+      {/* This sub-tab's own source failed while the others answered. Shown INSIDE the tab strip so it
+          points at the tab it belongs to — the blocks load independently, so a single failure used to
+          render as a confident row of zeros, which on the bonus figures reads as "you earned $0". */}
+      {block.error ? (
+        <div className="cs-an-error-card">
+          {SUB_TABS.find((t) => t.id === subTab)?.label} data could not be loaded — the figures below
+          are not real. {block.error}
+        </div>
+      ) : null}
+
       {/* ═══ KPI CARDS ═══ */}
       <div className="cs-an-kpi-grid">
         {loading && block.kpis.length === 0

@@ -44,7 +44,7 @@ beforeEach(() => {
 
 describe('reverseMapping — mapped charge with no stored CMP ref', () => {
   it('resolves the payment in CMP and deletes it (return path)', async () => {
-    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1' }];
+    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1', amount: 720.34 }];
     post.mockImplementation(async (path: string) =>
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
@@ -54,6 +54,57 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
     expect(res).toMatchObject({ ok: true, kind: 'invoice', reversed: entries });
     expect(paths()).toEqual([RESOLVE, REVERSE]);
     expect(post.mock.calls[0]?.[1]).toMatchObject({ carrierId: '5801437', amount: 720.34, chargedDay: '2026-07-02' });
+  });
+
+  it('rejects a resolved payment whose amount does not match the charge — nothing is deleted', async () => {
+    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1', amount: 99.99 }];
+    post.mockImplementation(async (path: string) =>
+      (path === RESOLVE ? { status: 'success', entries } : {}) as never,
+    );
+
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain('reconcile manually');
+    expect(paths()).toEqual([RESOLVE]); // never reaches REVERSE
+  });
+
+  it('forwards invoiceNumber on the no-ref path so the CMP lookup is scoped to one invoice', async () => {
+    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1', amount: 720.34 }];
+    post.mockImplementation(async (path: string) =>
+      (path === RESOLVE ? { status: 'success', entries } : {}) as never,
+    );
+
+    await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, invoiceNumber: 'INV-42' });
+
+    expect(post.mock.calls[0]?.[1]).toMatchObject({ invoiceNumber: 'INV-42' });
+  });
+
+  it('refuses to reverse a payment already claimed by another transaction', async () => {
+    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1', amount: 720.34 }];
+    post.mockImplementation(async (path: string) =>
+      (path === RESOLVE ? { status: 'success', entries } : {}) as never,
+    );
+    const isEntryClaimed = vi.fn().mockResolvedValue(true);
+
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, isEntryClaimed });
+
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain('already attributed');
+    expect(isEntryClaimed).toHaveBeenCalledWith(entries[0]);
+    expect(paths()).toEqual([RESOLVE]); // never reaches REVERSE
+  });
+
+  it('dryRun: resolves and verifies but never calls REVERSE — nothing is deleted', async () => {
+    const entries = [{ invoiceId: 'INV-1', paymentId: 'PAY-1', amount: 720.34 }];
+    post.mockImplementation(async (path: string) =>
+      (path === RESOLVE ? { status: 'success', entries } : {}) as never,
+    );
+
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, dryRun: true });
+
+    expect(res).toMatchObject({ ok: true, kind: 'invoice', reversed: entries });
+    expect(paths()).toEqual([RESOLVE]); // RESOLVE only — REVERSE is never called
   });
 
   it('fails loudly when CMP cannot be resolved — nothing is deleted', async () => {
@@ -125,7 +176,7 @@ describe('reverseMapping — stored refs still take the direct path', () => {
   });
 
   it('an invoice ref missing its paymentId is resolved, then reversed', async () => {
-    const entries = [{ invoiceId: 'INV-3', paymentId: 'PAY-3' }];
+    const entries = [{ invoiceId: 'INV-3', paymentId: 'PAY-3', amount: 100 }];
     post.mockImplementation(async (path: string) =>
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
