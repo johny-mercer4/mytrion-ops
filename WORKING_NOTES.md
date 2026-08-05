@@ -11262,3 +11262,105 @@ setting them — e.g. `tests/unit/billing-auto-map-route.test.ts:29` uses `env.B
 which is absent from `.env`, so the route 503s `SERVER_MISCONFIGURED` and all 6 assertions fail. This is
 exactly the non-determinism `vitest.config.ts`'s env baseline was introduced to prevent; those vars
 belong in that baseline. Worth its own pass.
+
+## 2026-08-05 (pm, cont.) — `ZOHO_USER_LOOKUP_FAILED`: sign-in worked only for admins
+
+Second failure, uncovered once the GET callback (above) let the flow get past the redirect.
+
+**Symptom:** `{"code":"ZOHO_USER_LOOKUP_FAILED","message":"Internal server error"}` — for ordinary
+workers (sales et al) but NOT for admins.
+
+**Root cause.** `fetchCurrentUser` read the worker's identity with `GET /crm/v8/users?type=CurrentUser`
+using THE WORKER'S OWN token. That endpoint is gated twice: by the OAuth scope AND by the caller's CRM
+**profile permission on the Users module**. Administrator profiles hold it; Sales-type profiles usually
+do not. So the one call the whole login depends on succeeded for admins and 403'd `NO_PERMISSION` for
+everyone else — the exact split reported. It was never an RBAC/override problem.
+
+**Fix** (`src/integrations/zohoOAuth.ts`) — split proving WHO signed in from reading their RBAC facts:
+1. Try the worker's own CRM record first (one call, authoritative when permitted → admins unchanged).
+2. On 401/403 only, fall back: identify the human at the accounts level (`{accounts}/oauth/user/info`),
+   then resolve profile/role from the **service token** roster (`zohoCrm.listActiveUsers()` — the same
+   admin-privileged credential Admin → User Management already uses). The worker's token never reads the
+   roster, so an ordinary profile no longer decides whether login works.
+3. A 5xx / network fault still THROWS rather than falling back — masking a broken Zoho as a login
+   problem would have hidden the real dependency failure.
+- `ZOHO_OAUTH_SCOPES` default is now `ZohoCRM.users.READ,AaaServer.profile.READ` (the fallback needs the
+  accounts profile scope). **Existing workers re-consent once on next sign-in** — Zoho prompts automatically.
+- The error is now diagnosable: the Zoho status + body are logged AND `expose: true` so the client sees
+  the actual reason. A real outage came back as a bare "Internal server error", which is why the first
+  report had nothing to act on. (Internal tool; the upstream body carries no secrets.)
+- Cover: `tests/unit/zoho-oauth-current-user.test.ts` (6) — permitted path takes no roster call, 403 and
+  401 both recover WITH profile/role intact, case-insensitive email match, a clear message when the Zoho
+  account maps to no active CRM user, and a 500 that must NOT fall back.
+
+Not verified against live Zoho — needs one real non-admin sign-in to confirm end-to-end.
+
+## 2026-08-05 (pm, cont. 2) — "the bypass logic works only for admin": the ROLE was still hardcoded
+
+Third and root issue behind Mytrion access not following Admin → User Management.
+
+**The defect.** `contextFromClaims` (src/modules/auth/authService.ts) built each worker session from TWO
+sources that had silently drifted apart:
+- `allDepartmentAccess` ← **DB** (`mytrionAccessService.resolveWorkerAccess`: profile default → role
+  default → per-user override)
+- `role` ← **hardcoded** (`workerRoleFor` → `resolveAllDepartmentAccess`: admin-marker profile/role
+  substrings + `ADMIN_USERS`/`BYPASS_USERS` env names)
+
+`workerRole.ts`'s own header claimed the two "can never diverge" — true when both came from the one
+predicate, false since access moved to the DB. So granting a worker all-department access in User
+Management produced `allDepartmentAccess: true` **with** `role: 'worker'` and read-only
+`scopesForRole('worker')`. Gates written `ctx.allDepartmentAccess` honoured the grant (e.g.
+mytrionAccess.routes requireAdmin); every gate written `ctx.role !== 'admin'` (realtime.routes, admin
+scopes, write tools) refused it. Net effect: the bypass was obtainable ONLY by matching a hardcoded
+marker — exactly the report.
+
+**Fix.** The authoritative role is now `access.allDepartmentAccess || markerAdmin`. The hardcoded marker
+stays a FLOOR, never a ceiling: an `ADMIN_USERS` / admin-profile break-glass account still resolves when
+the DB grants nothing or is unreadable, while a DB grant can confer admin on its own. No new escalation
+path — only an admin can write those override rows — and an all-access grant carrying denies still
+resolves `allDepartmentAccess: false` (mytrionAccessService `enforceableAllDept`), so it correctly stays
+a worker. Corrected the stale "can never diverge" header in `workerRole.ts`.
+- Cover: `tests/unit/worker-role-from-db-access.test.ts` (4) with `ADMIN_USERS`/`BYPASS_USERS` emptied so
+  every 'admin' must come from the DB: a User Management grant confers admin, an ungranted worker stays a
+  worker, the hardcoded marker still works when the DB grants nothing, and the exact broken state
+  (allDepartmentAccess true + role worker) can no longer occur.
+- Regression check: 157 tests green across every auth/RBAC/access/identity suite —
+  `caller-identity` (24, asserts re-derived workers stay workers), `zoho-oauth` (14),
+  `mytrion-access` (22), `mytrion-access-breakglass`, `department-access` (18),
+  `require-mytrion-write`, `agent-authority` (28), `hr-routes`, `sales-golive-contract`.
+
+**The full backend suite is NOT a usable signal on this branch — it is heavily flaky.** Three runs of
+effectively the same tree gave 145, 274 and **310** failures; the clean tree (my changes stashed) scored
+WORSE (310 failed) than with them (274). Two independent causes, both environmental:
+1. Suites that read secrets from the developer's `.env` instead of setting them (see the earlier
+   `BILLING_INGEST_SECRET` note) — belongs in the `vitest.config.ts` env baseline.
+2. Route suites that touch the real remote DB and blow the 5s default timeout under parallel load
+   (`hr-leave-routes`, `verification-clients-routes`, `files`, `hr-departments-routes` — all fail with
+   "Test timed out in 5000ms", never an assertion). `.env` points `MYTRION_OPS_DATABASE_URL` at the
+   remote/prod DB, so wall-clock, not logic, decides these.
+Until both are fixed, trust targeted suites. This is worth its own pass — it currently hides real
+regressions.
+
+### Decisions taken with the user (same session)
+
+- **Unconfigured worker keeps today's derivation.** The legacy profile/role substring floor
+  (`legacyAccess` / `deriveWorkerDepartments`) STAYS as the last-resort fallback; Admin config still wins
+  wherever it exists. Chosen over a tenant-level default Mytrion or a hard "no access until granted"
+  because dropping the floor would have locked out every worker currently depending on it — the same
+  lockout b2ec4b94 was written to avoid. So `mytrionAccessService` is unchanged.
+- **Any Zoho account may sign in.** Authentication answers "who are you"; which Mytrion anyone may enter
+  is Mytrion Admin's decision alone. The `AuthError` I had added for "no active CRM user" was itself an
+  access rule sitting in the login path, so it is gone: that session is now granted with
+  `zohoUserId: 'zuid:<ZUID>'`, `profile`/`role` null. With nothing configured it resolves to no Mytrions
+  and the portal shows "no Mytrion is assigned" — signed in, granted nothing yet.
+  - Prefixed `zuid:` because a ZUID is a different id space from a CRM user id. Bare, it could be
+    mistaken for one by owner-scoped lookups (DWH `agent_zoho_user_id`, act-as targets); prefixed, those
+    find nothing and fail closed.
+  - **Known gap:** Admin → User Management builds its list from CRM ActiveUsers, so a non-CRM account
+    does NOT appear there and cannot be granted anything through the UI yet. Accepted knowingly. If such
+    accounts need access, User Management needs a way to add a `zuid:` principal.
+  - Sign-in still refuses one case only: neither a CRM user NOR a ZUID, i.e. the sign-in cannot be
+    identified at all, so nothing could be keyed to it.
+- Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
+  `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
+  new suites (11).
