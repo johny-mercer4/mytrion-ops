@@ -6,7 +6,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
+import { AppError, ConflictError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
@@ -64,8 +64,10 @@ import {
 } from '../../modules/carrier/miniAppAuth.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { RBACError } from '../../lib/errors.js';
-import { assertCarrierOwned } from '../../modules/tools/serverCrmScope.js';
+import {
+  assertCarrierInviteEligible,
+  assertCarrierOwned,
+} from '../../modules/tools/serverCrmScope.js';
 import { requireContext } from './helpers.js';
 
 function sameRegistrationSubject(
@@ -243,9 +245,19 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireContext(request);
     const body = createInviteSchema.parse(request.body);
-    // Owner-scope invite creation to match the Manage reads: a non-admin worker may only mint an
-    // invite for a carrier in their own roster (admins / API-key system identity skip inside the gate).
-    if (ctx.role !== 'admin' && body.carrier_id) await assertCarrierOwned(ctx, body.carrier_id);
+    // A Sales Data Center worker may mint links only for their own ACTIVE, non-debtor clients.
+    // The gate reads the same fresh DWH roster row that determines the Clients-tab status.
+    // Admin/system identity bypasses; "Admin View" runs as the selected agent and is checked.
+    if (ctx.role !== 'admin' && !body.carrier_id) {
+      throw new AppError('A carrier id is required to generate a client registration link', {
+        statusCode: 400,
+        code: 'CARRIER_ID_REQUIRED',
+        expose: true,
+      });
+    }
+    if (ctx.role !== 'admin' && body.carrier_id) {
+      await assertCarrierInviteEligible(ctx, body.carrier_id);
+    }
     const fallbackAgent = inviteAgentFromContext(ctx);
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
@@ -674,7 +686,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/fleet', async (request) => {
     const body = ownerFleetSchema.parse(request.body);
-    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'fleet:manage');
 
     const [cards, drivers, pending, efs] = await Promise.all([
       // The owner's whole fleet, not the default 100. The screen's filter counts and search run over
@@ -766,7 +778,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/driver-name', async (request) => {
     const body = ownerDriverRenameSchema.parse(request.body);
-    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData, 'fleet:manage');
 
     const renamed = await registeredMiniAppCompanyRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName);
     const target = renamed ?? (await carrierInvitationRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName));
@@ -789,7 +801,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/driver-invites', async (request, reply) => {
     const body = ownerDriverInviteSchema.parse(request.body);
-    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'access:manage');
     const support = await resolveRegistrationAgent(registration);
 
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
@@ -836,7 +848,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       });
     }
     const body = ownerManagerInviteSchema.parse(request.body);
-    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'access:manage');
     const support = await resolveRegistrationAgent(registration);
 
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
@@ -872,7 +884,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/managers', async (request) => {
     const body = ownerFleetSchema.parse(request.body);
-    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData, 'access:manage');
     const managers = await registeredMiniAppCompanyRepo.listManagersByCarrier(ctx, carrierId);
     return {
       managers: managers.map((m) => ({
@@ -891,7 +903,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/managers/revoke', async (request) => {
     const body = ownerManagerRevokeSchema.parse(request.body);
-    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData, 'access:manage');
     const revoked = await registeredMiniAppCompanyRepo.revokeManagerByCarrier(ctx, carrierId, body.id);
     if (!revoked) {
       throw new NotFoundError('That manager was not found for your company');
@@ -915,7 +927,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   // driver's initData and the company's finances (the same lesson as /invoices and /tracking).
   app.post('/carrier/mini-app/balance', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read');
     return serverCrmWrapper.getCarrierBalance(carrierId);
   });
 
@@ -1066,7 +1078,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/company', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'company:read');
     const details = env.DWH_DATABASE_URL ? await getDwhCompanyDetails(carrierId).catch(() => null) : null;
     return details ?? { carrierId, companyName: null, email: null, phone: null, address: null, city: null, state: null, zip: null };
   });
@@ -1075,7 +1087,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   // stays carrier-level (it is the account standing the driver catalog's "Check card status" shows).
   app.post('/carrier/mini-app/status', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'company:read');
     // EFS-first (owner decision 2026-07-22): live statuses, inactive cards included — the mart
     // hid a deactivated-this-morning card entirely. Same response shape, живые data.
     const [overview, cardRows, balance] = await Promise.all([
@@ -1176,7 +1188,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/transactions/export', async (request) => {
     const body = txnExportSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'reports:send');
     const { telegramUserId } = verifyTelegramUser(body.initData);
     const isDriver = registration.profile === 'driver';
     const cardNumber = isDriver
@@ -1291,13 +1303,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
   app.post('/carrier/mini-app/payment-info', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read');
     return serverCrmWrapper.getPaymentInfo(carrierId);
   });
 
   app.post('/carrier/mini-app/invoices', async (request) => {
     const body = invoicesSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read');
     return serverCrmWrapper.getInvoices(carrierId, { range: body.range, status: body.status, from: body.from, to: body.to });
   });
 
@@ -1311,8 +1323,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     initData: string,
     invoiceId: string,
     format: 'pdf' | 'xlsx' = 'pdf',
+    capability: 'financial:read' | 'reports:send' = 'financial:read',
   ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: RegisteredMiniAppCompany }> {
-    const { carrierId, registration } = await requireRegisteredOwnerUser(initData);
+    const { carrierId, registration } = await requireRegisteredOwnerUser(initData, capability);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
     const invoice = (list.data ?? []).find((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === invoiceId);
     if (!invoice) {
@@ -1354,7 +1367,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     // One registration lookup, not two: ownedInvoiceUrl already resolves the owner. verifyTelegramUser
     // is just the HMAC — no DB — so it stays.
     const { telegramUserId } = verifyTelegramUser(body.initData);
-    const { url, carrierId, invoice, registration } = await ownedInvoiceUrl(body.initData, body.invoiceId, body.format);
+    const { url, carrierId, invoice, registration } = await ownedInvoiceUrl(
+      body.initData,
+      body.invoiceId,
+      body.format,
+      'reports:send',
+    );
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -1476,7 +1494,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   // call. Answering "where is my card" for a driver needs an upstream that returns per-card rows.
   app.post('/carrier/mini-app/tracking', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'company:read');
     try {
       return await executeZohoFunctionWithFallback(['mytriontruckingnumberrequest'], { carrierId }, { unwrap: 'status' });
     } catch (err) {
@@ -1492,7 +1510,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/billing-form', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read');
     try {
       const raw = await executeZohoFunctionWithFallback(
         ['mytrionfetchbillingforminfo', 'mytrionFetchBillingFormInfo'],
@@ -1519,7 +1537,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/money-code-report', async (request) => {
     const body = mcReportSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'reports:send');
     const { telegramUserId } = verifyTelegramUser(body.initData);
     const window = rangeToDates(body.range, body.from, body.to);
     const draws = await listMoneyCodeDraws(carrierId, window.from, window.to);
@@ -1560,7 +1578,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/transactions/export-bundle', async (request) => {
     const body = rangeSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'reports:send');
     const { telegramUserId } = verifyTelegramUser(body.initData);
     const chatId = registration.telegramChatId ?? telegramUserId;
     try {
@@ -1594,7 +1612,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    *  present (listMoneyCodeDraws strips them by construction). Owner-only. */
   app.post('/carrier/mini-app/money-code/history', async (request) => {
     const body = rangeSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, 'financial:read');
     const window = rangeToDates(body.range ?? 'month', body.from, body.to);
     return { draws: await listMoneyCodeDraws(carrierId, window.from, window.to) };
   });

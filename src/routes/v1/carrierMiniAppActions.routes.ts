@@ -139,7 +139,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
    */
   app.post('/carrier/mini-app/card/efs', async (request) => {
     const body = cardSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     return efsWrapper.getCardEfsInfo(carrierId, cardNumber);
   });
@@ -152,7 +152,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/override', async (request) => {
     requireWritesEnabled();
     const body = cardSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
     takeWriteToken(carrierId);
     const { cardNumber, cardId } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -205,7 +205,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/set-status', async (request) => {
     requireWritesEnabled();
     const body = setStatusSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -234,7 +234,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         { statusCode: 422, code: 'LIMIT_CHANGE_TOO_LARGE', expose: true },
       );
     }
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -274,7 +274,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         expose: true,
       });
     }
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
     if (registration.profile === 'driver' && body.driverName) {
       throw new AppError('The driver name on the card is managed by your company owner', {
         statusCode: 403,
@@ -304,7 +304,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/fraud-request', async (request) => {
     requireWritesEnabled();
     const body = fraudRequestSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -358,6 +358,8 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/money-code/void', async (request) => {
     requireMoneyCodeEnabled();
     const body = mcVoidSchema.parse(request.body);
+    // No `financial:write` capability exists yet. Keep this durable money action on the legacy
+    // owner/manager boundary; `financial:read` must never imply write authority.
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
     const row = await moneyCodeRequestRepo.findById(body.requestId);
@@ -383,6 +385,8 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/money-code/draw', async (request) => {
     requireMoneyCodeEnabled();
     const body = moneyCodeDrawSchema.parse(request.body);
+    // See void above: financial writes remain owner/manager-only until a distinct write capability
+    // is deliberately introduced.
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);

@@ -320,6 +320,12 @@ const CLIENT_ROSTER_CACHE_MAX = 100;
 const clientRosterCache = new Map<string, ClientRosterCacheEntry>();
 const clientRosterInFlight = new Map<string, Promise<AgentClientRow[]>>();
 
+/** Test hook: clear roster snapshots and refresh promises. */
+export function clearClientRosterCache(): void {
+  clientRosterCache.clear();
+  clientRosterInFlight.clear();
+}
+
 function writeClientRosterCache(key: string, rows: AgentClientRow[]): void {
   if (clientRosterCache.has(key)) clientRosterCache.delete(key);
   const now = Date.now();
@@ -339,10 +345,14 @@ async function cachedClientRoster(
   key: string,
   load: () => Promise<AgentClientRow[]>,
   force = false,
+  allowStaleOnError = true,
 ): Promise<AgentClientRow[]> {
   const cached = clientRosterCache.get(key);
   if (!force && cached && cached.expiresAt > Date.now()) return cached.rows;
-  const running = clientRosterInFlight.get(key);
+  // A strict authorization refresh must never join a UI refresh whose failure policy allows a
+  // stale snapshot. Keep the two promise classes separate while still coalescing equivalent calls.
+  const inFlightKey = `${key}:stale-on-error:${allowStaleOnError ? 'yes' : 'no'}`;
+  const running = clientRosterInFlight.get(inFlightKey);
   if (running) return running;
   const request = load()
     .then((rows) => {
@@ -350,7 +360,7 @@ async function cachedClientRoster(
       return rows;
     })
     .catch((error: unknown) => {
-      if (cached && cached.staleUntil > Date.now()) {
+      if (allowStaleOnError && cached && cached.staleUntil > Date.now()) {
         logger.warn(
           { err: error instanceof Error ? error.message : String(error), key },
           'DWH client roster refresh failed — serving recent snapshot',
@@ -359,8 +369,8 @@ async function cachedClientRoster(
       }
       throw error;
     })
-    .finally(() => clientRosterInFlight.delete(key));
-  clientRosterInFlight.set(key, request);
+    .finally(() => clientRosterInFlight.delete(inFlightKey));
+  clientRosterInFlight.set(inFlightKey, request);
   return request;
 }
 
@@ -373,7 +383,7 @@ async function cachedClientRoster(
 export async function fetchAgentClients(
   ownerZohoUserId: string,
   agentName?: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; allowStaleOnError?: boolean } = {},
 ): Promise<AgentClientRow[]> {
   const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
   if (idBindIdx === null && nameBindIdx === null) return [];
@@ -385,6 +395,7 @@ export async function fetchAgentClients(
       return rows.map(toClient);
     },
     options.force,
+    options.allowStaleOnError,
   );
 }
 

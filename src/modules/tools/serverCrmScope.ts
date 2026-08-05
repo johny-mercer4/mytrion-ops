@@ -12,7 +12,12 @@
  * Clients modal for every non-admin.
  */
 import { AppError, RBACError, ToolError } from '../../lib/errors.js';
-import { isCarrierOwned, zohoIdSuffix } from '../../integrations/dwhClientRoster.js';
+import {
+  fetchAgentClients,
+  isCarrierOwned,
+  zohoIdSuffix,
+  type AgentClientRow,
+} from '../../integrations/dwhClientRoster.js';
 import { serverCrmGet } from '../../integrations/serverCrm.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -175,5 +180,70 @@ export async function assertCarrierOwned(ctx: TenantContext, carrierId: number |
   }
   if (!owned) {
     throw new RBACError(`Carrier ${carrierId} is not in your client list — you can only access your own clients.`);
+  }
+}
+
+/**
+ * Link-generation policy for Sales Data Center → Client → Manage.
+ *
+ * Ownership, activity, and debt come from the same DWH roster row rendered by the Clients tab.
+ * This check deliberately requests a fresh row and forbids stale-on-error fallback: a registration
+ * link lasts for days, so we must not mint one from an old non-debtor snapshot when the warehouse
+ * cannot confirm the company's current standing. Admin/system callers retain the existing bypass;
+ * an admin using "View as" runs as the target worker and therefore takes this gate.
+ */
+export async function assertCarrierInviteEligible(
+  ctx: TenantContext,
+  carrierId: number | string,
+): Promise<void> {
+  if (ctx.allDepartmentAccess || ctx.bypassRbac) return;
+  const ownerId = callerZohoUserId(ctx) ?? '';
+  const ownerName = ctx.userName?.trim() || undefined;
+  if (!zohoIdSuffix(ownerId) && !ownerName) {
+    throw new ToolError('No agent identity (zoho user id or user_name) on the request for owner-scoped data');
+  }
+
+  const normalizedCarrierId = String(carrierId).trim();
+  let client: AgentClientRow | undefined;
+  try {
+    const clients = await fetchAgentClients(ownerId, ownerName, {
+      force: true,
+      allowStaleOnError: false,
+    });
+    client = clients.find((row) => row.carrierId === normalizedCarrierId);
+  } catch (err) {
+    throw new AppError('Registration eligibility check unavailable (data warehouse)', {
+      statusCode: 502,
+      code: 'DWH_ERROR',
+      expose: true,
+      cause: err,
+    });
+  }
+
+  if (!client) {
+    throw new RBACError(
+      `Carrier ${normalizedCarrierId} is not in your client list — you can only invite your own clients.`,
+    );
+  }
+  if (client.isLocSuspended || (client.computedDebt >= 1 && client.computedDebtDays >= 2)) {
+    throw new AppError('Registration links are unavailable while this client is a debtor', {
+      statusCode: 409,
+      code: 'CARRIER_INVITE_DEBTOR',
+      expose: true,
+      details: {
+        carrierId: normalizedCarrierId,
+        debt: client.computedDebt,
+        debtDays: client.computedDebtDays,
+        locSuspended: client.isLocSuspended,
+      },
+    });
+  }
+  if (!client.computedIsActive) {
+    throw new AppError('Registration links are only available for active clients', {
+      statusCode: 409,
+      code: 'CARRIER_INVITE_INACTIVE',
+      expose: true,
+      details: { carrierId: normalizedCarrierId },
+    });
   }
 }

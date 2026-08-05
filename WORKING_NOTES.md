@@ -11364,3 +11364,66 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+## 2026-08-06 — Telegram mini-app registration/session architecture review
+
+- Reviewed the registration bootstrap, invite redemption, returning-user Telegram `initData`
+  authentication, driver card-number self-registration, registration/invitation repositories, and
+  frontend session boot without changing runtime code.
+- Confirmed the strong parts: Telegram HMAC + `auth_date` validation, server-derived identity and
+  carrier/role scope, one-shot invite redemption inside the registration transaction, tenant
+  predicates in the repositories, active-status checks on every mini-app request, and audit entries
+  for successful registration writes.
+- Main follow-ups: exchange `initData` for a first-party HttpOnly session instead of placing the raw
+  credential in the realtime URL; add database-enforced one-live-driver-per-card invariants; remove
+  the unsigned `x-telegram-chat-id` registration input; harden card-number self-registration beyond
+  its process-local per-user limiter; and remove the default-tenant assumption before partner-tenant
+  onboarding is enabled.
+- Repository-rule debt found in the same surface: `carrierMiniApp.routes.ts` performs direct DB work
+  and is 1,709 lines, while `apps/mini-app/src/App.tsx` is 4,405 lines (600-line hard cap).
+- Verification: focused mini-app + registration-repository suites pass, 114/114.
+
+## 2026-08-06 — Mini-app sales-agent multi-company requirement
+
+- Clarified the next mini-app role: a Sales agent links their Telegram identity to their verified
+  Zoho worker identity, sees all companies currently assigned to that agent, selects one company,
+  and receives owner-equivalent capabilities only inside that selected/authorized company.
+- The current `registered_mini_app_companies` row cannot model this safely: it deliberately allows
+  one carrier registration per Telegram user and its upsert overwrites the carrier. Do not add a
+  carrier-bound `sales_agent` profile to that table.
+- Recommended model: separate Telegram principal/account identity from carrier access grants. Store
+  the Sales agent's verified Zoho user id on the principal; source the portfolio dynamically from
+  the existing `fetchAgentClients` DWH authority and re-run `assertCarrierOwned` for every selected
+  carrier operation. The request's carrier id is a selector, never authority.
+- Sales agents must act as themselves in audit data (`sales_agent` actor + selected carrier), not as
+  the carrier owner. Owner-equivalent capability is effective, carrier-scoped authorization; it is
+  not impersonation and must not depend on that carrier having an owner mini-app registration.
+- No runtime changes in this clarification session.
+
+## 2026-08-06 — Mini-app backend capability policy
+
+- Added the explicit mini-app capabilities `company:read`, `financial:read`, `fleet:manage`,
+  `card:write`, `reports:send`, and `access:manage`, with a single typed role-to-capability policy.
+- Added the internal `sales_agent` role. Sales agents receive all six owner-like capabilities,
+  including `access:manage` for the registration-link flow; their generic tool-dispatcher scopes
+  remain empty so this role cannot accidentally escape through the broader assistant tool catalog.
+- Routed fleet, access delegation, financial reads, card operations, and report delivery through
+  explicit capability checks while retaining the existing owner/carrier/driver-card scopes.
+  Driver/manager invitation and revocation now explicitly require `access:manage`.
+- Kept money-code draw/void on the existing owner/manager-only boundary. The requested capability
+  set has `financial:read` but no `financial:write`, so read authority is not treated as sufficient
+  write authority for the future sales-agent path.
+- Confirmed the screenshot flow: the Sales agent stays authenticated by their verified Zoho CRM
+  session in Sales Mytrion; the generated link is redeemed by the CLIENT in Telegram. The client
+  Telegram `user_id` belongs on `registered_mini_app_companies`; agent attribution remains the
+  verified Zoho user id/name stamped onto the invite and resulting registration. A future Sales
+  agent Telegram portal still needs its own Telegram-to-Zoho principal table and must not overload
+  the one-company client registration row.
+- Added a fail-closed registration eligibility gate. A non-admin Sales agent must supply a carrier
+  id, own that carrier in the same DWH roster that feeds Data Center → Clients, and the fresh roster
+  row must be active, non-debtor, and not LOC-suspended. Stale roster fallback is disabled for link
+  creation, including when a stale-tolerant UI refresh is already in flight. The Manage panel mirrors
+  the rule by disabling the button for Debtor/Attention cards.
+- Verification: capability/RBAC/carrier mini-app/eligibility suites pass, 136/136; backend and CRM
+  typechecks pass; the CRM production build passes; lint has zero errors (22 existing warnings).
+  Full backend run: 1,886 passes and 99 existing environment/fixture failures in DB/socket, CS,
+  Comms Admin, Billing, Retention, and scripted-agent groups.

@@ -20,6 +20,13 @@ import {
 } from '../../integrations/telegramCarrierBot.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import {
+  assertMiniAppCapability,
+  type MiniAppActorProfile,
+  type MiniAppCapability,
+} from './miniAppCapabilities.js';
+
+type RegisteredMiniAppProfile = Exclude<MiniAppActorProfile, 'sales_agent'>;
 
 /** Tenant-scoping only — no admin authority. Repos key off ctx.tenantId; audit reads the rest. */
 export function lookupCtx(): TenantContext {
@@ -35,17 +42,15 @@ export function lookupCtx(): TenantContext {
   };
 }
 
-type MiniAppProfile = 'owner' | 'manager' | 'driver';
-
 /** owner + manager share every capability gate — manager is a company-access colleague, not a
  *  driver. This is the single predicate every owner-only check keys off, so "manager == owner"
  *  lives in exactly one place. */
-export function isOwnerLike(profile: MiniAppProfile): boolean {
+export function isOwnerLike(profile: MiniAppActorProfile): boolean {
   return profile === 'owner' || profile === 'manager';
 }
 
 /** The actual actor once a Telegram user is verified — customer audience, deny-by-default. */
-export function telegramCtx(profile: MiniAppProfile, telegramUserId: string): TenantContext {
+export function telegramCtx(profile: RegisteredMiniAppProfile, telegramUserId: string): TenantContext {
   return {
     tenantId: DEFAULT_TENANT_ID,
     userId: `telegram:${telegramUserId}`,
@@ -124,6 +129,7 @@ export async function requireRegisteredMiniAppUser(
  */
 export async function requireRegisteredOwner(
   initData: string,
+  capability: MiniAppCapability = 'fleet:manage',
 ): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; carrierId: string; tgUser: TelegramWebAppUser }> {
   const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
   if (
@@ -138,6 +144,7 @@ export async function requireRegisteredOwner(
       expose: true,
     });
   }
+  assertMiniAppCapability(registration.profile, capability);
   return {
     ctx: telegramCtx(registration.profile, telegramUserId),
     registration,
@@ -154,6 +161,7 @@ export async function requireRegisteredOwner(
  */
 export async function requireRegisteredCarrierUser(
   initData: string,
+  capability: MiniAppCapability = 'company:read',
 ): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
   const { registration } = await requireRegisteredMiniAppUser(initData);
   if (!registration.carrierId) {
@@ -163,6 +171,7 @@ export async function requireRegisteredCarrierUser(
       expose: true,
     });
   }
+  assertMiniAppCapability(registration.profile, capability);
   return { registration, carrierId: registration.carrierId };
 }
 
@@ -176,6 +185,7 @@ export async function requireRegisteredCarrierUser(
  */
 export async function requireRegisteredOwnerUser(
   initData: string,
+  capability: MiniAppCapability = 'financial:read',
 ): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
   const { registration } = await requireRegisteredMiniAppUser(initData);
   if (!isOwnerLike(registration.profile) || !registration.carrierId) {
@@ -185,6 +195,7 @@ export async function requireRegisteredOwnerUser(
       expose: true,
     });
   }
+  assertMiniAppCapability(registration.profile, capability);
   return { registration, carrierId: registration.carrierId };
 }
 
@@ -256,7 +267,7 @@ export async function resolveDriverExtras(
 
 export function toRegistrationView(row: {
   id: string;
-  profile: MiniAppProfile;
+  profile: RegisteredMiniAppProfile;
   companyName: string | null;
   carrierId: string | null;
   companyType: 'owner-operator' | 'fleet-manager' | null;
