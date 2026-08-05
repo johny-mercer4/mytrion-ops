@@ -110,11 +110,14 @@ export function RoadScene({ layout, onOpenStage }: { layout: RoadLayout; onOpenS
         return (
           <div key={`orb${s.id}`} style={{ position: 'absolute', left: p.x, top: p.y, transform: 'translate(-50%,-50%)' }}>
             <div
-              className="oct-anim"
+              className="oct-ring oct-anim"
               style={{
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
+                // Centring inline, not only in octRing: reduced motion strips the animation,
+                // and with it the keyframes' translate — leaving the ring hung off the orb.
+                transform: 'translate(-50%,-50%)',
                 width: 46,
                 height: 46,
                 borderRadius: '50%',
@@ -147,7 +150,19 @@ export function RoadScene({ layout, onOpenStage }: { layout: RoadLayout; onOpenS
             data-stage-card="1"
             data-idx={i}
             className="oct-anim"
+            /* role=button on the existing div rather than a real <button>: the scene root
+               writes opacity/zIndex onto [data-stage-card] and hit-tests it on pointerdown,
+               so the float animation and these hooks have to stay on the same node. */
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${s.title} details`}
             onClick={() => onOpenStage(i)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenStage(i);
+              }
+            }}
             style={{
               position: 'absolute',
               left: c.x,

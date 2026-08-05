@@ -151,6 +151,14 @@ export function useCachedLoad<T>(
    */
   const runId = useRef(0);
   const mounted = useRef(true);
+  /**
+   * Which key the value on screen belongs to, and whether there is one.
+   *
+   * Kept in refs because `run` cannot read `data`: it would have to join the dep array, and every
+   * fetch would then rebuild the callback and refire the load effect.
+   */
+  const shownKey = useRef<string | null>(initial ? key : null);
+  const hasData = useRef<boolean>(initial != null);
   useEffect(() => {
     // Set on the way IN as well as cleared on the way out. StrictMode mounts, unmounts and remounts the
     // same component instance, so the ref survives the simulated unmount — a cleanup-only effect would
@@ -170,18 +178,26 @@ export function useCachedLoad<T>(
       if (hit) {
         setData(hit.data);
         setCachedAt(hit.ts);
+        hasData.current = true;
+      } else if (shownKey.current === key && hasData.current) {
+        // The SAME key with an empty cache: an invalidation just dropped the entry, which is how a save
+        // or a delete asks for fresh data. What is on screen is still this key's own last-known-good, so
+        // keep it and revalidate — clearing it turns every ordinary save into a full-page loader, and the
+        // whole point of this hook is that a refetch never flashes one.
       } else {
-        // No cache for this key: drop the PREVIOUS key's value rather than presenting it as this key's
-        // result. Matches the sibling `useLoad`, which documents the same rule.
+        // A DIFFERENT key with no cache: drop the previous key's value rather than presenting it as this
+        // key's result. Matches the sibling `useLoad`, which documents the same rule.
         setData(null);
         setCachedAt(null);
+        hasData.current = false;
       }
+      shownKey.current = key;
       const fresh = hit != null && Date.now() - hit.ts < staleMs;
       if (fresh && !force) {
         setLoading(false);
         return;
       }
-      if (hit) setRevalidating(true);
+      if (hit || hasData.current) setRevalidating(true);
       else setLoading(true);
       setError(null);
       try {
@@ -192,6 +208,7 @@ export function useCachedLoad<T>(
         if (!current()) return;
         setData(d);
         setCachedAt(ts);
+        hasData.current = true;
       } catch (e) {
         if (!current()) return;
         setError(e instanceof Error ? e.message : 'Failed to load');
@@ -226,6 +243,8 @@ export function useCachedLoad<T>(
         if (hit) {
           setData(hit.data);
           setCachedAt(hit.ts);
+          shownKey.current = key;
+          hasData.current = true;
         }
       }
     };

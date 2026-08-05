@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarCheck,
   CalendarDays,
@@ -9,11 +9,13 @@ import {
   HeartPulse,
   Loader2,
   Plus,
+  RefreshCw,
   ShieldCheck,
   SunMedium,
   Umbrella,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   cancelLeaveRequest,
   decideLeaveRequest,
@@ -31,6 +33,7 @@ import {
   type LeaveTypeDto,
   type TimeOffOverviewDto,
 } from '../../api/hrTimeOff';
+import { ApiError } from '../../api/transport';
 import { HrPageLoader } from '../hr/HrBits';
 import styles from './TimeOffWorkspace.module.css';
 
@@ -41,6 +44,15 @@ const TYPE_ICON = {
   annual_paid: Umbrella,
   unpaid: CircleDollarSign,
 } satisfies Record<LeaveTypeCode, typeof HeartPulse>;
+
+// Every year-taking leave endpoint validates with z.coerce.number().int().min(2020).max(2100)
+// (src/routes/v1/hrLeave.routes.ts), so a year outside this window makes the overview/list fetches
+// fail validation rather than return an empty page. Keep both the picker and the post-submit
+// year-follow inside it.
+const API_YEAR_MIN = 2020;
+const API_YEAR_MAX = 2100;
+const API_DATE_MIN = `${API_YEAR_MIN}-01-01`;
+const API_DATE_MAX = `${API_YEAR_MAX}-12-31`;
 
 const STATUS_LABEL: Record<LeaveRequestStatus, string> = {
   pending_lead: 'Department lead',
@@ -102,15 +114,17 @@ function BalanceCard({ balance }: { balance: LeaveBalanceDto }) {
 function RequestRow({
   item,
   showEmployee,
+  busy,
   onOpen,
 }: {
   item: LeaveRequestDto;
   showEmployee: boolean;
+  busy: boolean;
   onOpen: () => void;
 }) {
   const Icon = TYPE_ICON[item.leaveTypeCode];
   return (
-    <button type="button" className={styles.requestRow} onClick={onOpen}>
+    <button type="button" className={styles.requestRow} onClick={onOpen} aria-busy={busy}>
       <span className={`${styles.requestIcon} ${styles[`tone_${item.leaveTypeCode}`]}`}>
         <Icon size={18} />
       </span>
@@ -126,7 +140,9 @@ function RequestRow({
       <span className={`${styles.status} ${statusTone(item.status)}`}>
         {STATUS_LABEL[item.status]}
       </span>
-      <ChevronRight size={18} className={styles.chevron} />
+      {busy
+        ? <Loader2 size={18} className={`${styles.chevron} ${styles.spin}`} />
+        : <ChevronRight size={18} className={styles.chevron} />}
     </button>
   );
 }
@@ -149,7 +165,7 @@ function ApplyForm({
 }: {
   types: LeaveTypeDto[];
   onCancel: () => void;
-  onSubmitted: () => Promise<void>;
+  onSubmitted: (fromDate: string) => void;
 }) {
   const [leaveTypeId, setLeaveTypeId] = useState(types[0]?.id ?? '');
   const [fromDate, setFromDate] = useState('');
@@ -164,6 +180,13 @@ function ApplyForm({
       setError('Choose a leave type and date range.');
       return;
     }
+    // The submit endpoint only checks that these are real calendar dates, so a 4-digit-year typo
+    // (0025-08-01) posts fine and then breaks every year-scoped follow-up read. Reject it here —
+    // the input min/max only fire on native form validation, which this non-form button skips.
+    if (fromDate < API_DATE_MIN || fromDate > API_DATE_MAX || toDate < API_DATE_MIN || toDate > API_DATE_MAX) {
+      setError(`Dates must fall between ${API_YEAR_MIN} and ${API_YEAR_MAX}.`);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -174,7 +197,9 @@ function ApplyForm({
         dayPart,
         reason: reason.trim() || null,
       });
-      await onSubmitted();
+      toast.success('Request submitted — awaiting your lead');
+      // The lists are year-scoped by fromDate, so the workspace needs the range to follow it there.
+      onSubmitted(fromDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -204,14 +229,14 @@ function ApplyForm({
         </label>
         <label className={styles.field}>
           <span>From</span>
-          <input type="date" value={fromDate} onChange={(event) => {
+          <input type="date" min={API_DATE_MIN} max={API_DATE_MAX} value={fromDate} onChange={(event) => {
             setFromDate(event.target.value);
             if (!toDate || event.target.value > toDate) setToDate(event.target.value);
           }} />
         </label>
         <label className={styles.field}>
           <span>To</span>
-          <input type="date" min={fromDate} value={toDate} onChange={(event) => setToDate(event.target.value)} />
+          <input type="date" min={fromDate || API_DATE_MIN} max={API_DATE_MAX} value={toDate} onChange={(event) => setToDate(event.target.value)} />
         </label>
         <label className={`${styles.field} ${styles.fieldWide}`}>
           <span>Reason or handoff note</span>
@@ -238,14 +263,18 @@ function DetailPanel({
   item,
   actions,
   canDecide,
+  isOwn,
+  readOnly,
   onClose,
   onChanged,
 }: {
   item: LeaveRequestDto;
   actions: LeaveRequestActionDto[];
   canDecide: boolean;
+  isOwn: boolean;
+  readOnly: boolean;
   onClose: () => void;
-  onChanged: () => Promise<void>;
+  onChanged: () => void;
 }) {
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState<'approve' | 'reject' | 'cancel' | null>(null);
@@ -256,13 +285,23 @@ function DetailPanel({
     try {
       if (kind === 'cancel') await cancelLeaveRequest(item.id);
       else await decideLeaveRequest(item.id, { decision: kind, comment: comment.trim() || null });
-      await onChanged();
+      onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      // onChanged() no longer awaits the reload, so the panel can outlive the write — clear the
+      // spinner here rather than relying on being unmounted.
       setBusy(null);
     }
   };
   const pending = item.status === 'pending_lead' || item.status === 'pending_hr';
+  // A sign-in with no linked employee record may read the register but cannot write: every write
+  // resolves an actor employee row first, so its buttons could only ever fail.
+  const showDecide = canDecide && !readOnly;
+  // Cancelling is the requester's own escape hatch — the repo scopes it to the caller's employee
+  // id, so offering it on a colleague's request produces nothing but a conflict. Not exclusive
+  // with showDecide: an HR final approver with no department lead is their own current approver.
+  const showCancel = pending && isOwn && !readOnly;
   return (
     <div className={styles.detailPanel}>
       <div className={styles.panelTitle}>
@@ -287,20 +326,22 @@ function DetailPanel({
           </div>
         ))}
       </div>
-      {canDecide ? (
+      {showDecide ? (
         <label className={styles.field}>
           <span>Decision note</span>
           <textarea value={comment} rows={2} maxLength={2000} onChange={(event) => setComment(event.target.value)} placeholder="Optional note to the employee…" />
         </label>
       ) : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
-      <div className={styles.formActions}>
-        {pending && !canDecide ? <button type="button" className={styles.dangerBtn} disabled={busy !== null} onClick={() => void act('cancel')}>Cancel request</button> : null}
-        {canDecide ? <>
-          <button type="button" className={styles.dangerBtn} disabled={busy !== null} onClick={() => void act('reject')}>Reject</button>
-          <button type="button" className={styles.primaryBtn} disabled={busy !== null} onClick={() => void act('approve')}><Check size={16} />Approve</button>
-        </> : null}
-      </div>
+      {showCancel || showDecide ? (
+        <div className={styles.formActions}>
+          {showCancel ? <button type="button" className={styles.dangerBtn} disabled={busy !== null} onClick={() => void act('cancel')}>Cancel request</button> : null}
+          {showDecide ? <>
+            <button type="button" className={styles.dangerBtn} disabled={busy !== null} onClick={() => void act('reject')}>Reject</button>
+            <button type="button" className={styles.primaryBtn} disabled={busy !== null} onClick={() => void act('approve')}><Check size={16} />Approve</button>
+          </> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -323,27 +364,44 @@ export function TimeOffWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [personalUnavailable, setPersonalUnavailable] = useState('');
+  const [registerUnavailable, setRegisterUnavailable] = useState('');
   const [applyOpen, setApplyOpen] = useState(false);
   const [detail, setDetail] = useState<{ item: LeaveRequestDto; actions: LeaveRequestActionDto[] } | null>(null);
+  const [pendingDetailId, setPendingDetailId] = useState<string | null>(null);
+  // Bumped on every open/close/reload so a detail response that lands late cannot overwrite a
+  // newer one, nor re-open a panel the user has already left.
+  const detailSeq = useRef(0);
+  // Reloads run through the effect (and its AbortController) instead of an imperative load(), so a
+  // stale post-decision fetch can never repopulate state the user has since re-scoped.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError('');
     setPersonalUnavailable('');
+    setRegisterUnavailable('');
     try {
       const [overviewResult, typesResult, mineResult, inboxResult, allResult] = await Promise.allSettled([
         getTimeOffOverview(year, signal),
         listLeaveTypes(signal),
         listLeaveRequests({ scope: 'mine', year, limit: 200 }, signal),
-        listLeaveRequests({ scope: 'inbox', year, limit: 200 }, signal),
+        // Deliberately unscoped by year: the inbox is already limited to pending statuses, and a
+        // fromDate-year filter hides next-year leave from the approver who must decide it now.
+        listLeaveRequests({ scope: 'inbox', limit: 200 }, signal),
         includeAll ? listLeaveRequests({ scope: 'all', year, limit: 300 }, signal) : Promise.resolve([]),
       ]);
       if (signal?.aborted) return;
 
-      if (typesResult.status === 'rejected') throw typesResult.reason;
-      if (allResult.status === 'rejected') throw allResult.reason;
-      setTypes(typesResult.value);
-      setAll(allResult.value);
+      // Each slice degrades on its own — one failed fetch must not throw away the others.
+      setTypes(typesResult.status === 'fulfilled' ? typesResult.value : []);
+      if (allResult.status === 'fulfilled') {
+        setAll(allResult.value);
+      } else {
+        setAll([]);
+        setRegisterUnavailable(
+          `The tenant-wide register could not be loaded. ${allResult.reason instanceof Error ? allResult.reason.message : String(allResult.reason)}`,
+        );
+      }
 
       const personalFailed =
         overviewResult.status === 'rejected' ||
@@ -353,25 +411,30 @@ export function TimeOffWorkspace({
         setOverview(null);
         setMine([]);
         setInbox([]);
-        if (!includeAll) {
-          const reason =
-            overviewResult.status === 'rejected'
-              ? overviewResult.reason
-              : mineResult.status === 'rejected'
-                ? mineResult.reason
-                : inboxResult.status === 'rejected'
-                  ? inboxResult.reason
-                  : null;
-          throw reason;
+        const reason: unknown =
+          overviewResult.status === 'rejected'
+            ? overviewResult.reason
+            : mineResult.status === 'rejected'
+              ? mineResult.reason
+              : inboxResult.status === 'rejected'
+                ? inboxResult.reason
+                : null;
+        // Only a 404 means "no active employee row is linked to this sign-in"; a timeout or a 502
+        // must not tell a correctly-linked employee that their account is misconfigured.
+        if (includeAll && reason instanceof ApiError && reason.status === 404) {
+          setPersonalUnavailable(
+            'This administrator sign-in is not linked to an employee. You can review every request, but personal balances and leave applications require an employee link.',
+          );
+          setView('all');
+        } else {
+          setError(reason instanceof Error ? reason.message : String(reason));
         }
-        setPersonalUnavailable(
-          'This administrator sign-in is not linked to an employee. You can review every request, but personal balances and leave applications require an employee link.',
-        );
-        setView('all');
       } else {
         setOverview(overviewResult.value);
         setMine(mineResult.value);
-        setInbox(inboxResult.value);
+        // Unscoped by year, so order by leave date — a January request must not hide behind
+        // submittedAt ordering when the header reads December.
+        setInbox([...inboxResult.value].sort((a, b) => a.fromDate.localeCompare(b.fromDate)));
       }
     } catch (err) {
       if (!signal?.aborted && !(err instanceof DOMException && err.name === 'AbortError')) {
@@ -386,25 +449,64 @@ export function TimeOffWorkspace({
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, reloadKey]);
+
+  useEffect(() => () => { detailSeq.current += 1; }, []);
 
   const openDetail = async (item: LeaveRequestDto): Promise<void> => {
+    detailSeq.current += 1;
+    const seq = detailSeq.current;
+    setPendingDetailId(item.id);
     setError('');
     try {
-      setDetail(await getLeaveRequestDetail(item.id));
+      const loaded = await getLeaveRequestDetail(item.id);
+      if (detailSeq.current === seq) setDetail(loaded);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (detailSeq.current === seq) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (detailSeq.current === seq) setPendingDetailId(null);
     }
   };
-  const changed = async (): Promise<void> => {
-    setApplyOpen(false);
+  const closeDetail = (): void => {
+    detailSeq.current += 1;
+    setPendingDetailId(null);
     setDetail(null);
-    await load();
+  };
+  const retry = (): void => setReloadKey((key) => key + 1);
+  const changed = (submittedFrom?: string): void => {
+    setApplyOpen(false);
+    closeDetail();
+    if (submittedFrom !== undefined) {
+      setView('mine');
+      const submittedYear = Number(submittedFrom.slice(0, 4));
+      // Every list is fromDate-year-filtered server-side, so follow the request into its own year
+      // or it lands in no list at all. setYear alone re-runs the effect-owned load. Only follow a
+      // year the API will accept: adopting an out-of-range one makes all four reads fail schema
+      // validation, which blanks the overview and leaves the workspace stuck in its error state.
+      if (
+        Number.isInteger(submittedYear) &&
+        submittedYear >= API_YEAR_MIN &&
+        submittedYear <= API_YEAR_MAX &&
+        submittedYear !== year
+      ) {
+        setYear(submittedYear);
+        return;
+      }
+    }
+    retry();
   };
   const visible = useMemo(
     () => view === 'mine' ? mine : view === 'inbox' ? inbox : all,
     [all, inbox, mine, view],
   );
+  // The overview carries the year it was computed for, so a payload left over from the previous
+  // selection must not be rendered under the new year's heading.
+  const staleYear = overview !== null && overview.year !== year;
+  // A submitted request can fall outside the three offered years; keep the picker truthful.
+  const yearOptions = useMemo(() => {
+    const offered = [currentYear - 1, currentYear, currentYear + 1];
+    return offered.includes(year) ? offered : [...offered, year].sort((a, b) => a - b);
+  }, [currentYear, year]);
 
   if (loading && !overview) {
     return <HrPageLoader label="Preparing your leave calendar…" />;
@@ -419,37 +521,62 @@ export function TimeOffWorkspace({
           <p>{overview ? `${overview.employee.name} · ${overview.employee.department ?? 'No department'}` : 'Leave and approvals'}</p>
         </div>
         <div className={styles.headerActions}>
-          <label className={styles.yearPicker}><CalendarDays size={16} /><select value={year} onChange={(event) => setYear(Number(event.target.value))}><option value={currentYear - 1}>{currentYear - 1}</option><option value={currentYear}>{currentYear}</option><option value={currentYear + 1}>{currentYear + 1}</option></select></label>
-          {overview ? <button type="button" className={styles.primaryBtn} onClick={() => { setDetail(null); setApplyOpen(true); }}><Plus size={17} />Apply leave</button> : null}
+          {error || registerUnavailable ? (
+            <button type="button" className={styles.secondaryBtn} disabled={loading} onClick={retry}>
+              {loading ? <Loader2 size={16} className={styles.spin} /> : <RefreshCw size={16} />}
+              Retry
+            </button>
+          ) : null}
+          {/* The icon is decorative, so the name has to live on the control itself. */}
+          <label className={styles.yearPicker}><CalendarDays size={16} aria-hidden="true" /><select aria-label="Leave year" value={year} onChange={(event) => setYear(Number(event.target.value))}>{yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+          {overview ? <button type="button" className={styles.primaryBtn} disabled={types.length === 0} title={types.length === 0 ? 'Leave types could not be loaded — retry to apply for leave.' : undefined} onClick={() => { closeDetail(); setApplyOpen(true); }}><Plus size={17} />Apply leave</button> : null}
         </div>
       </header>
       <nav className={styles.tabs} aria-label="Time off views">
-        {overview ? <button type="button" className={view === 'summary' ? styles.tabActive : ''} onClick={() => setView('summary')}>Summary</button> : null}
-        {overview ? <button type="button" className={view === 'mine' ? styles.tabActive : ''} onClick={() => setView('mine')}>My requests <span>{mine.length}</span></button> : null}
-        {overview ? <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button> : null}
+        {!personalUnavailable ? <button type="button" className={view === 'summary' ? styles.tabActive : ''} onClick={() => setView('summary')}>Summary</button> : null}
+        {!personalUnavailable ? <button type="button" className={view === 'mine' ? styles.tabActive : ''} onClick={() => setView('mine')}>My requests <span>{mine.length}</span></button> : null}
+        {!personalUnavailable ? <button type="button" className={view === 'inbox' ? styles.tabActive : ''} onClick={() => setView('inbox')}>To approve <span>{inbox.length}</span></button> : null}
         {includeAll ? <button type="button" className={view === 'all' ? styles.tabActive : ''} onClick={() => setView('all')}>All requests <span>{all.length}</span></button> : null}
       </nav>
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {personalUnavailable ? <p className={styles.error} role="status">{personalUnavailable}</p> : null}
+      {registerUnavailable ? <p className={styles.error} role="status">{registerUnavailable}</p> : null}
       {applyOpen ? <ApplyForm types={types} onCancel={() => setApplyOpen(false)} onSubmitted={changed} /> : null}
-      {detail ? <DetailPanel item={detail.item} actions={detail.actions} canDecide={inbox.some((item) => item.id === detail.item.id)} onClose={() => setDetail(null)} onChanged={changed} /> : null}
+      {detail ? <DetailPanel item={detail.item} actions={detail.actions} canDecide={inbox.some((item) => item.id === detail.item.id)} isOwn={overview?.employee.id === detail.item.employee.id} readOnly={personalUnavailable !== ''} onClose={closeDetail} onChanged={changed} /> : null}
       {!applyOpen && !detail && view === 'summary' && overview ? (
-        <div className={styles.summary}>
-          <div className={styles.balanceGrid}>{overview.balances.map((balance) => <BalanceCard key={balance.leaveTypeId} balance={balance} />)}</div>
+        <div className={styles.summary} aria-busy={staleYear}>
+          <div className={styles.balanceGrid}>
+            {staleYear
+              ? overview.balances.map((balance) => <div key={balance.leaveTypeId} className={`${styles.balanceCard} ${styles[`tone_${balance.code}`]}`} aria-hidden="true" />)
+              : overview.balances.map((balance) => <BalanceCard key={balance.leaveTypeId} balance={balance} />)}
+          </div>
           <section className={styles.holidays}>
-            <div className={styles.sectionTitle}><div><span>Company calendar</span><h3>Holidays in {year}</h3></div><SunMedium size={21} /></div>
+            <div className={styles.sectionTitle}><div><span>Company calendar</span><h3>Holidays in {year}</h3></div>{staleYear ? <Loader2 size={21} className={styles.spin} /> : <SunMedium size={21} />}</div>
             <div className={styles.holidayList}>
-              {overview.holidays.length ? overview.holidays.map((holiday) => (
+              {staleYear ? <p className={styles.muted}>Loading {year} holidays…</p> : overview.holidays.length ? overview.holidays.map((holiday) => (
                 <div key={holiday.id} className={styles.holidayRow}><span className={styles.holidayDate}>{new Date(`${holiday.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' })}</span><strong>{holiday.name}</strong><span>{holiday.isHalfDay ? `${holiday.session} half-day` : holiday.location}</span></div>
               )) : <p className={styles.muted}>No holidays configured for this year.</p>}
             </div>
           </section>
         </div>
       ) : null}
+      {!applyOpen && !detail && view === 'summary' && !overview ? (
+        <section className={styles.requestList}>
+          <div className={styles.empty}>
+            <span><CalendarCheck size={25} /></span>
+            <strong>Balances are temporarily unavailable</strong>
+            <p>{error || 'Your personal leave data could not be loaded.'}</p>
+            <button type="button" className={styles.secondaryBtn} disabled={loading} onClick={retry}>
+              {loading ? <Loader2 size={16} className={styles.spin} /> : <RefreshCw size={16} />}
+              Retry
+            </button>
+          </div>
+        </section>
+      ) : null}
       {!applyOpen && !detail && view !== 'summary' ? (
         <section className={styles.requestList}>
           <div className={styles.listHead}><div><span>{view === 'inbox' ? 'Approval queue' : view === 'all' ? 'HR register' : 'Your history'}</span><h3>{view === 'inbox' ? 'Requests needing your decision' : view === 'all' ? 'All employee leave' : `${year} requests`}</h3></div>{loading ? <Loader2 size={18} className={styles.spin} /> : null}</div>
-          {visible.length ? visible.map((item) => <RequestRow key={item.id} item={item} showEmployee={view !== 'mine'} onOpen={() => void openDetail(item)} />) : <EmptyList view={view} />}
+          {visible.length ? visible.map((item) => <RequestRow key={item.id} item={item} showEmployee={view !== 'mine'} busy={pendingDetailId === item.id} onOpen={() => void openDetail(item)} />) : <EmptyList view={view} />}
         </section>
       ) : null}
     </div>

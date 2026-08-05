@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import {
   getDataLoaderBatch,
@@ -134,16 +134,28 @@ export function DataLoader() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<DataLoaderBatch | null>(null);
   const [reverting, setReverting] = useState(false);
-  const loaded = useLoad(
-    async () => {
-      const [config, batches] = await Promise.all([
-        getDataLoaderConfig(),
-        listDataLoaderBatches(PAGE_SIZE, (page - 1) * PAGE_SIZE),
-      ]);
-      return { config, batches };
-    },
-    [page],
-  );
+  // Two hooks, not one: useLoad nulls its `data` whenever the deps change, so pairing the config
+  // with the paged journal made every page turn blank the launch card into "NocoDB URL not
+  // configured" and unmount the pager mid-navigation. The config has no page dependency.
+  const cfg = useLoad(() => getDataLoaderConfig(), []);
+  const journal = useLoad(() => listDataLoaderBatches(PAGE_SIZE, (page - 1) * PAGE_SIZE), [page]);
+  // The pager reads the last known total so it stays mounted across the gap where journal.data is null.
+  const [knownTotal, setKnownTotal] = useState(0);
+  useEffect(() => {
+    if (journal.data) setKnownTotal(journal.data.total);
+  }, [journal.data]);
+
+  const error = cfg.error ?? journal.error;
+  const loading = cfg.loading || journal.loading;
+  const refreshing = cfg.refreshing || journal.refreshing;
+  function reloadAll() {
+    cfg.reload();
+    journal.reload();
+  }
+  function refreshAll() {
+    cfg.refresh();
+    journal.refresh();
+  }
 
   async function onRevert() {
     if (!confirming) return;
@@ -156,7 +168,7 @@ export function DataLoader() {
       );
       setConfirming(null);
       setExpanded(null);
-      loaded.reload();
+      journal.reload();
     } catch (error) {
       adminToast.error(
         'Could not revert batch',
@@ -167,8 +179,7 @@ export function DataLoader() {
     }
   }
 
-  const data = loaded.data;
-  const batches = data?.batches.batches ?? [];
+  const batches = journal.data?.batches ?? [];
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
@@ -184,10 +195,10 @@ export function DataLoader() {
         <button
           type="button"
           className={s.ghostBtn}
-          disabled={loaded.loading || loaded.refreshing}
-          onClick={loaded.refresh}
+          disabled={loading || refreshing}
+          onClick={refreshAll}
         >
-          {loaded.refreshing ? (
+          {refreshing ? (
             <>
               <span className={s.loadingSpin} aria-hidden="true" />
               Refreshing…
@@ -200,19 +211,19 @@ export function DataLoader() {
         </button>
       </div>
 
-      {loaded.error ? (
+      {error ? (
         <div className={s.errorState} role="alert">
           <span className={s.errorIcon}>
             <AlertIcon size={20} />
           </span>
           <span className={s.errorTitle}>Data Loader is unavailable</span>
-          <span className={s.errorCause}>{loaded.error}</span>
+          <span className={s.errorCause}>{error}</span>
           <span className={s.errorHint}>
             Check the app Postgres connection and confirm migration 0069 has been applied, then
             retry.
           </span>
           <span className={s.errorActions}>
-            <button type="button" className={s.ghostBtn} onClick={loaded.reload}>
+            <button type="button" className={s.ghostBtn} onClick={reloadAll}>
               Retry
             </button>
           </span>
@@ -228,10 +239,10 @@ export function DataLoader() {
                 <p className={s.sub}>
                   NocoDB opens in a separate tab and has its own manually provisioned admin login.
                 </p>
-                {data?.config.baseUrl ? (
+                {cfg.data?.baseUrl ? (
                   <a
                     className={`${s.primaryBtn} ${s.tall} ${dl.launchButton}`}
-                    href={data.config.baseUrl}
+                    href={cfg.data.baseUrl}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -243,7 +254,7 @@ export function DataLoader() {
                   </button>
                 )}
                 <div className={dl.tableList}>
-                  {data?.config.tables.map((table) => (
+                  {cfg.data?.tables.map((table) => (
                     <span className={dl.tableChip} key={table}>
                       {table}
                     </span>
@@ -285,7 +296,7 @@ export function DataLoader() {
               </div>
             </div>
 
-            <div className={s.table} aria-busy={loaded.loading}>
+            <div className={s.table} aria-busy={journal.loading}>
               <div className={`${s.tHead} ${dl.batchTable}`}>
                 <span>When</span>
                 <span>Database user</span>
@@ -294,7 +305,7 @@ export function DataLoader() {
                 <span>Rows</span>
                 <span className={s.right}>Actions</span>
               </div>
-              {loaded.loading ? (
+              {journal.loading ? (
                 <>
                   <span className={s.srOnly} role="status">
                     Loading Data Loader batches…
@@ -347,7 +358,7 @@ export function DataLoader() {
                   );
                 })
               )}
-              {!loaded.loading && batches.length === 0 && (
+              {!journal.loading && batches.length === 0 && (
                 <div className={s.emptyState}>
                   <span className={s.emptyIcon}>
                     <DatabaseIcon size={20} />
@@ -360,9 +371,7 @@ export function DataLoader() {
                 </div>
               )}
             </div>
-            {data && (
-              <Pager page={page} total={data.batches.total} onChange={setPage} />
-            )}
+            {knownTotal > 0 && <Pager page={page} total={knownTotal} onChange={setPage} />}
           </section>
         </>
       )}

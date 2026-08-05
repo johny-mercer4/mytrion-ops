@@ -67,18 +67,46 @@ export function CarrierInvitations({
   const [status, setStatus] = useState<StatusFilter>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  /**
+   * Every status in this table is derived from the clock — a pending invite lapses on its own — and
+   * nothing else here re-renders on a timer, so a link that died with the tab open kept its Pending
+   * pill, its stale countdown, and a live Copy button the admin would then send to a carrier.
+   *
+   * Paused while hidden: a background interval is throttled anyway, and the visibilitychange
+   * handler is what makes the first paint after refocus correct rather than a minute behind.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let timer: number | undefined;
+    const stop = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = undefined;
+    };
+    const start = () => {
+      stop();
+      setNow(Date.now());
+      timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return invitations.filter((inv) => {
-      if (status !== 'all' && inviteStatus(inv) !== status) return false;
+      if (status !== 'all' && inviteStatus(inv, now) !== status) return false;
       if (!q) return true;
       return [inv.companyName ?? '', inv.carrierId ?? '', inv.applicationId ?? '', inv.driverName ?? '']
         .join(' ')
         .toLowerCase()
         .includes(q);
     });
-  }, [invitations, status, query]);
+  }, [invitations, status, query, now]);
 
   useEffect(() => {
     setPage(1);
@@ -105,6 +133,9 @@ export function CarrierInvitations({
         <input
           className={s.searchInput}
           value={query}
+          // Named explicitly: the count chip inside this label would otherwise BE the input's
+          // accessible name ("87 total"), and it changes on every keystroke.
+          aria-label="Filter invitations"
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter — company, carrier id, driver…"
         />
@@ -136,9 +167,9 @@ export function CarrierInvitations({
           )}
         {!loading &&
           paged.map((inv) => {
-            const st = inviteStatus(inv);
-            const live = isLiveInvite(inv);
-            const soon = expiresSoon(inv);
+            const st = inviteStatus(inv, now);
+            const live = isLiveInvite(inv, now);
+            const soon = expiresSoon(inv, now);
             return (
               <div key={inv.id} className={`${s.tRow} ${s.tInvite}`} role="row">
                 <span className={s.cellStack} role="cell">
@@ -175,7 +206,7 @@ export function CarrierInvitations({
                   role="cell"
                   title={new Date(inv.expiresAt).toLocaleString()}
                 >
-                  {st === 'redeemed' || st === 'cancelled' ? '—' : relativeTime(inv.expiresAt)}
+                  {st === 'redeemed' || st === 'cancelled' ? '—' : relativeTime(inv.expiresAt, now)}
                   {soon && <AlertIcon />}
                 </span>
                 <span style={{ display: 'flex', gap: 'var(--space-2)' }} role="cell">
@@ -210,7 +241,9 @@ export function CarrierInvitations({
               </div>
             );
           })}
-          {!loading && filtered.length === 0 && (
+          {/* Suppressed while the load error stands: no list ever arrived, so "no invitations yet"
+              would be a claim about data we don't have. */}
+          {!loading && !error && filtered.length === 0 && (
             <div className={s.none} role="row">
               <span role="cell">
                 {invitations.length === 0

@@ -72,24 +72,32 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
   const todayRow = data.days.find((day) => day.date === today);
   const weeklyMs = data.days.reduce((total, day) => total + dayDurationMs(day, nowMs), 0);
   const activeMs = activeVisit ? sessionDurationMs(activeVisit.session, nowMs) : 0;
-  const presenceTitle = activeVisit
-    ? 'Currently in the office'
-    : data.currentState === 'needs_review'
-      ? 'Checkout needs review'
-      : data.currentState === 'out_of_office'
-        ? 'Currently out of office'
-        : 'No office activity yet';
+  // `currentState` / `lastPunch` come from the employee's latest punch overall, not from
+  // `from..to`, so they may only decorate this card while the range still touches now: today is
+  // in it, or a session inside it is still open (a visit that ran past Tashkent midnight).
+  const isLiveRange = activeVisit != null || todayRow != null;
+  const presenceTitle = !isLiveRange
+    ? `Week of ${data.from} — ${data.to}`
+    : activeVisit || data.currentState === 'in_office'
+      ? 'Currently in the office'
+      : data.currentState === 'needs_review'
+        ? 'Checkout needs review'
+        : data.currentState === 'out_of_office'
+          ? 'Currently out of office'
+          : 'No office activity yet';
 
   return (
     <>
       <section
         className="hr-att-presence"
-        data-state={data.currentState}
-        aria-label="Current office presence"
+        data-state={isLiveRange ? data.currentState : 'no_activity'}
+        aria-label={isLiveRange ? 'Current office presence' : 'Week attendance summary'}
       >
         <div className="hr-att-presence-icon" aria-hidden="true">
           {activeVisit ? (
             <DoorOpen size={24} />
+          ) : !isLiveRange ? (
+            <Clock3 size={24} />
           ) : data.currentState === 'needs_review' ? (
             <AlertTriangle size={24} />
           ) : (
@@ -97,26 +105,32 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
           )}
         </div>
         <div className="hr-att-presence-copy">
-          <span className="hr-att-eyebrow">Live presence · Tashkent time</span>
+          <span className="hr-att-eyebrow">
+            {isLiveRange ? 'Live presence · Tashkent time' : 'Week summary · Tashkent time'}
+          </span>
           <h2>{presenceTitle}</h2>
           <p>
             {activeVisit
               ? `Checked in at ${activeVisit.session.checkIn} · ${activeVisit.session.checkInDoor ?? 'Ganga entry'}`
-              : data.lastPunch
-                ? `Last scan ${data.lastPunch.localDateTime} · ${data.lastPunch.doorName ?? 'Ganga reader'}`
-                : 'A Ganga entry scan will start the tracker automatically.'}
+              : !isLiveRange
+                ? `${data.totals.present} present · ${data.totals.absent} absent · ${durationLabel(weeklyMs)} in office`
+                : data.lastPunch
+                  ? `Last scan ${data.lastPunch.localDateTime} · ${data.lastPunch.doorName ?? 'Ganga reader'}`
+                  : 'A Ganga entry scan will start the tracker automatically.'}
           </p>
         </div>
-        <div className="hr-att-live-clock">
-          <span>{activeVisit ? 'This visit' : 'Today in office'}</span>
-          <strong>
-            {durationLabel(
-              activeVisit ? activeMs : todayRow ? dayDurationMs(todayRow, nowMs) : 0,
-              true,
-            )}
-          </strong>
-          <small>{activeVisit ? 'Counting live' : 'Completed visits'}</small>
-        </div>
+        {activeVisit || todayRow ? (
+          <div className="hr-att-live-clock">
+            <span>{activeVisit ? 'This visit' : 'Today in office'}</span>
+            <strong>
+              {durationLabel(
+                activeVisit ? activeMs : todayRow ? dayDurationMs(todayRow, nowMs) : 0,
+                true,
+              )}
+            </strong>
+            <small>{activeVisit ? 'Counting live' : 'Completed visits'}</small>
+          </div>
+        ) : null}
         <div className="hr-att-week-clock">
           <span>This week</span>
           <strong>{durationLabel(weeklyMs)}</strong>

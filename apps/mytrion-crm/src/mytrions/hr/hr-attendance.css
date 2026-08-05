@@ -487,9 +487,16 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+/* Copy on top, the three controls on their own row. As one 5-track row this needed ~730px, but the card
+   lives in the `minmax(0, 1fr)` half of `.hr-att-split` — ~580px wide on a 1280px laptop — so the fields
+   ran past the card's right edge everywhere between the 960px split collapse and ~1400px. The constraint
+   is the container, not the viewport, so the wrap must not be another media query. */
 .hr-root .hr-att-assign {
   display: grid;
-  grid-template-columns: auto minmax(190px, 1fr) minmax(190px, 0.8fr) minmax(145px, 0.55fr) auto;
+  grid-template-columns: auto minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  grid-template-areas:
+    'icon copy copy copy'
+    'icon shift date go';
   align-items: end;
   gap: 10px;
   margin: 0 0 14px;
@@ -499,6 +506,7 @@
   background: color-mix(in srgb, var(--accent) 5%, var(--hz-pane-alt, transparent));
 }
 .hr-root .hr-att-assign-icon {
+  grid-area: icon;
   align-self: center;
   display: grid;
   place-items: center;
@@ -509,6 +517,7 @@
   color: var(--accent);
 }
 .hr-root .hr-att-assign-copy {
+  grid-area: copy;
   align-self: center;
   display: flex;
   flex-direction: column;
@@ -526,9 +535,15 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Without this the select's widest option is a hard floor and the track cannot shrink at all. */
+  min-width: 0;
 }
+.hr-root .hr-att-assign label:first-of-type { grid-area: shift; }
+.hr-root .hr-att-assign label:nth-of-type(2) { grid-area: date; }
+.hr-root .hr-att-assign > button { grid-area: go; }
 .hr-root .hr-att-assign select,
 .hr-root .hr-att-assign input {
+  min-width: 0;
   min-height: 34px;
   padding: 6px 9px;
   border: 1px solid var(--hz-pane-bd, var(--border));
@@ -572,6 +587,12 @@
   }
   .hr-root .hr-att-assign {
     grid-template-columns: 1fr;
+    /* Four named columns above: redeclare them, re-sizing alone leaves the areas 4-wide. */
+    grid-template-areas:
+      'copy'
+      'shift'
+      'date'
+      'go';
   }
   .hr-root .hr-att-assign-icon {
     display: none;

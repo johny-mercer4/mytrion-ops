@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Building2,
   EyeOff,
@@ -28,6 +28,15 @@ import {
   useHrOrgStructure,
 } from '../hrData';
 import { HrEmpty, HrPageLoader, HrPageHead, HrSummaryTiles } from '../HrBits';
+import { useModalFocus } from '../useModalFocus';
+
+/**
+ * Why a node can have nothing to open: the canvas paints as soon as the GRAPH lands, while the record a
+ * click opens is resolved out of the directory/departments caches — independent fetches, and the
+ * directory is one 500-row window where the graph is unbounded. Saying so beats a chart where every
+ * click does nothing, which reads as a dead tab.
+ */
+const MISSING_RECORD = 'That record has not loaded yet — press Refresh, then try again.';
 
 /**
  * HR → Org Structure. A React Flow canvas, top-to-bottom, built from `hr_departments.parent_id`,
@@ -118,11 +127,22 @@ export function HrOrgStructure() {
     () => ({
       onOpenDepartment: (id) => {
         const dep = deptById.get(id);
-        if (dep) setDeptModal({ kind: 'edit', department: dep });
+        if (!dep) {
+          setError(MISSING_RECORD);
+          return;
+        }
+        // Clears a previous miss (or a failed drag) now that the same gesture has worked.
+        setError('');
+        setDeptModal({ kind: 'edit', department: dep });
       },
       onOpenEmployee: (id) => {
         const emp = empById.get(id);
-        if (emp) setEmpDetail(emp);
+        if (!emp) {
+          setError(MISSING_RECORD);
+          return;
+        }
+        setError('');
+        setEmpDetail(emp);
       },
       onAddUnderDepartment: (id) => {
         // "+" on a department is ambiguous — a sub-department or a person? Ask with a real choice.
@@ -160,6 +180,12 @@ export function HrOrgStructure() {
   }, []);
 
   const firstLoad = org.loading && !org.data;
+  /**
+   * The directory and department caches are what a node click resolves against, so a failure on either
+   * is not cosmetic here — it leaves a fully painted chart where nothing opens, ever. Shown in the same
+   * banner as the graph's own error instead of being swallowed.
+   */
+  const banner = error || org.error || directory.error || departments.error;
   const hasGraph = (org.data?.departments.length ?? 0) > 0 || (org.data?.employees.length ?? 0) > 0;
 
   return (
@@ -207,6 +233,8 @@ export function HrOrgStructure() {
             {admin
               ? 'Click a node to open it · drag onto another to re-parent · “+” adds under a node · chevron expands staff'
               : 'Click a node to open details. Changing the structure needs Mytrion Admin.'}
+            {/* Text only, no second spinner: the chart is already up, only the record behind a click is not. */}
+            {directory.loading ? ' · employee details still loading' : ''}
           </p>
         </div>
       ) : null}
@@ -247,9 +275,9 @@ export function HrOrgStructure() {
         />
       ) : null}
 
-      {error || org.error ? (
+      {banner ? (
         <p className="hr-banner-error" role="alert">
-          {error || org.error}
+          {banner}
         </p>
       ) : null}
 
@@ -275,53 +303,18 @@ export function HrOrgStructure() {
       )}
 
       {addChoice ? (
-        <div className="hr-modal-backdrop" role="presentation" onClick={() => setAddChoice(null)}>
-          <div
-            className="hr-modal hr-addchoice"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hr-addchoice-title"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <header className="hr-modal-head">
-              <h2 id="hr-addchoice-title">Add under {addChoice.name}</h2>
-              <button
-                type="button"
-                className="hr-icon-btn"
-                aria-label="Close"
-                onClick={() => setAddChoice(null)}
-              >
-                <X size={16} />
-              </button>
-            </header>
-            <div className="hr-addchoice-opts">
-              <button
-                type="button"
-                className="hr-addchoice-opt"
-                onClick={() => {
-                  setEmpForm({ kind: 'create', presetDepartmentId: addChoice.id });
-                  setAddChoice(null);
-                }}
-              >
-                <UserPlus size={18} />
-                <span className="hr-addchoice-t">An employee</span>
-                <span className="hr-addchoice-d">A new person in this department.</span>
-              </button>
-              <button
-                type="button"
-                className="hr-addchoice-opt"
-                onClick={() => {
-                  setDeptModal({ kind: 'create', parentName: addChoice.name });
-                  setAddChoice(null);
-                }}
-              >
-                <Building2 size={18} />
-                <span className="hr-addchoice-t">A sub-department</span>
-                <span className="hr-addchoice-d">A new org unit beneath this one.</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <HrAddChoiceDialog
+          department={addChoice}
+          onClose={() => setAddChoice(null)}
+          onAddEmployee={() => {
+            setEmpForm({ kind: 'create', presetDepartmentId: addChoice.id });
+            setAddChoice(null);
+          }}
+          onAddDepartment={() => {
+            setDeptModal({ kind: 'create', parentName: addChoice.name });
+            setAddChoice(null);
+          }}
+        />
       ) : null}
 
       {deptModal ? (
@@ -386,6 +379,75 @@ export function HrOrgStructure() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The "+" chooser. Its own component purely so it can hold hooks — `useModalFocus` and the Escape
+ * listener cannot be called from the conditional branch that renders it, and a `role="dialog"
+ * aria-modal="true"` container that traps nothing tells a screen reader it contains focus while Tab
+ * walks into the React Flow nodes behind the backdrop (each one a tab stop).
+ */
+function HrAddChoiceDialog({
+  department,
+  onClose,
+  onAddEmployee,
+  onAddDepartment,
+}: {
+  department: HrDepartmentDto;
+  onClose: () => void;
+  onAddEmployee: () => void;
+  onAddDepartment: () => void;
+}) {
+  const dialogRef = useModalFocus<HTMLDivElement>();
+
+  // Escape closes, as it does in every other HR dialog. Nothing is in flight here, so unlike the
+  // editors there is no save whose outcome a dismissal could hide.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="hr-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="hr-modal hr-addchoice"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="hr-addchoice-title"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <header className="hr-modal-head">
+          <h2 id="hr-addchoice-title">Add under {department.name}</h2>
+          <button
+            type="button"
+            className="hr-icon-btn"
+            aria-label="Close"
+            // Skipped for initial focus: the point of this dialog is the choice, not the way out.
+            data-focus-skip=""
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        </header>
+        <div className="hr-addchoice-opts">
+          <button type="button" className="hr-addchoice-opt" onClick={onAddEmployee}>
+            <UserPlus size={18} />
+            <span className="hr-addchoice-t">An employee</span>
+            <span className="hr-addchoice-d">A new person in this department.</span>
+          </button>
+          <button type="button" className="hr-addchoice-opt" onClick={onAddDepartment}>
+            <Building2 size={18} />
+            <span className="hr-addchoice-t">A sub-department</span>
+            <span className="hr-addchoice-d">A new org unit beneath this one.</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

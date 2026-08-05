@@ -11,7 +11,7 @@
  * The Write / Preview switch is deliberate rather than a live side-by-side: at this size (a paragraph
  * or two about what a team does) a split pane halves the writing area for no gain.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type SyntheticEvent } from 'react';
 import { Bold, Eye, Italic, Link2, List, ListOrdered, Pencil } from 'lucide-react';
 import { Markdown } from '../../features/chat/Markdown';
 
@@ -39,6 +39,28 @@ export function HrRichText({
 }) {
   const [preview, setPreview] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  const lastSel = useRef<{ start: number; end: number } | null>(null);
+
+  const remember = (ev: SyntheticEvent<HTMLTextAreaElement>): void => {
+    const el = ev.currentTarget;
+    lastSel.current = { start: el.selectionStart, end: el.selectionEnd };
+  };
+
+  /**
+   * Where the toolbar applies — NOT `el.selectionStart` on its own.
+   *
+   * The Preview toggle unmounts the textarea, so returning to Write mounts a fresh node whose
+   * selectionStart is 0 and which is not focused (the toggle button holds focus). Reading it directly
+   * spliced the markers into the very beginning of a description the writer was halfway through. The
+   * remembered selection survives that round trip; with no caret ever placed, the end of the text
+   * (append) is the only harmless default — 0 is the one place a marker must not land.
+   */
+  const caretRange = (el: HTMLTextAreaElement): { start: number; end: number } => {
+    if (document.activeElement === el) {
+      return { start: el.selectionStart, end: el.selectionEnd };
+    }
+    return lastSel.current ?? { start: value.length, end: value.length };
+  };
 
   /**
    * Wrap the selection (or insert at the caret) and restore the selection afterwards — an editor that
@@ -47,7 +69,7 @@ export function HrRichText({
   const wrap = (w: Wrap): void => {
     const el = ref.current;
     if (!el) return;
-    const { selectionStart: start, selectionEnd: end } = el;
+    const { start, end } = caretRange(el);
     const selected = value.slice(start, end);
     const next = `${value.slice(0, start)}${w.before}${selected}${w.after}${value.slice(end)}`;
     onChange(next);
@@ -62,7 +84,7 @@ export function HrRichText({
   const prefixLines = ({ prefix, ordered }: LinePrefix): void => {
     const el = ref.current;
     if (!el) return;
-    const { selectionStart: start, selectionEnd: end } = el;
+    const { start, end } = caretRange(el);
     const from = value.lastIndexOf('\n', start - 1) + 1;
     const toIdx = value.indexOf('\n', end);
     const to = toIdx === -1 ? value.length : toIdx;
@@ -135,7 +157,21 @@ export function HrRichText({
           type="button"
           className="hr-rt-toggle"
           aria-pressed={preview}
-          onClick={() => setPreview((v) => !v)}
+          onClick={() => {
+            const leavingPreview = preview;
+            setPreview(!preview);
+            // Write mode mounts a NEW textarea, so put the caret back where the writer left it instead
+            // of handing them a node whose selection is 0.
+            if (leavingPreview) {
+              requestAnimationFrame(() => {
+                const el = ref.current;
+                const sel = lastSel.current;
+                if (!el || !sel) return;
+                el.focus();
+                el.setSelectionRange(sel.start, sel.end);
+              });
+            }
+          }}
         >
           {preview ? <Pencil size={13} /> : <Eye size={13} />}
           {preview ? 'Write' : 'Preview'}
@@ -160,6 +196,9 @@ export function HrRichText({
           disabled={disabled}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
+          onSelect={remember}
+          onKeyUp={remember}
+          onBlur={remember}
           spellCheck
         />
       )}

@@ -7,6 +7,7 @@ import {
   type AuditStatus,
 } from '../../api/audit';
 import { SearchIcon, XIcon } from '../../components/icons';
+import { useModalFocus } from '../hr/useModalFocus';
 import s from './admin.module.css';
 
 const PAGE = 50;
@@ -55,14 +56,31 @@ export function AuditLog() {
   const [actionPrefix, setActionPrefix] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [reloading, setReloading] = useState(false);
+  /** Short page back = no rows past the cursor. `entries.length < total` alone can never fall false
+   *  once dedup has dropped a shifted row, which would leave a Load more button that does nothing. */
+  const [endReached, setEndReached] = useState(false);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<AuditEntry | null>(null);
   const loadSeq = useRef(0);
+  /**
+   * Pages fetched for the current filter. The next offset MUST come from here, not `entries.length`:
+   * the id-dedup below drops the rows that shifted into this page, so `entries` grows by less than
+   * PAGE and an `entries.length` offset would re-request a window the client already holds — forever,
+   * once PAGE or more rows are written to the feed while the tab is open.
+   */
+  const pages = useRef(0);
 
   const load = useCallback(
     async (offset: number) => {
       const seq = (loadSeq.current += 1);
       setLoading(true);
+      // A filter change refires this at offset 0 while the previous filter's rows are still held:
+      // `entries` only swaps when the response lands, so flag the reload and let the table hide them.
+      if (offset === 0) {
+        setReloading(true);
+        pages.current = 0; // a failed refilter must not leave the previous filter's cursor behind
+      }
       setError('');
       try {
         const res = await listAudit({
@@ -73,12 +91,32 @@ export function AuditLog() {
           offset,
         });
         if (seq !== loadSeq.current) return; // a newer filter change superseded this load
-        setEntries((prev) => (offset === 0 ? res.entries : [...prev, ...res.entries]));
+        // Advance the cursor by a whole page whenever the server had rows at this offset, even when
+        // dedup discards all of them — that discard means the window slid, so the unseen rows are one
+        // page further down. An empty response is the end of the feed: leave the cursor put.
+        if (offset === 0) pages.current = 1;
+        else if (res.entries.length > 0) pages.current += 1;
+        setEndReached(res.entries.length < PAGE);
+        setEntries((prev) => {
+          if (offset === 0) return res.entries;
+          /**
+           * Offset paging over an append-only feed: every row written since page 1 shifts the
+           * `created_at DESC` window down, so the tail of what we already hold comes back as the head
+           * of this page. Dropping the repeats keeps `key={e.id}` unique and the same event out of the
+           * list twice. It cannot recover the newest rows that moved above the offset — that needs
+           * keyset paging on the server.
+           */
+          const seen = new Set(prev.map((e) => e.id));
+          return [...prev, ...res.entries.filter((e) => !seen.has(e.id))];
+        });
         setTotal(res.total);
       } catch (e) {
         if (seq === loadSeq.current) setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (seq === loadSeq.current) setLoading(false);
+        if (seq === loadSeq.current) {
+          setLoading(false);
+          setReloading(false);
+        }
       }
     },
     [actionPrefix, audience, status],
@@ -100,6 +138,10 @@ export function AuditLog() {
         .includes(q),
     );
   }, [entries, query]);
+
+  // Stands in for the rows on a first load AND on a refilter — rows left over from the previous
+  // filter read as matches for the chip that is now highlighted. Load more keeps its rows.
+  const showSkeleton = loading && (entries.length === 0 || reloading);
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
@@ -169,7 +211,7 @@ export function AuditLog() {
         </p>
       )}
 
-      <div className={s.table} aria-busy={loading && entries.length === 0}>
+      <div className={s.table} aria-busy={showSkeleton}>
         <div className={`${s.tHead} ${s.tAudit}`}>
           <span>When</span>
           <span>User</span>
@@ -178,7 +220,7 @@ export function AuditLog() {
           <span>Action</span>
           <span className={s.right}>Status</span>
         </div>
-        {loading && entries.length === 0 && (
+        {showSkeleton && (
           <>
             <span className={s.srOnly} role="status">
               Loading audit events…
@@ -186,7 +228,7 @@ export function AuditLog() {
             <TableSkeleton widths={AUDIT_SKELETON} rowClassName={s.tRow} colsClassName={s.tAudit} />
           </>
         )}
-        {!(loading && entries.length === 0) &&
+        {!showSkeleton &&
           visible.map((e) => (
           <button
             key={e.id}
@@ -221,13 +263,16 @@ export function AuditLog() {
         )}
       </div>
 
-      {entries.length < total && (
+      {/* Hidden while the skeleton stands in: on a refilter the gate below still reads the previous
+          filter's counts, so leaving it mounted put a second "Loading…" spinner under the skeleton
+          table for the same offset-0 request. Its spinner is now only ever a Load-more spinner. */}
+      {!showSkeleton && !endReached && entries.length < total && (
         <button
           type="button"
           className={s.ghostBtn}
           style={{ alignSelf: 'center' }}
           disabled={loading}
-          onClick={() => void load(entries.length)}
+          onClick={() => void load(pages.current * PAGE)}
         >
           {loading ? (
             <>
@@ -246,19 +291,18 @@ export function AuditLog() {
 }
 
 function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  // Initial focus, the Tab cycle and focus restore come from the shared hook: the panel declares
+  // aria-modal="true", so Tab must not walk into the filter chips still focusable behind the backdrop.
+  const panelRef = useModalFocus<HTMLDivElement>();
   const downOnBackdrop = useRef(false);
 
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      previous?.focus();
     };
   }, [onClose]);
 

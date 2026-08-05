@@ -18,6 +18,7 @@ import {
   createHrDepartment,
   updateHrDepartment,
   type HrDepartmentDto,
+  type HrDepartmentPatchInput,
   type HrDepartmentWriteInput,
   type HrEmployeeDto,
 } from '../../api/hr';
@@ -39,6 +40,16 @@ import { radioGroupKeyDown, rovingTabIndex, useModalFocus } from './useModalFocu
 export type DepartmentModalMode =
   | { kind: 'create'; parentName?: string | null }
   | { kind: 'edit'; department: HrDepartmentDto };
+
+/**
+ * Value of the "(not linked)" hint in the Lead picker — deliberately NOT ''.
+ *
+ * Sharing '' with the "—" option meant a controlled select matched the first of the two and the lead's
+ * name was never the one on display, so a department whose card reads "Lead · Jane Doe" looked leadless
+ * in the editor. The sentinel cannot reach `form` (the option is disabled) and, being equal to no
+ * normalized value, it is "unchanged" to the diff below.
+ */
+const UNLINKED_LEAD = '__unlinked';
 
 const EMPTY: HrDepartmentWriteInput = {
   name: '',
@@ -62,7 +73,21 @@ function toForm(d: HrDepartmentDto): HrDepartmentWriteInput {
   };
 }
 
-function normalize(form: HrDepartmentWriteInput): HrDepartmentWriteInput {
+/**
+ * normalize()'s output: every editable key PRESENT (null for empty), which is what lets the diff below
+ * compare two forms pairwise instead of guessing what a missing key meant.
+ */
+type NormalizedForm = {
+  name: string;
+  code: string | null;
+  leadEmployeeId: string | null;
+  parentName: string | null;
+  description: string | null;
+  icon: string | null;
+  iconColor: string | null;
+};
+
+function normalize(form: HrDepartmentWriteInput): NormalizedForm {
   const trimOrNull = (v: string | null | undefined): string | null => {
     const t = (v ?? '').trim();
     return t.length ? t : null;
@@ -80,6 +105,27 @@ function normalize(form: HrDepartmentWriteInput): HrDepartmentWriteInput {
   };
 }
 
+/**
+ * An edit saves a DIFF of the normalized form, never the whole of it.
+ *
+ * `leadEmployeeId` is authoritative on the backend: present-and-null resolves to an empty lead and wipes
+ * leadName / leadEmail / leadZohoId with it. Every department the Zoho sync owns is in exactly that shape
+ * — a leadName with no linked employee — so sending the full form destroyed the lead of a migrated
+ * department on a save that only changed its colour. An untouched picker now sends nothing; an explicit
+ * pick of "—" over a linked lead is a real change and still clears it.
+ */
+function changedFields(before: NormalizedForm, after: NormalizedForm): HrDepartmentPatchInput {
+  const patch: HrDepartmentPatchInput = {};
+  if (after.name !== before.name) patch.name = after.name;
+  if (after.code !== before.code) patch.code = after.code;
+  if (after.leadEmployeeId !== before.leadEmployeeId) patch.leadEmployeeId = after.leadEmployeeId;
+  if (after.parentName !== before.parentName) patch.parentName = after.parentName;
+  if (after.description !== before.description) patch.description = after.description;
+  if (after.icon !== before.icon) patch.icon = after.icon;
+  if (after.iconColor !== before.iconColor) patch.iconColor = after.iconColor;
+  return patch;
+}
+
 const displayName = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`.trim();
 
 export function HrDepartmentModal({
@@ -92,6 +138,8 @@ export function HrDepartmentModal({
   onSaved,
   onDirectoryChanged,
   onDelete,
+  deleting = false,
+  deleteError = '',
 }: {
   mode: DepartmentModalMode;
   admin: boolean;
@@ -105,6 +153,9 @@ export function HrDepartmentModal({
   /** Members add/remove mutated employees — refresh the directory without closing the modal. */
   onDirectoryChanged: () => void;
   onDelete?: (d: HrDepartmentDto) => void;
+  /** Delete runs on the tab (it owns the list), so its progress and failure have to come back in. */
+  deleting?: boolean;
+  deleteError?: string;
 }) {
   const [form, setForm] = useState<HrDepartmentWriteInput>(
     mode.kind === 'edit'
@@ -113,6 +164,15 @@ export function HrDepartmentModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * The admin picked "—" in this session — an INTENT, which is why it cannot be derived from the form.
+   *
+   * A Zoho-migrated row (leadName, no leadEmployeeId) and a just-cleared one look identical from `form`
+   * alone: both have an empty `leadEmployeeId`. Without this flag the picker snapped back to the disabled
+   * "(not linked)" option the moment "—" was chosen, and the null→null diff sent nothing, so a departed
+   * lead's name was uncorrectable from the UI.
+   */
+  const [leadCleared, setLeadCleared] = useState(false);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -171,8 +231,17 @@ export function HrDepartmentModal({
     return '—';
   }, [form.leadEmployeeId, employees, mode]);
 
+  /**
+   * The department has a lead NAME but no linked employee — the shape every Zoho-migrated row is in.
+   *
+   * Keyed on the stored row, not only on the empty form field: a department whose lead IS linked and
+   * whom the admin has just set to "—" must read "—", not the name they just removed. `leadCleared` is
+   * the same rule for the migrated case, where the stored row cannot tell the two apart.
+   */
   const unresolvedLead =
     mode.kind === 'edit' &&
+    !leadCleared &&
+    !mode.department.leadEmployeeId &&
     !(form.leadEmployeeId ?? '').trim() &&
     Boolean(mode.department.leadName);
 
@@ -194,7 +263,15 @@ export function HrDepartmentModal({
     setError('');
     try {
       if (mode.kind === 'create') await createHrDepartment(body);
-      else await updateHrDepartment(mode.department.id, body);
+      else {
+        const patch = changedFields(normalize(toForm(mode.department)), body);
+        // A migrated lead is null→null to the diff, so an explicit "—" over one has to be added back by
+        // hand. `leadEmployeeId` present-and-null is what makes the repo resolve an empty lead and wipe
+        // leadName / leadEmail / leadZohoId with it — no separate leadName key needed, and the untouched
+        // picker still sends nothing.
+        if (leadCleared && !body.leadEmployeeId) patch.leadEmployeeId = null;
+        await updateHrDepartment(mode.department.id, patch);
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -246,19 +323,24 @@ export function HrDepartmentModal({
           </span>
           <div className="hr-deptm-ident">
             <h2 id="hr-deptm-title">{title}</h2>
-            <p>
-              {headcount ? (
-                <>
-                  {headcount.active} active
-                  {headcount.total !== headcount.active ? ` · ${headcount.total} total` : ''}
-                </>
-              ) : (
-                'No one assigned yet'
-              )}
-              {mode.kind === 'edit' && mode.department.parentName
-                ? ` · under ${mode.department.parentName}`
-                : ''}
-            </p>
+            {/* Same three states as the card: an unloaded directory (`undefined`) is not an empty
+                department. A department being created has no headcount at all, so it gets no line —
+                not a line claiming nobody is in it. */}
+            {mode.kind === 'edit' ? (
+              <p>
+                {headcount === undefined ? (
+                  <span title="Headcount still loading">—</span>
+                ) : headcount.total === 0 ? (
+                  'No one assigned yet'
+                ) : (
+                  <>
+                    {headcount.active} active
+                    {headcount.total !== headcount.active ? ` · ${headcount.total} total` : ''}
+                  </>
+                )}
+                {mode.department.parentName ? ` · under ${mode.department.parentName}` : ''}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -319,12 +401,17 @@ export function HrDepartmentModal({
                 <label>
                   Lead
                   <select
-                    value={form.leadEmployeeId ?? ''}
-                    onChange={(e) => set('leadEmployeeId', e.target.value || null)}
+                    value={unresolvedLead ? UNLINKED_LEAD : (form.leadEmployeeId ?? '')}
+                    onChange={(e) => {
+                      set('leadEmployeeId', e.target.value || null);
+                      setLeadCleared(!e.target.value);
+                    }}
                   >
                     <option value="">—</option>
                     {unresolvedLead ? (
-                      <option value="" disabled>
+                      // A disabled option still DISPLAYS when the controlled value matches it, which is
+                      // the whole point: the field has to name the lead it is about to keep or replace.
+                      <option value={UNLINKED_LEAD} disabled>
                         {`${mode.kind === 'edit' ? mode.department.leadName : ''} (not linked)`}
                       </option>
                     ) : null}
@@ -434,29 +521,32 @@ export function HrDepartmentModal({
 
             {membersBlock}
 
-            {error ? (
+            {/* A failed delete keeps this modal open, so its error has to render HERE — on the tab
+                behind the backdrop it is invisible and the click reads as having done nothing. */}
+            {error || deleteError ? (
               <p className="hr-banner-error" role="alert">
-                {error}
+                {error || deleteError}
               </p>
             ) : null}
 
             <div className="hr-modal-actions">
               {saving ? <HrBusy label={mode.kind === 'create' ? 'Creating…' : 'Saving…'} /> : null}
+              {deleting ? <HrBusy label="Deleting…" /> : null}
               {mode.kind === 'edit' && onDelete ? (
                 <button
                   type="button"
                   className="hr-btn hr-btn-danger"
-                  disabled={saving}
+                  disabled={saving || deleting}
                   onClick={() => onDelete(mode.department)}
                 >
                   <Trash2 size={14} />
                   Delete
                 </button>
               ) : null}
-              <button type="button" className="hr-btn" onClick={onClose} disabled={saving}>
+              <button type="button" className="hr-btn" onClick={onClose} disabled={saving || deleting}>
                 Cancel
               </button>
-              <button type="submit" className="hr-btn hr-btn-primary" disabled={saving}>
+              <button type="submit" className="hr-btn hr-btn-primary" disabled={saving || deleting}>
                 {mode.kind === 'create' ? 'Create' : 'Save'}
               </button>
             </div>

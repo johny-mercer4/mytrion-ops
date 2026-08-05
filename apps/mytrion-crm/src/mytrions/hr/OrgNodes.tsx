@@ -6,14 +6,16 @@
  * re-parents, exactly like dropping the node itself. Same node contract as the Scope blueprint
  * (`admin/scope/Blueprint.tsx`).
  *
- * A node has three affordances, and they must not collide:
+ * A node has four affordances, and they must not collide:
  *   the body      → opens the record (single click — handled on the canvas via onNodeClick)
+ *   the "open"    → the same, for the keyboard: React Flow owns the node's focusable wrapper, so a
+ *                   keydown on a focused node never reaches this card and Enter there only selects it
  *   the chevron   → expands / collapses this subtree
  *   the "+"       → adds a child under this node
- * The last two `stopPropagation`, or expanding a department would also open its modal.
+ * The buttons all `stopPropagation`, or expanding a department would also open its modal.
  */
 import type { CSSProperties } from 'react';
-import { ChevronDown, ChevronRight, Plus, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Plus, Users } from 'lucide-react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { HrAvatar } from './HrAvatar';
 import { departmentIcon, departmentTone } from './departmentAppearance';
@@ -48,6 +50,17 @@ export function setOrgNodeCallbacks(next: OrgNodeCallbacks): void {
   callbacks = next;
 }
 
+/**
+ * Enter must stay with the button it was pressed on.
+ *
+ * The keydown bubbles through the card (which used to `preventDefault` it, cancelling the browser's own
+ * Enter activation — so Enter on the chevron opened the record INSTEAD of expanding) and on to React
+ * Flow's node wrapper, which would additionally select the node.
+ */
+function keepEnter(ev: React.KeyboardEvent): void {
+  if (ev.key === 'Enter') ev.stopPropagation();
+}
+
 function Chevron({ id, expanded, count }: { id: string; expanded: boolean; count: number }) {
   if (count === 0) return null;
   return (
@@ -56,6 +69,7 @@ function Chevron({ id, expanded, count }: { id: string; expanded: boolean; count
       className="hr-onode-chev"
       aria-expanded={expanded}
       aria-label={`${expanded ? 'Collapse' : 'Expand'} ${count} ${count === 1 ? 'person' : 'people'}`}
+      onKeyDown={keepEnter}
       onClick={(ev) => {
         ev.stopPropagation();
         callbacks.onToggle(id);
@@ -75,6 +89,7 @@ function AddButton({ id, kind }: { id: string; kind: 'department' | 'employee' }
       className="hr-onode-add"
       aria-label={kind === 'department' ? 'Add under this department' : 'Add a direct report'}
       title={kind === 'department' ? 'Add under this department' : 'Add a direct report'}
+      onKeyDown={keepEnter}
       onClick={(ev) => {
         ev.stopPropagation();
         callbacks.onAddChild(id, kind);
@@ -85,10 +100,41 @@ function AddButton({ id, kind }: { id: string; kind: 'department' | 'employee' }
   );
 }
 
+/**
+ * The keyboard's door into the record.
+ *
+ * @xyflow/react puts the tabIndex and its own onKeyDown on the `.react-flow__node` wrapper, so the card
+ * below is never the focused element: Enter on a focused node only selects it, and the "Enter to open"
+ * this label used to promise did not exist. A real button is the only affordance a keyboard user can
+ * reach. It borrows the "+" chrome (same square, revealed on hover or focus) rather than inventing a
+ * class with no CSS behind it.
+ */
+function OpenButton({ id, kind }: { id: string; kind: 'department' | 'employee' }) {
+  const label = kind === 'department' ? 'Open this department' : 'Open this record';
+  return (
+    <button
+      type="button"
+      className="hr-onode-add"
+      aria-label={label}
+      title={label}
+      onKeyDown={keepEnter}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        callbacks.onOpen(id, kind);
+      }}
+    >
+      <ExternalLink size={12} />
+    </button>
+  );
+}
+
 /** Enter opens the record (canvas click is the mouse path). Space still pans. */
 function openKeyHandler(id: string, kind: 'department' | 'employee') {
   return (ev: React.KeyboardEvent): void => {
     if (ev.key !== 'Enter') return;
+    // Only when the card ITSELF is focused. Everything reaching this handler by bubbling belongs to a
+    // button inside the node, and swallowing that keydown cancelled the button's own activation.
+    if (ev.target !== ev.currentTarget) return;
     ev.preventDefault();
     callbacks.onOpen(id, kind);
   };
@@ -102,7 +148,7 @@ export function OrgDepartmentNode({ id, data, selected }: NodeProps<OrgDeptNode>
       style={{ ['--dc' as string]: departmentTone(data.tone) } as CSSProperties}
       onKeyDown={openKeyHandler(id, 'department')}
       role="group"
-      aria-label={`${data.label} department, ${data.active} active. Enter to open.`}
+      aria-label={`${data.label} department, ${data.active} active`}
       /* The description is otherwise carried to the canvas and never shown. */
       title={data.description ? `${data.label} — ${data.description}` : data.label}
     >
@@ -119,6 +165,7 @@ export function OrgDepartmentNode({ id, data, selected }: NodeProps<OrgDeptNode>
             {data.leadName ? <span>{data.leadName}</span> : null}
           </span>
         </div>
+        <OpenButton id={id} kind="department" />
         <AddButton id={id} kind="department" />
       </div>
 
@@ -143,7 +190,7 @@ export function OrgEmployeeNode({ id, data, selected }: NodeProps<OrgEmpNode>) {
       className={`hr-onode is-emp${selected ? ' is-selected' : ''}${terminated ? ' is-terminated' : ''}`}
       onKeyDown={openKeyHandler(id, 'employee')}
       role="group"
-      aria-label={`${data.label}${data.designation ? `, ${data.designation}` : ''}. Enter to open.`}
+      aria-label={`${data.label}${data.designation ? `, ${data.designation}` : ''}`}
       title={data.label}
     >
       <Handle type="target" position={Position.Top} className="hr-ohandle" />
@@ -154,6 +201,7 @@ export function OrgEmployeeNode({ id, data, selected }: NodeProps<OrgEmpNode>) {
           <span className="hr-onode-label">{data.label}</span>
           <span className="hr-onode-sub">{data.designation ?? '—'}</span>
         </div>
+        <OpenButton id={id} kind="employee" />
         <AddButton id={id} kind="employee" />
       </div>
 

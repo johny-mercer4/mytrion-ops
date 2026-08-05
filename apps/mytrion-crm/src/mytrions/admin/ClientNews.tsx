@@ -21,21 +21,64 @@ const LANGS: Lang[] = ['en', 'ru', 'uz', 'es'];
 type PerLang = Record<Lang, string>;
 const emptyPerLang = (): PerLang => ({ en: '', ru: '', uz: '', es: '' });
 
+/* The server caps every locale of title AND body at 4000 chars (clientNews.routes localizedSchema),
+   and the body value is HTML — the markup counts. A zod 400 reaches the toast as the unactionable
+   'Request validation failed' (the transport drops zod's `details`), so over-length has to be caught
+   here, naming both the language and the field. */
+const MAX_LEN = 4000;
+/** Counter stays hidden until a post is close enough to the cap for the number to mean something. */
+const COUNT_FROM = 3500;
+
 /** contentEditable + execCommand toolbar. Controlled per language from OUTSIDE via key remount. */
 function RichEditor({ initialHtml, onChange }: { initialHtml: string; onChange: (html: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const exec = (cmd: string, value?: string) => {
+  /* The editable node is genuinely uncontrolled: `onInput` pushes innerHTML up into `bodies`, which
+     comes straight back down as `initialHtml`. Handing React a live string would make react-dom
+     re-run setInnerHTML after every keystroke (its diff is `lastHtml !== nextHtml`), destroying the
+     text node the caret sits in — typing came out reversed. Seeding from a ref keeps `__html` byte
+     identical across re-renders so that diff never fires; `key={lang}` remounts to re-seed. */
+  const seed = useRef(initialHtml);
+  const exec = (cmd: string, value?: string, range?: Range | null) => {
     ref.current?.focus();
+    /* window.prompt can drop the document selection, so the link/image commands restore the Range
+       they captured before asking — otherwise createLink applies to nothing and looks broken. */
+    if (range) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
     document.execCommand(cmd, false, value);
     onChange(ref.current?.innerHTML ?? '');
   };
+  const captureRange = (): Range | null => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    return ref.current?.contains(range.commonAncestorContainer) ? range : null;
+  };
+  /** Operators type bare hosts, so a scheme-less input is assumed https instead of discarded. */
+  const withScheme = (url: string) => (/^[a-z][a-z\d+.-]*:/i.test(url) ? url : `https://${url}`);
   const addLink = () => {
-    const url = window.prompt('Link URL (https://…)');
-    if (url && /^https?:\/\//i.test(url)) exec('createLink', url);
+    const range = captureRange();
+    const raw = window.prompt('Link URL (https://…)')?.trim();
+    if (!raw) return;
+    const url = withScheme(raw);
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      adminToast.error('Link needs a full URL', 'Start with https:// (or http://).');
+      return;
+    }
+    exec('createLink', url, range);
   };
   const addImage = () => {
-    const url = window.prompt('Image URL (https://… — hosted image, e.g. a CDN link)');
-    if (url && /^https:\/\//i.test(url)) exec('insertImage', url);
+    const range = captureRange();
+    const raw = window.prompt('Image URL (https://… — hosted image, e.g. a CDN link)')?.trim();
+    if (!raw) return;
+    const url = withScheme(raw);
+    if (!/^https:\/\/\S+$/i.test(url)) {
+      adminToast.error('Image must be an https URL', 'Clients open the mini-app over https, so an http:// image never renders.');
+      return;
+    }
+    exec('insertImage', url, range);
   };
   return (
     <div>
@@ -61,7 +104,7 @@ function RichEditor({ initialHtml, onChange }: { initialHtml: string; onChange: 
         suppressContentEditableWarning
         data-placeholder="Write the announcement…"
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: initialHtml }}
+        dangerouslySetInnerHTML={{ __html: seed.current }}
         onInput={() => onChange(ref.current?.innerHTML ?? '')}
         onBlur={() => onChange(ref.current?.innerHTML ?? '')}
       />
@@ -73,6 +116,56 @@ const emptyToNull = (v: string): string | undefined => {
   const t = v.replace(/<br\s*\/?>(\s|&nbsp;)*/gi, '').replace(/<[^>]*>/g, '').trim();
   return t ? v : undefined;
 };
+
+/** Only the locales `loc()` actually posts can trip the server cap, so blank tabs stay silent. */
+const tooLong = (v: PerLang, field: 'title' | 'body'): string[] =>
+  LANGS.filter((l) => (l === 'en' || emptyToNull(v[l])) && v[l].length > MAX_LEN).map(
+    (l) => `${l.toUpperCase()} ${field} is ${v[l].length} / ${MAX_LEN} characters`,
+  );
+
+/**
+ * Feed body: clipped to `.postBody`'s max-height, but only wearing the fade mask and the expand
+ * control when it really overflowed — the mask is relative to the element box, so on a two-line
+ * post it would dim text that is fully visible.
+ */
+function PostBody({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    /* Skip while expanded: scrollHeight then equals clientHeight, which would read as "not
+       clipped" and take the collapse control away mid-read. */
+    if (!el || open) return;
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 2);
+    measure();
+    /* Images in the sanitized HTML load after paint and change scrollHeight, but the clamped box
+       never resizes — so hook their load events rather than a ResizeObserver. */
+    const imgs = Array.from(el.querySelectorAll('img'));
+    imgs.forEach((img) => img.addEventListener('load', measure));
+    window.addEventListener('resize', measure);
+    return () => {
+      imgs.forEach((img) => img.removeEventListener('load', measure));
+      window.removeEventListener('resize', measure);
+    };
+  }, [html, open]);
+  return (
+    <>
+      {/* Server-sanitized subset (b/i/u/p/br/ul/ol/li/h3/a) — safe to render. */}
+      <div
+        ref={ref}
+        className={[styles.postBody, clipped && !open ? styles.postBodyClipped : '', open ? styles.postBodyOpen : ''].join(' ')}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {clipped && (
+        <button type="button" className={styles.postExpand} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </>
+  );
+}
 
 export function ClientNews() {
   const [posts, setPosts] = useState<ClientNewsPost[] | null>(null);
@@ -115,6 +208,11 @@ export function ClientNews() {
     }
     if (scope === 'carriers' && carriers.length === 0) {
       adminToast.error('Pick at least one carrier', 'Or switch the audience to “All clients”.');
+      return;
+    }
+    const over = [...tooLong(titles, 'title'), ...tooLong(bodies, 'body')];
+    if (over.length > 0) {
+      adminToast.error('Too long to publish', `${over.join('; ')} — the body count includes its HTML markup.`);
       return;
     }
     setBusy(true);
@@ -168,7 +266,9 @@ export function ClientNews() {
         </div>
       </div>
 
-      <div className={styles.layout}>
+      {/* Two tracks only while the composer is mounted — with the feed as the grid's only child the
+          second track was a permanently blank half-panel that read as content failing to load. */}
+      <div className={[styles.layout, composerOpen ? styles.layoutSplit : ''].join(' ')}>
         {composerOpen && (
           <div className={styles.postCard}>
             <div className={styles.formGrid}>
@@ -190,11 +290,17 @@ export function ClientNews() {
                   className={admin.input}
                   style={{ width: '100%', marginBottom: 8 }}
                   placeholder={`Title (${lang.toUpperCase()}${lang === 'en' ? ', required' : ''})`}
+                  maxLength={MAX_LEN}
                   value={titles[lang]}
                   onChange={(e) => setTitles((cur) => ({ ...cur, [lang]: e.target.value }))}
                 />
                 {/* key remounts the editor per language so contentEditable swaps content cleanly */}
                 <RichEditor key={lang} initialHtml={bodies[lang]} onChange={(html) => setBodies((cur) => ({ ...cur, [lang]: html }))} />
+                {bodies[lang].length > COUNT_FROM && (
+                  <div className={[styles.counter, bodies[lang].length > MAX_LEN ? styles.counterOver : ''].join(' ')}>
+                    {bodies[lang].length} / {MAX_LEN} characters, HTML markup included
+                  </div>
+                )}
               </div>
 
               <div>
@@ -281,9 +387,7 @@ export function ClientNews() {
                 <span className={[admin.pill, admin.pillNeutral].join(' ')}>{p.audienceScope === 'all' ? 'All clients' : `${p.carrierIds.length} carrier(s)`}</span>
                 <span className={[admin.pill, admin.pillNeutral].join(' ')}>{p.roles.join(' + ')}</span>
               </div>
-              {/* Server-sanitized subset (b/i/u/p/br/ul/ol/li/h3/a) — safe to render. */}
-              {/* eslint-disable-next-line react/no-danger */}
-              <div className={styles.postBody} dangerouslySetInnerHTML={{ __html: p.body.en }} />
+              <PostBody html={p.body.en} />
               <div className={styles.postMeta}>
                 {new Date(p.publishAt).toLocaleString()} · by {p.createdBy}
                 {LANGS.filter((l) => l !== 'en' && p.title[l]).length > 0 && ` · +${LANGS.filter((l) => l !== 'en' && p.title[l]).map((l) => l.toUpperCase()).join('/')}`}

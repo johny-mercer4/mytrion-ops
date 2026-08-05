@@ -77,10 +77,21 @@ function toForm(e: HrEmployeeDto): HrEmployeeWriteInput {
  * real rows have a manager NAME and no id. Those cannot be represented in a picker, so the field seeds
  * to "—" — and sending that back meant editing someone's mobile number silently erased their manager,
  * because the backend treats an explicit null as "no manager" and clears the name with it.
+ *
+ * `departmentId` is diffed for exactly the same reason: the sync leaves the id null whenever the Zoho
+ * department name has no `hr_departments` match, so those rows carry a department NAME the picker cannot
+ * represent either.
+ *
+ * `managerName` is the picked manager's display name and is only ever non-empty on create: the repo's
+ * PATCH derives `reporting_to` from the id, but its insert stores the column verbatim, so a create that
+ * sent the id alone linked the org-canvas edge correctly and still left the detail modal's "Reports to"
+ * reading "—" until the next sync.
  */
 function normalizeWrite(
   form: HrEmployeeWriteInput,
   initialManagerId: string,
+  initialDepartmentId: string,
+  managerName: string,
 ): HrEmployeeWriteInput {
   const trimOrNull = (v: string | null | undefined): string | null => {
     const t = (v ?? '').trim();
@@ -91,8 +102,11 @@ function normalizeWrite(
     lastName: form.lastName.trim(),
     employeeId: trimOrNull(form.employeeId),
     email: trimOrNull(form.email),
-    departmentId: trimOrNull(form.departmentId),
-    department: null,
+    // Sent only when the picker moved — and never as `department: null` alongside it, which made the
+    // backend re-resolve the link and blank the denormalized name of every row that has one without an id.
+    ...((form.departmentId ?? '') !== initialDepartmentId
+      ? { departmentId: trimOrNull(form.departmentId) }
+      : {}),
     designation: trimOrNull(form.designation),
     telegramUsername: trimOrNull(form.telegramUsername),
     location: trimOrNull(form.location),
@@ -101,9 +115,12 @@ function normalizeWrite(
     dateOfJoining: trimOrNull(form.dateOfJoining),
     mobile: trimOrNull(form.mobile),
     faceId: trimOrNull(form.faceId),
-    // Only the id is sent (the backend resolves `reportingTo` from it), and only if it changed.
+    // Sent only if the picker moved — on edit the id alone, since the backend re-derives the name from it.
     ...((form.reportingToEmployeeId ?? '') !== initialManagerId
-      ? { reportingToEmployeeId: trimOrNull(form.reportingToEmployeeId) }
+      ? {
+          reportingToEmployeeId: trimOrNull(form.reportingToEmployeeId),
+          ...(managerName ? { reportingTo: managerName } : {}),
+        }
       : {}),
   };
 }
@@ -135,15 +152,36 @@ export function HrEmployeeForm({
   );
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  /** The manager id the form opened with — the baseline the patch diffs against. */
-  const initialManagerId = useRef(
-    mode.kind === 'edit' ? (mode.employee.reportingToEmployeeId ?? '') : (mode.presetManagerId ?? ''),
-  ).current;
   /**
-   * A manager NAME with no resolved id. Shown as a disabled option so the record does not appear to have
-   * no manager at all — otherwise the only honest reading of the form is wrong.
+   * A designation that is not in the picklist, held on its own so the two controls never derive their
+   * value from each other. Reading the free-text box out of `form.designation` blanked it mid-typing the
+   * moment the text matched an existing title, so "Dispatcher Team Lead" saved as "Team Lead".
    */
+  const [customTitle, setCustomTitle] = useState(
+    mode.kind === 'edit' &&
+      mode.employee.designation &&
+      !designations.includes(mode.employee.designation)
+      ? mode.employee.designation
+      : '',
+  );
+  /**
+   * The manager id the form opened with — the baseline the patch diffs against. On create it is ''
+   * rather than `presetManagerId`: there is no stored manager name to protect yet, so the diff has
+   * nothing to guard, and seeding it to the preset made it equal to the form value — which omitted
+   * `reportingToEmployeeId` from the POST and left the org canvas's "+ add report" person unmanaged.
+   */
+  const initialManagerId = useRef(
+    mode.kind === 'edit' ? (mode.employee.reportingToEmployeeId ?? '') : '',
+  ).current;
+  /** The same baseline, for the same reason, for the department picker. */
+  const initialDepartmentId = useRef(
+    mode.kind === 'edit' ? (mode.employee.departmentId ?? '') : '',
+  ).current;
   const dialogRef = useModalFocus<HTMLDivElement>();
+  /**
+   * A manager NAME with no resolved id. Surfaced as helper text under the picker so the record does not
+   * appear to have no manager at all — otherwise the only honest reading of the form is wrong.
+   */
   const unresolvedManager =
     mode.kind === 'edit' && !mode.employee.reportingToEmployeeId
       ? (mode.employee.reportingTo ?? '').trim()
@@ -175,7 +213,17 @@ export function HrEmployeeForm({
   const onSave = async (ev: FormEvent): Promise<void> => {
     ev.preventDefault();
     if (saving) return;
-    const body = normalizeWrite(form, initialManagerId);
+    // Only create needs the name carried alongside the id; see normalizeWrite.
+    const picked =
+      mode.kind === 'create' && form.reportingToEmployeeId
+        ? managerOptions.find((m) => m.id === form.reportingToEmployeeId)
+        : undefined;
+    const body = normalizeWrite(
+      form,
+      initialManagerId,
+      initialDepartmentId,
+      picked ? displayName(picked) : '',
+    );
     if (!body.firstName || !body.lastName) {
       setFormError('First and last name are required.');
       return;
@@ -287,8 +335,11 @@ export function HrEmployeeForm({
                   the "Other designation" field below.
                 */}
                 <select
-                  value={designations.includes(form.designation ?? '') ? (form.designation ?? '') : ''}
-                  onChange={(e) => set('designation', e.target.value)}
+                  value={customTitle ? '' : (form.designation ?? '')}
+                  onChange={(e) => {
+                    set('designation', e.target.value);
+                    setCustomTitle('');
+                  }}
                 >
                   <option value="">—</option>
                   {designations.map((d) => (
@@ -302,8 +353,11 @@ export function HrEmployeeForm({
                 Other designation
                 <input
                   placeholder="Only if it is not in the list"
-                  value={designations.includes(form.designation ?? '') ? '' : (form.designation ?? '')}
-                  onChange={(e) => set('designation', e.target.value)}
+                  value={customTitle}
+                  onChange={(e) => {
+                    setCustomTitle(e.target.value);
+                    set('designation', e.target.value);
+                  }}
                 />
               </label>
               <label>
@@ -376,11 +430,6 @@ export function HrEmployeeForm({
                   onChange={(e) => set('reportingToEmployeeId', e.target.value || null)}
                 >
                   <option value="">—</option>
-                  {unresolvedManager ? (
-                    <option value="" disabled>
-                      {`${unresolvedManager} (not linked)`}
-                    </option>
-                  ) : null}
                   {managerOptions.map((m) => (
                     <option key={m.id} value={m.id}>
                       {`${m.firstName} ${m.lastName}`.trim()}
@@ -388,6 +437,23 @@ export function HrEmployeeForm({
                     </option>
                   ))}
                 </select>
+                {/*
+                  Helper text, not an <option>. An unlinked manager used to be a disabled option with
+                  value="" — the same value as the "—" placeholder above it, so a controlled select
+                  always selected the FIRST match and the closed field read "—", i.e. exactly the "has
+                  no manager" misreading the option existed to prevent.
+
+                  The typography reset is inline because the field label's uppercase/letter-spaced style
+                  inherits into its children and hr.css has no rule for a hint inside a form label.
+                */}
+                {unresolvedManager ? (
+                  <small
+                    className="hr-note"
+                    style={{ textTransform: 'none', letterSpacing: 'normal', fontWeight: 500 }}
+                  >
+                    {`Currently reports to ${unresolvedManager} — name only, not linked.`}
+                  </small>
+                ) : null}
               </label>
             </div>
           </fieldset>

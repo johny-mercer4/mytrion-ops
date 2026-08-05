@@ -65,7 +65,9 @@ export function PersonPicker({
     else setTerm('');
   }, [open]);
 
-  const shown = useMemo(() => {
+  // `matched` is the pre-cap count: the 60-row cap keeps the panel cheap, but an undisclosed cap reads as
+  // "that person has no Zoho user id" and sends the admin off to fix HR data that is already correct.
+  const { shown, matched } = useMemo(() => {
     const t = term.trim().toLowerCase();
     const scored = candidates.filter((c) => {
       if (!t) return true;
@@ -77,14 +79,14 @@ export function PersonPicker({
     });
     // Whoever HR marks as lead of the department being configured floats up. Ordering only — the admin
     // still has to click, so this can never route on its own.
-    if (!hintDepartment) return scored.slice(0, 60);
-    return [...scored]
-      .sort((a, b) => {
-        const al = a.leadOfDepartments.length > 0 ? 0 : 1;
-        const bl = b.leadOfDepartments.length > 0 ? 0 : 1;
-        return al - bl;
-      })
-      .slice(0, 60);
+    const ordered = hintDepartment
+      ? [...scored].sort((a, b) => {
+          const al = a.leadOfDepartments.length > 0 ? 0 : 1;
+          const bl = b.leadOfDepartments.length > 0 ? 0 : 1;
+          return al - bl;
+        })
+      : scored;
+    return { shown: ordered.slice(0, 60), matched: ordered.length };
   }, [candidates, term, hintDepartment]);
 
   const current = candidates.find((c) => c.zohoUserId === value);
@@ -182,6 +184,11 @@ export function PersonPicker({
                   )}
                 </button>
               ))
+            )}
+            {matched > shown.length && (
+              <div className={e.pickerNone}>
+                Showing {shown.length} of {matched} — type to narrow.
+              </div>
             )}
           </div>
         </div>

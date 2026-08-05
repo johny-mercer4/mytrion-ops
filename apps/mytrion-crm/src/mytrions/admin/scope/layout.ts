@@ -29,18 +29,34 @@ function at<T>(arr: readonly T[], i: number): T {
   return v;
 }
 
+/** Stage-card box height (18+15 padding, 34 head, 26 title, 43 desc, 27 footer). The whole
+ *  tether band is derived from it — a hard-coded margin tuned for one viewport is what let
+ *  the cards collapse onto the road, covering the orbs and their own stems. */
+const CARD_H = 200;
+
+/** Smallest world height the band fits in. `0.435H >= Doff + CARD_H/2` holds from here up,
+ *  so the caller floors the geometry height and centres a taller-than-viewport world
+ *  vertically rather than squeezing the cards into the road. */
+export const ROAD_MIN_H = 640;
+
 export function computeRoadLayout(H = 760): RoadLayout {
   const baseX = 540;
   const gap = 660;
   const worldW = baseX + gap * 4 + 560;
-  const Doff = Math.max(70, Math.min(180, 0.5 * H - 182));
+  const half = CARD_H / 2;
+  // A card has to clear its own orb by at least its own half-height, whatever H is.
+  const Doff = Math.max(half + 16, Math.min(180, 0.5 * H - 182));
   const waves = [-0.045, 0.055, -0.065, 0.05, -0.04];
   const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
   const points: RoadPoint[] = waves.map((w, i) => ({ x: baseX + gap * i, y: Math.round(0.5 * H + w * H) }));
+  const lo = half + 12;
+  const hi = H - half - 12;
   const cards: RoadCard[] = points.map((p, i) => {
     const above = i % 2 === 0;
     const raw = above ? p.y - Doff : p.y + Doff;
-    return { x: p.x, y: clamp(raw, 182, H - 172), above };
+    // Below ROAD_MIN_H the band would invert (lo > hi) and Math.max/min would silently
+    // stack every card on one edge; collapse to the midpoint instead of flipping.
+    return { x: p.x, y: lo > hi ? (lo + hi) / 2 : clamp(raw, lo, hi), above };
   });
 
   // Catmull-Rom → cubic bezier through points
@@ -98,7 +114,12 @@ export interface HubLayout {
 export function computeHubLayout(worldW: number, worldH: number): HubLayout {
   const cx = worldW / 2, cy = worldH / 2;
   const dx = Math.min(380, worldW * 0.23);
-  const dy = Math.max(150, Math.min(215, worldH * 0.27));
+  const CLIENT_R = 84, HW = 110, HH = 52;
+  /* Collection hangs 34px below the bottom row, so the spoke offset has to leave room for
+     that card's full half-height — the scene never scrolls vertically, so a spoke longer
+     than the world drops the card out of view entirely. */
+  const dyRoom = Math.max(0, worldH / 2 - HH - 34 - 12);
+  const dy = Math.min(dyRoom, Math.max(150, Math.min(215, worldH * 0.27)));
   const posMap: Record<string, RoadPoint> = {
     verification: { x: cx - dx, y: cy - dy },
     retention: { x: cx + dx, y: cy - dy },
@@ -110,7 +131,6 @@ export function computeHubLayout(worldW: number, worldH: number): HubLayout {
   /* Route the links like the Intake road: thick, glowing, gradient, flowing — and
      trimmed to each node's EDGE so they never cross the Client orb or the cards. */
   const C = { x: cx, y: cy };
-  const CLIENT_R = 84, HW = 110, HH = 52;
   const colorOf = (id: string) => OCT_AFTER_CYCLES.find((x) => x.id === id)?.color;
   const circleEdge = (ctr: RoadPoint, toward: RoadPoint, r: number): RoadPoint => {
     const ddx = toward.x - ctr.x, ddy = toward.y - ctr.y, m = Math.hypot(ddx, ddy) || 1;
