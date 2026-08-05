@@ -70,7 +70,6 @@ export async function contextFromClaims(
   // buildCallerContext.
   if (claims.worker) {
     const w = claims.worker;
-    const role = workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole });
     const access = await mytrionAccessService.resolveWorkerAccess({
       tenantId: claims.tenantId,
       zohoUserId: w.zohoUserId,
@@ -78,6 +77,24 @@ export async function contextFromClaims(
       zohoRole: w.zohoRole ?? null,
       userName: w.userName ?? null,
     });
+    /**
+     * Admin → User Management is the control plane for the role too, not just the Mytrion list.
+     *
+     * These two used to come from ONE hardcoded predicate, which is why workerRoleFor's header still
+     * claims they "can never diverge". They diverged the moment allDepartmentAccess became DB-resolved
+     * and the role did not: granting a worker all-department access in User Management produced a
+     * session with `allDepartmentAccess: true` but `role: 'worker'` and read-only scopes, so every gate
+     * written as `ctx.role !== 'admin'` refused them. The bypass was grantable only to whoever already
+     * matched a hardcoded marker.
+     *
+     * The marker stays as a FLOOR, never a ceiling: an ADMIN_USERS / admin-profile break-glass account
+     * keeps working when the DB says nothing (or cannot be read), while an explicit DB grant can now
+     * confer admin on its own. Only an admin can write those override rows, so this adds no new path
+     * to escalate — and a downgraded all-access grant (one carrying denies, which resolves
+     * allDepartmentAccess to false) correctly stays a worker.
+     */
+    const markerAdmin = workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole }) === 'admin';
+    const role: Role = access.allDepartmentAccess || markerAdmin ? 'admin' : 'worker';
     const ctx: TenantContext = {
       tenantId: claims.tenantId,
       userId: claims.userId,

@@ -288,8 +288,13 @@ const EnvSchema = z.object({
   // is correct in prod: the portal is served same-origin at root (plugins/widgetStatic.ts). Set it to
   // the Vite origin (http://localhost:5173) only when running the SPA on a separate dev port.
   PORTAL_BASE_URL: z.string().default('/'),
-  // Scope for reading the signed-in worker's CRM user (id, name, email, profile, role → RBAC).
-  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ'),
+  // Scopes for the sign-in token. `ZohoCRM.users.READ` reads the worker's own CRM user when their
+  // profile is permitted to; `AaaServer.profile.READ` is the fallback that made ordinary profiles work
+  // at all — `GET /users` is gated by the caller's CRM profile permission on the Users module, which
+  // Administrators hold and Sales-type profiles usually do not, so login 403'd for everyone but admins.
+  // The fallback identifies the human at the accounts level and reads their profile/role with the
+  // service token instead. Adding a scope means existing workers re-consent once on next sign-in.
+  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ,AaaServer.profile.READ'),
 
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
   // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
