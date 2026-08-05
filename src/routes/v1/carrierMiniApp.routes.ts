@@ -68,7 +68,8 @@ import {
   assertCarrierInviteEligible,
   assertCarrierOwned,
 } from '../../modules/tools/serverCrmScope.js';
-import { requireContext } from './helpers.js';
+import { buildCallerContext } from './callerIdentity.js';
+import { requireContext, requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function sameRegistrationSubject(
   existing: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'applicationId' | 'cardId'>,
@@ -224,26 +225,35 @@ const createInviteSchema = z.object({
   company_name: z.string().max(300).optional(),
   card_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
   driver_name: z.string().max(200).optional(),
-  // Accepted so createCarrierInvite's existing agent-attribution support (see inviteService.ts)
-  // isn't silently dropped by zod for any caller that sends it — the admin panel's CarrierUserForm
-  // has no picker for this today, but the Zoho sales self-service flow inviteService.ts's docstring
-  // anticipates does.
+  // A plain admin may choose attribution. Worker/Admin-View-as values are parsed but ignored in
+  // favor of the verified effective context + freshly authorized DWH roster row.
   agent_name: z.string().max(200).optional(),
   agent_zoho_user_id: z.string().max(120).optional(),
-  /** Admin-picked invite lifetime — falls through to createCarrierInvite's own 7-day default when unset. */
+  /** Plain-admin-picked lifetime; ignored for workers/View-as so they keep the service default. */
   ttl_hours: z.coerce.number().int().positive().max(24 * 30).optional(),
 });
 
 export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
+  /** Apply verified View-as before the Sales gate so admin impersonation runs as the target. */
+  const requireSalesCarrierAccess = async (
+    request: Parameters<typeof requireContext>[0],
+    write: boolean,
+  ): Promise<TenantContext> => {
+    request.ctx = await buildCallerContext(request, {});
+    return write
+      ? requireMytrionWrite(request, 'sales', 'Carrier registration links')
+      : requireDepartment(request, 'sales', 'Carrier registration management');
+  };
+
   /**
    * Generate a carrier registration link (owner or driver). Used by Admin Client Management and
-   * Sales Data Center → client Manage. Any authenticated session may create an invite (audit logs
-   * the actor); the mini-app still handles redeem/sign-in.
+   * Sales Data Center → client Manage. Requires full Sales access; the mini-app still handles
+   * redeem/sign-in and every successful write is attributed to the effective actor.
    */
   app.post('/carrier-invitations', guard, async (request, reply) => {
-    const ctx = requireContext(request);
+    const ctx = await requireSalesCarrierAccess(request, true);
     const body = createInviteSchema.parse(request.body);
     // A Sales Data Center worker may mint links only for their own ACTIVE, non-debtor clients.
     // The gate reads the same fresh DWH roster row that determines the Clients-tab status.
@@ -255,24 +265,36 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         expose: true,
       });
     }
-    if (ctx.role !== 'admin' && body.carrier_id) {
-      await assertCarrierInviteEligible(ctx, body.carrier_id);
-    }
+    const eligibleClient =
+      ctx.role !== 'admin' && body.carrier_id
+        ? await assertCarrierInviteEligible(ctx, body.carrier_id)
+        : undefined;
     const fallbackAgent = inviteAgentFromContext(ctx);
+    // Only a real, non-impersonating admin may override attribution/lifetime. For workers and
+    // Admin View-as, identity comes from the verified effective context and company/agent name
+    // comes from the same fresh DWH row that authorized the carrier.
+    const mayOverrideInviteMetadata = ctx.role === 'admin' && !ctx.impersonatorUserId;
+    const agentName = mayOverrideInviteMetadata
+      ? body.agent_name?.trim() || fallbackAgent.agentName
+      : eligibleClient?.agentName || fallbackAgent.agentName;
+    const agentZohoUserId = mayOverrideInviteMetadata
+      ? body.agent_zoho_user_id?.trim() || fallbackAgent.agentZohoUserId
+      : fallbackAgent.agentZohoUserId;
+    const companyName = mayOverrideInviteMetadata
+      ? body.company_name?.trim()
+      : eligibleClient?.companyName || body.company_name?.trim();
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
       ...(body.carrier_id ? { carrierId: body.carrier_id } : {}),
       ...(body.application_id ? { applicationId: body.application_id } : {}),
-      ...(body.company_name ? { companyName: body.company_name } : {}),
+      ...(companyName ? { companyName } : {}),
       ...(body.card_id ? { cardId: body.card_id } : {}),
       ...(body.driver_name ? { driverName: body.driver_name } : {}),
-      ...(body.agent_name ? { agentName: body.agent_name } : fallbackAgent.agentName ? { agentName: fallbackAgent.agentName } : {}),
-      ...(body.agent_zoho_user_id
-        ? { agentZohoUserId: body.agent_zoho_user_id }
-        : fallbackAgent.agentZohoUserId
-          ? { agentZohoUserId: fallbackAgent.agentZohoUserId }
-          : {}),
-      ...(body.ttl_hours !== undefined ? { ttlHours: body.ttl_hours } : {}),
+      ...(agentName ? { agentName } : {}),
+      ...(agentZohoUserId ? { agentZohoUserId } : {}),
+      ...(mayOverrideInviteMetadata && body.ttl_hours !== undefined
+        ? { ttlHours: body.ttl_hours }
+        : {}),
     });
     await auditFromContext(ctx, {
       action: 'carrier.invitation.create',
@@ -330,7 +352,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * driver registration link (Admin + Sales client Manage). Auth-gated; no admin role required.
    */
   app.get('/carrier-users/dwh-cards', guard, async (request) => {
-    const ctx = requireContext(request);
+    const ctx = await requireSalesCarrierAccess(request, false);
     if (!env.DWH_DATABASE_URL) {
       throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
         statusCode: 503,
@@ -374,7 +396,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * (driver requires an active owner) without exposing the full admin registration list.
    */
   app.get('/carrier-registrations/for-carrier', guard, async (request) => {
-    const ctx = requireContext(request);
+    const ctx = await requireSalesCarrierAccess(request, false);
     const q = z.object({ carrier_id: z.string().min(1) }).parse(request.query);
     // Same IDOR guard as /carrier-users/dwh-cards — owner/driver PII is roster-scoped.
     if (ctx.role !== 'admin') await assertCarrierOwned(ctx, q.carrier_id);

@@ -195,8 +195,8 @@ export async function assertCarrierOwned(ctx: TenantContext, carrierId: number |
 export async function assertCarrierInviteEligible(
   ctx: TenantContext,
   carrierId: number | string,
-): Promise<void> {
-  if (ctx.allDepartmentAccess || ctx.bypassRbac) return;
+): Promise<AgentClientRow | undefined> {
+  if (ctx.allDepartmentAccess || ctx.bypassRbac) return undefined;
   const ownerId = callerZohoUserId(ctx) ?? '';
   const ownerName = ctx.userName?.trim() || undefined;
   if (!zohoIdSuffix(ownerId) && !ownerName) {
@@ -246,4 +246,5 @@ export async function assertCarrierInviteEligible(
       details: { carrierId: normalizedCarrierId },
     });
   }
+  return client;
 }

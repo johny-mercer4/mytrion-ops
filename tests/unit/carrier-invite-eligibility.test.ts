@@ -61,7 +61,11 @@ beforeEach(() => {
 
 describe('assertCarrierInviteEligible', () => {
   it('allows an active, non-debtor client in the sales agent roster', async () => {
-    await expect(assertCarrierInviteEligible(agentContext(), '5785947')).resolves.toBeUndefined();
+    await expect(assertCarrierInviteEligible(agentContext(), '5785947')).resolves.toMatchObject({
+      carrierId: '5785947',
+      companyName: 'David Kolhelly',
+      agentName: 'Daniel Brown',
+    });
     expect(fetchAgentClients).toHaveBeenCalledWith(AGENT_ID, 'Daniel Brown', {
       force: true,
       allowStaleOnError: false,

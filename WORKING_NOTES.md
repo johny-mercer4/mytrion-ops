@@ -11427,3 +11427,34 @@ regressions.
   typechecks pass; the CRM production build passes; lint has zero errors (22 existing warnings).
   Full backend run: 1,886 passes and 99 existing environment/fixture failures in DB/socket, CS,
   Comms Admin, Billing, Retention, and scripted-agent groups.
+
+## 2026-08-06 — Sales-agent mini-app authorization audit follow-up
+
+- Audited the committed capability/eligibility work end-to-end against the effective caller,
+  department/write-mode, DWH ownership, metadata attribution, tenant/RBAC, and cache boundaries.
+- Fixed a real Admin View-as bypass: carrier-management routes used the principal context directly,
+  so an admin viewing as an agent still skipped that agent's ownership/debtor/activity checks. These
+  routes now resolve the verified act-as target first; writes and reads both run with that effective
+  identity, and a target's read-only/full Sales mode is enforced on link creation.
+- Added the missing internal boundary: carrier-link creation now requires full Sales access, while
+  the card/registration management reads require Sales access. Non-Sales internal sessions and
+  customer-audience sessions fail before DWH/repository work.
+- Closed request-body attribution spoofing for non-admins and Admin View-as. The authorized DWH row
+  supplies company/agent names, the effective verified session supplies the Zoho agent id, and a
+  worker cannot choose a 30-day TTL. A plain, non-impersonating admin retains the intentional manual
+  metadata/lifetime override used by Admin Carrier Management.
+- `assertCarrierInviteEligible` now returns the exact fresh authorized roster row after checking it,
+  so authorization and persisted metadata cannot be sourced from divergent lookups.
+- New route regressions cover non-Sales denial, Admin View-as debtor denial, View-as read scoping,
+  and spoofed metadata/TTL rejection. Focused capability, carrier, Data Center, ownership, cache,
+  and RBAC verification passes 175/175; backend typecheck/build and CRM production build pass; lint
+  has zero errors (22 pre-existing warnings).
+- Full backend run on the product changes: 1,889 passed, 99 failed, 1 skipped. The failures remain in
+  the known unrelated environment/fixture groups: local socket bind is denied; DB-backed suites
+  cannot reach localhost:5433; billing webhook secrets are absent; and CS/Comms/Retention fixtures
+  resolve against the developer environment. All mini-app/Data Center/ownership/RBAC suites pass.
+- Remaining architectural debt in this surface: the real Telegram-to-Zoho `sales_agent` principal
+  and portfolio selector are still future work (the capability policy is scaffolding today);
+  `carrierMiniApp.routes.ts` is 1,749 lines and still contains direct DB select/transaction orchestration
+  instead of repository/service boundaries; `dwhClientRoster.ts` is 596 lines (under the 600 hard cap
+  but over the 580 target). Split/refactor these before adding the sales-agent Telegram portal.
