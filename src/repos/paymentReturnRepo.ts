@@ -1,6 +1,12 @@
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { paymentReturns, type NewPaymentReturn, type PaymentReturn } from '../db/schema/index.js';
+import {
+  paymentReturns,
+  paymentTransactions,
+  type NewPaymentReturn,
+  type PaymentReturn,
+  type PaymentTransaction,
+} from '../db/schema/index.js';
 
 /**
  * paymentReturnRepo — ACH returns + card disputes (replaces the Zoho `MX_Merchant_Returns` module).
@@ -33,6 +39,9 @@ export interface LinkMatchInput {
 }
 
 const NEWEST_FIRST = sql`${paymentReturns.returnDate} DESC NULLS LAST, ${paymentReturns.id} DESC`;
+
+/** Must match `servercrm/services/zohoReturnMatchSync.js`'s `ZOHO_ACTOR` exactly. */
+const ZOHO_SYNC_ACTOR = 'Zoho (workflow)';
 
 export const paymentReturnRepo = {
   async listPage(opts: { page: number; limit: number } & ListReturnFilters): Promise<ReturnPage> {
@@ -104,6 +113,58 @@ export const paymentReturnRepo = {
         updatedAt: new Date(),
       })
       .where(eq(paymentReturns.id, returnId))
+      .returning();
+    return rows[0];
+  },
+
+  /**
+   * Already-matched returns still sitting `is_reversed = false` — candidates for the CMP-backfill
+   * script (`scripts/backfillReturnCmpReversals.ts`). LEFT JOINs the original transaction (some rows
+   * have `original_transaction_id IS NULL` — a return recorded with no link at all, predating the
+   * payments backfill) so the caller can bucket those separately rather than silently drop them.
+   * Structural filter only (matched + not reversed) — the caller decides eligibility per-row from
+   * the joined transaction's own mapping/source fields, since the historical `match_note` text takes
+   * more than one shape (this repo's own bare string vs. the Zoho-workflow-wrapped sentence).
+   */
+  async listStuckUnreversed(limit = 500): Promise<Array<{ ret: PaymentReturn; tx: PaymentTransaction | undefined }>> {
+    const rows = await db
+      .select({ ret: paymentReturns, tx: paymentTransactions })
+      .from(paymentReturns)
+      .leftJoin(paymentTransactions, eq(paymentTransactions.id, paymentReturns.originalTransactionId))
+      .where(and(eq(paymentReturns.matched, true), eq(paymentReturns.isReversed, false)))
+      .orderBy(NEWEST_FIRST)
+      .limit(limit);
+    return rows.map((r) => ({ ret: r.ret, tx: r.tx ?? undefined }));
+  },
+
+  /**
+   * Record a resolver-found CMP reversal for an ALREADY-matched return (the backfill path — these
+   * rows can't go back through `linkMatch`/`assertReturnMatchable`, which would 409). A conditional
+   * UPDATE on `is_reversed = false`: idempotent (a re-run's `listStuckUnreversed` no longer selects
+   * an already-fixed row) and safe against a concurrent live match reaching the row first.
+   *
+   * Deliberately does NOT touch `matched_at` or overwrite `matched_by` wholesale — these 97 rows'
+   * original attribution (an agent's name, or the Zoho sync) must survive. The one exception: when
+   * `matched_by` is the exact Zoho-sync marker, append to it so the row becomes "app-owned" from the
+   * Zoho→PG sync's point of view (`servercrm/services/zohoReturnMatchSync.js`) — otherwise its next
+   * 2-hourly tick overwrites `match_note` right back to the stale text (it never re-deletes the CMP
+   * payment, since `is_reversed` only ever goes false→true, but the pill would regress).
+   */
+  async recordCmpReversal(
+    returnId: number,
+    input: { matchNote: string; isReversed: boolean; resolvedBy: string },
+  ): Promise<PaymentReturn | undefined> {
+    const rows = await db
+      .update(paymentReturns)
+      .set({
+        matchNote: input.matchNote,
+        isReversed: input.isReversed,
+        matchedBy: sql`case when ${paymentReturns.matchedBy} = ${ZOHO_SYNC_ACTOR}
+          then ${paymentReturns.matchedBy} || ' + ' || ${input.resolvedBy}
+          else ${paymentReturns.matchedBy} end`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(paymentReturns.id, returnId), eq(paymentReturns.isReversed, false)))
       .returning();
     return rows[0];
   },

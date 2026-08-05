@@ -28,6 +28,7 @@ import {
   fetchRecordNotes,
   type CrmModule,
 } from '../../modules/sales/recordActivity.js';
+import { executeLeadBlueprintTransition } from '../../modules/sales/leadBlueprint.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
@@ -41,10 +42,12 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 }
 
 const scopeQuery = z.object({ zoho_user_id: z.string().max(120).optional() });
-
 const carrierCardsQuery = z.object({ carrierId: z.string().regex(/^\d+$/, 'carrierId must be numeric').max(20) });
-
 const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
+const blueprintTransitionParam = idParam.extend({ transitionId: z.string().regex(/^\d+$/, 'transitionId must be a CRM transition id').max(60) });
+const blueprintTransitionBody = z.object({
+  data: z.record(z.union([z.string().max(32000), z.number(), z.boolean(), z.null()])).default({}),
+}).strict();
 
 /** An email that may be a valid address, an empty string (clears the field), or null. */
 const editableEmail = z.union([z.string().email().max(100), z.string().max(0)]).nullable().optional();
@@ -205,16 +208,25 @@ async function applyLeadUpdateWithStatus(id: string, resolved: Record<string, un
     }
   }
 
-  // 2) Status: a Blueprint transition when the lead is in one, else a plain update.
-  const transitions = await zohoCrmRecords.getBlueprintTransitions('Leads', id).catch(() => []);
-  if (transitions.length === 0) {
+  // 2) Status: a Blueprint transition when the lead is in one, else a plain update. Only Zoho's
+  // explicit RECORD_NOT_IN_PROCESS response returns null; auth/permission/vendor errors fail closed.
+  let blueprint: Awaited<ReturnType<typeof zohoCrmRecords.getBlueprintDetails>>;
+  try {
+    blueprint = await zohoCrmRecords.getBlueprintDetails('Leads', id);
+  } catch (err) {
+    throw crmError(err);
+  }
+  if (blueprint === null) {
     try {
       await zohoCrmRecords.updateRecord('Leads', id, { Status: targetStatus, ...transitionData });
     } catch (err) {
       throw crmError(err);
     }
   } else {
-    const match = transitions.find((t) => t.nextValue === targetStatus);
+    const transitions = blueprint.transitions.filter((transition) =>
+      transition.type === 'manual' && transition.criteriaMatched,
+    );
+    const match = transitions.find((transition) => transition.nextValue === targetStatus);
     if (!match) {
       const allowed = transitions.map((t) => t.nextValue).filter((v) => v && v !== '-None-').join(', ');
       throw new AppError(
@@ -467,6 +479,34 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     }
     return { ctx, id };
   }
+
+  app.get('/data-center/leads/:id/blueprint', guard, async (request) => {
+    const { id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
+    try {
+      return { blueprint: await zohoCrmRecords.getBlueprintDetails('Leads', id) };
+    } catch (err) {
+      throw crmError(err);
+    }
+  });
+
+  app.post('/data-center/leads/:id/blueprint/:transitionId', guard, async (request) => {
+    const { ctx, id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
+    const { transitionId } = blueprintTransitionParam.parse(request.params);
+    const { data } = blueprintTransitionBody.parse(request.body);
+    try {
+      const result = await executeLeadBlueprintTransition(id, transitionId, data);
+      await auditFromContext(ctx, {
+        action: 'sales.datacenter.lead_blueprint_transition', status: 'ok',
+        resourceType: 'crm_lead',
+        resourceId: id,
+        detail: { transitionId, from: result.currentValue, to: result.nextValue },
+      });
+      return { id, transitionId, status: result.nextValue };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw crmError(err);
+    }
+  });
 
   /** Merged call history (our mytrion_calls + the Zoho Calls related to the record), badged by source. */
   app.get('/data-center/leads/:id/calls', guard, async (request) => {

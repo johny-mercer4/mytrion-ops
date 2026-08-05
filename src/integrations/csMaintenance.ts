@@ -25,7 +25,7 @@
  *     NAME ONLY). `owner_name` is denormalized on the row, resolved once at migration time.
  *   - COQL's mandatory-WHERE and binary-AND contortions.
  */
-import { and, gte, lte, sql } from 'drizzle-orm';
+import { and, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { maintenanceCases } from '../db/schema/index.js';
 import { AppError } from '../lib/errors.js';
@@ -148,15 +148,43 @@ const SPLIT_SHARE = 0.5;
  */
 const SECOND_AGENT_SPLIT_FROM = '2026-08-01';
 
+/**
+ * The second-agent columns, gated on the split date, as RAW SQL TEXT.
+ *
+ * These appear in both the projection and the GROUP BY of the leaderboard query, and Postgres will
+ * only accept that if the two render as the same expression. Building them with drizzle's `sql`
+ * template did NOT satisfy that, and the whole query failed with
+ * `42803: column "maintenance_cases.case_date" must appear in the GROUP BY clause`, because drizzle
+ * renders one `sql` object differently depending on where it sits:
+ *
+ *   projection: case when "case_date"                     >= $1 then "bonus_completion_user_id"   …
+ *   group by:   case when "maintenance_cases"."case_date"  >= $5 then "maintenance_cases"."bonus…" …
+ *
+ * Two differences, each fatal on its own — the column qualification, and a fresh bind placeholder
+ * per render, which makes `$1` and `$5` distinct expressions to the planner no matter what values
+ * they carry. Raw text sidesteps both: it is passed through verbatim, so the projection and the
+ * GROUP BY are byte-identical and carry no parameters at all.
+ *
+ * `sql.raw` is safe here specifically because nothing user-supplied reaches it — the only value
+ * interpolated is `SECOND_AGENT_SPLIT_FROM`, a module constant. The window dates stay bound
+ * parameters in `windowWhere()`. Do not "tidy" this back into `${maintenanceCases.caseDate}`
+ * interpolation; that is the exact change that broke it, and the mocked unit tests cannot see it
+ * because they never render the SQL. See cs-maintenance-analytics.test.ts for the guard that can.
+ */
+const SPLIT_GUARD = `maintenance_cases.case_date >= date '${SECOND_AGENT_SPLIT_FROM}'`;
+export const SECOND_ID_SQL = `case when ${SPLIT_GUARD} then maintenance_cases.bonus_completion_user_id else null end`;
+export const SECOND_NAME_SQL = `case when ${SPLIT_GUARD} then maintenance_cases.bonus_completion_name else null end`;
+
 /** Every figure the Maintenance tab needs, in the shape the panel already consumes. */
 export async function fetchMaintenanceAnalytics(w: MaintenanceWindow): Promise<MaintenanceAnalytics> {
   const cur = windowWhere(w.from, w.to);
   const prev = windowWhere(w.prevFrom, w.prevTo);
 
-  // Reused (not rebuilt) in both the SELECT and the GROUP BY below so the two render
-  // byte-identical SQL — Postgres requires a grouped expression to match its projection exactly.
-  const secondIdExpr = sql<string | null>`case when ${maintenanceCases.caseDate} >= ${SECOND_AGENT_SPLIT_FROM} then ${maintenanceCases.bonusCompletionUserId} else null end`;
-  const secondNameExpr = sql<string | null>`case when ${maintenanceCases.caseDate} >= ${SECOND_AGENT_SPLIT_FROM} then ${maintenanceCases.bonusCompletionName} else null end`;
+  // One instance each, reused in the projection and the GROUP BY. `sql.raw` is untyped, so the
+  // element type is restated for the projection — the cast asserts nothing the SQL does not already
+  // guarantee (both columns are nullable text).
+  const secondIdExpr = sql.raw(SECOND_ID_SQL) as SQL<string | null>;
+  const secondNameExpr = sql.raw(SECOND_NAME_SQL) as SQL<string | null>;
 
   const [statusRows, caseTypeRows, dailyRows, ownerRows, prevRows] = await Promise.all([
     db

@@ -13,7 +13,13 @@ import { Icon } from './icons';
 import { badge } from './salesData';
 import { useSales } from './ctx';
 import { getImpersonation } from '@/api/impersonation';
-import { updateDeal, updateLead, type DealEditFields, type LeadEditFields } from '@/api/dataCenter';
+import {
+  executeLeadBlueprintTransition,
+  updateDeal,
+  updateLead,
+  type DealEditFields,
+  type LeadEditFields,
+} from '@/api/dataCenter';
 import { invalidateDcCache } from './dcCache';
 import {
   dealStageColor,
@@ -24,8 +30,7 @@ import {
   type LeadEdit,
   type LeadVM,
 } from './dataCenterLive';
-import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor } from './leadStatusFlow';
-import { LeadStatusPicker } from './LeadStatusPicker';
+import { LeadBlueprintEditor, type LeadBlueprintSelection } from './LeadBlueprintEditor';
 import { RecordActivityPanels } from './recordActivityPanels';
 import { DetailSheet, ModalFooter } from './dataCenterSheet';
 import { emitKpiActivity } from './kpiTelemetry';
@@ -170,13 +175,8 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
   const [saving, setSaving] = useState(false);
   const [applied, setApplied] = useState<LeadEdit>(lead.edit);
   const [form, setForm] = useState<LeadEdit>(lead.edit);
-  // Manual status editing — agents also reach clients off-RingCentral, so status is editable here
-  // (not only via the post-call wizard). Reason picklist follows Unqualified / Not Interested.
   const [appliedStatus, setAppliedStatus] = useState<string>(lead.status);
-  const [statusForm, setStatusForm] = useState<string>(lead.status);
-  const [statusReason, setStatusReason] = useState<string>('');
-  const statusReasonSpec = reasonFieldFor(statusForm);
-  const statusChanged = statusForm !== appliedStatus && STATUS_OPTIONS.some((o) => o.value === statusForm);
+  const [blueprintSelection, setBlueprintSelection] = useState<LeadBlueprintSelection | null>(null);
 
   const meta = { col: leadStatusColor(appliedStatus), label: appliedStatus };
   const stageBadge = lead.converted ? badge('Converted', 'var(--ok)') : badge(meta.label, meta.col);
@@ -188,14 +188,12 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
   const startEdit = (): void => {
     emitKpiActivity('crm.edit_open', { entityType: 'lead', entityId: lead.id });
     setForm(applied);
-    setStatusForm(appliedStatus);
-    setStatusReason('');
+    setBlueprintSelection(null);
     setEditing(true);
   };
   const cancelEdit = (): void => {
     setForm(applied);
-    setStatusForm(appliedStatus);
-    setStatusReason('');
+    setBlueprintSelection(null);
     setEditing(false);
   };
 
@@ -204,15 +202,11 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
     (Object.keys(form) as (keyof LeadEdit)[]).forEach((k) => {
       if (form[k] !== applied[k]) changes[k] = form[k];
     });
-    if (statusChanged) {
-      if (statusReasonSpec && !statusReason) {
-        pushToast('Reason required', `Pick a ${statusForm === 'Unqualified' ? 'Unqualified' : 'Not-interested'} reason.`);
-        return;
-      }
-      changes.Status = statusForm;
-      if (statusReasonSpec) changes[statusReasonSpec.field] = statusReason;
+    if (blueprintSelection && !blueprintSelection.valid) {
+      pushToast('Blueprint fields required', 'Complete all required transition fields first.');
+      return;
     }
-    if (Object.keys(changes).length === 0) {
+    if (Object.keys(changes).length === 0 && !blueprintSelection) {
       setEditing(false);
       return;
     }
@@ -222,12 +216,22 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
     }
     setSaving(true);
     try {
-      await updateLead(lead.id, changes, getImpersonation()?.zohoUserId);
+      const actingAs = getImpersonation()?.zohoUserId;
+      if (Object.keys(changes).length > 0) await updateLead(lead.id, changes, actingAs);
+      if (blueprintSelection) {
+        const result = await executeLeadBlueprintTransition(
+          lead.id,
+          blueprintSelection.transitionId,
+          blueprintSelection.data,
+          actingAs,
+        );
+        setAppliedStatus(result.status);
+      }
       setApplied({ ...form });
-      if (statusChanged) setAppliedStatus(statusForm);
+      setBlueprintSelection(null);
       invalidateDcCache('sales:leads');
       setEditing(false);
-      const count = Object.keys(changes).length;
+      const count = Object.keys(changes).length + (blueprintSelection ? 1 : 0);
       emitKpiActivity('crm.edit_save_success', {
         entityType: 'lead',
         entityId: lead.id,
@@ -285,44 +289,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
                   <Icon name="edit" size={12} color="var(--accent)" />
                   Lead status
                 </div>
-                {allowedStatuses(appliedStatus).length > 0 ? (
-                  <LeadStatusPicker
-                    options={allowedStatuses(appliedStatus)}
-                    value={statusForm}
-                    onChange={(v) => {
-                      setStatusForm(v);
-                      setStatusReason('');
-                    }}
-                  />
-                ) : (
-                  <div style={s('font-size:13px;color:var(--muted);padding:2px 0')}>
-                    No manual status change from “{appliedStatus}” — this stage is set by the process.
-                  </div>
-                )}
-                {statusReasonSpec && (
-                  <div style={s('margin-top:10px')}>
-                    <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
-                      {statusForm === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
-                    </div>
-                    <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
-                      {statusReasonSpec.options.map((r) => {
-                        const active = statusReason === r;
-                        return (
-                          <button
-                            key={r}
-                            type="button"
-                            role="radio"
-                            aria-checked={active}
-                            onClick={() => setStatusReason(r)}
-                            style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:13px;font-weight:700;cursor:pointer`)}
-                          >
-                            {r}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <LeadBlueprintEditor leadId={lead.id} onChange={setBlueprintSelection} />
               </div>
             )}
             <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>

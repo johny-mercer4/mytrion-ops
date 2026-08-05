@@ -87,11 +87,8 @@ type PipeView = 'kanban' | 'list';
 
 const DC_TABS: ReadonlyArray<SalesSubTab<DcSub>> = [
   { id: 'clients', label: 'Clients', icon: 'clients' },
-  // Leads + Deals parked as "Coming soon". Drop `soon` to re-enable — LeadsView / DealsView and
-  // loadLeads() / loadDeals() stay wired, and the COQL loads are `enabled`-gated on dcSub so nothing
-  // fetches while parked.
-  { id: 'leads', label: 'Leads', icon: 'leads', soon: true },
-  { id: 'deals', label: 'Deals', icon: 'deals', soon: true },
+  { id: 'leads', label: 'Leads', icon: 'leads' },
+  { id: 'deals', label: 'Deals', icon: 'deals' },
   { id: 'rejections', label: 'Rejection Reports', icon: 'rejections' },
   { id: 'money', label: 'Money Codes', icon: 'moneyCodes' },
 ];
@@ -105,8 +102,7 @@ const SEARCH_PLACEHOLDER: Record<DcSub, string> = {
 };
 
 const VIEW_TABS: ReadonlyArray<SalesSubTab<PipeView>> = [
-  { id: 'kanban', label: 'Board', icon: 'board' },
-  { id: 'list', label: 'List', icon: 'list' },
+  { id: 'kanban', label: 'Board', icon: 'board' }, { id: 'list', label: 'List', icon: 'list' },
 ];
 
 /**
@@ -151,14 +147,7 @@ interface RecordVM {
 }
 
 /** Display order for the bar + filter. Mirrors the sort: best tier first, "no cards" last. */
-const TIER_ORDER: TierBucket[] = [
-  'enterprise',
-  'gold',
-  'silver',
-  'bronze',
-  'building',
-  'idle',
-];
+const TIER_ORDER: TierBucket[] = ['enterprise', 'gold', 'silver', 'bronze', 'building', 'idle'];
 
 /** Loyalty distribution and filter; counts always describe the agent's full book. */
 function TierDistribution({

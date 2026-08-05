@@ -512,6 +512,24 @@ export async function loadAnalytics(
   const maint: Partial<MaintenanceAnalytics> = maintR.status === 'fulfilled' ? maintR.value : {};
   const roster = rosterR.status === 'fulfilled' ? rosterR.value.agents : [];
 
+  /**
+   * Keep the REASON a block is empty, not just the emptiness.
+   *
+   * `allSettled` is right here — one dead source must not blank the other two — but discarding the
+   * rejection turned a broken read into a page of zeros. Maintenance was down this way (Postgres
+   * 42803 on the leaderboard GROUP BY) and nothing on screen said so; since these figures drive agent
+   * bonuses, that reads as "you earned $0" rather than "we could not load it".
+   */
+  const reason = (r: PromiseSettledResult<unknown>): string | undefined =>
+    r.status === 'rejected'
+      ? r.reason instanceof Error
+        ? r.reason.message
+        : String(r.reason)
+      : undefined;
+  const ticketsErr = reason(ticketsR);
+  const callsErr = reason(callsR);
+  const maintErr = reason(maintR);
+
   const tAgents = tickets.data?.agents ?? [];
   let open = 0;
   let closed = 0;
@@ -589,6 +607,7 @@ export async function loadAnalytics(
       breakdown: toBreakdown(tickets.data?.byPriority ?? tickets.data?.byStatus),
       leaderboardCols: ['Handled', 'Resolved', 'Avg Hrs'],
       leaderboard: ticketBoard,
+      ...(ticketsErr ? { error: ticketsErr } : {}),
     },
     calls: {
       kpis: [
@@ -604,6 +623,7 @@ export async function loadAnalytics(
       breakdown: toBreakdown(calls.data?.byStatus),
       leaderboardCols: ['Calls', 'Prev Range', ''],
       leaderboard: callBoard,
+      ...(callsErr ? { error: callsErr } : {}),
     },
     maintenance: {
       kpis: [
@@ -621,6 +641,7 @@ export async function loadAnalytics(
       breakdown: toBreakdown(maint.data?.byStatus),
       leaderboardCols: ['Cases', 'Bonus', 'Full'],
       leaderboard: maintBoard,
+      ...(maintErr ? { error: maintErr } : {}),
     },
   };
 }

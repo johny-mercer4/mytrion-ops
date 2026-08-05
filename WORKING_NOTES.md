@@ -11178,52 +11178,41 @@ today's records — but the end-to-end POST is untested and should be exercised 
 - Verification: full gateway suite 97/97, root/gateway typechecks, and gateway production build
   pass; root lint has 0 errors (22 pre-existing warnings).
 
-## 2026-08-05 — Mytrion Admin + Mytrion HR bug/UX sweep (hotfix/Mytrion)
+## 2026-08-05 — Sales Data Center Leads + Deals live
 
-Scope was deliberately fenced to the Admin and HR Mytrions; no other Mytrion's files were touched.
+- Removed the `soon` gates from the Leads and Deals Data Center sub-tabs. Both existing live Zoho
+  pipelines are selectable again with their lazy loads, search, status/source/stage filters, Meta
+  filter, Board/List layouts, detail sheets, edits, call workflow, notes, and activity history intact.
+- Added a UI regression test that asserts both tabs stay enabled and that each tab exposes its
+  complete search/filter/layout toolbar. Compacted static catalogs to bring `RecordsTab.tsx` back to
+  the repository's 600-line cap, and rebuilt the committed production widget bundle.
+- Verification: cross-tenant/Data Center backend suites 53/53, targeted Sales UI suites 20/20, and
+  the full Mytrion CRM suite 433/433 pass; root + frontend typechecks, root lint (0 errors, 22 existing
+  warnings), and the production build pass. The full backend suite remains red in unrelated CS,
+  Comms Admin, Retention, and agent-blackboard tests because their current fixtures/environment
+  return 403/500 or require the absent localhost test DB on port 5433.
 
-- Audited both modules with per-cluster readers plus an adversarial verifier per cluster (the verifier
-  re-read the cited code and refuted anything the compiler, the test suite, or an existing guard already
-  covered). 176 raw candidates → **152 confirmed** (1 critical, 17 high, 67 medium, 67 low), 24 refuted.
-- Fixed 152/152 across 59 files. Highest-value ones:
-  - **ClientNews RichEditor** fed its own `innerHTML` back into `dangerouslySetInnerHTML`, so react-dom
-    re-ran setInnerHTML per keystroke and destroyed the text node holding the caret — typing came out
-    reversed. Now seeded from a ref so `__html` stays byte-identical across renders; `key={lang}` re-seeds.
-    (Sanitization is and stays server-side in `modules/notifications/richText.ts` — unchanged.)
-  - **UserAccessForm** was a lossy round-trip of a full-row-replace endpoint: saving a Home Mytrion wiped
-    `deniedMytrions`/`viewAsUserIds`, and the modal opened in "Specific Mytrions" for profile/role admins
-    so Save demoted them. `allDepartmentAccess` is now tri-state (true / false / null=inherit).
-  - **HR attendance** counted days that have not happened yet as Absent (`modules/hr/attendance/summary.ts`),
-    and the settings date defaults used the UTC day while the domain runs on Tashkent (UTC+5) — the two
-    diverge 00:00–05:00 local, i.e. the tail of the default 19:00–03:00 shift.
-  - **Time-off approval inbox** was year-filtered, so a December-submitted January request was invisible to
-    the approver AND its badge read 0 under "Approval queue is clear".
-  - `useModalFocus` moved its Tab trap from the dialog node to a document capturing listener with a
-    topmost-dialog stack + nest-safe body scroll lock: the old trap could not fire once focus fell to
-    `<body>`, so Tab walked into the page behind an `aria-modal="true"` dialog. Seven dialogs across both
-    modules declared `aria-modal` while trapping nothing; they now use the hook.
-- Then re-reviewed the whole diff adversarially, which found **23 regressions** the fixes had introduced
-  (4 high). All repaired with the original fix preserved. Worth recording, because two were mine:
-  - The `useModalFocus` scroll lock I added targeted `document.body`, which is a **no-op** here —
-    `html/body/#root` are all `height:100%` and the shell's `.center` owns `overflow-y:auto`. It also
-    clashed latently with Manager's `ReferralDetailModal`, which locks body itself. Now walks past
-    `position:fixed` backdrops to the real scroller and refcounts per element.
-  - Moving HR attendance off its remount `key` orphaned `today` and the shift-list fetch, which the
-    remount used to re-derive; a tab left open across Tashkent midnight showed the wrong day as today.
-    Kept `refreshToken` and made Refresh re-derive what the remount did.
-  - RBAC: the tri-state `allDepartmentAccess` silently discarded a Specific-Mytrions restriction for a
-    worker inheriting all-access. Custom mode now pins `false` explicitly, since the server builds the
-    set as `allDept ? ALL : allowed` and an inherited `true` would throw the submitted list away.
-- Verification: frontend `tsc --noEmit` clean, **432/432** vitest pass; backend `tsc --noEmit` clean,
-  backend unit suite **1882/1883** — the one failure is `realtime-heartbeat.test.ts`, a real-socket
-  timing test that passes in isolation and touches nothing in this diff (pre-existing flake under full
-  parallel load). Existing `EscalationRouting` (14) and `orgGraph` (21) suites pass unmodified, which was
-  the check on the NULL-rung and graph-layout changes.
-- **Hard-rule debt NOT resolved — 600-line cap (rule 5), needs a follow-up:**
-  `EscalationRouting.tsx` 895 (was 676), `CarrierUsers.tsx` 734 (was 652), `HrOrgCanvas.tsx` 651 (was
-  448), `Deals.tsx` 613 (was 583), `repos/hrEmployeeRepo.ts` 616 (was 585). Two were already over the cap
-  and three crossed it here. Splitting five files is a refactor, not a bug fix, and doing it immediately
-  after a 152-fix pass would risk fresh regressions with no review budget left — so it was left explicit
-  rather than done quietly. `hr.css` (1305) was already over before this session.
-- `modern-web-guidance` (CLAUDE.md rule 10) is still not installed in this environment, so UI work followed
-  the codebase's own established patterns instead.
+## 2026-08-05 — Zoho Lead Blueprint API discovery
+
+- Verified Zoho CRM v8's record-level Blueprint contract: fetch the record's current process and
+  available transitions with `GET /Leads/{record_id}/actions/blueprint`, then execute exactly one
+  currently available transition with `PUT /Leads/{record_id}/actions/blueprint` and a
+  `transition_id` plus any transition-required field data.
+- Audited the `build` source without switching away from the active feature branch. The integration
+  and owner-scoped Lead PATCH route already contain a basic Blueprint transition path, while the
+  Lead detail UI still derives available statuses from a hardcoded local graph instead of the live
+  per-record Blueprint response.
+- Identified a fail-open gap to fix before live credential testing: the current Blueprint lookup
+  turns every non-2xx response (including OAuth/permission/server failures) into an empty transition
+  list, after which the route attempts a plain `Status` update. Only Zoho's explicit
+  `RECORD_NOT_IN_PROCESS` condition may safely use that fallback.
+- Implemented typed live Blueprint details, fail-closed error handling, official top-level mutation
+  response validation, and an owner-scoped/audited transition endpoint that re-fetches the record's
+  available transitions before accepting an id or field payload.
+- Replaced the Lead detail editor's hardcoded status graph with the record-specific Zoho process,
+  manual transitions, criteria, required fields, and picklist options. Unsupported mandatory complex
+  inputs stop safely and direct the agent to Zoho rather than attempting a partial transition.
+- Verification: Blueprint/Data Center suites 38/38, RBAC/tenant set 131/131, full Mytrion CRM suite
+  435/435, root + frontend typechecks, lint (0 errors, 22 existing warnings), and production build
+  pass. The full backend run has 1,791 passes and the same unrelated CS/Comms/Retention/DB/socket
+  environment failures; the Blueprint/Data Center suites pass independently after that run.
