@@ -39,7 +39,13 @@ import {
 } from '../../modules/carrier/serviceRequest.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
+import { salesAgentMiniAppRepo } from '../../repos/salesAgentMiniAppRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
+import {
+  createSalesAgentMiniAppInvitation,
+  listActiveSalesAgentCompanies,
+  salesAgentContextFromPrincipal,
+} from '../../modules/carrier/salesAgentMiniApp.js';
 import {
   escapeTelegramHtml,
   sendDocument,
@@ -62,6 +68,7 @@ import {
   toRegistrationView,
   verifyTelegramUser,
 } from '../../modules/carrier/miniAppAuth.js';
+import type { MiniAppActorRegistration } from '../../modules/carrier/miniAppAuth.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import {
@@ -70,6 +77,7 @@ import {
 } from '../../modules/tools/serverCrmScope.js';
 import { buildCallerContext } from './callerIdentity.js';
 import { requireContext, requireDepartment, requireMytrionWrite } from './helpers.js';
+import { registerSalesAgentMiniAppScopeHook } from './salesAgentMiniAppScope.js';
 
 function sameRegistrationSubject(
   existing: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'applicationId' | 'cardId'>,
@@ -232,8 +240,12 @@ const createInviteSchema = z.object({
   /** Plain-admin-picked lifetime; ignored for workers/View-as so they keep the service default. */
   ttl_hours: z.coerce.number().int().positive().max(24 * 30).optional(),
 });
+const createSalesAgentInviteSchema = z.object({
+  carrier_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
+});
 
 export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> {
+  registerSalesAgentMiniAppScopeHook(app);
   const guard = { onRequest: [app.sessionOrApiKey] };
 
   /** Apply verified View-as before the Sales gate so admin impersonation runs as the target. */
@@ -308,6 +320,25 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       },
     });
     return reply.code(201).send({ invite, inviteUrl });
+  });
+
+  /**
+   * Register the signed-in Sales agent themselves with Telegram. A client-card launch includes the
+   * carrier selector so redeem can land on that company; the selector is freshly re-authorized both
+   * here and again inside the Telegram mini-app.
+   */
+  app.post('/carrier/mini-app/sales-agent-invitations', guard, async (request, reply) => {
+    const ctx = await requireSalesCarrierAccess(request, true);
+    const body = createSalesAgentInviteSchema.parse(request.body ?? {});
+    const result = await createSalesAgentMiniAppInvitation(ctx, body.carrier_id);
+    await auditFromContext(ctx, {
+      action: 'sales_agent.mini_app.invitation.create',
+      status: 'ok',
+      resourceType: 'sales_agent_mini_app_invitation',
+      resourceId: result.invitationId,
+      detail: body.carrier_id ? { carrierId: body.carrier_id } : {},
+    });
+    return reply.code(201).send(result);
   });
 
   const requireAdmin = (request: Parameters<typeof requireContext>[0]) => {
@@ -525,6 +556,44 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   /** Invite preview — what the mini-app shows on the Confirm screen before the user acts. */
   app.get('/carrier-invitations/:id/public', async (request) => {
     const { id } = request.params as { id: string };
+    if (id.startsWith('sai_')) {
+      const agentInvite = await salesAgentMiniAppRepo.findInvitation(lookupCtx(), id);
+      if (!agentInvite) throw new NotFoundError('This Sales agent registration link is not valid');
+      if (agentInvite.status === 'cancelled') {
+        throw new AppError('This Sales agent registration link was cancelled', {
+          statusCode: 410,
+          code: 'SALES_AGENT_INVITE_CANCELLED',
+          expose: true,
+        });
+      }
+      if (agentInvite.expiresAt.getTime() < Date.now()) {
+        throw new AppError('This Sales agent registration link has expired', {
+          statusCode: 410,
+          code: 'SALES_AGENT_INVITE_EXPIRED',
+          expose: true,
+        });
+      }
+      if (agentInvite.status === 'redeemed') {
+        return {
+          invite: null,
+          status: 'redeemed' as const,
+          companyName: 'Your active companies',
+          agentName: agentInvite.agentName,
+        };
+      }
+      return {
+        invite: {
+          id: agentInvite.id,
+          profile: 'sales_agent' as const,
+          companyName: 'Your active companies',
+          companyType: null,
+          cardCount: null,
+          agentName: agentInvite.agentName,
+          expiresAt: agentInvite.expiresAt.toISOString(),
+        },
+        status: 'pending' as const,
+      };
+    }
     const invite = await carrierInvitationRepo.findById(lookupCtx(), id);
     if (!invite) throw new NotFoundError('This invite link is not valid');
     if (invite.status === 'redeemed') {
@@ -564,10 +633,38 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/session', async (request) => {
     const body = miniAppSessionSchema.parse(request.body);
+    const { telegramUserId } = verifyTelegramUser(body.initData);
+    const agentPrincipal = await salesAgentMiniAppRepo.findPrincipalByTelegramUserId(
+      lookupCtx(),
+      telegramUserId,
+    );
+    if (agentPrincipal) {
+      if (agentPrincipal.status !== 'active') {
+        throw new AppError('Your Sales agent mini-app access has been revoked.', {
+          statusCode: 403,
+          code: 'SALES_AGENT_REVOKED',
+          expose: true,
+        });
+      }
+      const ctx = salesAgentContextFromPrincipal(agentPrincipal, request.requestId);
+      const companies = await listActiveSalesAgentCompanies(ctx);
+      return {
+        kind: 'sales_agent' as const,
+        salesAgent: {
+          id: agentPrincipal.id,
+          zohoUserId: agentPrincipal.zohoUserId,
+          agentName: agentPrincipal.agentName,
+        },
+        companies,
+      };
+    }
     const { registration } = await requireRegisteredMiniAppUser(body.initData);
     const support = await resolveRegistrationAgent(registration);
     const extras = await resolveDriverExtras(registration);
-    return { registration: toRegistrationView({ ...registration, ...support, ...extras }) };
+    return {
+      kind: 'carrier' as const,
+      registration: toRegistrationView({ ...registration, ...support, ...extras }),
+    };
   });
 
   /**
@@ -582,6 +679,63 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
 
     const ctx = lookupCtx();
+    if (id.startsWith('sai_')) {
+      const carrierBinding = await registeredMiniAppCompanyRepo.findByTelegramUserId(
+        ctx,
+        telegramUserId,
+      );
+      if (carrierBinding && carrierBinding.status !== 'revoked') {
+        throw new ConflictError(
+          'This Telegram account is already registered to a carrier mini-app account',
+          { code: 'TELEGRAM_ALREADY_REGISTERED' },
+        );
+      }
+      const redeemed = await salesAgentMiniAppRepo.redeemInvitation(ctx, {
+        invitationId: id,
+        telegramUserId,
+        ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
+        ...(tgUser.language_code ? { languageCode: tgUser.language_code } : {}),
+      });
+      const agentCtx = salesAgentContextFromPrincipal(redeemed.principal, request.requestId);
+      const companies = await listActiveSalesAgentCompanies(agentCtx);
+      const selectedCarrierId = companies.some(
+        (company) => company.carrierId === redeemed.invitation.requestedCarrierId,
+      )
+        ? redeemed.invitation.requestedCarrierId
+        : null;
+      await auditFromContext(agentCtx, {
+        action: 'sales_agent.mini_app.registration.redeem',
+        status: 'ok',
+        resourceType: 'sales_agent_mini_app_principal',
+        resourceId: redeemed.principal.id,
+        detail: {
+          telegramUserId,
+          companyCount: companies.length,
+          ...(selectedCarrierId ? { selectedCarrierId } : {}),
+        },
+      });
+      return reply.code(201).send({
+        kind: 'sales_agent' as const,
+        salesAgent: {
+          id: redeemed.principal.id,
+          zohoUserId: redeemed.principal.zohoUserId,
+          agentName: redeemed.principal.agentName,
+        },
+        companies,
+        selectedCarrierId,
+      });
+    }
+
+    const agentBinding = await salesAgentMiniAppRepo.findPrincipalByTelegramUserId(
+      ctx,
+      telegramUserId,
+    );
+    if (agentBinding && agentBinding.status === 'active') {
+      throw new ConflictError(
+        'This Telegram account is already registered as a Sales agent',
+        { code: 'TELEGRAM_ALREADY_REGISTERED' },
+      );
+    }
     const txResult = await db.transaction(async (tx) => {
       const invite = await carrierInvitationRepo.findById(ctx, id, tx);
       if (!invite) throw new NotFoundError('This invite link is not valid');
@@ -662,6 +816,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         const existing = txResult.existing;
         const extras = await resolveDriverExtras(existing);
         return reply.send({
+          kind: 'carrier' as const,
           alreadyRegistered: true,
           registration: toRegistrationView({ ...existing, ...extras }),
         });
@@ -695,6 +850,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
     const extras = await resolveDriverExtras(registration);
     return reply.code(201).send({
+      kind: 'carrier' as const,
       registration: toRegistrationView({ ...registration, ...extras }),
       ...(fleet ? { fleet } : {}),
     });
@@ -708,7 +864,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/fleet', async (request) => {
     const body = ownerFleetSchema.parse(request.body);
-    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'fleet:manage');
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'fleet:read');
 
     const [cards, drivers, pending, efs] = await Promise.all([
       // The owner's whole fleet, not the default 100. The screen's filter counts and search run over
@@ -1346,7 +1502,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     invoiceId: string,
     format: 'pdf' | 'xlsx' = 'pdf',
     capability: 'financial:read' | 'reports:send' = 'financial:read',
-  ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: RegisteredMiniAppCompany }> {
+  ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: MiniAppActorRegistration }> {
     const { carrierId, registration } = await requireRegisteredOwnerUser(initData, capability);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
     const invoice = (list.data ?? []).find((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === invoiceId);
@@ -1462,9 +1618,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/service-request', async (request) => {
     const body = serviceRequestSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(
+      body.initData,
+      'service:request',
+    );
     const profile = registration.profile;
-    if (!serviceRequestAllows(body.service, profile)) {
+    const serviceProfile = profile === 'sales_agent' ? 'owner' : profile;
+    if (!serviceRequestAllows(body.service, serviceProfile)) {
       throw new RBACError('This request is not available for your account.');
     }
     const cardNumber = profile === 'driver' ? await requireDriverCardNumber(registration) : null;
@@ -1472,7 +1632,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     try {
       const ticketId = await fileServiceRequest({
         key: body.service,
-        profile,
+        profile: serviceProfile,
         carrierId,
         cardNumber,
         requesterName: registration.driverName ?? registration.companyName ?? 'Octane customer',

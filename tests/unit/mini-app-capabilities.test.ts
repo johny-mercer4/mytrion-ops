@@ -19,15 +19,24 @@ describe('mini-app capability policy', () => {
       'company:read',
       'card:write',
       'reports:send',
+      'service:request',
     ]);
     expect(miniAppHasCapability('driver', 'financial:read')).toBe(false);
     expect(miniAppHasCapability('driver', 'fleet:manage')).toBe(false);
     expect(miniAppHasCapability('driver', 'access:manage')).toBe(false);
   });
 
-  it('gives sales agents the complete owner-like set, including registration-link access', () => {
-    expect(miniAppCapabilitiesFor('sales_agent')).toEqual(MINI_APP_CAPABILITIES);
-    expect(miniAppHasCapability('sales_agent', 'access:manage')).toBe(true);
+  it('keeps Sales-agent company preview read-only', () => {
+    expect(miniAppCapabilitiesFor('sales_agent')).toEqual([
+      'company:read',
+      'financial:read',
+      'fleet:read',
+    ]);
+    expect(miniAppHasCapability('sales_agent', 'financial:write')).toBe(false);
+    expect(miniAppHasCapability('sales_agent', 'card:write')).toBe(false);
+    expect(miniAppHasCapability('sales_agent', 'reports:send')).toBe(false);
+    expect(miniAppHasCapability('sales_agent', 'access:manage')).toBe(false);
+    expect(miniAppHasCapability('sales_agent', 'service:request')).toBe(false);
   });
 
   it('returns a stable RBAC error when a capability is denied', () => {
