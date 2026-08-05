@@ -7,6 +7,7 @@ import { ScopeBlueprint } from './Blueprint';
 import { EngineDiagram } from './EngineDiagram';
 import { DetailsTab } from './DetailsTab';
 import { blueprintsOf, deptColor, hexA, hideLogoTile, ic, platVM, type DetailNode } from './model';
+import { useModalFocus } from '../../hr/useModalFocus';
 
 interface SubTab {
   id: 'blueprint' | 'departments' | 'automations' | 'details';
@@ -20,6 +21,10 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
   );
   const [bpIndex, setBpIndex] = useState(0);
   const [deptExpanded, setDeptExpanded] = useState<Record<number, boolean>>({});
+  /* Escape stays with the scene root (it owns the keydown listener) — this only takes and
+     traps focus, which aria-modal="true" already promises. */
+  const dialogRef = useModalFocus<HTMLDivElement>();
+  const toggleDept = (di: number) => setDeptExpanded((prev) => ({ ...prev, [di]: !prev[di] }));
 
   const subtabs: SubTab[] = [];
   if (bps.length) subtabs.push({ id: 'blueprint', name: 'Blueprint' });
@@ -48,6 +53,7 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
         }}
       >
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-label={node.title}
@@ -89,6 +95,9 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
               className="oct-close"
               onClick={onClose}
               aria-label="Close"
+              /* Close is first in the DOM, so useModalFocus would otherwise open the
+                 drill-down with the cursor on the one control that discards it. */
+              data-focus-skip
               style={{ border: '1px solid var(--gb)', background: 'transparent', color: 'var(--sub)', cursor: 'pointer', display: 'flex', padding: 10, borderRadius: 3 }}
             >
               <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,7 +155,24 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                     const col = deptColor(d);
                     const platforms = d.platforms.map((p) => platVM(p));
                     return (
-                      <div key={di} className="oct-dept-block" style={{ '--d': col } as CSSProperties} onClick={() => setDeptExpanded((prev) => ({ ...prev, [di]: !prev[di] }))}>
+                      <div
+                        key={di}
+                        className="oct-dept-block"
+                        style={{ '--d': col } as CSSProperties}
+                        /* The whole block stays clickable (that is the existing affordance);
+                           role=button is safe here because it contains no other control. */
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={!!deptExpanded[di]}
+                        aria-controls={`oct-dept-${di}`}
+                        onClick={() => toggleDept(di)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleDept(di);
+                          }
+                        }}
+                      >
                         <div className="oct-dept-block__head">
                           <span className="oct-dept-block__icon">
                             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,7 +198,7 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                           ))}
                         </div>
                         {deptExpanded[di] && (
-                          <div className="oct-dept-block__detail oct-anim">
+                          <div id={`oct-dept-${di}`} className="oct-dept-block__detail oct-anim">
                             <div className="oct-dept-block__detail-label">TOOLS &amp; PLATFORMS</div>
                             {platforms.length ? (
                               <div className="oct-dept-block__logos">

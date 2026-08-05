@@ -3,6 +3,7 @@
  *
  * Interactions, and what each one writes:
  *   drag a node               → `PATCH /hr/org/position` (debounced; layout only, no audit row)
+ *   arrow keys on a selection → the same write, so a keyboard-only layout edit is not silently lost
  *   drop a node on a node     → `PATCH /hr/org/reparent`
  *   drag handle → handle      → the same reparent, for people who prefer drawing the edge
  *   chevron                   → expand / collapse, client-side only
@@ -48,6 +49,34 @@ import { buildOrgGraph, DEPT_H, DEPT_W, EMP_H, EMP_W, type OrgNodeData } from '.
 
 /** A drag can end many times a second; one write per settled position is enough. */
 const POSITION_DEBOUNCE_MS = 400;
+
+/**
+ * Geometry for the row of brand-new children parked under a parent: the gap between two cards, the gap
+ * below the parent, and the step that pushes a row clear of what it lands on. The last one mirrors the
+ * auto-layout's own nudge gap (orgGraph keeps that constant private).
+ */
+const ROW_GAP_X = 20;
+const ROW_GAP_Y = 36;
+const ROW_PUSH_GAP = 24;
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** React Flow positions by top-left; every hit test here measures against the fixed node sizes. */
+function nodeBox(n: Node<OrgNodeData>): Box {
+  const isDept = n.data.kind === 'department';
+  const w = isDept ? DEPT_W : EMP_W;
+  const h = isDept ? DEPT_H : EMP_H;
+  return { x: n.position.x, y: n.position.y, w, h };
+}
+
+function boxesOverlap(a: Box, b: Box): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
 
 export interface OrgCanvasHandlers {
   onOpenDepartment: (id: string) => void;
@@ -106,6 +135,21 @@ function CanvasInner({
   const localPos = useRef(new Map<string, { x: number; y: number }>());
 
   /**
+   * Where each node sat when the current gesture started — the only honest rollback source, since by the
+   * time a write fails React Flow has long committed the drop and `node.position` IS the new coordinate.
+   */
+  const preDrag = useRef(new Map<string, { x: number; y: number }>());
+
+  /** Ids React Flow is dragging now. A settled position change for anything else is a keyboard nudge. */
+  const dragActive = useRef(new Set<string>());
+
+  /**
+   * Set while "Reset layout" waits for its refetch: the rebuild that follows must be adopted verbatim, or
+   * the merge below hands every node its pre-reset coordinate straight back.
+   */
+  const pendingReset = useRef(false);
+
+  /**
    * Merge a rebuilt graph onto the live canvas without reshuffling what the user is looking at.
    *
    * Expand/collapse used to re-run dagre for every unpinned node and `fitView` on every change, so
@@ -118,7 +162,11 @@ function CanvasInner({
       next: Node<OrgNodeData>[],
       nextEdges: Edge[],
       prev: Node<OrgNodeData>[],
+      adoptNext: boolean,
     ): Node<OrgNodeData>[] => {
+      // "Reset layout" has just cleared every saved position, so the fresh dagre pass IS the answer.
+      // Preferring any on-screen coordinate here is what made the button look like it did nothing.
+      if (adoptNext) return next.map((n) => ({ ...n }));
       const prevPos = new Map(prev.map((n) => [n.id, n.position]));
       const parentOf = new Map(nextEdges.map((e) => [e.target, e.source]));
       const merged = next.map((n) => {
@@ -137,18 +185,44 @@ function CanvasInner({
         list.push(n);
         groups.set(parentId, list);
       }
+      /**
+       * Everything that already holds a coordinate is an obstacle — not just the DB-pinned nodes the
+       * auto-layout knows about. Expanding two sibling managers in turn is the ordinary case, and a row
+       * placed blindly under each parent put the second manager's reports on top of the first's.
+       */
+      const toPlace = new Set<string>();
+      for (const kids of groups.values()) for (const kid of kids) toPlace.add(kid.id);
+      const obstacles = merged.filter((n) => !toPlace.has(n.id)).map(nodeBox);
       for (const [parentId, kids] of groups) {
         const parent = byId.get(parentId);
         if (!parent) continue;
-        const parentH = parent.data.kind === 'department' ? DEPT_H : EMP_H;
-        const baseX = parent.position.x;
-        const baseY = parent.position.y + parentH + 36;
-        kids.forEach((kid, index) => {
-          const w = kid.data.kind === 'department' ? DEPT_W : EMP_W;
-          const at = { x: Math.round(baseX + index * (w + 20)), y: Math.round(baseY) };
-          kid.position = at;
-          localPos.current.set(kid.id, at);
-        });
+        const pb = nodeBox(parent);
+        // Accumulate real widths rather than striding by one kid's own width: a single row can mix
+        // department and employee cards, and a fixed stride mis-steps the moment the two differ.
+        const row = kids.map((kid) => ({
+          kid,
+          ...(kid.data.kind === 'department' ? { w: DEPT_W, h: DEPT_H } : { w: EMP_W, h: EMP_H }),
+        }));
+        const rowW = row.reduce((total, r, i) => total + r.w + (i > 0 ? ROW_GAP_X : 0), 0);
+        const rowH = row.reduce((tallest, r) => Math.max(tallest, r.h), 0);
+        const left = pb.x + pb.w / 2 - rowW / 2;
+        let y = pb.y + pb.h + ROW_GAP_Y;
+        // Push the whole row past whatever it lands on. Each step clears the box that was hit, so one
+        // pass per obstacle is the bound — and a bound is what keeps a dense canvas from looping.
+        for (let guard = 0; guard <= obstacles.length; guard += 1) {
+          const hit = obstacles.find((o) => boxesOverlap({ x: left, y, w: rowW, h: rowH }, o));
+          if (!hit) break;
+          y = hit.y + hit.h + ROW_PUSH_GAP;
+        }
+        let x = left;
+        for (const r of row) {
+          const at = { x: Math.round(x), y: Math.round(y) };
+          r.kid.position = at;
+          localPos.current.set(r.kid.id, at);
+          // A row just placed is an obstacle for the next parent's row.
+          obstacles.push({ x: at.x, y: at.y, w: r.w, h: r.h });
+          x += r.w + ROW_GAP_X;
+        }
       }
       return merged;
     },
@@ -159,15 +233,22 @@ function CanvasInner({
   // edges taken straight from `built` would be one painted frame ahead of the nodes they connect, and
   // React Flow drops an edge whose endpoint is not yet present.
   useEffect(() => {
-    setNodes((prev) => mergeGraph(built.nodes, built.edges, prev));
+    const adoptNext = pendingReset.current;
+    setNodes((prev) => mergeGraph(built.nodes, built.edges, prev, adoptNext));
     setEdges(built.edges);
+    // Consumed here and not inside mergeGraph: a state updater may run more than once, and a flag
+    // cleared on the first run would let the second restore the layout that was just discarded.
+    if (adoptNext) pendingReset.current = false;
   }, [built.nodes, built.edges, setNodes, mergeGraph]);
 
   // Fit once when the first non-empty graph lands — never on expand/collapse.
   useEffect(() => {
     if (didFit.current || built.nodes.length === 0) return;
-    didFit.current = true;
     const id = window.requestAnimationFrame(() => {
+      // Latched inside the frame, not before scheduling it: StrictMode's mount/unmount rehearsal cancels
+      // the frame and re-runs the effect, and a ref set up front made that re-run bail on a fit that had
+      // never actually happened — so in development the chart never fitted at all.
+      didFit.current = true;
       void fitView({ padding: 0.2, maxZoom: 0.95, duration: 220 });
     });
     return () => window.cancelAnimationFrame(id);
@@ -233,11 +314,28 @@ function CanvasInner({
     await Promise.all(
       queued.map(([id, p]) =>
         setHrOrgPosition(p.kind, id, { x: p.x, y: p.y }).catch(() => {
-          // A failed flush is not worth interrupting the re-parent for; the reload shows the truth.
+          // Not worth interrupting the re-parent for, but the override has to go: kept, it re-pins a
+          // coordinate the server rejected on every later rebuild, so not even a reload shows the truth.
+          // Nodes are left alone — the re-parent refetch is about to redraw them anyway.
+          localPos.current.delete(id);
         }),
       ),
     );
   }, []);
+
+  /**
+   * Put a node back where its gesture started, and forget the override. What makes "optimistic" honest:
+   * a coordinate the server never accepted otherwise stays on screen all session, then teleports back.
+   */
+  const rollbackPosition = useCallback(
+    (id: string): void => {
+      localPos.current.delete(id);
+      const at = preDrag.current.get(id);
+      if (!at) return;
+      setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, position: { ...at } } : n)));
+    },
+    [setNodes],
+  );
 
   /** Debounced position write, per node id. */
   const persistPosition = useCallback(
@@ -253,16 +351,23 @@ function CanvasInner({
         timers.current.delete(node.id);
         pending.current.delete(node.id);
         void setHrOrgPosition(kind, node.id, at).catch((err: unknown) => {
+          rollbackPosition(node.id);
           onError(err instanceof Error ? err.message : 'Could not save the new position.');
         });
       }, POSITION_DEBOUNCE_MS);
       timers.current.set(node.id, t);
     },
-    [admin, onError],
+    [admin, onError, rollbackPosition],
   );
 
   const reparent = useCallback(
-    async (childId: string, parentId: string | null, parentKind: 'department' | 'employee') => {
+    async (
+      childId: string,
+      parentId: string | null,
+      parentKind: 'department' | 'employee',
+      /** Only a DROP moved the node; an edge drawn by hand has no snapshot worth restoring. */
+      restoreOnRefusal = false,
+    ) => {
       const child = nodes.find((n) => n.id === childId);
       if (!child) return;
       await flushPositions();
@@ -275,10 +380,13 @@ function CanvasInner({
         });
         onGraphChanged();
       } catch (err) {
+        // Nothing rebuilds on a refusal — no refetch, and a later rebuild would preserve the on-screen
+        // position anyway — so the card would sit on top of the target it was refused, hiding it.
+        if (restoreOnRefusal) rollbackPosition(childId);
         onError(err instanceof Error ? err.message : 'Could not move that node.');
       }
     },
-    [nodes, onGraphChanged, onError, flushPositions],
+    [nodes, onGraphChanged, onError, flushPositions, rollbackPosition],
   );
 
   /**
@@ -291,32 +399,61 @@ function CanvasInner({
    * and it makes "move" the default that a small drag can never escape.
    */
   const onNodeDragStop = useCallback(
-    (_ev: unknown, node: Node<OrgNodeData>): void => {
+    (_ev: unknown, node: Node<OrgNodeData>, dragged: Node<OrgNodeData>[]): void => {
+      // The whole selection moves, not just the node under the cursor — Cmd/Ctrl-click multi-select is on
+      // by default, and React Flow hands the full set as the third argument.
+      const group = new Map(dragged.map((n) => [n.id, n]));
+      if (!group.has(node.id)) group.set(node.id, node);
+      // The gesture is over; from here a settled position change can only be a keyboard nudge.
+      dragActive.current.clear();
       if (!admin) return;
+      const saveGroup = (): void => {
+        for (const n of group.values()) persistPosition(n);
+      };
       const size = (n: Node<OrgNodeData>) =>
         n.data.kind === 'department' ? { w: DEPT_W, h: DEPT_H } : { w: EMP_W, h: EMP_H };
       const self = size(node);
       const cx = node.position.x + self.w / 2;
       const cy = node.position.y + self.h / 2;
       const hit = nodes.find((n) => {
-        if (n.id === node.id) return false;
+        // Every node that moved with this gesture is excluded, not just the one under the pointer: a
+        // sibling in the same selection landing under the cursor would turn a tidy-up into a re-parent.
+        if (group.has(n.id)) return false;
         const { w, h } = size(n);
         return (
           cx >= n.position.x && cx <= n.position.x + w && cy >= n.position.y && cy <= n.position.y + h
         );
       });
       if (!hit) {
-        persistPosition(node);
+        saveGroup();
+        return;
+      }
+      if (group.size > 1) {
+        // One drop target cannot mean four re-parents, and guessing would leave the other three moved but
+        // unsaved. Refuse the re-parent and keep the move the user can see.
+        onError('Move one node at a time to re-parent.');
+        saveGroup();
         return;
       }
       const targetKind = hit.data.kind;
       if (node.data.kind === 'department' && targetKind === 'employee') {
+        rollbackPosition(node.id);
         onError('A department cannot sit under a person.');
         return;
       }
-      void reparent(node.id, hit.id, targetKind);
+      void reparent(node.id, hit.id, targetKind, true);
     },
-    [admin, nodes, persistPosition, reparent, onError],
+    [admin, nodes, persistPosition, reparent, onError, rollbackPosition],
+  );
+
+  /** Snapshot the pre-drag positions (the rollback source) and mark the gesture as a mouse drag. */
+  const onNodeDragStart = useCallback(
+    (_ev: unknown, node: Node<OrgNodeData>, dragged: Node<OrgNodeData>[]): void => {
+      const group = dragged.length > 0 ? dragged : [node];
+      dragActive.current = new Set(group.map((n) => n.id));
+      for (const n of group) preDrag.current.set(n.id, { ...n.position });
+    },
+    [],
   );
 
   /**
@@ -329,15 +466,62 @@ function CanvasInner({
   const resetLayout = useCallback(async (): Promise<void> => {
     if (!admin) return;
     await flushPositions();
-    const moved = nodes.filter((n) => localPos.current.has(n.id) || n.position.x !== 0);
+    // Which rows are pinned comes from the payload and the override map, never from the rendered x:
+    // guessing with `position.x !== 0` skipped the one node someone had dragged to the origin — the
+    // only position it could never clear — and sent a pointless PATCH for every auto-laid-out node.
+    const pinned: { kind: 'department' | 'employee'; id: string }[] = [
+      ...data.departments
+        .filter((d) => d.canvasX != null || d.canvasY != null)
+        .map((d) => ({ kind: 'department' as const, id: d.id })),
+      ...data.employees
+        .filter((e) => e.canvasX != null || e.canvasY != null)
+        .map((e) => ({ kind: 'employee' as const, id: e.id })),
+    ];
+    /**
+     * ...unioned with everything moved in THIS session. A position write never invalidates the org
+     * query, so a coordinate that landed on the server seconds ago is still `null` in `data`. Omitted
+     * from the batch below, those rows survive the reset: the refetch hands their saved coordinates
+     * back and `pendingReset` makes the rebuild adopt them verbatim — i.e. the only nodes that got
+     * reset were the ones already pinned at page load. A null for a node that was never pinned is a
+     * harmless no-op; a missing one is the bug.
+     */
+    const kindOf = new Map<string, 'department' | 'employee'>([
+      ...data.departments.map((d) => [d.id, 'department'] as const),
+      ...data.employees.map((e) => [e.id, 'employee'] as const),
+    ]);
+    const batched = new Set(pinned.map((n) => n.id));
+    for (const id of localPos.current.keys()) {
+      if (batched.has(id)) continue;
+      // Absent from the payload means the row was deleted elsewhere — nothing left to clear, and a
+      // PATCH would only 404 into the error toast below.
+      const kind = kindOf.get(id);
+      if (!kind) continue;
+      batched.add(id);
+      pinned.push({ kind, id });
+    }
     localPos.current.clear();
+    pendingReset.current = true;
     try {
-      await Promise.all(moved.map((n) => setHrOrgPosition(n.data.kind, n.id, null)));
+      // allSettled: one 404 for a row deleted elsewhere must not skip the refetch and leave the reset
+      // half-applied on screen.
+      const results = await Promise.allSettled(
+        pinned.map((n) => setHrOrgPosition(n.kind, n.id, null)),
+      );
       onGraphChanged();
+      const failed = results.find((r) => r.status === 'rejected');
+      if (failed) {
+        onError(
+          failed.reason instanceof Error
+            ? failed.reason.message
+            : 'Some positions could not be cleared.',
+        );
+      }
     } catch (err) {
+      // No refetch is coming, so the adopt-verbatim flag would reshuffle the next unrelated rebuild.
+      pendingReset.current = false;
       onError(err instanceof Error ? err.message : 'Could not reset the layout.');
     }
-  }, [admin, nodes, flushPositions, onGraphChanged, onError]);
+  }, [admin, data, flushPositions, onGraphChanged, onError]);
 
   /** Drawing an edge by hand means the same thing as dropping the node. */
   const onConnect = useCallback(
@@ -357,9 +541,28 @@ function CanvasInner({
    */
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<OrgNodeData>>[]): void => {
-      onNodesChange(changes.filter((c) => c.type !== 'remove'));
+      const kept = changes.filter((c) => c.type !== 'remove');
+      onNodesChange(kept);
+      if (!admin) return;
+      for (const c of kept) {
+        /**
+         * Arrow-key moves arrive here and nowhere else, so without this a keyboard-only layout edit was
+         * visible all session and never written. Mouse drags are excluded by the dragActive ref, not by
+         * `dragging === false` alone: @xyflow/system emits one settled change immediately BEFORE
+         * onNodeDragStop, so the flag alone double-writes every drag — including gestures that turn out
+         * to be a re-parent.
+         */
+        if (c.type !== 'position' || c.dragging !== false || !c.position) continue;
+        if (dragActive.current.has(c.id)) continue;
+        const target = nodes.find((n) => n.id === c.id);
+        if (!target) continue;
+        // The rollback target is where the node stood before this burst of nudges, so snapshot only when
+        // no write for it is queued yet — every later arrow in the same burst must not overwrite it.
+        if (!pending.current.has(c.id)) preDrag.current.set(c.id, { ...target.position });
+        persistPosition({ ...target, position: c.position });
+      }
     },
-    [onNodesChange],
+    [onNodesChange, admin, nodes, persistPosition],
   );
 
   /** Single click opens the department / employee modal (chevron and "+" stopPropagation). */
@@ -377,6 +580,7 @@ function CanvasInner({
       edges={edges}
       onNodesChange={handleNodesChange}
       onNodeClick={onNodeClick}
+      onNodeDragStart={onNodeDragStart}
       onNodeDragStop={onNodeDragStop}
       onConnect={onConnect}
       nodeTypes={ORG_NODE_TYPES}

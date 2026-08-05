@@ -140,7 +140,8 @@
 .oct-btn:disabled { opacity: .5; cursor: not-allowed; }
 .oct-btn-primary {
     background: var(--liveColor);
-    color: var(--bg0);
+    /* NOT --bg0: it is near-white in the light theme, ~2:1 on a mid-tone accent fill */
+    color: var(--onAccent);
     border-color: var(--liveColor);
     box-shadow: 0 2px 10px color-mix(in srgb, var(--liveColor) 28%, transparent);
 }
@@ -158,6 +159,65 @@
 }
 .oct-btn-ghost:hover:not(:disabled) { color: var(--ink); border-color: color-mix(in srgb, var(--sub) 40%, var(--gb)); }
 
+/* ── stage cards: keyboard affordance (role=button divs on the road) ── */
+[data-stage-card]:focus-visible,
+.oct-cycle-card:focus-visible {
+    outline: 2px solid var(--liveColor);
+    outline-offset: 5px;
+    border-radius: 4px;
+}
+
+/* ── risk sections: overrides for scope-detail.css, which loads AFTER this sheet — hence
+      the .oct-root prefix to win on specificity ── */
+
+/* Hidden-but-clickable is a trap: an invisible focused Remove button deletes on Enter, and
+   a touch tap at the row's right edge hits it with no hover to reveal it. */
+.oct-root .oct-risk-row__act { pointer-events: none; }
+.oct-root .oct-risk-row:hover .oct-risk-row__act,
+.oct-root .oct-risk-row:focus-within .oct-risk-row__act { opacity: 1; pointer-events: auto; }
+
+.oct-risk-row__confirm {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    color: var(--sub);
+}
+.oct-risk-row__confirm button {
+    border: 1px solid var(--gb);
+    background: transparent;
+    color: var(--sub);
+    cursor: pointer;
+    padding: 2px 7px;
+    border-radius: var(--radius-md);
+    font: inherit;
+    transition: color .15s, border-color .15s;
+}
+.oct-risk-row__confirm button:disabled { opacity: .5; cursor: not-allowed; }
+.oct-risk-row__confirm .oct-risk-yes {
+    color: #F4716F;
+    border-color: color-mix(in srgb, #F4716F 45%, transparent);
+}
+
+/* Failed load ≠ empty node: spans the .oct-risk grid with the retry affordance. */
+.oct-risk-error {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 4px;
+    color: var(--sub);
+    font-size: 13px;
+}
+
+/* The picker is an 86px-tall scroller — without a ring you cannot tell which of the 22
+   chips you are on. */
+.oct-risk-icon:focus-visible { outline: 2px solid var(--rc); outline-offset: 1px; }
+.oct-root .oct-risk-icon.active { color: var(--onAccent); }
+
 /* ── toasts (port of the widget's asToast stack) ── */
 .oct-toast-stack {
     position: absolute;
@@ -168,6 +228,9 @@
     flex-direction: column;
     gap: 8px;
     max-width: 340px;
+    /* a legitimate burst must stay reachable — .oct-root clips, it does not scroll */
+    max-height: calc(100% - 96px);
+    overflow-y: auto;
 }
 .oct-toast {
     display: flex;
@@ -208,6 +271,8 @@
 /* ── reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
     .oct-anim { animation: none !important; }
-    .oct-particle { display: none !important; }
+    /* purely decorative and their whole point is the motion — the orb pulse would otherwise
+       freeze as a static ring at full opacity */
+    .oct-particle, .oct-ring { display: none !important; }
     .oct-flowline { animation: none !important; }
 }

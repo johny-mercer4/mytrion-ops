@@ -9,7 +9,7 @@ import {
   type CarrierInvitation,
   type RegisteredCompany,
 } from '../../api/carrierUsers';
-import { ApiError } from '../../api/transport';
+import { ApiError, request } from '../../api/transport';
 import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierInvitations } from './CarrierInvitations';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
@@ -89,21 +89,34 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
   // Support-bot group per carrier (chat-map). Admins view/set/re-point the STATIC Telegram group id
   // inline — the manual counterpart of the bot's auto-bind (wire a group before an owner registers).
   const [botChats, setBotChats] = useState<Map<string, string>>(new Map());
+  // A failed chat-map read is not "no group is mapped" — the column goes read-only instead of
+  // offering every carrier a Set-group button it would then write a duplicate row from.
+  const [botChatsUnavailable, setBotChatsUnavailable] = useState(false);
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `quiet` is for a re-read after a single-row mutation: the rows are already on screen, and
+  // swapping the whole table for the first-load skeleton unmounts the Pager and collapses
+  // .tableScroll, so the admin loses their place in the tree over one Revoke — on top of the
+  // confirm dialog's own "Working…". aria-busy + the disabled row carry the refresh instead.
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setError('');
+    setBotChatsUnavailable(false);
     try {
-      const [regs, chats] = await Promise.all([
+      const [regs, chatMap] = await Promise.all([
         listRegisteredCompanies(),
-        // Best-effort: the column just shows '—' if the chat-map read fails; registrations still load.
-        listSupportBotChats().catch(() => []),
+        // Best-effort, and the outcome has to be distinguishable: an empty list means "nothing
+        // mapped", a rejection means "we don't know" — collapsing both into [] said the first.
+        listSupportBotChats().then(
+          (chats) => ({ ok: true as const, chats }),
+          () => ({ ok: false as const }),
+        ),
       ]);
       setRegistrations(regs);
-      setBotChats(new Map(chats.map((c): [string, string] => [c.carrierId, c.chatId])));
+      if (chatMap.ok) setBotChats(new Map(chatMap.chats.map((c): [string, string] => [c.carrierId, c.chatId])));
+      else setBotChatsUnavailable(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -111,8 +124,8 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
     }
   }, []);
 
-  const loadInvitations = useCallback(async () => {
-    setInvLoading(true);
+  const loadInvitations = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setInvLoading(true);
     setInvError('');
     try {
       setInvitations(await listInvitations());
@@ -131,26 +144,80 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       return;
     }
     setGroupBusy(true);
+    const previous = botChats.get(carrierId);
+    let unbound = false;
     try {
+      // Upstream keys the mapping by chatId, not by carrier: setChat inserts a second row and leaves
+      // the old group enabled and still resolving to this carrier — two authorized Telegram groups
+      // behind one "saved" toast, and a second slot spent against SUPPORT_BOT_MAX_GROUPS. Unbind
+      // first so the re-point is a move, and so the freed slot is available to the new row.
+      if (previous && previous !== chat) {
+        try {
+          await request('DELETE', `/support-bot/chat-map/${encodeURIComponent(previous)}`);
+        } catch (e) {
+          // Already gone upstream is the state we were asking for; anything else would leave the
+          // old group live, so the re-point must not proceed on a half-done move.
+          if (!(e instanceof ApiError && e.status === 404)) throw e;
+        }
+        unbound = true;
+      }
       await setSupportBotChat(chat, carrierId);
-      setBotChats((prev) => new Map(prev).set(carrierId, chat));
       setEditingGroup(null);
       adminToast.success('Bot group saved', 'The support bot answers this group within ~5 minutes.');
+      // The map is upstream state, so read back what was actually stored rather than asserting it.
+      // A failed read-back is not a failed save, so it falls back to the value we just wrote.
+      try {
+        const chats = await listSupportBotChats();
+        setBotChats(new Map(chats.map((c): [string, string] => [c.carrierId, c.chatId])));
+      } catch {
+        setBotChats((prev) => new Map(prev).set(carrierId, chat));
+      }
     } catch (e) {
-      adminToast.error(
-        'Save failed',
+      // Unbind-first makes a failed write strictly worse than the duplicate row it prevents: the
+      // carrier is left with NO authorized group and the bot silently stops answering the group they
+      // are actually messaging in. Put the previous mapping back so the move is all-or-nothing, and
+      // only report the carrier as unmapped when the restore itself fails.
+      let restoreError = '';
+      if (unbound && previous) {
+        try {
+          await setSupportBotChat(previous, carrierId);
+          setBotChats((prev) => new Map(prev).set(carrierId, previous));
+        } catch (re) {
+          restoreError = re instanceof Error ? re.message : String(re);
+          setBotChats((prev) => {
+            const next = new Map(prev);
+            next.delete(carrierId);
+            return next;
+          });
+        }
+      }
+      const detail =
         e instanceof ApiError && e.status === 403
           ? 'Admin access required to map bot groups.'
           : e instanceof Error
             ? e.message
-            : String(e),
-      );
+            : String(e);
+      if (restoreError) {
+        // The one outcome an admin must not miss: two writes failed and the carrier is now unmapped.
+        adminToast.error(
+          'Save failed — this carrier now has NO bot group',
+          `${detail} The previous group ${previous} could not be restored either (${restoreError}) — re-enter it to bring the bot back.`,
+          20000,
+        );
+      } else {
+        adminToast.error('Save failed', unbound && previous ? `${detail} ${previous} is still mapped.` : detail);
+      }
     } finally {
       setGroupBusy(false);
     }
   }
 
   function renderGroupCell(cid: string) {
+    // We don't know this carrier's mapping — say so instead of rendering the affirmative "Set group"
+    // affordance, which reads as "nothing is mapped" and invites a duplicate write.
+    if (botChatsUnavailable) {
+      return <span title="Bot group map unavailable">—</span>;
+    }
     if (editingGroup === cid) {
       return (
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -201,7 +268,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
     try {
       await revokeRegistration(id);
       adminToast.success('Access revoked', `${label} can no longer open the mini-app.`);
-      await load();
+      await load({ quiet: true });
     } catch (e) {
       adminToast.error('Revoke failed', e instanceof Error ? e.message : String(e));
     } finally {
@@ -214,7 +281,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
     try {
       await cancelInvitation(id);
       adminToast.success('Invite cancelled', 'The link no longer works.');
-      await loadInvitations();
+      await loadInvitations({ quiet: true });
     } catch (e) {
       adminToast.error('Cancel failed', e instanceof Error ? e.message : String(e));
     } finally {
@@ -438,6 +505,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         <input
           className={s.searchInput}
           value={query}
+          // The count chip lives inside this label, so without an explicit name the input is
+          // announced as "12 of 40" — a name that changes on every keystroke.
+          aria-label="Filter registered companies"
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter — company, carrier id, telegram username…"
         />
@@ -558,6 +628,12 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   <span className={s.cellSub} role="cell">
                     @{m.telegramUsername ?? m.telegramUserId}
                   </span>
+                  {/* Bot group is carrier-level (see the owner row), but the cell still has to exist:
+                      a 6-cell row in a 7-track grid slides the date under "Bot group" and Revoke
+                      under "Registered", and pairs every announced cell with the wrong header. */}
+                  <span className={s.cellSub} role="cell">
+                    —
+                  </span>
                   <span className={s.cellSub} role="cell" title={new Date(m.createdAt).toLocaleString()}>
                     {new Date(m.createdAt).toLocaleDateString()}
                   </span>
@@ -599,6 +675,10 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   <span className={s.cellSub} role="cell">
                     @{d.telegramUsername ?? d.telegramUserId}
                   </span>
+                  {/* Same placeholder as the manager row — the group is mapped per carrier, not per person. */}
+                  <span className={s.cellSub} role="cell">
+                    —
+                  </span>
                   <span className={s.cellSub} role="cell" title={new Date(d.createdAt).toLocaleString()}>
                     {new Date(d.createdAt).toLocaleDateString()}
                   </span>
@@ -619,7 +699,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
               ))}
             </div>
           ))}
-          {!loading && filtered.length === 0 && (
+          {/* Not while `error` stands: nothing was received, so "no one has registered yet" would be
+              a claim about data we never got — and an admin who reads it starts re-inviting owners. */}
+          {!loading && !error && filtered.length === 0 && (
             <div className={s.none} role="row">
               <span role="cell">
                 {registrations.length === 0

@@ -80,6 +80,14 @@ function isActive(t: DbTable): boolean {
   return (t.writeActivity?.totalWrites ?? 0) > 0 || activityOf(t.updateTime).label === 'Live';
 }
 
+/**
+ * A matview is a view for filtering purposes. Testing `type === 'VIEW'` exactly put every relation
+ * the row already labels "Matview" under the Tables chip and left it out of the Views count.
+ */
+function isViewLike(t: DbTable): boolean {
+  return t.type === 'VIEW' || t.type === 'MATERIALIZED VIEW';
+}
+
 function relativeTime(iso: string | null): string {
   if (!iso) return '—';
   const then = new Date(iso).getTime();
@@ -127,6 +135,12 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
   const [schemaFilter, setSchemaFilter] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /**
+   * Explicit per-row disclosure decisions, which outrank the "a column matched the search" default.
+   * Without them a click on an auto-expanded row could never close it: the derived rule is ORed in,
+   * so it re-opened whatever `expanded` had just dropped.
+   */
+  const [override, setOverride] = useState<Map<string, boolean>>(new Map());
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -167,8 +181,8 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
     const tables = snap?.tables ?? [];
     return tables.filter((t) => {
       if (schemaFilter && t.schema !== schemaFilter) return false;
-      if (kind === 'tables' && t.type === 'VIEW') return false;
-      if (kind === 'views' && t.type !== 'VIEW') return false;
+      if (kind === 'tables' && isViewLike(t)) return false;
+      if (kind === 'views' && !isViewLike(t)) return false;
       if (activeOnly && !isActive(t)) return false;
       if (!q) return true;
       const tableMetadata = [
@@ -188,21 +202,51 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
     [snap],
   );
   const viewCount = useMemo(
-    () => (snap?.tables ?? []).filter((t) => t.type === 'VIEW').length,
+    () => (snap?.tables ?? []).filter(isViewLike).length,
     [snap],
   );
 
-  const toggle = (key: string) =>
+  // A new query re-derives which rows auto-open, so decisions taken against the previous one go.
+  useEffect(() => {
+    setOverride((prev) => (prev.size === 0 ? prev : new Map()));
+  }, [q]);
+
+  const isOpen = useCallback(
+    (t: DbTable): boolean => {
+      const key = tableKey(t);
+      const auto = q !== '' && columnMatches(t) > 0 && !key.toLowerCase().includes(q);
+      return override.get(key) ?? (expanded.has(key) || auto);
+    },
+    [q, columnMatches, override, expanded],
+  );
+
+  const toggle = (key: string, open: boolean) => {
+    setOverride((prev) => new Map(prev).set(key, !open));
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
+      if (open) next.delete(key);
       else next.add(key);
       return next;
     });
+  };
 
-  const allOpen = visible.length > 0 && visible.every((t) => expanded.has(tableKey(t)));
-  const toggleAll = () =>
-    setExpanded(allOpen ? new Set() : new Set(visible.map((t) => tableKey(t))));
+  const allOpen = visible.length > 0 && visible.every(isOpen);
+  const toggleAll = () => {
+    const keys = visible.map(tableKey);
+    setOverride((prev) => {
+      const next = new Map(prev);
+      for (const key of keys) next.set(key, !allOpen);
+      return next;
+    });
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const key of keys) {
+        if (allOpen) next.delete(key);
+        else next.add(key);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
@@ -249,7 +293,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           </div>
           <div className={s.statTile}>
             <span className={s.statNum}>{viewCount}</span>
-            <span className={s.statLabel}>Views</span>
+            <span className={s.statLabel}>Views &amp; matviews</span>
           </div>
         </div>
       )}
@@ -280,23 +324,29 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
               ))}
             </select>
           )}
-          {(['all', 'tables', 'views'] as const).map((k) => (
+          {/* `.filterChipOn` is a gradient and nothing else, so which filter is applied has to be
+              announced too — aria-pressed, not radios, since there is no roving-tabindex here. */}
+          <div className={x.filterGroup} role="group" aria-label="Filter relations">
+            {(['all', 'tables', 'views'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={`${s.filterChip} ${kind === k ? s.filterChipOn : ''}`}
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+              >
+                {k === 'all' ? 'All' : k === 'tables' ? 'Tables' : 'Views'}
+              </button>
+            ))}
             <button
-              key={k}
               type="button"
-              className={`${s.filterChip} ${kind === k ? s.filterChipOn : ''}`}
-              onClick={() => setKind(k)}
+              className={`${s.filterChip} ${activeOnly ? s.filterChipOn : ''}`}
+              aria-pressed={activeOnly}
+              onClick={() => setActiveOnly((v) => !v)}
             >
-              {k === 'all' ? 'All' : k === 'tables' ? 'Tables' : 'Views'}
+              Has activity
             </button>
-          ))}
-          <button
-            type="button"
-            className={`${s.filterChip} ${activeOnly ? s.filterChipOn : ''}`}
-            onClick={() => setActiveOnly((v) => !v)}
-          >
-            Has activity
-          </button>
+          </div>
           {snap && (
             <>
               <span className={s.chipMeta}>
@@ -348,8 +398,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
         {visible.map((t) => {
           const tkey = tableKey(t);
           const matched = columnMatches(t);
-          const open =
-            expanded.has(tkey) || (q !== '' && matched > 0 && !tkey.toLowerCase().includes(q));
+          const open = isOpen(t);
           const act = tableActivity(t);
           return (
             <div key={tkey} className={x.schemaItem}>
@@ -357,13 +406,17 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
                 type="button"
                 className={`${s.tRow} ${s.tRowClick}`}
                 style={TABLE_COLS}
-                onClick={() => toggle(tkey)}
+                onClick={() => toggle(tkey, open)}
                 aria-expanded={open}
               >
                 <span className={s.docCell}>
                   <span className={`${x.chevron} ${open ? x.chevronOpen : ''}`}>▸</span>
                   {t.schema && <span className={x.schemaBadge}>{t.schema}</span>}
-                  <span className={s.docTitle}>{t.name}</span>
+                  {/* The name is the only shrinkable track in this cell, so a long relation is
+                      routinely ellipsized — the qualified key in `title` is how it stays readable. */}
+                  <span className={s.docTitle} title={tkey}>
+                    {t.name}
+                  </span>
                   {matched > 0 && <span className={x.matchHint}>{matched} col match</span>}
                 </span>
                 <span className={s.deptText}>
@@ -400,7 +453,9 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
                     return (
                       <div key={c.name} className={x.colRow} style={COL_COLS}>
                         <span className={x.colName}>{c.name}</span>
-                        <span className={x.typeMono}>{c.type}</span>
+                        <span className={x.typeMono} title={c.type}>
+                          {c.type}
+                        </span>
                         <span className={c.nullable ? x.nullYes : s.deptText}>
                           {c.nullable ? 'NULL' : 'NOT NULL'}
                         </span>
@@ -410,8 +465,12 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
                             <span className={s.deptText} title="auto_increment"> ai</span>
                           )}
                         </span>
-                        <span className={s.mono}>{c.default ?? '—'}</span>
-                        <span className={s.deptText}>{c.comment || '—'}</span>
+                        <span className={x.colDefault} title={c.default ?? ''}>
+                          {c.default ?? '—'}
+                        </span>
+                        <span className={x.colComment} title={c.comment}>
+                          {c.comment || '—'}
+                        </span>
                       </div>
                     );
                   })}

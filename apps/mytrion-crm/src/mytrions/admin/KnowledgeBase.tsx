@@ -12,6 +12,8 @@ import {
 } from '../../api/knowledge';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { DocIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
+import { useModalFocus } from '../hr/useModalFocus';
+import { Pager, PAGE_SIZE } from './Pager';
 import s from './admin.module.css';
 
 const STATUS_LABEL: Record<DocStatus, string> = {
@@ -21,6 +23,14 @@ const STATUS_LABEL: Record<DocStatus, string> = {
   failed: 'Failed',
 };
 const DOC_SKELETON = ['58%', '72px', '36%', '48%', '68px'] as const;
+/** One chunk window per fetch — a 1MB doc is ~1250 chunks, far too many bodies to ship at once. */
+const CHUNK_PAGE = 100;
+/**
+ * Search is client-side (listQuery on /knowledge/docs is limit/offset/department only — no `q`), so
+ * while the box has text we fetch the widest window the route allows instead of the 10-row page, or
+ * typing a title would only ever match the current window. 200 is the route's `limit` cap.
+ */
+const SEARCH_LIMIT = 200;
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -42,20 +52,48 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<KnowledgeDoc | null>(null);
+  const [page, setPage] = useState(1);
+
+  // Non-empty search box ⇒ wide fetch. Derived as a boolean (not the raw query) so `load` refetches
+  // once when search mode flips, not on every keystroke.
+  const searching = query.trim().length > 0;
+
+  // A page step and the keystroke that flips search mode can be in flight together; without this the
+  // late paged response overwrites the wide search window with its 10 rows.
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const mine = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
-      const [statsRes, docsRes] = await Promise.all([getStats(), listDocs({ limit: 200 })]);
+      const [statsRes, docsRes] = await Promise.all([
+        getStats(),
+        // Page server-side. The backend caps `limit` at 200 while the Documents tile counts the
+        // whole corpus, so a single fetch silently hides every doc past the newest window — and
+        // the one it hides is exactly the old failed ingest an admin came here to find. Searching
+        // widens the window back to the cap (offset 0) because the match is computed on the client.
+        searching
+          ? listDocs({ limit: SEARCH_LIMIT })
+          : listDocs({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+      ]);
+      if (loadSeq.current !== mine) return; // superseded; the newer load owns the list and `loading`
       setStats(statsRes);
       setDocs(docsRes.docs);
+      // Re-point an open detail modal at the refreshed row, so a write that only changes a
+      // timestamp (Mark verified) is visible in the dialog that triggered it.
+      setOpen((prev) => (prev ? (docsRes.docs.find((d) => d.id === prev.id) ?? prev) : prev));
+      // Deleting the last doc on the last page would otherwise leave the operator on a blank
+      // window whose pager has just hidden itself. Step back (strictly, so this can't loop).
+      if (!searching && docsRes.docs.length === 0 && statsRes.docs > 0 && page > 1) {
+        setPage(Math.min(page - 1, Math.max(1, Math.ceil(statsRes.docs / PAGE_SIZE))));
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (loadSeq.current === mine) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (loadSeq.current === mine) setLoading(false);
     }
-  }, []);
+  }, [page, searching]);
 
   useEffect(() => {
     void load();
@@ -74,28 +112,34 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
 
   const ready = docs.filter((d) => d.status === 'ready').length;
   const failed = docs.filter((d) => d.status === 'failed').length;
+  /**
+   * The tiles count the loaded window — there is no backend status count. Qualify the label with
+   * what that window actually is, and drop the qualifier entirely once the window covers the whole
+   * corpus (search mode over a corpus ≤ SEARCH_LIMIT), so the number is never undersold either way.
+   */
+  const countScope =
+    stats && docs.length >= stats.docs ? '' : searching ? ` (first ${SEARCH_LIMIT})` : ' (this page)';
 
+  /**
+   * Both writes deliberately let the rejection escape to DocDetailModal: the panel's `error`
+   * banner renders in normal flow behind the fixed, blurred `.modalBackdrop`, so a failed delete
+   * (a non-admin hits the 403 writeGuard) used to produce no visible feedback at all. The panel
+   * banner is now for the list/stats fetch only.
+   */
   async function onDelete(doc: KnowledgeDoc) {
     if (!window.confirm(`Delete "${doc.title}" and its embedded chunks?`)) return;
-    try {
-      await deleteDoc(doc.id);
-      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
-      setStats((prev) =>
-        prev ? { docs: prev.docs - 1, chunks: prev.chunks - (doc.chunkCount ?? 0) } : prev,
-      );
-      setOpen(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    await deleteDoc(doc.id);
+    setOpen(null);
+    // Refetch instead of splicing the row out: with a server-side window the page has to be
+    // re-filled from the backend anyway, and the totals come back consistent with it.
+    await load();
   }
 
   async function onVerify(doc: KnowledgeDoc) {
-    try {
-      await verifyDoc(doc.id);
-      setError('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    await verifyDoc(doc.id);
+    // markVerified bumps updated_at as well as last_verified_at, so the refetch is what makes the
+    // attestation visible — a success message alone leaves the stale Updated timestamp on screen.
+    await load();
   }
 
   return (
@@ -124,13 +168,15 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
           <div className={s.statNum}>{(stats?.chunks ?? 0).toLocaleString()}</div>
           <div className={s.statLabel}>Embedded chunks</div>
         </div>
+        {/* Ready/Failed are counted from the loaded window, not the corpus — `countScope` says which,
+            so a "Failed 0" is never read as a promise about the docs off screen. */}
         <div className={s.statTile}>
           <div className={`${s.statNum} ${s.good}`}>{ready.toLocaleString()}</div>
-          <div className={s.statLabel}>Ready</div>
+          <div className={s.statLabel}>Ready{countScope}</div>
         </div>
         <div className={s.statTile}>
           <div className={`${s.statNum} ${failed > 0 ? s.bad : ''}`}>{failed.toLocaleString()}</div>
-          <div className={s.statLabel}>Failed</div>
+          <div className={s.statLabel}>Failed{countScope}</div>
         </div>
       </div>
 
@@ -163,7 +209,14 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
             <span className={s.srOnly} role="status">
               Loading documents…
             </span>
-            <TableSkeleton widths={DOC_SKELETON} rowClassName={s.tRow} colsClassName={s.tDocs} />
+            {/* Match the outgoing window's height: a page step reloads, and a fixed 6-row skeleton
+                under a 10-row page would drag the pager up and back down under the cursor. */}
+            <TableSkeleton
+              widths={DOC_SKELETON}
+              rowClassName={s.tRow}
+              colsClassName={s.tDocs}
+              rows={Math.min(docs.length || 6, PAGE_SIZE)}
+            />
           </>
         )}
         {!loading &&
@@ -188,17 +241,31 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
           ))}
         {!loading && filtered.length === 0 && (
           <div className={s.none}>
-            {docs.length === 0 ? 'No documents yet — add sources in Train.' : `No documents match "${query}".`}
+            {docs.length === 0
+              ? 'No documents yet — add sources in Train.'
+              : `No documents match "${query}"${
+                  (stats?.docs ?? 0) > docs.length
+                    ? ` — search covers the newest ${SEARCH_LIMIT} documents.`
+                    : '.'
+                }`}
           </div>
         )}
       </div>
+
+      {/* Hidden while searching — that fetch is one wide offset-0 window, so a page number would be a
+          lie about what the list contains. Not gated on `loading`: this pager is server-side, so
+          every click sets loading, and a `!loading` gate would unmount the button under the cursor
+          mid-page-step. Pager self-hides at one page, and the table's aria-busy carries in-flight. */}
+      {!searching && (stats !== null || docs.length > 0) && (
+        <Pager page={page} total={stats?.docs ?? docs.length} onChange={setPage} />
+      )}
 
       {open && (
         <DocDetailModal
           doc={open}
           onClose={() => setOpen(null)}
-          onDelete={() => void onDelete(open)}
-          onVerify={() => void onVerify(open)}
+          onDelete={() => onDelete(open)}
+          onVerify={() => onVerify(open)}
         />
       )}
     </div>
@@ -214,19 +281,24 @@ function DocDetailModal({
 }: {
   doc: KnowledgeDoc;
   onClose: () => void;
-  onDelete: () => void;
-  onVerify: () => void;
+  /** Rejects on a failed write — the modal, not the panel behind it, reports the outcome. */
+  onDelete: () => Promise<void>;
+  onVerify: () => Promise<void>;
 }) {
   const [chunks, setChunks] = useState<DocChunk[] | null>(null);
   const [error, setError] = useState('');
-  const panelRef = useRef<HTMLDivElement>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [busy, setBusy] = useState<'verify' | 'delete' | null>(null);
+  const [actionError, setActionError] = useState('');
+  const [verified, setVerified] = useState(false);
+  const panelRef = useModalFocus<HTMLDivElement>();
   // Close only when the press STARTED on the backdrop — a text-selection drag that ends
   // outside the panel must not dismiss the modal.
   const downOnBackdrop = useRef(false);
 
   useEffect(() => {
     let alive = true;
-    getDocChunks(doc.id, { limit: 100 })
+    getDocChunks(doc.id, { limit: CHUNK_PAGE })
       .then((res) => alive && setChunks(res.chunks))
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -234,19 +306,46 @@ function DocDetailModal({
     };
   }, [doc.id]);
 
-  // Focus management + Escape (same pattern as the chat ConversationList overlay).
+  // Escape only: useModalFocus owns the Tab trap, initial focus, focus restore and the background
+  // scroll lock, and deliberately leaves Escape to the caller — the one place that knows a write
+  // may be in flight.
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      previous?.focus();
     };
   }, [onClose]);
+
+  async function loadMoreChunks() {
+    setLoadingMore(true);
+    setError('');
+    try {
+      const res = await getDocChunks(doc.id, { limit: CHUNK_PAGE, offset: chunks?.length ?? 0 });
+      setChunks((prev) => [...(prev ?? []), ...res.chunks]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function runAction(kind: 'verify' | 'delete') {
+    if (busy) return;
+    setBusy(kind);
+    setActionError('');
+    setVerified(false);
+    try {
+      await (kind === 'delete' ? onDelete() : onVerify());
+      if (kind === 'verify') setVerified(true);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div
@@ -283,12 +382,33 @@ function DocDetailModal({
         </div>
         {doc.error && <p className={s.errorNote}>{doc.error}</p>}
 
+        {actionError && (
+          <p className={s.errorNote} role="alert">
+            {actionError}
+          </p>
+        )}
+        {verified && !actionError && (
+          <p className={s.noticeNote} role="status">
+            Freshness confirmed — retrieval will stop demoting this document as stale.
+          </p>
+        )}
+
         <div className={s.modalActions}>
-          <button type="button" className={s.ghostBtn} onClick={onVerify}>
-            Mark verified
+          <button
+            type="button"
+            className={s.ghostBtn}
+            disabled={busy !== null}
+            onClick={() => void runAction('verify')}
+          >
+            {busy === 'verify' ? 'Marking…' : 'Mark verified'}
           </button>
-          <button type="button" className={s.dangerBtn} onClick={onDelete}>
-            Delete document
+          <button
+            type="button"
+            className={s.dangerBtn}
+            disabled={busy !== null}
+            onClick={() => void runAction('delete')}
+          >
+            {busy === 'delete' ? 'Deleting…' : 'Delete document'}
           </button>
         </div>
 
@@ -313,6 +433,23 @@ function DocDetailModal({
             </div>
           ))}
           {chunks?.length === 0 && <div className={s.none}>No chunks stored for this document.</div>}
+          {/* Without this the list just stops at chunk 99 under a meta row reading "Chunks 412",
+              which reads as a truncated embedding — the opposite of what the inspector is for. */}
+          {chunks && chunks.length > 0 && chunks.length < (doc.chunkCount ?? 0) && (
+            <div className={s.pager}>
+              <span className={s.pagerMeta}>
+                showing first {chunks.length} of {doc.chunkCount} chunks
+              </span>
+              <button
+                type="button"
+                className={s.ghostBtn}
+                disabled={loadingMore}
+                onClick={() => void loadMoreChunks()}
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -100,7 +100,9 @@
 
 .expanded {
   border-bottom: 1px solid var(--border-light);
-  background: color-mix(in srgb, var(--accent) 4%, var(--hz-pane));
+  /* Mixed against --hz-pane-alt, not --hz-pane: the latter is a linear-gradient(), and a non-<color>
+     argument makes the whole color-mix() — and so the background — invalid at computed-value time. */
+  background: color-mix(in srgb, var(--accent) 4%, var(--hz-pane-alt));
 }
 
 .details {

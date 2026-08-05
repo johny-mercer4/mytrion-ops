@@ -64,6 +64,11 @@ export function Deals() {
   const loadSeq = useRef(0);
   const openSeq = useRef(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Roster for handlers that read it after an await — `openDeal`'s closed-over `agents` can still
+      be the empty pre-fetch array by the time the deal detail resolves. */
+  const agentsRef = useRef<AgentUser[]>([]);
+  /** Which mode the rows in `deals` came from, so a reload can tell a flip from a plain refresh. */
+  const loadedMode = useRef<Mode>('browse');
 
   const recoveryMode = RECOVERY_TAB_ENABLED && mode === 'recovery';
 
@@ -80,9 +85,17 @@ export function Deals() {
 
       setLoading(true);
       setError('');
-      setDeals([]);
-      setTimelineByDeal({});
       setLastTransfer(null);
+      // Rows are dropped only when the mode flips — the two modes list different sets, and
+      // `timelineByDeal` is keyed by deal id so it goes with them or `filterDeals` matches
+      // prior-owner text against rows that are gone. A failed reload inside one mode keeps the last
+      // good rows instead of blanking a list the admin is working through.
+      const nextMode: Mode = transferredBy ? 'recovery' : 'browse';
+      if (loadedMode.current !== nextMode) {
+        setDeals([]);
+        setTimelineByDeal({});
+      }
+      loadedMode.current = nextMode;
       if (transferredBy) {
         setMode('recovery');
         setActiveTransferrerId(transferredBy);
@@ -125,11 +138,13 @@ export function Deals() {
 
   useEffect(() => {
     void listAgents(true)
-      .then((rows) =>
-        setAgents(
-          [...rows].sort((a, b) => (a.name ?? a.zohoUserId).localeCompare(b.name ?? b.zohoUserId)),
-        ),
-      )
+      .then((rows) => {
+        const sorted = [...rows].sort((a, b) =>
+          (a.name ?? a.zohoUserId).localeCompare(b.name ?? b.zohoUserId),
+        );
+        agentsRef.current = sorted;
+        setAgents(sorted);
+      })
       .catch((e: unknown) =>
         adminToast.error(
           'Could not load agents',
@@ -140,6 +155,11 @@ export function Deals() {
 
   useEffect(() => {
     void loadDeals('');
+    // Admin tabs unmount on switch, so a pending debounce would otherwise fire a Zoho search — and
+    // an `admin.deals.search` audit row — for a search nobody performed.
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
 
@@ -167,6 +187,11 @@ export function Deals() {
     setSelected(null);
     void loadDeals('', { transferredBy: tid, offset: 0 });
   };
+
+  const reloadCurrent = () =>
+    void loadDeals(query, {
+      transferredBy: recoveryMode ? activeTransferrerId || transferrerId : null,
+    });
 
   const switchBrowse = () => {
     setMode('browse');
@@ -206,7 +231,7 @@ export function Deals() {
       if (detail.priorOwner?.zohoUserId) {
         setToAgentId(detail.priorOwner.zohoUserId);
       } else if (detail.priorOwner?.name) {
-        const match = agents.find(
+        const match = agentsRef.current.find(
           (a) =>
             (a.name ?? '').trim().toLowerCase() === detail.priorOwner!.name!.trim().toLowerCase(),
         );
@@ -310,11 +335,7 @@ export function Deals() {
             type="button"
             className={s.ghostBtn}
             disabled={loading}
-            onClick={() =>
-              void loadDeals(query, {
-                transferredBy: recoveryMode ? activeTransferrerId || transferrerId : null,
-              })
-            }
+            onClick={reloadCurrent}
             title="Refresh"
           >
             <RefreshIcon /> Refresh
@@ -334,7 +355,10 @@ export function Deals() {
               aria-label="Search deals"
             />
           </div>
-          {!loading ? <span className={s.dealsCount}>{visibleDeals.length} shown</span> : null}
+          {/* Hidden on `error`: the rows below are the last good load, not this failed request. */}
+          {!loading && !error ? (
+            <span className={s.dealsCount}>{visibleDeals.length} shown</span>
+          ) : null}
         </div>
       ) : (
         <div className={s.dealsRecoveryBar}>
@@ -445,9 +469,13 @@ export function Deals() {
       {/* Every other tab surfaces a load failure in the tinted `errorNote` pane; this was the one
           place it rendered as bare red text with nothing to separate it from the table below. */}
       {error ? (
-        <p className={s.errorNote} role="alert">
-          {error}
-        </p>
+        <div className={s.errorNote} role="alert">
+          {deals.length > 0 ? `Could not refresh — showing the last loaded deals. ${error}` : error}{' '}
+          {/* No busy label needed — a retry clears `error`, so this note is gone while it runs. */}
+          <button type="button" className={s.linkBtn} onClick={reloadCurrent}>
+            Try again
+          </button>
+        </div>
       ) : null}
 
       <div className={s.dealsLayout}>
@@ -483,7 +511,9 @@ export function Deals() {
                   />
                 </>
               ) : null}
-              {!loading && visibleDeals.length === 0 ? (
+              {/* Never on `error`: a failure is not an empty result, and "try another search" sends
+                  the admin to edit a query that never reached Zoho. */}
+              {!loading && !error && visibleDeals.length === 0 ? (
                 <div className={s.emptyState}>
                   {deals.length === 0
                     ? recoveryMode

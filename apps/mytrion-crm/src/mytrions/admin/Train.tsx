@@ -1,5 +1,6 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useRef, useState, useSyncExternalStore, type ChangeEvent, type DragEvent } from 'react';
 import { embedDocument } from '../../api/knowledge';
+import { ApiError } from '../../api/transport';
 import { CheckIcon, XIcon } from '../../components/icons';
 import s from './admin.module.css';
 
@@ -27,7 +28,8 @@ const DEPARTMENT_PRESETS = [
   'c-level',
 ];
 
-type FileStatus = 'queued' | 'embedding' | 'ready' | 'skipped' | 'failed';
+/** `unconfirmed` = the client gave up waiting, but the server may well have committed the ingest. */
+type FileStatus = 'queued' | 'embedding' | 'ready' | 'skipped' | 'failed' | 'unconfirmed';
 
 interface QueuedFile {
   id: string;
@@ -35,6 +37,13 @@ interface QueuedFile {
   status: FileStatus;
   chunkCount: number | null;
   error: string;
+}
+
+interface RunSummary {
+  ready: number;
+  skipped: number;
+  failed: number;
+  unconfirmed: number;
 }
 
 function mimeForFilename(name: string): string {
@@ -48,13 +57,56 @@ function normalizeDept(raw: string): string {
 let seq = 0;
 const nextId = () => `f_${(seq += 1)}`;
 
+/**
+ * The queue and the run live OUTSIDE the component.
+ *
+ * admin/index.tsx mounts <Train> only while its tab is selected, so clicking Knowledge Base
+ * mid-ingest — the natural thing to do during a long embed — unmounts it. Held in useState, the
+ * loop would keep POSTing while every write became a no-op on an unmounted component, and the
+ * operator would come back to an empty dropzone with no record of which files embedded or failed.
+ * In a module store both the queue and the per-file results survive unmount and remount.
+ */
+interface TrainRun {
+  files: QueuedFile[];
+  running: boolean;
+  summary: RunSummary | null;
+}
+
+let run: TrainRun = { files: [], running: false, summary: null };
+const listeners = new Set<() => void>();
+
+function commit(next: Partial<TrainRun>): void {
+  run = { ...run, ...next };
+  listeners.forEach((listener) => listener());
+}
+
+function setQueue(update: (prev: QueuedFile[]) => QueuedFile[]): void {
+  commit({ files: update(run.files) });
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+const snapshot = (): TrainRun => run;
+
+/**
+ * A reload mid-run orphans the batch: the loop dies with the page while the server keeps whatever
+ * it already committed. Registered by the run itself rather than by an effect, so the warning
+ * outlives Train's unmount when the operator switches tabs.
+ */
+function warnUnload(e: BeforeUnloadEvent): void {
+  e.preventDefault();
+}
+
 /** Admin Train — upload sources (or paste text), tag a department scope, and embed. */
 export function Train({ onTrained }: { onTrained?: () => void }) {
-  const [files, setFiles] = useState<QueuedFile[]>([]);
+  const { files, running, summary } = useSyncExternalStore(subscribe, snapshot, snapshot);
   const [department, setDepartment] = useState('');
-  const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [summary, setSummary] = useState<{ ready: number; skipped: number; failed: number } | null>(null);
   const [notice, setNotice] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -79,7 +131,7 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
       }
       next.push({ id: nextId(), file, status: 'queued', chunkCount: null, error: '' });
     }
-    setFiles((prev) => {
+    setQueue((prev) => {
       const merged = [...prev, ...next];
       if (merged.length > MAX_BATCH) {
         setNotice(`Batch capped at ${MAX_BATCH} files.`);
@@ -101,36 +153,51 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
   }
 
   const patch = (id: string, p: Partial<QueuedFile>) =>
-    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...p } : f)));
+    setQueue((prev) => prev.map((f) => (f.id === id ? { ...f, ...p } : f)));
 
   async function train() {
     if (running || files.length === 0) return;
-    setRunning(true);
-    setSummary(null);
+    commit({ running: true, summary: null });
+    window.addEventListener('beforeunload', warnUnload);
     const dept = normalizeDept(department);
-    const tally = { ready: 0, skipped: 0, failed: 0 };
-    for (const item of files) {
-      if (item.status === 'ready' || item.status === 'skipped') continue;
-      patch(item.id, { status: 'embedding', error: '' });
-      try {
-        const content = await item.file.text();
-        const res = await embedDocument({
-          title: item.file.name,
-          content,
-          ...(dept ? { department: dept } : {}),
-          mimeType: mimeForFilename(item.file.name),
-        });
-        const status: FileStatus = res.status === 'skipped' ? 'skipped' : 'ready';
-        tally[status === 'skipped' ? 'skipped' : 'ready'] += 1;
-        patch(item.id, { status, chunkCount: res.chunkCount });
-      } catch (e) {
-        tally.failed += 1;
-        patch(item.id, { status: 'failed', error: e instanceof Error ? e.message : String(e) });
+    const tally: RunSummary = { ready: 0, skipped: 0, failed: 0, unconfirmed: 0 };
+    try {
+      for (const item of files) {
+        // `unconfirmed` is deliberately not retried: the server may still be committing that
+        // ingest, and a blind re-run re-POSTs the whole file. Remove and re-add it to force one.
+        if (item.status === 'ready' || item.status === 'skipped' || item.status === 'unconfirmed') {
+          continue;
+        }
+        patch(item.id, { status: 'embedding', error: '' });
+        try {
+          const content = await item.file.text();
+          const res = await embedDocument({
+            title: item.file.name,
+            content,
+            ...(dept ? { department: dept } : {}),
+            mimeType: mimeForFilename(item.file.name),
+          });
+          const status: FileStatus = res.status === 'skipped' ? 'skipped' : 'ready';
+          tally[status === 'skipped' ? 'skipped' : 'ready'] += 1;
+          patch(item.id, { status, chunkCount: res.chunkCount });
+        } catch (e) {
+          // A client timeout is not a failure. /knowledge/embed chunks, embeds and inserts inline,
+          // so the request routinely outlives the transport deadline while the server transaction
+          // goes on to commit — reporting "Failed" is then the opposite of the truth.
+          if (e instanceof ApiError && e.code === 'TIMEOUT') {
+            tally.unconfirmed += 1;
+            patch(item.id, { status: 'unconfirmed', error: 'still embedding — check Knowledge Base' });
+          } else {
+            tally.failed += 1;
+            patch(item.id, { status: 'failed', error: e instanceof Error ? e.message : String(e) });
+          }
+        }
       }
+    } finally {
+      window.removeEventListener('beforeunload', warnUnload);
+      commit({ running: false, summary: tally });
     }
-    setRunning(false);
-    setSummary(tally);
-    if (tally.ready > 0) onTrained?.();
+    if (tally.ready > 0 || tally.unconfirmed > 0) onTrained?.();
   }
 
   async function ingestText() {
@@ -151,7 +218,15 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
       setTextBody('');
       onTrained?.();
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      // Same inline-ingest race as the file loop: a transport timeout says nothing about whether
+      // the server committed, so don't claim the embed failed.
+      setNotice(
+        e instanceof ApiError && e.code === 'TIMEOUT'
+          ? `"${title}" is still embedding on the server — check Knowledge Base before retrying.`
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
     } finally {
       setTextBusy(false);
     }
@@ -228,7 +303,7 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
                   type="button"
                   className={s.iconBtn}
                   aria-label={`Remove ${f.file.name}`}
-                  onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
+                  onClick={() => setQueue((prev) => prev.filter((x) => x.id !== f.id))}
                 >
                   <XIcon size={10} />
                 </button>
@@ -287,6 +362,11 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
               <span>
                 Failed <strong>{summary.failed}</strong>
               </span>
+              {summary.unconfirmed > 0 && (
+                <span>
+                  Still embedding <strong>{summary.unconfirmed}</strong>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -346,6 +426,10 @@ function FilePill({ status }: { status: FileStatus }) {
         Ready
       </span>
     );
+  }
+  // No spinner: nothing is polling this file — the truth is in Knowledge Base, not here.
+  if (status === 'unconfirmed') {
+    return <span className={`${s.pill} ${s.pillWarn}`}>Still embedding</span>;
   }
   if (status === 'skipped') return <span className={`${s.pill} ${s.pillNeutral}`}>Skipped</span>;
   if (status === 'failed') return <span className={`${s.pill} ${s.pillBad}`}>Failed</span>;

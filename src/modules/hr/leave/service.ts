@@ -237,15 +237,25 @@ export async function getLeaveRequestDetail(
   ctx: TenantContext,
   id: string,
 ): Promise<{ item: LeaveRequestView; actions: Awaited<ReturnType<typeof hrLeaveRequestRepo.listActions>> }> {
-  const employee = await resolveTimeOffEmployee(ctx);
+  /**
+   * READING a request does not need an employee row of the caller's own. Resolving it first made every
+   * row in the HR register 404 for precisely the population the register exists for — an HR/admin
+   * sign-in whose Zoho user id has no active hr_employees match. submit/decide/cancel still require
+   * one, because they need an actor id to write.
+   */
+  const employee = await resolveTimeOffEmployee(ctx).catch((err: unknown) => {
+    if (canAdministerTimeOff(ctx)) return null;
+    throw err;
+  });
   const item = await hrLeaveRequestRepo.getById(ctx, id);
   if (!item) throw new NotFoundError('Leave request not found');
   const request = item.request;
   const canView =
     canAdministerTimeOff(ctx) ||
-    request.employeeId === employee.id ||
-    request.leadApproverEmployeeId === employee.id ||
-    request.hrApproverEmployeeId === employee.id;
+    (employee !== null &&
+      (request.employeeId === employee.id ||
+        request.leadApproverEmployeeId === employee.id ||
+        request.hrApproverEmployeeId === employee.id));
   if (!canView) throw new RBACError('You cannot view this leave request');
   return { item, actions: await hrLeaveRequestRepo.listActions(ctx, id) };
 }

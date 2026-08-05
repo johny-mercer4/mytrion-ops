@@ -87,7 +87,10 @@ export async function buildHrOrgStructure(ctx: TenantContext): Promise<HrOrgStru
       .select({
         departmentId: hrEmployees.departmentId,
         total: sql<number>`count(*)::int`,
-        active: sql<number>`count(*) filter (where ${hrEmployees.status} = 'Active')::int`,
+        // `status` is Zoho's free text copied verbatim, so a row stored as "active" has to count the
+        // same as "Active" — an exact match made those people show up in `total` but not in `active`,
+        // and the card then reported a termination that does not exist.
+        active: sql<number>`count(*) filter (where lower(btrim(${hrEmployees.status})) = 'active')::int`,
       })
       .from(hrEmployees)
       .where(

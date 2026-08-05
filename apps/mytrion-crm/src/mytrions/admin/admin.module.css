@@ -197,9 +197,12 @@
 }
 
 /* ── stat tiles ─────────────────────────────────────────────────────────────── */
+/* auto-fit rather than a fixed 4: the schema browsers add a 5th "Schemas" tile on a multi-schema
+   source, and a 4-track band orphaned the last tile alone on row 2 at quarter width. auto-fit
+   collapses the tracks nothing lands in, so a 4-tile band still spans the row exactly as before. */
 .statGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-4);
 }
 /* Glass tile with the picker's hover language: lift, accent glow ring, and a 1px specular
@@ -520,9 +523,11 @@
   color: var(--warning);
   font-weight: var(--fw-semibold);
 }
+/* 280–300px, not 300–340: the table track and the drawer both have to fit inside `--admin-measure`,
+   and the drawer is the cheaper one to give back — its cards ellipsis and its controls stretch. */
 .dealsLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
   gap: var(--space-5);
   align-items: start;
 }
@@ -761,6 +766,13 @@
   border: none;
   border-radius: 0;
   background: none;
+}
+/* Deals is the one table that shares its row with a drawer, so the carrier floor above guaranteed a
+   sideways scrollbar on every viewport: `--admin-measure` minus the panel padding minus the drawer
+   track leaves ~880px, and widening the browser cannot help because the measure caps first. Its seven
+   columns are narrower than the carrier tables' anyway, so it gets a floor that fits the measure. */
+.dealsLayout .tableScroll > .table {
+  min-width: 820px;
 }
 .tableScroll .tHead {
   position: sticky;
@@ -1571,7 +1583,17 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   display: flex;
-  align-items: center;
+  /* LAYOUT CONTRACT for every dialog in this module — three rules that depend on each other:
+     1. The backdrop is `position: fixed` and NEVER scrolls; `.modal` is the scrollport. The two must
+        stay different elements because the backdrop is also the click-outside dismiss surface: a
+        scrollbar's mousedown AND mouseup both target the scrolling element itself, so a scrolling
+        backdrop passes the `e.target === e.currentTarget` guard every call site uses (ConfirmDialog,
+        UserAccessForm, KnowledgeBase, AuditLog, Jobs) — dragging it to reach Save discarded the edit.
+     2. Because the backdrop is fixed, a scroll lock must step OVER it (ConfirmDialog, useModalFocus):
+        locking it would freeze the dialog's own scrollport, not the page behind it.
+     3. Start-aligned, with `.modal`'s `margin: auto` doing the centring: auto margins centre a short
+        sheet and collapse to 0 rather than pushing a full-height one past the top edge. */
+  align-items: flex-start;
   justify-content: center;
   padding: var(--space-6);
   animation: modalFade var(--dur-fast) var(--ease-out);
@@ -1589,24 +1611,42 @@
 .modal {
   position: relative;
   width: min(760px, 100%);
-  max-height: 84vh;
+  /* The sheet is the scrollport (rule 1 of the contract above). `min(84vh, 100%)`: 84vh is the design
+     breathing room, and the `100%` — of the backdrop's padded content box — is what keeps a sheet
+     reachable on a viewport too short for 84vh plus that padding, since the backdrop cannot scroll. */
+  max-height: min(84vh, 100%);
   overflow-y: auto;
+  /* The page behind is locked by JS while a dialog is open, but a wheel gesture that runs out of sheet
+     must not chain out to it on the dialogs that don't lock either. */
+  overscroll-behavior: contain;
+  /* Auto margins centre the sheet in the start-aligned backdrop and collapse to 0 once free space goes
+     negative, so a full-height sheet still starts at the top edge. */
+  margin: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-5);
-  /* A dialog is the most foreground thing on screen, so it gets the Horizon ramp along its top
-     edge. Painted as a background layer rather than a pseudo-element: ::before would become a flex
-     item here (and pick up the column `gap`), and an absolutely-positioned one would scroll away
-     with the content. A scroll container's own background stays pinned to its border box. */
+  /* A dialog is the most foreground thing on screen, so it gets the Horizon ramp along its top edge —
+     and the chromatic edge ring painted into a 1px TRANSPARENT border (a coloured border would paint
+     over the background layers). Both are backgrounds, never pseudo-elements: ::before would become a
+     flex item here and pick up the column `gap`, and an absolutely-positioned ::after is laid out in
+     this scrollport's SCROLLED CONTENT — it travelled up with the content and drew its bottom hairline
+     across the middle of a tall sheet. A scroll container's own background and box-shadows stay pinned
+     to its border box, so both survive scrolling. The inset 1px shadow restores the weight the old
+     solid border added underneath the ring, without tinting the translucent pane the way a fourth
+     border-box background layer would. */
+  border: 1px solid transparent;
   background:
-    var(--hz-gradient-r) top left / 100% 2px no-repeat,
-    var(--hz-pane-lift);
+    var(--hz-gradient-r) top left / 100% 2px no-repeat padding-box,
+    var(--hz-pane-lift) padding-box,
+    var(--hz-edge) border-box;
   backdrop-filter: blur(var(--hz-blur));
   -webkit-backdrop-filter: blur(var(--hz-blur));
-  border: 1px solid var(--hz-glass-bd-hover);
   border-radius: var(--radius-lg);
-  box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+  box-shadow:
+    var(--hz-shadow-pop),
+    var(--hz-glass-inset),
+    inset 0 0 0 1px var(--hz-glass-bd-hover);
   animation: panelIn var(--dur-base) var(--ease-out);
 }
 
@@ -2030,25 +2070,9 @@
 }
 
 
-/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
-   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
-   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
-   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
-.modal::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--hz-edge);
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
+/* The chromatic edge — the 1px sky→sunset ring that makes the sheet read as glass with THICKNESS —
+   used to live here as a masked `.modal::after`. It now rides `.modal`'s own background in a 1px
+   transparent border (see `.modal` above), because the sheet is a scrollport and an absolutely-
+   positioned ring scrolls away with the content. Same reason as ever for not using `border-image`:
+   it takes a gradient but ignores border-radius, and a background layer clipped to the border box
+   respects the radius. */

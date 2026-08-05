@@ -593,11 +593,15 @@
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+  /* `.hr-root` is the module's scroll container and the backdrop is one of its descendants, so scrolling
+     past the end of the dialog used to chain up and scroll the directory away behind it. */
+  overscroll-behavior: contain;
 }
 .hr-root .hr-modal {
   width: min(100%, 560px);
   max-height: min(90vh, 720px);
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-lift, var(--hz-pane));
@@ -930,6 +934,15 @@
 .hr-root :is(input, textarea, select):focus-visible {
   outline: none;
   box-shadow: none;
+}
+/* Text fields pay for the reset above with a `border-color: var(--accent)` swap; a native checkbox or
+   radio has no border to paint, so it needs the ring back explicitly. Stated positively on purpose —
+   the reset is duplicated across four HR stylesheets and widening each exclusion is how this regressed.
+   `outline` (not box-shadow) is what actually renders on the control box in every UA. */
+.hr-root input[type='checkbox']:focus-visible,
+.hr-root input[type='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .hr-root .hr-select:focus-within {
   border-color: var(--accent);

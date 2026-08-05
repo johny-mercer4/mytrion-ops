@@ -2,13 +2,18 @@
    only owns the rich-text editor and the composer's layout. */
 .layout {
   display: grid;
-  grid-template-columns: minmax(380px, 5fr) minmax(320px, 4fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
+/* Composer + feed side by side. Applied only when the composer is open, otherwise the feed sits in
+   track 1 and the 4fr track stays empty. */
+.layoutSplit {
+  grid-template-columns: minmax(380px, 5fr) minmax(320px, 4fr);
+}
 @media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 1fr;
+  .layoutSplit {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -131,6 +136,18 @@
   padding-left: 22px;
 }
 
+/* Appears only near the server's per-locale cap — see MAX_LEN in ClientNews.tsx. */
+.counter {
+  margin-top: 6px;
+  font-size: 11.5px;
+  text-align: right;
+  color: var(--text-muted);
+}
+.counterOver {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .segRow {
   display: flex;
   gap: 6px;
@@ -152,8 +169,10 @@
   opacity: 1;
   border-color: currentColor;
 }
+/* Token, not a raw hex: the hardcoded #dc2626 fell under AA on the dark pane and read dimmer than
+   the unselected siblings, inverting the affordance. `.segOn`'s currentColor border follows this. */
 .segDanger.segOn {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .chipRow {
@@ -210,6 +229,15 @@
   max-height: 120px;
   overflow: hidden;
 }
+/* Only on a body that actually overflowed (see PostBody) — the mask is relative to the element box,
+   so on a short post it would fade text that is fully visible. */
+.postBodyClipped {
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.postBodyOpen {
+  max-height: none;
+}
 .postBody p {
   margin: 0 0 6px;
 }
@@ -217,6 +245,20 @@
 .postBody ol {
   margin: 0 0 6px;
   padding-left: 20px;
+}
+.postExpand {
+  margin-top: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.postExpand:hover {
+  text-decoration: underline;
 }
 .postMeta {
   margin-top: 8px;

@@ -9,6 +9,7 @@ import {
   type QueueStateCount,
 } from '../../api/jobs';
 import { RefreshIcon, XIcon } from '../../components/icons';
+import { useModalFocus } from '../hr/useModalFocus';
 import s from './admin.module.css';
 import { adminToast } from './toast';
 
@@ -73,7 +74,10 @@ export function Jobs() {
   const [openRun, setOpenRun] = useState<JobRunRow | null>(null);
   const [lookbackDays, setLookbackDays] = useState('45');
   const [syncLimit, setSyncLimit] = useState('500');
-  const [running, setRunning] = useState<string | null>(null);
+  // A set, not one name: a single slot meant triggering B re-enabled A's still-pending button (and
+  // A's finally cleared B's), and every manual-triggerable queue is a pg-boss singleton — a second
+  // click queues a second real run behind the first rather than being rejected.
+  const [running, setRunning] = useState<ReadonlySet<string>>(new Set());
   const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
@@ -99,6 +103,9 @@ export function Jobs() {
     void load();
   }, [load]);
 
+  // Stable so the modal's Escape listener is attached once, not re-bound on every parent render.
+  const closeRun = useCallback(() => setOpenRun(null), []);
+
   /** First paint only — refresh keeps prior rows (no double spinner + blank table). */
   const initialLoad = loading && data == null;
   const catalog = data?.catalog ?? [];
@@ -107,7 +114,10 @@ export function Jobs() {
 
   async function onTrigger(name: string, manualTriggerable: boolean) {
     if (!manualTriggerable) return;
-    setRunning(name);
+    // Guard re-entry, not just `disabled`: the retention queue has two entry points (its own card and
+    // its catalog row), and a click dispatched before the re-render still reaches this handler.
+    if (running.has(name)) return;
+    setRunning((prev) => new Set(prev).add(name));
     try {
       const opts =
         name === RETENTION_SYNC
@@ -122,7 +132,11 @@ export function Jobs() {
     } catch (e) {
       adminToast.error('Could not queue job', e instanceof Error ? e.message : String(e));
     } finally {
-      setRunning(null);
+      setRunning((prev) => {
+        const next = new Set(prev);
+        next.delete(name);
+        return next;
+      });
     }
   }
 
@@ -205,10 +219,10 @@ export function Jobs() {
             <button
               type="button"
               className={s.primaryBtn}
-              disabled={!data?.enabled || running === RETENTION_SYNC || loading}
+              disabled={!data?.enabled || running.has(RETENTION_SYNC) || loading}
               onClick={() => void onTrigger(RETENTION_SYNC, true)}
             >
-              {running === RETENTION_SYNC ? (
+              {running.has(RETENTION_SYNC) ? (
                 <>
                   <span className={s.loadingSpin} aria-hidden="true" />
                   Queuing…
@@ -283,10 +297,10 @@ export function Jobs() {
                     <button
                       type="button"
                       className={s.ghostBtn}
-                      disabled={!data?.enabled || running === job.name}
+                      disabled={!data?.enabled || running.has(job.name) || loading}
                       onClick={() => void onTrigger(job.name, job.manualTriggerable)}
                     >
-                      {running === job.name ? (
+                      {running.has(job.name) ? (
                         <>
                           <span className={s.loadingSpin} aria-hidden="true" />
                           Run
@@ -394,60 +408,76 @@ export function Jobs() {
         </div>
       </div>
 
-      {openRun ? (
-        <div
-          className={s.modalBackdrop}
-          role="presentation"
-          onClick={() => setOpenRun(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setOpenRun(null);
-          }}
-        >
-          <div
-            className={s.modal}
-            role="dialog"
-            aria-label="Job run detail"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className={s.modalHead}>
-              <span className={s.cardTitle}>{openRun.name}</span>
-              <button type="button" className={s.iconBtn} onClick={() => setOpenRun(null)} aria-label="Close">
-                <XIcon />
-              </button>
-            </div>
-            <div className={s.metaGrid}>
-              <div className={s.field}>
-                <span className={s.fieldLabel}>State</span>
-                <span className={s.metaValue}>{openRun.state}</span>
-              </div>
-              <div className={s.field}>
-                <span className={s.fieldLabel}>Id</span>
-                <span className={`${s.metaValue} ${s.mono}`}>{openRun.id}</span>
-              </div>
-              <div className={s.field}>
-                <span className={s.fieldLabel}>Created</span>
-                <span className={s.metaValue}>{openRun.createdOn ?? '—'}</span>
-              </div>
-              <div className={s.field}>
-                <span className={s.fieldLabel}>Completed</span>
-                <span className={s.metaValue}>{openRun.completedOn ?? '—'}</span>
-              </div>
-            </div>
-            <div className={s.chunkCard}>
-              <div className={s.chunkMeta}>
-                <span className={s.mono}>payload</span>
-              </div>
-              <pre className={s.chunkText}>{formatJson(openRun.data)}</pre>
-            </div>
-            <div className={s.chunkCard}>
-              <div className={s.chunkMeta}>
-                <span className={s.mono}>output</span>
-              </div>
-              <pre className={s.chunkText}>{formatJson(openRun.output)}</pre>
-            </div>
+      {openRun ? <JobRunModal run={openRun} onClose={closeRun} /> : null}
+    </div>
+  );
+}
+
+function JobRunModal({ run, onClose }: { run: JobRunRow; onClose: () => void }) {
+  const panelRef = useModalFocus<HTMLDivElement>();
+  const downOnBackdrop = useRef(false);
+
+  useEffect(() => {
+    // On `document`, not on the backdrop: keydown is dispatched at the focused element, which is the
+    // runs-table row that opened this — a sibling branch of the backdrop, so a handler there is never
+    // in the propagation path and Escape did nothing.
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className={s.modalBackdrop}
+      onMouseDown={(e) => {
+        downOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        // Drag-selecting the payload JSON and releasing outside the panel fires `click` on the nearest
+        // common ancestor — this backdrop — so the mousedown origin has to match or copying dismisses.
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div ref={panelRef} className={s.modal} role="dialog" aria-modal="true" aria-label="Job run detail">
+        <div className={s.modalHead}>
+          <span className={s.cardTitle}>{run.name}</span>
+          <button type="button" className={s.iconBtn} onClick={onClose} aria-label="Close">
+            <XIcon />
+          </button>
+        </div>
+        <div className={s.metaGrid}>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>State</span>
+            <span className={s.metaValue}>{run.state}</span>
+          </div>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Id</span>
+            <span className={`${s.metaValue} ${s.mono}`}>{run.id}</span>
+          </div>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Created</span>
+            <span className={s.metaValue}>{run.createdOn ?? '—'}</span>
+          </div>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Completed</span>
+            <span className={s.metaValue}>{run.completedOn ?? '—'}</span>
           </div>
         </div>
-      ) : null}
+        <div className={s.chunkCard}>
+          <div className={s.chunkMeta}>
+            <span className={s.mono}>payload</span>
+          </div>
+          <pre className={s.chunkText}>{formatJson(run.data)}</pre>
+        </div>
+        <div className={s.chunkCard}>
+          <div className={s.chunkMeta}>
+            <span className={s.mono}>output</span>
+          </div>
+          <pre className={s.chunkText}>{formatJson(run.output)}</pre>
+        </div>
+      </div>
     </div>
   );
 }

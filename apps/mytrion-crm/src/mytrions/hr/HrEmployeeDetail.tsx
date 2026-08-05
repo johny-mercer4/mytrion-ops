@@ -16,6 +16,7 @@ import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
 import { Pill, toneFor } from './HrBits';
 import { HrZohoUserLink } from './HrZohoUserLink';
+import { useModalFocus } from './useModalFocus';
 
 /**
  * Read-only employee detail — what a card click opens.
@@ -44,6 +45,12 @@ export function HrEmployeeDetail({
   const name = `${employee.firstName} ${employee.lastName}`.trim();
   const handle = (employee.telegramUsername ?? '').trim().replace(/^@+/, '');
   const deptTone = departmentTone(departmentColor ?? null);
+  /**
+   * `aria-modal="true"` below is a promise: focus moves in, Tab cannot leave, focus comes back on close.
+   * Without this the card that opened the dialog kept focus behind the backdrop and Tab walked the grid
+   * underneath. Close is the right landing spot here — nothing in a read-only dialog is a field.
+   */
+  const dialogRef = useModalFocus<HTMLDivElement>();
 
   // Escape closes it. A modal you can only dismiss with the mouse is a trap for keyboard users.
   useEffect(() => {
@@ -61,7 +68,17 @@ export function HrEmployeeDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="hr-empd-title"
-        style={{ ['--dc' as string]: deptTone } as CSSProperties}
+        /* Focusable programmatically only, so the trap can pull focus back off <body> when a click
+           lands on non-focusable content such as the heading. */
+        tabIndex={-1}
+        ref={dialogRef}
+        style={
+          {
+            ['--dc' as string]: deptTone,
+            // Stops a wheel past the end of the modal's own scroll area chaining to the grid behind it.
+            overscrollBehavior: 'contain',
+          } as CSSProperties
+        }
         onClick={(ev) => ev.stopPropagation()}
       >
         <header className="hr-empd-head">

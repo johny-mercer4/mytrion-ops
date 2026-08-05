@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getCommsRouting,
   listRoutingCandidates,
@@ -13,6 +13,7 @@ import {
   type RoutingCandidate,
   type RoutingSnapshot,
 } from '../../api/commsAdmin';
+import { ConfirmDialog } from './ConfirmDialog';
 import { PersonPicker } from './PersonPicker';
 import { adminToast } from './toast';
 import s from './admin.module.css';
@@ -32,6 +33,27 @@ import e from './escalationRouting.module.css';
 
 const C_LEVEL = 'c-level';
 
+/**
+ * A pending seat deletion, raised by a row and confirmed at the PANEL ROOT.
+ *
+ * Never inside the row that owns the seat: `e.row` carries `backdrop-filter`, which per spec makes it a
+ * containing block for `position: fixed` descendants *and* a stacking context. A ConfirmDialog mounted
+ * in one is therefore sized to that single department row — a clipped sheet whose buttons sit outside
+ * the row's box, no dimmed page, and the rows rendered after it painting on top. Every other
+ * ConfirmDialog in the app (Deals, DataLoader, CarrierUsers) mounts at its page root for this reason.
+ *
+ * The copy travels with the request rather than being rebuilt here: the last-C-Level-seat warning and
+ * the "Deactivate instead" hint are only knowable at the call site.
+ */
+type PendingRemoval = {
+  /** Routing slug the seat sits on — `c-level` for the pool, whose removal reports differently. */
+  department: string;
+  zohoUserId: string;
+  name: string;
+  title: string;
+  body: string;
+};
+
 /** The rung colours match the ladder legend, so a row and the legend never disagree about a level. */
 const RUNGS: { level: number; label: string; tone: string; where: string }[] = [
   { level: 1, label: 'Requester', tone: 'var(--tone-slate)', where: 'whoever raises it' },
@@ -50,8 +72,20 @@ export function EscalationRouting() {
   const [candidates, setCandidates] = useState<RoutingCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pendingRemove, setPendingRemove] = useState<PendingRemoval | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  // Every fetch that writes into state takes a ticket, and only the newest ticket may land. Rows save
+  // independently (each has its own `busy`), so two saves in quick succession put two refreshes in
+  // flight — and the slower one would otherwise install a snapshot taken before the newer save
+  // committed, showing a row the admin just fixed as unrouted.
+  const seqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
+    // Retry re-enters here with `loading` already false, and `snap` still null — without this the
+    // screen falls through to "No routing configuration available." for the whole request.
+    setLoading(true);
     setError('');
     try {
       // Together: the screen is unusable with only one of them, so a single await keeps it to one
@@ -60,12 +94,15 @@ export function EscalationRouting() {
         getCommsRouting(),
         listRoutingCandidates({ limit: 500 }),
       ]);
+      if (seq !== seqRef.current) return;
       setSnap(routing);
       setCandidates(people.candidates);
     } catch (err) {
+      if (seq !== seqRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      // A superseded attempt must not clear the flag: the newer one is still running.
+      if (seq === seqRef.current) setLoading(false);
     }
   }, []);
 
@@ -76,29 +113,64 @@ export function EscalationRouting() {
   // Refresh from the server after every save rather than patching local state: `readiness` is derived
   // server-side, and a locally-patched copy would drift from the numbers the agents' refusals use.
   const refresh = useCallback(async () => {
+    const seq = ++seqRef.current;
     try {
-      setSnap(await getCommsRouting());
+      const routing = await getCommsRouting();
+      if (seq !== seqRef.current) return;
+      setSnap(routing);
     } catch (err) {
       adminToast.error('Saved, but the screen could not refresh', err instanceof Error ? err.message : undefined);
     }
   }, []);
 
+  // Removal is a hard DELETE server-side, so it runs here rather than in the row: the dialog stays
+  // mounted for the round trip (its button reads "Working…") and the row it belongs to is disabled
+  // through `removing`, which is why the in-flight flag is lifted along with the pending seat.
+  async function confirmRemove(): Promise<void> {
+    const seat = pendingRemove;
+    if (!seat) return;
+    setRemoving(true);
+    try {
+      await removePoolSeat(seat.department, seat.zohoUserId);
+      if (seat.department === C_LEVEL) {
+        // Escalations already at level 4 keep the person their hop recorded — the chain snapshots its
+        // assignee, so removing a seat never rewrites history.
+        adminToast.success(
+          `${seat.name} removed from C-Level`,
+          'Escalations already with them are unchanged.',
+        );
+      } else {
+        adminToast.success('Removed from the roster');
+      }
+      await refresh();
+    } catch (err) {
+      adminToast.error('Could not remove', err instanceof Error ? err.message : undefined);
+    } finally {
+      setRemoving(false);
+      setPendingRemove(null);
+    }
+  }
+
+  // `.panel` is what supplies this tab's padding, measure, flex column and gap — EVERY branch needs it,
+  // or the tab renders flush against the sidebar while loading and then jumps when the data lands.
   if (loading) {
     return (
-      <div aria-busy="true">
-        <span className={s.srOnly} role="status">
-          Loading escalation routing…
-        </span>
-        <div className={e.readiness}>
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
-        </div>
-        <div className={e.rows}>
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
+      <div className={s.panel}>
+        <div aria-busy="true">
+          <span className={s.srOnly} role="status">
+            Loading escalation routing…
+          </span>
+          <div className={e.readiness}>
+            <div className={s.skelCard} />
+            <div className={s.skelCard} />
+            <div className={s.skelCard} />
+          </div>
+          <div className={e.rows}>
+            <div className={s.skelCard} />
+            <div className={s.skelCard} />
+            <div className={s.skelCard} />
+            <div className={s.skelCard} />
+          </div>
         </div>
       </div>
     );
@@ -106,23 +178,40 @@ export function EscalationRouting() {
 
   if (error && !snap) {
     return (
-      <div className={s.errorState} role="alert">
-        <p className={s.errorText}>{error}</p>
-        <div className={s.errorActions}>
-          <button type="button" className={s.primaryBtn} onClick={() => void load()}>
-            Try again
-          </button>
+      <div className={s.panel}>
+        <div className={s.errorState} role="alert">
+          <p className={s.errorText}>{error}</p>
+          <div className={s.errorActions}>
+            <button
+              type="button"
+              className={s.primaryBtn}
+              disabled={loading}
+              onClick={() => void load()}
+            >
+              Try again
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!snap) return <div className={s.none}>No routing configuration available.</div>;
+  if (!snap)
+    return (
+      <div className={s.panel}>
+        <div className={s.none}>No routing configuration available.</div>
+      </div>
+    );
 
   const reasons = [...snap.escalationReasons].sort((a, b) => a.sortOrder - b.sortOrder);
   const routedCount = reasons.filter((r) => r.active && r.routed).length;
   const activeReasons = reasons.filter((r) => r.active).length;
-  const escalationDepts = snap.departments.filter((d) => d.acceptsEscalations);
+  // `c-level` is out of the denominator: level 4 is a POOL, so that row can never have a manager, and
+  // counting it would leave the tile permanently one short next to an all-clear hint. The server's
+  // `departmentsMissingManager` excludes it for the same reason — the fraction must agree with it.
+  const escalationDepts = snap.departments.filter(
+    (d) => d.acceptsEscalations && d.department !== C_LEVEL,
+  );
   const withManager = escalationDepts.filter((d) => d.managerZohoUserId).length;
   const cLevelSeats = snap.cLevel.filter((p) => p.active);
   // Departments the org HAS but that nothing can be escalated to yet — the gap this screen exists to close.
@@ -136,7 +225,18 @@ export function EscalationRouting() {
   const staffed = ticketDepts.filter((d) => d.pool.some((p) => p.active));
 
   return (
-    <>
+    <div className={s.panel}>
+      <div className={s.head}>
+        <div>
+          <div className={s.eyebrow}>Comms</div>
+          <h2 className={s.h2}>Escalation Routing</h2>
+          <p className={s.sub}>
+            Who an escalation reaches at each of the four levels. Every rung ships unset, and the server
+            refuses a raise on an unset rung rather than filing it into an empty inbox.
+          </p>
+        </div>
+      </div>
+
       {error && (
         <p className={s.errorNote} role="alert">
           {error}
@@ -232,7 +332,14 @@ export function EscalationRouting() {
           {snap.departments
             .filter((d) => d.department !== C_LEVEL)
             .map((d) => (
-              <DepartmentRow key={d.department} dept={d} candidates={candidates} onSaved={refresh} />
+              <DepartmentRow
+                key={d.department}
+                dept={d}
+                candidates={candidates}
+                onSaved={refresh}
+                onRequestRemove={setPendingRemove}
+                removing={removing && pendingRemove?.department === d.department}
+              />
             ))}
         </div>
       </section>
@@ -256,9 +363,31 @@ export function EscalationRouting() {
           manager picks which. Give each seat a role title so &ldquo;Escalate to CEO&rdquo; is
           distinguishable from &ldquo;Escalate to COO&rdquo;.
         </p>
-        <CLevelPool seats={snap.cLevel} candidates={candidates} onSaved={refresh} />
+        <CLevelPool
+          seats={snap.cLevel}
+          candidates={candidates}
+          onSaved={refresh}
+          onRequestRemove={setPendingRemove}
+          removing={removing && pendingRemove?.department === C_LEVEL}
+        />
       </section>
-    </>
+
+      {/* Both removals share this one dialog, mounted on `.panel` — see PendingRemoval for why it may
+          not live inside the row. `.panel` has no filter/transform of its own, so the backdrop's
+          `position: fixed` still resolves against the viewport. */}
+      {pendingRemove && (
+        <ConfirmDialog
+          title={pendingRemove.title}
+          body={pendingRemove.body}
+          confirmLabel="Remove"
+          busy={removing}
+          onConfirm={() => void confirmRemove()}
+          onCancel={() => {
+            if (!removing) setPendingRemove(null);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -342,13 +471,31 @@ function DepartmentRow({
   dept,
   candidates,
   onSaved,
+  onRequestRemove,
+  removing,
 }: {
   dept: DepartmentRouting;
   candidates: RoutingCandidate[];
   onSaved: () => Promise<void>;
+  onRequestRemove: (seat: PendingRemoval) => void;
+  /** A removal from THIS department's roster is in flight at the panel root. */
+  removing: boolean;
 }) {
   const [busy, setBusy] = useState<'manager' | 'default' | null>(null);
   const needsManager = dept.acceptsEscalations && !dept.managerZohoUserId;
+  // Level 2 mirrors resolveDepartmentAgent exactly — default assignee, else the first seat that is BOTH
+  // active and accepting new work; the manager is deliberately not a fallback there. Without this a
+  // department with a manager and nothing at level 2 rendered "ready" while the server refused every
+  // escalation raised against it.
+  const level2Unroutable =
+    dept.acceptsEscalations &&
+    dept.department !== C_LEVEL &&
+    !dept.defaultAssigneeZohoUserId &&
+    !dept.pool.some((p) => p.active && p.acceptsNew);
+  // Name the rung, not just "gap": the refusal the agent sees names one specific level.
+  const gaps: string[] = [];
+  if (level2Unroutable) gaps.push('no level-2 route — escalations opened against it are refused');
+  if (needsManager) gaps.push('no level-3 manager');
 
   async function saveManager(id: string | null, name: string | null): Promise<void> {
     setBusy('manager');
@@ -384,7 +531,7 @@ function DepartmentRow({
   }
 
   return (
-    <div className={`${e.row} ${needsManager ? e.rowGap : ''}`}>
+    <div className={`${e.row} ${gaps.length > 0 ? e.rowGap : ''}`}>
       <div className={e.rowMain}>
         <span className={e.rowTitle}>
           {/* HR's name, not the slug: 'Billing & Accounting' is what people call it. The slug is the
@@ -402,6 +549,7 @@ function DepartmentRow({
           {dept.acceptsTickets ? ' · accepts tickets' : ''}
           {dept.pool.length > 0 ? ` · ${dept.pool.filter((p) => p.active).length} on the roster` : ''}
         </span>
+        {gaps.length > 0 && <span className={e.rowMeta}>{gaps.join(' · ')}</span>}
       </div>
       <div style={{ display: 'grid', gap: '0.35rem' }}>
         <PersonPicker
@@ -428,17 +576,25 @@ function DepartmentRow({
       <div className={e.rowActions}>
         {!dept.acceptsEscalations ? (
           <span className={s.pillNeutral}>off</span>
-        ) : needsManager ? (
+        ) : gaps.length > 0 ? (
           <span className={s.pillWarn}>gap</span>
         ) : (
           <span className={s.pillGood}>ready</span>
         )}
       </div>
 
-      {/* The TICKET ROSTER. Separate from the manager and the hand-off target above, because this is who
-          picks up NEW CLIENT TICKETS — the round-robin draws from exactly this list. */}
-      {dept.acceptsTickets && (
-        <RosterEditor dept={dept} candidates={candidates} onSaved={onSaved} />
+      {/* The ROSTER. Separate from the manager and the hand-off target above, because this is who picks
+          up NEW CLIENT TICKETS — the round-robin draws from exactly this list. An escalation-only
+          department needs it too: the roster is its level 2 when no default assignee is set, and gating
+          this on `acceptsTickets` left those departments with no way to add anybody at all. */}
+      {(dept.acceptsTickets || dept.acceptsEscalations) && (
+        <RosterEditor
+          dept={dept}
+          candidates={candidates}
+          onSaved={onSaved}
+          onRequestRemove={onRequestRemove}
+          removing={removing}
+        />
       )}
     </div>
   );
@@ -455,12 +611,19 @@ function RosterEditor({
   dept,
   candidates,
   onSaved,
+  onRequestRemove,
+  removing,
 }: {
   dept: DepartmentRouting;
   candidates: RoutingCandidate[];
   onSaved: () => Promise<void>;
+  onRequestRemove: (seat: PendingRemoval) => void;
+  removing: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // A removal runs at the panel root now (see PendingRemoval), so its in-flight state arrives as a
+  // prop — OR them together or this rota stays clickable while one of its seats is being deleted.
+  const busy = saving || removing;
   const roster = [...dept.pool].sort((a, b) => {
     // NULL last_assigned_at first: a newly added member is next in line, because they are owed work.
     const at = a.lastAssignedAt ? Date.parse(a.lastAssignedAt) : 0;
@@ -468,9 +631,17 @@ function RosterEditor({
     return at - bt;
   });
   const active = roster.filter((r) => r.active);
+  // Who actually gets the next one, by the backend's own eligibility rule — not by display index. The
+  // sort above ignores `active`/`acceptsNew`, so badging index 0 left nobody marked the moment the
+  // least-recently-assigned member went on leave. Round robin only: under `least_open` the next ticket
+  // goes to the smallest backlog, which rotation order says nothing about.
+  const nextUp =
+    dept.ticketAssignmentStrategy === 'round_robin'
+      ? (roster.find((p) => p.active && p.acceptsNew)?.zohoUserId ?? null)
+      : null;
 
   async function run(label: string, fn: () => Promise<unknown>): Promise<void> {
-    setBusy(true);
+    setSaving(true);
     try {
       await fn();
       adminToast.success(label);
@@ -478,50 +649,60 @@ function RosterEditor({
     } catch (err) {
       adminToast.error('Could not save', err instanceof Error ? err.message : undefined);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
   return (
     <div className={e.poolWrap}>
       <div className={e.poolHead}>
+        {/* "Roster", not "ticket roster": for a department that only accepts escalations this list is
+            its level-2 landing, and no ticket ever reaches it. */}
         <span>
-          Ticket roster — {active.length} active
-          {dept.ticketAssignmentStrategy === 'manual'
-            ? ' · assignment is manual, nothing auto-assigns'
-            : dept.ticketAssignmentStrategy === 'least_open'
-              ? ' · next ticket goes to the smallest backlog'
-              : ' · next ticket goes to whoever is at the top'}
+          Roster — {active.length} active
+          {dept.acceptsTickets
+            ? dept.ticketAssignmentStrategy === 'manual'
+              ? ' · assignment is manual, nothing auto-assigns'
+              : dept.ticketAssignmentStrategy === 'least_open'
+                ? ' · next ticket goes to the smallest backlog'
+                : ' · next ticket goes to whoever is at the top'
+            : ' · level 2 for escalations opened against this department'}
         </span>
-        <select
-          value={dept.ticketAssignmentStrategy}
-          disabled={busy}
-          aria-label={`Assignment strategy for ${dept.label}`}
-          onChange={(ev) =>
-            void run('Assignment strategy updated', () =>
-              patchDepartmentRouting(dept.department, {
-                ticketAssignmentStrategy: ev.target.value as AssignmentStrategy,
-              }),
-            )
-          }
-        >
-          <option value="round_robin">Round robin</option>
-          <option value="least_open">Least open</option>
-          <option value="manual">Manual</option>
-        </select>
+        {/* The strategy only governs ticket assignment, so it is meaningless — and misleading — on a
+            department that does not take tickets. */}
+        {dept.acceptsTickets && (
+          <select
+            value={dept.ticketAssignmentStrategy}
+            disabled={busy}
+            aria-label={`Assignment strategy for ${dept.label}`}
+            onChange={(ev) =>
+              void run('Assignment strategy updated', () =>
+                patchDepartmentRouting(dept.department, {
+                  ticketAssignmentStrategy: ev.target.value as AssignmentStrategy,
+                }),
+              )
+            }
+          >
+            <option value="round_robin">Round robin</option>
+            <option value="least_open">Least open</option>
+            <option value="manual">Manual</option>
+          </select>
+        )}
       </div>
 
       {roster.length > 0 && (
         <div className={e.seats}>
-          {roster.map((p, i) => (
+          {roster.map((p) => (
             <span key={p.zohoUserId} className={`${e.seat} ${p.active ? '' : e.seatOff}`}>
-              {p.active && dept.ticketAssignmentStrategy !== 'manual' && i === 0 && (
+              {p.zohoUserId === nextUp && (
                 <span className={e.seatRole} title="Next in the rotation">
                   next
                 </span>
               )}
               {p.displayName ?? p.zohoUserId}
-              <span className={e.attachSize} title="Tickets assigned all time">
+              {/* A pill, not bare text: at the seat's own size the lifetime count reads as part of the
+                  name ("Aziza Karimova 137"). */}
+              <span className={`${s.pill} ${s.pillNeutral}`} title="Tickets assigned all time">
                 {p.assignedCount}
               </span>
               <button
@@ -538,6 +719,8 @@ function RosterEditor({
               >
                 {p.active ? '−' : '+'}
               </button>
+              {/* Removal is a hard DELETE server-side — deactivating is the reversible one, so the two
+                  buttons sitting 0.4rem apart must not be one click apart in consequence. */}
               <button
                 type="button"
                 className={e.seatX}
@@ -545,9 +728,13 @@ function RosterEditor({
                 aria-label={`Remove ${p.displayName ?? p.zohoUserId} from the roster`}
                 disabled={busy}
                 onClick={() =>
-                  void run('Removed from the roster', () =>
-                    removePoolSeat(dept.department, p.zohoUserId),
-                  )
+                  onRequestRemove({
+                    department: dept.department,
+                    zohoUserId: p.zohoUserId,
+                    name: p.displayName ?? p.zohoUserId,
+                    title: `Remove ${p.displayName ?? p.zohoUserId} from the roster?`,
+                    body: 'Removes their rotation history (assignedCount/lastAssignedAt) for good — re-added, they go to the front of the rotation. Use Deactivate instead if they are only away.',
+                  })
                 }
               >
                 ×
@@ -563,7 +750,7 @@ function RosterEditor({
         busy={busy}
         hintDepartment={dept.department}
         placeholder={roster.length === 0 ? 'Add the first person to this rota…' : 'Add someone to the rota…'}
-        ariaLabel={`Add someone to the ${dept.label} ticket roster`}
+        ariaLabel={`Add someone to the ${dept.label} ${dept.acceptsTickets ? 'ticket roster' : 'roster'}`}
         onPick={(c) =>
           void run(`${c.name} added to the ${dept.label} rota`, () =>
             upsertPoolSeat(dept.department, { zohoUserId: c.zohoUserId, displayName: c.name }),
@@ -578,43 +765,42 @@ function CLevelPool({
   seats,
   candidates,
   onSaved,
+  onRequestRemove,
+  removing,
 }: {
   seats: RoutingSnapshot['cLevel'];
   candidates: RoutingCandidate[];
   onSaved: () => Promise<void>;
+  onRequestRemove: (seat: PendingRemoval) => void;
+  removing: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [roleTitle, setRoleTitle] = useState('CEO');
+  const [saving, setSaving] = useState(false);
+  // The removal itself runs at the panel root (see PendingRemoval); its in-flight state still has to
+  // disable this pool, or a seat can be added while another is mid-delete.
+  const busy = saving || removing;
+  // Starts empty, not at 'CEO': a default would silently label whoever is added first, and the title is
+  // the whole reason a pool exists here.
+  const [roleTitle, setRoleTitle] = useState('');
+  const title = roleTitle.trim();
 
   async function add(c: RoutingCandidate): Promise<void> {
-    setBusy(true);
+    setSaving(true);
     try {
       await upsertPoolSeat(C_LEVEL, {
         zohoUserId: c.zohoUserId,
         displayName: c.name,
-        roleTitle: roleTitle.trim() || null,
+        roleTitle: title,
       });
-      adminToast.success(`${c.name} added as ${roleTitle.trim() || 'C-Level'}`);
+      adminToast.success(`${c.name} added as ${title}`);
       await onSaved();
+      // Cleared only on success: the next pick from this same picker would otherwise inherit this
+      // seat's title, and two seats both reading "CEO" is exactly what the pool is meant to prevent.
+      // A failed add keeps what was typed.
+      setRoleTitle('');
     } catch (err) {
       adminToast.error('Could not add', err instanceof Error ? err.message : undefined);
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(zohoUserId: string, name: string): Promise<void> {
-    setBusy(true);
-    try {
-      await removePoolSeat(C_LEVEL, zohoUserId);
-      // Escalations already at level 4 keep the person their hop recorded — the chain snapshots its
-      // assignee, so removing a seat never rewrites history.
-      adminToast.success(`${name} removed from C-Level`, 'Escalations already with them are unchanged.');
-      await onSaved();
-    } catch (err) {
-      adminToast.error('Could not remove', err instanceof Error ? err.message : undefined);
-    } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -637,8 +823,28 @@ function CLevelPool({
                   type="button"
                   className={e.seatX}
                   title="Remove from the C-Level pool"
+                  // aria-label, not just the title: the button's own text is "×", and text content wins
+                  // over title in accessible-name computation — every seat would announce as "×".
+                  aria-label={`Remove ${p.displayName ?? p.zohoUserId}${
+                    p.roleTitle ? ` (${p.roleTitle})` : ''
+                  } from the C-Level pool`}
                   disabled={busy}
-                  onClick={() => void remove(p.zohoUserId, p.displayName ?? p.zohoUserId)}
+                  onClick={() =>
+                    onRequestRemove({
+                      department: C_LEVEL,
+                      zohoUserId: p.zohoUserId,
+                      name: p.displayName ?? p.zohoUserId,
+                      title: `Remove ${p.displayName ?? p.zohoUserId} from C-Level?`,
+                      // A seat has no deactivate button, so this × is the only thing on the chip — and it
+                      // deletes the row outright server-side. Emptying the pool takes level 4 away
+                      // company-wide, which is worth saying out loud on the last active seat.
+                      body: `Removes their rotation history (assignedCount/lastAssignedAt) for good — re-added, they go to the front of the rotation.${
+                        seats.filter((q) => q.active).length === 1
+                          ? ' This is the last active C-Level seat: level 4 becomes unreachable and the ladder will stop at the department manager.'
+                          : ''
+                      }`,
+                    })
+                  }
                 >
                   ×
                 </button>
@@ -655,14 +861,27 @@ function CLevelPool({
           placeholder="Role title (CEO, COO…)"
           aria-label="Role title for the next C-Level seat"
         />
-        <PersonPicker
-          candidates={candidates}
-          value={null}
-          busy={busy}
-          placeholder="Add a C-Level member…"
-          ariaLabel="Add a C-Level member"
-          onPick={(c) => void add(c)}
-        />
+        {/* A fieldset because it is the one element that disables a control through a single attribute:
+            PersonPicker's only disable path is `busy`, which would relabel the button "Saving…". The
+            title is required rather than defaulted — an untitled seat is unpickable by name at level 4. */}
+        <fieldset
+          disabled={busy || title === ''}
+          style={{ margin: 0, padding: 0, border: 0, minWidth: 0 }}
+        >
+          <PersonPicker
+            candidates={candidates}
+            value={null}
+            busy={busy}
+            placeholder="Add a C-Level member…"
+            ariaLabel="Add a C-Level member"
+            onPick={(c) => void add(c)}
+          />
+        </fieldset>
+        {title === '' && (
+          <p className={s.fieldHint}>
+            Give the seat a role title first — that is what the escalating manager picks.
+          </p>
+        )}
       </div>
       <div className={e.rowActions}>
         {seats.some((p) => p.active) ? (

@@ -38,6 +38,26 @@ export function HrDepartments() {
   const [modal, setModal] = useState<DepartmentModalMode | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  /**
+   * Which department `error` is ABOUT — the delete failure is now rendered inside the modal, and a modal
+   * is one department's editor. Unscoped, "Department has sub-departments" from A's failed delete greeted
+   * whoever opened B (or Add department) next, announced by role="alert" as if something had been tried
+   * there. `null` = the message belongs to no open editor.
+   */
+  const [errorDepartmentId, setErrorDepartmentId] = useState<string | null>(null);
+
+  /** Any editor opens clean: a leftover message belongs to the delete that produced it, not to this one. */
+  const openModal = useCallback((next: DepartmentModalMode): void => {
+    setError('');
+    setErrorDepartmentId(null);
+    setModal(next);
+  }, []);
+
+  const closeModal = useCallback((): void => {
+    setError('');
+    setErrorDepartmentId(null);
+    setModal(null);
+  }, []);
 
   const departments = useHrDepartments();
   const directory = useHrDirectory();
@@ -94,13 +114,15 @@ export function HrDepartments() {
         : `Delete department “${department.name}”?`;
     if (!window.confirm(warning)) return;
     setError('');
+    setErrorDepartmentId(null);
     setDeletingId(department.id);
     try {
       await deleteHrDepartment(department.id);
-      setModal(null);
+      closeModal();
       invalidateHrDepartments();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setErrorDepartmentId(department.id);
     } finally {
       setDeletingId(null);
     }
@@ -108,12 +130,23 @@ export function HrDepartments() {
 
   const firstLoad = departments.loading && !departments.data;
   const cachedCaption = formatCachedAt(departments.cachedAt);
+  /**
+   * `null` while the directory is unknown — same rule as `headcounts`: a tile reading "0 staffed" above a
+   * grid of real departments is a measurement the page has not taken, and on a directory error it would
+   * stay wrong forever. Zero is only ever printed when it was actually counted.
+   */
   const staffed = headcounts
     ? items.filter((department) => (headcounts.get(department.id)?.total ?? 0) > 0).length
-    : 0;
+    : null;
   const assignedPeople = headcounts
     ? [...headcounts.values()].reduce((sum, count) => sum + count.total, 0)
-    : 0;
+    : null;
+  /**
+   * A failed delete is announced by the still-open modal, which is where the click happened; repeating it
+   * here would fire a second identical role="alert" behind the backdrop. A list-load failure is the page's
+   * own and always belongs here.
+   */
+  const bannerError = (modal ? '' : error) || departments.error;
 
   return (
     <div className="hr-page">
@@ -143,7 +176,7 @@ export function HrDepartments() {
                 <button
                   type="button"
                   className="hr-btn hr-btn-primary"
-                  onClick={() => setModal({ kind: 'create' })}
+                  onClick={() => openModal({ kind: 'create' })}
                 >
                   <Plus size={14} />
                   Add department
@@ -181,15 +214,19 @@ export function HrDepartments() {
             },
             {
               label: 'Staffed departments',
-              value: staffed,
-              detail: 'Have at least one assigned person',
+              value: staffed ?? '—',
+              detail:
+                staffed === null ? 'Waiting for the directory' : 'Have at least one assigned person',
               icon: <UserRoundCheck size={19} />,
               tone: 'var(--success)',
             },
             {
               label: 'Assigned people',
-              value: assignedPeople,
-              detail: 'Linked across all departments',
+              value: assignedPeople ?? '—',
+              detail:
+                assignedPeople === null
+                  ? 'Waiting for the directory'
+                  : 'Linked across all departments',
               icon: <Users size={19} />,
               tone: 'var(--tone-blue)',
             },
@@ -197,9 +234,9 @@ export function HrDepartments() {
         />
       ) : null}
 
-      {error || departments.error ? (
+      {bannerError ? (
         <p className="hr-banner-error" role="alert">
-          {error || departments.error}
+          {bannerError}
         </p>
       ) : null}
 
@@ -225,7 +262,7 @@ export function HrDepartments() {
               department={d}
               headcount={headcountFor(d.id)}
               busy={deletingId === d.id}
-              onOpen={(dep) => setModal({ kind: 'edit', department: dep })}
+              onOpen={(dep) => openModal({ kind: 'edit', department: dep })}
             />
           ))}
         </div>
@@ -238,16 +275,22 @@ export function HrDepartments() {
           departments={items}
           employees={directory.data?.items ?? []}
           headcount={modal.kind === 'edit' ? headcountFor(modal.department.id) : undefined}
-          onClose={() => setModal(null)}
+          onClose={closeModal}
           onSaved={() => {
-            setModal(null);
+            closeModal();
             invalidateHrDepartments();
           }}
           onDirectoryChanged={() => {
+            // invalidateHrEmployees already wakes this tab's directory loader (and refreshes the
+            // designations picklist + the org graph, which a `directory.reload()` would leave stale),
+            // so calling reload() as well only put a second identical 500-row fetch in flight.
             invalidateHrEmployees();
-            directory.reload();
           }}
           onDelete={(dep) => void onDelete(dep)}
+          deleting={deletingId !== null}
+          deleteError={
+            modal.kind === 'edit' && errorDepartmentId === modal.department.id ? error : ''
+          }
         />
       ) : null}
     </div>
