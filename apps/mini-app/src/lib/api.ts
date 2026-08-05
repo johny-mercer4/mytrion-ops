@@ -4,6 +4,14 @@
  */
 import { resolveApiConfig, v1Url } from './config';
 
+let salesAgentCarrierId: string | null = null;
+
+/** The selected company is a request selector, never authority. The backend re-authorizes it
+ * against the registered agent's fresh active roster on every scoped call. */
+export function setSalesAgentCarrierId(carrierId: string | null): void {
+  salesAgentCarrierId = carrierId?.trim() || null;
+}
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -22,7 +30,10 @@ async function request(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   try {
     res = await fetch(url, {
       method,
-      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json' },
+      headers: {
+        ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
+        ...(salesAgentCarrierId ? { 'x-mini-app-carrier-id': salesAgentCarrierId } : {}),
+      },
       ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }),
     });
   } catch (e) {
@@ -47,7 +58,7 @@ async function request(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 
 export type CompanyType = 'owner-operator' | 'fleet-manager';
 /** 'manager' has owner-equivalent access — the UI treats owner + manager alike (see isOwner). */
-export type Profile = 'owner' | 'manager' | 'driver';
+export type Profile = 'owner' | 'manager' | 'driver' | 'sales_agent';
 
 export interface RegistrationPreview {
   id: string;
@@ -81,6 +92,23 @@ export interface RegistrationView {
   cardNumber: string | null;
 }
 
+export interface SalesAgentCompany {
+  carrierId: string;
+  companyName: string;
+  cardCount: number;
+  companyType: CompanyType | null;
+  status: 'active' | 'debtor';
+  debt: number;
+  debtDays: number;
+  locSuspended: boolean;
+}
+
+export interface SalesAgentView {
+  id: string;
+  zohoUserId: string;
+  agentName: string;
+}
+
 /** Aggregate fleet summary — counts only, deliberately no card numbers or driver identities. */
 export interface FleetSummary {
   cardCount: number | null;
@@ -88,8 +116,14 @@ export interface FleetSummary {
 }
 
 export type RedeemResult =
-  | { registration: RegistrationView; fleet?: FleetSummary }
-  | { alreadyRegistered: true; registration: RegistrationView };
+  | { kind: 'carrier'; registration: RegistrationView; fleet?: FleetSummary }
+  | { kind: 'carrier'; alreadyRegistered: true; registration: RegistrationView }
+  | {
+      kind: 'sales_agent';
+      salesAgent: SalesAgentView;
+      companies: SalesAgentCompany[];
+      selectedCarrierId: string | null;
+    };
 
 export async function redeemRegistration(id: string, initData: string): Promise<RedeemResult> {
   return (await request('POST', `/carrier-invitations/${encodeURIComponent(id)}/redeem`, {
@@ -97,8 +131,12 @@ export async function redeemRegistration(id: string, initData: string): Promise<
   })) as RedeemResult;
 }
 
-export async function fetchMiniAppSession(initData: string): Promise<{ registration: RegistrationView }> {
-  return (await request('POST', '/carrier/mini-app/session', { initData })) as { registration: RegistrationView };
+export type MiniAppSessionResult =
+  | { kind: 'carrier'; registration: RegistrationView }
+  | { kind: 'sales_agent'; salesAgent: SalesAgentView; companies: SalesAgentCompany[] };
+
+export async function fetchMiniAppSession(initData: string): Promise<MiniAppSessionResult> {
+  return (await request('POST', '/carrier/mini-app/session', { initData })) as MiniAppSessionResult;
 }
 
 /** Driver self-registration by fuel-card number — no invite link (the number identifies the carrier
@@ -655,5 +693,7 @@ export async function markNotificationRead(initData: string, notificationId: str
 export function inboxRealtimeUrl(initData: string): string {
   const { baseUrl } = resolveApiConfig();
   const base = baseUrl || window.location.origin;
-  return v1Url(base, '/carrier/mini-app/realtime').replace(/^http/, 'ws') + `?initData=${encodeURIComponent(initData)}`;
+  const params = new URLSearchParams({ initData });
+  if (salesAgentCarrierId) params.set('agentCarrierId', salesAgentCarrierId);
+  return v1Url(base, '/carrier/mini-app/realtime').replace(/^http/, 'ws') + `?${params.toString()}`;
 }

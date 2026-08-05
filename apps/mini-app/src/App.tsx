@@ -46,12 +46,15 @@ import {
   type RegistrationPreview,
   type RegistrationView,
   type SalesInvoicesResult,
+  type SalesAgentCompany,
+  type SalesAgentView,
   type StatusResult,
   type BillingFormInfo,
   type MoneyCodeDrawRow,
   type TrackingResult,
   type TransactionsResult,
   type TxnExportFormat,
+  setSalesAgentCarrierId,
 } from './lib/api';
 import { getRegistrationId, getStartAction, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
@@ -81,10 +84,21 @@ import { useSlideDirection } from './lib/useSlideDirection';
 
 const CTA_SHADOW = '0 4px 14px color-mix(in srgb, var(--primary) 34%, transparent)';
 
-type Screen = 'loading' | 'error' | 'confirm' | 'success' | 'already' | 'home' | 'fleet' | 'login';
+type Screen =
+  | 'loading'
+  | 'error'
+  | 'confirm'
+  | 'success'
+  | 'already'
+  | 'home'
+  | 'fleet'
+  | 'login'
+  | 'agent-portfolio'
+  | 'agent-company';
 
 interface Session {
   isDriver: boolean;
+  isSalesAgent: boolean;
   /** Owner-LIKE: true for both a company owner and a manager (owner-equivalent access). This is what
    *  gates the owner UI. Use isManager only when the copy must distinguish the two. */
   isOwner: boolean;
@@ -108,8 +122,9 @@ function sessionFrom(reg: RegistrationView | null): Session {
   const companyType = reg?.companyType ?? null;
   const isDriver = reg?.profile === 'driver';
   const isManager = reg?.profile === 'manager';
+  const isSalesAgent = reg?.profile === 'sales_agent';
   // Owner-like drives the whole owner UI — a manager is owner-equivalent.
-  const isOwner = reg?.profile === 'owner' || isManager;
+  const isOwner = reg?.profile === 'owner' || isManager || isSalesAgent;
   const isFleetManager = isOwner && companyType === 'fleet-manager';
   // A true owner-operator only — a manager is never a solo owner-operator.
   const isOwnerOp = reg?.profile === 'owner' && companyType !== 'fleet-manager';
@@ -118,6 +133,7 @@ function sessionFrom(reg: RegistrationView | null): Session {
   const ownCard = (ownCardNumber ?? reg?.cardId ?? '417593').slice(-6);
   return {
     isDriver,
+    isSalesAgent,
     isOwner,
     isManager,
     isOwnerOp,
@@ -534,6 +550,7 @@ function DetailCard({ children }: { children: ReactNode }) {
 
 function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: RegistrationPreview; firstName: string; busy: boolean; onConfirm: () => void }) {
   const { t } = useI18n();
+  const isSalesAgent = preview.profile === 'sales_agent';
   const isManager = preview.profile === 'manager';
   const isOwner = preview.profile === 'owner' || isManager;
   const ownerLabel = isManager
@@ -548,18 +565,18 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
         <LogoLockup size={40} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
-          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
+          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isSalesAgent ? t('agent.confirm') : isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
         </div>
         <DetailCard>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('confirm.company')}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{isSalesAgent ? t('agent.workspace') : t('confirm.company')}</span>
             <span className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{preview.companyName ?? '—'}</span>
           </div>
           <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{isOwner ? t('confirm.accountType') : t('confirm.role')}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg)', padding: '5px 11px', borderRadius: 8, background: 'var(--secondary)' }}>
-              {isOwner ? ownerLabel : t('role.driver')}
+              {isSalesAgent ? t('agent.role') : isOwner ? ownerLabel : t('role.driver')}
             </span>
           </div>
         </DetailCard>
@@ -797,6 +814,151 @@ function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefin
           {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
         </span>
       </button>
+    </div>
+  );
+}
+
+function SalesAgentPortfolioScreen({
+  agent,
+  companies,
+  onSelect,
+}: {
+  agent: SalesAgentView;
+  companies: SalesAgentCompany[];
+  onSelect: (company: SalesAgentCompany) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div style={{ padding: '18px 16px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: 18, borderRadius: 24, color: '#FFFFFF', background: 'var(--primary)', boxShadow: CTA_SHADOW }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: 0.76 }}>{t('agent.role')}</div>
+        <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, letterSpacing: '-.025em' }}>{agent.agentName}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 13, fontWeight: 600, opacity: 0.86 }}>
+          <Icon name="users" size={16} strokeWidth={2} className="" />
+          {t('agent.activeCount', { n: companies.length })}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--fg)' }}>{t('agent.portfolioTitle')}</div>
+        <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.45, marginTop: 4 }}>{t('agent.portfolioSub')}</div>
+      </div>
+
+      {companies.length === 0 ? (
+        <div style={{ padding: '34px 22px', textAlign: 'center', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--muted-fg)', fontSize: 14, lineHeight: 1.55 }}>
+          {t('agent.empty')}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+          {companies.map((company) => {
+            const debtor = company.status === 'debtor';
+            return (
+              <button
+                key={company.carrierId}
+                type="button"
+                className="press"
+                onClick={() => { haptic('tap'); onSelect(company); }}
+                style={{ width: '100%', padding: 16, textAlign: 'left', borderRadius: 20, border: `1px solid ${debtor ? 'color-mix(in srgb, var(--destructive) 30%, var(--border))' : 'var(--border)'}`, background: 'var(--card)', boxShadow: 'var(--card-shadow)', color: 'var(--fg)', fontFamily: "'Geist'", cursor: 'pointer' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 44, height: 44, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', background: debtor ? 'color-mix(in srgb, var(--destructive) 12%, transparent)' : 'var(--secondary)', color: debtor ? 'var(--destructive)' : 'var(--link-accent)' }}>
+                    <Icon name="truck" size={21} strokeWidth={1.8} className="" />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 15, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company.companyName}</span>
+                    <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums' }}>CR-{company.carrierId} · {t('agent.cards', { n: company.cardCount })}</span>
+                  </span>
+                  <Chevron />
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 13, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 999, background: debtor ? 'color-mix(in srgb, var(--destructive) 12%, transparent)' : 'color-mix(in srgb, var(--success) 12%, transparent)', color: debtor ? 'var(--destructive)' : 'var(--success)' }}>
+                    {debtor ? t('agent.debtor') : t('agent.active')}
+                  </span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--link-accent)' }}>{t('agent.viewCompany')}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SalesAgentProfileSheet({
+  agent,
+  companyCount,
+  onClose,
+}: {
+  agent: SalesAgentView;
+  companyCount: number;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      <button type="button" aria-label="Close" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 42, border: 'none', background: 'rgba(0,0,0,.42)' }} />
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 43, padding: '10px 20px calc(22px + env(safe-area-inset-bottom))', borderRadius: '24px 24px 0 0', background: 'var(--card)', boxShadow: '0 -8px 40px rgba(0,0,0,.28)' }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          <span style={{ width: 48, height: 48, borderRadius: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--primary)', color: '#FFFFFF' }}><Icon name="users" size={22} strokeWidth={2} className="" /></span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: 'var(--fg)' }}>{agent.agentName}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 3 }}>{t('agent.role')} · {t('agent.activeCount', { n: companyCount })}</span>
+          </span>
+        </div>
+        <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 14, background: 'var(--secondary)', color: 'var(--muted-fg)', fontSize: 12.5, lineHeight: 1.5 }}>{t('agent.scopeHint')}</div>
+      </div>
+    </>
+  );
+}
+
+function SalesAgentCompanyScreen({
+  company,
+  initData,
+  onBack,
+  onOpenAction,
+}: {
+  company: SalesAgentCompany;
+  initData: string;
+  onBack: () => void;
+  onOpenAction: (target: OpenAction) => void;
+}) {
+  const { t } = useI18n();
+  const actions: Array<{ key: 'status' | 'balance' | 'txns' | 'invoices' | 'payment' | 'lastused'; icon: IconName }> = [
+    { key: 'status', icon: 'shield' },
+    { key: 'balance', icon: 'wallet' },
+    { key: 'txns', icon: 'list' },
+    { key: 'invoices', icon: 'doc' },
+    { key: 'payment', icon: 'banknote' },
+    { key: 'lastused', icon: 'clock' },
+  ];
+  return (
+    <div style={{ padding: '12px 16px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <button type="button" className="press" onClick={onBack} style={{ alignSelf: 'flex-start', height: 40, display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: '0 4px' }}>
+        <BackChevron /> {t('agent.backToCompanies')}
+      </button>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--fg)', letterSpacing: '-.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company.companyName}</div>
+          <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums' }}>CR-{company.carrierId} · {t('agent.cards', { n: company.cardCount })}</div>
+        </div>
+        <span style={{ flex: 'none', fontSize: 11, fontWeight: 750, borderRadius: 999, padding: '6px 9px', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', color: 'var(--link-accent)' }}>{t('agent.readOnly')}</span>
+      </div>
+
+      <OwnerHero initData={initData} company={company.companyName} carrierId={company.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
+
+      <div style={{ padding: 16, borderRadius: 22, border: '1px solid var(--border)', background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', marginBottom: 12 }}>{t('agent.companyData')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+          {actions.map((action) => (
+            <button key={action.key} type="button" className="press" onClick={() => onOpenAction({ kind: 'service', key: action.key })} style={{ minHeight: 82, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: 13, borderRadius: 15, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ color: 'var(--link-accent)', display: 'flex' }}><Icon name={action.icon} size={19} strokeWidth={1.9} className="" /></span>
+              <span style={{ fontSize: 13, lineHeight: 1.25, fontWeight: 700 }}>{t(`svc.${action.key}`)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2129,18 +2291,21 @@ const SHEET_TTL_MS = 60_000;
 // list — a heavy EFS-first read. One module-level cache serves them all within a TTL, and an
 // in-flight promise dedupes concurrent opens (open cardops + transactions back-to-back = ONE
 // network call). Card writes call invalidateFleet() so the next read is fresh.
-let FLEET_CACHE: { at: number; data: FleetResponse } | null = null;
-let FLEET_INFLIGHT: Promise<FleetResponse> | null = null;
+const FLEET_CACHE = new Map<string, { at: number; data: FleetResponse }>();
+const FLEET_INFLIGHT = new Map<string, Promise<FleetResponse>>();
 const FLEET_TTL_MS = 60_000;
-function getFleet(initData: string, force = false): Promise<FleetResponse> {
-  if (!force && FLEET_CACHE && Date.now() - FLEET_CACHE.at < FLEET_TTL_MS) return Promise.resolve(FLEET_CACHE.data);
-  if (FLEET_INFLIGHT) return FLEET_INFLIGHT;
-  FLEET_INFLIGHT = fetchFleet(initData)
-    .then((f) => { FLEET_CACHE = { at: Date.now(), data: f }; return f; })
-    .finally(() => { FLEET_INFLIGHT = null; });
-  return FLEET_INFLIGHT;
+function getFleet(initData: string, carrierId: string, force = false): Promise<FleetResponse> {
+  const cached = FLEET_CACHE.get(carrierId);
+  if (!force && cached && Date.now() - cached.at < FLEET_TTL_MS) return Promise.resolve(cached.data);
+  const running = FLEET_INFLIGHT.get(carrierId);
+  if (running) return running;
+  const next = fetchFleet(initData)
+    .then((fleet) => { FLEET_CACHE.set(carrierId, { at: Date.now(), data: fleet }); return fleet; })
+    .finally(() => { FLEET_INFLIGHT.delete(carrierId); });
+  FLEET_INFLIGHT.set(carrierId, next);
+  return next;
 }
-function invalidateFleet(): void { FLEET_CACHE = null; }
+function invalidateFleet(): void { FLEET_CACHE.clear(); }
 // In-flight dedupe for sheet loads (owner ask 2026-07-23): if a sheet's data is already being
 // fetched for the same cacheId (React StrictMode double-mount, or a fast close/re-open before the
 // first request lands), the second load AWAITS the first's promise instead of firing another
@@ -2157,8 +2322,17 @@ function dedupeSheet(key: string, producer: () => Promise<SheetData>): Promise<S
 }
 function invalidateSheetCache(...prefixes: string[]): void {
   for (const key of [...SHEET_CACHE.keys()]) {
-    if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
+    if (prefixes.some((p) => key.startsWith(`${p}|`) || key.includes(`|${p}|`))) {
+      SHEET_CACHE.delete(key);
+    }
   }
+}
+
+function resetCompanyCaches(): void {
+  SHEET_CACHE.clear();
+  SHEET_INFLIGHT.clear();
+  FLEET_CACHE.clear();
+  FLEET_INFLIGHT.clear();
 }
 
 /**
@@ -2337,7 +2511,8 @@ function ActionSheet({
         const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
         const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range: dwhRange, ...cardFilter };
         // Params that change WHAT a sheet shows are part of its cache identity.
-        const cacheId = `${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? `${invRange}|${invFrom}|${invTo}` : ''}`;
+        const cacheScope = session.carrierId ?? 'unscoped';
+        const cacheId = `${cacheScope}|${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? `${invRange}|${invFrom}|${invTo}` : ''}`;
         const hit = SHEET_CACHE.get(cacheId);
         if (hit && Date.now() - hit.at < SHEET_TTL_MS) {
           if (cancelled) return;
@@ -2401,7 +2576,7 @@ function ActionSheet({
         else if (service === 'pinunit') next = { kind: 'pinunit', v: await fetchCardEfs(initData).catch(() => null) };
         // Card ops (C-1/C-3/C-4-5/C-26): the picker is the owner's own fleet list.
         else if (service === 'cardops') {
-          const fl = await getFleet(initData);
+          const fl = await getFleet(initData, session.carrierId ?? 'unscoped');
           next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
         }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
@@ -2426,7 +2601,7 @@ function ActionSheet({
             const merged = await fetchTransactions(initData, txnOpts, true);
             if (!cancelled) {
               const upgraded: SheetData = { kind: 'txns', v: merged };
-              SHEET_CACHE.set(`txns|${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}|`, { at: Date.now(), data: upgraded });
+              SHEET_CACHE.set(`${session.carrierId ?? 'unscoped'}|txns|${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}|`, { at: Date.now(), data: upgraded });
               setData(upgraded);
             }
           } catch (e) {
@@ -2471,7 +2646,7 @@ function ActionSheet({
   useEffect(() => {
     if (service !== 'txns' || session.isDriver || txnFleet !== null) return;
     let cancelled = false;
-    getFleet(initData)
+    getFleet(initData, session.carrierId ?? 'unscoped')
       .then((f) => {
         if (!cancelled) setTxnFleet(f.fleet.filter((c) => c.cardId));
       })
@@ -3033,7 +3208,7 @@ function ActionSheet({
                       </div>
                     </div>
                   )}
-                  {rows.length > 0 && (
+                  {rows.length > 0 && !session.isSalesAgent && (
                     <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                       {/* CSV removed 2026-07-22: servercrm has no CSV invoice document — the button
                           400'd. Excel now really works (xlsx→excel mapped in the wrapper). */}
@@ -3054,7 +3229,7 @@ function ActionSheet({
                   const busy = invoiceBusyId === id;
                   const st = invoiceStatus(inv['status'], t);
                   return (
-                    <div key={id || i} onClick={() => !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: busy ? 'default' : 'pointer' }}>
+                    <div key={id || i} onClick={() => !session.isSalesAgent && !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: session.isSalesAgent || busy ? 'default' : 'pointer' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
@@ -3066,7 +3241,7 @@ function ActionSheet({
                           <span style={{ color: `var(--${st.tone})`, fontWeight: 600 }}>· {st.label}</span>
                         </div>
                       </div>
-                      {busy ? <Spinner size={16} /> : (
+                      {session.isSalesAgent ? null : busy ? <Spinner size={16} /> : (
                         <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
                       )}
                     </div>
@@ -3749,7 +3924,7 @@ function ActionSheet({
         {/* Export bar — pinned, not the tail of the list. It used to live at the bottom of the
             scroll area, so reaching it meant scrolling past every transaction; a client pulling a
             year would never find it. As a sibling of the scroll container it stays put. */}
-        {data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
+        {!session.isSalesAgent && data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
           <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '10px 16px calc(10px + env(safe-area-inset-bottom))' }}>
             {/* Indeterminate by necessity: the work is a server-side build plus a Telegram upload
                 behind our own API, so there are no progress events to report. The bar says
@@ -3919,6 +4094,9 @@ export function App() {
   const [errorReason, setErrorReason] = useState('');
   const [preview, setPreview] = useState<RegistrationPreview | null>(null);
   const [registration, setRegistration] = useState<RegistrationView | null>(null);
+  const [salesAgent, setSalesAgent] = useState<SalesAgentView | null>(null);
+  const [agentCompanies, setAgentCompanies] = useState<SalesAgentCompany[]>([]);
+  const [selectedAgentCompany, setSelectedAgentCompany] = useState<SalesAgentCompany | null>(null);
   const [busy, setBusy] = useState(false);
   const [theme, setThemeState] = useState<Theme>(getStoredTheme);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -3977,6 +4155,55 @@ export function App() {
   function askConfirm(cfg: ConfirmConfig) {
     haptic('tap');
     setConfirmCfg({ ...cfg, onConfirm: () => { setConfirmCfg(null); cfg.onConfirm(); } });
+  }
+
+  function openSalesAgentCompany(companyRow: SalesAgentCompany, actor = salesAgent): void {
+    if (!actor) return;
+    setSalesAgentCarrierId(companyRow.carrierId);
+    resetCompanyCaches();
+    setSelectedAgentCompany(companyRow);
+    setRegistration({
+      id: actor.id,
+      profile: 'sales_agent',
+      companyName: companyRow.companyName,
+      carrierId: companyRow.carrierId,
+      companyType: companyRow.companyType,
+      cardCount: companyRow.cardCount,
+      cardId: null,
+      agentName: actor.agentName,
+      cardNumber: null,
+    });
+    setOpenAction(null);
+    setProfileOpen(false);
+    setScreen('agent-company');
+  }
+
+  function showSalesAgentPortfolio(
+    actor: SalesAgentView,
+    companies: SalesAgentCompany[],
+    requestedCarrierId?: string | null,
+  ): void {
+    setSalesAgent(actor);
+    setAgentCompanies(companies);
+    setSalesAgentCarrierId(null);
+    resetCompanyCaches();
+    setRegistration(null);
+    setSelectedAgentCompany(null);
+    const requested = requestedCarrierId
+      ? companies.find((candidate) => candidate.carrierId === requestedCarrierId)
+      : undefined;
+    if (requested) openSalesAgentCompany(requested, actor);
+    else setScreen('agent-portfolio');
+  }
+
+  function backToAgentPortfolio(): void {
+    setSalesAgentCarrierId(null);
+    resetCompanyCaches();
+    setRegistration(null);
+    setSelectedAgentCompany(null);
+    setOpenAction(null);
+    setProfileOpen(false);
+    setScreen('agent-portfolio');
   }
 
   // Home/Services/Inbox all need the role to be known before they can seed anything, so this runs
@@ -4063,6 +4290,10 @@ export function App() {
     async function restoreSession(initData: string) {
       try {
         const res = await fetchMiniAppSession(initData);
+        if (res.kind === 'sales_agent') {
+          showSalesAgentPortfolio(res.salesAgent, res.companies);
+          return;
+        }
         setRegistration(res.registration);
         setScreen('home');
       } catch (e) {
@@ -4101,7 +4332,7 @@ export function App() {
         // different user still receives the proper conflict from the backend.
         const redeemedPreview = {
           id,
-          profile: 'owner' as const,
+          profile: id.startsWith('sai_') ? ('sales_agent' as const) : ('owner' as const),
           companyName: res.companyName,
           companyType: null,
           cardCount: null,
@@ -4111,6 +4342,14 @@ export function App() {
         if (wa?.initData) {
           try {
             const redeemed = await redeemRegistration(id, wa.initData);
+            if (redeemed.kind === 'sales_agent') {
+              showSalesAgentPortfolio(
+                redeemed.salesAgent,
+                redeemed.companies,
+                redeemed.selectedCarrierId,
+              );
+              return;
+            }
             setRegistration(redeemed.registration);
             setScreen('home');
             return;
@@ -4135,7 +4374,7 @@ export function App() {
   useEffect(() => {
     const bb = wa?.BackButton;
     if (!bb) return undefined;
-    const layered = Boolean(confirmCfg) || openAction !== null || profileOpen || screen === 'fleet';
+    const layered = Boolean(confirmCfg) || openAction !== null || profileOpen || screen === 'fleet' || screen === 'agent-company';
     if (!layered) {
       bb.hide();
       return undefined;
@@ -4145,6 +4384,7 @@ export function App() {
       if (confirmCfg) setConfirmCfg(null);
       else if (openAction !== null) setOpenAction(null);
       else if (profileOpen) setProfileOpen(false);
+      else if (screen === 'agent-company') backToAgentPortfolio();
       else goHome();
     };
     bb.onClick(onBack);
@@ -4175,7 +4415,9 @@ export function App() {
     redeemRegistration(preview.id, wa.initData)
       .then((res) => {
         haptic('success');
-        if ('alreadyRegistered' in res) {
+        if (res.kind === 'sales_agent') {
+          showSalesAgentPortfolio(res.salesAgent, res.companies, res.selectedCarrierId);
+        } else if ('alreadyRegistered' in res) {
           setRegistration(res.registration);
           setScreen('already');
         } else {
@@ -4258,7 +4500,7 @@ export function App() {
     setFleetLoadError('');
     setFleetActionError('');
     setFleetLoading(true);
-    getFleet(wa.initData, force)
+    getFleet(wa.initData, session.carrierId ?? 'unscoped', force)
       .then((res) => {
         setFleetCards(res.fleet);
         fleetLoaded.current = true;
@@ -4317,7 +4559,7 @@ export function App() {
     showToast(t('toast.driverRenamed'), 'success');
   }
 
-  const signedIn = screen === 'home' || screen === 'fleet';
+  const signedIn = screen === 'home' || screen === 'fleet' || screen === 'agent-portfolio' || screen === 'agent-company';
 
   return (
     <div className="app-root" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--background)', overflow: 'hidden' }}>
@@ -4331,6 +4573,21 @@ export function App() {
         {screen === 'confirm' && preview && <ConfirmScreen preview={preview} firstName={firstName} busy={busy} onConfirm={confirm} />}
         {screen === 'success' && <SuccessScreen session={session} company={company} onContinue={goHome} />}
         {screen === 'already' && <AlreadyScreen company={company} agentName={supportAgentName} onContinue={goHome} />}
+        {screen === 'agent-portfolio' && salesAgent && (
+          <SalesAgentPortfolioScreen
+            agent={salesAgent}
+            companies={agentCompanies}
+            onSelect={openSalesAgentCompany}
+          />
+        )}
+        {screen === 'agent-company' && selectedAgentCompany && (
+          <SalesAgentCompanyScreen
+            company={selectedAgentCompany}
+            initData={wa?.initData ?? ''}
+            onBack={backToAgentPortfolio}
+            onOpenAction={handleOpenAction}
+          />
+        )}
         {screen === 'home' && (
           <Home
             session={session}
@@ -4373,7 +4630,13 @@ export function App() {
 
       {screen === 'home' && <TabBar active={tab} unreadCount={inbox.filter((n) => n.unread).length} onSelect={(next) => { if (next !== tab) haptic('tap'); setTab(next); }} />}
 
-      {profileOpen && (
+      {profileOpen && screen === 'agent-portfolio' && salesAgent ? (
+        <SalesAgentProfileSheet
+          agent={salesAgent}
+          companyCount={agentCompanies.length}
+          onClose={() => setProfileOpen(false)}
+        />
+      ) : profileOpen ? (
         <ProfileSheet
           user={user}
           company={company}
@@ -4384,7 +4647,7 @@ export function App() {
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}
         />
-      )}
+      ) : null}
       {openAction && (
         <ActionSheet
           target={openAction}

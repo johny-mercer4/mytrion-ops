@@ -20,13 +20,16 @@ import {
 } from '../../integrations/telegramCarrierBot.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { getCurrentContext } from '../../plugins/requestContext.js';
 import {
   assertMiniAppCapability,
   type MiniAppActorProfile,
   type MiniAppCapability,
 } from './miniAppCapabilities.js';
 
-type RegisteredMiniAppProfile = Exclude<MiniAppActorProfile, 'sales_agent'>;
+export type MiniAppActorRegistration = Omit<RegisteredMiniAppCompany, 'profile'> & {
+  profile: MiniAppActorProfile;
+};
 
 /** Tenant-scoping only — no admin authority. Repos key off ctx.tenantId; audit reads the rest. */
 export function lookupCtx(): TenantContext {
@@ -49,8 +52,27 @@ export function isOwnerLike(profile: MiniAppActorProfile): boolean {
   return profile === 'owner' || profile === 'manager';
 }
 
+/** Sales agents may enter selected-company read gates, but remain distinct from customer owners. */
+function isOwnerOrSalesAgent(profile: MiniAppActorProfile): boolean {
+  return isOwnerLike(profile) || profile === 'sales_agent';
+}
+
 /** The actual actor once a Telegram user is verified — customer audience, deny-by-default. */
-export function telegramCtx(profile: RegisteredMiniAppProfile, telegramUserId: string): TenantContext {
+export function telegramCtx(profile: MiniAppActorProfile, telegramUserId: string): TenantContext {
+  if (profile === 'sales_agent') {
+    const current = getCurrentContext();
+    if (
+      current?.role !== 'sales_agent' ||
+      current.miniAppAgent?.telegramUserId !== telegramUserId
+    ) {
+      throw new AppError('Sales agent mini-app context is unavailable', {
+        statusCode: 401,
+        code: 'SALES_AGENT_CONTEXT_MISSING',
+        expose: true,
+      });
+    }
+    return current;
+  }
   return {
     tenantId: DEFAULT_TENANT_ID,
     userId: `telegram:${telegramUserId}`,
@@ -96,8 +118,44 @@ export function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUs
  */
 export async function requireRegisteredMiniAppUser(
   initData: string,
-): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; tgUser: TelegramWebAppUser; telegramUserId: string }> {
+): Promise<{ ctx: TenantContext; registration: MiniAppActorRegistration; tgUser: TelegramWebAppUser; telegramUserId: string }> {
   const { tgUser, telegramUserId } = verifyTelegramUser(initData);
+  const agentCtx = getCurrentContext();
+  if (
+    agentCtx?.role === 'sales_agent' &&
+    agentCtx.miniAppAgent?.telegramUserId === telegramUserId
+  ) {
+    const selected = agentCtx.miniAppAgent;
+    const now = new Date();
+    return {
+      ctx: agentCtx,
+      registration: {
+        id: selected.principalId,
+        tenantId: agentCtx.tenantId,
+        invitationId: 'sales-agent-self-registration',
+        profile: 'sales_agent',
+        telegramUserId,
+        telegramChatId: telegramUserId,
+        telegramUsername: tgUser.username ?? null,
+        languageCode: tgUser.language_code ?? null,
+        carrierId: selected.selectedCarrierId,
+        applicationId: null,
+        companyName: selected.companyName,
+        agentName: agentCtx.userName ?? null,
+        agentZohoUserId: selected.zohoUserId,
+        cardId: null,
+        driverName: agentCtx.userName ?? null,
+        companyType: selected.companyType,
+        cardCount: selected.cardCount,
+        status: 'active',
+        revokedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      tgUser,
+      telegramUserId,
+    };
+  }
   const lookup = lookupCtx();
   const registration = await registeredMiniAppCompanyRepo.findByTelegramUserId(lookup, telegramUserId);
   if (!registration) {
@@ -130,11 +188,11 @@ export async function requireRegisteredMiniAppUser(
 export async function requireRegisteredOwner(
   initData: string,
   capability: MiniAppCapability = 'fleet:manage',
-): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; carrierId: string; tgUser: TelegramWebAppUser }> {
+): Promise<{ ctx: TenantContext; registration: MiniAppActorRegistration; carrierId: string; tgUser: TelegramWebAppUser }> {
   const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
   if (
     !registration ||
-    !isOwnerLike(registration.profile) ||
+    !isOwnerOrSalesAgent(registration.profile) ||
     registration.companyType !== 'fleet-manager' ||
     !registration.carrierId
   ) {
@@ -162,7 +220,7 @@ export async function requireRegisteredOwner(
 export async function requireRegisteredCarrierUser(
   initData: string,
   capability: MiniAppCapability = 'company:read',
-): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
+): Promise<{ registration: MiniAppActorRegistration; carrierId: string }> {
   const { registration } = await requireRegisteredMiniAppUser(initData);
   if (!registration.carrierId) {
     throw new AppError('This registration has no linked carrier yet', {
@@ -186,9 +244,9 @@ export async function requireRegisteredCarrierUser(
 export async function requireRegisteredOwnerUser(
   initData: string,
   capability: MiniAppCapability = 'financial:read',
-): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
+): Promise<{ registration: MiniAppActorRegistration; carrierId: string }> {
   const { registration } = await requireRegisteredMiniAppUser(initData);
-  if (!isOwnerLike(registration.profile) || !registration.carrierId) {
+  if (!isOwnerOrSalesAgent(registration.profile) || !registration.carrierId) {
     throw new AppError('This view is only available to the company owner', {
       statusCode: 403,
       code: 'NOT_A_REGISTERED_OWNER_USER',
@@ -207,7 +265,7 @@ export async function requireRegisteredOwnerUser(
  * masked cardId", but here a null must NEVER fall through to the carrier-wide rows — that is
  * exactly the leak this scoping exists to prevent. So: no card number → no data, 503.
  */
-export async function requireDriverCardNumber(registration: RegisteredMiniAppCompany): Promise<string> {
+export async function requireDriverCardNumber(registration: MiniAppActorRegistration): Promise<string> {
   const cardNumber = await resolveDriverCardNumber(registration.carrierId, registration.cardId);
   if (!cardNumber) {
     throw new AppError("We couldn't confirm which card is yours right now. Please try again shortly.", {
@@ -255,7 +313,7 @@ export async function resolveCarrierCompanyName(carrierId: string | null): Promi
 
 /** DWH-resolved extras for a DRIVER registration (real card number + company name fallback). */
 export async function resolveDriverExtras(
-  reg: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'cardId' | 'companyName'>,
+  reg: Pick<MiniAppActorRegistration, 'profile' | 'carrierId' | 'cardId' | 'companyName'>,
 ): Promise<{ cardNumber: string | null; companyName?: string }> {
   if (reg.profile !== 'driver') return { cardNumber: null };
   const [cardNumber, resolvedCompany] = await Promise.all([
@@ -267,7 +325,7 @@ export async function resolveDriverExtras(
 
 export function toRegistrationView(row: {
   id: string;
-  profile: RegisteredMiniAppProfile;
+  profile: MiniAppActorProfile;
   companyName: string | null;
   carrierId: string | null;
   companyType: 'owner-operator' | 'fleet-manager' | null;

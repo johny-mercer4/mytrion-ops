@@ -369,6 +369,8 @@ export interface RecordVM {
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
+  /** Live eligibility for Sales-agent mini-app preview. Debtors may still be active companies. */
+  computedIsActive: boolean;
   /** Live open-invoice debt ($) from cmp_invoice (computed server-side). 0 when not a debtor. */
   computedDebt: number;
   mc: string;
@@ -409,6 +411,7 @@ function mapRecord(c: AgentClient): RecordVM {
     gallons: galFmt(c.cycleGallons),
     cycleGallons: c.cycleGallons,
     status,
+    computedIsActive: c.computedIsActive,
     computedDebt: c.computedDebt,
     mc: c.moneyCode,
     dot: c.dot,

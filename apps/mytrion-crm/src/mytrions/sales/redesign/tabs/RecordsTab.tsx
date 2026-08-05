@@ -48,6 +48,7 @@ import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 import { RejectionDetailModal } from '../RejectionDetailModal';
 import { ManagerLoyaltyBadge } from '../LoyaltyOverrideNotice';
+import { createSalesAgentMiniAppInvitation } from '@/api/carrierUsers';
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
@@ -142,6 +143,7 @@ interface RecordVM {
   currentCards: number;
   owed: number;
   managerControlled: boolean;
+  activeCompany: boolean;
   tier: TierResult;
   onClick: () => void;
 }
@@ -273,7 +275,7 @@ function Gate({
 }
 
 export function RecordsTab() {
-  const { openClient } = useSales();
+  const { openClient, pushToast } = useSales();
   const [dcSub, setDcSub] = useState<DcSub>('clients');
   const [search, setSearch] = useState<Record<DcSub, string>>({ clients: '', leads: '', deals: '', rejections: '', money: '' });
   const [leadView, setLeadView] = useState<PipeView>('kanban');
@@ -285,6 +287,28 @@ export function RecordsTab() {
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const [clientTierFilter, setClientTierFilter] = useState<TierBucket | null>(null);
   const [openRejection, setOpenRejection] = useState<RejectionVM | null>(null);
+  const [launchingCarrier, setLaunchingCarrier] = useState<string | null>(null);
+
+  const openAgentMiniApp = async (carrierId: string): Promise<void> => {
+    // Open synchronously so browser popup protection does not discard the Telegram window while
+    // the authenticated invitation request is in flight.
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
+    setLaunchingCarrier(carrierId);
+    try {
+      const { inviteUrl } = await createSalesAgentMiniAppInvitation(carrierId);
+      if (popup) popup.location.replace(inviteUrl);
+      else window.open(inviteUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      popup?.close();
+      pushToast(
+        'Mini-app could not open',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setLaunchingCarrier((current) => (current === carrierId ? null : current));
+    }
+  };
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
@@ -345,6 +369,7 @@ export function RecordsTab() {
         currentCards: c.activeCardsThisMonth,
         owed: c.computedDebt,
         managerControlled: c.managerControlled === true,
+        activeCompany: c.computedIsActive,
         tier,
         onClick: () => openClient({
           id: c.id, name: c.name, carrier: c.carrier, contact: c.contact, phone: c.phone,
@@ -529,6 +554,20 @@ export function RecordsTab() {
                   accountActiveCards={c.active}
                   owed={c.owed}
                 />
+                <button
+                  type="button"
+                  disabled={!c.activeCompany || launchingCarrier === c.id}
+                  aria-label={`View ${c.name} mini-app`}
+                  title={c.activeCompany ? 'Open this company in your Sales agent mini-app' : 'Only active companies can be viewed'}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (c.activeCompany) void openAgentMiniApp(c.id);
+                  }}
+                  style={s(`margin-top:13px;width:100%;height:38px;border-radius:var(--radius-sm);border:1px solid ${c.activeCompany ? 'rgba(var(--accent-rgb),.35)' : 'var(--border)'};background:${c.activeCompany ? 'rgba(var(--accent-rgb),.1)' : 'var(--alt)'};color:${c.activeCompany ? 'var(--accent)' : 'var(--faint)'};display:flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;font-size:12px;font-weight:700;cursor:${c.activeCompany ? 'pointer' : 'not-allowed'};opacity:${launchingCarrier === c.id ? .7 : 1}`)}
+                >
+                  <Icon name={launchingCarrier === c.id ? 'refresh' : 'link'} size={14} />
+                  {launchingCarrier === c.id ? 'Opening mini-app…' : c.activeCompany ? 'View mini-app' : 'Mini-app unavailable'}
+                </button>
               </div>
             ))}
           </div>

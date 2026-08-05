@@ -453,7 +453,9 @@ export function ClientManagePanel({
         </div>
       )}
 
-      {(isOwnerLike || ownerReady) && (
+      {/* Do not render an invitation action for debtors/inactive clients. The API enforces the
+          same rule; omitting the control keeps the UI from suggesting that an override exists. */}
+      {inviteEligible && (isOwnerLike || ownerReady) && (
         <button
           type="submit"
           disabled={busy || !valid}

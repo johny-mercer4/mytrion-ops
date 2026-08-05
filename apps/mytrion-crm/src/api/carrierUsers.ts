@@ -122,6 +122,17 @@ export async function createCarrierInvitation(input: {
   })) as { invite: CarrierInvitation; inviteUrl: string };
 }
 
+/** Register the currently authenticated Sales agent's Telegram mini-app identity. When a carrier
+ * is supplied the mini-app opens that company after registration, but the backend still verifies
+ * it against the agent's fresh active roster before returning it. */
+export async function createSalesAgentMiniAppInvitation(
+  carrierId?: string,
+): Promise<{ invitationId: string; inviteUrl: string; expiresAt: string }> {
+  return (await request('POST', '/carrier/mini-app/sales-agent-invitations', {
+    body: carrierId ? { carrier_id: carrierId } : {},
+  })) as { invitationId: string; inviteUrl: string; expiresAt: string };
+}
+
 /** Every invite (pending/redeemed/cancelled) — distinct from RegisteredCompany, which is who
  * actually finished signing in. */
 export async function listInvitations(): Promise<CarrierInvitation[]> {
