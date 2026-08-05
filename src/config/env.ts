@@ -281,7 +281,13 @@ const EnvSchema = z.object({
   ZOHO_SERVER_CLIENT_SECRET: z.string().default(''),
   // Where Zoho sends the browser back with ?code&state — the SPA relays it to /v1/auth/zoho/callback.
   // MUST byte-match a redirect URI registered on the Zoho server app (local dev: the Vite origin).
+  // EITHER form works: the portal origin (the SPA reads the params directly) or this API's
+  // `/v1/auth/zoho/callback` (the GET handler there bounces the browser to PORTAL_BASE_URL).
   ZOHO_OAUTH_REDIRECT_URI: z.string().default('http://localhost:5173'),
+  // Where the API sends the browser after Zoho redirects to the API's own callback path. Default '/'
+  // is correct in prod: the portal is served same-origin at root (plugins/widgetStatic.ts). Set it to
+  // the Vite origin (http://localhost:5173) only when running the SPA on a separate dev port.
+  PORTAL_BASE_URL: z.string().default('/'),
   // Scope for reading the signed-in worker's CRM user (id, name, email, profile, role → RBAC).
   ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ'),
 
