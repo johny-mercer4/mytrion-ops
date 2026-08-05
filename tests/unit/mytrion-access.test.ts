@@ -111,19 +111,38 @@ describe('resolveWorkerAccess — role defaults', () => {
   it('role-only grant: particular Mytrion = full access + auto-route home', async () => {
     rd.findByKey.mockResolvedValue(
       roleDefault({
-        roleName: 'Collections Agent',
-        roleKey: 'collections agent',
+        roleName: 'Ops Specialist',
+        roleKey: 'ops specialist',
         allowedMytrions: ['billing'],
         homeMytrion: 'billing',
       }),
     );
+    // Profile/role names deliberately avoid department substrings so the legacy floor is empty
+    // and the Role Default alone is what grants Billing.
     const r = await mytrionAccessService.resolveWorkerAccess(
-      principal({ profileName: 'Mystery', zohoRole: 'Collections Agent' }),
+      principal({ profileName: 'Mystery', zohoRole: 'Ops Specialist' }),
     );
     expect(r.accessibleMytrions).toEqual(['billing']);
     expect(r.homeMytrion).toBe('billing');
     expect(r.departments).toEqual(['billing']);
     expect(r.allDepartmentAccess).toBe(false);
+  });
+
+  it('role default does not wipe Sales legacy floor when Profile Default is unset (Admin configures profiles)', async () => {
+    // Zoho profile "Sales" with no Admin Profile Default row yet, but some Role Default exists.
+    // Previously role-only started at [] and locked them out of the app.
+    rd.findByKey.mockResolvedValue(
+      roleDefault({
+        roleName: 'Uzbekistan Sales',
+        allowedMytrions: [],
+        homeMytrion: null,
+      }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Sales', zohoRole: 'Uzbekistan Sales' }),
+    );
+    expect(r.accessibleMytrions).toContain('sales');
+    expect(r.homeMytrion).toBe('sales');
   });
 
   it('role UNIONs onto profile defaults (additive grants)', async () => {
