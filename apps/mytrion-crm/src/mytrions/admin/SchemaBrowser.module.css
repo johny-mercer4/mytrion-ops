@@ -46,6 +46,23 @@
   cursor: pointer;
 }
 
+/* global.css strips the UA outline from every select, and this control does not use `.select`, so
+   without this it was the one stop in the tools row with no focus indicator at all. */
+.schemaSelect:focus {
+  background: var(--hz-pane-lift);
+  border-color: var(--accent);
+  box-shadow: var(--hz-glass-inset);
+}
+
+/* Keeps the chips laid out exactly as they were as direct `.chipRow` children now that a
+   role="group" wrapper sits between them. */
+.filterGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+
 .schemaItem {
   border-bottom: 1px solid var(--border-light);
 }
@@ -138,6 +155,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Default and Comment hold the widest values here — a serial's `nextval('…'::regclass)` has no break
+   opportunity. `.colRow` is its own grid, sharing only a template with `.colHead`, so a cell allowed
+   to grow past its fr share widens that one row's track and the row stops lining up with the header
+   and its siblings. Clamping zeroes the automatic minimum; the full value lives in `title`. */
+.colDefault,
+.colComment {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colDefault {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.colComment {
+  color: var(--text-secondary);
 }
 
 .nullYes {

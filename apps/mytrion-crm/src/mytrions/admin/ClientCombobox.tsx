@@ -21,6 +21,7 @@ export function ClientCombobox({ onPick, onManual }: { onPick: (client: DwhClien
   const listboxId = `${comboId}-listbox`;
   const optionId = (i: number) => `${comboId}-option-${i}`;
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const open = Boolean(results?.length);
 
   useEffect(() => {
@@ -40,7 +41,13 @@ export function ClientCombobox({ onPick, onManual }: { onPick: (client: DwhClien
           setError('');
         })
         .catch((e: unknown) => {
-          if (!ac.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+          // Drop the old options with the error: they answer a query the admin has already typed past,
+          // and leaving them selectable prefills the invite from a search that never completed. null,
+          // not [], so the hint stays neutral instead of claiming "No clients match".
+          if (!ac.signal.aborted) {
+            setError(e instanceof Error ? e.message : String(e));
+            setResults(null);
+          }
         })
         .finally(() => {
           if (!ac.signal.aborted) setBusy(false);
@@ -56,6 +63,15 @@ export function ClientCombobox({ onPick, onManual }: { onPick: (client: DwhClien
   useEffect(() => {
     setActiveIndex(-1);
   }, [results]);
+
+  // The list clips at 260px, so arrowing past the fifth row would move an invisible highlight and Enter
+  // would pick a client the admin never saw. 'nearest' keeps the page itself from scrolling.
+  useEffect(() => {
+    if (activeIndex < 0) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeIndex))}`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
 
   // Click-away closes the list. Without this the only ways out were picking something or editing
   // the query — the list would just sit over the form.
@@ -113,7 +129,7 @@ export function ClientCombobox({ onPick, onManual }: { onPick: (client: DwhClien
           {busy && <span className={s.chipMeta}>searching…</span>}
         </label>
         {results && results.length > 0 && (
-          <div className={s.clientPick} role="listbox" id={listboxId} aria-label="Matching clients">
+          <div className={s.clientPick} role="listbox" id={listboxId} aria-label="Matching clients" ref={listRef}>
             {results.map((c, i) => (
               <button
                 key={`${c.carrierId ?? ''}:${c.applicationId ?? ''}:${i}`}

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { listDocs, queryKnowledge, type RetrievedPassage } from '../../api/knowledge';
 import { SearchIcon } from '../../components/icons';
 import s from './admin.module.css';
@@ -40,10 +40,18 @@ export function KnowledgeBrowser() {
     };
   }, []);
 
+  /**
+   * Bumped by every search AND by a scope change, so a retrieval that resolves after the admin has
+   * switched chips is discarded instead of re-landing old-scope passages under the new chip — the
+   * exact mislabelling the chip handler's invalidation exists to prevent.
+   */
+  const seqRef = useRef(0);
+
   async function run(e?: FormEvent) {
     e?.preventDefault();
     const q = query.trim();
     if (!q || busy) return;
+    const mine = ++seqRef.current;
     setBusy(true);
     setError('');
     const started = performance.now();
@@ -57,12 +65,16 @@ export function KnowledgeBrowser() {
             ? { departmentAccess: [] }
             : { departmentAccess: [filter] }),
       });
+      if (seqRef.current !== mine) return;
       setPassages(res.passages);
       setTookMs(Math.round(performance.now() - started));
     } catch (err) {
+      if (seqRef.current !== mine) return;
       setError(err instanceof Error ? err.message : String(err));
       setPassages(null);
     } finally {
+      // Always clears: `run` refuses to start while `busy`, so no newer request can own the flag —
+      // a stale response is dropped by the guard above but must still end the spinner.
       setBusy(false);
     }
   }
@@ -99,7 +111,20 @@ export function KnowledgeBrowser() {
             key={f}
             type="button"
             className={`${s.filterChip} ${filter === f ? s.filterChipOn : ''}`}
-            onClick={() => setFilter(f)}
+            onClick={() => {
+              if (f === filter) return;
+              // The passages on screen were retrieved under the OLD scope. Keeping them next to a
+              // newly-active chip (and its "N passages · Xms" meta) labels unscoped hits as this
+              // department's retrieval — the one thing this screen exists to prove. Invalidate
+              // instead of auto-refetching, so the panel falls back to the "Run a search" prompt.
+              // The seq bump is what makes the invalidation stick: an in-flight old-scope retrieval
+              // would otherwise resolve straight back into `passages` under the new chip.
+              seqRef.current += 1;
+              setFilter(f);
+              setPassages(null);
+              setTookMs(null);
+              setError('');
+            }}
           >
             {f}
           </button>

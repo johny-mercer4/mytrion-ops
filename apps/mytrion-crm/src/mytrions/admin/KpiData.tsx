@@ -134,14 +134,22 @@ export function KpiData() {
   const [factUseRange, setFactUseRange] = useState(false);
   const [factSearch, setFactSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [workerLoading, setWorkerLoading] = useState(false);
+  const [factsLoading, setFactsLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState('');
+  const [workerError, setWorkerError] = useState('');
+  const [factsError, setFactsError] = useState('');
   const loadSeq = useRef(0);
+  // One sequence token per loader, never shared: a Refresh/Apply must not invalidate an
+  // in-flight worker or facts fetch, and the two detail loaders can be in flight together
+  // because switching view does not cancel the request the previous view started.
+  const detailSeq = useRef(0);
+  const factsSeq = useRef(0);
 
   const load = useCallback(async (range?: { from: string; to: string }) => {
     const seq = (loadSeq.current += 1);
     setLoading(true);
-    setError('');
+    setOverviewError('');
     try {
       const [nextOverview, nextWorkers] = await Promise.all([
         getAdminKpiOverview(range),
@@ -155,7 +163,7 @@ export function KpiData() {
       setSelectedWorkerId((current) => current || nextWorkers.find((w) => w.eligible)?.id || '');
     } catch (caught) {
       if (seq === loadSeq.current) {
-        setError(caught instanceof Error ? caught.message : 'KPI data could not be loaded.');
+        setOverviewError(caught instanceof Error ? caught.message : 'KPI data could not be loaded.');
       }
     } finally {
       if (seq === loadSeq.current) setLoading(false);
@@ -167,20 +175,26 @@ export function KpiData() {
   }, [load]);
 
   const loadWorker = useCallback(async (workerId: string) => {
+    // The bump sits after the guard on purpose: a no-op call must not invalidate the
+    // response already in flight for the still-selected worker.
     if (!workerId || !from || !to) return;
-    setDetailLoading(true);
-    setError('');
+    const seq = (detailSeq.current += 1);
+    setWorkerLoading(true);
+    setWorkerError('');
     try {
       const [nextDays, nextSnapshots] = await Promise.all([
         listAdminKpiDays(workerId, from, to),
         listAdminKpiSnapshots(workerId),
       ]);
+      if (seq !== detailSeq.current) return;
       setDays(nextDays);
       setSnapshots(nextSnapshots);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Worker KPI history could not be loaded.');
+      if (seq === detailSeq.current) {
+        setWorkerError(caught instanceof Error ? caught.message : 'Worker KPI history could not be loaded.');
+      }
     } finally {
-      setDetailLoading(false);
+      if (seq === detailSeq.current) setWorkerLoading(false);
     }
   }, [from, to]);
 
@@ -188,22 +202,35 @@ export function KpiData() {
     if (view === 'workers' && selectedWorkerId) void loadWorker(selectedWorkerId);
   }, [loadWorker, selectedWorkerId, view]);
 
+  // Keyed on the identity only, not on `from`/`to`: the panel header switches to the new
+  // worker at once, so the previous worker's rollups and finalized revisions must go with
+  // it — but a date keystroke must not blank the panel it is refining.
+  useEffect(() => {
+    setDays([]);
+    setSnapshots([]);
+  }, [selectedWorkerId]);
+
   const loadFacts = useCallback(async () => {
-    setDetailLoading(true);
-    setError('');
+    const seq = (factsSeq.current += 1);
+    setFactsLoading(true);
+    setFactsError('');
     try {
-      setFacts(await listAdminKpiFacts({
+      const nextFacts = await listAdminKpiFacts({
         ...(factSource ? { source: factSource } : {}),
         ...(factMetric ? { metricKey: factMetric } : {}),
         ...(factWorkerId ? { workerId: factWorkerId } : {}),
         ...(factUseRange && from ? { from } : {}),
         ...(factUseRange && to ? { to } : {}),
         limit: 200,
-      }));
+      });
+      if (seq !== factsSeq.current) return;
+      setFacts(nextFacts);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Raw KPI facts could not be loaded.');
+      if (seq === factsSeq.current) {
+        setFactsError(caught instanceof Error ? caught.message : 'Raw KPI facts could not be loaded.');
+      }
     } finally {
-      setDetailLoading(false);
+      if (seq === factsSeq.current) setFactsLoading(false);
     }
   }, [factMetric, factSource, factUseRange, factWorkerId, from, to]);
 
@@ -279,7 +306,7 @@ export function KpiData() {
         </div>
       </div>
 
-      {error ? <p className={s.errorNote} role="alert">{error}</p> : null}
+      {overviewError ? <p className={s.errorNote} role="alert">{overviewError}</p> : null}
       {!overview && loading ? <div className={k.empty}>Loading KPI administration…</div> : null}
 
       {overview && view === 'overview' ? (
@@ -335,11 +362,13 @@ export function KpiData() {
           </aside>
           <section className={k.section}>
             <div className={k.sectionHead}><div><h3>{selectedWorker?.displayName ?? 'Select a worker'}</h3><p>{selectedWorker?.zohoUserId} · daily values and immutable monthly revisions</p></div></div>
-            {detailLoading ? <div className={k.empty}>Loading worker history…</div> : null}
-            {!detailLoading && days.length === 0 ? <div className={k.empty}>No daily rollups in this range.</div> : null}
-            {!detailLoading && days.map((day) => <div className={k.dayBlock} key={day.id}><div className={k.dayHead}><strong>{day.reportingDate}</strong><span>calculation v{day.calculationVersion} · {new Date(day.computedAt).toLocaleString()}</span></div><div className={k.compactMetrics}>{day.values.map((value) => <div key={`${value.metricKey}:${value.metricVersion}`}><span>{friendly(value.metricKey)}</span><strong>{value.numericValue ?? '—'}</strong><small>{value.dataStatus}</small></div>)}</div></div>)}
+            {workerError ? <p className={s.errorNote} role="alert">{workerError}</p> : null}
+            {workerLoading ? <div className={k.empty}>Loading worker history…</div> : null}
+            {!workerLoading && days.length === 0 ? <div className={k.empty}>No daily rollups in this range.</div> : null}
+            {!workerLoading && days.map((day) => <div className={k.dayBlock} key={day.id}><div className={k.dayHead}><strong>{day.reportingDate}</strong><span>calculation v{day.calculationVersion} · {new Date(day.computedAt).toLocaleString()}</span></div><div className={k.compactMetrics}>{day.values.map((value) => <div key={`${value.metricKey}:${value.metricVersion}`}><span>{friendly(value.metricKey)}</span><strong>{value.numericValue ?? '—'}</strong><small>{value.dataStatus}</small></div>)}</div></div>)}
             <div className={k.snapshotHead}>Monthly snapshot revisions</div>
-            {snapshots.length === 0 ? <div className={k.empty}>No month has closed yet.</div> : snapshots.map((snapshot) => <div className={k.snapshot} key={snapshot.id}><strong>{snapshot.periodStart} · revision {snapshot.revision}</strong><span>{snapshot.workerProfileName ?? 'No profile'} · finalized {new Date(snapshot.finalizedAt).toLocaleString()}</span></div>)}
+            {!workerLoading && snapshots.length === 0 ? <div className={k.empty}>No month has closed yet.</div> : null}
+            {!workerLoading && snapshots.map((snapshot) => <div className={k.snapshot} key={snapshot.id}><strong>{snapshot.periodStart} · revision {snapshot.revision}</strong><span>{snapshot.workerProfileName ?? 'No profile'} · finalized {new Date(snapshot.finalizedAt).toLocaleString()}</span></div>)}
           </section>
         </div>
       ) : null}
@@ -354,7 +383,11 @@ export function KpiData() {
             <button type="button" onClick={() => void loadFacts()}><Search size={13} /> Load facts</button>
           </div>
           <div className={k.factSearch}><Search size={14} /><input placeholder="Filter loaded facts…" value={factSearch} onChange={(event) => setFactSearch(event.target.value)} /></div>
-          {detailLoading ? <div className={k.empty}>Loading facts…</div> : <div className={k.tableWrap}><table><thead><tr><th>Observed</th><th>Worker</th><th>Source</th><th>Metric</th><th>Value</th><th>Revision</th><th>Source key</th></tr></thead><tbody>{visibleFacts.map((fact) => <tr key={fact.id}><td>{new Date(fact.observedAt).toLocaleString()}<small>{fact.reportingDate}</small></td><td>{fact.workerName ?? fact.workerId}</td><td>{fact.source}</td><td>{fact.metricKey}<small>{fact.dataStatus}</small></td><td>{fact.numericValue}</td><td>v{fact.revision}</td><td className={k.mono}>{fact.sourceKey}</td></tr>)}</tbody></table></div>}
+          {factsError ? <p className={s.errorNote} role="alert">{factsError}</p> : null}
+          {factsLoading ? <div className={k.empty}>Loading facts…</div>
+            : facts.length === 0 ? <div className={k.empty}>No facts for these filters.</div>
+            : visibleFacts.length === 0 ? <div className={k.empty}>No loaded fact matches “{factSearch}”.</div>
+            : <div className={k.tableWrap}><table><thead><tr><th>Observed</th><th>Worker</th><th>Source</th><th>Metric</th><th>Value</th><th>Revision</th><th>Source key</th></tr></thead><tbody>{visibleFacts.map((fact) => <tr key={fact.id}><td>{new Date(fact.observedAt).toLocaleString()}<small>{fact.reportingDate}</small></td><td>{fact.workerName ?? fact.workerId}</td><td>{fact.source}</td><td>{fact.metricKey}<small>{fact.dataStatus}</small></td><td>{fact.numericValue}</td><td>v{fact.revision}</td><td className={k.mono}>{fact.sourceKey}</td></tr>)}</tbody></table></div>}
         </section>
       ) : null}
 

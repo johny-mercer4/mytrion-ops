@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, UserCheck, UserMinus, Users } from 'lucide-react';
+import {
+  Plus,
+  RefreshCw,
+  Search,
+  TriangleAlert,
+  UserCheck,
+  UserMinus,
+  Users,
+  X,
+} from 'lucide-react';
 import { isAdmin } from '../../../access/resolveAccess';
 import { deleteHrEmployee, type HrEmployeeDto } from '../../../api/hr';
 import { formatCachedAt } from '../../_shared/swrCache';
@@ -62,9 +71,16 @@ export function HrEmployees() {
   /** The employee whose detail modal is open — a card click, not an admin edit. */
   const [detail, setDetail] = useState<HrEmployeeDto | null>(null);
   const [formMode, setFormMode] = useState<EmployeeFormMode | null>(null);
-  /** The row a delete is in flight for — dims that one card instead of yanking it out of the grid. */
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  /**
+   * The rows a delete is in flight for — dims those cards instead of yanking them out of the grid.
+   *
+   * A set, not one id: with a single id the handler had to bail out on a Delete click for any OTHER row,
+   * and since `busy` is per row every other card's button stayed enabled and simply ate the click — no
+   * confirm, no spinner, no message. Deletes address distinct rows, so they can just run alongside.
+   */
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
+  /** A failed DELETE. Kept apart from the loader's error so neither can be read as the other. */
+  const [deleteError, setDeleteError] = useState('');
 
   const directory = useHrDirectory();
   const departments = useHrDepartments();
@@ -119,28 +135,45 @@ export function HrEmployees() {
 
   /** One reload for the tab: the directory plus the two picklists that sit beside it. */
   const reloadAll = useCallback((): void => {
+    // A refresh retires the previous delete's failure with it — leaving it up would caption the rows that
+    // are about to arrive.
+    setDeleteError('');
     directory.reload();
     departments.reload();
     designations.reload();
   }, [directory, departments, designations]);
 
+  /**
+   * Retry after a failed load. `reloadAll` owns the directory and the two picklists; in server-search
+   * mode the request that actually failed is the search, which it does not.
+   */
+  const retryLoad = useCallback((): void => {
+    reloadAll();
+    if (serverMode) serverSearch.reload();
+  }, [reloadAll, serverMode, serverSearch]);
+
   const onSaved = useCallback((): void => {
     setFormMode(null);
+    setDeleteError('');
     invalidateHrEmployees();
   }, []);
 
   const onDelete = async (employee: HrEmployeeDto): Promise<void> => {
-    if (!admin || deletingId) return;
+    if (!admin || deletingIds.has(employee.id)) return;
     if (!window.confirm(`Delete ${displayName(employee)} from the HR directory?`)) return;
-    setError('');
-    setDeletingId(employee.id);
+    setDeleteError('');
+    setDeletingIds((prev) => new Set(prev).add(employee.id));
     try {
       await deleteHrEmployee(employee.id);
       invalidateHrEmployees();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setDeleteError(err instanceof Error ? err.message : String(err));
     } finally {
-      setDeletingId(null);
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(employee.id);
+        return next;
+      });
     }
   };
 
@@ -155,6 +188,16 @@ export function HrEmployees() {
   const firstLoad = directory.loading && !directory.data;
   /** A search whose results have not arrived yet: the grid waits, the toolbar does not. */
   const searching = serverMode && source.loading && !source.data;
+  const loadError = source.error ?? directory.error;
+  /**
+   * The load FAILED and left nothing on screen — `loading` is already false, `data` is still null.
+   *
+   * Without its own branch the tab fell through to `filtered === 0` and told an admin the directory was
+   * empty ("Add an employee manually, or run the Zoho People sync.") over a 403 or an unreachable
+   * Postgres, with 0/0/0 tiles above it. An empty directory and an unanswered request are not the same
+   * claim, and only one of them is safe to act on.
+   */
+  const loadFailed = !source.data && Boolean(loadError);
 
   const cachedCaption = useMemo(() => formatCachedAt(source.cachedAt), [source.cachedAt]);
 
@@ -243,7 +286,9 @@ export function HrEmployees() {
         </div>
       ) : null}
 
-      {!firstLoad ? (
+      {/* Counted from the directory, so they need the directory — three tiles reading 0 over a failed
+          load are a measurement, not a blank. */}
+      {!firstLoad && directory.data ? (
         <HrSummaryTiles
           label="Employee directory summary"
           items={[
@@ -272,14 +317,48 @@ export function HrEmployees() {
         />
       ) : null}
 
-      {error || source.error ? (
+      {/* Two failures, two banners. A load error only captions rows that are STILL on screen (a failed
+          revalidation); with nothing loaded the panel below owns the message instead of repeating it. */}
+      {loadError && !loadFailed ? (
         <p className="hr-banner-error" role="alert">
-          {error || source.error}
+          {loadError}
         </p>
+      ) : null}
+
+      {/* A delete failure is the user's own action, so it is dismissible: sharing one banner with the load
+          error left a stale "HTTP 500" pinned over a healthy grid for the rest of the session, reading as
+          if the list on screen had failed to load. */}
+      {deleteError ? (
+        <div
+          className="hr-banner-error"
+          role="alert"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <span style={{ flex: 1 }}>{deleteError}</span>
+          <button
+            type="button"
+            className="hr-icon-btn"
+            aria-label="Dismiss delete error"
+            onClick={() => setDeleteError('')}
+          >
+            <X size={13} />
+          </button>
+        </div>
       ) : null}
 
       {firstLoad || searching ? (
         <HrPageLoader label={searching ? 'Searching employees…' : 'Loading employees…'} />
+      ) : loadFailed ? (
+        <div className="hr-empty">
+          <TriangleAlert size={26} />
+          <div className="hr-empty-title">Directory unavailable</div>
+          <p className="hr-empty-body">{loadError}</p>
+          {/* Text only: `.hr-empty svg` mutes and half-fades every icon inside this panel, which is right
+              for the state glyph and wrong for a live control. */}
+          <button type="button" className="hr-btn" onClick={retryLoad}>
+            Retry
+          </button>
+        </div>
       ) : filtered === 0 ? (
         <HrEmpty
           icon={<Users size={26} />}
@@ -299,7 +378,7 @@ export function HrEmployees() {
               key={e.id}
               employee={e}
               admin={admin}
-              busy={deletingId === e.id}
+              busy={deletingIds.has(e.id)}
               departmentColor={
                 e.departmentId ? (deptColorById.get(e.departmentId) ?? null) : null
               }

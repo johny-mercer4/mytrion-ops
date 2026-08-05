@@ -102,9 +102,12 @@ export function DetailsTab({ node }: { node: DetailNode }) {
 /** Blockers / Red Flags / Manual — live CRUD against /v1/scope/risks for one node. */
 function RiskSections({ nodeId }: { nodeId: string }) {
   const [items, setItems] = useState<ScopeRiskItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [form, setForm] = useState<RiskForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const aliveRef = useRef(true);
 
   useEffect(() => {
@@ -117,18 +120,23 @@ function RiskSections({ nodeId }: { nodeId: string }) {
   useEffect(() => {
     let alive = true;
     setItems(null);
+    setError(null);
     setForm(null);
+    setConfirmId(null);
     listRisks(nodeId)
       .then((res) => { if (alive) setItems(res.items); })
       .catch((e: unknown) => {
         if (!alive) return;
-        setItems([]);
-        scopeToast.error('Risk items failed to load', e instanceof Error ? e.message : String(e));
+        /* Leave items null. An empty array renders as "No items yet", which asserts this node
+           has no blockers — a very different, reassuring claim from "we never loaded them". */
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        scopeToast.error('Risk items failed to load', msg);
       });
     return () => {
       alive = false;
     };
-  }, [nodeId]);
+  }, [nodeId, reload]);
 
   const refetch = async () => {
     const res = await listRisks(nodeId);
@@ -177,6 +185,19 @@ function RiskSections({ nodeId }: { nodeId: string }) {
     }
   };
 
+  if (error !== null) {
+    return (
+      <div className="oct-risk">
+        <div className="oct-risk-error">
+          <span style={{ flex: 1 }}>Couldn&apos;t load risk items — {error}</span>
+          <button type="button" className="oct-btn oct-btn-ghost" onClick={() => setReload((n) => n + 1)}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (items === null) {
     return (
       <div className="oct-risk">
@@ -221,18 +242,41 @@ function RiskSections({ nodeId }: { nodeId: string }) {
                   <span className="oct-risk-row__text">{item.label}</span>
                   {deletingId === item.id ? (
                     <span className="oct-risk-spin oct-risk-spin--row" />
+                  ) : confirmId === item.id ? (
+                    /* Inline two-step confirm rather than window.confirm: these records are
+                       shared with the Zoho widget and the delete has no undo. */
+                    <span className="oct-risk-row__confirm">
+                      Delete?
+                      {/* autoFocus: activating Remove unmounts the button that had focus, so
+                          without this a keyboard user is dropped on <body> in front of a
+                          confirm they cannot reach without re-tabbing the whole dialog. */}
+                      <button type="button" className="oct-risk-yes" disabled={saving} autoFocus onClick={() => { setConfirmId(null); void remove(item); }}>
+                        Yes
+                      </button>
+                      <button type="button" onClick={() => setConfirmId(null)}>
+                        No
+                      </button>
+                    </span>
                   ) : (
                     <span className="oct-risk-row__act">
                       <button
                         type="button"
                         title="Edit"
+                        aria-label={`Edit: ${item.label}`}
+                        disabled={saving || deletingId !== null}
                         onClick={() => setForm({ category: sec.key, id: item.id, label: item.label, icon: item.icon || (OCT_RISK_DEFAULT_ICON[sec.key] ?? 'flag') })}
                       >
                         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-                      <button type="button" title="Remove" onClick={() => void remove(item)}>
+                      <button
+                        type="button"
+                        title="Remove"
+                        aria-label={`Remove: ${item.label}`}
+                        disabled={saving || deletingId !== null}
+                        onClick={() => setConfirmId(item.id)}
+                      >
                         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
@@ -248,6 +292,7 @@ function RiskSections({ nodeId }: { nodeId: string }) {
                     className="oct-risk-form__input"
                     value={form.label}
                     placeholder="Describe the item…"
+                    aria-label="Item description"
                     autoFocus
                     onChange={(e) => setForm({ ...form, label: e.target.value })}
                     onKeyDown={(e) => {
@@ -257,12 +302,16 @@ function RiskSections({ nodeId }: { nodeId: string }) {
                       }
                     }}
                   />
-                  <div className="oct-risk-form__icons">
+                  <div className="oct-risk-form__icons" role="group" aria-label="Item icon">
                     {OCT_RISK_ICONS.map((ik) => (
                       <button
                         key={ik}
                         type="button"
                         className={`oct-risk-icon ${form.icon === ik ? 'active' : ''}`}
+                        // The icon key is the only name these chips have — 22 unnamed buttons
+                        // otherwise, with selection conveyed by colour alone.
+                        aria-label={ik}
+                        aria-pressed={form.icon === ik}
                         onClick={() => setForm({ ...form, icon: ik })}
                       >
                         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">

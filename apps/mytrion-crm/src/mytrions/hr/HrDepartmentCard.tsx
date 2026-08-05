@@ -77,13 +77,19 @@ export function HrDepartmentCard({
       <span className="hr-deptc-meta">
         <span className="hr-deptc-head">
           <Users size={12} />
-          {headcount ? (
+          {/* THREE states, not two. `undefined` means the directory has not landed (it is a second,
+              slower fetch than the departments themselves, and it re-fetches after every member
+              change) — claiming "No one assigned" there states something false about a department
+              that may be fully staffed. Only a zero-filled headcount is real emptiness. */}
+          {headcount === undefined ? (
+            <span title="Headcount still loading">—</span>
+          ) : headcount.total === 0 ? (
+            <>No one assigned</>
+          ) : (
             <>
               <strong>{headcount.active}</strong> active
               {headcount.total !== headcount.active ? <> · {headcount.total} total</> : null}
             </>
-          ) : (
-            <>No one assigned</>
           )}
         </span>
         <span className="hr-deptc-lead">

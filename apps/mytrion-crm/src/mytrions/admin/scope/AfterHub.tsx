@@ -86,8 +86,24 @@ export function AfterHub({ worldH, onOpenCycle }: { worldH: number; onOpenCycle:
         return (
           <div
             key={c.id}
-            className="oct-anim"
+            className="oct-anim oct-cycle-card"
             onClick={() => { if (hasDetail) onOpenCycle(c); }}
+            {...(hasDetail
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  'aria-label': `Open ${c.label}${afterLabel ? ` (${afterLabel})` : ''}`,
+                  onKeyDown: (ev: React.KeyboardEvent) => {
+                    // Enter and Space both, because this is a role=button: a div only gets the
+                    // keyboard activation a real <button> has for free if it handles them itself.
+                    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+                    ev.preventDefault();
+                    onOpenCycle(c);
+                  },
+                }
+              : // A SOON cycle has nothing to drill into. Announced as a disabled control rather than
+                // left as an unlabelled div, so a screen reader says why it does not respond.
+                { role: 'button', 'aria-disabled': true, 'aria-label': `${c.label} — no detail yet` })}
             style={{
               position: 'absolute',
               left: p.x,

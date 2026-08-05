@@ -1,10 +1,11 @@
 import { and, asc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { hrEmployees, type HrEmployee, type NewHrEmployee } from '../db/schema/index.js';
+import { ValidationError } from '../lib/errors.js';
 import { resolveDepartmentId } from '../modules/hr/resolveDepartmentLink.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { hrDepartmentRepo } from './hrDepartmentRepo.js';
-import { firstOrThrow, firstOrUndefined } from './util.js';
+import { firstOrThrow, firstOrUndefined, isUniqueViolation } from './util.js';
 
 export interface HrEmployeeListOpts {
   q?: string;
@@ -398,8 +399,12 @@ export const hrEmployeeRepo = {
       rawFields: null,
       lastSyncedAt: null,
     };
-    const rows = await db.insert(hrEmployees).values(row).returning(EMPLOYEE_COLUMNS);
-    return firstOrThrow(rows, 'hr_employees insert returned no row');
+    try {
+      const rows = await db.insert(hrEmployees).values(row).returning(EMPLOYEE_COLUMNS);
+      return firstOrThrow(rows, 'hr_employees insert returned no row');
+    } catch (err) {
+      throw employeeWriteConflict(err);
+    }
   },
 
   async update(
@@ -453,12 +458,16 @@ export const hrEmployeeRepo = {
       }
     }
 
-    const rows = await db
-      .update(hrEmployees)
-      .set(updates)
-      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
-      .returning(EMPLOYEE_COLUMNS);
-    return firstOrUndefined(rows);
+    try {
+      const rows = await db
+        .update(hrEmployees)
+        .set(updates)
+        .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
+        .returning(EMPLOYEE_COLUMNS);
+      return firstOrUndefined(rows);
+    } catch (err) {
+      throw employeeWriteConflict(err);
+    }
   },
 
   /**
@@ -566,6 +575,29 @@ export const hrEmployeeRepo = {
     return rows.length > 0;
   },
 };
+
+/**
+ * Each partial unique index means something different, so each gets its own message rather than one
+ * generic 409 that leaves the admin guessing which field is taken.
+ */
+const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
+  hr_employees_tenant_employee_id_uk: 'That Employee ID is already used by another employee',
+  hr_employees_tenant_zoho_uk: 'That Zoho People record is already linked to another employee',
+  hr_employees_tenant_zoho_user_uk: 'That Mytrion login is already linked to another employee',
+};
+
+/**
+ * A raw SQLSTATE 23505 is not an AppError, so errorHandler swaps its message for "Internal server
+ * error" — an admin who typed an Employee ID that already exists was told the server broke rather than
+ * which field is at fault, and retrying reproduced it forever. Unrecognized errors pass through.
+ */
+function employeeWriteConflict(err: unknown): unknown {
+  if (!isUniqueViolation(err)) return err;
+  const constraint = (err as { constraint?: unknown }).constraint;
+  const message =
+    typeof constraint === 'string' ? UNIQUE_VIOLATION_MESSAGES[constraint] : undefined;
+  return message ? new ValidationError(message, { cause: err }) : err;
+}
 
 async function resolveDepartmentLinkForManual(
   ctx: TenantContext,

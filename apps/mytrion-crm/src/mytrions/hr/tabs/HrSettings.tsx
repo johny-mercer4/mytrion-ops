@@ -10,7 +10,7 @@ import { useUserContext } from '../../../context/UserContextProvider';
 import { HrAttendanceSettings } from '../HrAttendanceSettings';
 import { HrLeaveSettings } from '../HrLeaveSettings';
 import { invalidateHrDepartments, invalidateHrEmployees } from '../hrData';
-import { HrBusy, HrEmpty, HrPageHead } from '../HrBits';
+import { HrEmpty, HrPageHead } from '../HrBits';
 
 type SettingsPane = 'directory' | 'attendance' | 'timeoff';
 
@@ -142,7 +142,13 @@ export function HrSettings() {
               Sync departments
             </button>
           </div>
-          {busy ? <HrBusy label="Syncing from Zoho People…" /> : null}
+          {/* The pressed button's own spinning icon is the one loader for this fetch — this line only
+              carries the label and the screen-reader announcement, so it must not animate too. */}
+          {busy ? (
+            <p className="hr-note" role="status" aria-live="polite">
+              Syncing from Zoho People…
+            </p>
+          ) : null}
           {message ? <p className="hr-settings-ok">{message}</p> : null}
           {error ? (
             <p className="hr-banner-error" role="alert">

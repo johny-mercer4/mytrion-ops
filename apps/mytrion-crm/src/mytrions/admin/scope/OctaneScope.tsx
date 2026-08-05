@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { hexA, type CycleDef, type DetailNode } from './model';
 import { OCT_STAGES } from './stages';
 import { OCT_AFTER_CENTER, OCT_AFTER_W } from './after';
-import { computeRoadLayout } from './layout';
+import { computeRoadLayout, ROAD_MIN_H } from './layout';
 import { useTheme } from '../../../hooks/useTheme';
 import { SCENE_DARK, SCENE_LIGHT } from './scopeTheme';
 import { RoadScene } from './RoadScene';
@@ -31,26 +31,33 @@ export function OctaneScope() {
   const [vh, setVh] = useState(760);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const chromeRef = useRef<HTMLDivElement | null>(null);
   const farRef = useRef<HTMLDivElement | null>(null);
   const midRef = useRef<HTMLDivElement | null>(null);
   const glowRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const dragEndRef = useRef<(() => void) | null>(null);
 
-  const layout = useMemo(() => computeRoadLayout(vh / zoom), [vh, zoom]);
+  const intake = lc === 'intake';
+  /* Zoom is the intake road's camera only: the After hub has no zoom control, so a level
+     left over from the road would compress its geometry with no affordance to undo it. */
+  const camZoom = intake ? zoom : 1;
+  /* Floor the geometry height — below ROAD_MIN_H the tether band has no room and the cards
+     land on the road. A taller-than-viewport world is centred vertically instead. */
+  const layout = useMemo(() => computeRoadLayout(Math.max(vh / camZoom, ROAD_MIN_H)), [vh, camZoom]);
 
   // Mirrors for imperative handlers (scroll / resize / keys) so they never go stale.
-  const stateRef = useRef({ lc, zoom, activeIndex, layout, isOpen: false });
-  stateRef.current = { lc, zoom, activeIndex, layout, isOpen: openStage !== null || openCycle !== null };
+  const stateRef = useRef({ lc, zoom: camZoom, activeIndex, layout, isOpen: false });
+  stateRef.current = { lc, zoom: camZoom, activeIndex, layout, isOpen: openStage !== null || openCycle !== null };
 
   const { theme } = useTheme();
   const dark = theme !== 'light';
   const t = dark ? SCENE_DARK : SCENE_LIGHT;
 
-  const intake = lc === 'intake';
   const activeStage = OCT_STAGES[Math.min(activeIndex, OCT_STAGES.length - 1)]!;
   const floodHex = intake ? activeStage.color : OCT_AFTER_CENTER.color;
   const worldW = intake ? layout.worldW : OCT_AFTER_W;
-  const worldH = layout.worldH;
+  const worldH = intake ? layout.worldH : vh;
 
   const node: DetailNode | null = openCycle ?? (openStage !== null ? OCT_STAGES[openStage] ?? null : null);
   const isOpen = node !== null;
@@ -117,23 +124,53 @@ export function OctaneScope() {
   const onPointerDown = (e: ReactPointerEvent) => {
     const sc = scrollRef.current;
     if (!sc) return;
+    // Touch and pen already pan the scroller natively; panning manually on top of that
+    // double-applies the gesture, and the browser then steals it with a pointercancel.
+    if (e.pointerType !== 'mouse') return;
     if ((e.target as HTMLElement).closest('[data-stage-card]')) return;
     const startX = e.clientX;
     const startL = sc.scrollLeft;
+    const pointerId = e.pointerId;
+    let captured = false;
     sc.style.cursor = 'grabbing';
-    const move = (ev: PointerEvent) => { sc.scrollLeft = startL - (ev.clientX - startX); };
-    const up = () => {
+    /* Listeners on the scroller, not window: a gesture the browser takes over fires
+       pointercancel instead of pointerup, and a window-scoped pointerup never arrives at
+       all when the button is released outside the window — either way the old handler
+       stayed attached and kept panning with no button held. */
+    const ac = new AbortController();
+    const end = () => {
+      dragEndRef.current = null;
       sc.style.cursor = 'grab';
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+      ac.abort(); // drops all three listeners at once
+      if (captured && sc.hasPointerCapture(pointerId)) sc.releasePointerCapture(pointerId);
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    const move = (ev: PointerEvent) => {
+      if (ev.buttons === 0) { end(); return; } // a release we never saw: the drag is over
+      const dx = ev.clientX - startX;
+      if (!captured && Math.abs(dx) > 3) {
+        /* Capture only once this really is a drag. It guarantees pointerup/pointercancel
+           even outside the window, but it also retargets the following click to the
+           scroller — which would swallow a card's own onClick on a plain press. */
+        sc.setPointerCapture(pointerId);
+        captured = true;
+      }
+      sc.scrollLeft = startL - dx;
+    };
+    sc.addEventListener('pointermove', move, { signal: ac.signal });
+    sc.addEventListener('pointerup', end, { signal: ac.signal });
+    sc.addEventListener('pointercancel', end, { signal: ac.signal });
+    dragEndRef.current = end;
   };
 
   /* ── navigation ── */
   const focusStage = (i: number) => centerOn(i, true);
-  const closeDetail = () => { setOpenStage(null); setOpenCycle(null); };
+  const closeDetail = () => {
+    /* Drop `inert` before the dialog unmounts: useModalFocus restores focus in the same
+       commit and .focus() is a silent no-op inside an inert subtree. */
+    chromeRef.current?.removeAttribute('inert');
+    setOpenStage(null);
+    setOpenCycle(null);
+  };
   const switchLifecycle = (id: Lifecycle) => { setLc(id); closeDetail(); };
 
   const handleOpenStage = (i: number) => {
@@ -183,10 +220,21 @@ export function OctaneScope() {
       ro.disconnect();
       sc.removeEventListener('wheel', onWheel);
       document.removeEventListener('keydown', onKey);
+      dragEndRef.current?.(); // a drag in flight when the tab unmounts would leak its listeners
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* The drill-down is aria-modal, so everything behind the scrim — scroller, HUD, zoom,
+     rail — must leave the tab order. `inert` is not in React 18's JSX types, hence the
+     imperative toggle. */
+  useEffect(() => {
+    const el = chromeRef.current;
+    if (!el) return;
+    if (isOpen) el.setAttribute('inert', '');
+    else el.removeAttribute('inert');
+  }, [isOpen]);
 
   /* Recenter the camera whenever the world changes (zoom, resize, lifecycle switch). */
   useLayoutEffect(() => {
@@ -219,6 +267,9 @@ export function OctaneScope() {
       '--noteglass': t.noteglass,
       '--flood': hexA(floodHex, dark ? 0.3 : 0.16),
       '--liveColor': floodHex,
+      /* Text ON the accent fill. The accent is a mid-tone in both themes, so the light
+         theme's near-white --bg0 would sit at ~2:1 on it — always go dark instead. */
+      '--onAccent': dark ? t.bg0 : '#0B1020',
       '--scrim': dark ? 'rgba(2,4,9,.78)' : 'rgba(20,28,45,.5)',
     } as CSSProperties),
   };
@@ -259,6 +310,8 @@ export function OctaneScope() {
         {/* vignette */}
         <div style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none', background: 'radial-gradient(130% 100% at 50% 46%,transparent 52%,rgba(0,0,0,.55) 100%)' }} />
 
+        {/* SCENE CHROME — one subtree so the drill-down can make all of it inert at once */}
+        <div ref={chromeRef}>
         {/* SCROLLER (the camera) */}
         <div
           ref={scrollRef}
@@ -267,8 +320,10 @@ export function OctaneScope() {
           onPointerDown={onPointerDown}
           style={{ position: 'absolute', inset: 0, zIndex: 5, overflowX: 'auto', overflowY: 'hidden', cursor: 'grab' }}
         >
-          <div style={{ position: 'relative', height: '100%', width: worldW * zoom }}>
-            <div style={{ position: 'absolute', left: 0, top: 0, width: worldW, height: worldH, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
+          <div style={{ position: 'relative', height: '100%', width: worldW * camZoom }}>
+            {/* The world is never shorter than ROAD_MIN_H, so centre the overflow instead of
+                clipping it all off one edge. */}
+            <div style={{ position: 'absolute', left: 0, top: Math.round((vh - worldH * camZoom) / 2), width: worldW, height: worldH, transform: `scale(${camZoom})`, transformOrigin: '0 0' }}>
               {intake ? (
                 <RoadScene layout={layout} onOpenStage={handleOpenStage} />
               ) : (
@@ -355,6 +410,7 @@ export function OctaneScope() {
             </div>
           </div>
         )}
+        </div>
 
         {/* DRILL-DOWN overlay */}
         {node && <StageModal key={node.id} node={node} onClose={closeDetail} />}

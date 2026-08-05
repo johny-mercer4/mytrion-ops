@@ -80,7 +80,13 @@ export function HrEmployeeCard({
 
         <span className="hr-empc-meta">
           {employee.department ? <span className="hr-empc-dept">{employee.department}</span> : null}
-          {employee.email ? <span className="hr-empc-mail">{employee.email}</span> : null}
+          {/* Titled because the column ellipsises it: a mytriontrucking.com address does not fit the
+              268px grid minimum, and scanning the directory by email otherwise means opening each card. */}
+          {employee.email ? (
+            <span className="hr-empc-mail" title={employee.email}>
+              {employee.email}
+            </span>
+          ) : null}
           {handle ? (
             <span className="hr-empc-tg" title={`Telegram @${handle}`}>
               <Send size={11} />@{handle}

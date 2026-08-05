@@ -58,6 +58,16 @@ export function UserManagement() {
             their profile and role defaults.
           </p>
         </div>
+        {/* A refetch (tab round-trip, saved override) now keeps the rows it already has, so the
+            pending state needs somewhere else to live. One indicator per fetch: the skeleton owns the
+            first load, this pill owns every refetch. In the head, not the table, because `.table`
+            zebra-stripes on nth-child — a strip above the rows would invert all of them mid-refresh. */}
+        {view === 'users' && loading && rows.length > 0 && (
+          <span className={`${s.pill} ${s.pillInfo}`} role="status">
+            <span className={s.spinner} />
+            Refreshing
+          </span>
+        )}
       </div>
 
       <div className={s.chipRow}>
@@ -106,7 +116,7 @@ export function UserManagement() {
             </p>
           )}
 
-          <div className={s.table} aria-busy={loading && rows.length === 0}>
+          <div className={s.table} aria-busy={loading}>
             <div className={`${s.tHead} ${s.tUsers}`}>
               <span>User</span>
               <span>Profile</span>
@@ -123,11 +133,19 @@ export function UserManagement() {
                 <TableSkeleton widths={USER_SKELETON} rowClassName={s.tRow} colsClassName={s.tUsers} />
               </>
             )}
-            {!loading &&
+            {rows.length > 0 &&
               visible.map((r) => (
                 <div key={r.zohoUserId} className={`${s.tRow} ${s.tUsers}`}>
-                  <span className={s.docCell}>
-                    <span className={s.docTitle}>{r.name ?? r.zohoUserId}</span>
+                  {/* Two same-named workers are one row apart in this table, so the email — already
+                      searchable, never shown — is what tells them apart before Edit is clicked. */}
+                  <span className={s.cellStack}>
+                    <span
+                      className={s.docTitle}
+                      title={[r.name, r.email].filter(Boolean).join(' — ') || r.zohoUserId}
+                    >
+                      {r.name ?? r.zohoUserId}
+                    </span>
+                    <span className={s.cellSub}>{r.email ?? r.zohoUserId}</span>
                   </span>
                   <span className={s.deptText}>{r.profile ?? '—'}</span>
                   <span className={s.deptText}>{r.role ?? '—'}</span>

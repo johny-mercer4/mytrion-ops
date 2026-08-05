@@ -13,7 +13,10 @@ import {
   formatDurationHours,
   formatUzbDateTime,
   formatUzbHhMmSs,
+  hhMmToMinutes,
   isUzbWeekend,
+  isValidHhMm,
+  UZB_OFFSET_MS,
 } from './uzbTime.js';
 import {
   MAX_LIVE_ATTENDANCE_SESSION_MS,
@@ -146,6 +149,17 @@ export function buildAttendanceSummaryFromRecords(
     } else if (!scheduled) {
       status = 'Unscheduled';
       unscheduled += 1;
+    } else if (!shiftWindowClosed(date, shift, calculatedAt)) {
+      /**
+       * A day nobody has worked yet cannot be an absence. The default range is the CURRENT Mon–Sun
+       * week, so counting these as Absent pre-marked every remaining weekday of this week — and all
+       * five of any week paged forward to — against every employee.
+       *
+       * `Unscheduled` rather than a new 'Upcoming' status: DayStatus is the wire contract that the
+       * client's AttendanceDayStatus and the CSV export both read.
+       */
+      status = 'Unscheduled';
+      unscheduled += 1;
     } else {
       status = 'Absent';
       absent += 1;
@@ -202,6 +216,32 @@ export function buildAttendanceSummaryFromRecords(
       : null,
     currentState: presenceStateForLastPunch(last, calculatedAt),
   };
+}
+
+/**
+ * Has the shift window for this work date already ended?
+ *
+ * Overnight shifts (end <= start) close on the FOLLOWING calendar day — the same rollover
+ * `workDateForPunch` applies when it buckets a post-midnight punch back onto this work date. On the
+ * shipped 19:00–03:00 shift that means "today" only settles after 03:00 tomorrow, and at 01:00
+ * yesterday is still in progress, so neither can be scored as an absence yet.
+ */
+function shiftWindowClosed(
+  date: string,
+  shift: { startLocal: string; endLocal: string } | null,
+  now: Date,
+): boolean {
+  if (!shift) return true;
+  // Malformed HH:mm can only reach us from a hand-edited row; keep the old behaviour rather than
+  // throwing out of a read path that serves the whole team directory.
+  if (!isValidHhMm(shift.startLocal) || !isValidHhMm(shift.endLocal)) return true;
+  const [y, mo, d] = date.split('-').map(Number);
+  if (!y || !mo || !d) return true;
+  const startM = hhMmToMinutes(shift.startLocal);
+  const endM = hhMmToMinutes(shift.endLocal);
+  const overnightMs = endM > startM ? 0 : 24 * 60 * 60 * 1000;
+  const endUtcMs = Date.UTC(y, mo - 1, d) - UZB_OFFSET_MS + endM * 60_000 + overnightMs;
+  return now.getTime() >= endUtcMs;
 }
 
 function presenceStateForLastPunch(

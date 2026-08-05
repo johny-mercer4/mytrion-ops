@@ -15,14 +15,22 @@ import {
 } from '../../api/hr';
 import { useHrDirectory } from './hrData';
 import { HrBusy } from './HrBits';
+import { tashkentToday } from './attendanceTime';
 
-const TZ_OPTIONS = [
-  'Asia/Tashkent',
-  'Asia/Samarkand',
-  'UTC',
-  'Europe/Moscow',
-  'America/New_York',
-];
+/**
+ * Only +5 zones are offered: every punch is bucketed, classified and formatted against a fixed
+ * +5 offset (modules/hr/attendance/uzbTime.ts), so any other zone would be stored and then
+ * silently ignored by the engine. Widen this list only once the engine reads `shift.timezone`.
+ */
+const TZ_OPTIONS = ['Asia/Tashkent', 'Asia/Samarkand'];
+
+/** UZB calendar arithmetic on a YYYY-MM-DD string; noon UTC keeps the day stable across offsets. */
+function addDays(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+}
 
 function downloadCsv(csv: string, filename: string): void {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -30,8 +38,13 @@ function downloadCsv(csv: string, filename: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.rel = 'noopener';
+  // Safari (and some Firefox builds) only fetch the object URL for an in-document anchor, and
+  // fetch it after this tick — revoking synchronously made the download a silent no-op.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 export function HrAttendanceSettings() {
@@ -49,15 +62,17 @@ export function HrAttendanceSettings() {
 
   const [assignShiftId, setAssignShiftId] = useState('');
   const [assignEmpId, setAssignEmpId] = useState('');
-  const [effectiveFrom, setEffectiveFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  // Seeded from the UZB calendar day, not the UTC one: between 00:00 and 05:00 Tashkent the UTC
+  // day is still yesterday, which would back-date the assignment (and drop today from the export).
+  const [effectiveFrom, setEffectiveFrom] = useState(() => tashkentToday());
+  const [assignMessage, setAssignMessage] = useState('');
+  const [assignError, setAssignError] = useState('');
 
   const [exportEmpId, setExportEmpId] = useState('');
-  const [exportFrom, setExportFrom] = useState(() => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [exportTo, setExportTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exportFrom, setExportFrom] = useState(() => addDays(tashkentToday(), -30));
+  const [exportTo, setExportTo] = useState(() => tashkentToday());
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportError, setExportError] = useState('');
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -120,14 +135,22 @@ export function HrAttendanceSettings() {
   const onAssign = async (): Promise<void> => {
     if (busy || !assignShiftId || !assignEmpId) return;
     setBusy(true);
-    setError('');
+    setAssignMessage('');
+    setAssignError('');
     try {
       await assignAttendanceShift(assignShiftId, {
         employeeIds: [assignEmpId],
         effectiveFrom,
       });
+      // Assign changes nothing on screen (the shift list is unaffected), so the outcome has to be
+      // stated inside this card — the shared error banner sits below all three cards, off-screen.
+      const shift = shifts.find((s) => s.id === assignShiftId);
+      const emp = employees.find((e) => e.id === assignEmpId);
+      setAssignMessage(
+        `${shift?.name ?? 'Shift'} assigned to ${emp ? empLabel(emp) : 'employee'} from ${effectiveFrom}.`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setAssignError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -136,7 +159,8 @@ export function HrAttendanceSettings() {
   const onExport = async (): Promise<void> => {
     if (busy || !exportEmpId) return;
     setBusy(true);
-    setError('');
+    setExportMessage('');
+    setExportError('');
     try {
       const { csv, filename } = await exportAttendanceCsv({
         from: exportFrom,
@@ -144,8 +168,9 @@ export function HrAttendanceSettings() {
         employeeId: exportEmpId,
       });
       downloadCsv(csv, filename);
+      setExportMessage(`Downloaded ${filename}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setExportError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -260,6 +285,12 @@ export function HrAttendanceSettings() {
             Assign
           </button>
         </div>
+        {assignMessage ? <p className="hr-att-assign-ok">{assignMessage}</p> : null}
+        {assignError ? (
+          <p className="hr-banner-error" role="alert">
+            {assignError}
+          </p>
+        ) : null}
       </section>
 
       <section className="hr-settings-card">
@@ -291,6 +322,12 @@ export function HrAttendanceSettings() {
             Download CSV
           </button>
         </div>
+        {exportMessage ? <p className="hr-att-assign-ok">{exportMessage}</p> : null}
+        {exportError ? (
+          <p className="hr-banner-error" role="alert">
+            {exportError}
+          </p>
+        ) : null}
       </section>
 
       {error ? (

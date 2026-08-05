@@ -3,7 +3,7 @@
  * Module-level pub/sub so deep components (risk CRUD) can notify without prop
  * drilling; <ScopeToastHost /> renders the stack inside the scope root.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -45,26 +45,57 @@ const TOAST_ICON: Record<ToastType, string> = {
   info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
 };
 
+/** The stack sits inside a clipped panel — past three cards it buries the drill-down. */
+const MAX_TOASTS = 3;
+
 export function ScopeToastHost() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
-    const timers = new Map<number, ReturnType<typeof setTimeout>>();
-    const onToast: Listener = (t) => {
-      setToasts((prev) => [...prev, t]);
+    const timers = timersRef.current;
+    /* Re-arming clears the card's previous handle first, so arming inside the updater stays
+       idempotent even when React invokes it twice. */
+    const arm = (id: number, duration: number) => {
+      const prev = timers.get(id);
+      if (prev) clearTimeout(prev);
       timers.set(
-        t.id,
-        setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== t.id)), t.duration),
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          setToasts((cur) => cur.filter((x) => x.id !== id));
+        }, duration),
       );
+    };
+    const onToast: Listener = (t) => {
+      setToasts((prev) => {
+        /* Same type + title is the same event — the empty-description guard fires once per
+           keypress. Refresh the live card's timer instead of stacking a duplicate. */
+        const dup = prev.find((x) => x.type === t.type && x.title === t.title);
+        if (dup) {
+          arm(dup.id, t.duration);
+          return prev.map((x) => (x.id === dup.id ? { ...x, message: t.message } : x));
+        }
+        arm(t.id, t.duration);
+        return [...prev, t].slice(-MAX_TOASTS);
+      });
     };
     listeners.add(onToast);
     return () => {
       listeners.delete(onToast);
       timers.forEach((h) => clearTimeout(h));
+      timers.clear();
     };
   }, []);
 
-  const dismiss = (id: number) => setToasts((prev) => prev.filter((x) => x.id !== id));
+  const dismiss = (id: number) => {
+    const h = timersRef.current.get(id);
+    if (h) {
+      clearTimeout(h);
+      timersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((x) => x.id !== id));
+  };
 
   if (!toasts.length) return null;
   return (

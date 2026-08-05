@@ -40,6 +40,10 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
   // A reissued draft opens straight into manual entry: its ids came from the dead invite, not from
   // a client the agent picked, and they need to be visible and editable.
   const [manual, setManual] = useState(Boolean(initial));
+  // Latched at pick time, NOT derived from `carrierId` being empty: the id grid below is the only
+  // place to type that carrier id, so a live-value condition unmounted the focused input on the
+  // first keystroke and threw away the rest of the number.
+  const [needsCarrier, setNeedsCarrier] = useState(false);
   const [carrierId, setCarrierId] = useState(initial?.carrierId ?? '');
   const [applicationId, setApplicationId] = useState(initial?.applicationId ?? '');
   const [companyName, setCompanyName] = useState(initial?.companyName ?? '');
@@ -64,6 +68,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
     prevProfile.current = profile;
     setPicked(null);
     setManual(false);
+    setNeedsCarrier(false);
     setCarrierId('');
     setApplicationId('');
     setCompanyName('');
@@ -76,6 +81,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
 
   function pickClient(c: DwhClient) {
     setPicked(c);
+    setNeedsCarrier(!c.carrierId?.trim());
     setCarrierId(c.carrierId ?? '');
     setApplicationId(c.applicationId ?? '');
     setCompanyName(c.companyName ?? '');
@@ -83,6 +89,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
 
   function clearClient() {
     setPicked(null);
+    setNeedsCarrier(false);
     setCarrierId('');
     setApplicationId('');
     setCompanyName('');
@@ -183,11 +190,16 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
       ? hasTie && driverName.trim().length > 0
       : hasTie;
 
+  // Cards are listed BY carrier, so a client tied only by an application id can't produce one —
+  // point at the carrier field the form now offers rather than at a picker that isn't on screen.
+  const cardBlocker = carrierId.trim()
+    ? 'Pick the card this driver is for.'
+    : "This client has no carrier id yet — enter one to list the driver's cards.";
   const blocker = !valid
     ? !hasTie
       ? 'Pick a client (or enter a carrier / application id manually).'
       : isDriver && !cardId.trim()
-        ? 'Pick the card this driver is for.'
+        ? cardBlocker
         : (isDriver || isManager) && !driverName.trim()
           ? isManager ? "Enter the manager's name." : "Enter the driver's name."
           : ''
@@ -195,7 +207,13 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
 
   async function generateInvite(e: FormEvent) {
     e.preventDefault();
-    if (busy || !valid) return;
+    if (busy) return;
+    // The button is deliberately enabled while invalid (aria-disabled keeps the reason reachable),
+    // so a bare `return` here swallowed the click and read as a dead button.
+    if (!valid) {
+      adminToast.error('Not ready to generate yet', blocker);
+      return;
+    }
     setBusy(true);
     try {
       const actingAs = getImpersonation();
@@ -227,6 +245,13 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Same contract as the invitations table's Copy button: a blocked clipboard has to say so and
+   *  hand the link back, otherwise it is indistinguishable from a copy that worked. */
+  async function copyInvite(url: string) {
+    if (await copyToClipboard(url)) adminToast.success('Invite link copied');
+    else adminToast.error('Copy failed — select the link in the field', url, 15000);
   }
 
   return (
@@ -315,12 +340,17 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
 
         {!picked && !manual && <ClientCombobox onPick={pickClient} onManual={() => setManual(true)} />}
 
-        {!picked && manual && (
+        {/* Also shown for a PICKED client whose deal has no carrier id yet (`needsCarrier`, latched
+            at pick time so typing into the field can't close the field): the card list and the
+            driver's own cards all key off the carrier, so without this the form asked for fields it
+            never rendered and the only escape was discarding the pick. The client's own values stay
+            read-only — they came from the DWH, and only the missing carrier id is ours to fill. */}
+        {(manual || needsCarrier) && (
           <>
             <div className={s.formGrid}>
               <div className={s.field}>
                 <span className={s.fieldLabel}>Company name</span>
-                <input className={s.input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Transport LLC" />
+                <input className={s.input} value={companyName} readOnly={Boolean(picked)} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Transport LLC" />
               </div>
               <div className={s.field}>
                 <span className={s.fieldLabel}>Carrier Id</span>
@@ -328,15 +358,17 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
               </div>
               <div className={s.field}>
                 <span className={s.fieldLabel}>Application Id</span>
-                <input className={`${s.input} ${s.mono}`} value={applicationId} onChange={(e) => setApplicationId(e.target.value)} placeholder="892408" />
+                <input className={`${s.input} ${s.mono}`} value={applicationId} readOnly={Boolean(picked)} onChange={(e) => setApplicationId(e.target.value)} placeholder="892408" />
                 <span className={s.fieldHint}>At least one id — application works before the carrier exists.</span>
               </div>
             </div>
-            <p className={s.fieldHint}>
-              <button type="button" className={s.linkBtn} onClick={() => setManual(false)}>
-                ← Back to client search
-              </button>
-            </p>
+            {!picked && (
+              <p className={s.fieldHint}>
+                <button type="button" className={s.linkBtn} onClick={() => setManual(false)}>
+                  ← Back to client search
+                </button>
+              </p>
+            )}
           </>
         )}
 
@@ -458,7 +490,9 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
             )}
           </div>
         )}
-        {(isDriver || isManager) && carrierId.trim() && (
+        {/* `hasTie`, not the carrier id — a name needs no carrier, and gating it on one left the
+            blocker demanding a name with no field on screen to type it into. */}
+        {(isDriver || isManager) && hasTie && (
           <div className={s.field}>
             <span className={s.fieldLabel}>{isManager ? 'Manager name' : 'Driver name'}</span>
             <input
@@ -474,7 +508,11 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
           </div>
         )}
         {isDriver && !carrierId.trim() && (
-          <p className={s.fieldHint}>Pick the client above first — the card list comes from their carrier.</p>
+          <p className={s.fieldHint}>
+            {picked
+              ? 'This client has no carrier id yet — enter one above and the card list will load.'
+              : 'Pick the client above first — the card list comes from their carrier.'}
+          </p>
         )}
       </div>
 
@@ -485,7 +523,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
       {inviteUrl ? (
         <div className={s.inlineRow}>
           <input className={`${s.input} ${s.mono}`} readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
-          <button type="button" className={s.ghostBtn} onClick={() => copyToClipboard(inviteUrl)}>
+          <button type="button" className={s.ghostBtn} onClick={() => void copyInvite(inviteUrl)}>
             Copy
           </button>
           <button type="button" className={s.ghostBtn} onClick={() => setInviteUrl('')}>
