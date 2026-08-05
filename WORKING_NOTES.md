@@ -11216,3 +11216,49 @@ today's records — but the end-to-end POST is untested and should be exercised 
   435/435, root + frontend typechecks, lint (0 errors, 22 existing warnings), and production build
   pass. The full backend run has 1,791 passes and the same unrelated CS/Comms/Retention/DB/socket
   environment failures; the Blueprint/Data Center suites pass independently after that run.
+
+## 2026-08-05 (pm) — Zoho OAuth sign-in outage: the callback had no GET (branch `fix/Oauth`)
+
+**Symptom:** `{"error":{"code":"NOT_FOUND","message":"Route GET /v1/auth/zoho/callback not found"}}`
+— reported as "Daniel Brown cannot login with zoho", but it blocked EVERY worker.
+
+**Root cause (not RBAC at all).** The flow was written for one registration shape only: Zoho redirects
+to the PORTAL origin, the SPA reads `?code&state` and relays them to `POST /v1/auth/zoho/callback`
+(`apps/mytrion-crm/src/api/auth.ts`). The Zoho server app's redirect URI is instead registered as the
+API's own `/v1/auth/zoho/callback`, so Zoho sent the browser there with a **GET** — and only the POST
+relay existed. `/v1/*` is an API path, so it never reaches the SPA's index.html deep-link fallback
+either; it just 404'd, with nothing in the message pointing at OAuth.
+
+**Fix.** Added the browser-facing `GET /v1/auth/zoho/callback` (`src/routes/v1/auth.routes.ts`). It
+does NOT complete the exchange: the one-time code is still unconsumed at that point, so it bounces the
+browser to `PORTAL_BASE_URL` with the params intact and lets the existing, tested POST relay finish —
+which also avoids minting a session that could only be handed over in a URL. Denied consent and a
+param-less callback are forwarded as `?error=...`, which the portal already renders as sign-in copy.
+Both registration shapes now work, since `redirect_uri` is the same env value on the authorize and
+token calls either way.
+
+- New env `PORTAL_BASE_URL` (default `/`, correct in prod — the portal is served same-origin at root
+  by `plugins/widgetStatic.ts`). Set it to the Vite origin only for a separate dev port.
+- `.env.example` now documents `ZOHO_SERVER_CLIENT_ID/SECRET`, `ZOHO_OAUTH_REDIRECT_URI` and
+  `PORTAL_BASE_URL`. **None of the three were documented before**, which is how the redirect URI drifted
+  (its dev-only default is `http://localhost:5173`). This was already flagged as a prod-config issue in
+  the 2026-07-17 note and never closed.
+- Cover: `tests/unit/auth-zoho-callback.test.ts` (6) — pins "GET must not 404", param forwarding, that
+  the code is NOT consumed server-side, and the error paths.
+
+**RBAC was verified, not changed.** The layering already does what was asked: profile default (Admin →
+Profile Defaults) → role default (union) → marker floor → per-user override (Admin → User Management)
+→ break-glass. Login (`POST /auth/zoho/callback`) and `/auth/me` both resolve through the same
+`mytrionAccessService.resolveWorkerAccess` the backend gates use, and the 10s cache is invalidated on
+admin save. A worker with nothing configured falls to the legacy profile-substring floor; if that is
+empty the portal renders `Forbidden` naming the user and profile — so once signed in, "no Mytrion is
+assigned to Daniel Brown (profile: X)" is the diagnostic, and the cure is a User Management override or
+a profile/role default. b2ec4b94 had already fixed the Role-Defaults-wipes-unconfigured-profiles lockout.
+
+**Pre-existing test breakage on this branch — NOT from this change and NOT fixed here.** `npx vitest run
+tests/unit` is 145 failed / 1786 passed across 17 files; verified identical with my changes stashed.
+Cause is test hygiene, not product code: suites read secrets from the developer's `.env` instead of
+setting them — e.g. `tests/unit/billing-auto-map-route.test.ts:29` uses `env.BILLING_INGEST_SECRET`,
+which is absent from `.env`, so the route 503s `SERVER_MISCONFIGURED` and all 6 assertions fail. This is
+exactly the non-determinism `vitest.config.ts`'s env baseline was introduced to prevent; those vars
+belong in that baseline. Worth its own pass.
