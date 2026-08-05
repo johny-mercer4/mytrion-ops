@@ -475,7 +475,11 @@ export function ClientModal({
             </div>
           )}
           {clientTab === 'manage' && (
-            <ClientManagePanel carrierId={client.id} companyName={client.name} />
+            <ClientManagePanel
+              carrierId={client.id}
+              companyName={client.name}
+              clientStatus={client.status}
+            />
           )}
         </div>
         <div

@@ -29,6 +29,8 @@ export const ROLES = [
   'viewer',
   'driver',
   'fleet_manager',
+  /** Internal worker linked to Telegram; carrier authority is re-checked against their live roster. */
+  'sales_agent',
 ] as const;
 export type Role = (typeof ROLES)[number];
 

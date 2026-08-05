@@ -43,9 +43,11 @@ function friendlyManageError(e: unknown): string {
 export function ClientManagePanel({
   carrierId,
   companyName,
+  clientStatus,
 }: {
   carrierId: string;
   companyName: string;
+  clientStatus: 'active' | 'attention' | 'debtor';
 }) {
   const { pushToast } = useSales();
   const [profile, setProfile] = useState<CarrierProfile>('owner');
@@ -208,24 +210,31 @@ export function ClientManagePanel({
   const companyType =
     cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
-  const valid = isOwnerLike
-    ? carrierId.trim().length > 0
-    : ownerReady
-      && carrierId.trim().length > 0
-      && cardId.trim().length > 0
-      && driverName.trim().length > 0;
+  const inviteEligible = clientStatus === 'active';
+  const valid =
+    inviteEligible &&
+    (isOwnerLike
+      ? carrierId.trim().length > 0
+      : ownerReady &&
+        carrierId.trim().length > 0 &&
+        cardId.trim().length > 0 &&
+        driverName.trim().length > 0);
 
-  const blocker = !valid
-    ? !carrierId.trim()
-      ? 'This client has no carrier id — cannot generate a link.'
-      : isDriver && !ownerReady
-        ? 'Register the owner user first — drivers can only be created under an active owner user.'
-        : isDriver && !cardId.trim()
-          ? 'Pick the carrier card number this driver is for.'
-          : isDriver && !driverName.trim()
-            ? "Enter the driver's name."
-            : ''
-    : '';
+  let blocker = '';
+  if (!inviteEligible) {
+    blocker =
+      clientStatus === 'debtor'
+        ? 'Registration links are unavailable while this client is a debtor.'
+        : 'Registration links are only available for active clients.';
+  } else if (!carrierId.trim()) {
+    blocker = 'This client has no carrier id — cannot generate a link.';
+  } else if (isDriver && !ownerReady) {
+    blocker = 'Register the owner user first — drivers can only be created under an active owner user.';
+  } else if (isDriver && !cardId.trim()) {
+    blocker = 'Pick the carrier card number this driver is for.';
+  } else if (isDriver && !driverName.trim()) {
+    blocker = "Enter the driver's name.";
+  }
 
   async function generateInvite(e: FormEvent) {
     e.preventDefault();
@@ -286,6 +295,13 @@ export function ClientManagePanel({
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
         </div>
+        {!inviteEligible && (
+          <div style={s('margin-top:10px;font-size:13px;font-weight:700;color:var(--warn)')}>
+            {clientStatus === 'debtor'
+              ? 'Debtor — registration links are blocked.'
+              : 'Inactive — registration links are blocked.'}
+          </div>
+        )}
         {dealOwner && (
           <div style={s('margin-top:4px;font-size:13px;color:var(--text2)')}>
             Sales agent: <b>{dealOwner.name}</b> — stamped on the registration link; the client sees this name in the mini-app.
