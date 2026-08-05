@@ -109,11 +109,21 @@ describe('profile-default seeding (boot + admin GET share ensureProfileDefaultsS
     expect(out.length).toBe(DEFAULT_PROFILE_SEED.length);
   });
 
-  it('is a no-op for a tenant that already has rows (admin edits never clobbered)', async () => {
-    pd.list.mockResolvedValue([seedRow('Sales Agent')]);
+  it('backfills missing seed profiles without clobbering existing admin rows', async () => {
+    // Tenant already has Sales Agent (admin may have customized it) but is missing other seed keys.
+    pd.list
+      .mockResolvedValueOnce([seedRow('Sales Agent')])
+      .mockResolvedValue(DEFAULT_PROFILE_SEED.map((s) => seedRow(s.profileName)));
     const out = await mytrionAccessService.ensureProfileDefaultsSeeded('octane');
-    expect(pd.upsert).not.toHaveBeenCalled();
-    expect(out.length).toBe(1);
+    // Every seed key except the one already present is inserted.
+    expect(pd.upsert).toHaveBeenCalledTimes(DEFAULT_PROFILE_SEED.length - 1);
+    expect(pd.upsert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ profileName: 'HR', allowedMytrions: ['hr', 'recruit'] }),
+    );
+    // Existing Sales Agent was NOT re-upserted (would clobber admin edits).
+    expect(pd.upsert.mock.calls.every(([, row]) => row.profileName !== 'Sales Agent')).toBe(true);
+    expect(out.length).toBe(DEFAULT_PROFILE_SEED.length);
   });
 });
 

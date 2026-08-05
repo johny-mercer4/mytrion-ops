@@ -104,6 +104,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     // "…Sales Agent…" profile lands here — and ONLY here — so they auto-enter /m/sales on login.
     // List mirrors the backend DEFAULT_PROFILE_SEED (src/lib/mytrions.ts) — the server-resolved
     // access wins for verified sessions; this fallback only covers dev-mock/legacy paths.
+    // Additional Zoho profiles (e.g. plain "Sales") are granted via Mytrion Admin → Profile Defaults.
     allowedProfiles: ['Sales', 'Sales Agent', 'Sales Plus', 'Sales Assistant', 'Referral Standard Plus', 'Standard Plus'],
     profileContainsAny: ['Sales Agent'],
     allowedRoles: [],

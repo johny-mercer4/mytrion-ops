@@ -6,8 +6,9 @@
  * backend RBAC (tool/agent/knowledge department gates) is DB-driven, and surfaced to the client
  * (/auth/me) so the UI stops guessing from profile strings.
  *
- * Layering: profile default (or legacy floor) → role default (UNION grants / OR all-dept / home
- * overlay) → per-user override (replace / deny) → env-admin pin.
+ * Layering: profile default if set, else legacy floor → role default (UNION grants / OR all-dept /
+ * home overlay) → per-user override (replace / deny) → env-admin pin. Admin Profile/Role Defaults
+ * are the control plane; the legacy floor only covers Zoho profiles not yet configured in Admin.
  *
  * Per-Mytrion modes (read|full): env-admin / allDept → all full; else user explicit mode wins;
  * else role mode; else full (profile grants are implicit full). Mode does not affect entry.
@@ -206,9 +207,10 @@ function combineAccess(
   if (!markerAdmin && !havePd && !haveRd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
 
   // Step 1 — base grant.
-  // Profile default wins as the starting set. Role-only (no profile row) starts empty so the
-  // role is authoritative. Override-only (no profile/role) keeps the legacy floor so an
-  // "inherit" override never resolves below the unconfigured baseline.
+  // Profile default (Admin → Profile Defaults) wins as the starting set when present.
+  // Without a profile row, keep the legacy profile/role substring floor — Role Defaults and
+  // per-user overrides layer on top. Role Defaults must not wipe unconfigured profiles to []
+  // (that locked Sales users out of the app when any role default existed).
   let allowed: MytrionId[] = [];
   let home: MytrionId | null = null;
   let allDept = false;
@@ -216,7 +218,7 @@ function combineAccess(
     allowed = pd.allowedMytrions;
     home = pd.homeMytrion;
     allDept = pd.allDepartmentAccess;
-  } else if (!haveRd) {
+  } else {
     const floor = legacyAccess(input, false);
     allowed = floor.accessibleMytrions;
     home = floor.homeMytrion;
@@ -408,24 +410,29 @@ export const mytrionAccessService = {
   },
 
   /**
-   * Seed DEFAULT_PROFILE_SEED for a tenant iff it has no profile defaults yet (idempotent —
-   * a tenant with ANY rows is left alone, so admin edits are never clobbered). Called at boot
-   * (modules/access/bootstrap.ts) and by GET /admin/mytrion-access/profiles.
+   * Seed DEFAULT_PROFILE_SEED for a tenant (idempotent). Empty tenants get the full seed.
+   * Already-seeded tenants only INSERT missing seed keys — existing admin edits are never
+   * overwritten. Called at boot (modules/access/bootstrap.ts) and by GET /admin/mytrion-access/profiles.
    */
   async ensureProfileDefaultsSeeded(tenantId: string): Promise<MytrionProfileDefaultDto[]> {
     const ctx = internalCtx(tenantId);
     const existing = await mytrionProfileDefaultsRepo.list(ctx);
-    if (existing.length === 0) {
-      for (const seed of DEFAULT_PROFILE_SEED) {
-        await mytrionProfileDefaultsRepo.upsert(ctx, {
-          profileName: seed.profileName,
-          allowedMytrions: seed.allowedMytrions,
-          homeMytrion: seed.homeMytrion,
-          allDepartmentAccess: seed.allDepartmentAccess,
-        });
-      }
+    const existingKeys = new Set(existing.map((row) => row.profileKey));
+    let inserted = 0;
+    for (const seed of DEFAULT_PROFILE_SEED) {
+      const key = profileKeyOf(seed.profileName);
+      if (existingKeys.has(key)) continue;
+      await mytrionProfileDefaultsRepo.upsert(ctx, {
+        profileName: seed.profileName,
+        allowedMytrions: seed.allowedMytrions,
+        homeMytrion: seed.homeMytrion,
+        allDepartmentAccess: seed.allDepartmentAccess,
+      });
+      inserted += 1;
+    }
+    if (inserted > 0) {
       this.invalidateAll();
-      return mytrionProfileDefaultsRepo.list(ctx);
+      logger.info({ tenantId, inserted }, 'mytrion access: backfilled missing profile defaults from seed');
     }
     // One-time product harden: strip leaked Standard → CS auto-grant on already-seeded tenants.
     await this.reconcileStandardNoCsGrant(tenantId);
