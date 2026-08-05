@@ -54,6 +54,28 @@ vi.mock('../../src/repos/carrierInvitationRepo.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/repos/salesAgentMiniAppRepo.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/repos/salesAgentMiniAppRepo.js')>();
+  return {
+    ...mod,
+    salesAgentMiniAppRepo: {
+      ...mod.salesAgentMiniAppRepo,
+      createInvitation: vi.fn(async (ctx, input) => ({
+        id: 'sai_test',
+        tenantId: ctx.tenantId,
+        zohoUserId: input.zohoUserId,
+        agentName: input.agentName,
+        requestedCarrierId: input.requestedCarrierId ?? null,
+        status: 'pending' as const,
+        redeemedTelegramUserId: null,
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    },
+  };
+});
+
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return {
@@ -91,11 +113,13 @@ import {
 } from '../../src/integrations/dwhClientRoster.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
+import { salesAgentMiniAppRepo } from '../../src/repos/salesAgentMiniAppRepo.js';
 
 const clientsMock = vi.mocked(fetchAgentClients);
 const carrierOwnedMock = vi.mocked(isCarrierOwned);
 const listDwhCardsMock = vi.mocked(listDwhCards);
 const createInviteMock = vi.mocked(carrierInvitationRepo.create);
+const createAgentInviteMock = vi.mocked(salesAgentMiniAppRepo.createInvitation);
 
 let app: FastifyInstance;
 
@@ -231,5 +255,58 @@ describe('carrier registration links — Sales write scope + View-as', () => {
       }),
     );
     expect(createInviteMock.mock.calls.at(-1)?.[1]).not.toHaveProperty('ttlHours');
+  });
+
+  it('creates a self-registration launch for an active company in the Sales agent roster', async () => {
+    clientsMock.mockResolvedValue([
+      activeClient({ computedDebt: 500, computedDebtDays: 3 }),
+    ]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/sales-agent-invitations',
+      headers: bearer(await workerToken('Sales Rep')),
+      payload: { carrier_id: '123' },
+    });
+
+    expect(res.statusCode, res.body).toBe(201);
+    expect(createAgentInviteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'zoho:42', userName: 'Robiya' }),
+      expect.objectContaining({
+        zohoUserId: '42',
+        agentName: 'Robiya',
+        requestedCarrierId: '123',
+      }),
+    );
+  });
+
+  it('requires Admin View before an administrator can create a Sales-agent self-registration', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/sales-agent-invitations',
+      headers: bearer(await workerToken('Administrator', '1')),
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(createAgentInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the verified Admin View target identity for Sales-agent registration', async () => {
+    clientsMock.mockResolvedValue([activeClient({ agentName: 'Frank Harrison' })]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/sales-agent-invitations',
+      headers: {
+        ...bearer(await workerToken('Administrator', '1')),
+        'x-act-as-zoho-user-id': '999',
+      },
+      payload: { carrier_id: '123' },
+    });
+
+    expect(res.statusCode, res.body).toBe(201);
+    expect(createAgentInviteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'zoho:999', userName: 'Frank Harrison' }),
+      expect.objectContaining({ zohoUserId: '999', agentName: 'Frank Harrison' }),
+    );
   });
 });

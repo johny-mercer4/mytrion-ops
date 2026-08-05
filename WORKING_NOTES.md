@@ -11458,3 +11458,40 @@ regressions.
   `carrierMiniApp.routes.ts` is 1,749 lines and still contains direct DB select/transaction orchestration
   instead of repository/service boundaries; `dwhClientRoster.ts` is 596 lines (under the 600 hard cap
   but over the 580 target). Split/refactor these before adding the sales-agent Telegram portal.
+
+## 2026-08-06 — Debtor registration-link deployment fix
+
+- Traced a production UI mismatch where Data Center correctly labeled a client as `Debtor` but the
+  Manage panel still rendered an enabled registration-link action. The source-side status gate from
+  the sales-agent capability work had not reached production because the committed CRM `app/` bundle
+  was stale; Render serves that vendored bundle and does not rebuild the CRM during deployment.
+- Tightened the UI so debtor/inactive clients receive an explicit blocked-state message and no
+  registration-link button at all. The API remains the authority and independently rejects debtor,
+  inactive, or LOC-suspended client invitations after a fresh DWH eligibility check.
+- Added a component regression covering both sides of the boundary: a debtor cannot see the action,
+  while an active client can. Rebuilt the committed CRM production bundle so the status gate is in
+  the assets actually copied into the Render runtime image.
+- Verification: all CRM tests pass (69 files, 437 tests), including the new debtor/active regression;
+  CRM TypeScript checking and the Vite production build pass.
+
+## 2026-08-06 — Sales-agent Telegram mini-app workspace
+
+- Added a separate Sales-agent Telegram identity and one-time self-registration flow. The durable
+  principal binds one verified Zoho worker to one Telegram user per tenant; it does not reuse a
+  customer carrier registration because the agent owns a changing portfolio rather than one company.
+- Added a distinct mini-app workspace: Sales agents first see their live active-company portfolio,
+  then can open a company in a read-only mini-app view and return to the portfolio. Active debtors
+  remain viewable, while inactive companies are excluded. The selected carrier is only a request
+  selector and is re-authorized against a fresh, no-stale-fallback DWH roster on every scoped call.
+- Added the Data Center client-card action that opens the Sales agent's self-registration/deep link.
+  Active debtors can use View mini-app; inactive companies show a disabled action. Customer owner,
+  manager, and driver registration links remain blocked for debtor or inactive clients.
+- Split read and write capabilities so Sales agents can inspect company, financial, and fleet data
+  but cannot mutate cards, issue or void money codes, send reports/documents, manage access, or file
+  customer service requests. Registration creation and redemption are audit-logged.
+- Added migration `0103_sales_agent_mini_app.sql`, tenant-scoped repository operations, route and
+  capability regressions, CRM component regressions, translations, and rebuilt both vendored apps.
+- Verification: focused backend coverage passes (4 files, 135 tests); CRM focused coverage passes
+  (2 files, 5 tests); root lint/typecheck and both production app builds pass. The repository-wide
+  suite still has unrelated baseline/environment failures in CS, retention, billing auto-map, and
+  scripted-agent tests; the carrier mini-app suite itself passes all 117 tests in that full run.

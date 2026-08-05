@@ -114,6 +114,20 @@ export interface TenantContext {
   impersonatorUserId?: string;
   /** Verified carrier-client access (customer-audience login sessions only). */
   client?: ClientAccess;
+  /**
+   * Server-created Sales-agent mini-app scope. Telegram proves the principal, the repository binds
+   * it to a verified Zoho user, and a fresh DWH roster lookup supplies this selected company.
+   * Never populated from request JSON/headers without those checks.
+   */
+  miniAppAgent?: {
+    principalId: string;
+    telegramUserId: string;
+    zohoUserId: string;
+    selectedCarrierId: string;
+    companyName: string;
+    cardCount: number;
+    companyType: 'owner-operator' | 'fleet-manager' | null;
+  };
   requestId: string;
 }
 

@@ -36,7 +36,8 @@ import {
   requireRegisteredOwnerUser,
   telegramCtx,
 } from '../../modules/carrier/miniAppAuth.js';
-import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
+import type { MiniAppActorRegistration } from '../../modules/carrier/miniAppAuth.js';
+import { registerSalesAgentMiniAppScopeHook } from './salesAgentMiniAppScope.js';
 
 const initDataSchema = z.object({ initData: z.string().min(1) });
 const cardSchema = initDataSchema.extend({ cardId: z.string().min(1).max(120).optional() });
@@ -107,7 +108,7 @@ function takeWriteToken(carrierId: string): void {
  * Returns the real card number servercrm/EFS needs. Fail-closed on any miss.
  */
 async function resolveActionCard(
-  registration: RegisteredMiniAppCompany,
+  registration: MiniAppActorRegistration,
   carrierId: string,
   cardId: string | undefined,
 ): Promise<{ cardNumber: string; cardId: string }> {
@@ -133,6 +134,7 @@ async function resolveActionCard(
 }
 
 export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise<void> {
+  registerSalesAgentMiniAppScopeHook(app);
   /**
    * Diagnostics read — live EFS info for one card (status, hold flag, limits). Powers the
    * "My card isn't working" flow: status → limits → [override]. Read-only, so no write flag.
@@ -358,9 +360,12 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/money-code/void', async (request) => {
     requireMoneyCodeEnabled();
     const body = mcVoidSchema.parse(request.body);
-    // No `financial:write` capability exists yet. Keep this durable money action on the legacy
-    // owner/manager boundary; `financial:read` must never imply write authority.
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    // Financial writes are a distinct capability from read access. Sales-agent company preview is
+    // intentionally read-only, so it cannot void a customer's code.
+    const { registration, carrierId } = await requireRegisteredOwnerUser(
+      body.initData,
+      'financial:write',
+    );
     takeWriteToken(carrierId);
     const row = await moneyCodeRequestRepo.findById(body.requestId);
     if (!row || String(row.carrierId) !== String(carrierId)) {
@@ -385,9 +390,11 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/money-code/draw', async (request) => {
     requireMoneyCodeEnabled();
     const body = moneyCodeDrawSchema.parse(request.body);
-    // See void above: financial writes remain owner/manager-only until a distinct write capability
-    // is deliberately introduced.
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    // See void above: the distinct write capability keeps read-only Sales-agent preview out.
+    const { registration, carrierId } = await requireRegisteredOwnerUser(
+      body.initData,
+      'financial:write',
+    );
     takeWriteToken(carrierId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
     try {

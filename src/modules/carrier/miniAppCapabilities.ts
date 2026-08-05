@@ -11,10 +11,13 @@ import { RBACError } from '../../lib/errors.js';
 export const MINI_APP_CAPABILITIES = [
   'company:read',
   'financial:read',
+  'financial:write',
+  'fleet:read',
   'fleet:manage',
   'card:write',
   'reports:send',
   'access:manage',
+  'service:request',
 ] as const;
 
 export type MiniAppCapability = (typeof MINI_APP_CAPABILITIES)[number];
@@ -32,8 +35,10 @@ const OWNER_CAPABILITIES = MINI_APP_CAPABILITIES;
 export const MINI_APP_CAPABILITIES_BY_PROFILE = {
   owner: OWNER_CAPABILITIES,
   manager: OWNER_CAPABILITIES,
-  driver: ['company:read', 'card:write', 'reports:send'],
-  sales_agent: OWNER_CAPABILITIES,
+  driver: ['company:read', 'card:write', 'reports:send', 'service:request'],
+  // Sales agents can inspect an active assigned company, but cannot mutate the customer's account,
+  // issue financial instruments, send documents, or create customer-facing requests from it.
+  sales_agent: ['company:read', 'financial:read', 'fleet:read'],
 } as const satisfies Record<MiniAppActorProfile, readonly MiniAppCapability[]>;
 
 export function miniAppCapabilitiesFor(profile: MiniAppActorProfile): readonly MiniAppCapability[] {

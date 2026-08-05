@@ -12,8 +12,8 @@ import {
   type ClientNewsPost,
   type ClientNewsRole,
   type LocalizedText,
-  type RegisteredMiniAppCompany,
 } from '../../db/schema/index.js';
+import type { MiniAppActorProfile } from '../carrier/miniAppCapabilities.js';
 import { logger } from '../../lib/logger.js';
 import { notifyMiniApp } from './service.js';
 
@@ -29,8 +29,15 @@ export interface NewsFeedItem {
 
 const FEED_LIMIT = 30;
 
+interface NewsRegistration {
+  tenantId: string;
+  telegramUserId: string;
+  carrierId: string | null;
+  profile: MiniAppActorProfile;
+}
+
 /** The caller's news feed: published, unexpired, audience- and role-matched, pinned first. */
-export async function listNewsForRegistration(reg: RegisteredMiniAppCompany): Promise<NewsFeedItem[]> {
+export async function listNewsForRegistration(reg: NewsRegistration): Promise<NewsFeedItem[]> {
   const role: ClientNewsRole = reg.profile === 'driver' ? 'driver' : 'owner';
   const now = new Date();
   const rows = await db
@@ -67,7 +74,7 @@ export async function listNewsForRegistration(reg: RegisteredMiniAppCompany): Pr
 }
 
 /** Idempotent read receipt (unique on news+user). No ownership risk: it only marks, never reads. */
-export async function markNewsRead(reg: RegisteredMiniAppCompany, newsId: string): Promise<void> {
+export async function markNewsRead(reg: NewsRegistration, newsId: string): Promise<void> {
   await db
     .insert(clientNewsReads)
     .values({ newsId, telegramUserId: reg.telegramUserId })
