@@ -42,6 +42,14 @@ export interface StatementTarget {
 
 const PAGE_SIZE = 50;
 
+/**
+ * A schema-readiness 503 is a deployment state, not a transient fault — "Try Again" will fail
+ * identically until someone applies the migration, so the UI offers an instruction instead of a button.
+ */
+function isSetupError(message: string | null): boolean {
+  return Boolean(message && /being set up|not.*ready|LEDGER_SCHEMA/i.test(message));
+}
+
 export function LedgerTable({
   section,
   range,
@@ -108,9 +116,14 @@ export function LedgerTable({
     </div>
   );
 
+  const failed = Boolean(load.error) && !data;
+
   return (
     <>
-      {/* ── KPI strip: the section totals, plus the migration backlog kept visible ── */}
+      {/* ── KPI strip: the section totals, plus the migration backlog kept visible ──
+          Suppressed entirely on a failed load: skeletons above an error message read as a band of
+          empty boxes and push the actual explanation down the page. */}
+      {failed ? null : (
       <div className="db-kpi-grid">
         {data ? (
           <>
@@ -169,6 +182,7 @@ export function LedgerTable({
           ))
         )}
       </div>
+      )}
 
       {data && data.totals.missingOpening > 0 ? (
         <div className="lg-exclusion-note">
@@ -208,15 +222,23 @@ export function LedgerTable({
             </div>
           ))}
         </div>
-      ) : load.error && !data ? (
+      ) : failed ? (
         <div className="db-error-state">
-          <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={P_ERROR} />
           </svg>
           <div className="db-error-msg">{load.error}</div>
-          <button className="bm-refresh-btn" onClick={() => void load.reload()}>
-            Try Again
-          </button>
+          {/* Retrying a not-yet-created table just fails again — say what actually unblocks it. */}
+          {isSetupError(load.error) ? (
+            <div className="lg-error-hint">
+              The ledger&rsquo;s tables have not been created in this environment yet. Ask R&amp;D to apply
+              the pending database migration, then reload.
+            </div>
+          ) : (
+            <button className="bm-refresh-btn" onClick={() => void load.reload()}>
+              Try Again
+            </button>
+          )}
         </div>
       ) : cycleFiltered.length === 0 ? (
         <div className="db-empty-state">

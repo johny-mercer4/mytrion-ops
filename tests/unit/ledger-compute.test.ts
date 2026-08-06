@@ -18,9 +18,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // vi.mock factories are hoisted above module scope, so every mock fn must come from vi.hoisted —
 // the pattern the repo's route tests use.
-const { dwhQuery, findLiveBatch } = vi.hoisted(() => ({
+const { dwhQuery, findLiveBySection } = vi.hoisted(() => ({
   dwhQuery: vi.fn(async (_sql: string, _params?: readonly unknown[]) => [] as unknown[]),
-  findLiveBatch: vi.fn(async () => new Map<string, { asOfDate: string; amount: string }>()),
+  // compute reads the whole section unfiltered — passing 2,000+ carrier ids as bind parameters is what
+  // made the route time out against the managed Postgres.
+  findLiveBySection: vi.fn(async () => new Map<string, { asOfDate: string; amount: string }>()),
 }));
 
 vi.mock('../../src/integrations/dwh.js', () => ({ dwh: { query: dwhQuery } }));
@@ -43,7 +45,7 @@ vi.mock('../../src/repos/paymentTransactionRepo.js', () => ({
 }));
 
 vi.mock('../../src/repos/ledgerOpeningBalanceRepo.js', () => ({
-  ledgerOpeningBalanceRepo: { findLiveBatch },
+  ledgerOpeningBalanceRepo: { findLiveBySection },
   num: (v: unknown) => (v === null || v === undefined ? 0 : Number(v) || 0),
 }));
 
@@ -93,7 +95,7 @@ function stubDwh(values: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  findLiveBatch.mockResolvedValue(new Map());
+  findLiveBySection.mockResolvedValue(new Map());
   stubDwh({});
 });
 
@@ -109,7 +111,7 @@ describe('shiftYmd', () => {
 
 describe('closing = opening + debit − credit', () => {
   it('holds for a recorded opening', async () => {
-    findLiveBatch.mockResolvedValue(
+    findLiveBySection.mockResolvedValue(
       new Map([['5000001:cb-loc', { asOfDate: '2026-07-01', amount: '1000.00' }]]) as never,
     );
     stubDwh({ loads: 500, draws: 100, fuel: 250 });
@@ -131,7 +133,7 @@ describe('closing = opening + debit − credit', () => {
   });
 
   it('rounds to cents rather than accumulating float drift', async () => {
-    findLiveBatch.mockResolvedValue(
+    findLiveBySection.mockResolvedValue(
       new Map([['5000001:cb-loc', { asOfDate: '2026-07-01', amount: '0.10' }]]) as never,
     );
     stubDwh({ loads: 0.2, fuel: 0.3 });
@@ -183,7 +185,7 @@ describe('a missing opening balance is null, never zero', () => {
 
 describe('a window that opens before the carrier’s ledger does', () => {
   it('states no balance and names the anchor date rather than guessing', async () => {
-    findLiveBatch.mockResolvedValue(
+    findLiveBySection.mockResolvedValue(
       new Map([['5000001:cb-loc', { asOfDate: '2026-07-15', amount: '500.00' }]]) as never,
     );
     const [row] = await computeSection({
@@ -201,7 +203,7 @@ describe('a window that opens before the carrier’s ledger does', () => {
 
 describe('roll-forward from the anchor', () => {
   it('accumulates movement between the anchor and the window start', async () => {
-    findLiveBatch.mockResolvedValue(
+    findLiveBySection.mockResolvedValue(
       new Map([['5000001:cb-loc', { asOfDate: '2026-07-01', amount: '1000.00' }]]) as never,
     );
     // Every feed call returns the same figures, so the roll-forward window contributes the same
@@ -222,7 +224,7 @@ describe('roll-forward from the anchor', () => {
   });
 
   it('does not roll forward when the window starts exactly on the anchor', async () => {
-    findLiveBatch.mockResolvedValue(
+    findLiveBySection.mockResolvedValue(
       new Map([['5000001:cb-loc', { asOfDate: '2026-07-10', amount: '1000.00' }]]) as never,
     );
     stubDwh({ loads: 500, draws: 100, fuel: 250 });

@@ -227,7 +227,9 @@ export async function computeSection(opts: ComputeSectionOptions): Promise<Secti
 
   const [flows, anchors] = await Promise.all([
     sectionFlows(opts.section, def.clientType, period, carrierIds),
-    ledgerOpeningBalanceRepo.findLiveBatch(carrierIds, [opts.section]),
+    // Unfiltered by carrier: one live row per carrier per section keeps this small, whereas an
+    // `IN (...)` over the whole book is a multi-megabyte query. See findLiveBySection's docstring.
+    ledgerOpeningBalanceRepo.findLiveBySection(opts.section),
   ]);
 
   /**

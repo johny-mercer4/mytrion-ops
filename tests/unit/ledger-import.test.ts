@@ -13,22 +13,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 
-const { dwhQuery, findOpenBatch, findLiveBatch, carrierIdsWithLive } = vi.hoisted(() => ({
+const { dwhQuery, findOpenAll, findLiveBatch, findLiveBySection, carrierIdsWithLive } = vi.hoisted(() => ({
   dwhQuery: vi.fn(async (_sql: string, _params?: readonly unknown[]) => [] as unknown[]),
-  findOpenBatch: vi.fn(async () => new Map<string, { clientType: string }>()),
+  findOpenAll: vi.fn(async () => new Map<string, { clientType: string }>()),
+  // The importer validates a bounded set of uploaded rows, so it keeps the id-filtered batch read; the
+  // template builder wants the whole section. Both are stubbed from one fixture below.
   findLiveBatch: vi.fn(async () => new Map<string, { id: string; asOfDate: string; amount: string }>()),
+  findLiveBySection: vi.fn(async () => new Map<string, { id: string; asOfDate: string; amount: string }>()),
   carrierIdsWithLive: vi.fn(async () => new Set<string>()),
 }));
 
 vi.mock('../../src/integrations/dwh.js', () => ({ dwh: { query: dwhQuery } }));
 vi.mock('../../src/repos/ledgerClientTypeRepo.js', () => ({
-  ledgerClientTypeRepo: { findOpenBatch, findOpen: vi.fn(async () => undefined) },
+  ledgerClientTypeRepo: { findOpenAll, findOpenBatch: findOpenAll, findOpen: vi.fn(async () => undefined) },
 }));
 vi.mock('../../src/repos/ledgerOpeningBalanceRepo.js', () => ({
-  ledgerOpeningBalanceRepo: { findLiveBatch, carrierIdsWithLive, listLive: vi.fn(async () => ({ rows: [], total: 0 })) },
+  ledgerOpeningBalanceRepo: {
+    findLiveBatch,
+    findLiveBySection,
+    carrierIdsWithLive,
+    listLive: vi.fn(async () => ({ rows: [], total: 0 })),
+  },
   num: (v: unknown) => (v === null || v === undefined ? 0 : Number(v) || 0),
 }));
 
+import { clearLedgerScopeCache } from '../../src/modules/billing/ledger/clientType.js';
 import { buildOpeningTemplate, TEMPLATE_COLUMNS } from '../../src/modules/billing/ledger/excelTemplate.js';
 import { validateWorkbook } from '../../src/modules/billing/ledger/import.js';
 
@@ -51,8 +60,10 @@ const today = new Intl.DateTimeFormat('en-CA', {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  findOpenBatch.mockResolvedValue(new Map());
+  findOpenAll.mockResolvedValue(new Map());
   findLiveBatch.mockResolvedValue(new Map());
+  findLiveBySection.mockResolvedValue(new Map());
+  clearLedgerScopeCache();
   carrierIdsWithLive.mockResolvedValue(new Set());
   dwhQuery.mockResolvedValue([dimRow('5000001'), dimRow('5000002')]);
 });
@@ -72,9 +83,11 @@ async function makeWorkbook(rows: unknown[][], opts: { headers?: string[]; sheet
 
 describe('template generation', () => {
   it('writes As Of Date as a STRING, never a Date — the UTC day-shift trap', async () => {
-    findLiveBatch.mockResolvedValue(
-      new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '1250.50' }]]) as never,
-    );
+    const live = new Map([
+      ['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '1250.50' }],
+    ]);
+    findLiveBatch.mockResolvedValue(live as never);
+    findLiveBySection.mockResolvedValue(live as never);
     const wb = await buildOpeningTemplate({ section: 'cb-prepay', includeCarriers: 'all' });
     const read = new ExcelJS.Workbook();
     await read.xlsx.load(wb.bytes as unknown as ArrayBuffer);
@@ -86,9 +99,11 @@ describe('template generation', () => {
   });
 
   it('pre-fills the current value so an agent edits rather than types', async () => {
-    findLiveBatch.mockResolvedValue(
-      new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '1250.50' }]]) as never,
-    );
+    const live = new Map([
+      ['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '1250.50' }],
+    ]);
+    findLiveBatch.mockResolvedValue(live as never);
+    findLiveBySection.mockResolvedValue(live as never);
     const wb = await buildOpeningTemplate({ section: 'cb-prepay', includeCarriers: 'all' });
     const read = new ExcelJS.Workbook();
     await read.xlsx.load(wb.bytes as unknown as ArrayBuffer);
@@ -97,9 +112,9 @@ describe('template generation', () => {
   });
 
   it('defaults to the carriers still MISSING a balance — the actual work queue', async () => {
-    findLiveBatch.mockResolvedValue(
-      new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '10' }]]) as never,
-    );
+    const live = new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '10' }]]);
+    findLiveBatch.mockResolvedValue(live as never);
+    findLiveBySection.mockResolvedValue(live as never);
     const wb = await buildOpeningTemplate({ section: 'cb-prepay' });
     // 5000001 already has one, so only 5000002 remains.
     expect(wb.rowCount).toBe(1);
@@ -225,9 +240,9 @@ describe('per-row validation', () => {
   });
 
   it('marks a row matching the live value as unchanged, not a rewrite', async () => {
-    findLiveBatch.mockResolvedValue(
-      new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '100.00' }]]) as never,
-    );
+    const live = new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '100.00' }]]);
+    findLiveBatch.mockResolvedValue(live as never);
+    findLiveBySection.mockResolvedValue(live as never);
     const buf = await makeWorkbook([['5000001', 'CO', 'cb-prepay', '2026-07-13', '100', '']]);
     const res = await validateWorkbook(buf);
     expect(res.rows[0]!.verdict).toBe('unchanged');
@@ -235,9 +250,9 @@ describe('per-row validation', () => {
   });
 
   it('marks a differing value as a CHANGE and carries the previous revision id for concurrency', async () => {
-    findLiveBatch.mockResolvedValue(
-      new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '100.00' }]]) as never,
-    );
+    const live = new Map([['5000001:cb-prepay', { id: 'lob_1', asOfDate: '2026-07-13', amount: '100.00' }]]);
+    findLiveBatch.mockResolvedValue(live as never);
+    findLiveBySection.mockResolvedValue(live as never);
     const buf = await makeWorkbook([['5000001', 'CO', 'cb-prepay', '2026-07-13', '250', '']]);
     const res = await validateWorkbook(buf);
     const row = res.rows[0]!;

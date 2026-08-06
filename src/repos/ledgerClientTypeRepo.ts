@@ -64,6 +64,23 @@ export const ledgerClientTypeRepo = {
     return new Map(rows.map((r) => [r.carrierId, r]));
   },
 
+/**
+   * EVERY open override, unfiltered.
+   *
+   * Use this — not `findOpenBatch` — whenever the caller wants the whole book. The overrides table holds
+   * at most one row per carrier and in practice a handful, whereas passing 8,145 carrier ids to
+   * `findOpenBatch` builds an `IN (...)` with 8,145 bind parameters and ships it to the database. On a
+   * localhost Postgres that is merely wasteful; against the managed instance it is a multi-megabyte
+   * query over a WAN and was the cause of the Ledger tab timing out.
+   */
+  async findOpenAll(): Promise<Map<string, LedgerClientTypeOverride>> {
+    const rows = await db
+      .select()
+      .from(ledgerClientTypeOverrides)
+      .where(isNull(ledgerClientTypeOverrides.effectiveTo));
+    return new Map(rows.map((r) => [r.carrierId, r]));
+  },
+
   /** Every override ever recorded for a carrier, newest effective period first. */
   async listHistory(carrierId: string): Promise<LedgerClientTypeOverride[]> {
     return db

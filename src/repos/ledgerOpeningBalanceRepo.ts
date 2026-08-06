@@ -167,6 +167,28 @@ export const ledgerOpeningBalanceRepo = {
     return new Map(rows.map((r) => [`${r.carrierId}:${r.section}`, r]));
   },
 
+/**
+   * Every LIVE opening balance for one section, unfiltered — keyed `${carrierId}:${section}`.
+   *
+   * The whole-book counterpart to `findLiveBatch`. There is at most one live row per carrier per
+   * section, so this table stays small; passing 2,165 carrier ids to `findLiveBatch` instead builds an
+   * `IN (...)` with 2,165 bind parameters and ships it to the database, which is what made the Ledger
+   * tab time out against the managed instance. Keep `findLiveBatch` for genuinely small sets — the
+   * import validator, a single carrier.
+   */
+  async findLiveBySection(section: string): Promise<Map<string, LedgerOpeningBalance>> {
+    const rows = await db
+      .select()
+      .from(ledgerOpeningBalances)
+      .where(
+        and(
+          eq(ledgerOpeningBalances.section, String(section).trim()),
+          isNull(ledgerOpeningBalances.supersededAt),
+        ),
+      );
+    return new Map(rows.map((r) => [`${r.carrierId}:${r.section}`, r]));
+  },
+
   /**
    * Every live opening balance, paged. `ORDER BY` ends in `id` so offset paging cannot skip or repeat
    * a row when two rows share a carrier id.

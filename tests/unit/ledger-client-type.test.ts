@@ -10,18 +10,20 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { dwhQuery, findOpen, findOpenBatch } = vi.hoisted(() => ({
+const { dwhQuery, findOpen, findOpenBatch, findOpenAll } = vi.hoisted(() => ({
   dwhQuery: vi.fn(async (_sql: string, _params?: readonly unknown[]) => [] as unknown[]),
   findOpen: vi.fn(async () => undefined as unknown),
   findOpenBatch: vi.fn(async () => new Map<string, { clientType: string }>()),
+  findOpenAll: vi.fn(async () => new Map<string, { clientType: string }>()),
 }));
 
 vi.mock('../../src/integrations/dwh.js', () => ({ dwh: { query: dwhQuery } }));
 vi.mock('../../src/repos/ledgerClientTypeRepo.js', () => ({
-  ledgerClientTypeRepo: { findOpen, findOpenBatch },
+  ledgerClientTypeRepo: { findOpen, findOpenBatch, findOpenAll },
 }));
 
 import {
+  clearLedgerScopeCache,
   listLedgerCarriers,
   lookupLedgerCarrier,
   normalizeClientType,
@@ -49,6 +51,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   findOpen.mockResolvedValue(undefined);
   findOpenBatch.mockResolvedValue(new Map());
+  findOpenAll.mockResolvedValue(new Map());
+  // The scope query is cached for 60s, so it MUST be cleared between tests or each case would assert
+  // against the first one's fixture.
+  clearLedgerScopeCache();
 });
 
 describe('normalizeClientType', () => {
@@ -139,7 +145,7 @@ describe('exclusions are counted, not silent', () => {
 describe('an override beats the DWH', () => {
   it('flips the resolved type and reports the source', async () => {
     dwhQuery.mockResolvedValue([row({ carrier_id: '5000001', payment_terms: 'LOC' })]);
-    findOpenBatch.mockResolvedValue(new Map([['5000001', { clientType: 'Prepay' }]]));
+    findOpenAll.mockResolvedValue(new Map([['5000001', { clientType: 'Prepay' }]]));
     const { carriers } = await listLedgerCarriers();
     expect(carriers[0]!.clientType).toBe('Prepay');
     expect(carriers[0]!.source).toBe('override');
@@ -149,7 +155,7 @@ describe('an override beats the DWH', () => {
 
   it('brings an UNTYPED carrier into scope — the escape hatch for the ~62% with no payment_terms', async () => {
     dwhQuery.mockResolvedValue([row({ carrier_id: '5000001', payment_terms: null })]);
-    findOpenBatch.mockResolvedValue(new Map([['5000001', { clientType: 'LOC' }]]));
+    findOpenAll.mockResolvedValue(new Map([['5000001', { clientType: 'LOC' }]]));
     const { carriers, excluded } = await listLedgerCarriers();
     expect(carriers).toHaveLength(1);
     expect(carriers[0]!.clientType).toBe('LOC');
@@ -199,5 +205,42 @@ describe('the SCD collapse is not optional', () => {
     // Without this, a carrier fans out across historical dim rows and every downstream sum multiplies.
     expect(sql).toContain('distinct on (carrier_id)');
     expect(sql).toContain('update_date desc nulls last');
+  });
+});
+
+describe('the scope cache', () => {
+  it('serves a second call without re-scanning the dim', async () => {
+    dwhQuery.mockResolvedValue([row({ carrier_id: '5000001' })]);
+    await listLedgerCarriers();
+    await listLedgerCarriers();
+    // 8,145 dim rows per request, several requests per page load — one scan is the point.
+    expect(dwhQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one in-flight scan between concurrent callers', async () => {
+    dwhQuery.mockResolvedValue([row({ carrier_id: '5000001' })]);
+    await Promise.all([listLedgerCarriers(), listLedgerCarriers(), listLedgerCarriers()]);
+    expect(dwhQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-scans after an explicit clear, so an override write is visible at once', async () => {
+    dwhQuery.mockResolvedValue([row({ carrier_id: '5000001' })]);
+    await listLedgerCarriers();
+    clearLedgerScopeCache();
+    await listLedgerCarriers();
+    expect(dwhQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a clientType filter poison the cache for another type', async () => {
+    dwhQuery.mockResolvedValue([
+      row({ carrier_id: '5000001', payment_terms: 'LOC' }),
+      row({ carrier_id: '5000002', payment_terms: 'Prepay' }),
+    ]);
+    const loc = await listLedgerCarriers({ clientType: 'LOC' });
+    const prepay = await listLedgerCarriers({ clientType: 'Prepay' });
+    // Filtering happens AFTER the cached scan, so both answers are correct off one query.
+    expect(loc.carriers.map((c) => c.carrierId)).toEqual(['5000001']);
+    expect(prepay.carriers.map((c) => c.carrierId)).toEqual(['5000002']);
+    expect(dwhQuery).toHaveBeenCalledTimes(1);
   });
 });

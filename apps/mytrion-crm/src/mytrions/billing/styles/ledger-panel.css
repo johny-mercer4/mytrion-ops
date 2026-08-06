@@ -13,16 +13,42 @@
 .bm-root .bm-ledger-panel .text-success { color: var(--success-text); }
 .bm-root .bm-ledger-panel .text-info    { color: var(--billing-accent); }
 
+/* ═══ Panel header ══════════════════════════════════════════════════════════
+   The header names the ACTIVE section. On a screen of money figures, not knowing
+   which sub-ledger they belong to is the worst ambiguity available. */
+.bm-root .lg-header { align-items: flex-start; }
+.bm-root .lg-header-main { min-width: 0; }
+
+.bm-root .lg-header-titles {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.bm-root .lg-scope-pill {
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-full);
+    background: var(--accent-bg-subtle);
+    color: var(--accent-on);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.5625rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
 /* ═══ Sub-nav ═══════════════════════════════════════════════════════════════
-   Horizontal + grouped. The shell already owns the left rail, so the prototype's
-   second vertical rail is not portable; groups keep the LOC/Prepay split legible. */
+   ONE row. Groups are separated by a hairline rule rather than stacked labels —
+   the section names already carry their scope ("CB (LOC)"), so the labels were
+   redundant AND made the rows ragged at different group widths. */
 .bm-root .lg-subnav {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 1.25rem;
-    padding: 0.75rem 0.875rem;
-    margin-bottom: 0.75rem;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    margin-bottom: 0.5rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     overflow-x: auto;
@@ -31,31 +57,26 @@
 
 .bm-root .lg-subnav-group {
     display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    min-width: 0;
+    align-items: center;
+    gap: 0.25rem;
 }
 
-.bm-root .lg-subnav-label {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    white-space: nowrap;
+.bm-root .lg-subnav-rule {
+    width: 1px;
+    height: 1.125rem;
+    margin: 0 0.375rem;
+    background: var(--border-dark);
+    flex: 0 0 auto;
 }
-
-.bm-root .lg-subnav-btns { display: flex; gap: 0.25rem; }
 
 .bm-root .lg-subnav-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.4rem 0.7rem;
-    border: 1px solid var(--border);
+    gap: 0.3rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    background: var(--surface-alt);
+    background: none;
     color: var(--text-secondary);
     font-size: 0.75rem;
     font-weight: 500;
@@ -65,9 +86,13 @@
 }
 
 .bm-root .lg-subnav-btn:hover:not(:disabled) {
-    background: var(--accent-bg-subtle);
+    background: var(--surface-alt);
     color: var(--text-primary);
-    border-color: var(--accent-border);
+}
+
+.bm-root .lg-subnav-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -1px;
 }
 
 .bm-root .lg-subnav-btn-active,
@@ -78,75 +103,92 @@
     font-weight: 600;
 }
 
-.bm-root .lg-subnav-btn-parked {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
+.bm-root .lg-subnav-btn-parked { opacity: 0.45; cursor: not-allowed; }
 
 .bm-root .lg-subnav-soon {
-    font-size: 0.5625rem;
+    font-size: 0.5rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    padding: 0.05rem 0.3rem;
+    padding: 0.05rem 0.25rem;
     border-radius: var(--radius-full);
     background: var(--muted-bg);
     color: var(--text-muted);
 }
 
-/* ═══ Period bar ════════════════════════════════════════════════════════════ */
-.bm-root .lg-period-bar {
+/* ═══ Controls: period + filters on ONE line ════════════════════════════════
+   Previously three stacked full-width bars — roughly 250px of chrome before a
+   single figure. They are all the same kind of control, so they share a row and
+   the long explanatory hints became `title` attributes. */
+.bm-root .lg-controls {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.7rem 0.875rem;
-    margin-bottom: 0.625rem;
+    gap: 0.5rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
     border: 1px solid var(--border);
     border-left: 2px solid var(--billing-accent);
     border-radius: var(--radius-md);
 }
 
 /* A dirty draft must not read as "these are the current figures". */
-.bm-root .lg-period-bar.lg-period-dirty {
-    border-left-color: var(--warning-text);
+.bm-root .lg-controls.lg-controls-dirty { border-left-color: var(--warning-text); }
+
+.bm-root .lg-ctl-group {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
 }
 
-.bm-root .lg-period-label {
+.bm-root .lg-ctl-label {
     font-family: 'Rajdhani', sans-serif;
     font-size: 0.625rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--text-muted);
+    white-space: nowrap;
 }
 
-.bm-root .lg-period-input {
+.bm-root .lg-ctl-rule {
+    width: 1px;
+    align-self: stretch;
+    min-height: 1.25rem;
+    background: var(--border-dark);
+}
+
+.bm-root .lg-ctl-date,
+.bm-root .lg-ctl-input {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.75rem;
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.45rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
     color: var(--text-primary);
-    color-scheme: dark;
 }
 
-.bm-root.light-mode .lg-period-input { color-scheme: light; }
+.bm-root .lg-ctl-date { color-scheme: dark; }
+.bm-root.light-mode .lg-ctl-date { color-scheme: light; }
 
-.bm-root .lg-period-input:focus-visible {
+.bm-root .lg-ctl-input { width: 8.5rem; }
+.bm-root .lg-ctl-input::placeholder { color: var(--text-muted); opacity: 0.65; }
+
+.bm-root .lg-ctl-date:focus-visible,
+.bm-root .lg-ctl-input:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: -1px;
 }
 
-.bm-root .lg-period-dash { color: var(--text-muted); }
+.bm-root .lg-ctl-dash { color: var(--text-muted); font-size: 0.75rem; }
 
-.bm-root .lg-period-apply {
+.bm-root .lg-ctl-apply {
     font-family: 'Rajdhani', sans-serif;
     font-size: 0.6875rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    padding: 0.4rem 0.9rem;
+    padding: 0.35rem 0.8rem;
     border: none;
     border-radius: var(--radius-sm);
     background: var(--billing-accent);
@@ -154,83 +196,30 @@
     cursor: pointer;
 }
 
-.bm-root .lg-period-apply:disabled { opacity: 0.45; cursor: not-allowed; }
-.bm-root .lg-period-apply:not(:disabled):hover { filter: brightness(1.08); }
+.bm-root .lg-ctl-apply:disabled { opacity: 0.4; cursor: not-allowed; }
+.bm-root .lg-ctl-apply:not(:disabled):hover { filter: brightness(1.08); }
 
-.bm-root .lg-period-hint {
-    margin-left: auto;
-    max-width: 30rem;
-    font-size: 0.6875rem;
-    font-style: italic;
-    color: var(--text-muted);
-}
-
-.bm-root .lg-period-dirty .lg-period-hint { color: var(--warning-text); font-style: normal; }
-
-/* ═══ Filter bar ════════════════════════════════════════════════════════════ */
-.bm-root .lg-filter-bar {
-    display: flex;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    gap: 0.625rem;
-    padding: 0.7rem 0.875rem;
-    margin-bottom: 0.875rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-}
-
-.bm-root .lg-filter-field { display: flex; flex-direction: column; gap: 0.25rem; }
-
-.bm-root .lg-filter-label {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-}
-
-.bm-root .lg-filter-field input {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    min-width: 8.5rem;
-    padding: 0.35rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--text-primary);
-}
-
-.bm-root .lg-filter-field input::placeholder { color: var(--text-muted); opacity: 0.7; }
-
-.bm-root .lg-filter-field input:focus-visible {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: -1px;
-}
-
-.bm-root .lg-filter-clear,
-.bm-root .lg-filter-hint {
+.bm-root .lg-ctl-reset {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    font-size: 0.6875rem;
-}
-
-.bm-root .lg-filter-clear {
-    padding: 0.4rem 0.7rem;
+    gap: 0.3rem;
+    padding: 0.3rem 0.55rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: none;
     color: var(--text-secondary);
+    font-size: 0.6875rem;
     cursor: pointer;
 }
 
-.bm-root .lg-filter-clear:hover { background: var(--surface-alt); color: var(--text-primary); }
+.bm-root .lg-ctl-reset:hover { background: var(--surface-alt); color: var(--text-primary); }
 
-.bm-root .lg-filter-hint {
+.bm-root .lg-ctl-dirty-hint {
     margin-left: auto;
-    font-style: italic;
-    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--warning-text);
+    white-space: nowrap;
 }
 
 /* ═══ Toolbar ═══════════════════════════════════════════════════════════════ */
@@ -1128,4 +1117,56 @@
 
 @media (max-width: 700px) {
     .bm-root .lg-aging-legend { gap: 0.2rem 0.5rem; font-size: 0.625rem; }
+}
+
+/* ═══ KPI grid ══════════════════════════════════════════════════════════════
+   The shared db-kpi-grid is tuned for 3–4 cards; the ledger sections show 5, which
+   wrapped 3+2 and read as a mistake. An explicit auto-fit with a smaller floor keeps
+   them on one row on a normal screen and wraps evenly when it cannot. */
+.bm-root .bm-ledger-panel .db-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.bm-root .bm-ledger-panel .db-kpi-card { padding: 0.6rem 0.75rem; }
+.bm-root .bm-ledger-panel .db-kpi-value { font-size: 1.0625rem; }
+.bm-root .bm-ledger-panel .db-kpi-title { font-size: 0.625rem; }
+
+/* ═══ Compact empty / error states ══════════════════════════════════════════
+   These were full-height bands with a small icon adrift in the middle. A failure
+   should be legible and take the room it needs, not a third of the viewport. */
+.bm-root .bm-ledger-panel .db-empty-state,
+.bm-root .bm-ledger-panel .db-error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 0;
+    padding: 1.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-alt);
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .bm-ledger-panel .db-error-state { border-color: var(--danger-border); }
+.bm-root .bm-ledger-panel .db-error-state svg { color: var(--danger-text); }
+
+.bm-root .bm-ledger-panel .db-error-msg {
+    max-width: 34rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+/* A setup failure gets an instruction, not a retry button that would fail identically. */
+.bm-root .lg-error-hint {
+    max-width: 30rem;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    color: var(--text-muted);
 }

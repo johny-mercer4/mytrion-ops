@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
+  clearLedgerScopeCache,
   listLedgerCarriers,
   lookupLedgerCarrier,
   normalizeClientType,
@@ -455,6 +456,9 @@ export async function billingLedgerRoutes(app: FastifyInstance): Promise<void> {
       createdByName: actor(ctx),
     });
 
+    // The scope cache keyed this carrier's type; drop it so the change is visible immediately.
+    clearLedgerScopeCache();
+
     await auditFromContext(ctx, {
       action: 'billing.ledger.client_type.override',
       status: 'ok',
@@ -481,6 +485,8 @@ export async function billingLedgerRoutes(app: FastifyInstance): Promise<void> {
 
     const closed = await ledgerClientTypeRepo.closeOpen(carrierId, { closedByName: actor(ctx) });
     if (!closed) throw new NotFoundError(`No open client-type override for ${carrierId}.`);
+
+    clearLedgerScopeCache();
 
     await auditFromContext(ctx, {
       action: 'billing.ledger.client_type.clear',

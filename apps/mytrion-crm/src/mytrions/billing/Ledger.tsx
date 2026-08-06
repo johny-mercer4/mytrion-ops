@@ -34,7 +34,6 @@ import {
 import type { LedgerSectionId } from '../../api/ledgerTypes';
 import { defaultRange, isValidRange, rangesEqual, type LedgerRange } from './ledgerModel';
 
-const P_SEARCH = 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z';
 const P_CLOSE = 'M6 18L18 6M6 6l12 12';
 
 /** Filters the ledger surfaces share. Rendered CONDITIONALLY — see `visibleFilters`. */
@@ -59,6 +58,35 @@ function visibleFilters(tab: LedgerTabId): (keyof LedgerFilters)[] {
   if (tab === 'unbilled') return ['carrierId', 'company', 'billingCycle'];
   if (tab === 'transitions' || tab === 'payments') return ['carrierId', 'company', 'date'];
   return ['carrierId', 'company'];
+}
+
+/**
+ * One line explaining what the ACTIVE surface is, so the header carries meaning rather than repeating
+ * the module's tagline on every tab.
+ */
+function describeTab(id: LedgerTabId): string {
+  switch (id) {
+    case 'cb-loc':
+      return 'Company funds on the carrier’s EFS account — top-ups in, spend out. Closing is checked against the balance CMP holds.';
+    case 'unbilled':
+      return 'Spend that has happened but has not reached an invoice. Should return to zero by the end of each billing cycle.';
+    case 'ar':
+      return 'What LOC carriers currently owe — invoices issued, less payments applied.';
+    case 'cb-prepay':
+      return 'The carrier’s remaining prepaid deposit. No invoice is raised; spend simply draws it down.';
+    case 'untopped':
+      return 'Money received from a Prepay carrier that is not yet loaded onto their EFS account. Nothing should sit here past 24 hours.';
+    case 'transitions':
+      return 'History of carriers moving between LOC and Prepay, with the date each change took effect.';
+    case 'controls':
+      return 'The checks that decide what needs attention — reconciliation variances, aging and control sums.';
+    case 'payments':
+      return 'Every incoming payment and which sub-ledger it landed in. Mapping itself lives on the Transactions tab.';
+    case 'openings':
+      return 'The inception balance each sub-ledger accumulates from. Enter one per carrier per section, by hand or from Excel.';
+    default:
+      return 'Closing = Opening + Debit − Credit, reconciled against an independent source.';
+  }
 }
 
 export function Ledger() {
@@ -155,105 +183,123 @@ export function Ledger() {
 
   return (
     <div className="bm-panel bm-ledger-panel">
-      <div className="bm-header-row">
-        <div>
-          <h2 className="bm-title">Ledger</h2>
-          <div className="bm-subtitle">
-            Separate sub-ledgers per client type — Closing = Opening + Debit − Credit, each reconciled
-            against EFS or CMP
+      {/*
+        The header names the ACTIVE section, not just "Ledger". Previously the only clue to which
+        sub-ledger you were reading was the highlighted pill in the nav, which is easy to lose — and on a
+        screen full of money figures, not knowing which book they belong to is the worst possible ambiguity.
+      */}
+      <div className="bm-header-row lg-header">
+        <div className="lg-header-main">
+          <div className="lg-header-titles">
+            <h2 className="bm-title">{activeDef.label}</h2>
+            {activeDef.scope ? <span className="lg-scope-pill">{activeDef.scope}</span> : null}
           </div>
+          <div className="bm-subtitle">{describeTab(activeDef.id)}</div>
         </div>
       </div>
 
-      {/* ── Grouped sub-nav ── */}
+      {/* ── Sub-nav: ONE row, groups separated by a rule rather than stacked labels ── */}
       <nav className="lg-subnav" aria-label="Ledger sections">
-        {LEDGER_GROUPS.map((group) => {
+        {LEDGER_GROUPS.map((group, gi) => {
           const tabs = LEDGER_TABS.filter((t) => t.group === group);
           if (!tabs.length) return null;
           return (
             <div className="lg-subnav-group" key={group}>
-              <span className="lg-subnav-label">{group}</span>
-              <div className="lg-subnav-btns">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className={`lg-subnav-btn${active === tab.id ? ' lg-subnav-btn-active' : ''}${
-                      tab.disabled ? ' lg-subnav-btn-parked' : ''
-                    }`}
-                    disabled={tab.disabled}
-                    aria-current={active === tab.id ? 'page' : undefined}
-                    title={tab.disabled ? 'Coming soon' : tab.label}
-                    onClick={() => navigate(tab.id, tab.disabled)}
-                  >
-                    <span className="lg-subnav-btn-text">{tab.shortLabel}</span>
-                    {tab.disabled ? <span className="lg-subnav-soon">Soon</span> : null}
-                  </button>
-                ))}
-              </div>
+              {gi > 0 ? <span className="lg-subnav-rule" aria-hidden /> : null}
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`lg-subnav-btn${active === tab.id ? ' lg-subnav-btn-active' : ''}${
+                    tab.disabled ? ' lg-subnav-btn-parked' : ''
+                  }`}
+                  disabled={tab.disabled}
+                  aria-current={active === tab.id ? 'page' : undefined}
+                  title={tab.disabled ? `${tab.label} — coming soon` : tab.label}
+                  onClick={() => navigate(tab.id, tab.disabled)}
+                >
+                  {tab.shortLabel}
+                  {tab.disabled ? <span className="lg-subnav-soon">Soon</span> : null}
+                </button>
+              ))}
             </div>
           );
         })}
       </nav>
 
-      {/* ── Period bar — hidden where it would do nothing ── */}
-      {activeDef.periodDriven ? (
-        <div className={`lg-period-bar${dirty ? ' lg-period-dirty' : ''}`}>
-          <span className="lg-period-label">Period</span>
-          <input
-            type="date"
-            className="lg-period-input"
-            value={draft.from}
-            max={draft.to || undefined}
-            onChange={(e) => setDraft((r) => ({ ...r, from: e.target.value }))}
-            aria-label="Period start"
-          />
-          <span className="lg-period-dash">—</span>
-          <input
-            type="date"
-            className="lg-period-input"
-            value={draft.to}
-            min={draft.from || undefined}
-            onChange={(e) => setDraft((r) => ({ ...r, to: e.target.value }))}
-            aria-label="Period end"
-          />
-          <button type="button" className="lg-period-apply" disabled={!canApply} onClick={applyPeriod}>
-            Apply
-          </button>
-          <span className="lg-period-hint">
-            {dirty
-              ? 'Press Apply to recompute — the figures below are still for the previous period.'
-              : 'Opening is the balance at the period start, accumulated from each carrier’s opening-balance date. Both dates are inclusive.'}
-          </span>
-        </div>
-      ) : null}
+      {/*
+        ── ONE toolbar: period + filters + reset ──
+        These were three stacked full-width bars, ~250px of chrome before a single figure. They are all
+        the same kind of thing — controls that narrow what is shown — so they belong on one line, and the
+        long explanatory hints moved to `title` attributes rather than occupying a row each.
+      */}
+      {activeDef.periodDriven || shown.length ? (
+        <div className={`lg-controls${dirty ? ' lg-controls-dirty' : ''}`}>
+          {activeDef.periodDriven ? (
+            <div className="lg-ctl-group">
+              <span className="lg-ctl-label">Period</span>
+              <input
+                type="date"
+                className="lg-ctl-date"
+                value={draft.from}
+                max={draft.to || undefined}
+                onChange={(e) => setDraft((r) => ({ ...r, from: e.target.value }))}
+                aria-label="Period start"
+              />
+              <span className="lg-ctl-dash" aria-hidden>
+                →
+              </span>
+              <input
+                type="date"
+                className="lg-ctl-date"
+                value={draft.to}
+                min={draft.from || undefined}
+                onChange={(e) => setDraft((r) => ({ ...r, to: e.target.value }))}
+                aria-label="Period end"
+              />
+              <button
+                type="button"
+                className="lg-ctl-apply"
+                disabled={!canApply}
+                onClick={applyPeriod}
+                title="Recompute every figure for this period. Both dates are inclusive."
+              >
+                Apply
+              </button>
+            </div>
+          ) : null}
 
-      {/* ── Filter bar — only the inputs that apply to this surface ── */}
-      {shown.length ? (
-        <div className="lg-filter-bar">
+          {activeDef.periodDriven && shown.length ? <span className="lg-ctl-rule" aria-hidden /> : null}
+
           {shown.map((key) => (
-            <label className="lg-filter-field" key={key}>
-              <span className="lg-filter-label">{filterLabels[key]}</span>
+            <div className="lg-ctl-group" key={key}>
+              <span className="lg-ctl-label">{filterLabels[key]}</span>
               <input
                 type="text"
+                className="lg-ctl-input"
                 value={filters[key]}
                 placeholder={filterPlaceholders[key]}
                 onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))}
+                aria-label={filterLabels[key]}
               />
-            </label>
+            </div>
           ))}
-          <button type="button" className="lg-filter-clear" onClick={clearFilters}>
-            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
-            </svg>
-            Reset
-          </button>
-          <span className="lg-filter-hint">
-            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_SEARCH} />
-            </svg>
-            Filters the rows already computed for this section
-          </span>
+
+          {shown.length && Object.values(filters).some(Boolean) ? (
+            <button type="button" className="lg-ctl-reset" onClick={clearFilters} title="Clear all filters">
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
+              </svg>
+              Reset
+            </button>
+          ) : null}
+
+          {/* The one hint worth a permanent line: stale figures under a new period label. */}
+          {dirty ? (
+            <span className="lg-ctl-dirty-hint" role="status">
+              Figures are still for the previous period — press Apply
+            </span>
+          ) : null}
         </div>
       ) : null}
 

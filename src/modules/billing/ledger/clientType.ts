@@ -125,14 +125,53 @@ export interface ScopeResult {
 }
 
 /**
+ * The scope query scans all 8,145 dim_company rows and is identical for every caller within a request —
+ * and a Ledger page load makes several. A short TTL collapses those into one round trip. 60s because the
+ * dim is refreshed nightly: a carrier's type does not change within a minute, and an override write is
+ * followed by an explicit reload on the client anyway.
+ */
+const SCOPE_TTL_MS = 60_000;
+let scopeCache: { rows: DimRow[]; overrides: Map<string, { clientType: LedgerClientType }>; at: number } | null = null;
+let scopeInflight: Promise<{ rows: DimRow[]; overrides: Map<string, { clientType: LedgerClientType }> }> | null = null;
+
+async function loadScope(): Promise<{
+  rows: DimRow[];
+  overrides: Map<string, { clientType: LedgerClientType }>;
+}> {
+  if (scopeCache && Date.now() - scopeCache.at < SCOPE_TTL_MS) {
+    return { rows: scopeCache.rows, overrides: scopeCache.overrides };
+  }
+  // Concurrent callers share one fetch rather than each firing the same scan.
+  if (scopeInflight) return scopeInflight;
+  scopeInflight = (async () => {
+    const rows = await dwh.query<DimRow>(`with company as (${DIM_COMPANY_CTE}) select * from company`);
+    // Unfiltered: the overrides table is tiny, and passing 8,000+ ids as bind parameters is what made
+    // this route time out against the managed Postgres. See findOpenAll's docstring.
+    const open = await ledgerClientTypeRepo.findOpenAll();
+    const overrides = new Map<string, { clientType: LedgerClientType }>(
+      [...open].map(([k, v]) => [k, { clientType: v.clientType }]),
+    );
+    scopeCache = { rows, overrides, at: Date.now() };
+    return { rows, overrides };
+  })().finally(() => {
+    scopeInflight = null;
+  });
+  return scopeInflight;
+}
+
+/** Drop the scope cache — called after a client-type override write so the change is visible at once. */
+export function clearLedgerScopeCache(): void {
+  scopeCache = null;
+}
+
+/**
  * Every carrier in ledger scope. ONE DWH query plus ONE Postgres query for the overrides — never
- * per-carrier. Measured 2026-08-06: 8,145 dim rows in, ~2,847 in scope out.
+ * per-carrier, and both cached for 60s. Measured 2026-08-06: 8,145 dim rows in, ~2,847 in scope out.
  */
 export async function listLedgerCarriers(
   opts: { clientType?: LedgerClientType | undefined; includeInactive?: boolean | undefined } = {},
 ): Promise<ScopeResult> {
-  const rows = await dwh.query<DimRow>(`with company as (${DIM_COMPANY_CTE}) select * from company`);
-  const overrides = await ledgerClientTypeRepo.findOpenBatch(rows.map((r) => String(r.carrier_id)));
+  const { rows, overrides } = await loadScope();
 
   const carriers: LedgerCarrier[] = [];
   const excluded = { wexFunded: 0, noType: 0, inactive: 0 };
