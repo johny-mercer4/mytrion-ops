@@ -11423,3 +11423,59 @@ section tables, the drill-down and the nightly snapshot job follow.
 (TZ §5.3), 4,998 with no `payment_terms` (the `financeClients.ts:42` ~62% comment still holds), 268
 inactive. **`Deposit` has zero rows**, so the Deposit→Prepay normalization is currently inert — kept
 because the value is live in Zoho's picklist.
+
+### Later the same day — compute, control points, tests (M3–M5)
+
+Rest of the module: the feeds, the compute, the five section tables, the drill-down statement, the
+nightly reconciliation snapshot, the TZ §9 control points, and 97 tests.
+
+**The chain is shared code, not convention.** Each section's Debit and its neighbour's Credit call the
+SAME feed function in `ledger/feeds.ts`, so the TZ's "Credit of one section becomes Debit of the next"
+is a property of the implementation. Verified live 2026-07-01..07 across 2,165 LOC carriers:
+`cb-loc.credit === unbilled.debit === $4,558,990.37` and `unbilled.credit === ar.debit ===
+$5,199,587.38`, to the cent. Continuity too: `closing[07-13..19] === opening[07-20..] = 6,915.25`.
+
+**More traps found by running it, not by reading it:**
+
+- **`cmp_transaction.net_total` is unpopulated** — sums to exactly 0.00 over a full week. `funded_total`
+  is the amount. And do NOT switch to `mart_transaction_line_items.funded_total`: that table is
+  line-item grained and repeats the per-transaction total, so it overstates by 46% ($7.81M vs $5.33M for
+  2026-07-01..08). `line_item_amount` there agrees with `cmp_transaction.funded_total` to the cent.
+- **A control sum that always cries wolf is worse than none.** The first version compared loads−draws
+  against per-carrier `balance_after` deltas. But `balance_after` is the post-movement WALLET balance and
+  carriers spend BETWEEN movements — that spend lives in `cmp_transaction` — so the balance repeatedly
+  resets toward the credit limit and its deltas never sum to the movement amounts. It reported a $5.49M
+  "variance" that was simply the week's card spend. Replaced with live-table-vs-staging-mirror, which
+  found a genuine finding on its first run: the mirror is 92 rows / $54,292 behind. Do not re-add the
+  old one; the identity it reached for is what the per-carrier reconciliation already tests.
+- **Postgres will not accept a SELECT alias inside an ORDER BY expression** (`case bucket when …` →
+  `column "bucket" does not exist`), and re-deriving the bucket there then demands every column it
+  touches in the GROUP BY. The rows are re-emitted in declaration order in JS, so the SQL ordering was
+  dropped entirely.
+- **Live-EFS reconciliation is deliberately NOT wired.** servercrm exposes only
+  `GET /api/smart-balance/carrier-balance?carrierId=` — the batched `getChildBalancesByCarrierIds` has no
+  route in front of it — and EFS has no as-of parameter anyway. So Customer Balance reconciles against
+  CMP's own `balance_after` and is TAGGED `cmp_balance_after` rather than implying EFS confirmed it.
+  Enabling it needs a servercrm batch route first; `ledger/reconcile.ts`'s `fetchExternal` is the one
+  place to change.
+- **The extra aging buckets earned themselves.** The TZ names 0–7 / 8–14 / 15–30 / 30+. Production has
+  **777 open invoices worth $3.8M that are NOT YET DUE** — under the TZ's set those would have been
+  reported as 0–7 days overdue. `current` and `no_due_date` are additions, flagged for billing.
+
+**Nightly job** `billing.ledger.daily-snapshot`, 05:00 America/Chicago. Idempotent via the snapshot
+unique key — verified 878 rows across two runs of the same day. One section failing cannot lose the
+others' work; all-zero rows are skipped rather than written (at ~2,850 carriers × 3 sections × 365 days
+that is the difference between 3.1M rows/year and millions of empty ones).
+
+**Payments is NOT a second Transactions tab.** That tab answers "how do I map this"; the ledger's answers
+"which sub-ledger did it land in" — AR credit, prepay top-up, or attributed to nobody. The last is the
+TZ §7 lost-money case and is invisible on Transactions.
+
+**Deliberately parked:** the LOC↔Prepay transition history, behind a flag derived from the nav config so
+it cannot drift. An empty table is a factual claim ("no transitions have occurred"); a Soon badge is a
+claim about the software, and only the second is true until §8's workflow lands.
+
+**Tests: 97.** The load-bearing ones are the drift guard on the AR rules extracted out of
+`analytics/dimensions/receivables.ts` (both now import them, so an edit changes two reports), the
+`is_active`-is-an-integer pin, and the route file asserting all 11 reads and 8 writes deny an
+unauthenticated and a non-billing caller — the UI hide is not the boundary.
