@@ -11511,3 +11511,54 @@ regressions.
   production bundle was rebuilt. The full repository run is 1,901 passed, 96 failed, 1 skipped;
   failures remain in the same unrelated CS, retention, billing, Comms Admin, and DB-backed scripted
   agent groups, while the carrier mini-app suite passes all 117 tests.
+
+## 2026-08-06 — Agora project-boundary review
+
+- Reviewed Agora's workspace/project/resource model and the active repositories under
+  `~/Projects/Octane` to define a practical project taxonomy for the empty Octane workspace.
+- Recommended treating Mytrion's shared Git repository as several product workstreams (core
+  platform, CRM, Telegram mini-app, and support-agent gateway) while attaching the same repository
+  root to each project; component labels should describe touched code, not replace ownership and QA
+  boundaries.
+- No product code or configuration was changed during this review.
+
+## 2026-08-06 — Agora Octane workspace skill and agent pack
+
+- Added 20 version-controlled workspace skill sources under `.agents/skills`: five shared
+  engineering/safety/documentation skills, six focused Mytrion architecture/runtime skills, and
+  nine ServerCRM skills covering runtime security, EFS, WEX, CMP billing, payments/reporting,
+  Smart Balance, scheduled jobs, and browser automation.
+- Generated the sources with the standard skill scaffolder, removed all template content, scanned
+  for unsafe instructions and credential-like values, and validated every skill with the official
+  skill validator. All 20 passed.
+- Deployed all 20 skills to the production Agora Octane workspace and read each one back to verify
+  the workspace id and persisted content. The existing `mytrion-ops-kb` remains the broad repository
+  knowledge base, bringing the workspace total to 21 skills.
+- Created workspace-visible `Octane Code Reviewer` and `Octane Documentation Writer` agents on
+  the online Codex runtime. The reviewer has 20 review/domain skills with high reasoning; the
+  documentation writer has 18 documentation/domain skills with medium reasoning. Both deliberately
+  have no MCP configuration until credentials can be attached through a non-plaintext secret path.
+- Security follow-up: the existing Deep Research Agent returned an unredacted GitHub credential in
+  its MCP configuration during inventory. Do not reuse that configuration; rotate/revoke the token
+  and reconnect GitHub through protected secret input before enabling MCP on the new agents.
+- No product TypeScript or application runtime code changed, so product lint/typecheck/test were not
+  run. Verification was limited to skill validation and production Agora read-back.
+
+## 2026-08-06 — Sales-agent selected-company mini-app layout parity
+
+- Replaced the Sales-agent preview's one-off two-column action grid with the same Home, Services,
+  Inbox, owner balance hero, quick-actions list, and bottom-tab shell that real company users see.
+  A compact sticky preview bar preserves the portfolio back action and read-only context.
+- Kept the preview read-only in both layers: the shared Home shell hides manager/fleet management for
+  Sales agents, while an explicit six-item catalog exposes only status, balance, transactions,
+  invoices, payment information, and last-used reads. Existing ActionSheet guards continue to hide
+  report/document delivery, and backend capabilities still deny all customer mutations.
+- Scoped Sales-agent pins separately from owner/driver local preferences and clear company inbox
+  state on portfolio/company transitions so one selected company's rows never flash under another.
+- Added a repository-level catalog regression and rebuilt the committed mini-app production assets.
+- Verification: mandatory RBAC leakage checks pass 32/32; focused mini-app catalog/capability/carrier
+  coverage passes 123/123; root lint passes with zero errors (22 existing warnings); root typecheck
+  and the mini-app production build pass. The full suite is 1,900 passed, 99 failed, 1 skipped; all
+  failures are in the existing CS, Comms Admin, retention, billing-secret, database-backed agent,
+  and local WebSocket groups, while the changed mini-app suites pass. Responsive browser QA could
+  not run because this session exposed no in-app or connected browser.

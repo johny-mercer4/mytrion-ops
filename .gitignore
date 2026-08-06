@@ -48,3 +48,5 @@ apps/design_handoff_octane_mini_app/
 .claude/settings.local.json
 .DS_Store
 _to_delete/
+
+.agents/

@@ -9,12 +9,14 @@ import type { OpenAction } from '../lib/actionTarget';
 export function ServicesTab({
   isDriver,
   isFleetManager,
+  isSalesAgent,
   pinned,
   onTogglePin,
   onOpen,
 }: {
   isDriver: boolean;
   isFleetManager: boolean;
+  isSalesAgent: boolean;
   pinned: string[];
   onTogglePin: (key: string) => void;
   onOpen: (target: OpenAction) => void;
@@ -23,7 +25,7 @@ export function ServicesTab({
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
-  const groups = getCatalog(isDriver, isFleetManager)
+  const groups = getCatalog(isDriver, isFleetManager, isSalesAgent)
     .map((g) => ({
       ...g,
       items: g.items
