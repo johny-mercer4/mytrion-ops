@@ -11553,3 +11553,48 @@ Loaders → skeletons (`ManagerSkeletons.tsx`, one `.mg-sk` shimmer):
 Verification: `corepack pnpm build` green (tsc --noEmit + vite), `corepack pnpm test` 441/441 across
 69 files. Not visually verified — no headless browser in this environment, so the two themes and the
 skeleton→content hand-off still want a human pass at `pnpm dev`.
+
+## 2026-08-06 — Manager Tasks: one board on every desk, Sales included
+
+Inspected prod `mytrion_worker_tasks` read-only first: table is correct (22 cols, `department`
+default `sales`, migration 0075 applied) but **completely empty — 0 tasks, 0 events** — and
+`mytrion_task_types` held exactly **one** row (`general`), so the manager's Type control was a
+single-option select on every desk.
+
+Both halves of the loop were switched off, which is why nothing had ever been written:
+- Sales **Management** rendered a "coming soon" panel instead of the Tasks block.
+- Sales Mytrion **My Tasks** was `comingSoon: true` in `salesData.ts`, so the fully-built agent
+  kanban was unreachable. A manager could have created a row; no agent had a surface to see it.
+
+Backend:
+- **Removed the duplicate `/manager/sales/tasks*` routes** from `salesKpi.routes.ts`. Fastify
+  prefers a static segment over a param, so those shadowed the generic `/manager/:department/tasks*`
+  and Sales was the one desk running different code — including a PATCH that never checked the task
+  belonged to the desk (a Sales manager could edit another desk's task by id). Their frontend
+  client functions in `api/salesKpi.ts` had no callers and went with them.
+- **Per-department task types** (migration `0104`): nullable `department` + `sort_order` on
+  `mytrion_task_types`, seeded with 6 shared codes and 21 desk-scoped ones. NULL = every desk.
+  `(tenant_id, code)` stays unique, so a code means one thing tenant-wide. Routes now validate the
+  code against the DESK, not the whole catalog.
+- List endpoint returns `{tasks, counts, load, pagination}`. `counts` is deliberately desk-wide and
+  ignores the status/priority/search filter — those are the numbers you read to decide what to
+  filter by, so narrowing them would zero every column but the selected one.
+
+Frontend — Manager Tasks rebuilt as a status board mirroring the agent's own: same four columns,
+same order, same priority hues, same overdue rule, drag to move. Metric strip, assignee/priority/
+search filters, `Assign task` dialog, detail dialog with event history, optimistic moves, skeleton
+first paint. `tasksBlock.css` was dark-only (`--bg-primary` fills that are an inset well in dark and
+invisible in light) and is now on the Manager token ramps.
+
+Verification: backend `pnpm typecheck` clean, `pnpm lint` clean **for the files in this change**,
+new `tests/unit/manager-tasks-routes.test.ts` 21/21; CRM `pnpm build` green, 442/442 tests. Vendored
+`apps/mytrion-crm/app/` rebuilt.
+
+NOT verified: the migration was not run — Docker is not up here and there is no local Postgres, so
+CLAUDE.md's throwaway-DB check could not be done. It is defensive (`IF NOT EXISTS` ×3,
+`ON CONFLICT DO NOTHING`) and touches only a 1-row table. No UI screenshots — no headless browser.
+
+Note for whoever owns the in-flight RAG work in the tree (`src/modules/agents/*`,
+`src/modules/knowledge/*`, `llm_calls`/`rag_runs`, untracked `0105_horizon_rag_excellence.sql`):
+that migration has **no journal entry yet**. Register it as idx 105 with `when` greater than
+0104's `1786065600000`, or drizzle skips it silently with a green exit.

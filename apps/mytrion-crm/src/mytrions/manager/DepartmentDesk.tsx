@@ -1,7 +1,10 @@
 /**
  * Shared department landing — page chrome + workspace blocks (Tasks first).
+ *
+ * Every desk gets the same blocks, Sales included. Sales used to render a "coming soon" panel here
+ * instead, which meant the one department with a fully-built agent-side task board had no manager
+ * side to assign from — the two halves of `mytrion_worker_tasks` were never both switched on.
  */
-import { Clock3 } from 'lucide-react';
 import type { ManagerDepartment } from './managerNav';
 import type { ManagerTaskDepartment } from '../../api/managerTasks';
 import { TasksBlock } from './tasks/TasksBlock';
@@ -23,21 +26,10 @@ export function DepartmentDesk({ dept }: { dept: ManagerDepartment }) {
         </div>
       </header>
 
-      {dept.id === 'sales' ? (
-        <section className="mg-coming-soon" aria-label="Sales Manager coming soon">
-          <span>
-            <Clock3 size={22} />
-          </span>
-          <div className="mg-kicker">Coming soon</div>
-          <h2>Sales Manager is being prepared</h2>
-          <p>
-            Pipeline oversight and agent performance controls are temporarily held back while the
-            production workflow is finalized.
-          </p>
-        </section>
-      ) : (
-        <TasksBlock department={dept.id as ManagerTaskDepartment} />
-      )}
+      <TasksBlock
+        department={dept.id as ManagerTaskDepartment}
+        departmentLabel={dept.navLabel}
+      />
     </div>
   );
 }

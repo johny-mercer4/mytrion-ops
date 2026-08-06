@@ -132,51 +132,53 @@ export function LoyaltySkeleton({ cards = 9 }: { cards?: number }) {
 /* ── Department tasks ──────────────────────────────────────────────────────── */
 
 /**
- * Tasks placeholder: the real three-column layout — new-assignment form, assignment list, detail
- * pane. This replaces a dashed "Loading tasks…" box that was both the wrong shape and, being the
- * same `.mg-tasks-empty` element used for "no assignments", the wrong semantics.
+ * Tasks placeholder: the real metric strip, filter bar and four-column board, in the real
+ * containers. It replaces a dashed "Loading tasks…" box that was both the wrong shape and — being
+ * the same `.mg-tasks-empty` element used for "no assignments match this filter" — the wrong
+ * semantics: loading and empty were indistinguishable.
+ *
+ * Card counts per column are uneven on purpose. Four identical stacks read as a loading graphic;
+ * a ragged board reads as a board whose text has not arrived.
  */
+const TASK_COLUMN_CARDS = [3, 2, 3, 1];
+
 export function TasksSkeleton() {
   return (
     <div
-      className="mg-tasks-layout"
+      className="mg-sk-stack"
       role="status"
       aria-busy="true"
       aria-label="Loading department tasks"
     >
-      <div className="mg-tasks-panel" aria-hidden="true">
-        <Bar w="118px" h="11px" />
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="mg-sk-col">
-            <Bar w="72px" h="10px" delay={(i % 3) as 0 | 1 | 2} />
-            <Bar w="100%" h="36px" line={false} delay={(i % 3) as 0 | 1 | 2} />
+      <div className="mg-tk-metrics" aria-hidden="true">
+        {[0, 1, 2, 3].map((i) => (
+          <Block key={i} h="72px" delay={(i % 3) as 0 | 1 | 2} />
+        ))}
+      </div>
+
+      <div className="mg-tk-filters" aria-hidden="true">
+        <Bar w="min(320px, 100%)" h="34px" line={false} style={{ flex: '1 1 260px' }} />
+        <Bar w="150px" h="34px" line={false} delay={1} />
+        <Bar w="130px" h="34px" line={false} delay={2} />
+      </div>
+
+      <div className="mg-tk-board" aria-hidden="true">
+        {TASK_COLUMN_CARDS.map((cards, col) => (
+          <div key={col} className="mg-tk-col">
+            <div className="mg-tk-col-head">
+              <div className="mg-sk-col">
+                <Bar w="78px" h="12px" delay={(col % 3) as 0 | 1 | 2} />
+                <Bar w="62px" h="9px" delay={(col % 3) as 0 | 1 | 2} />
+              </div>
+              <Bar w="30px" h="22px" line={false} delay={(col % 3) as 0 | 1 | 2} />
+            </div>
+            <div className="mg-tk-col-body">
+              {Array.from({ length: cards }, (_, card) => (
+                <Block key={card} h="86px" delay={(card % 3) as 0 | 1 | 2} />
+              ))}
+            </div>
           </div>
         ))}
-        <Bar w="100%" h="88px" line={false} delay={1} />
-        <Bar w="100%" h="38px" line={false} delay={2} />
-      </div>
-
-      <div className="mg-tasks-panel" aria-hidden="true">
-        <div className="mg-sk-row">
-          <Bar w="104px" h="11px" />
-          <Bar w="120px" h="32px" line={false} style={{ marginLeft: 'auto' }} />
-        </div>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Block key={i} h="82px" delay={(i % 3) as 0 | 1 | 2} />
-        ))}
-      </div>
-
-      <div className="mg-tasks-panel" aria-hidden="true">
-        <Bar w="88px" h="11px" />
-        <Bar w="72%" h="18px" />
-        <Bar w="100%" h="11px" delay={1} />
-        <Bar w="86%" h="11px" delay={1} />
-        <div className="mg-tasks-detail-grid">
-          {[0, 1, 2, 3].map((i) => (
-            <Block key={i} h="44px" delay={(i % 3) as 0 | 1 | 2} />
-          ))}
-        </div>
-        <Bar w="100%" h="140px" line={false} delay={2} />
       </div>
     </div>
   );

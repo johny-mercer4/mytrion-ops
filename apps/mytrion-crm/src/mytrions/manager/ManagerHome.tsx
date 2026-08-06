@@ -110,14 +110,10 @@ export function ManagerHome({
                     <span className="mg-dept-title">{dept.label}</span>
                     <span className="mg-dept-desc">{dept.description}</span>
                   </span>
-                  {dept.id === 'sales' ? (
-                    <span className="mg-dept-soon">Coming soon</span>
-                  ) : (
-                    <span className="mg-dept-chip">
-                      <ListTodo size={11} strokeWidth={2.4} aria-hidden />
-                      Tasks
-                    </span>
-                  )}
+                  <span className="mg-dept-chip">
+                    <ListTodo size={11} strokeWidth={2.4} aria-hidden />
+                    Tasks
+                  </span>
                 </button>
               );
             })}
