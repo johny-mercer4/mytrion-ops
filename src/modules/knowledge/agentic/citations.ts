@@ -15,12 +15,19 @@ export function buildGroundingBlock(passages: RetrievedPassage[]): {
     docId: p.docId,
     docTitle: p.docTitle,
     chunkIndex: p.chunkIndex,
+    ...(p.sourceVersion ? { sourceVersion: p.sourceVersion } : {}),
+    ...(p.authorityClass ? { authorityClass: p.authorityClass } : {}),
+    ...(p.verificationStatus ? { verificationStatus: p.verificationStatus } : {}),
+    ...(p.lastVerifiedAt ? { lastVerifiedAt: p.lastVerifiedAt.toISOString() } : {}),
+    stale: p.stale,
   }));
   const body = passages
     .map((p, i) => {
       const title = p.docTitle ? ` · ${p.docTitle}` : '';
       const staleNote = p.stale ? ' · may be outdated' : '';
-      return `[S${i + 1}${title} · doc ${p.docId}${staleNote}]\n${p.content}`;
+      const version = p.sourceVersion ? ` · version ${p.sourceVersion}` : '';
+      const authority = p.authorityClass ? ` · ${p.authorityClass}` : '';
+      return `[S${i + 1}${title} · doc ${p.docId}${version}${authority}${staleNote}]\n${p.content}`;
     })
     .join('\n\n');
   const groundingBlock =

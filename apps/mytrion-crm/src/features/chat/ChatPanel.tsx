@@ -6,6 +6,7 @@ import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
 import { MessageList } from './MessageList';
 import { useChat } from './useChat';
+import { TurnInspector } from './TurnInspector';
 import styles from './ChatPanel.module.css';
 
 /**
@@ -20,11 +21,14 @@ export function ChatPanel({
   department,
   agentKey = null,
   variant = 'dock',
+  showTurnInspector = false,
 }: {
   context: UserContext;
   department?: string | string[] | null;
   agentKey?: AgentKey | null;
   variant?: 'dock' | 'full';
+  /** Admin-only runtime diagnostic rail for the current turn. */
+  showTurnInspector?: boolean;
 }) {
   const chat = useChat(context, department ?? null, agentKey);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -41,7 +45,8 @@ export function ChatPanel({
   })();
 
   return (
-    <div className={variant === 'full' ? styles.full : styles.dock}>
+    <div className={`${variant === 'full' ? styles.full : styles.dock} ${showTurnInspector ? styles.withInspector : ''}`}>
+      <div className={styles.chatColumn}>
       <div className={styles.header}>
         <div className={styles.title}>
           <Sparkle size={26} />
@@ -99,6 +104,8 @@ export function ChatPanel({
       <div className={styles.composerWrap}>
         <Composer streaming={chat.streaming} onSend={chat.send} onStop={chat.stop} />
       </div>
+      </div>
+      {showTurnInspector && <TurnInspector inspection={chat.inspection} />}
     </div>
   );
 }

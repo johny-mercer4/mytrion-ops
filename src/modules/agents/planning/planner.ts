@@ -9,7 +9,8 @@ import { env } from '../../../config/env.js';
 import { logger } from '../../../lib/logger.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import { mergeBlackboard } from '../blackboard.js';
-import { resolveOrchestratorModel } from '../models.js';
+import { getAgentContext } from '../context.js';
+import { resolveAgentModelId, resolveOrchestratorModel } from '../models.js';
 import {
   formatExecutionPlanXml,
   shouldPlan,
@@ -33,6 +34,11 @@ export async function maybeBuildPlan(opts: {
 }): Promise<PlanSeed | null> {
   if (!shouldPlan(opts.message, opts.isOrchestrator)) return null;
 
+  const startedAt = Date.now();
+  const modelId = resolveAgentModelId();
+  const provider = modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai';
+  const inspect = getAgentContext()?.inspect;
+  inspect?.({ stage: 'model', status: 'running', label: `Calling ${modelId}`, model: modelId, modelRole: 'planner', provider });
   try {
     const model = resolveOrchestratorModel();
     const agentList = opts.allowedAgentKeys.join(', ');
@@ -48,6 +54,10 @@ export async function maybeBuildPlan(opts: {
       { role: 'user', content: opts.message.slice(0, 4000) },
     ]);
     const raw = typeof res.content === 'string' ? res.content : JSON.stringify(res.content);
+    inspect?.({
+      stage: 'model', status: 'complete', label: `${modelId} produced a plan`,
+      model: modelId, modelRole: 'planner', provider, durationMs: Date.now() - startedAt,
+    });
     let json: unknown;
     try {
       json = JSON.parse(raw);
@@ -95,6 +105,10 @@ export async function maybeBuildPlan(opts: {
       xml: formatExecutionPlanXml(validated.plan),
     };
   } catch (err) {
+    inspect?.({
+      stage: 'model', status: 'error', label: `${modelId} planning failed`,
+      model: modelId, modelRole: 'planner', provider, durationMs: Date.now() - startedAt,
+    });
     logger.warn({ err }, 'planner failed; continuing without ExecutionPlan');
     return null;
   }

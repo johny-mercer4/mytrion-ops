@@ -4,18 +4,21 @@ import {
   getConversation,
   listConversations,
   type ConversationSummary,
+  type TranscriptMessage,
 } from '../../api/chat';
 import {
   streamAgent,
   streamChat,
   type ChatRequestBody,
   type Elicitation,
+  type TurnTraceEvent,
 } from '../../api/stream';
 import { ApiError } from '../../api/transport';
 import { getSession } from '../../api/session';
 import { AGENT_LABELS, type AgentKey } from '../../access/mytrions.config';
 import type { UserContext } from '../../context/userContext';
 import { getLastConversationId, setLastConversationId } from './chatStorage';
+import { getTurnInspection, removeTurnInspection, setTurnInspection } from './turnInspectionStorage';
 import { blankMessage, type ErrorKind, type UiMessage } from './types';
 
 /** Route through the orchestrator/agent runtime by default; VITE_USE_AGENT=0 falls back to /v1/chat. */
@@ -27,6 +30,15 @@ interface State {
   streaming: boolean;
   conversations: ConversationSummary[];
   error: string | null;
+  inspection: TurnInspection | null;
+}
+
+export interface TurnInspection extends Omit<TurnTraceEvent, 'stage' | 'status' | 'label' | 'at' | 'details'> {
+  turnId: string;
+  active: boolean;
+  startedAt: string;
+  finishedAt?: string;
+  steps: TurnTraceEvent[];
 }
 
 type Action =
@@ -42,11 +54,65 @@ type Action =
   | { type: 'streamEnd' }
   | { type: 'retryTurn'; assistantId: string }
   | { type: 'setConversations'; conversations: ConversationSummary[] }
-  | { type: 'loadTranscript'; conversationId: string; messages: UiMessage[] }
+  | { type: 'loadTranscript'; conversationId: string; messages: UiMessage[]; inspection?: TurnInspection | null }
   | { type: 'newConversation' }
-  | { type: 'setError'; error: string | null };
+  | { type: 'setError'; error: string | null }
+  | { type: 'inspectTrace'; event: TurnTraceEvent };
 
-const EMPTY: State = { messages: [], conversationId: null, streaming: false, conversations: [], error: null };
+const EMPTY: State = { messages: [], conversationId: null, streaming: false, conversations: [], error: null, inspection: null };
+
+function appendInspection(current: TurnInspection | null, event: TurnTraceEvent): TurnInspection | null {
+  if (!current) return null;
+  const at = event.at ?? new Date().toISOString();
+  const terminal = event.stage === 'complete' || event.stage === 'error';
+  return {
+    ...current,
+    active: terminal ? false : current.active,
+    ...(terminal ? { finishedAt: at } : {}),
+    ...(event.runId ? { runId: event.runId } : {}),
+    ...(event.agent ? { agent: event.agent } : {}),
+    ...(event.model ? { model: event.model } : {}),
+    ...(event.modelRole ? { modelRole: event.modelRole } : {}),
+    ...(event.provider ? { provider: event.provider } : {}),
+    ...(event.route ? { route: event.route } : {}),
+    ...(event.ragUsed !== undefined ? { ragUsed: event.ragUsed } : {}),
+    ...(event.ragGrade ? { ragGrade: event.ragGrade } : {}),
+    ...(event.confidence !== undefined ? { confidence: event.confidence } : {}),
+    ...(event.passages !== undefined ? { passages: event.passages } : {}),
+    ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+    steps: [...current.steps, { ...event, at }].slice(-80),
+  };
+}
+
+/** Reconstruct the safe persisted summary when a full live trace is not in this browser. */
+export function inspectionFromTranscript(messages: TranscriptMessage[]): TurnInspection | null {
+  const answer = [...messages].reverse().find((message) => message.role === 'assistant' && message.model);
+  if (!answer?.model) return null;
+  const passages = answer.ragPassages ?? 0;
+  return {
+    turnId: answer.id,
+    active: false,
+    startedAt: answer.createdAt,
+    finishedAt: answer.createdAt,
+    model: answer.model,
+    modelRole: answer.model === 'horizon-local-greeting-v1' ? 'deterministic' : 'answer',
+    provider: answer.model === 'horizon-local-greeting-v1' ? 'local' : answer.model.includes('/') ? 'groq' : 'openai',
+    route: passages > 0 ? 'knowledge' : 'none',
+    ragUsed: passages > 0,
+    passages,
+    steps: [
+      {
+        stage: 'model', status: 'complete', label: `Recorded response model: ${answer.model}`,
+        at: answer.createdAt, model: answer.model,
+      },
+      {
+        stage: 'rag', status: 'complete',
+        label: passages > 0 ? `Used ${passages} evidence passages` : 'No RAG evidence used',
+        at: answer.createdAt, ragUsed: passages > 0, passages,
+      },
+    ],
+  };
+}
 
 /** A stable client id for a freshly-created message row (crypto when available, else a session counter). */
 let uidSeq = 0;
@@ -89,7 +155,8 @@ export function classifyStreamError(e: unknown): { message: string; kind: ErrorK
 
 export function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case 'send':
+    case 'send': {
+      const startedAt = new Date().toISOString();
       return {
         ...state,
         streaming: true,
@@ -100,7 +167,14 @@ export function reducer(state: State, action: Action): State {
           blankMessage(action.userId, 'user', action.text),
           { ...blankMessage(action.assistantId, 'assistant'), status: 'Thinking…', streaming: true },
         ],
+        inspection: {
+          turnId: action.assistantId,
+          active: true,
+          startedAt,
+          steps: [{ stage: 'route', status: 'pending', label: 'Request accepted', at: startedAt }],
+        },
       };
+    }
     case 'appendToken':
       return { ...state, messages: patchLastAssistant(state.messages, (m) => ({ ...m, text: m.text + action.text, status: '' })) };
     case 'patchAssistant':
@@ -145,7 +219,12 @@ export function reducer(state: State, action: Action): State {
       };
     case 'streamEnd':
       // Minimal finalize — must not clear stopped/agentPath/citations set earlier in the turn.
-      return { ...state, streaming: false, messages: patchLastAssistant(state.messages, (m) => ({ ...m, streaming: false, status: '' })) };
+      return {
+        ...state,
+        streaming: false,
+        inspection: state.inspection ? { ...state.inspection, active: false } : null,
+        messages: patchLastAssistant(state.messages, (m) => ({ ...m, streaming: false, status: '' })),
+      };
     case 'retryTurn': {
       const idx = state.messages.findIndex((m) => m.id === action.assistantId);
       if (idx < 0) return state;
@@ -156,12 +235,20 @@ export function reducer(state: State, action: Action): State {
     case 'setConversations':
       return { ...state, conversations: action.conversations };
     case 'loadTranscript':
-      return { ...state, conversationId: action.conversationId, messages: action.messages, error: null };
+      return {
+        ...state,
+        conversationId: action.conversationId,
+        messages: action.messages,
+        error: null,
+        inspection: action.inspection ?? null,
+      };
     case 'newConversation':
       // Optimistically unlock the composer: a proxy stream can't be cancelled, so we don't wait for
       // its (now-ignored) response to flip streaming off. The stale stream's frames are dropped by
       // its abort signal, and its finally won't touch state once a newer controller has replaced it.
-      return { ...state, conversationId: null, messages: [], error: null, streaming: false };
+      return { ...state, conversationId: null, messages: [], error: null, streaming: false, inspection: null };
+    case 'inspectTrace':
+      return { ...state, inspection: appendInspection(state.inspection, action.event) };
     case 'setError':
       return { ...state, error: action.error };
     default:
@@ -175,6 +262,7 @@ export interface ChatController {
   conversationId: string | null;
   streaming: boolean;
   error: string | null;
+  inspection: TurnInspection | null;
   send(text: string): void;
   /** Abort the in-flight generation, keeping the partial answer. */
   stop(): void;
@@ -194,6 +282,8 @@ export function useChat(
   const [state, dispatch] = useReducer(reducer, EMPTY);
   const abortRef = useRef<AbortController | null>(null);
   const restoredForRef = useRef<string | null>(null);
+  const transcriptCacheRef = useRef(new Map<string, UiMessage[]>());
+  const inspectionCacheRef = useRef(new Map<string, TurnInspection>());
   const zohoUserId = ctx.userId;
 
   const refreshConversations = useCallback(async () => {
@@ -209,6 +299,15 @@ export function useChat(
   useEffect(() => {
     void refreshConversations();
   }, [refreshConversations]);
+  // Preserve transcripts + admin traces so history switches avoid a network round trip.
+  useEffect(() => {
+    if (!state.conversationId) return;
+    transcriptCacheRef.current.set(state.conversationId, state.messages);
+    if (state.inspection) {
+      inspectionCacheRef.current.set(state.conversationId, state.inspection);
+      setTurnInspection(zohoUserId, state.conversationId, state.inspection);
+    }
+  }, [state.conversationId, state.messages, state.inspection, zohoUserId]);
 
   const send = useCallback(
     (raw: string) => {
@@ -231,6 +330,7 @@ export function useChat(
       if (agentKey && USE_AGENT_RUNTIME) body.agent = agentKey;
 
       const run = USE_AGENT_RUNTIME ? streamAgent : streamChat;
+      const inspect = (event: TurnTraceEvent) => dispatch({ type: 'inspectTrace', event });
 
       void (async () => {
         try {
@@ -238,22 +338,47 @@ export function useChat(
             body,
             {
               onStart: (d) => {
+                inspect({
+                  stage: 'route', status: 'running', label: 'Agent runtime started',
+                  ...(d.agent ? { agent: d.agent } : {}),
+                });
                 if (d.conversationId) {
                   dispatch({ type: 'setConversationId', id: d.conversationId });
                   setLastConversationId(zohoUserId, d.conversationId);
                 }
               },
-              onStatus: (d) => dispatch({ type: 'patchAssistant', patch: { status: d.label ?? '' } }),
-              onContext: (d) =>
+              onStatus: (d) => {
+                dispatch({ type: 'patchAssistant', patch: { status: d.label ?? '' } });
+                if (d.label) inspect({ stage: 'plan', status: 'running', label: d.label });
+              },
+              onContext: (d) => {
+                inspect({
+                  stage: 'rag', status: 'running',
+                  label: `Loaded ${d.passages ?? 0} evidence passages`,
+                  ragUsed: (d.passages ?? 0) > 0,
+                  passages: d.passages ?? 0,
+                });
                 dispatch({
                   type: 'patchAssistant',
                   patch: {
                     passages: d.passages ?? null,
                     ...(d.citations ? { citations: d.citations } : {}),
                   },
-                }),
-              onToolCall: (d) => d.name && dispatch({ type: 'addTool', name: d.name }),
-              onToolResult: (d) => d.name && dispatch({ type: 'updateTool', name: d.name, status: d.status ?? 'ok' }),
+                });
+              },
+              onToolCall: (d) => {
+                if (!d.name) return;
+                dispatch({ type: 'addTool', name: d.name });
+                inspect({ stage: 'tool', status: 'running', label: `Calling ${d.name}` });
+              },
+              onToolResult: (d) => {
+                if (!d.name) return;
+                dispatch({ type: 'updateTool', name: d.name, status: d.status ?? 'ok' });
+                inspect({
+                  stage: 'tool', status: d.status === 'error' ? 'error' : 'complete',
+                  label: `${d.name}: ${d.status ?? 'ok'}`,
+                });
+              },
               // Agent path emits {delta}; chat path emits {text}.
               onToken: (d) => { const t = d.delta ?? d.text; if (t) dispatch({ type: 'appendToken', text: t }); },
               // "Consulting Sales…" as a child starts (agent path only) + persist the trail.
@@ -262,8 +387,15 @@ export function useChat(
                   const label = AGENT_LABELS[d.key as AgentKey] ?? d.label ?? d.key;
                   dispatch({ type: 'appendAgentPath', key: d.key });
                   dispatch({ type: 'patchAssistant', patch: { status: `Consulting ${label}…` } });
+                  inspect({ stage: 'agent', status: 'running', label: `Consulting ${label}`, agent: d.key });
                 }
               },
+              onPlan: (d) => inspect({
+                stage: 'plan', status: d.state === 'done' ? 'complete' : 'running',
+                label: d.goal ? `Plan: ${d.goal}` : d.nodeId ? `Plan node ${d.nodeId}: ${d.state ?? 'running'}` : 'Plan updated',
+                ...(d.agent ? { agent: d.agent } : {}),
+              }),
+              onTrace: inspect,
               onElicitation: (d) => dispatch({ type: 'setElicitation', elicitation: d }),
               onDone: (d) => {
                 if (d.conversationId) {
@@ -280,10 +412,30 @@ export function useChat(
                       ? { agentPath: d.agentPath, agentKey: d.agentPath.at(-1) ?? null }
                       : {}),
                     ...(d.citations ? { citations: d.citations } : {}),
+                    ...(d.error?.message ? { error: d.error.message, errorKind: 'server' as const } : {}),
+                  },
+                });
+                inspect({
+                  stage: d.error ? 'error' : 'complete', status: d.error ? 'error' : 'complete',
+                  label: d.error?.message ?? 'Response delivered',
+                  ...(d.agentKey ? { agent: d.agentKey } : {}),
+                  ...(d.rag?.mode ? { route: d.rag.mode } : {}),
+                  ragUsed: (d.ragPassages ?? 0) > 0,
+                  ...(d.rag?.grade ? { ragGrade: d.rag.grade } : {}),
+                  ...(d.rag?.confidence != null ? { confidence: d.rag.confidence } : {}),
+                  passages: d.ragPassages ?? 0,
+                  details: {
+                    citations: d.citations?.length ?? 0,
+                    tools: d.toolCalls?.length ?? 0,
+                    abstained: d.rag?.abstained ?? false,
+                    totalCost: d.usage?.totalCost ?? 0,
                   },
                 });
               },
-              onError: (msg) => dispatch({ type: 'patchAssistant', patch: { error: msg, errorKind: 'stream' } }),
+              onError: (msg) => {
+                dispatch({ type: 'patchAssistant', patch: { error: msg, errorKind: 'stream' } });
+                inspect({ stage: 'error', status: 'error', label: msg });
+              },
             },
             controller.signal,
           );
@@ -291,6 +443,7 @@ export function useChat(
           if (abortRef.current === controller) {
             const { message, kind } = classifyStreamError(e);
             dispatch({ type: 'patchAssistant', patch: { error: message, errorKind: kind } });
+            dispatch({ type: 'inspectTrace', event: { stage: 'error', status: 'error', label: message } });
           }
         } finally {
           // Only finalize if this is still the active stream. If New chat / a newer turn replaced the
@@ -336,6 +489,17 @@ export function useChat(
   const openConversation = useCallback(
     async (id: string, opts: { silent?: boolean } = {}) => {
       if (state.streaming || id === state.conversationId) return;
+      const cached = transcriptCacheRef.current.get(id);
+      if (cached) {
+        dispatch({
+          type: 'loadTranscript',
+          conversationId: id,
+          messages: cached,
+          inspection: inspectionCacheRef.current.get(id) ?? getTurnInspection(zohoUserId, id),
+        });
+        setLastConversationId(zohoUserId, id);
+        return;
+      }
       try {
         const { messages } = await getConversation(id, zohoUserId);
         const ui: UiMessage[] = messages.map((m) => ({
@@ -344,7 +508,15 @@ export function useChat(
           error: m.error ?? '',
           tools: Array.isArray(m.tools) ? m.tools : [],
         }));
-        dispatch({ type: 'loadTranscript', conversationId: id, messages: ui });
+        const restoredInspection = getTurnInspection(zohoUserId, id) ?? inspectionFromTranscript(messages);
+        transcriptCacheRef.current.set(id, ui);
+        if (restoredInspection) inspectionCacheRef.current.set(id, restoredInspection);
+        dispatch({
+          type: 'loadTranscript',
+          conversationId: id,
+          messages: ui,
+          inspection: restoredInspection,
+        });
         setLastConversationId(zohoUserId, id);
       } catch (e) {
         if (opts.silent) {
@@ -361,6 +533,9 @@ export function useChat(
     async (id: string) => {
       try {
         await deleteConversation(id, zohoUserId);
+        transcriptCacheRef.current.delete(id);
+        inspectionCacheRef.current.delete(id);
+        removeTurnInspection(zohoUserId, id);
         if (id === state.conversationId) {
           abortRef.current?.abort(); // a stream may still be writing to the conversation we just deleted
           abortRef.current = null;
@@ -393,6 +568,7 @@ export function useChat(
     conversationId: state.conversationId,
     streaming: state.streaming,
     error: state.error,
+    inspection: state.inspection,
     send,
     stop,
     retry,

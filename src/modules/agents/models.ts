@@ -6,11 +6,12 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { env } from '../../config/env.js';
 import { chatOpenAIFields } from '../llm/modelParams.js';
-import { models } from '../llm/openaiClient.js';
+import { resolveModelPolicy, type ModelPolicy, type ModelRole } from '../llm/modelRouter.js';
 import type { AgentManifest } from './types.js';
 
-function makeChatModel(model: string): ChatOpenAI {
-  const isGLM = model.startsWith('glm-') || (env.GLM_API_KEY && model === env.GLM_MODEL_WORKER);
+function makeChatModel(policy: ModelPolicy): ChatOpenAI {
+  const { model } = policy;
+  const isGLM = policy.provider === 'glm';
 
   if (isGLM) {
     return new ChatOpenAI({
@@ -37,20 +38,34 @@ function makeChatModel(model: string): ChatOpenAI {
 }
 
 /** The parent orchestrator's model: ORCHESTRATOR_MODEL → DEEP_AGENTS_MODEL → default. */
-export function resolveOrchestratorModel(): ChatOpenAI {
-  const defaultModel = env.GLM_API_KEY ? env.GLM_MODEL_WORKER : models.default;
-  return makeChatModel(env.ORCHESTRATOR_MODEL || env.DEEP_AGENTS_MODEL || defaultModel);
+export function resolveOrchestratorModel(role: Extract<ModelRole, 'answer' | 'casual'> = 'answer'): ChatOpenAI {
+  const override = env.ORCHESTRATOR_MODEL || env.DEEP_AGENTS_MODEL || undefined;
+  return makeChatModel(resolveModelPolicy(role, {
+    evidenceBearing: role === 'answer',
+    ...(override ? { model: override } : {}),
+  }));
 }
 
 /** A child agent's model: manifest override → AGENT_CHILD_MODEL → default. */
 export function resolveAgentModel(manifest: AgentManifest): ChatOpenAI {
-  const defaultModel = env.GLM_API_KEY ? env.GLM_MODEL_WORKER : models.default;
-  return makeChatModel(manifest.model || env.AGENT_CHILD_MODEL || defaultModel);
+  const override = manifest.model || env.AGENT_CHILD_MODEL || undefined;
+  return makeChatModel(resolveModelPolicy('answer', {
+    evidenceBearing: true,
+    ...(override ? { model: override } : {}),
+  }));
 }
 
 /** The model id a child resolves to (for agent_runs/cost bookkeeping). */
-export function resolveAgentModelId(manifest?: AgentManifest): string {
-  const defaultModel = env.GLM_API_KEY ? env.GLM_MODEL_WORKER : models.default;
-  if (manifest) return manifest.model || env.AGENT_CHILD_MODEL || defaultModel;
-  return env.ORCHESTRATOR_MODEL || env.DEEP_AGENTS_MODEL || defaultModel;
+export function resolveAgentModelId(
+  manifest?: AgentManifest,
+  orchestratorRole: Extract<ModelRole, 'answer' | 'casual'> = 'answer',
+): string {
+  const override = manifest
+    ? manifest.model || env.AGENT_CHILD_MODEL || undefined
+    : env.ORCHESTRATOR_MODEL || env.DEEP_AGENTS_MODEL || undefined;
+  const role = manifest ? 'answer' : orchestratorRole;
+  return resolveModelPolicy(role, {
+    evidenceBearing: role === 'answer',
+    ...(override ? { model: override } : {}),
+  }).model;
 }

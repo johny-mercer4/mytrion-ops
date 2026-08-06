@@ -240,6 +240,13 @@ export const checkpointSweepJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600 },
 });
 
+/** Nightly deterministic Horizon platform capability catalog refresh. */
+export const platformKnowledgeSyncJob = defineJob({
+  name: 'maintenance.platform-knowledge-sync',
+  schema: emptyPayload,
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 900 },
+});
+
 /** Dead-letter sink: audit + mark the linked task failed. */
 export const deadLetterJob = defineJob({
   name: DEAD_LETTER_QUEUE,
@@ -280,6 +287,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   billingLedgerSnapshotJob,
   verificationRecheckJob,
   checkpointSweepJob,
+  platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
   // workers boss.work() these names and notifyMiniApp enqueues 'notification.dispatch'. Missing
   // them meant the queues were never created and dispatch threw under FF_JOBS_ENABLED (the dev
@@ -330,6 +338,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
+  { name: platformKnowledgeSyncJob.name, cron: '15 4 * * *' }, // nightly, after maintenance jobs
   { name: notificationPollJob.name, cron: '*/2 * * * *' }, // card_status diff (no-op w/o pilot carriers)
   { name: statementWeeklyJob.name, cron: '0 7 * * 1' }, // weekly accounting bundle (no-op w/o pilot carriers)
   { name: kpiSalesHourlySyncJob.name, cron: '10 * * * *', timezone: 'America/New_York' },
@@ -349,4 +358,5 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,
+  platformKnowledgeSyncJob.name,
 ]);

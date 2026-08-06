@@ -69,11 +69,13 @@ const salesCaller = () =>
   makeContext({ scopes: ['*'], audience: 'internal', departments: ['sales'], allDepartmentAccess: false });
 
 const savedComposio = env.FF_COMPOSIO_ENABLED;
+const savedBlackboard = env.FF_AGENT_BLACKBOARD;
 const savedMaxToolCalls = env.AGENT_MAX_TOOL_CALLS;
 const savedChildIterations = env.AGENT_MAX_CHILD_ITERATIONS;
 
 beforeEach(() => {
   env.FF_COMPOSIO_ENABLED = false; // no external tool construction in CI
+  env.FF_AGENT_BLACKBOARD = false; // this scripted suite is explicitly DB-free
   orchestratorModel = new ScriptedChatModel([]);
   childModels.clear();
   vi.clearAllMocks();
@@ -81,24 +83,26 @@ beforeEach(() => {
 
 afterEach(() => {
   env.FF_COMPOSIO_ENABLED = savedComposio;
+  env.FF_AGENT_BLACKBOARD = savedBlackboard;
   env.AGENT_MAX_TOOL_CALLS = savedMaxToolCalls;
   env.AGENT_MAX_CHILD_ITERATIONS = savedChildIterations;
 });
 
 describe('greeting short-circuit (orchestrator answers directly, zero delegation/tools)', () => {
-  it('a plain reply yields agentKey orchestrator, empty agentPath, no tool calls', async () => {
+  it('answers locally without consuming the scripted model', async () => {
     orchestratorModel = new ScriptedChatModel([new AIMessage('Hi! How can I help today?')]);
     const result = await runAgentTurn('hi', salesCaller());
     expect(result.agentKey).toBe('orchestrator');
     expect(result.agentPath).toEqual([]);
     expect(result.toolCalls).toEqual([]);
-    expect(result.message).toBe('Hi! How can I help today?');
+    expect(result.message).toBe('Hello! How can I help you today?');
+    expect(orchestratorModel.remaining).toBe(1);
     expect(result.ragPassages).toBe(0);
     expect(result.citations).toEqual([]);
     expect(messageStore.appendAssistant).toHaveBeenCalledWith(
       expect.anything(),
       'conv-scripted',
-      expect.objectContaining({ content: 'Hi! How can I help today?', tools: [] }),
+      expect.objectContaining({ content: 'Hello! How can I help you today?', model: 'horizon-local-greeting-v1', tools: [] }),
     );
   });
 });

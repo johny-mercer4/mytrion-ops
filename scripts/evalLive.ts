@@ -30,6 +30,8 @@ import { agentRegistry } from '../src/modules/agents/agentRegistry.js';
 import { runAgentTurn, type AgentTurnResult } from '../src/modules/agents/orchestratorService.js';
 import { systemContext } from '../src/modules/auth/authService.js';
 import { ingestDocument } from '../src/modules/knowledge/ingestService.js';
+import { buildPlatformCatalog } from '../src/modules/knowledge/platformCatalog.js';
+import { syncPlatformKnowledge } from '../src/modules/knowledge/platformSync.js';
 import { models } from '../src/modules/llm/openaiClient.js';
 import { judgedChecksFor, judgeTask } from './lib/behaviorJudge.js';
 import {
@@ -84,6 +86,15 @@ async function ingestCorpus(): Promise<Map<string, CorpusDoc>> {
       title: doc.title,
       content: doc.content,
       ...(doc.department ? { department: doc.department } : {}),
+    });
+  }
+  await syncPlatformKnowledge(ingestCtx);
+  for (const doc of buildPlatformCatalog()) {
+    byKey.set(doc.source, {
+      key: doc.source,
+      department: doc.department,
+      title: doc.title,
+      content: doc.content,
     });
   }
   return byKey;
@@ -178,7 +189,8 @@ async function main(): Promise<void> {
 
   // Match the prod agent posture; keep side-effectful subsystems out of the run —
   // unless EVAL_AGENT_SOTA=1 (checkpoints + blackboard + plan/hard DAG + skills + CRAG).
-  const sotaProfile = process.env['EVAL_AGENT_SOTA'] === '1' || process.env['EVAL_AGENT_SOTA'] === 'true';
+  const sotaProfile =
+    process.env['EVAL_AGENT_SOTA'] === '1' || process.env['EVAL_AGENT_SOTA'] === 'true';
   const baselinePath = cliOption('baseline');
   const saved = {
     composio: env.FF_COMPOSIO_ENABLED,
@@ -190,9 +202,11 @@ async function main(): Promise<void> {
     planDag: env.FF_AGENT_PLAN_DAG,
     hardDag: env.FF_AGENT_HARD_DAG,
     cragWeb: env.FF_CRAG_WEB_FALLBACK,
+    platformKnowledge: env.FF_PLATFORM_KNOWLEDGE,
   };
   env.FF_COMPOSIO_ENABLED = false;
   env.FF_AGENTIC_RAG = false;
+  env.FF_PLATFORM_KNOWLEDGE = true;
   if (sotaProfile) {
     env.FF_AGENT_MEMORY = true;
     env.FF_AGENT_CHECKPOINTS = true;
@@ -202,7 +216,9 @@ async function main(): Promise<void> {
     env.FF_AGENT_HARD_DAG = true;
     env.FF_AGENTIC_RAG = true;
     env.FF_CRAG_WEB_FALLBACK = true;
-    logger.info('EVAL_AGENT_SOTA=1 — enabling checkpoints/memory/blackboard/plan/hard-DAG/skills/CRAG');
+    logger.info(
+      'EVAL_AGENT_SOTA=1 — enabling checkpoints/memory/blackboard/plan/hard-DAG/skills/CRAG',
+    );
   } else {
     env.FF_AGENT_MEMORY = false;
     env.FF_AGENT_CHECKPOINTS = false;
@@ -231,16 +247,30 @@ async function main(): Promise<void> {
       void queue.add(async () => {
         if (task.requires.includes('servercrm') && !env.SERVER_CRM_URL) {
           reports.push({
-            id: task.id, category: task.category, verdict: 'skip',
-            failures: [], agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
+            id: task.id,
+            category: task.category,
+            verdict: 'skip',
+            failures: [],
+            agentPath: [],
+            pingPongCount: 0,
+            durationMs: 0,
+            toolCalls: [],
+            costUsd: 0,
             note: 'SERVER_CRM_URL not configured',
           });
           return;
         }
         if (capTripped) {
           reports.push({
-            id: task.id, category: task.category, verdict: 'skip',
-            failures: [], agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
+            id: task.id,
+            category: task.category,
+            verdict: 'skip',
+            failures: [],
+            agentPath: [],
+            pingPongCount: 0,
+            durationMs: 0,
+            toolCalls: [],
+            costUsd: 0,
             note: `suite cost cap ($${maxCost}) reached`,
           });
           return;
@@ -251,14 +281,27 @@ async function main(): Promise<void> {
           if (spentUsd > maxCost) capTripped = true;
           reports.push(report);
           logger.info(
-            { id: task.id, verdict: report.verdict, pingPongCount: report.pingPongCount, durationMs: report.durationMs, agentPath: report.agentPath, costUsd: costUsd.toFixed(4) },
+            {
+              id: task.id,
+              verdict: report.verdict,
+              pingPongCount: report.pingPongCount,
+              durationMs: report.durationMs,
+              agentPath: report.agentPath,
+              costUsd: costUsd.toFixed(4),
+            },
             'task done',
           );
         } catch (err) {
           reports.push({
-            id: task.id, category: task.category, verdict: 'error',
+            id: task.id,
+            category: task.category,
+            verdict: 'error',
             failures: [err instanceof Error ? err.message : String(err)],
-            agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
+            agentPath: [],
+            pingPongCount: 0,
+            durationMs: 0,
+            toolCalls: [],
+            costUsd: 0,
           });
           logger.warn({ id: task.id, err }, 'task errored');
         }
@@ -345,6 +388,7 @@ async function main(): Promise<void> {
     env.FF_AGENT_PLAN_DAG = saved.planDag;
     env.FF_AGENT_HARD_DAG = saved.hardDag;
     env.FF_CRAG_WEB_FALLBACK = saved.cragWeb;
+    env.FF_PLATFORM_KNOWLEDGE = saved.platformKnowledge;
   }
 }
 

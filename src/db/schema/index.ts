@@ -24,6 +24,8 @@ export * from './automation_logs.js';
 export * from './scope_risk_items.js';
 export * from './money_code_requests.js';
 export * from './agent_runs.js';
+export * from './rag_runs.js';
+export * from './llm_calls.js';
 export * from './agent_tasks.js';
 export * from './file_assets.js';
 export * from './approvals.js';

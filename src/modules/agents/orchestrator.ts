@@ -75,7 +75,10 @@ async function compileSubAgent(manifest: AgentManifest, callerCtx: TenantContext
 }
 
 /** The parent orchestrator over the caller's RBAC-filtered agents. */
-export async function buildOrchestrator(callerCtx: TenantContext): Promise<{
+export async function buildOrchestrator(
+  callerCtx: TenantContext,
+  modelRole: 'answer' | 'casual' = 'answer',
+): Promise<{
   agent: ReturnType<typeof createDeepAgent>;
   agentKeys: string[];
 }> {
@@ -88,13 +91,13 @@ export async function buildOrchestrator(callerCtx: TenantContext): Promise<{
     env.FF_COMPOSIO_ENABLED ? 'co1' : 'co0',
     env.FF_FILES_ENABLED ? 'fi1' : 'fi0',
   ].join(':');
-  return getCachedAgent(`orch:${flagSig}:${identitySignature(callerCtx)}`, async () => {
+  return getCachedAgent(`orch:${modelRole}:${flagSig}:${identitySignature(callerCtx)}`, async () => {
     const manifests = agentRegistry.listForContext(callerCtx);
     const subagents = await Promise.all(manifests.map((m) => compileSubAgent(m, callerCtx)));
     const checkpointer = getCheckpointer();
     const planTools = buildOrchestratorPlanTools();
     const agent = createDeepAgent({
-      model: resolveOrchestratorModel(),
+      model: resolveOrchestratorModel(modelRole),
       systemPrompt: ORCHESTRATOR_PROMPT,
       subagents,
       ...(planTools.length > 0 ? { tools: planTools } : {}),

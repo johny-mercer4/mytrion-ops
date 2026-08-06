@@ -7,13 +7,22 @@ import {
   type KnowledgeDoc,
   type NewKnowledgeChunk,
   type NewKnowledgeDoc,
+  type KnowledgeAuthorityClass,
+  type KnowledgeDomain,
+  type KnowledgeVerificationStatus,
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
-import { firstOrThrow, firstOrUndefined, normalizePagination, toVectorLiteral } from './util.js';
+import { firstOrUndefined, normalizePagination, toVectorLiteral } from './util.js';
 
 export interface NewChunkInput {
   chunkIndex: number;
   content: string;
+  retrievalText: string;
+  contentHash: string;
+  sectionPath?: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  sourceVersion: string;
   embedding: number[];
   tokenCount?: number;
   metadata?: Record<string, unknown>;
@@ -34,6 +43,32 @@ export interface UpdateDocPatch {
   error?: string | null;
   title?: string;
   departmentAccess?: string | null;
+  verificationStatus?: KnowledgeVerificationStatus;
+  lastVerifiedAt?: Date | null;
+}
+
+export interface CreateKnowledgeDocInput {
+  title: string;
+  source?: string;
+  mimeType?: string;
+  checksum?: string;
+  departmentAccess?: string | null;
+  origin?: string;
+  domain?: KnowledgeDomain;
+  language?: string;
+  authorityClass?: KnowledgeAuthorityClass;
+  owner?: string;
+  sourceVersion?: string;
+  sourceCommit?: string;
+  supersedesDocId?: string;
+  effectiveAt?: Date;
+  expiresAt?: Date;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateKnowledgeDocResult {
+  doc: KnowledgeDoc;
+  inserted: boolean;
 }
 
 /**
@@ -54,22 +89,13 @@ export const knowledgeRepo = {
   async markVerified(ctx: TenantContext, id: string): Promise<boolean> {
     const rows = await db
       .update(knowledgeDocs)
-      .set({ lastVerifiedAt: sql`now()`, updatedAt: sql`now()` })
+      .set({ verificationStatus: 'verified', lastVerifiedAt: sql`now()`, updatedAt: sql`now()` })
       .where(and(eq(knowledgeDocs.tenantId, ctx.tenantId), eq(knowledgeDocs.id, id)))
       .returning({ id: knowledgeDocs.id });
     return rows.length > 0;
   },
 
-  async createDoc(
-    ctx: TenantContext,
-    input: {
-      title: string;
-      source?: string;
-      mimeType?: string;
-      checksum?: string;
-      departmentAccess?: string | null;
-    },
-  ): Promise<KnowledgeDoc> {
+  async createDoc(ctx: TenantContext, input: CreateKnowledgeDocInput): Promise<CreateKnowledgeDocResult> {
     const values: NewKnowledgeDoc = {
       tenantId: ctx.tenantId,
       audience: ctx.audience,
@@ -79,8 +105,25 @@ export const knowledgeRepo = {
     if (input.source !== undefined) values.source = input.source;
     if (input.mimeType !== undefined) values.mimeType = input.mimeType;
     if (input.checksum !== undefined) values.checksum = input.checksum;
-    const rows = await db.insert(knowledgeDocs).values(values).returning();
-    return firstOrThrow(rows, 'Failed to create knowledge doc');
+    if (input.origin !== undefined) values.origin = input.origin;
+    if (input.domain !== undefined) values.domain = input.domain;
+    if (input.language !== undefined) values.language = input.language;
+    if (input.authorityClass !== undefined) values.authorityClass = input.authorityClass;
+    if (input.owner !== undefined) values.owner = input.owner;
+    if (input.sourceVersion !== undefined) values.sourceVersion = input.sourceVersion;
+    if (input.sourceCommit !== undefined) values.sourceCommit = input.sourceCommit;
+    if (input.supersedesDocId !== undefined) values.supersedesDocId = input.supersedesDocId;
+    if (input.effectiveAt !== undefined) values.effectiveAt = input.effectiveAt;
+    if (input.expiresAt !== undefined) values.expiresAt = input.expiresAt;
+    if (input.metadata !== undefined) values.metadata = input.metadata;
+    const rows = await db.insert(knowledgeDocs).values(values).onConflictDoNothing().returning();
+    const inserted = firstOrUndefined(rows);
+    if (inserted) return { doc: inserted, inserted: true };
+    if (input.checksum) {
+      const existing = await this.findDocByChecksum(ctx, input.checksum);
+      if (existing) return { doc: existing, inserted: false };
+    }
+    throw new Error('Failed to create or resolve knowledge doc');
   },
 
   async findDoc(ctx: TenantContext, docId: string): Promise<KnowledgeDoc | undefined> {
@@ -96,7 +139,31 @@ export const knowledgeRepo = {
     const rows = await db
       .select()
       .from(knowledgeDocs)
-      .where(and(eq(knowledgeDocs.tenantId, ctx.tenantId), eq(knowledgeDocs.checksum, checksum)))
+      .where(and(
+        eq(knowledgeDocs.tenantId, ctx.tenantId),
+        eq(knowledgeDocs.audience, ctx.audience),
+        eq(knowledgeDocs.checksum, checksum),
+      ))
+      .limit(1);
+    return firstOrUndefined(rows);
+  },
+
+  async findLatestBySource(
+    ctx: TenantContext,
+    source: string,
+    domain: KnowledgeDomain,
+  ): Promise<KnowledgeDoc | undefined> {
+    const rows = await db
+      .select()
+      .from(knowledgeDocs)
+      .where(and(
+        eq(knowledgeDocs.tenantId, ctx.tenantId),
+        eq(knowledgeDocs.audience, ctx.audience),
+        eq(knowledgeDocs.source, source),
+        eq(knowledgeDocs.domain, domain),
+        sql`${knowledgeDocs.verificationStatus} <> 'superseded'`,
+      ))
+      .orderBy(desc(knowledgeDocs.updatedAt))
       .limit(1);
     return firstOrUndefined(rows);
   },
@@ -172,6 +239,8 @@ export const knowledgeRepo = {
     if (patch.error !== undefined) set.error = patch.error;
     if (patch.title !== undefined) set.title = patch.title;
     if (patch.departmentAccess !== undefined) set.departmentAccess = patch.departmentAccess;
+    if (patch.verificationStatus !== undefined) set.verificationStatus = patch.verificationStatus;
+    if (patch.lastVerifiedAt !== undefined) set.lastVerifiedAt = patch.lastVerifiedAt;
     const rows = await db
       .update(knowledgeDocs)
       .set(set)
@@ -243,13 +312,79 @@ export const knowledgeRepo = {
           departmentAccess,
           chunkIndex: c.chunkIndex,
           content: c.content,
+          retrievalText: c.retrievalText,
+          contentHash: c.contentHash,
+          embeddingModel: c.embeddingModel,
+          embeddingDimensions: c.embeddingDimensions,
+          sourceVersion: c.sourceVersion,
           embedding: c.embedding,
         };
+        if (c.sectionPath !== undefined) row.sectionPath = c.sectionPath;
         if (c.tokenCount !== undefined) row.tokenCount = c.tokenCount;
         if (c.metadata !== undefined) row.metadata = c.metadata;
         return row;
       });
       await tx.insert(knowledgeChunks).values(rows);
+    });
+  },
+
+  /** Commit chunks + ready state + optional supersession in one transaction. */
+  async commitIngestion(
+    ctx: TenantContext,
+    docId: string,
+    chunks: NewChunkInput[],
+    departmentAccess: string | null,
+    supersedesDocId?: string,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      const owned = await tx
+        .select({ id: knowledgeDocs.id })
+        .from(knowledgeDocs)
+        .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)))
+        .limit(1);
+      if (!owned[0]) throw new Error('Knowledge doc not found for ingestion commit');
+      await tx.delete(knowledgeChunks).where(and(
+        eq(knowledgeChunks.tenantId, ctx.tenantId),
+        eq(knowledgeChunks.docId, docId),
+      ));
+      const rows: NewKnowledgeChunk[] = chunks.map((chunk) => ({
+        tenantId: ctx.tenantId,
+        audience: ctx.audience,
+        docId,
+        departmentAccess,
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        retrievalText: chunk.retrievalText,
+        contentHash: chunk.contentHash,
+        embeddingModel: chunk.embeddingModel,
+        embeddingDimensions: chunk.embeddingDimensions,
+        sourceVersion: chunk.sourceVersion,
+        embedding: chunk.embedding,
+        ...(chunk.sectionPath !== undefined ? { sectionPath: chunk.sectionPath } : {}),
+        ...(chunk.tokenCount !== undefined ? { tokenCount: chunk.tokenCount } : {}),
+        ...(chunk.metadata !== undefined ? { metadata: chunk.metadata } : {}),
+      }));
+      if (rows.length > 0) await tx.insert(knowledgeChunks).values(rows);
+      await tx
+        .update(knowledgeDocs)
+        .set({
+          status: 'ready',
+          chunkCount: rows.length,
+          departmentAccess,
+          error: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)));
+      if (supersedesDocId && supersedesDocId !== docId) {
+        await tx
+          .update(knowledgeDocs)
+          .set({ verificationStatus: 'superseded', updatedAt: new Date() })
+          .where(and(
+            eq(knowledgeDocs.id, supersedesDocId),
+            eq(knowledgeDocs.tenantId, ctx.tenantId),
+            eq(knowledgeDocs.audience, ctx.audience),
+          ));
+      }
     });
   },
 
@@ -268,10 +403,13 @@ export const knowledgeRepo = {
         score: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${literal}::vector)`,
       })
       .from(knowledgeChunks)
+      .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
       .where(
         and(
           eq(knowledgeChunks.tenantId, ctx.tenantId),
           eq(knowledgeChunks.audience, ctx.audience),
+          eq(knowledgeDocs.status, 'ready'),
+          sql`${knowledgeDocs.verificationStatus} <> 'superseded'`,
           departmentFilter(ctx),
         ),
       )

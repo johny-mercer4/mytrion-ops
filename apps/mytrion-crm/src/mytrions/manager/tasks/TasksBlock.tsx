@@ -1,9 +1,24 @@
 /**
- * Department Tasks block — assign, list, and a detail pane with event history.
+ * Department Tasks — the Manager workspace block, on every desk.
+ *
+ * Shape and vocabulary deliberately mirror the agent's own board
+ * (`sales/redesign/tabs/TasksTab.tsx`): same four columns, same order, same priority hues, same
+ * overdue rule, drag a card to move it. Manager and agent are reading one table
+ * (`mytrion_worker_tasks`) and should not need two mental models of it. What the manager gets on
+ * top is the assign dialog, the assignee filter, and the per-agent load read.
+ *
+ * Data: `/v1/manager/:department/tasks` returns the page, the desk-wide status counts, and the
+ * open-load per assignee. The counts are desk-wide ON PURPOSE — they are what you read to decide
+ * which status to filter by, so they must not follow the filter.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Send, XCircle } from 'lucide-react';
-import type { WorkerTaskDto, WorkerTaskEventDto, WorkerTaskPriority, WorkerTaskStatus } from '../../../api/salesKpi';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { AlertTriangle, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import type {
+  TaskTypeDto,
+  WorkerTaskDto,
+  WorkerTaskEventDto,
+  WorkerTaskStatus,
+} from '../../../api/salesKpi';
 import {
   createManagerDeptTask,
   listManagerAssignees,
@@ -12,74 +27,144 @@ import {
   listManagerDeptTasks,
   updateManagerDeptTask,
   type ManagerAssigneeDto,
+  type ManagerAssigneeLoad,
+  type ManagerTaskCounts,
   type ManagerTaskDepartment,
 } from '../../../api/managerTasks';
+import { TaskAssignModal, type TaskDraft } from './TaskAssignModal';
+import { TaskDetailModal } from './TaskDetailModal';
+import {
+  PRIORITIES,
+  TASK_COLUMNS,
+  deadlineLabel,
+  friendly,
+  groupByStatus,
+  isOverdue,
+  priorityTone,
+} from './taskModel';
+import { TasksBoardSkeleton } from '../ManagerSkeletons';
 import './tasksBlock.css';
 
-function friendly(value: string): string {
-  return value.replaceAll('_', ' ');
-}
+const MIME = 'application/x-mytrion-task-id';
+const PAGE_SIZE = 200;
+const EMPTY_COUNTS: ManagerTaskCounts = { open: 0, in_progress: 0, completed: 0, cancelled: 0 };
 
-function deadlineInput(value: string): string | undefined {
-  return value ? new Date(value).toISOString() : undefined;
-}
+/**
+ * Per-desk roster cache, module-scoped so it survives navigating between departments and back.
+ * The underlying call is 2.7–4.9s and its answer changes on the timescale of HR changes, not of
+ * a page view.
+ */
+const rosterCache = new Map<
+  ManagerTaskDepartment,
+  { workers: ManagerAssigneeDto[]; types: TaskTypeDto[] }
+>();
 
-function deadlineLabel(value: string | null): string {
-  if (!value) return 'No deadline';
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-export function TasksBlock({ department }: { department: ManagerTaskDepartment }) {
+export function TasksBlock({
+  department,
+  departmentLabel,
+}: {
+  department: ManagerTaskDepartment;
+  departmentLabel: string;
+}) {
   const [workers, setWorkers] = useState<ManagerAssigneeDto[]>([]);
-  const [types, setTypes] = useState<Array<{ id: string; code: string; label: string }>>([]);
+  const [types, setTypes] = useState<TaskTypeDto[]>([]);
   const [tasks, setTasks] = useState<WorkerTaskDto[]>([]);
-  const [filterWorker, setFilterWorker] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [events, setEvents] = useState<WorkerTaskEventDto[]>([]);
+  const [counts, setCounts] = useState<ManagerTaskCounts>(EMPTY_COUNTS);
+  const [load, setLoad] = useState<ManagerAssigneeLoad[]>([]);
+  const [total, setTotal] = useState(0);
+
+  const [query, setQuery] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    assigneeZohoUserId: '',
-    type: 'general',
-    subject: '',
-    description: '',
-    deadlineAt: '',
-    priority: 'normal' as WorkerTaskPriority,
-  });
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [workerRows, typeRows, taskRows] = await Promise.all([
-        listManagerAssignees(department),
-        listManagerDeptTaskTypes(department),
-        listManagerDeptTasks(department),
-      ]);
-      setWorkers(workerRows);
-      setTypes(typeRows);
-      setTasks(taskRows);
-      setForm((current) => ({
-        ...current,
-        assigneeZohoUserId: current.assigneeZohoUserId || workerRows[0]?.zohoUserId || '',
-        type: current.type || typeRows[0]?.code || 'general',
-      }));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Tasks could not be loaded.');
-    } finally {
-      setLoading(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [events, setEvents] = useState<WorkerTaskEventDto[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overColumn, setOverColumn] = useState<WorkerTaskStatus | null>(null);
+
+  // Debounced so typing in the search box does not fire a request per keystroke.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  /**
+   * The roster and type catalog change rarely and are SLOW — `listManagerAssignees` measured
+   * 2.7s for Sales and 4.9s for Billing (it resolves the Zoho user directory). They are therefore
+   * cached per desk for the session and, critically, are NOT on the board's critical path: the
+   * board renders from the task list alone, and the agent filter and Assign button simply fill in
+   * when the roster lands.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const cached = rosterCache.get(department);
+    if (cached) {
+      setWorkers(cached.workers);
+      setTypes(cached.types);
+      return;
     }
+    void Promise.all([listManagerAssignees(department), listManagerDeptTaskTypes(department)])
+      .then(([workerRows, typeRows]) => {
+        rosterCache.set(department, { workers: workerRows, types: typeRows });
+        if (cancelled) return;
+        setWorkers(workerRows);
+        setTypes(typeRows);
+      })
+      .catch(() => {
+        // A failed roster is not a failed board — the task list still renders and reports its own
+        // error. It only means the assign dialog has nobody to offer yet.
+        if (!cancelled) setWorkers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [department]);
 
+  const loadTasks = useCallback(
+    async (mode: 'cold' | 'refresh' = 'cold') => {
+      if (mode === 'cold') setLoading(true);
+      else setRefreshing(true);
+      setError(null);
+      try {
+        const page = await listManagerDeptTasks(department, {
+          limit: PAGE_SIZE,
+          ...(assigneeFilter ? { assigneeZohoUserId: assigneeFilter } : {}),
+          ...(priorityFilter ? { priority: priorityFilter as WorkerTaskDto['priority'] } : {}),
+          ...(debouncedQuery ? { q: debouncedQuery } : {}),
+        });
+        setTasks(page.tasks);
+        setCounts(page.counts);
+        setLoad(page.load);
+        setTotal(page.pagination.total);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Tasks could not be loaded.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [department, assigneeFilter, priorityFilter, debouncedQuery],
+  );
+
+  // A filter change is a refresh, not a cold start: replacing a populated board with a skeleton on
+  // every keystroke is the flicker that makes a filtered list feel broken.
+  const firstLoad = useRef(true);
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadTasks(firstLoad.current ? 'cold' : 'refresh');
+    firstLoad.current = false;
+  }, [loadTasks]);
+  useEffect(() => {
+    firstLoad.current = true;
+  }, [department]);
 
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
 
@@ -88,70 +173,96 @@ export function TasksBlock({ department }: { department: ManagerTaskDepartment }
       setEvents([]);
       return;
     }
+    let cancelled = false;
+    setEventsLoading(true);
     void listManagerDeptTaskEvents(department, selectedId)
-      .then(setEvents)
-      .catch(() => setEvents([]));
+      .then((rows) => {
+        if (!cancelled) setEvents(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setEventsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [department, selectedId, selected?.version]);
 
-  const visibleTasks = useMemo(
-    () => (filterWorker ? tasks.filter((task) => task.assigneeZohoUserId === filterWorker) : tasks),
-    [filterWorker, tasks],
+  const board = useMemo(() => groupByStatus(tasks), [tasks]);
+  const overdue = useMemo(() => tasks.filter((task) => isOverdue(task)).length, [tasks]);
+  const workerName = useCallback(
+    (id: string): string =>
+      workers.find((worker) => worker.zohoUserId === id)?.displayName ?? id,
+    [workers],
   );
+  const busiest = useMemo(
+    () => [...load].sort((a, b) => b.open - a.open).slice(0, 3),
+    [load],
+  );
+  const filtered = Boolean(assigneeFilter || priorityFilter || debouncedQuery);
 
-  const workerName = (id: string): string =>
-    workers.find((worker) => worker.zohoUserId === id)?.displayName ?? id;
-
-  const createTask = async (event: React.FormEvent): Promise<void> => {
-    event.preventDefault();
-    if (!form.assigneeZohoUserId || !form.subject.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const normalizedDeadline = deadlineInput(form.deadlineAt);
-      const created = await createManagerDeptTask(department, {
-        assigneeZohoUserId: form.assigneeZohoUserId,
-        type: form.type,
-        subject: form.subject.trim(),
-        ...(form.description.trim() ? { description: form.description.trim() } : {}),
-        ...(normalizedDeadline ? { deadlineAt: normalizedDeadline } : {}),
-        priority: form.priority,
-      });
-      setTasks((rows) => [created, ...rows]);
-      setSelectedId(created.id);
-      setForm((current) => ({ ...current, subject: '', description: '', deadlineAt: '' }));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The task could not be created.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const patchTask = async (
+  const patch = async (
     task: WorkerTaskDto,
-    change: {
-      status?: WorkerTaskStatus;
-      assigneeZohoUserId?: string;
-      comment?: string;
-    },
+    change: { status?: WorkerTaskStatus; assigneeZohoUserId?: string },
   ): Promise<void> => {
     setSaving(true);
-    setError(null);
+    setActionError(null);
+    // Optimistic: the board answers immediately, and a failure restores the row and says so.
+    const previous = tasks;
+    setTasks((rows) =>
+      rows.map((row) => (row.id === task.id ? { ...row, ...change, version: row.version + 1 } : row)),
+    );
     try {
       const updated = await updateManagerDeptTask(department, task.id, {
         version: task.version,
         ...change,
       });
       setTasks((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+      // Status counts and the load read are desk-wide, so only the server can restate them.
+      await loadTasks('refresh');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The task changed elsewhere. Refresh and retry.');
-      await load();
+      setTasks(previous);
+      setActionError(
+        caught instanceof Error ? caught.message : 'The task changed elsewhere. Refresh and retry.',
+      );
     } finally {
       setSaving(false);
     }
   };
 
+  const assign = async (draft: TaskDraft): Promise<void> => {
+    setSaving(true);
+    setActionError(null);
+    try {
+      const created = await createManagerDeptTask(department, draft);
+      setAssignOpen(false);
+      setSelectedId(created.id);
+      await loadTasks('refresh');
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : 'The task could not be created.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onDrop = (status: WorkerTaskStatus, event: DragEvent): void => {
+    event.preventDefault();
+    const id =
+      event.dataTransfer.getData(MIME) || event.dataTransfer.getData('text/plain') || dragId;
+    setDragId(null);
+    setOverColumn(null);
+    if (!id) return;
+    const task = tasks.find((row) => row.id === id);
+    if (!task || task.status === status || saving) return;
+    void patch(task, { status });
+  };
+
+  const active = counts.open + counts.in_progress;
+
   return (
-    <section className="mg-block" aria-labelledby={`mg-tasks-${department}`}>
+    <section className="mg-block mg-tk" aria-labelledby={`mg-tasks-${department}`}>
       <header className="mg-block-head">
         <div>
           <p className="mg-block-kicker">Workspace block</p>
@@ -159,112 +270,77 @@ export function TasksBlock({ department }: { department: ManagerTaskDepartment }
             Tasks
           </h2>
           <p className="mg-block-sub">
-            Assign work to this department&rsquo;s agents, track status, and open any assignment for
-            full detail and history.
+            Assign work to this department&rsquo;s agents and track it to done. Drag a card between
+            columns to move it, or open one for full detail and history.
           </p>
         </div>
-        <button type="button" className="mg-tasks-btn mg-tasks-btn--ghost" onClick={() => void load()}>
-          <RefreshCw size={15} /> Refresh
-        </button>
+        <div className="mg-tk-head-actions">
+          <button
+            type="button"
+            className="mg-btn"
+            onClick={() => void loadTasks('refresh')}
+            disabled={loading || refreshing}
+          >
+            <RefreshCw size={15} className={refreshing ? 'mg-spin' : ''} />
+            Refresh
+          </button>
+          <button type="button" className="mg-btn-primary" onClick={() => setAssignOpen(true)}>
+            <Plus size={15} />
+            Assign task
+          </button>
+        </div>
       </header>
 
-      {error ? <div className="mg-tasks-error">{error}</div> : null}
-      {loading ? <div className="mg-tasks-empty">Loading tasks…</div> : null}
-
-      {!loading ? (
-        <div className="mg-tasks-layout">
-          <form className="mg-tasks-panel mg-tasks-form" onSubmit={(event) => void createTask(event)}>
-            <div className="mg-tasks-panel-title">New assignment</div>
-            <label>
-              Agent
-              <select
-                value={form.assigneeZohoUserId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, assigneeZohoUserId: event.target.value }))
-                }
-              >
-                {workers.length === 0 ? <option value="">No agents available</option> : null}
-                {workers.map((worker) => (
-                  <option key={worker.zohoUserId} value={worker.zohoUserId}>
-                    {worker.displayName ?? worker.email ?? worker.zohoUserId}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="mg-tasks-form-row">
-              <label>
-                Type
-                <select
-                  value={form.type}
-                  onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
-                >
-                  {types.map((type) => (
-                    <option key={type.id} value={type.code}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Priority
-                <select
-                  value={form.priority}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      priority: event.target.value as WorkerTaskPriority,
-                    }))
-                  }
-                >
-                  <option value="low">Low</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </label>
+      {/*
+       * The block's own chrome — metrics, filters — renders IMMEDIATELY, at zero, and fills in.
+       * It used to sit behind a full-block skeleton, so a desk with no records still showed a
+       * loading graphic for as long as the round trip took. A block whose numbers are all zero is
+       * a truthful answer; a skeleton is a promise that something is coming.
+       */}
+          <div className="mg-tk-metrics">
+            <div>
+              <span>Active</span>
+              <strong>{active}</strong>
+              <em>Open + in progress</em>
             </div>
-            <label>
-              Subject
-              <input
-                required
-                maxLength={200}
-                value={form.subject}
-                onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
-              />
-            </label>
-            <label>
-              Description
-              <textarea
-                rows={4}
-                maxLength={10_000}
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, description: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Deadline (optional)
-              <input
-                type="datetime-local"
-                value={form.deadlineAt}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, deadlineAt: event.target.value }))
-                }
-              />
-            </label>
-            <button className="mg-tasks-btn" disabled={saving || !workers.length} type="submit">
-              <Send size={15} /> Assign task
-            </button>
-          </form>
+            <div className={overdue ? 'is-bad' : ''}>
+              <span>Overdue</span>
+              <strong>{overdue}</strong>
+              <em>Past deadline, still open</em>
+            </div>
+            <div>
+              <span>Completed</span>
+              <strong>{counts.completed}</strong>
+              <em>All time on this desk</em>
+            </div>
+            <div>
+              <span>Agents loaded</span>
+              <strong>{busiest.filter((row) => row.open > 0).length}</strong>
+              <em>
+                {busiest.length && busiest[0] && busiest[0].open > 0
+                  ? `Most: ${workerName(busiest[0].assigneeZohoUserId)} · ${busiest[0].open}`
+                  : 'Nobody has open work'}
+              </em>
+            </div>
+          </div>
 
-          <div className="mg-tasks-panel">
-            <div className="mg-tasks-list-head">
-              <div className="mg-tasks-panel-title">Assignments</div>
+          <div className="mg-tk-filters">
+            <label className="mg-search">
+              <Search size={15} />
+              <input
+                type="search"
+                value={query}
+                placeholder="Search subject, description or type…"
+                aria-label="Search tasks"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <label className="mg-tk-select">
+              <Users size={14} aria-hidden />
               <select
                 aria-label="Filter by agent"
-                value={filterWorker}
-                onChange={(event) => setFilterWorker(event.target.value)}
+                value={assigneeFilter}
+                onChange={(event) => setAssigneeFilter(event.target.value)}
               >
                 <option value="">All agents</option>
                 {workers.map((worker) => (
@@ -273,147 +349,188 @@ export function TasksBlock({ department }: { department: ManagerTaskDepartment }
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="mg-tasks-list">
-              {visibleTasks.length === 0 ? (
-                <div className="mg-tasks-empty">No assignments match this filter.</div>
-              ) : null}
-              {visibleTasks.map((task) => (
-                <button
-                  type="button"
-                  key={task.id}
-                  className={`mg-tasks-card${selectedId === task.id ? ' is-on' : ''}`}
-                  data-priority={task.priority}
-                  onClick={() => setSelectedId(task.id)}
-                >
-                  <div className="mg-tasks-card-top">
-                    <div>
-                      <strong>{task.subject}</strong>
-                      <span>
-                        {workerName(task.assigneeZohoUserId)} · {friendly(task.taskType)}
-                      </span>
-                    </div>
-                    <span className="mg-tasks-pill" data-priority={task.priority}>
-                      {task.priority}
-                    </span>
-                  </div>
-                  <div className="mg-tasks-card-meta">
-                    <span>{friendly(task.status)}</span>
-                    <span>{deadlineLabel(task.deadlineAt)}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+            </label>
+            <label className="mg-tk-select">
+              <select
+                aria-label="Filter by priority"
+                value={priorityFilter}
+                onChange={(event) => setPriorityFilter(event.target.value)}
+              >
+                <option value="">Any priority</option>
+                {PRIORITIES.map((value) => (
+                  <option key={value} value={value}>
+                    {value[0]?.toUpperCase()}
+                    {value.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {filtered ? (
+              <button
+                type="button"
+                className="mg-btn"
+                onClick={() => {
+                  setQuery('');
+                  setAssigneeFilter('');
+                  setPriorityFilter('');
+                }}
+              >
+                Clear
+              </button>
+            ) : null}
+            <span className="mg-tk-result-count" aria-live="polite">
+              {refreshing ? 'Updating…' : `${total} ${total === 1 ? 'task' : 'tasks'}`}
+            </span>
           </div>
 
-          <div className="mg-tasks-panel mg-tasks-detail">
-            <div className="mg-tasks-panel-title">Task detail</div>
-            {!selected ? (
-              <div className="mg-tasks-empty">Select an assignment to see detail and history.</div>
-            ) : (
-              <>
-                <div className="mg-tasks-detail-hero">
-                  <h3>{selected.subject}</h3>
-                  {selected.description ? <p>{selected.description}</p> : <p>No description.</p>}
-                </div>
-                <div className="mg-tasks-detail-grid">
-                  <div className="mg-tasks-stat">
-                    <span>Status</span>
-                    <strong>{friendly(selected.status)}</strong>
-                  </div>
-                  <div className="mg-tasks-stat">
-                    <span>Priority</span>
-                    <strong>{selected.priority}</strong>
-                  </div>
-                  <div className="mg-tasks-stat">
-                    <span>Assignee</span>
-                    <strong>{workerName(selected.assigneeZohoUserId)}</strong>
-                  </div>
-                  <div className="mg-tasks-stat">
-                    <span>Deadline</span>
-                    <strong>{deadlineLabel(selected.deadlineAt)}</strong>
-                  </div>
-                </div>
+          {error ? (
+            <div className="mg-error">
+              <p>{error}</p>
+              <button type="button" className="mg-btn" onClick={() => void loadTasks('cold')}>
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {actionError ? (
+            <div className="mg-tk-error" role="alert">
+              <AlertTriangle size={15} aria-hidden />
+              {actionError}
+            </div>
+          ) : null}
 
-                <div className="mg-tasks-actions">
-                  <select
-                    aria-label={`Reassign ${selected.subject}`}
-                    value={selected.assigneeZohoUserId}
-                    disabled={saving}
-                    onChange={(event) =>
-                      void patchTask(selected, { assigneeZohoUserId: event.target.value })
-                    }
+          {loading ? <TasksBoardSkeleton /> : null}
+
+          {!loading && !error && tasks.length === 0 ? (
+            <div className="mg-empty">
+              {filtered
+                ? 'No tasks match these filters.'
+                : `No assignments on the ${departmentLabel} desk yet. Use “Assign task” to create the first one.`}
+            </div>
+          ) : null}
+
+          {!loading && !error && tasks.length > 0 ? (
+            <div className="mg-tk-board">
+              {TASK_COLUMNS.map((column) => {
+                const rows = board[column.id];
+                const dropping = overColumn === column.id && dragId !== null;
+                return (
+                  <div
+                    key={column.id}
+                    className="mg-tk-col"
+                    style={{ ['--tk-col' as string]: column.tone }}
                   >
-                    {workers.map((worker) => (
-                      <option key={worker.zohoUserId} value={worker.zohoUserId}>
-                        {worker.displayName ?? worker.zohoUserId}
-                      </option>
-                    ))}
-                  </select>
-                  {selected.status === 'completed' || selected.status === 'cancelled' ? (
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => void patchTask(selected, { status: 'open' })}
+                    <div className="mg-tk-col-head">
+                      <div>
+                        <div className="mg-tk-col-title">
+                          <span className="mg-tk-col-dot" />
+                          {column.label}
+                        </div>
+                        <div className="mg-tk-col-hint">{column.hint}</div>
+                      </div>
+                      {/* The count of what is ON this column, not the desk-wide figure: the metric
+                          strip above owns the all-tasks numbers and says so. A header that prints
+                          the desk total over a filtered body reads as a bug. */}
+                      <div className="mg-tk-col-count">{rows.length}</div>
+                    </div>
+                    <div
+                      className={`mg-tk-col-body${dropping ? ' is-drop' : ''}`}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        if (overColumn !== column.id) setOverColumn(column.id);
+                      }}
+                      onDragLeave={() => {
+                        if (overColumn === column.id) setOverColumn(null);
+                      }}
+                      onDrop={(event) => onDrop(column.id, event)}
                     >
-                      Reopen
-                    </button>
-                  ) : (
-                    <>
-                      {selected.status === 'open' ? (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void patchTask(selected, { status: 'in_progress' })}
-                        >
-                          Start
-                        </button>
+                      {rows.map((task) => {
+                        const late = isOverdue(task);
+                        return (
+                          <button
+                            key={task.id}
+                            type="button"
+                            draggable={!saving}
+                            className={`mg-tk-card${dragId === task.id ? ' is-dragging' : ''}${late ? ' is-overdue' : ''}`}
+                            style={{ ['--tk-rail' as string]: late ? 'var(--danger)' : priorityTone(task.priority) }}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData(MIME, task.id);
+                              event.dataTransfer.setData('text/plain', task.id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              setDragId(task.id);
+                            }}
+                            onDragEnd={() => {
+                              setDragId(null);
+                              setOverColumn(null);
+                            }}
+                            onClick={() => setSelectedId(task.id)}
+                          >
+                            <div className="mg-tk-card-top">
+                              <strong>{task.subject}</strong>
+                              <span
+                                className="mg-tk-pill"
+                                style={{ ['--tk-pill' as string]: priorityTone(task.priority) }}
+                              >
+                                {task.priority}
+                              </span>
+                            </div>
+                            <div className="mg-tk-card-who">{workerName(task.assigneeZohoUserId)}</div>
+                            <div className="mg-tk-card-meta">
+                              <span>{friendly(task.taskType)}</span>
+                              <span className={late ? 'is-bad' : ''}>
+                                {deadlineLabel(task.deadlineAt)}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {rows.length === 0 ? (
+                        <div className="mg-tk-col-empty">Drop a card here</div>
                       ) : null}
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void patchTask(selected, { status: 'completed' })}
-                      >
-                        Complete
-                      </button>
-                      <button
-                        type="button"
-                        className="is-danger"
-                        disabled={saving}
-                        onClick={() => void patchTask(selected, { status: 'cancelled' })}
-                      >
-                        <XCircle size={13} /> Cancel
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <div className="mg-tasks-panel-title" style={{ marginBottom: 10 }}>
-                    History
+                    </div>
                   </div>
-                  {events.length === 0 ? (
-                    <div className="mg-tasks-empty">No events yet.</div>
-                  ) : (
-                    <ul className="mg-tasks-timeline">
-                      {[...events].reverse().map((event) => (
-                        <li key={event.id}>
-                          <strong>{friendly(event.eventType)}</strong>
-                          <span>
-                            {event.fromStatus && event.toStatus
-                              ? `${friendly(event.fromStatus)} → ${friendly(event.toStatus)} · `
-                              : ''}
-                            {new Date(event.occurredAt).toLocaleString()}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {total > tasks.length ? (
+            <p className="mg-empty-sm">
+              Showing the {tasks.length} most recent of {total}. Narrow with the filters above to
+              reach the rest.
+            </p>
+          ) : null}
+
+      {assignOpen ? (
+        <TaskAssignModal
+          departmentLabel={departmentLabel}
+          workers={workers}
+          types={types}
+          saving={saving}
+          error={actionError}
+          onSubmit={assign}
+          onClose={() => {
+            setAssignOpen(false);
+            setActionError(null);
+          }}
+        />
+      ) : null}
+
+      {selected ? (
+        <TaskDetailModal
+          task={selected}
+          events={events}
+          eventsLoading={eventsLoading}
+          workers={workers}
+          saving={saving}
+          error={actionError}
+          onMove={(status) => void patch(selected, { status })}
+          onReassign={(zohoUserId) => void patch(selected, { assigneeZohoUserId: zohoUserId })}
+          onClose={() => {
+            setSelectedId(null);
+            setActionError(null);
+          }}
+        />
       ) : null}
     </section>
   );

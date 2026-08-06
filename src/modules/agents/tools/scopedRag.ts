@@ -20,12 +20,21 @@ import type { AgentManifest } from '../types.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 
 /** Report retrieved sources onto the run: collected for post-run validation + live SSE. */
-function reportSources(run: AgentRunContext, passages: number, citations: WireCitation[]): void {
+function reportSources(
+  run: AgentRunContext,
+  passages: number,
+  citations: WireCitation[],
+  evidence: Array<{ marker: string; docId: string; content: string }> = [],
+): void {
   if (run.collect) {
     run.collect.ragPassages = (run.collect.ragPassages ?? 0) + passages;
     const bucket = (run.collect.citations ??= []);
     for (const c of citations) {
       if (!bucket.some((b) => b.id === c.id && b.marker === c.marker)) bucket.push(c);
+    }
+    const evidenceBucket = (run.collect.ragEvidence ??= []);
+    for (const item of evidence) {
+      if (!evidenceBucket.some((existing) => existing.marker === item.marker)) evidenceBucket.push(item);
     }
   }
   run.emit?.('context', { passages, citations });
@@ -50,11 +59,40 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
       const run = requireAgentContext();
       // RAG counts against the run's tool-call budget too (registry tools aren't the only path).
       run.budget?.countToolCall();
-      if (env.FF_AGENTIC_RAG) {
+      if (env.FF_AGENTIC_RAG && env.FF_RAG_V2_RETRIEVAL) {
         const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
         const result = await agenticRetrieve(retrievalCtx, query, {
           k: limit,
-          allowWebFallback: Boolean(manifest.webSearch) || Boolean(callerCtx.allDepartmentAccess),
+          allowExternalSearch: Boolean(manifest.webSearch),
+          ...(run.turnContext?.task.resolvedAsk ? { resolvedAsk: run.turnContext.task.resolvedAsk } : {}),
+        });
+        if (run.collect) {
+          run.collect.rag = {
+            traceId: result.traceId,
+            scopeFingerprint: result.scopeFingerprint,
+            mode: result.route,
+            grade: result.grade,
+            confidence: result.confidence,
+            abstained: result.notDocumented,
+          };
+        }
+        run.inspect?.({
+          stage: 'rag',
+          status: result.notDocumented ? 'complete' : 'running',
+          label: result.notDocumented
+            ? 'Knowledge base has no documented answer'
+            : `Evidence assessed as ${result.grade}`,
+          route: result.route,
+          ragUsed: result.passages.length > 0,
+          ragGrade: result.grade,
+          confidence: result.confidence,
+          passages: result.passages.length,
+          details: {
+            hops: result.hops,
+            externalFallback: Boolean(result.webFallbackBlock),
+            retrievalStrategy: env.RAG_RETRIEVAL_STRATEGY,
+            traceId: result.traceId,
+          },
         });
         if (result.passages.length === 0 && !result.webFallbackBlock) {
           return (
@@ -65,20 +103,53 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
           );
         }
         if (result.passages.length > 0) {
+          const markerOffset = run.collect?.citations?.filter((citation) => citation.marker).length ?? 0;
+          const rebased = result.citations.map((citation, index) => ({
+            ...citation,
+            marker: `S${markerOffset + index + 1}`,
+          }));
           reportSources(
             run,
             result.passages.length,
-            result.citations.map((c) => ({
+            rebased.map((c, index) => ({
               id: c.docId,
               title: c.docTitle ?? c.docId,
               marker: c.marker,
+              ...(result.passages[index]?.id ? { chunkId: result.passages[index].id } : {}),
+              chunkIndex: c.chunkIndex,
+              ...(c.sourceVersion ? { sourceVersion: c.sourceVersion } : {}),
+              ...(c.authorityClass ? { authorityClass: c.authorityClass } : {}),
+              ...(c.verificationStatus ? { verificationStatus: c.verificationStatus } : {}),
+              ...(c.lastVerifiedAt ? { lastVerifiedAt: c.lastVerifiedAt } : {}),
+              freshness: c.stale ? 'stale' : c.lastVerifiedAt ? 'fresh' : 'unknown',
+            })),
+            rebased.map((citation, index) => ({
+              marker: citation.marker,
+              docId: citation.docId,
+              content: result.passages[index]?.content ?? '',
             })),
           );
+          const rebasedBlock = result.groundingBlock.replace(/\[S(\d+)\]/g, (_whole, digits: string) =>
+            `[S${markerOffset + Number(digits)}]`,
+          );
+          const memory = await recallMemories(retrievalCtx, manifest.key, query);
+          return `${rebasedBlock}${memory}`;
         }
         const memory = await recallMemories(retrievalCtx, manifest.key, query);
         return `${result.groundingBlock}${memory}`;
       }
       const results = await retrieve(retrievalCtx, query, limit);
+      run.inspect?.({
+        stage: 'rag',
+        status: 'complete',
+        label: results.length > 0
+          ? `Retrieved ${results.length} knowledge passages`
+          : 'Knowledge search returned no passages',
+        route: 'knowledge',
+        ragUsed: results.length > 0,
+        passages: results.length,
+        details: { retrievalStrategy: 'legacy' },
+      });
       if (results.length === 0) return 'No relevant passages found in the knowledge base.';
       const titles = await titlesFor(retrievalCtx, results.map((r) => r.docId));
       reportSources(
