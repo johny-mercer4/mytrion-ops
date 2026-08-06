@@ -11660,3 +11660,54 @@ Migration safety: renamed the in-flight RAG migration from 0105 to
 `0107_horizon_rag_excellence`, index 107 / timestamp `1786080000000`, so Drizzle will not silently
 skip it behind the already-applied production 0106. It remains unapplied and requires a scratch-DB
 migration check before an authorized rollout.
+
+## 2026-08-06 — EFS Console: third Manager workspace card
+
+Probed prod read-only before designing. Three findings changed the shape:
+
+- **Latency dominates.** Measured: parent/snapshot 1.8s · carrier/snapshot 1.1s · carrier
+  transactions(6d) 1.6s · money-codes/summary(30d) 3.9s · carrier/cards(37) 5.0s ·
+  **parent/discounts 11.1s**. Nothing may fan out on mount. The roster is `octane.dim_company`
+  ONLY (milliseconds, zero vendor traffic); every EFS read hangs off something clicked. The single
+  exception is the parent totals strip — one `parent.snapshot`, because that is the number the card
+  gets opened for.
+- **`/fetchers/carrier/:id/rejects` is broken upstream.** HTTP 500,
+  `ADBException: Unexpected subelement startDate` — same failure financeEfs.ts recorded on
+  2026-08-04, still there. Catalogued as `health: 'broken'` and refused with a 503 naming the
+  reason, rather than letting an operator watch a spinner end in a 502. The doc lists it as live.
+- **Partial success is normal.** `parent/snapshot` returns a good balance alongside
+  `creditLimitsError: ADBException…`; `carrier/snapshot` has `cardDetailError`. Those fields pass
+  through untouched and render as a warning chip beside good data.
+
+Shape: roster → dossier, same as Referrals and Loyalty. Chosen over a parent-ledger landing
+(3–8s cold, slowest surface first) and a task-runner IA (no carrier record page at all).
+
+Server — `src/modules/manager/efsConsole/`, ~2 handlers for the whole vendor surface because the
+surface is DATA: 50 fetchers and all 30 actions declared as descriptors.
+- **Writes are inert.** `FF_MANAGER_EFS_WRITES_ENABLED` defaults off; actions validate, audit and
+  return a preview of what WOULD be sent. A parameterised test asserts the serverCrm client is
+  never called for any of the 30. Arming is two steps: the master flag, then per-key
+  `MANAGER_EFS_LIVE_ACTIONS` — so it is one money-moving call at a time, not a boolean cliff.
+  Money/destructive actions additionally require an admin caller (CLAUDE.md rule 7).
+- **Carrier scope**: `assertEfsCarrier` refuses anything absent from `octane.dim_company` with 404
+  before any vendor traffic, on reads AND writes. Known cost: dim_company lags, so a genuinely new
+  child carrier 404s until the warehouse catches up; the message says exactly that.
+- **Money-code digits never leave the server** — `redact.ts` walks the payload structurally
+  (not keyed to one envelope shape, because V1/V2 differ and a shape-specific redactor fails silently
+  the day the envelope moves) and keeps `codeLast4`. Inherited from financeEfs.ts's rule.
+- Window ceilings (7d txns / 90d history) validated server-side AND published via `/capabilities`
+  so the picker refuses a range instead of EFS 400ing.
+
+CRM — `EfsConsoleCard` + `efs/` (dossier, 4 tabs, skeletons). `/capabilities` is server-authoritative:
+no client write toggle, no localStorage, and while writes are disabled **no Execute control is
+rendered at all** — absent, not disabled.
+
+Also: **URL state for the whole Manager hub** (`?card=efs&carrier=5724546&tab=cards`).
+ManagerShell was a routerless `useState`, so a reload dropped you on Overview and no carrier view
+could be pasted into a ticket. Done once for all three cards while there are only three; only the
+three manager-owned query keys are touched, so the Zoho OAuth `?code=` handshake survives.
+
+Verified: backend typecheck + lint clean, 71/71 manager tests (50 new EFS); CRM build green,
+448/448 (6 new URL-state tests); vendored `app/` rebuilt.
+NOT verified: no write has ever been sent to EFS — every action schema is read off the vendor doc,
+not off a successful call. Expect to re-diff bodies during arming. No UI screenshots (no browser).

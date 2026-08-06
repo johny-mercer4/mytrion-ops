@@ -438,6 +438,16 @@ const EnvSchema = z.object({
   //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
   REJECTION_WEBHOOK_SECRET: z.string().default(''),
 
+  // --- Manager EFS Console (proxies servercrm /api/efs/console) ---
+  // Two flags, not one. The master switch defaults OFF, and even with it on nothing is sent unless
+  // the action's key is listed in MANAGER_EFS_LIVE_ACTIONS. Arming is therefore one money-moving
+  // call at a time rather than ~30 at once, none of which has ever been sent to EFS.
+  // Note this is OUR gate; servercrm has its own (EFS_TOUCHPOINTS_WRITES_ENABLED) which we do not
+  // control and which currently reports writesEnabled: true.
+  FF_MANAGER_EFS_WRITES_ENABLED: flag('0'),
+  /** Comma-separated action keys, e.g. `cards.pin,moneyCodes.void`. Empty means none. */
+  MANAGER_EFS_LIVE_ACTIONS: z.string().default(''),
+
   // --- Sales KPI collection + external worker-task intake ---
   // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
   FF_KPI_COLLECTION_ENABLED: flag('0'),
