@@ -68,6 +68,28 @@ function billingGet<T>(path: string): Promise<T> {
   return request('GET', path, { headers: BILLING_HEADERS }) as Promise<T>;
 }
 
+/**
+ * A ledger read that legitimately takes a while.
+ *
+ * The transport's 20s default is tuned for row lookups. A section or statement request aggregates the
+ * whole in-scope carrier book across seven warehouse queries and rolls each carrier's opening balance
+ * forward — measured around 1s from a machine next to the database, but several times that over a WAN
+ * to the managed instance, and occasionally past 20s. Failing a correct-but-slow analytical query with
+ * "the backend took too long" is worse than waiting for it, so these get their own budget. The same
+ * reasoning already applies to `requestMultipart`, which defaults to 45s.
+ *
+ * The durable fix is the nightly snapshot table, which makes a period O(1) — until that has run in an
+ * environment, this is the live path.
+ */
+const LEDGER_SLOW_TIMEOUT_MS = 60_000;
+
+function billingGetSlow<T>(path: string): Promise<T> {
+  return request('GET', path, {
+    headers: BILLING_HEADERS,
+    timeoutMs: LEDGER_SLOW_TIMEOUT_MS,
+  }) as Promise<T>;
+}
+
 /** Paged payment ledger (newest first). */
 /** Server-side list filters. Applied in Postgres so a filter reaches records beyond the loaded
  *  page(s) — e.g. Chase txns that are older than the newest 200 and wouldn't be in memory yet. */
@@ -516,7 +538,7 @@ export function fetchLedgerSection(
   if (opts.missingOpeningOnly) qs.set('missingOpeningOnly', 'true');
   if (opts.sort) qs.set('sort', opts.sort);
   if (opts.dir) qs.set('dir', opts.dir);
-  return billingGet(`/billing/ledger/sections/${encodeURIComponent(section)}?${qs.toString()}`);
+  return billingGetSlow(`/billing/ledger/sections/${encodeURIComponent(section)}?${qs.toString()}`);
 }
 
 /** One carrier's lines for one section, with the server-computed running balance. */
@@ -532,7 +554,7 @@ export function fetchLedgerStatement(p: {
     startDate: p.startDate,
     endDate: p.endDate,
   });
-  return billingGet(`/billing/ledger/statement?${qs.toString()}`);
+  return billingGetSlow(`/billing/ledger/statement?${qs.toString()}`);
 }
 
 // ---- Ledger: control points + payments journal ----
@@ -558,11 +580,11 @@ export function fetchLedgerVariances(
 }
 
 export function fetchLedgerArAging(): Promise<LedgerArAgingResponse> {
-  return billingGet('/billing/ledger/aging/ar');
+  return billingGetSlow('/billing/ledger/aging/ar');
 }
 
 export function fetchLedgerUnbilledAging(limit = 100): Promise<LedgerUnbilledAgingResponse> {
-  return billingGet(`/billing/ledger/aging/unbilled?limit=${limit}`);
+  return billingGetSlow(`/billing/ledger/aging/unbilled?limit=${limit}`);
 }
 
 export function fetchLedgerUntoppedAging(): Promise<LedgerUntoppedAgingResponse> {
@@ -573,7 +595,7 @@ export function fetchLedgerControlSums(
   range?: { startDate: string; endDate: string },
 ): Promise<LedgerControlSumsResponse> {
   const qs = range ? `?startDate=${range.startDate}&endDate=${range.endDate}` : '';
-  return billingGet(`/billing/ledger/control-sums${qs}`);
+  return billingGetSlow(`/billing/ledger/control-sums${qs}`);
 }
 
 /** Payments in ledger framing — which sub-ledger each one landed in. */

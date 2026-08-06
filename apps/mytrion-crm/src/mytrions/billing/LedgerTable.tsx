@@ -42,6 +42,14 @@ export interface StatementTarget {
 
 const PAGE_SIZE = 50;
 
+const LEDGER_LABELS: Record<LedgerSectionId, string> = {
+  'cb-loc': 'Customer Balance (LOC)',
+  unbilled: 'Unbilled Transactions',
+  ar: 'Accounts Receivable',
+  'cb-prepay': 'Customer Balance (Prepay)',
+  untopped: 'Un Top-Upped Payments',
+};
+
 /**
  * A schema-readiness 503 is a deployment state, not a transient fault — "Try Again" will fail
  * identically until someone applies the migration, so the UI offers an instruction instead of a button.
@@ -117,6 +125,8 @@ export function LedgerTable({
   );
 
   const failed = Boolean(load.error) && !data;
+  /** How many rows actually contributed a closing balance — 0 means the total is meaningless. */
+  const closedRows = data ? data.totals.carriers - data.totals.missingOpening : 0;
 
   return (
     <>
@@ -130,7 +140,9 @@ export function LedgerTable({
             <div className="db-kpi-card">
               <div className="db-kpi-title">Clients</div>
               <div className="db-kpi-value">{data.totals.carriers}</div>
-              <div className="lg-kpi-sub">{data.clientType} · {data.total} shown</div>
+              <div className="lg-kpi-sub">
+                {data.clientType} · {data.total} shown
+              </div>
             </div>
             <div className="db-kpi-card">
               <div className="db-kpi-title">Debit</div>
@@ -144,15 +156,26 @@ export function LedgerTable({
             </div>
             <div className="db-kpi-card">
               <div className="db-kpi-title">Closing</div>
+              {/*
+                When NO row could state a closing balance, the total is 0 only because nothing was
+                summed — rendering "$0.00" there reads as "the book balances", which is the opposite of
+                the truth. Show the same em dash the rows show.
+              */}
               <div
                 className={`db-kpi-value${
-                  data.shouldTrendToZero && Math.abs(data.totals.closing) > 0.005 ? ' text-warning' : ''
+                  closedRows > 0 && data.shouldTrendToZero && Math.abs(data.totals.closing) > 0.005
+                    ? ' text-warning'
+                    : ''
                 }`}
               >
-                {fmtMoney(data.totals.closing)}
+                {closedRows > 0 ? fmtMoney(data.totals.closing) : '—'}
               </div>
               <div className="lg-kpi-sub">
-                {data.shouldTrendToZero ? 'should trend to zero' : `vs ${externalLabel(data.externalSource)}`}
+                {closedRows === 0
+                  ? 'no client has an opening balance yet'
+                  : data.shouldTrendToZero
+                    ? 'should trend to zero'
+                    : `vs ${externalLabel(data.externalSource)}`}
               </div>
             </div>
             {/* A partly-migrated book must not present a total that silently omits carriers. */}
@@ -195,6 +218,12 @@ export function LedgerTable({
       {/* ── Rows ── */}
       {initialLoading ? (
         <div className="db-content-area" aria-busy="true" aria-label="Computing the ledger">
+          {/* A full-book compute can run for tens of seconds over a WAN. A bare skeleton that long reads
+              as a hung page, so say what is happening. */}
+          <div className="lg-computing" role="status">
+            Computing {LEDGER_LABELS[section]} for {formatYmd(range.from)} – {formatYmd(range.to)} across
+            every {section.startsWith('cb-prepay') || section === 'untopped' ? 'Prepay' : 'LOC'} client…
+          </div>
           {header}
           {Array.from({ length: 8 }, (_, i) => (
             <div className="db-row-item" key={`skel-${i}`} aria-hidden>

@@ -1170,3 +1170,43 @@
     line-height: 1.55;
     color: var(--text-muted);
 }
+
+/* ═══ Chrome must not shrink ═════════════════════════════════════════════════
+   `.bm-panel` is `display:flex; flex-direction:column; height:100%`, so every child
+   is a flex ITEM with the default `flex-shrink: 1`. Once the panel's content exceeds
+   the viewport the browser shrinks them — which collapsed the sub-nav to 14px with
+   its 32px buttons overflowing. These are fixed-height chrome, so they opt out of
+   shrinking and the scrollable row area absorbs the remainder instead. */
+.bm-root .bm-ledger-panel > .lg-header,
+.bm-root .bm-ledger-panel > .lg-subnav,
+.bm-root .bm-ledger-panel > .lg-controls {
+    flex: 0 0 auto;
+}
+
+/* The section surfaces render inside a `display: contents` wrapper, so their own
+   children become the panel's flex items and need the same treatment. */
+.bm-root .bm-ledger-panel .db-kpi-grid,
+.bm-root .bm-ledger-panel .lg-exclusion-note,
+.bm-root .bm-ledger-panel .lg-toolbar,
+.bm-root .bm-ledger-panel .lg-readonly-banner,
+.bm-root .bm-ledger-panel .db-pagination,
+.bm-root .bm-ledger-panel .lg-list-caption,
+.bm-root .bm-ledger-panel .db-empty-state,
+.bm-root .bm-ledger-panel .db-error-state {
+    flex: 0 0 auto;
+}
+
+/* The row list is the one thing that SHOULD absorb leftover height and scroll. */
+.bm-root .bm-ledger-panel .db-content-area {
+    flex: 1 1 auto;
+    min-height: 12rem;
+}
+
+/* A multi-second compute needs to say so — a silent skeleton reads as a hung page. */
+.bm-root .lg-computing {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+    background: var(--accent-bg-subtle);
+    color: var(--accent-on);
+    font-size: 0.75rem;
+}

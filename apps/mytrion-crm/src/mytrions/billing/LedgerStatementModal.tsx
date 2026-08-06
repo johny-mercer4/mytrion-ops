@@ -56,6 +56,12 @@ export function LedgerStatementModal({
 
   const d = load.data;
   const lines = d?.lines ?? [];
+  /**
+   * With no opening balance on file the server still walks the lines, but from an assumed zero — so the
+   * column is the cumulative NET MOVEMENT, not a balance. Saying "Balance" there would fabricate exactly
+   * the number the header is honestly reporting as unknown, and it can even read negative. Relabel it.
+   */
+  const isBalance = d?.opening !== null && d?.opening !== undefined;
   const lastRunning = lines.length ? lines[lines.length - 1]!.running : d?.opening ?? null;
   const mismatch =
     d && d.closing !== null && lastRunning !== null
@@ -130,7 +136,7 @@ export function LedgerStatementModal({
                 </div>
               ) : null}
 
-              {Math.abs(mismatch) > 0.005 ? (
+              {isBalance && Math.abs(mismatch) > 0.005 ? (
                 <div className="bm-notice bm-notice--error" role="alert">
                   <div className="bm-notice-msg">
                     The last running balance ({fmtMoney(lastRunning)}) does not match the closing balance
@@ -148,16 +154,25 @@ export function LedgerStatementModal({
                       <th>Description</th>
                       <th className={`lg-th-num${column === 'debit' ? ' lg-th-active' : ''}`}>Debit</th>
                       <th className={`lg-th-num${column === 'credit' ? ' lg-th-active' : ''}`}>Credit</th>
-                      <th className="lg-th-num lg-th-running">Balance</th>
+                      <th
+                        className="lg-th-num lg-th-running"
+                        title={
+                          isBalance
+                            ? 'Running balance after each line.'
+                            : 'Cumulative movement — no opening balance is recorded, so this is not a balance.'
+                        }
+                      >
+                        {isBalance ? 'Balance' : 'Net movement'}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="lg-stmt-bookend">
                       <td>{formatYmdShort(d.period.startDate)}</td>
-                      <td>Opening balance</td>
+                      <td>{isBalance ? 'Opening balance' : 'Opening balance — not recorded'}</td>
                       <td className="lg-td-num" />
                       <td className="lg-td-num" />
-                      <td className="lg-td-num lg-stmt-running">{fmtMoney(d.opening)}</td>
+                      <td className="lg-td-num lg-stmt-running">{isBalance ? fmtMoney(d.opening) : '—'}</td>
                     </tr>
                     {lines.length === 0 ? (
                       <tr>
@@ -178,10 +193,12 @@ export function LedgerStatementModal({
                     )}
                     <tr className="lg-stmt-bookend">
                       <td>{formatYmdShort(d.period.endDate)}</td>
-                      <td>Closing balance</td>
+                      <td>{isBalance ? 'Closing balance' : 'Net movement for the period'}</td>
                       <td className="lg-td-num">{fmtMoney(d.debit)}</td>
                       <td className="lg-td-num">{fmtMoney(d.credit)}</td>
-                      <td className="lg-td-num lg-stmt-running">{fmtMoney(d.closing)}</td>
+                      <td className="lg-td-num lg-stmt-running">
+                        {isBalance ? fmtMoney(d.closing) : fmtMoney(d.debit - d.credit)}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -189,8 +206,10 @@ export function LedgerStatementModal({
 
               <p className="lg-modal-note">
                 {lines.length} line{lines.length === 1 ? '' : 's'}
-                {d.truncated ? ' (capped — the totals above still cover the whole period)' : ''}. The
-                balance column is computed server-side from the same figures as the section table.
+                {d.truncated ? ' (capped — the totals above still cover the whole period)' : ''}.{' '}
+                {isBalance
+                  ? 'The balance column is computed server-side from the same figures as the section table.'
+                  : 'No opening balance is recorded for this client, so the last column accumulates movement from zero rather than stating a balance.'}
               </p>
             </>
           ) : null}
