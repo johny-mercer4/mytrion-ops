@@ -11479,3 +11479,47 @@ claim about the software, and only the second is true until §8's workflow lands
 `analytics/dimensions/receivables.ts` (both now import them, so an edit changes two reports), the
 `is_active`-is-an-integer pin, and the route file asserting all 11 reads and 8 writes deny an
 unauthenticated and a non-billing caller — the UI hide is not the boundary.
+
+### 2026-08-06, later — Ledger live on prod: the bugs only a browser found
+
+Applied `0103` + `0104` to prod and drove the tab for real. Everything below was invisible to
+typecheck, lint and 101 passing tests.
+
+- **`db:migrate` would have silently applied nothing.** drizzle-kit applies an entry only when the
+  newest ALREADY-APPLIED `created_at` is less than that entry's `when`. Prod's newest was
+  `1786076400000`; the timestamps hand-derived from 0102 were ~4 days *behind* it, so the command
+  reports success and does nothing. Had to bump 0103/0104 above prod's cutoff. **0101/0102 are below it
+  too** — which is why those tables were applied by hand — so anyone adding `0105` must check prod's max
+  `created_at` first, not just increment from the journal's tail.
+- **Every billing modal was painting under the app header.** Pre-existing, all six tabs.
+  `.bm-body { position: relative; z-index: 1 }` makes a stacking context, and modals render inside it,
+  so their `z-index: 9990` was scoped there and lost to `.bm-header`'s 100. A descendant can never
+  escape an ancestor's stacking context, so it cannot be fixed in the modal. Dropped the z-index and
+  kept `position: relative`: `.bm-ambience` is first in the DOM so the body still paints above it, and
+  the header still outranks body content (100 > auto) — the View-as dropdown, the documented reason for
+  the rank, still wins.
+- **The `.bm-panel` flex trap.** It is `display:flex; flex-direction:column; height:100%`, so every
+  child is a flex item with the default `flex-shrink: 1`. Once content exceeded the viewport the browser
+  shrank the sub-nav to **14px with its 32px buttons overflowing**. Chrome elements need
+  `flex: 0 0 auto`; only the row list should absorb leftover height. Any new panel here will hit this.
+- **Two places fabricated a number the same code had just called unknown.** The Closing KPI showed
+  `$0.00` when 2,165 of 2,165 carriers had no opening (0 because nothing was summed, which reads as "the
+  book balances"), and the statement's running column walked from an assumed zero and went negative
+  while its own header said Opening `—`. Both now say what they actually are: `—  no client has an
+  opening balance yet`, and a column relabelled **Net movement**. The null-opening rule has to hold in
+  the presentation layer too, not just the compute.
+
+**Perf.** The timeout was query SIZE, not slow compute: `listLedgerCarriers` passed all 8,145 carrier
+ids to `findOpenBatch` and `computeSection` passed 2,165 to `findLiveBatch` — `IN (...)` lists with that
+many bind parameters, shipped to Oregon. Both tables hold at most one row per carrier, so filtering was
+pointless; added `findOpenAll` / `findLiveBySection`. Plus a 60s scope cache with in-flight sharing,
+invalidated on a client-type write. Ruled out paging the carrier list first: the DWH aggregates are
+~142ms as a parallel seq scan regardless of the filter.
+
+Section reads now carry a 60s client budget instead of the transport's 20s row-lookup default (~8s over
+a WAN). The durable fix is wiring the read path to the nightly snapshot table, which makes a period
+O(1) — designed and built, not yet consumed by the section route. That is the next perf step.
+
+**Chrome** went 254px → 95px: one sub-nav row with rules between groups instead of stacked labels, one
+toolbar instead of a period bar plus a filter bar, and a header that names the active section rather
+than repeating the module tagline.
