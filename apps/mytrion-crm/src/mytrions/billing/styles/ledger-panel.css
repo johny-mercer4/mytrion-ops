@@ -786,8 +786,11 @@
     transition: background 0.12s ease, color 0.12s ease;
 }
 
+/* Stronger than the row's own hover (--accent-bg-subtle, from debtors-panel.css). The whole row is
+   clickable now, so at equal weight the cell would vanish into the row highlight and stop reading as the
+   narrower, column-specific target that it is. */
 .bm-root .lg-amt:hover {
-    background: var(--accent-bg-subtle);
+    background: var(--accent-bg-strong);
     color: var(--accent-on);
 }
 

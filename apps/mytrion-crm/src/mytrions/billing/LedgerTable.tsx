@@ -13,9 +13,10 @@
  *     aggregation bug in a tool whose whole job is reconciliation.
  *
  * Every amount cell is a real `<button>`, so the drill-down is keyboard-reachable and gets a focus ring
- * with no extra a11y machinery.
+ * with no extra a11y machinery. Clicking anywhere ELSE in the row opens the same statement with no
+ * column emphasis — see `SectionRow`.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { fetchLedgerSection } from '../../api/billing';
 import type {
@@ -37,7 +38,8 @@ export interface StatementTarget {
   carrierId: string;
   companyName: string;
   section: LedgerSectionId;
-  column: AmountColumn;
+  /** `null` when the row itself was clicked: no column was named, so the modal tints none of them. */
+  column: AmountColumn | null;
 }
 
 const PAGE_SIZE = 50;
@@ -334,13 +336,43 @@ function SectionRow({
   onOpenStatement: (t: StatementTarget) => void;
   onFixOpening: (carrierId: string) => void;
 }) {
-  const open = (column: AmountColumn): void =>
+  const open = (column: AmountColumn | null): void =>
     onOpenStatement({
       carrierId: row.carrierId,
       companyName: row.companyName,
       section: row.section,
       column,
     });
+
+  /**
+   * The whole row opens the statement, not just the four amount cells — scanning a row and wanting that
+   * client's history is the common gesture, and a right-aligned number is a small target. `.db-row-main`
+   * has carried `cursor: pointer` and a hover tint from `debtors-panel.css` since day one, so the row
+   * already LOOKED clickable; this makes the affordance honest.
+   */
+  const openRow = (e: MouseEvent<HTMLDivElement>): void => {
+    /*
+     * A drag-select of the carrier id ends in a click. Agents copy those ids into CMP and EFS constantly,
+     * so opening a modal over the text they just selected misreads the gesture.
+     *
+     * Scoped to THIS row on purpose. Testing `getSelection().toString()` alone looks equivalent and is
+     * not: any leftover selection elsewhere on the page — a KPI figure the agent copied a minute ago —
+     * silently swallows every row click after it, with no feedback and nothing to un-stick but a stray
+     * click on blank space. Verified in the browser, which is the only place it shows up.
+     */
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode)) return;
+    open(null);
+  };
+
+  /**
+   * Nested buttons stop the event instead of letting the row's generic handler fire too — a click on
+   * Debit means "the debit statement", and the row handler would overwrite that intent with `null`.
+   */
+  const openColumn = (column: AmountColumn) => (e: MouseEvent): void => {
+    e.stopPropagation();
+    open(column);
+  };
 
   /**
    * Independent check on the server's arithmetic. Not defensive padding — in a reconciliation tool a
@@ -361,7 +393,7 @@ function SectionRow({
       <button
         type="button"
         className={`lg-amt${column === 'closing' ? ' lg-amt-closing' : ''}`}
-        onClick={() => open(column)}
+        onClick={openColumn(column)}
         title={`Open the ${column} statement for ${row.companyName || row.carrierId}`}
       >
         {fmtMoney(value)}
@@ -371,7 +403,18 @@ function SectionRow({
 
   return (
     <div className="db-row-item">
-      <div className="db-row-main lg-section-row">
+      {/*
+        No `role="button"` / `tabIndex` here, unlike the openings row in `OpeningBalances.tsx`: this row
+        CONTAINS four buttons, and a button role may not wrap interactive children — a screen reader would
+        flatten the amount cells into the row's accessible name and lose the per-column drill-down. Those
+        four buttons already are the keyboard path, so nothing is unreachable; the row click is a
+        mouse-only shortcut on top of it. Don't "fix" this for consistency with the openings table.
+      */}
+      <div
+        className="db-row-main lg-section-row"
+        onClick={openRow}
+        title={`Open the statement for ${row.companyName || row.carrierId}`}
+      >
         <div className="db-col-carrier">
           <span className="db-carrier-id">{row.carrierId}</span>
         </div>
@@ -391,7 +434,7 @@ function SectionRow({
           <button
             type="button"
             className="lg-amt lg-amt-closing"
-            onClick={() => open('closing')}
+            onClick={openColumn('closing')}
             title={`Open the closing statement for ${row.companyName || row.carrierId}`}
           >
             {fmtMoney(row.closing)}
@@ -444,7 +487,15 @@ function ReconCaption({
     }
     // The gap is discovered HERE, so this is where it gets fixed.
     return canWrite ? (
-      <button type="button" className="lg-recon lg-recon--warn lg-recon-btn" onClick={() => onFixOpening(row.carrierId)}>
+      /* Stops the event: this fixes the gap, it does not open a statement the row click would have. */
+      <button
+        type="button"
+        className="lg-recon lg-recon--warn lg-recon-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          onFixOpening(row.carrierId);
+        }}
+      >
         no opening balance — add
       </button>
     ) : (

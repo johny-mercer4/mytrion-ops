@@ -9,7 +9,9 @@
  * `last.running === closing`.
  *
  * The clicked column is tinted in the header — in the source prototype all four amount cells opened an
- * identical statement with no indication of which one was clicked, which reads as a bug.
+ * identical statement with no indication of which one was clicked, which reads as a bug. A `null` column
+ * means the ROW was clicked rather than a cell, so nothing is tinted: highlighting an arbitrary column
+ * would claim an emphasis the agent never asked for.
  *
  * A real `<table>` here rather than the flex rows the section list uses: this is dense, fixed-column,
  * wants a sticky header and a footer, and scrolls horizontally on a narrow screen.
@@ -35,7 +37,7 @@ export function LedgerStatementModal({
   companyName: string;
   section: LedgerSectionId;
   sectionLabel: string;
-  column: AmountColumn;
+  column: AmountColumn | null;
   range: LedgerRange;
   onClose: () => void;
 }) {
