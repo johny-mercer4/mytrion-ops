@@ -147,6 +147,12 @@
     cursor: pointer;
 }
 
+/* Windows dark mode leaves native <option> rows unstyled (near-invisible) without this. */
+.cs-root .cs-mt-filter select option {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
 .cs-root .cs-mt-filter-date {
     min-width: 132px;
 }

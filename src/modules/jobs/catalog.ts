@@ -247,6 +247,22 @@ export const deadLetterJob = defineJob({
   queue: {},
 });
 
+/**
+ * Billing Ledger daily snapshot (TZ §9) — recompute every section's Closing for a day and reconcile it
+ * against the independent source. Singleton so two runs never overlap; an hour to expire because a full
+ * book pass touches the DWH several times per section.
+ */
+export const billingLedgerSnapshotJob = defineJob({
+  name: 'billing.ledger.daily-snapshot',
+  schema: z.object({
+    /** Defaults to today in America/Chicago. A past date recomputes that day (the upsert is idempotent). */
+    asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    sections: z.array(z.string()).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   agentRunJob,
   approvalsExpiryJob,
@@ -261,6 +277,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   kpiSalesDailyRollupJob,
   kpiSalesMonthCloseJob,
   salesBocaRequestJob,
+  billingLedgerSnapshotJob,
   verificationRecheckJob,
   checkpointSweepJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -301,6 +318,8 @@ export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
 
 /** Cron schedule per automation queue. Per-job timezone overrides preserve existing schedules. */
 export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: string }> = [
+  // 05:00 Central — after the DWH's nightly refresh and after the 02:15/04:00 ET jobs.
+  { name: billingLedgerSnapshotJob.name, cron: '0 5 * * *', timezone: 'America/Chicago' },
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
   // Every hour: DWH → retention cases (incl. auto-close Returned). Singleton so runs never
   // overlap; Admin can also enqueue on demand for a manual / backfill pass.
@@ -321,6 +340,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
 export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
+  billingLedgerSnapshotJob.name,
   debtorSweepJob.name,
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,

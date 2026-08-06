@@ -729,6 +729,20 @@
       "when": 1786062000000,
       "tag": "0103_sales_agent_mini_app",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1786080000000,
+      "tag": "0104_ledger_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1786083600000,
+      "tag": "0105_ledger_daily_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -11,8 +11,11 @@
  * There is no delete: `totalAmount` on these rows is real money feeding the prepay ledger. Setting
  * Status to Cancelled is the reversible path, and the route has no DELETE at all.
  */
+import { useMemo } from 'react';
+
 import type { CompanyOption } from '@/api/cs';
 import { fmtMoneyStr, type MaintenanceRecord } from './live';
+import { SearchableSelect, type SelectOption } from './SearchableSelect';
 
 /** Every field the form writes. String-only state keeps the inputs controlled and the diff simple. */
 export const FIELDS = [
@@ -191,6 +194,37 @@ export function MaintenanceOverviewForm({
     />
   );
 
+  // Memoised so SearchableSelect's option list keeps a stable identity across the form's re-renders
+  // (it re-renders on every keystroke in any field).
+  const userOptions: SelectOption[] = useMemo(
+    () => users.map((u) => ({ value: u.id, label: u.name ?? u.id })),
+    [users],
+  );
+
+  // Searchable rather than a native <select>: users is the same full roster the Maintenance list
+  // filter guards against — too many names to scan, and a native select can't be typed past its
+  // first letter.
+  const userSelect = (idField: Field, nameField: Field, allLabel: string, placeholder: string) => {
+    const current = values[idField];
+    // Keep a legacy assignee selectable even if they've left the roster.
+    const opts =
+      current && !users.some((u) => u.id === current)
+        ? [{ value: current, label: values[nameField] || current }, ...userOptions]
+        : userOptions;
+    return (
+      <SearchableSelect
+        value={current}
+        options={opts}
+        placeholder={placeholder}
+        allLabel={allLabel}
+        onChange={(id) => {
+          set(idField, id);
+          set(nameField, users.find((u) => u.id === id)?.name ?? '');
+        }}
+      />
+    );
+  };
+
   return (
     <>
       <div className="cs-citi-section-title">Case</div>
@@ -349,52 +383,10 @@ export function MaintenanceOverviewForm({
       </div>
       <div className="cs-form-grid">
         <FormField label="Owner">
-          <select
-            className="cs-form-input"
-            value={values.ownerZohoUserId}
-            onChange={(e) => {
-              const id = e.target.value;
-              set('ownerZohoUserId', id);
-              // ownerName is denormalized — the card and the search read it, not a join.
-              set('ownerName', users.find((u) => u.id === id)?.name ?? '');
-            }}
-          >
-            <option value="">Unassigned</option>
-            {values.ownerZohoUserId && !users.some((u) => u.id === values.ownerZohoUserId) ? (
-              <option value={values.ownerZohoUserId}>
-                {values.ownerName || values.ownerZohoUserId}
-              </option>
-            ) : null}
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name ?? u.id}
-              </option>
-            ))}
-          </select>
+          {userSelect('ownerZohoUserId', 'ownerName', 'Unassigned', 'Search owner…')}
         </FormField>
         <FormField label="Second Agent (Joint Case)">
-          <select
-            className="cs-form-input"
-            value={values.bonusCompletionUserId}
-            onChange={(e) => {
-              const id = e.target.value;
-              set('bonusCompletionUserId', id);
-              set('bonusCompletionName', users.find((u) => u.id === id)?.name ?? '');
-            }}
-          >
-            <option value="">None — solo case</option>
-            {values.bonusCompletionUserId &&
-            !users.some((u) => u.id === values.bonusCompletionUserId) ? (
-              <option value={values.bonusCompletionUserId}>
-                {values.bonusCompletionName || values.bonusCompletionUserId}
-              </option>
-            ) : null}
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name ?? u.id}
-              </option>
-            ))}
-          </select>
+          {userSelect('bonusCompletionUserId', 'bonusCompletionName', 'None — solo case', 'Search agent…')}
           <div className="cs-mt-form-hint">
             Jointly worked case — splits whatever bonus this case earns 50/50 with the Owner.
           </div>

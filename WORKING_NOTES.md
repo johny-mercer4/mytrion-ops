@@ -11584,6 +11584,165 @@ regressions.
   Comms Admin, retention, billing-secret, DB-backed agent, and local WebSocket groups, while the
   changed carrier mini-app suite passes all 119 tests.
 
+---
+
+## 2026-08-06 — Billing Ledger: opening balances + Excel bulk import (M1/M2)
+
+New Billing Mytrion tab implementing the billing department's AR-accounting spec (`mytrion_TZ`): five
+sub-ledgers, each `Closing = Opening + Debit − Credit`, each reconciled against an independent source.
+This pass lands the schema, the client-type scope resolver, the opening-balance surface (the launch
+requirement — migrating accumulated balances out of CMP) and the Excel bulk path. Compute, the five
+section tables, the drill-down and the nightly snapshot job follow.
+
+### Decisions worth not re-litigating
+
+- **`endDate` is INCLUSIVE on every `/billing/ledger/*` endpoint.** Billing is inconsistent today (list
+  endpoints exclusive, `/billing/prepay/ledger` inclusive — which is why `Prepay.tsx:961` shifts back a
+  day). The ledger takes what the agent typed and converts once, in the route layer. Frontend routes all
+  conversion through `toWireRange()` so it cannot drift per call site.
+- **Reporting day is `America/Chicago`.** Both feeds that define Customer Balance are CT and ops' prepay
+  numbers already bucket CT, so Billing's two screens agree. servercrm's own ledger buckets New York and
+  will differ by up to a day at the boundary — expected, not a bug.
+- **`opening = null` when none is recorded — never coerced to 0.** Zero is a claim the carrier had no
+  position at inception; null is "we don't know". Coercing produces a confidently-wrong Closing that
+  lands in the variance queue instead of the migration backlog.
+- **Opening balances are append-only with supersede**, one live row per (carrier, section). Mutating one
+  retroactively rewrites every statement that section ever produced. The chain (`supersedes_id` +
+  `import_batch_id`) IS the import revert journal, so no `bulk_change_log` analogue was needed.
+- **Errors are thrown `AppError`s**, not the `{status:'error'}` widget-parity envelope — that exists in
+  `billing.routes.ts` for the legacy zoho-octane widget, and the Ledger has no legacy twin. The one
+  exception: import preview/commit return per-row verdicts in a 200/201 body, because a partly-valid
+  spreadsheet is a *successful* preview and rejected rows are data.
+- **The Excel template is generated server-side** so the importer parses exactly what the template emits.
+- **`POST`, not `PUT`,** for the two upserts: `PUT` is used by no route in this repo and the frontend's
+  `request()` transport does not accept the verb.
+
+### Traps found the hard way (all verified live against the DWH)
+
+- **`octane.dim_company.is_active` is `integer`, not `boolean`** — unlike its `is_*` siblings
+  `is_wex_funded` / `is_debtor` / `is_loc_suspended`, which are real booleans. A strict `=== true`
+  silently excluded EVERY typed carrier (eligible read 0 instead of 2,847). Read through `truthy()`.
+- **`cmp_transaction.invoice_ref` is NOT an invoice FK and NOT an "invoiced yet" flag.** Joining it to
+  `cmp_invoice.id` matches 41% of rows but the carrier ids agree only 20 times in 32,094 — numeric
+  collision. And it is populated on 100% of transactions in every week including the current one. Attribute
+  a transaction to an invoice by `carrier_id` + `transaction_date ∈ [invoice.date_from, invoice.date_to)`
+  instead: 83.7% attributed in a test week, and the unattributed remainder IS the unbilled set.
+- **`db:generate` cannot be used here.** The snapshot in `meta/` is stale against several teams' schema
+  files, so it emits their pending drift (`mytrion_thread_*`, `mytrion_tickets`, `mytrion_escalations`, a
+  `file_assets` column) mixed into whatever you added. `0103_ledger_core.sql` is hand-written and
+  idempotent, and the three `ledger_*` files are deliberately absent from `drizzle.config.ts` — same as
+  `maintenance_case_attachments` / `maintenance_case_history` / `verification_sales_responses`.
+- **Reverting an import whose rows were all superseded by later activity** used to report success with
+  `restored 0` while changing nothing. Now refuses with `LEDGER_IMPORT_SUPERSEDED`, because an agent told
+  "reverted" will believe the old numbers are back.
+
+### Scope, measured 2026-08-06
+
+8,145 dim_company carriers → **2,160 LOC + 687 Prepay = 2,847 in ledger scope**. Excluded: 32 WEX-Funded
+(TZ §5.3), 4,998 with no `payment_terms` (the `financeClients.ts:42` ~62% comment still holds), 268
+inactive. **`Deposit` has zero rows**, so the Deposit→Prepay normalization is currently inert — kept
+because the value is live in Zoho's picklist.
+
+### Later the same day — compute, control points, tests (M3–M5)
+
+Rest of the module: the feeds, the compute, the five section tables, the drill-down statement, the
+nightly reconciliation snapshot, the TZ §9 control points, and 97 tests.
+
+**The chain is shared code, not convention.** Each section's Debit and its neighbour's Credit call the
+SAME feed function in `ledger/feeds.ts`, so the TZ's "Credit of one section becomes Debit of the next"
+is a property of the implementation. Verified live 2026-07-01..07 across 2,165 LOC carriers:
+`cb-loc.credit === unbilled.debit === $4,558,990.37` and `unbilled.credit === ar.debit ===
+$5,199,587.38`, to the cent. Continuity too: `closing[07-13..19] === opening[07-20..] = 6,915.25`.
+
+**More traps found by running it, not by reading it:**
+
+- **`cmp_transaction.net_total` is unpopulated** — sums to exactly 0.00 over a full week. `funded_total`
+  is the amount. And do NOT switch to `mart_transaction_line_items.funded_total`: that table is
+  line-item grained and repeats the per-transaction total, so it overstates by 46% ($7.81M vs $5.33M for
+  2026-07-01..08). `line_item_amount` there agrees with `cmp_transaction.funded_total` to the cent.
+- **A control sum that always cries wolf is worse than none.** The first version compared loads−draws
+  against per-carrier `balance_after` deltas. But `balance_after` is the post-movement WALLET balance and
+  carriers spend BETWEEN movements — that spend lives in `cmp_transaction` — so the balance repeatedly
+  resets toward the credit limit and its deltas never sum to the movement amounts. It reported a $5.49M
+  "variance" that was simply the week's card spend. Replaced with live-table-vs-staging-mirror, which
+  found a genuine finding on its first run: the mirror is 92 rows / $54,292 behind. Do not re-add the
+  old one; the identity it reached for is what the per-carrier reconciliation already tests.
+- **Postgres will not accept a SELECT alias inside an ORDER BY expression** (`case bucket when …` →
+  `column "bucket" does not exist`), and re-deriving the bucket there then demands every column it
+  touches in the GROUP BY. The rows are re-emitted in declaration order in JS, so the SQL ordering was
+  dropped entirely.
+- **Live-EFS reconciliation is deliberately NOT wired.** servercrm exposes only
+  `GET /api/smart-balance/carrier-balance?carrierId=` — the batched `getChildBalancesByCarrierIds` has no
+  route in front of it — and EFS has no as-of parameter anyway. So Customer Balance reconciles against
+  CMP's own `balance_after` and is TAGGED `cmp_balance_after` rather than implying EFS confirmed it.
+  Enabling it needs a servercrm batch route first; `ledger/reconcile.ts`'s `fetchExternal` is the one
+  place to change.
+- **The extra aging buckets earned themselves.** The TZ names 0–7 / 8–14 / 15–30 / 30+. Production has
+  **777 open invoices worth $3.8M that are NOT YET DUE** — under the TZ's set those would have been
+  reported as 0–7 days overdue. `current` and `no_due_date` are additions, flagged for billing.
+
+**Nightly job** `billing.ledger.daily-snapshot`, 05:00 America/Chicago. Idempotent via the snapshot
+unique key — verified 878 rows across two runs of the same day. One section failing cannot lose the
+others' work; all-zero rows are skipped rather than written (at ~2,850 carriers × 3 sections × 365 days
+that is the difference between 3.1M rows/year and millions of empty ones).
+
+**Payments is NOT a second Transactions tab.** That tab answers "how do I map this"; the ledger's answers
+"which sub-ledger did it land in" — AR credit, prepay top-up, or attributed to nobody. The last is the
+TZ §7 lost-money case and is invisible on Transactions.
+
+**Deliberately parked:** the LOC↔Prepay transition history, behind a flag derived from the nav config so
+it cannot drift. An empty table is a factual claim ("no transitions have occurred"); a Soon badge is a
+claim about the software, and only the second is true until §8's workflow lands.
+
+**Tests: 97.** The load-bearing ones are the drift guard on the AR rules extracted out of
+`analytics/dimensions/receivables.ts` (both now import them, so an edit changes two reports), the
+`is_active`-is-an-integer pin, and the route file asserting all 11 reads and 8 writes deny an
+unauthenticated and a non-billing caller — the UI hide is not the boundary.
+
+### 2026-08-06, later — Ledger live on prod: the bugs only a browser found
+
+Applied `0103` + `0104` to prod and drove the tab for real. Everything below was invisible to
+typecheck, lint and 101 passing tests.
+
+- **`db:migrate` would have silently applied nothing.** drizzle-kit applies an entry only when the
+  newest ALREADY-APPLIED `created_at` is less than that entry's `when`. Prod's newest was
+  `1786076400000`; the timestamps hand-derived from 0102 were ~4 days *behind* it, so the command
+  reports success and does nothing. Had to bump 0103/0104 above prod's cutoff. **0101/0102 are below it
+  too** — which is why those tables were applied by hand — so anyone adding `0105` must check prod's max
+  `created_at` first, not just increment from the journal's tail.
+- **Every billing modal was painting under the app header.** Pre-existing, all six tabs.
+  `.bm-body { position: relative; z-index: 1 }` makes a stacking context, and modals render inside it,
+  so their `z-index: 9990` was scoped there and lost to `.bm-header`'s 100. A descendant can never
+  escape an ancestor's stacking context, so it cannot be fixed in the modal. Dropped the z-index and
+  kept `position: relative`: `.bm-ambience` is first in the DOM so the body still paints above it, and
+  the header still outranks body content (100 > auto) — the View-as dropdown, the documented reason for
+  the rank, still wins.
+- **The `.bm-panel` flex trap.** It is `display:flex; flex-direction:column; height:100%`, so every
+  child is a flex item with the default `flex-shrink: 1`. Once content exceeded the viewport the browser
+  shrank the sub-nav to **14px with its 32px buttons overflowing**. Chrome elements need
+  `flex: 0 0 auto`; only the row list should absorb leftover height. Any new panel here will hit this.
+- **Two places fabricated a number the same code had just called unknown.** The Closing KPI showed
+  `$0.00` when 2,165 of 2,165 carriers had no opening (0 because nothing was summed, which reads as "the
+  book balances"), and the statement's running column walked from an assumed zero and went negative
+  while its own header said Opening `—`. Both now say what they actually are: `—  no client has an
+  opening balance yet`, and a column relabelled **Net movement**. The null-opening rule has to hold in
+  the presentation layer too, not just the compute.
+
+**Perf.** The timeout was query SIZE, not slow compute: `listLedgerCarriers` passed all 8,145 carrier
+ids to `findOpenBatch` and `computeSection` passed 2,165 to `findLiveBatch` — `IN (...)` lists with that
+many bind parameters, shipped to Oregon. Both tables hold at most one row per carrier, so filtering was
+pointless; added `findOpenAll` / `findLiveBySection`. Plus a 60s scope cache with in-flight sharing,
+invalidated on a client-type write. Ruled out paging the carrier list first: the DWH aggregates are
+~142ms as a parallel seq scan regardless of the filter.
+
+Section reads now carry a 60s client budget instead of the transport's 20s row-lookup default (~8s over
+a WAN). The durable fix is wiring the read path to the nightly snapshot table, which makes a period
+O(1) — designed and built, not yet consumed by the section route. That is the next perf step.
+
+**Chrome** went 254px → 95px: one sub-nav row with rules between groups instead of stacked labels, one
+toolbar instead of a period bar plus a filter bar, and a header that names the active section rather
+than repeating the module tagline.
+
 ## 2026-08-07 — Lead Blueprint required fields on status change
 
 - Data Center → Leads edit: when moving Zoho Blueprint stages, always collect/require

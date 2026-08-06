@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../db/client.js';
 import { maintenanceCases, type MaintenanceCase, type NewMaintenanceCase } from '../db/schema/index.js';
@@ -406,6 +406,82 @@ export const maintenanceCaseRepo = {
       chunks += 1;
     }
     return { written, skipped, chunks };
+  },
+
+
+  /**
+   * Individual maintenance cases for one carrier in a window — the itemized lines behind the
+   * maintenance term of a Billing Ledger statement (the drill-down modal).
+   *
+   * Returns every payment method; the caller filters to the one that hits the EFS card for that client
+   * type, because it also needs to itemize exactly what the aggregate counted.
+   */
+  async listForLedger(
+    carrierId: string,
+    startDate: string,
+    endDateExclusive: string,
+    limit = 5000,
+  ): Promise<Array<{ id: string; caseDate: string | null; totalAmount: string | null; paymentMethod: string | null; caseType: string | null }>> {
+    return db
+      .select({
+        id: maintenanceCases.id,
+        caseDate: maintenanceCases.caseDate,
+        totalAmount: maintenanceCases.totalAmount,
+        paymentMethod: maintenanceCases.paymentMethod,
+        caseType: maintenanceCases.caseType,
+      })
+      .from(maintenanceCases)
+      .where(
+        and(
+          eq(maintenanceCases.carrierId, String(carrierId).trim()),
+          sql`${maintenanceCases.caseDate} >= ${startDate}`,
+          sql`${maintenanceCases.caseDate} < ${endDateExclusive}`,
+        ),
+      )
+      .orderBy(asc(maintenanceCases.caseDate), asc(maintenanceCases.id))
+      .limit(Math.min(20000, Math.max(1, limit)));
+  },
+
+  /**
+   * Fee sums per carrier for a window, for an explicit set of payment methods — the maintenance term
+   * in a Billing Ledger Customer Balance sub-ledger (TZ §5.1/§5.2).
+   *
+   * Generalizes `sumPrepayByCarrier` below, which is the `['Prepay / EFS']` case. The caller passes
+   * the method(s) that hit the EFS card for that client type: `LOC_PAYMENT_METHOD` for LOC carriers,
+   * `PREPAY_PAYMENT_METHOD` for Prepay. `Prepay / Card`, `Prepay / Zelle` and `Selfpay` settle
+   * outside the card and must not be passed — including one would overstate Customer Balance credit.
+   *
+   * `endDateExclusive` is EXCLUSIVE, matching every other billing caller.
+   */
+  async sumByCarrierAndMethod(
+    methods: readonly string[],
+    startDate: string,
+    endDateExclusive: string,
+    carrierIds?: readonly string[],
+  ): Promise<Map<string, number>> {
+    if (!methods.length) return new Map();
+    const conds = [
+      inArray(maintenanceCases.paymentMethod, [...methods]),
+      isNotNull(maintenanceCases.carrierId),
+      sql`${maintenanceCases.caseDate} >= ${startDate}`,
+      sql`${maintenanceCases.caseDate} < ${endDateExclusive}`,
+    ];
+    if (carrierIds?.length) {
+      conds.push(inArray(maintenanceCases.carrierId, [...new Set(carrierIds)]));
+    }
+    const rows = await db
+      .select({
+        carrierId: maintenanceCases.carrierId,
+        amt: sql<string>`coalesce(sum(${maintenanceCases.totalAmount}), 0)::text`,
+      })
+      .from(maintenanceCases)
+      .where(and(...conds))
+      .groupBy(maintenanceCases.carrierId);
+    const out = new Map<string, number>();
+    for (const r of rows) {
+      if (r.carrierId) out.set(r.carrierId, Number(r.amt) || 0);
+    }
+    return out;
   },
 
   /**
