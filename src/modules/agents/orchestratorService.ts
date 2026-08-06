@@ -16,11 +16,14 @@ import { auditFromContext } from '../audit/auditLogger.js';
 import { messageStore } from '../chat/messageStore.js';
 import type { SSEStream } from '../chat/streaming.js';
 import { validateCitations, type WireCitation } from '../knowledge/agentic/citationCheck.js';
+import { verifyAnswerFaithfulness } from '../knowledge/agentic/faithfulness.js';
+import { routeRetrievalIntent } from '../knowledge/agentic/router.js';
 import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
+import { narrowContext } from './authority.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
 import { buildTurnBrief, recentHistorySummary, shouldReciteGoal } from './briefBuilder.js';
-import { formatBlackboardXml, loadBlackboard, mergeBlackboard } from './blackboard.js';
+import { formatBlackboardXml, loadBlackboard, mergeBlackboard, type BlackboardPayload } from './blackboard.js';
 import { ensureCheckpointerReady, getCheckpointer, threadIdFor } from './checkpointer.js';
 import { runWithAgentContext, type RunCollector } from './context.js';
 import { resolveAgentModelId } from './models.js';
@@ -33,6 +36,11 @@ import { runHardDagWaves } from './planning/waveRunner.js';
 import { captureSkill, recallSkillHint } from './skillCache.js';
 import { consumeAgentStream, type StreamOutcome } from './streamAdapter.js';
 import { isAgentKey, type AgentManifest } from './types.js';
+import { createTurnContext, type ContextNoMatch } from './turnContext.js';
+import { createTurnTraceEmitter } from './turnInspection.js';
+import { casualFastReply } from './casualFastPath.js';
+import { knownNoMatchesFrom } from './noMatchHistory.js';
+import { presentAgentError } from './agentError.js';
 
 export interface AgentTurnOptions {
   conversationId?: string;
@@ -51,7 +59,7 @@ export interface AgentTurnResult {
   /** 'orchestrator' or the direct child key, plus the specialists actually consulted. */
   agentKey: string;
   agentPath: string[];
-  toolCalls: Array<{ name: string; status: string; args?: any }>;
+  toolCalls: Array<{ name: string; status: string; args?: unknown }>;
   usage: {
     promptTokens: number;
     completionTokens: number;
@@ -63,8 +71,18 @@ export interface AgentTurnResult {
   ragPassages: number;
   /** Validated sources backing the answer (post-run [Sn] marker check). */
   citations: WireCitation[];
+  /** Additive RAG v2 envelope; older clients may ignore it. */
+  rag: {
+    traceId: string | null;
+    mode: 'none' | 'knowledge' | 'tool' | 'external';
+    grade: string | null;
+    confidence: number | null;
+    abstained: boolean;
+  };
   /** Present when the agent asked the user to pick from options (generative UI). */
   elicitation?: Elicitation;
+  /** Safe client status; raw provider diagnostics remain server-side only. */
+  error?: { message: string; retryable: boolean };
 }
 
 /** Resolve + RBAC-check the requested child agent; audit denials. */
@@ -137,9 +155,32 @@ async function executeTurn(
   const agentKey = manifest?.key ?? 'orchestrator';
   sse?.send('start', { conversationId: conv.id, agent: agentKey });
 
+  const routeDecision = routeRetrievalIntent(message);
+  const fastReply = manifest ? null : casualFastReply(message, opts.userName ?? ctx.userName);
+  const orchestratorModelRole = !manifest && routeDecision.route === 'none' ? 'casual' : 'answer';
+  const modelId = fastReply?.model ?? resolveAgentModelId(manifest, orchestratorModelRole);
+  const budget = new BudgetMeter();
+  const agentRunId = createId();
+  const inspect = createTurnTraceEmitter(ctx, sse, agentRunId);
+  inspect?.({
+    stage: 'route', status: 'complete', label: fastReply ? 'Local greeting fast path' : `Routed to ${agentKey}`,
+    agent: agentKey, model: modelId, modelRole: fastReply ? 'deterministic' : manifest ? 'answer' : orchestratorModelRole,
+    provider: fastReply ? 'local' : modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai',
+    route: routeDecision.route, ragUsed: false,
+    details: { contextV2: env.FF_RAG_V2_CONTEXT, retrievalV2: env.FF_RAG_V2_RETRIEVAL, claimVerification: env.FF_RAG_CLAIM_VERIFY },
+  });
+  const tracker = new RunTracker(modelId, budget, {
+    ctx,
+    agentRunId,
+    conversationId: conv.id,
+    role: fastReply ? 'deterministic' : manifest ? 'answer' : orchestratorModelRole,
+    ...(inspect ? { inspect } : {}),
+  });
+  const startedAt = Date.now();
+
   await messageStore.appendUser(ctx, conv.id, message, opts.departmentScope);
 
-  const checkpointing = Boolean(getCheckpointer());
+  const checkpointing = !fastReply && Boolean(getCheckpointer());
   // Idempotent, memoized: guarantees the langgraph schema exists even though scripts/migrate.ts
   // isn't in the runtime image (deploy applies drizzle migrations only).
   if (checkpointing) await ensureCheckpointerReady();
@@ -151,7 +192,8 @@ async function executeTurn(
 
   // Shared blackboard snapshot for the brief (flag-gated).
   let blackboardXml: string | undefined;
-  if (env.FF_AGENT_BLACKBOARD) {
+  let blackboard: BlackboardPayload | undefined;
+  if (!fastReply && env.FF_AGENT_BLACKBOARD) {
     const board = await loadBlackboard(ctx, conv.id);
     if (!board.goal) {
       await mergeBlackboard({ ...ctx, actingAgent: 'orchestrator' }, conv.id, {
@@ -159,12 +201,13 @@ async function executeTurn(
       });
     }
     const refreshed = await loadBlackboard(ctx, conv.id);
+    blackboard = refreshed;
     blackboardXml = formatBlackboardXml(refreshed);
   }
 
   // Goal re-anchoring every Nth user turn.
   let goalRecite: string | undefined;
-  if (shouldReciteGoal(conv.messageCount)) {
+  if (!fastReply && shouldReciteGoal(conv.messageCount)) {
     const board = env.FF_AGENT_BLACKBOARD ? await loadBlackboard(ctx, conv.id) : null;
     const goal = board?.goal || message.slice(0, 240);
     const step = board?.planId
@@ -174,17 +217,38 @@ async function executeTurn(
   }
 
   // Procedural skill hint (suggestion only).
-  const cachedSkillXml =
-    (await recallSkillHint(ctx, agentKey, message)) || undefined;
-
-  const budget = new BudgetMeter();
-  const agentRunId = createId();
-  const modelId = resolveAgentModelId(manifest);
-  const tracker = new RunTracker(modelId, budget);
-  const startedAt = Date.now();
+  const cachedSkillXml = fastReply ? undefined : (await recallSkillHint(ctx, agentKey, message)) || undefined;
   // Filled during the run: elicitation by choice tools, citations by knowledge_search,
   // warnings by degraded construction (e.g. Composio unreachable).
   const collect: RunCollector = {};
+  // Prompt identity is projected only from the canonical server context. Request-body identity
+  // options remain compatibility inputs to caller-context resolution and cannot become trusted XML.
+  const promptCtx = manifest ? narrowContext(ctx, manifest) : ctx;
+  const turnProfile = promptCtx.profiles?.join(', ');
+  const turnContext = env.FF_RAG_V2_CONTEXT
+    ? createTurnContext({
+        ctx: promptCtx,
+        message,
+        ...(historySummary ? { historySummary } : {}),
+        ...(promptCtx.userName ? { userName: promptCtx.userName } : {}),
+        zohoUserId: promptCtx.userId,
+        ...(turnProfile ? { profile: turnProfile } : {}),
+        role: promptCtx.callerRole ?? promptCtx.role,
+        ...(promptCtx.client ? { client: promptCtx.client } : {}),
+        knownNoMatch: knownNoMatchesFrom(blackboard),
+        ...(blackboard
+          ? {
+              toolFacts: blackboard.artifacts.slice(-16).map((artifact) => ({
+                key: artifact.key,
+                value: artifact.value,
+                source: artifact.sourceAgent,
+                fetchedAt: artifact.at,
+              })),
+              openQuestions: blackboard.openQuestions,
+            }
+          : {}),
+      })
+    : undefined;
 
   sse?.send('status', { state: 'running' });
 
@@ -197,7 +261,14 @@ async function executeTurn(
   let outcome: StreamOutcome;
   let status: 'ok' | 'error' = 'ok';
   let errorMsg: string | undefined;
-  try {
+  if (fastReply) {
+    outcome = { finalText: fastReply.message, toolCalls: [], agentPath: [] };
+    inspect?.({
+      stage: 'model', status: 'complete', label: 'Answered without an LLM call',
+      agent: agentKey, model: modelId, modelRole: 'deterministic', provider: 'local',
+      route: 'none', ragUsed: false, durationMs: Date.now() - startedAt,
+    });
+  } else try {
     outcome = await runWithAgentContext(
       {
         ctx,
@@ -205,6 +276,8 @@ async function executeTurn(
         budget,
         agentRunId,
         collect,
+        ...(inspect ? { inspect } : {}),
+        ...(turnContext ? { turnContext } : {}),
         ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
       },
       async () => {
@@ -250,6 +323,7 @@ async function executeTurn(
 
         const brief = buildTurnBrief({
           message,
+          ...(turnContext ? { turnContext } : {}),
           ...(opts.userName ?? ctx.userName ? { userName: opts.userName ?? ctx.userName } : {}),
           ...(opts.zohoUserId ?? ctx.userId ? { zohoUserId: opts.zohoUserId ?? ctx.userId } : {}),
           ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
@@ -269,7 +343,7 @@ async function executeTurn(
 
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
-          : (await buildOrchestrator(ctx)).agent;
+          : (await buildOrchestrator(ctx, orchestratorModelRole)).agent;
         // recursionLimit is the hard graph-depth backstop (deepagents' default is ~unbounded).
         // LangGraph counts EVERY super-step (model node, tool node, deepagents middleware), so one
         // tool round is several steps — the cap is tool-call rounds converted to graph steps with
@@ -303,10 +377,9 @@ async function executeTurn(
     const wallHit = wallAbort.signal.aborted;
     errorMsg = wallHit ? 'the run hit its wall-clock time limit' : errorMessage(err);
     const budgetHit = hasBudgetCause(err) || wallHit;
-    const friendly = budgetHit
-      ? `I had to stop early: ${errorMsg}. Here is what I have so far — please narrow the request.`
-      : `The agent run failed: ${errorMsg}`;
+    const friendly = presentAgentError(errorMsg, budgetHit);
     outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
+    inspect?.({ stage: 'error', status: 'error', label: friendly });
     logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
   } finally {
     clearTimeout(wallTimer);
@@ -336,7 +409,12 @@ async function executeTurn(
       'stripped citation markers not backed by retrieved passages',
     );
   }
-  const finalText = validated.text || 'The agent produced no answer.';
+  let finalText = validated.text || 'The agent produced no answer.';
+  const faithfulness = collect.rag
+    ? await verifyAnswerFaithfulness(finalText, collect.ragEvidence ?? [])
+    : { text: finalText, coverage: 1, repaired: false, abstained: false, unsupportedClaims: [] };
+  finalText = faithfulness.text;
+  if (collect.rag && faithfulness.abstained) collect.rag.abstained = true;
   const usage = {
     promptTokens: tracker.promptTokens,
     completionTokens: tracker.completionTokens,
@@ -344,6 +422,14 @@ async function executeTurn(
     cachedPromptTokens: tracker.cachedPromptTokens,
     cacheHitRate: tracker.cacheHitRate(),
   };
+  inspect?.({
+    stage: 'verification', status: 'complete',
+    label: collect.rag ? 'Grounded claims verified' : 'No RAG evidence to verify',
+    ragUsed: (collect.ragPassages ?? 0) > 0,
+    ...(collect.rag?.grade ? { ragGrade: collect.rag.grade } : {}),
+    ...(collect.rag?.confidence !== undefined ? { confidence: collect.rag.confidence } : {}), passages: collect.ragPassages ?? 0,
+    details: { coverage: faithfulness.coverage, repaired: faithfulness.repaired, abstained: faithfulness.abstained },
+  });
 
   // Persistence + bookkeeping are best-effort: the user already has the answer.
   try {
@@ -378,6 +464,24 @@ async function executeTurn(
       totalCost: usage.totalCost.toFixed(6),
       durationMs: Date.now() - startedAt,
     });
+    if (
+      env.FF_AGENT_BLACKBOARD &&
+      turnContext &&
+      collect.rag?.mode === 'knowledge' &&
+      (collect.rag.grade === 'not_documented' || collect.rag.grade === 'irrelevant')
+    ) {
+      const miss: ContextNoMatch = {
+        query: turnContext.task.resolvedAsk.slice(0, 1_000),
+        scopeFingerprint: collect.rag.scopeFingerprint,
+        at: new Date().toISOString(),
+      };
+      const known = turnContext.state.knownNoMatch.filter((item) =>
+        item.query !== miss.query || item.scopeFingerprint !== miss.scopeFingerprint,
+      );
+      await mergeBlackboard({ ...ctx, actingAgent: 'orchestrator' }, conv.id, {
+        facts: { 'rag/knownNoMatch': [...known, miss].slice(-24) },
+      });
+    }
     await auditFromContext(ctx, {
       action: 'agent.turn',
       status,
@@ -390,6 +494,11 @@ async function executeTurn(
         ...(collect.warnings?.length ? { warnings: collect.warnings } : {}),
         ...(validated.strippedMarkers.length > 0
           ? { strippedMarkers: validated.strippedMarkers }
+          : {}),
+        faithfulnessCoverage: faithfulness.coverage,
+        faithfulnessRepaired: faithfulness.repaired,
+        ...(faithfulness.unsupportedClaims.length > 0
+          ? { unsupportedClaimCount: faithfulness.unsupportedClaims.length }
           : {}),
       },
     });
@@ -413,8 +522,28 @@ async function executeTurn(
     usage,
     ragPassages: collect.ragPassages ?? 0,
     citations: validated.usedCitations,
+    rag: collect.rag
+      ? {
+          traceId: collect.rag.traceId,
+          mode: collect.rag.mode,
+          grade: collect.rag.grade,
+          confidence: collect.rag.confidence,
+          abstained: collect.rag.abstained,
+        }
+      : { traceId: null, mode: 'none', grade: null, confidence: null, abstained: false },
     ...(outcome.elicitation ? { elicitation: outcome.elicitation } : {}),
+    ...(status === 'error' ? { error: { message: 'This response failed. Please retry.', retryable: true } } : {}),
   };
+  inspect?.({
+    stage: 'complete', status: status === 'ok' ? 'complete' : 'error', label: 'Turn complete',
+    agent: outcome.agentPath.at(-1) ?? agentKey, model: modelId,
+    route: collect.rag?.mode ?? routeDecision.route,
+    ragUsed: result.ragPassages > 0,
+    ...(result.rag.grade ? { ragGrade: result.rag.grade } : {}),
+    ...(result.rag.confidence !== null ? { confidence: result.rag.confidence } : {}), passages: result.ragPassages,
+    durationMs: Date.now() - startedAt,
+    details: { tools: result.toolCalls.length, citations: result.citations.length, totalCost: usage.totalCost },
+  });
   sse?.send('done', result);
   return result;
 }

@@ -11,6 +11,7 @@ import { embedQuery, embedTexts } from '../knowledge/embedder.js';
 import { getOpenAI, models } from '../llm/openaiClient.js';
 import { wrapUntrusted } from '../security/untrusted.js';
 import { toolRegistry } from '../tools/index.js';
+import { xmlElement } from './contextXml.js';
 
 export interface SkillStep {
   tool: string;
@@ -81,7 +82,7 @@ export async function recallSkillHint(
       `suggested_tools: ${steps || (hit.toolsUsed ?? []).join(', ')}\n` +
       'NOTE: This is a SUGGESTION only. You MUST still call real tools via the tool interface; ' +
       'never invent results. Re-check RBAC if a tool fails.';
-    return `\n\n<CachedSkill>\n${wrapUntrusted('memory', body)}\n</CachedSkill>`;
+    return `\n\n<CachedSkill trust="retrieved-untrusted">\n${xmlElement('Pattern', wrapUntrusted('memory', body), { indent: 2, maxChars: 3_000 })}\n</CachedSkill>`;
   } catch (err) {
     logger.warn({ err, agentKey }, 'skill recall failed (ignored)');
     return '';

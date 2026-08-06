@@ -12,6 +12,13 @@ export interface WireCitation {
   title: string;
   /** [Sn] marker when the passage came from an agentic grounding block. */
   marker?: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  sourceVersion?: string;
+  authorityClass?: string;
+  verificationStatus?: string;
+  lastVerifiedAt?: string;
+  freshness?: 'fresh' | 'stale' | 'unknown';
 }
 
 export interface CitationValidation {

@@ -45,6 +45,28 @@ export interface Citation {
   marker?: string;
 }
 
+export type TurnTraceStage =
+  | 'route' | 'model' | 'plan' | 'agent' | 'rag' | 'tool' | 'verification' | 'complete' | 'error';
+
+export interface TurnTraceEvent {
+  stage: TurnTraceStage;
+  status: 'pending' | 'running' | 'complete' | 'error';
+  label: string;
+  at?: string;
+  runId?: string;
+  agent?: string;
+  model?: string;
+  modelRole?: string;
+  provider?: string;
+  route?: string;
+  ragUsed?: boolean;
+  ragGrade?: string;
+  confidence?: number;
+  passages?: number;
+  durationMs?: number;
+  details?: Record<string, string | number | boolean | null>;
+}
+
 export interface StreamHandlers {
   onStart?(data: { conversationId?: string; agent?: string }): void;
   onStatus?(data: { state?: string; label?: string; warnings?: string[] }): void;
@@ -55,6 +77,9 @@ export interface StreamHandlers {
   onToken?(data: { text?: string; delta?: string }): void;
   /** Agent-path only: which child is running ("Consulting Sales…"). */
   onAgent?(data: { key?: string; state?: string; label?: string }): void;
+  onPlan?(data: { goal?: string; nodeId?: string; state?: string; agent?: string }): void;
+  /** Admin-only server trace; contains decisions and identifiers, never prompts or evidence text. */
+  onTrace?(data: TurnTraceEvent): void;
   /** Agent-path only: a dynamic-UI picker the user must answer (their pick is the next turn). */
   onElicitation?(data: Elicitation): void;
   /** `done` is authoritative: message/attribution/citations overwrite in-flight accumulation. */
@@ -65,6 +90,10 @@ export interface StreamHandlers {
     agentKey?: string;
     agentPath?: string[];
     citations?: Citation[];
+    toolCalls?: Array<{ name: string; status: string }>;
+    usage?: { promptTokens?: number; completionTokens?: number; totalCost?: number; cacheHitRate?: number | null };
+    rag?: { traceId?: string | null; mode?: string; grade?: string | null; confidence?: number | null; abstained?: boolean };
+    error?: { message?: string; retryable?: boolean };
   }): void;
   onError?(message: string): void;
 }
@@ -93,8 +122,10 @@ export function dispatchFrame(frame: string, h: StreamHandlers): void {
     case 'tool_result': h.onToolResult?.(data); break;
     case 'token': h.onToken?.(data); break;
     case 'agent': h.onAgent?.(data); break;
+    case 'trace': h.onTrace?.(data as unknown as TurnTraceEvent); break;
     case 'elicitation': h.onElicitation?.(data as unknown as Elicitation); break;
     case 'plan':
+      h.onPlan?.(data);
       // SotA Phase 1: surface DAG progress via status chip (Horizon AI).
       h.onStatus?.({
         state: 'planning',

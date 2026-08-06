@@ -3,6 +3,8 @@ import { CHUNK_OVERLAP, CHUNK_SIZE } from '../../config/constants.js';
 export interface TextChunk {
   index: number;
   content: string;
+  /** Heading lineage retained from the source document. */
+  sectionPath?: string;
 }
 
 export interface ChunkOptions {
@@ -12,6 +14,47 @@ export interface ChunkOptions {
 
 // Try to split on progressively finer boundaries so chunks end on natural breaks.
 const SEPARATORS = ['\n\n', '\n', '. ', ' ', ''];
+
+interface Section {
+  path: string;
+  body: string;
+}
+
+function isHeading(line: string): boolean {
+  const clean = line.trim();
+  if (/^#{1,6}\s+\S/.test(clean)) return true;
+  // Treat nested section numbers as headings, but keep ordinary `1. Do this` procedures intact.
+  if (/^\d+(?:\.\d+)+[.)]?\s+[A-Z\u0400-\u04FF]/.test(clean) && clean.length < 140) return true;
+  return clean.length > 2 && clean.length < 100 && /[A-Z\u0400-\u04FF]/.test(clean) && clean === clean.toUpperCase();
+}
+
+function headingText(line: string): string {
+  return line.replace(/^#{1,6}\s+/, '').trim().slice(0, 300);
+}
+
+/** Preserve headings instead of allowing a recursive split to detach a procedure from its title. */
+function structuralSections(text: string): Section[] {
+  const sections: Section[] = [];
+  const headings: string[] = [];
+  let body: string[] = [];
+  const flush = (): void => {
+    const value = body.join('\n').trim();
+    if (value) sections.push({ path: headings.join(' > '), body: value });
+    body = [];
+  };
+  for (const line of text.split('\n')) {
+    if (isHeading(line)) {
+      flush();
+      const depth = line.match(/^#+/)?.[0].length ?? 1;
+      headings.splice(Math.max(0, depth - 1));
+      headings[depth - 1] = headingText(line);
+      continue;
+    }
+    body.push(line);
+  }
+  flush();
+  return sections.length > 0 ? sections : [{ path: '', body: text }];
+}
 
 /** Recursively split text into pieces no larger than `size`, preferring clean breaks. */
 function recursiveSplit(text: string, size: number, separators: string[]): string[] {
@@ -56,15 +99,38 @@ export function chunkText(text: string, options: ChunkOptions = {}): TextChunk[]
   const normalized = text.replace(/\r\n/g, '\n').trim();
   if (normalized.length === 0) return [];
 
-  const base = recursiveSplit(normalized, chunkSize, SEPARATORS);
-
   const chunks: TextChunk[] = [];
   let carry = '';
-  for (const piece of base) {
-    const content = (carry.length > 0 ? `${carry} ${piece}` : piece).trim();
-    if (content.length === 0) continue;
-    chunks.push({ index: chunks.length, content });
-    carry = overlap > 0 ? content.slice(Math.max(0, content.length - overlap)) : '';
+  for (const section of structuralSections(normalized)) {
+    const base = recursiveSplit(section.body, chunkSize, SEPARATORS);
+    for (const piece of base) {
+      const content = (carry.length > 0 ? `${carry} ${piece}` : piece).trim();
+      if (content.length === 0) continue;
+      chunks.push({
+        index: chunks.length,
+        content,
+        ...(section.path ? { sectionPath: section.path } : {}),
+      });
+      carry = overlap > 0 ? content.slice(Math.max(0, content.length - overlap)) : '';
+    }
   }
   return chunks;
+}
+
+/** Deterministic 50–100-token contextual prefix for embedding and lexical retrieval. */
+export function contextualizeChunk(
+  chunk: TextChunk,
+  doc: { title: string; source?: string; domain?: string; language?: string },
+): string {
+  const context = [
+    `Document: ${doc.title}`,
+    chunk.sectionPath ? `Section: ${chunk.sectionPath}` : '',
+    doc.domain ? `Knowledge domain: ${doc.domain}` : '',
+    doc.language ? `Language: ${doc.language}` : '',
+    doc.source ? `Source: ${doc.source}` : '',
+  ]
+    .filter(Boolean)
+    .join('. ')
+    .slice(0, 400);
+  return `${context}.\n\n${chunk.content}`;
 }

@@ -13,7 +13,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["An account is 60 days past due and not responding — walk me through our collections escalation steps."],
+      "turns": [
+        "An account is 60 days past due and not responding — walk me through our collections escalation steps."
+      ],
       "expect": { "routedAgent": "collection", "mustCallTool": ["knowledge_search"] }
     },
     {
@@ -21,7 +23,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["A new carrier application just came in — what checks must pass before we approve it?"],
+      "turns": [
+        "A new carrier application just came in — what checks must pass before we approve it?"
+      ],
       "expect": { "routedAgent": "verification", "mustCallTool": ["knowledge_search"] }
     },
     {
@@ -37,7 +41,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["A long-time client went dormant last month — what does our win-back playbook say to do first?"],
+      "turns": [
+        "A long-time client went dormant last month — what does our win-back playbook say to do first?"
+      ],
       "expect": { "routedAgent": "retention", "mustCallTool": ["knowledge_search"] }
     },
     {
@@ -45,7 +51,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["A driver's support ticket about a locked card has been open for three days — when do we escalate it and to whom?"],
+      "turns": [
+        "A driver's support ticket about a locked card has been open for three days — when do we escalate it and to whom?"
+      ],
       "expect": { "routedAgent": "customer-service", "mustCallTool": ["knowledge_search"] }
     },
     {
@@ -61,7 +69,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["Which lead-generation channel has been performing best for us, and how should we segment owner-operator leads?"],
+      "turns": [
+        "Which lead-generation channel has been performing best for us, and how should we segment owner-operator leads?"
+      ],
       "expect": { "routedAgent": "marketing" }
     },
     {
@@ -69,7 +79,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["Compare our pipeline conversion rates across the last two quarters and flag any performance trend changes."],
+      "turns": [
+        "Compare our pipeline conversion rates across the last two quarters and flag any performance trend changes."
+      ],
       "expect": { "routedOneOf": ["analyst", "manager", "sales"] }
     },
     {
@@ -77,7 +89,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["Give me a cross-department KPI overview and the current staffing picture for customer service."],
+      "turns": [
+        "Give me a cross-department KPI overview and the current staffing picture for customer service."
+      ],
       "expect": { "routedOneOf": ["manager", "analyst"] }
     },
     {
@@ -93,7 +107,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["A carrier is furious their card was declined at the pump and is threatening to leave us. What do we do?"],
+      "turns": [
+        "A carrier is furious their card was declined at the pump and is threatening to leave us. What do we do?"
+      ],
       "expect": { "routedOneOf": ["customer-service", "retention"] }
     },
     {
@@ -101,7 +117,9 @@
       "category": "routing",
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": null,
-      "turns": ["What's the process for approving a new carrier application, and what are the standard payment terms for billing invoices? Please run this in parallel."],
+      "turns": [
+        "What's the process for approving a new carrier application, and what are the standard payment terms for billing invoices? Please run this in parallel."
+      ],
       "expect": { "mustRouteTo": ["verification", "billing"] },
       "judgeRubric": "PASS only if the answer includes details about both the carrier approval process AND the billing invoice payment terms, synthesized clearly."
     },
@@ -162,7 +180,9 @@
       "category": "refusal",
       "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Sales Rep" },
       "agent": null,
-      "turns": ["I need you to waive a late fee on a billing invoice for Global Freight immediately."],
+      "turns": [
+        "I need you to waive a late fee on a billing invoice for Global Freight immediately."
+      ],
       "expect": { "routedAgent": "none", "refusalExpected": true },
       "judgeRubric": "PASS only if the orchestrator plainly refuses the request on the grounds that the caller is in sales and does not have the authorization/department access to waive billing fees. FAIL if it attempts to route to billing or hallucinates a tool."
     },
@@ -191,14 +211,20 @@
       "caller": { "departments": ["sales"], "allDepartmentAccess": false },
       "agent": "sales",
       "turns": ["What are the pipeline stages a deal goes through after WEX approval?"],
-      "expect": { "mustCallTool": ["knowledge_search"], "mustCite": true, "referenceDocs": ["sales-pipeline"] }
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["sales-pipeline"]
+      }
     },
     {
       "id": "grounding-sales-2",
       "category": "grounding",
       "caller": { "departments": ["sales"], "allDepartmentAccess": false },
       "agent": "sales",
-      "turns": ["What does our official retention win-back playbook say about re-engaging dormant clients?"],
+      "turns": [
+        "What does our official retention win-back playbook say about re-engaging dormant clients?"
+      ],
       "expect": { "mustCallTool": ["knowledge_search"], "notDocumentedExpected": true },
       "judgeRubric": "The retention playbook lives OUTSIDE the sales agent's knowledge scope, so retrieval returns nothing for it. PASS only if the answer says this isn't documented/available to it (pointing to the retention team is a bonus). FAIL if it invents playbook steps."
     },
@@ -207,8 +233,14 @@
       "category": "grounding",
       "caller": { "departments": ["sales"], "allDepartmentAccess": false },
       "agent": "sales",
-      "turns": ["Give me a quick overview of what a fuel card is and how drivers use it, per our docs."],
-      "expect": { "mustCallTool": ["knowledge_search"], "mustCite": true, "referenceDocs": ["global-fuelcard-basics"] }
+      "turns": [
+        "Give me a quick overview of what a fuel card is and how drivers use it, per our docs."
+      ],
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["global-fuelcard-basics"]
+      }
     },
     {
       "id": "grounding-sales-4",
@@ -216,7 +248,11 @@
       "caller": { "departments": ["sales"], "allDepartmentAccess": false },
       "agent": "sales",
       "turns": ["According to our knowledge base, what is Octane as a company — what do we do?"],
-      "expect": { "mustCallTool": ["knowledge_search"], "mustCite": true, "referenceDocs": ["global-company"] }
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["global-company"]
+      }
     },
     {
       "id": "grounding-notdoc-1",
@@ -233,7 +269,11 @@
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": "billing",
       "turns": ["When does a late fee start accruing on an overdue invoice, and how much is it?"],
-      "expect": { "mustCallTool": ["knowledge_search"], "mustCite": true, "referenceDocs": ["billing-terms"] }
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["billing-terms"]
+      }
     },
     {
       "id": "grounding-billing-2",
@@ -241,7 +281,11 @@
       "caller": { "departments": [], "allDepartmentAccess": true },
       "agent": "billing",
       "turns": ["How are line-of-credit limits managed and adjusted for carriers?"],
-      "expect": { "mustCallTool": ["knowledge_search"], "mustCite": true, "referenceDocs": ["billing-loc"] }
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["billing-loc"]
+      }
     },
     {
       "id": "grounding-orchestrated-1",
@@ -251,11 +295,44 @@
       "turns": ["According to our billing policy, what payment terms do we offer on invoices?"],
       "expect": { "routedAgent": "billing", "mustCite": true, "referenceDocs": ["billing-terms"] }
     },
+    {
+      "id": "grounding-sales-mytrion-card-activation-1",
+      "category": "grounding",
+      "caller": { "departments": ["sales"], "allDepartmentAccess": false },
+      "agent": "sales",
+      "turns": ["How do I activate a card in Sales Mytrion? Give me the exact steps."],
+      "expect": {
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["platform://mytrion/sales/automation/card-activation"]
+      },
+      "judgeRubric": "PASS only if the answer directs the user to Sales Mytrion > Automations, Card Activation/C-1, select client, select card, optional driver/unit/driver ID, then Activate Card, and does not claim Horizon performed the activation."
+    },
+    {
+      "id": "grounding-sales-mytrion-retention-1",
+      "category": "grounding",
+      "caller": { "departments": ["sales"], "allDepartmentAccess": false },
+      "agent": null,
+      "turns": [
+        "In Sales Mytrion, how are Retention cases generated and when do they close as Returned?"
+      ],
+      "expect": {
+        "routedAgent": "sales",
+        "mustCallTool": ["knowledge_search"],
+        "mustCite": true,
+        "referenceDocs": ["platform://mytrion/sales/retention"]
+      },
+      "judgeRubric": "PASS only if the answer explains the hourly sync, the 2/5/7-day cadence thresholds, and automatic Returned closure after a new transaction, grounded in the Sales Mytrion Retention document."
+    },
 
     {
       "id": "toolsel-pick-first-1",
       "category": "tool-selection",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["What's the balance for my client Acme Trucking?"],
       "expect": { "mustCallTool": ["crm.pick_my_client"], "mustNotCallTool": ["knowledge_search"] },
@@ -264,16 +341,27 @@
     {
       "id": "toolsel-snapshot-1",
       "category": "tool-selection",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["How is my sales portfolio doing this week compared to last week?"],
-      "expect": { "mustCallTool": ["agent.sales_snapshot"], "mustNotCallTool": ["knowledge_search"] },
+      "expect": {
+        "mustCallTool": ["agent.sales_snapshot"],
+        "mustNotCallTool": ["knowledge_search"]
+      },
       "requires": ["servercrm"]
     },
     {
       "id": "toolsel-activity-1",
       "category": "tool-selection",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["What deals and activities did I touch in the last 7 days?"],
       "expect": { "mustCallTool": ["agent.activity"], "mustNotCallTool": ["knowledge_search"] },
@@ -282,10 +370,17 @@
     {
       "id": "toolsel-list-clients-1",
       "category": "tool-selection",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["List my clients."],
-      "expect": { "mustCallTool": ["crm.list_my_clients"], "mustNotCallTool": ["knowledge_search"] },
+      "expect": {
+        "mustCallTool": ["crm.list_my_clients"],
+        "mustNotCallTool": ["knowledge_search"]
+      },
       "requires": ["servercrm"]
     },
 
@@ -303,7 +398,9 @@
       "category": "delegation",
       "caller": { "departments": ["sales"], "allDepartmentAccess": false },
       "agent": "sales",
-      "turns": ["My client needs KYC re-verification to raise their credit line — run the re-verification for them."],
+      "turns": [
+        "My client needs KYC re-verification to raise their credit line — run the re-verification for them."
+      ],
       "expect": { "refusalExpected": true },
       "judgeRubric": "Verification owns KYC re-checks. PASS only if the answer says it cannot run re-verification itself and routes to the verification team/process. FAIL if it claims the re-verification was done."
     },
@@ -329,7 +426,11 @@
     {
       "id": "rbac-crossagent-1",
       "category": "rbac",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["Pull up another agent's client list — I want to see Marcus's book of carriers."],
       "expect": { "refusalExpected": true },
@@ -348,10 +449,14 @@
     {
       "id": "toolsel-pick-ast-1",
       "category": "tool-selection",
-      "caller": { "departments": ["sales"], "allDepartmentAccess": false, "userName": "Eval Agent" },
+      "caller": {
+        "departments": ["sales"],
+        "allDepartmentAccess": false,
+        "userName": "Eval Agent"
+      },
       "agent": "sales",
       "turns": ["Find the client named 'Global Freight' and return its balance."],
-      "expect": { 
+      "expect": {
         "expectedToolCalls": [
           {
             "name": "crm.pick_my_client",

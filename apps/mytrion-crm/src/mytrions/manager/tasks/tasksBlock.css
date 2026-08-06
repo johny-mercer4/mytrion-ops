@@ -1,28 +1,40 @@
-/* Manager Tasks block — dept-neutral, scoped under .mg-root */
+/* =====================================================
+   Manager Tasks board — dept-neutral, scoped under .mg-root.
+
+   Same four-column status language as the agent's own board, so the manager who assigns a task and
+   the agent who works it see one description of one record. Every size, radius and duration comes
+   from the ramps in manager.css; the per-column hue arrives as `--tk-col` and the per-card rail as
+   `--tk-rail`, both set inline from taskModel.ts.
+
+   Surfaces follow the module rule: pane → inset (`--hz-pane-alt`) → control back up to `--hz-pane`.
+   Nothing here fills with `--bg-primary`, which is an inset well in dark and a highlight in light.
+   ===================================================== */
 
 .mg-root .mg-block {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   padding: 18px 18px 20px;
   border-radius: var(--mg-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  box-shadow: var(--hz-shadow-rest);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 
 .mg-root .mg-block-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .mg-root .mg-block-kicker {
   margin: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-family: var(--font-head);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--mg-tone, var(--accent));
@@ -30,340 +42,463 @@
 
 .mg-root .mg-block-title {
   margin: 4px 0 0;
-  font-size: 18px;
-  font-weight: 750;
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  font-weight: var(--fw-bold);
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .mg-root .mg-block-sub {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
-  line-height: 1.4;
-  max-width: 52ch;
+  line-height: 1.45;
+  max-width: 62ch;
 }
 
-.mg-root .mg-tasks-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(0, 1.2fr) minmax(260px, 0.95fr);
-  gap: 14px;
-  align-items: start;
+.mg-root .mg-tk-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.mg-root .mg-tasks-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 14px;
-  border-radius: var(--mg-r-md);
-  border: 1px solid var(--hz-pane-bd);
-  background: color-mix(in srgb, var(--bg-primary, #0b0d12) 35%, var(--hz-pane));
-}
-
-.mg-root .mg-tasks-panel-title {
-  font-size: 12.5px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.mg-root .mg-tasks-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.mg-root .mg-tasks-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.mg-root .mg-tasks-form input,
-.mg-root .mg-tasks-form select,
-.mg-root .mg-tasks-form textarea,
-.mg-root .mg-tasks-list-head select,
-.mg-root .mg-tasks-detail select {
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-primary);
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--hz-pane-bd);
-  background: var(--bg-primary, transparent);
-}
-
-.mg-root .mg-tasks-form textarea {
-  resize: vertical;
-  min-height: 88px;
-}
-
-.mg-root .mg-tasks-form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.mg-root .mg-tasks-btn {
+/* ── The one filled button in Manager ────────────────────────────────────────
+   It carries the DEPARTMENT tone, so its ink cannot come from --on-accent (computed for --accent,
+   a different hue). Near-black on the bright dark tones, white on their deeper light values. */
+.mg-root .mg-btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 38px;
+  height: 34px;
   padding: 0 14px;
-  border: 0;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--mg-r-sm);
   background: var(--mg-tone, var(--accent));
-  color: var(--on-accent, #fff);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  color: #0b0f18;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  line-height: 1;
   cursor: pointer;
+  transition:
+    filter var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
 }
-
-.mg-root .mg-tasks-btn:disabled {
-  opacity: 0.55;
+[data-theme='light'] .mg-root .mg-btn-primary {
+  color: #ffffff;
+}
+.mg-root .mg-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--mg-tone, var(--accent)) 60%, transparent);
+  transform: var(--hz-hover-lift-sm);
+}
+.mg-root .mg-btn-primary:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
-
-.mg-root .mg-tasks-btn--ghost {
-  background: transparent;
-  border: 1px solid var(--hz-pane-bd);
-  color: var(--text-primary);
+.mg-root .mg-btn.is-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--hz-pane-bd));
+}
+.mg-root .mg-btn.is-danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--tint-bad-bg);
+  border-color: var(--tint-bad-bd);
+  box-shadow: none;
 }
 
-.mg-root .mg-tasks-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* ── Metric strip ──────────────────────────────────────────────────────────── */
+.mg-root .mg-tk-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
+.mg-root .mg-tk-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-tk-metrics span {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mg-root .mg-tk-metrics strong {
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.mg-root .mg-tk-metrics em {
+  font-style: normal;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+}
+/* Zero overdue is good news and must stay quiet — only a non-zero count earns the danger tint. */
+.mg-root .mg-tk-metrics > div.is-bad {
+  border-color: var(--tint-bad-bd);
+  background: var(--tint-bad-bg);
+}
+.mg-root .mg-tk-metrics > div.is-bad strong {
+  color: var(--danger);
+}
 
-.mg-root .mg-tasks-list {
+/* ── Filter bar ────────────────────────────────────────────────────────────── */
+.mg-root .mg-tk-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mg-root .mg-tk-filters .mg-search {
+  flex: 1 1 260px;
+}
+.mg-root .mg-tk-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-tk-select:focus-within {
+  border-color: var(--accent);
+  background: var(--hz-pane-lift);
+}
+.mg-root .mg-tk-select select {
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.mg-root .mg-tk-result-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mg-root .mg-tk-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--tint-bad-bd);
+  background: var(--tint-bad-bg);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+/* ── Board ─────────────────────────────────────────────────────────────────── */
+.mg-root .mg-tk-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: start;
+  /* The board scrolls inside itself rather than widening the page — a Manager desk sits in a
+     measure-capped column and must never push the document sideways. */
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.mg-root .mg-tk-col {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: min(62vh, 640px);
-  overflow: auto;
+  min-width: 0;
 }
-
-.mg-root .mg-tasks-card {
-  text-align: left;
-  width: 100%;
-  padding: 12px 13px;
-  border-radius: 10px;
-  border: 1px solid var(--hz-pane-bd);
-  border-left-width: 3px;
-  border-left-color: var(--mg-tone, var(--accent));
-  background: var(--hz-pane);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.mg-root .mg-tasks-card[data-priority='high'] {
-  border-left-color: var(--tone-amber, #f59e0b);
-}
-.mg-root .mg-tasks-card[data-priority='urgent'] {
-  border-left-color: var(--danger, #e11d48);
-}
-.mg-root .mg-tasks-card[data-priority='low'] {
-  border-left-color: color-mix(in srgb, var(--text-muted) 55%, transparent);
-}
-
-.mg-root .mg-tasks-card:hover {
-  border-color: color-mix(in srgb, var(--mg-tone, var(--accent)) 40%, var(--hz-pane-bd));
-}
-
-.mg-root .mg-tasks-card.is-on {
-  border-color: color-mix(in srgb, var(--mg-tone, var(--accent)) 55%, var(--hz-pane-bd));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mg-tone, var(--accent)) 25%, transparent);
-}
-
-.mg-root .mg-tasks-card-top {
+.mg-root .mg-tk-col-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  padding: 0 2px;
 }
-
-.mg-root .mg-tasks-card-top strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.mg-root .mg-tasks-card-top span {
-  display: block;
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.mg-root .mg-tasks-pill {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: color-mix(in srgb, var(--mg-tone, var(--accent)) 16%, transparent);
-  color: var(--mg-tone, var(--accent));
-}
-
-.mg-root .mg-tasks-pill[data-priority='high'] {
-  background: color-mix(in srgb, var(--tone-amber, #f59e0b) 18%, transparent);
-  color: var(--tone-amber, #f59e0b);
-}
-.mg-root .mg-tasks-pill[data-priority='urgent'] {
-  background: color-mix(in srgb, var(--danger, #e11d48) 18%, transparent);
-  color: var(--danger, #e11d48);
-}
-
-.mg-root .mg-tasks-card-meta {
+.mg-root .mg-tk-col-title {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 8px;
-  font-size: 11.5px;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-bold);
+  color: var(--tk-col);
+}
+.mg-root .mg-tk-col-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--mg-r-pill);
+  background: var(--tk-col);
+}
+.mg-root .mg-tk-col-hint {
+  margin-top: 2px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
   color: var(--text-muted);
 }
-
-.mg-root .mg-tasks-empty,
-.mg-root .mg-tasks-error {
-  padding: 16px;
-  border-radius: 10px;
+.mg-root .mg-tk-col-count {
+  flex: none;
+  min-width: 24px;
+  padding: 3px 8px;
+  border-radius: var(--mg-r-pill);
+  border: 1px solid color-mix(in srgb, var(--tk-col) 26%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--tk-col) 10%, transparent);
+  color: var(--tk-col);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.mg-root .mg-tk-col-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  /* The column's own hue as a 2px cap — the board reads as four lanes without four tinted walls. */
+  box-shadow: inset 0 2px 0 var(--tk-col), var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-tk-col-body.is-drop {
+  background: var(--hz-pane-lift);
+  box-shadow:
+    inset 0 2px 0 var(--tk-col),
+    inset 0 0 0 1px color-mix(in srgb, var(--tk-col) 45%, transparent),
+    var(--hz-glass-inset);
+}
+.mg-root .mg-tk-col-empty {
+  padding: 18px 10px;
+  border-radius: var(--mg-r-sm);
   border: 1px dashed var(--hz-pane-bd);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-xs);
   text-align: center;
 }
 
-.mg-root .mg-tasks-error {
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--danger, #e11d48) 40%, var(--hz-pane-bd));
-  color: var(--danger, #e11d48);
-  text-align: left;
-}
-
-.mg-root .mg-tasks-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.mg-root .mg-tasks-detail-hero {
+/* ── Card ──────────────────────────────────────────────────────────────────── */
+.mg-root .mg-tk-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  cursor: grab;
+  font: inherit;
+  color: var(--text-primary);
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  border-left: 3px solid var(--tk-rail, var(--accent));
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
 }
-
-.mg-root .mg-tasks-detail-hero h3 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+.mg-root .mg-tk-card:hover {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--tk-rail, var(--accent)) 40%, var(--hz-pane-bd));
+  border-left-color: var(--tk-rail, var(--accent));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
 }
-
-.mg-root .mg-tasks-detail-hero p {
-  margin: 0;
-  font-size: 13px;
+.mg-root .mg-tk-card:active {
+  cursor: grabbing;
+}
+.mg-root .mg-tk-card.is-dragging {
+  opacity: 0.45;
+}
+.mg-root .mg-tk-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mg-root .mg-tk-card-top strong {
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  font-weight: var(--fw-bold);
+}
+.mg-root .mg-tk-pill {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--mg-r-pill);
+  background: color-mix(in srgb, var(--tk-pill) 14%, transparent);
+  color: var(--tk-pill);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-extra);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mg-root .mg-tk-card-who {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.mg-root .mg-tk-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
   color: var(--text-muted);
-  line-height: 1.45;
-  white-space: pre-wrap;
+  text-transform: capitalize;
+}
+.mg-root .mg-tk-card-meta .is-bad {
+  color: var(--danger);
+  font-weight: var(--fw-semibold);
+  text-transform: none;
 }
 
-.mg-root .mg-tasks-detail-grid {
+/* ── Dialogs (assign + detail) ─────────────────────────────────────────────── */
+.mg-root .mg-tk-dialog {
+  width: min(680px, 96vw);
+}
+.mg-root .mg-tk-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+.mg-root .mg-tk-dialog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mg-root .mg-tk-facts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
 }
-
-.mg-root .mg-tasks-stat {
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mg-tone, var(--accent)) 8%, transparent);
+.mg-root .mg-tk-facts > div {
+  padding: 9px 11px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
 }
-
-.mg-root .mg-tasks-stat span {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+.mg-root .mg-tk-facts > div.is-overdue {
+  border-color: var(--tint-bad-bd);
+  background: var(--tint-bad-bg);
+}
+.mg-root .mg-tk-facts dt {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
-
-.mg-root .mg-tasks-stat strong {
-  display: block;
-  margin-top: 2px;
-  font-size: 13px;
-  font-weight: 700;
+.mg-root .mg-tk-facts dd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 3px 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
   text-transform: capitalize;
 }
-
-.mg-root .mg-tasks-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+.mg-root .mg-tk-facts > div.is-overdue dd {
+  color: var(--danger);
 }
-
-.mg-root .mg-tasks-actions button {
+.mg-root .mg-tk-desc {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.mg-root .mg-tk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mg-root .mg-tk-reassign {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 11px;
-  border-radius: 8px;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--mg-r-sm);
   border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+}
+.mg-root .mg-tk-reassign:focus-within {
+  border-color: var(--accent);
+}
+.mg-root .mg-tk-reassign select {
+  border: 0;
+  outline: none;
+  background: none;
   color: var(--text-primary);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-family: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
-
-.mg-root .mg-tasks-actions button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.mg-root .mg-tasks-actions button.is-danger {
-  color: var(--danger, #e11d48);
-  border-color: color-mix(in srgb, var(--danger, #e11d48) 35%, var(--hz-pane-bd));
-}
-
-.mg-root .mg-tasks-timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.mg-root .mg-tk-history-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border-left: 2px solid color-mix(in srgb, var(--mg-tone, var(--accent)) 28%, transparent);
-  padding-left: 14px;
+  gap: 8px;
 }
-
-.mg-root .mg-tasks-timeline li {
+.mg-root .mg-tk-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.mg-root .mg-tk-timeline li {
   position: relative;
   padding: 0 0 14px;
 }
-
-.mg-root .mg-tasks-timeline li::before {
+.mg-root .mg-tk-timeline li::before {
   content: '';
   position: absolute;
   left: -19px;
@@ -371,33 +506,114 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--mg-tone, var(--accent));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mg-tone, var(--accent)) 18%, transparent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
-
-.mg-root .mg-tasks-timeline strong {
+.mg-root .mg-tk-timeline strong {
   display: block;
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-bold);
   text-transform: capitalize;
 }
-
-.mg-root .mg-tasks-timeline span {
+.mg-root .mg-tk-timeline span {
   display: block;
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
 }
 
-@media (max-width: 1100px) {
-  .mg-root .mg-tasks-layout {
+/* ── Assign form ───────────────────────────────────────────────────────────── */
+.mg-root .mg-tk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+.mg-root .mg-tk-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mg-root .mg-tk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.mg-root .mg-tk-field > span {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mg-root .mg-tk-field > span em {
+  font-style: normal;
+  font-weight: var(--fw-regular);
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+.mg-root .mg-tk-field :is(input, select, textarea) {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  /* The dialog surface is already a pane, so a field has to come DOWN to read as an input here —
+     the inverse of the board, where fields sit inside an inset panel and come up. */
+  background: var(--hz-pane-alt);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-tk-field :is(input, select, textarea):focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--hz-pane-bd));
+  background: var(--hz-pane-lift);
+}
+.mg-root .mg-tk-field textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.55;
+}
+.mg-root .mg-tk-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+@media (max-width: 1180px) {
+  .mg-root .mg-tk-board {
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .mg-root .mg-tk-board {
     grid-template-columns: 1fr;
+    overflow-x: visible;
+  }
+  .mg-root .mg-tk-col-body {
+    max-height: none;
+  }
+  .mg-root .mg-tk-field-row {
+    grid-template-columns: 1fr;
+  }
+  .mg-root .mg-tk-result-count {
+    margin-left: 0;
   }
 }
 
-@media (max-width: 720px) {
-  .mg-root .mg-tasks-form-row,
-  .mg-root .mg-tasks-detail-grid {
-    grid-template-columns: 1fr;
+@media (prefers-reduced-motion: reduce) {
+  .mg-root .mg-tk-card:hover,
+  .mg-root .mg-btn-primary:hover:not(:disabled) {
+    transform: none;
   }
 }

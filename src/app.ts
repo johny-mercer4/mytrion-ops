@@ -60,6 +60,9 @@ import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
+import { billingLedgerRoutes } from './routes/v1/billingLedger.routes.js';
+import { billingLedgerImportRoutes } from './routes/v1/billingLedgerImport.routes.js';
+import { billingLedgerSectionsRoutes } from './routes/v1/billingLedgerSections.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
@@ -91,6 +94,7 @@ import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
 import { salesBootstrapRoutes } from './routes/v1/salesBootstrap.routes.js';
 import { callHubRoutes } from './routes/v1/callHub.routes.js';
+import { managerEfsRoutes } from './routes/v1/managerEfs.routes.js';
 import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
@@ -439,6 +443,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(csMaintenanceRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
+      await v1.register(billingLedgerRoutes);
+      await v1.register(billingLedgerImportRoutes);
+      await v1.register(billingLedgerSectionsRoutes);
       await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
@@ -460,6 +467,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(salesBootstrapRoutes);
       await v1.register(callHubRoutes);
       await v1.register(managerTasksRoutes);
+      await v1.register(managerEfsRoutes);
       await v1.register(kpiAdminRoutes);
     },
     { prefix: API_PREFIX },

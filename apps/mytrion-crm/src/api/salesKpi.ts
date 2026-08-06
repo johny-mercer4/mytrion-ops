@@ -68,38 +68,12 @@ export async function listKpiWorkers(): Promise<KpiWorkerDto[]> {
   return data.workers;
 }
 
-export async function listManagerTasks(filter: {
-  assigneeZohoUserId?: string;
-  status?: WorkerTaskStatus;
-} = {}): Promise<WorkerTaskDto[]> {
-  const data = (await request('GET', '/manager/sales/tasks', { query: filter })) as {
-    tasks: WorkerTaskDto[];
-  };
-  return data.tasks;
-}
-
-export async function listTaskTypes(): Promise<TaskTypeDto[]> {
-  const data = (await request('GET', '/manager/sales/tasks/types')) as { types: TaskTypeDto[] };
-  return data.types;
-}
-
-export async function createManagerTask(body: TaskWriteInput): Promise<WorkerTaskDto> {
-  const data = (await request('POST', '/manager/sales/tasks', { body })) as { task: WorkerTaskDto };
-  return data.task;
-}
-
-export async function updateManagerTask(
-  taskId: string,
-  body: { version: number } & Partial<TaskWriteInput> & {
-      status?: WorkerTaskStatus;
-      comment?: string;
-    },
-): Promise<WorkerTaskDto> {
-  const data = (await request('PATCH', `/manager/sales/tasks/${encodeURIComponent(taskId)}`, {
-    body,
-  })) as { task: WorkerTaskDto };
-  return data.task;
-}
+/*
+ * `listManagerTasks` / `listTaskTypes` / `createManagerTask` / `updateManagerTask` lived here and
+ * called `/manager/sales/tasks*`. They had no callers, and the routes behind them were duplicates
+ * that shadowed the generic per-department ones. Manager task CRUD is `api/managerTasks.ts` for
+ * EVERY desk, Sales included.
+ */
 
 export interface WorkerTaskCounts {
   open: number;

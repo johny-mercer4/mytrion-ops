@@ -19,6 +19,8 @@ function handlersWithSpies(): { handlers: StreamHandlers; calls: Record<string, 
       onToolResult: spy('tool_result'),
       onToken: spy('token'),
       onAgent: spy('agent'),
+      onPlan: spy('plan'),
+      onTrace: spy('trace'),
       onElicitation: spy('elicitation'),
       onDone: spy('done'),
       onError: spy('error'),
@@ -39,12 +41,16 @@ describe('dispatchFrame (pure SSE parser)', () => {
     dispatchFrame('event: token\ndata: {"delta":"hi"}', handlers);
     dispatchFrame('event: agent\ndata: {"key":"sales","state":"start","label":"Sales"}', handlers);
     dispatchFrame('event: context\ndata: {"passages":3,"citations":[{"id":"d1","title":"T"}]}', handlers);
+    dispatchFrame('event: plan\ndata: {"goal":"Answer safely"}', handlers);
+    dispatchFrame('event: trace\ndata: {"stage":"route","status":"complete","label":"Routed","model":"gpt-test"}', handlers);
     dispatchFrame('event: done\ndata: {"message":"x","agentKey":"sales","agentPath":["sales"]}', handlers);
     dispatchFrame('event: error\ndata: {"message":"boom"}', handlers);
     expect(calls['start']).toEqual([{ conversationId: 'c1' }]);
     expect(calls['token']).toEqual([{ delta: 'hi' }]);
     expect(calls['agent']).toEqual([{ key: 'sales', state: 'start', label: 'Sales' }]);
     expect(calls['context']).toEqual([{ passages: 3, citations: [{ id: 'd1', title: 'T' }] }]);
+    expect(calls['plan']).toEqual([{ goal: 'Answer safely' }]);
+    expect(calls['trace']).toEqual([{ stage: 'route', status: 'complete', label: 'Routed', model: 'gpt-test' }]);
     expect(calls['done']).toEqual([{ message: 'x', agentKey: 'sales', agentPath: ['sales'] }]);
     expect(calls['error']).toEqual(['boom']);
   });

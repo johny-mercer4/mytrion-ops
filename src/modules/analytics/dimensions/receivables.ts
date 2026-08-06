@@ -30,15 +30,20 @@ import {
   type DayRow,
 } from '../shared.js';
 import type { AnalyticsBlock, BreakdownItem, BreakdownTone, KpiStat, LeaderboardRow } from '../types.js';
+/**
+ * `DUE` / `OPEN_INVOICE` / `PAYMENT_OK` and friends now live in the Billing Ledger's arRules.ts. They
+ * were inlined here first; the Ledger's AR sub-ledger has to mean exactly the same thing by "owed", so
+ * there is one definition and two consumers. `tests/unit/ledger-aging.test.ts` asserts this file's
+ * output is unchanged by the extraction.
+ */
+import {
+  DUE,
+  INVOICE_DATE,
+  OPEN_INVOICE,
+  PAYMENT_DATE,
+  PAYMENT_OK,
+} from '../../billing/ledger/arRules.js';
 
-/** Still-owed balance on an invoice, floored at zero (overpayments must not net off other rows). */
-const DUE = 'greatest(i.total_amount - coalesce(i.total_paid, 0), 0)';
-/** The open-AR book — same rule as dwhClientRoster's debt_cte. */
-const OPEN_INVOICE = `i.status in ('PENDING', 'PARTIALLY_PAID') and ${DUE} >= 1`;
-const INVOICE_DATE = 'i.invoice_date';
-const PAYMENT_DATE = 'p.payment_date';
-/** Reversed/bounced payments are not collections. */
-const PAYMENT_OK = 'coalesce(p.is_failed, false) = false';
 
 /** Ordered oldest-last so the breakdown reads Current → 60+ rather than by size. */
 const AGING_BUCKET_SQL = `case

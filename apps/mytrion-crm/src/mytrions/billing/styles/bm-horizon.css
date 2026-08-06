@@ -46,10 +46,19 @@
 
 /* Both sit above the ambient backdrop (z-index 0). The header must ALSO outrank the body: they are
    siblings, so an equal z-index let the later-in-DOM body paint over the header — burying the
-   "View as" dropdown under the panel's KPI cards. Keep the header's shared-base rank (100). */
+   "View as" dropdown under the panel's KPI cards. Keep the header's shared-base rank (100).
+
+   `.bm-body` deliberately has NO z-index. It keeps `position: relative` (panels position against it),
+   but a z-index would make it a STACKING CONTEXT — and every modal renders inside it, so their
+   `z-index: 9990` would be scoped to that context and lose to the header's 100. The result was the app
+   header painting across the top of every billing modal: the Prepay ledger, the transaction modal, the
+   ledger statement. A descendant can never escape an ancestor's stacking context, so the fix has to be
+   here rather than in the modals.
+
+   Removing it costs nothing: `.bm-ambience` (z-index 0) comes FIRST in the DOM, so a positioned
+   `z-index: auto` body still paints above it, and the header's 100 still outranks the body's content. */
 .bm-root .bm-body {
     position: relative;
-    z-index: 1;
 }
 .bm-root .bm-header {
     position: relative;

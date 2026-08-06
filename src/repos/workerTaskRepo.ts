@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionTaskTypes,
@@ -45,6 +45,47 @@ export interface UpdateWorkerTaskInput {
   comment?: string;
 }
 
+export interface ListWorkerTaskFilter {
+  assigneeZohoUserId?: string;
+  status?: WorkerTaskStatus;
+  priority?: WorkerTaskPriority;
+  department?: string;
+  /** Free text over subject / description / task type. */
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * The WHERE for a task list. Shared by `list` and `countMatching` so a page and its total can never
+ * disagree about what is being counted.
+ */
+function listClauses(ctx: TenantContext, filter: ListWorkerTaskFilter): SQL[] {
+  const clauses: SQL[] = [eq(mytrionWorkerTasks.tenantId, ctx.tenantId)];
+  if (filter.assigneeZohoUserId) {
+    clauses.push(eq(mytrionWorkerTasks.assigneeZohoUserId, filter.assigneeZohoUserId));
+  }
+  if (filter.status) clauses.push(eq(mytrionWorkerTasks.status, filter.status));
+  if (filter.priority) clauses.push(eq(mytrionWorkerTasks.priority, filter.priority));
+  if (filter.department?.trim()) {
+    clauses.push(eq(mytrionWorkerTasks.department, filter.department.trim()));
+  }
+  const needle = filter.search?.trim();
+  if (needle) {
+    // Escape the LIKE metacharacters so a subject search for "100%" or "a_b" matches literally
+    // rather than turning into a wildcard.
+    const escaped = needle.replace(/[\\%_]/g, (char) => `\\${char}`);
+    const pattern = `%${escaped}%`;
+    const matches = or(
+      ilike(mytrionWorkerTasks.subject, pattern),
+      ilike(mytrionWorkerTasks.description, pattern),
+      ilike(mytrionWorkerTasks.taskType, pattern),
+    );
+    if (matches) clauses.push(matches);
+  }
+  return clauses;
+}
+
 function eventTypeForStatus(from: WorkerTaskStatus, to: WorkerTaskStatus): WorkerTaskEventType {
   if (to === 'completed') return 'completed';
   if (to === 'cancelled') return 'cancelled';
@@ -52,40 +93,132 @@ function eventTypeForStatus(from: WorkerTaskStatus, to: WorkerTaskStatus): Worke
   return 'status_changed';
 }
 
+/**
+ * Task-type catalog cache. See `listTypes`. Exported so a future admin editor can drop it after a
+ * write — a cached catalog that outlives an edit is how a newly-added type stays invisible.
+ */
+const TYPE_TTL_MS = 5 * 60_000;
+const typeCache = new Map<string, { at: number; rows: MytrionTaskType[] }>();
+
+export function clearTaskTypeCache(): void {
+  typeCache.clear();
+}
+
 export const workerTaskRepo = {
-  async listTypes(ctx: TenantContext): Promise<MytrionTaskType[]> {
-    return db
+  /**
+   * Active task types a desk may use: the ones scoped to it, plus the shared ones (`department IS
+   * NULL`). Omit `department` to get the whole catalog — that is the admin/reporting view, not what
+   * a desk's picker should show.
+   */
+  async listTypes(ctx: TenantContext, department?: string): Promise<MytrionTaskType[]> {
+    const desk = department?.trim();
+    /*
+     * Cached: the catalog is ~30 rows that change when an admin edits them, but the round trip is
+     * ~550ms (2.5s cold) and the Tasks block asks for it on every desk visit. Cache-on-read with a
+     * short TTL, and note the WRITE path does not exist yet — when a type editor lands it must call
+     * `clearTaskTypeCache`.
+     */
+    const key = `${ctx.tenantId}:${desk ?? '*'}`;
+    const hit = typeCache.get(key);
+    if (hit && Date.now() - hit.at < TYPE_TTL_MS) return hit.rows;
+    const clauses = [eq(mytrionTaskTypes.tenantId, ctx.tenantId), eq(mytrionTaskTypes.active, true)];
+    if (desk) {
+      const scoped = or(
+        isNull(mytrionTaskTypes.department),
+        eq(mytrionTaskTypes.department, desk),
+      );
+      // `or()` is only undefined when given no arguments; the guard keeps the types honest.
+      if (scoped) clauses.push(scoped);
+    }
+    const rows = await db
       .select()
       .from(mytrionTaskTypes)
-      .where(and(eq(mytrionTaskTypes.tenantId, ctx.tenantId), eq(mytrionTaskTypes.active, true)))
-      .orderBy(asc(mytrionTaskTypes.label));
+      .where(and(...clauses))
+      .orderBy(asc(mytrionTaskTypes.sortOrder), asc(mytrionTaskTypes.label));
+    typeCache.set(key, { at: Date.now(), rows });
+    return rows;
+  },
+
+  /**
+   * Whether a code is usable on this desk. A code scoped to another desk must NOT be accepted just
+   * because it exists — checking `listTypes(ctx)` for membership, as the routes used to, let a
+   * Billing form post `agency_filing` and file it under Billing.
+   */
+  async isTypeAllowed(ctx: TenantContext, department: string, code: string): Promise<boolean> {
+    const types = await this.listTypes(ctx, department);
+    return types.some((type) => type.code === code);
   },
 
   async list(
     ctx: TenantContext,
-    filter: {
-      assigneeZohoUserId?: string;
-      status?: WorkerTaskStatus;
-      department?: string;
-      limit?: number;
-      offset?: number;
-    } = {},
+    filter: ListWorkerTaskFilter = {},
   ): Promise<MytrionWorkerTask[]> {
-    const clauses = [eq(mytrionWorkerTasks.tenantId, ctx.tenantId)];
-    if (filter.assigneeZohoUserId) {
-      clauses.push(eq(mytrionWorkerTasks.assigneeZohoUserId, filter.assigneeZohoUserId));
-    }
-    if (filter.status) clauses.push(eq(mytrionWorkerTasks.status, filter.status));
-    if (filter.department?.trim()) {
-      clauses.push(eq(mytrionWorkerTasks.department, filter.department.trim()));
-    }
     return db
       .select()
       .from(mytrionWorkerTasks)
-      .where(and(...clauses))
+      .where(and(...listClauses(ctx, filter)))
       .orderBy(desc(mytrionWorkerTasks.createdAt))
       .limit(Math.min(Math.max(filter.limit ?? 100, 1), 500))
       .offset(Math.max(filter.offset ?? 0, 0));
+  },
+
+  /** Total matching the SAME filter as `list`, so pagination reports the real size of the result. */
+  async countMatching(ctx: TenantContext, filter: ListWorkerTaskFilter = {}): Promise<number> {
+    const rows = await db
+      .select({ n: count() })
+      .from(mytrionWorkerTasks)
+      .where(and(...listClauses(ctx, filter)));
+    return Number(rows[0]?.n ?? 0);
+  },
+
+  /**
+   * The board's numbers in ONE round trip: desk-wide status counts AND the count matching the
+   * caller's filter.
+   *
+   * These used to be two queries plus a third for per-assignee load. A single round trip to the
+   * prod DB costs ~550ms, so a desk with ZERO tasks paid ~2.2s of database time to be told it has
+   * nothing — which is exactly what made an empty Tasks block feel broken. `FILTER` answers both
+   * from one scan.
+   *
+   * The status counts deliberately ignore status/priority/search — they are what you read to decide
+   * what to filter BY. Only the assignee filter narrows them, because "this agent's board" is a
+   * different board rather than a filtered view of the same one.
+   */
+  async deskCounts(
+    ctx: TenantContext,
+    department: string,
+    filter: ListWorkerTaskFilter = {},
+  ): Promise<{ counts: Record<WorkerTaskStatus, number>; matching: number }> {
+    const scope = [
+      eq(mytrionWorkerTasks.tenantId, ctx.tenantId),
+      eq(mytrionWorkerTasks.department, department),
+    ];
+    if (filter.assigneeZohoUserId) {
+      scope.push(eq(mytrionWorkerTasks.assigneeZohoUserId, filter.assigneeZohoUserId));
+    }
+    const matching = and(...listClauses(ctx, { ...filter, department }));
+
+    const rows = await db
+      .select({
+        open: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'open')::int`,
+        inProgress: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'in_progress')::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'completed')::int`,
+        cancelled: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'cancelled')::int`,
+        matching: sql<number>`count(*) FILTER (WHERE ${matching})::int`,
+      })
+      .from(mytrionWorkerTasks)
+      .where(and(...scope));
+
+    const row = rows[0];
+    return {
+      counts: {
+        open: Number(row?.open ?? 0),
+        in_progress: Number(row?.inProgress ?? 0),
+        completed: Number(row?.completed ?? 0),
+        cancelled: Number(row?.cancelled ?? 0),
+      },
+      matching: Number(row?.matching ?? 0),
+    };
   },
 
   async countByStatus(
@@ -110,6 +243,76 @@ export const workerTaskRepo = {
     };
     for (const row of rows) counts[row.status] = Number(row.count) || 0;
     return counts;
+  },
+
+  /**
+   * Status counts across a whole desk (optionally narrowed to one assignee), independent of the
+   * page being displayed. The Manager board's column headers and metric strip read this: printing
+   * `rows.length` from a 100-row page over a 400-task desk is how a board quietly lies about the
+   * size of the backlog.
+   */
+  async countByStatusForDepartment(
+    ctx: TenantContext,
+    department: string,
+    assigneeZohoUserId?: string,
+  ): Promise<Record<WorkerTaskStatus, number>> {
+    const clauses = [
+      eq(mytrionWorkerTasks.tenantId, ctx.tenantId),
+      eq(mytrionWorkerTasks.department, department),
+    ];
+    if (assigneeZohoUserId) {
+      clauses.push(eq(mytrionWorkerTasks.assigneeZohoUserId, assigneeZohoUserId));
+    }
+    const rows = await db
+      .select({ status: mytrionWorkerTasks.status, n: count() })
+      .from(mytrionWorkerTasks)
+      .where(and(...clauses))
+      .groupBy(mytrionWorkerTasks.status);
+    const counts: Record<WorkerTaskStatus, number> = {
+      open: 0,
+      in_progress: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+    for (const row of rows) counts[row.status] = Number(row.n) || 0;
+    return counts;
+  },
+
+  /**
+   * Open/in-progress assignments per assignee on a desk — the manager's "who is loaded" read.
+   * Completed and cancelled work is excluded: a workload figure that counts finished tasks tells
+   * you about history, not about who can take the next one.
+   */
+  async openLoadByAssignee(
+    ctx: TenantContext,
+    department: string,
+  ): Promise<Array<{ assigneeZohoUserId: string; open: number; overdue: number }>> {
+    const rows = await db
+      .select({
+        assigneeZohoUserId: mytrionWorkerTasks.assigneeZohoUserId,
+        open: count(),
+        overdue: sql<number>`count(*) FILTER (
+          WHERE ${mytrionWorkerTasks.deadlineAt} IS NOT NULL
+            AND ${mytrionWorkerTasks.deadlineAt} < now()
+        )::int`,
+      })
+      .from(mytrionWorkerTasks)
+      .where(
+        and(
+          eq(mytrionWorkerTasks.tenantId, ctx.tenantId),
+          eq(mytrionWorkerTasks.department, department),
+          or(
+            eq(mytrionWorkerTasks.status, 'open'),
+            eq(mytrionWorkerTasks.status, 'in_progress'),
+          ) ?? sql`true`,
+        ),
+      )
+      .groupBy(mytrionWorkerTasks.assigneeZohoUserId);
+    return rows.map((row) => ({
+      assigneeZohoUserId: row.assigneeZohoUserId,
+      open: Number(row.open) || 0,
+      overdue: Number(row.overdue) || 0,
+    }));
   },
 
   async findById(ctx: TenantContext, taskId: string): Promise<MytrionWorkerTask | undefined> {

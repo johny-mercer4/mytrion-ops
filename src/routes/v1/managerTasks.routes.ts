@@ -12,6 +12,7 @@ import {
   listDepartmentAssignees,
   type ManagerTaskDepartment,
 } from '../../modules/manager/departmentAssignees.js';
+import { fetchSalesKpiBoard } from '../../modules/manager/salesKpiBoard.js';
 import { workerTaskRepo } from '../../repos/workerTaskRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -47,6 +48,8 @@ const managerPatchSchema = z
 const listTaskQuerySchema = z.object({
   assigneeZohoUserId: z.string().max(120).optional(),
   status: statusSchema.optional(),
+  priority: prioritySchema.optional(),
+  q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -63,10 +66,18 @@ function parseDepartment(raw: string): ManagerTaskDepartment {
   return dept;
 }
 
-async function assertTaskType(ctx: TenantContext, code: string): Promise<void> {
-  const types = await workerTaskRepo.listTypes(ctx);
-  if (!types.some((type) => type.code === code)) {
-    throw new NotFoundError(`Active task type '${code}' not found`);
+/**
+ * A code must be usable on THIS desk — scoped to it, or shared (`department IS NULL`). Checking the
+ * whole catalog would let a Billing form post `agency_filing` and file a Collection type under
+ * Billing, which then breaks every per-desk report built on `task_type`.
+ */
+async function assertTaskType(
+  ctx: TenantContext,
+  department: ManagerTaskDepartment,
+  code: string,
+): Promise<void> {
+  if (!(await workerTaskRepo.isTypeAllowed(ctx, department, code))) {
+    throw new NotFoundError(`Active task type '${code}' is not available on the ${department} desk`);
   }
 }
 
@@ -84,6 +95,17 @@ function taskDto(task: NonNullable<Awaited<ReturnType<typeof workerTaskRepo.find
 export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
   const auth: RouteShorthandOptions = { onRequest: [app.authenticate] };
 
+  /**
+   * Sales Management → KPI: every sales agent with this cycle's headline numbers.
+   *
+   * Two grouped DWH queries rather than a per-agent fan-out — see modules/manager/salesKpiBoard.ts
+   * for why, and for the name-join caveat between the mart and Zoho.
+   */
+  app.get('/manager/sales/kpi/board', auth, async (request) => {
+    managerContext(request);
+    return fetchSalesKpiBoard();
+  });
+
   app.get<{ Params: { department: string } }>(
     '/manager/:department/workers',
     auth,
@@ -100,8 +122,8 @@ export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
     auth,
     async (request) => {
       const ctx = managerContext(request);
-      parseDepartment(request.params.department);
-      return { types: await workerTaskRepo.listTypes(ctx) };
+      const department = parseDepartment(request.params.department);
+      return { types: await workerTaskRepo.listTypes(ctx, department) };
     },
   );
 
@@ -112,16 +134,39 @@ export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
       const ctx = managerContext(request);
       const department = parseDepartment(request.params.department);
       const query = listTaskQuerySchema.parse(request.query ?? {});
-      const tasks = await workerTaskRepo.list(ctx, {
+      const limit = query.limit ?? 100;
+      const offset = query.offset ?? 0;
+      const filter = {
         department,
         ...(query.assigneeZohoUserId !== undefined
           ? { assigneeZohoUserId: query.assigneeZohoUserId }
           : {}),
         ...(query.status !== undefined ? { status: query.status } : {}),
-        ...(query.limit !== undefined ? { limit: query.limit } : {}),
-        ...(query.offset !== undefined ? { offset: query.offset } : {}),
-      });
-      return { tasks: tasks.map((task) => taskDto(task)) };
+        ...(query.priority !== undefined ? { priority: query.priority } : {}),
+        ...(query.q ? { search: query.q } : {}),
+      };
+      /*
+       * TWO round trips, not four. A prod DB round trip is ~550ms, so the old four-way fan-out
+       * charged an EMPTY desk ~2.2s of database time to report that it is empty.
+       *   tasks       the page
+       *   deskCounts  desk-wide status totals AND the filter-matching total, from one FILTER scan
+       *
+       * The per-assignee load is a third query, so it is skipped entirely when nothing is open —
+       * on an empty desk there is no workload to describe.
+       */
+      const [tasks, summary] = await Promise.all([
+        workerTaskRepo.list(ctx, { ...filter, limit, offset }),
+        workerTaskRepo.deskCounts(ctx, department, filter),
+      ]);
+      const active = summary.counts.open + summary.counts.in_progress;
+      const load = active > 0 ? await workerTaskRepo.openLoadByAssignee(ctx, department) : [];
+      const total = summary.matching;
+      return {
+        tasks: tasks.map((task) => taskDto(task)),
+        counts: summary.counts,
+        load,
+        pagination: { limit, offset, total, hasMore: offset + tasks.length < total },
+      };
     },
   );
 
@@ -137,7 +182,7 @@ export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
       } catch {
         throw new NotFoundError('Eligible assignee not found for this department');
       }
-      await assertTaskType(ctx, body.type);
+      await assertTaskType(ctx, department, body.type);
       const task = await workerTaskRepo.create(ctx, ctx.userId, {
         assigneeZohoUserId: body.assigneeZohoUserId,
         taskType: body.type,
@@ -185,7 +230,7 @@ export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
           throw new NotFoundError('Eligible assignee not found for this department');
         }
       }
-      if (body.type !== undefined) await assertTaskType(ctx, body.type);
+      if (body.type !== undefined) await assertTaskType(ctx, department, body.type);
       const task = await workerTaskRepo.update(ctx, ctx.userId, taskId, {
         expectedVersion: body.version,
         ...(body.assigneeZohoUserId !== undefined

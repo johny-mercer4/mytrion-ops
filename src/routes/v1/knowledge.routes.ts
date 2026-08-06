@@ -19,6 +19,16 @@ const embedSchema = z.object({
   department: z.string().min(1).max(60).optional(),
   /** Alias accepted from callers that use the chat-side name. */
   department_scope: z.string().min(1).max(60).optional(),
+  domain: z.enum(['operations', 'platform']).optional(),
+  language: z.string().min(2).max(25).optional(),
+  authorityClass: z.enum(['canonical', 'manual', 'external']).optional(),
+  owner: z.string().min(1).max(300).optional(),
+  sourceVersion: z.string().min(1).max(200).optional(),
+  sourceCommit: z.string().min(1).max(200).optional(),
+  supersedesDocId: z.string().min(1).max(100).optional(),
+  effectiveAt: z.string().datetime().optional(),
+  expiresAt: z.string().datetime().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const querySchema = z.object({
@@ -77,10 +87,11 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   // Mutating the shared KB corpus (ingest + delete) is an admin-only curation action: a non-admin
   // worker must not be able to poison the RAG grounding corpus or destroy documents. The static
   // API-key systemContext is role 'admin', so server-to-server tooling is unaffected.
-  const writeGuard = {
+  const adminGuard = {
     onRequest: [app.sessionOrApiKey],
     preHandler: [app.requireAudience('internal', 'partner'), app.requireRole('admin')],
   };
+  const writeGuard = adminGuard;
 
   // --- Ingest: raw text body ---
   app.post('/knowledge/embed', writeGuard, async (request) => {
@@ -94,6 +105,16 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       ...(body.source !== undefined ? { source: body.source } : {}),
       ...(body.mimeType !== undefined ? { mimeType: body.mimeType } : {}),
       ...(department !== undefined ? { department } : {}),
+      ...(body.domain !== undefined ? { domain: body.domain } : {}),
+      ...(body.language !== undefined ? { language: body.language } : {}),
+      ...(body.authorityClass !== undefined ? { authorityClass: body.authorityClass } : {}),
+      ...(body.owner !== undefined ? { owner: body.owner } : {}),
+      ...(body.sourceVersion !== undefined ? { sourceVersion: body.sourceVersion } : {}),
+      ...(body.sourceCommit !== undefined ? { sourceCommit: body.sourceCommit } : {}),
+      ...(body.supersedesDocId !== undefined ? { supersedesDocId: body.supersedesDocId } : {}),
+      ...(body.effectiveAt !== undefined ? { effectiveAt: new Date(body.effectiveAt) } : {}),
+      ...(body.expiresAt !== undefined ? { expiresAt: new Date(body.expiresAt) } : {}),
+      ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
     });
   });
 
@@ -124,6 +145,10 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('No files in upload', { statusCode: 400, code: 'NO_FILES', expose: true });
     }
     const department = (fields.department ?? fields.department_scope)?.trim() || null;
+    const domain = fields.domain === 'platform' ? 'platform' : 'operations';
+    const authorityClass = fields.authorityClass === 'canonical' || fields.authorityClass === 'external'
+      ? fields.authorityClass
+      : 'manual';
 
     const results: Array<IngestResult & { filename: string }> = [];
     for (const file of files) {
@@ -133,6 +158,15 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         source: `upload:${file.filename}`,
         mimeType: file.mimetype || 'text/markdown',
         department,
+        domain,
+        authorityClass,
+        ...(fields.language ? { language: fields.language } : {}),
+        ...(fields.owner ? { owner: fields.owner } : {}),
+        ...(fields.sourceVersion ? { sourceVersion: fields.sourceVersion } : {}),
+        ...(fields.sourceCommit ? { sourceCommit: fields.sourceCommit } : {}),
+        ...(fields.supersedesDocId ? { supersedesDocId: fields.supersedesDocId } : {}),
+        ...(fields.effectiveAt ? { effectiveAt: new Date(fields.effectiveAt) } : {}),
+        ...(fields.expiresAt ? { expiresAt: new Date(fields.expiresAt) } : {}),
       });
       results.push({ ...result, filename: file.filename });
     }
@@ -140,7 +174,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Inspect: list ingested docs (optionally filter by department) ---
-  app.get('/knowledge/docs', guard, async (request) => {
+  app.get('/knowledge/docs', adminGuard, async (request) => {
     const ctx = requireContext(request);
     const q = listQuerySchema.parse(request.query);
     const page: { limit?: number; offset?: number; department?: string } = {};
@@ -153,7 +187,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Inspect: knowledge totals (for the widget header) ---
-  app.get('/knowledge/stats', guard, async (request) => {
+  app.get('/knowledge/stats', adminGuard, async (request) => {
     const ctx = requireContext(request);
     const [docs, chunks] = await Promise.all([
       knowledgeRepo.countDocs(ctx),
@@ -163,7 +197,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Inspect: a single doc ---
-  app.get<{ Params: { id: string } }>('/knowledge/docs/:id', guard, async (request) => {
+  app.get<{ Params: { id: string } }>('/knowledge/docs/:id', adminGuard, async (request) => {
     const ctx = requireContext(request);
     const doc = await knowledgeRepo.findDoc(ctx, request.params.id);
     if (!doc) throw new NotFoundError('Knowledge doc not found');
@@ -171,7 +205,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Inspect: a doc's embedded chunks (content + whether a vector is stored) ---
-  app.get<{ Params: { id: string } }>('/knowledge/docs/:id/chunks', guard, async (request) => {
+  app.get<{ Params: { id: string } }>('/knowledge/docs/:id/chunks', adminGuard, async (request) => {
     const ctx = requireContext(request);
     const doc = await knowledgeRepo.findDoc(ctx, request.params.id);
     if (!doc) throw new NotFoundError('Knowledge doc not found');

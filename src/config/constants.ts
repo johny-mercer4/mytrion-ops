@@ -40,6 +40,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   // Verified against the llm-providers pricing table (developers.openai.com/api/docs/pricing).
   'gpt-5.4-mini': { input: 0.75, output: 4.5 },
   'gpt-5.4-mini-2026-03-17': { input: 0.75, output: 4.5 },
+  'gpt-5.4-nano': { input: 0.2, output: 1.25 },
   'text-embedding-3-small': { input: 0.02, output: 0 },
   'text-embedding-3-large': { input: 0.13, output: 0 },
   // Groq (USD per 1M tokens) — gpt-oss worker models. Confirm vs groq.com/pricing.

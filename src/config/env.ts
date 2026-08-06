@@ -75,7 +75,9 @@ const EnvSchema = z.object({
   // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
   // EMBEDDING_SMALL = embeddings. Wired in modules/llm/openaiClient.ts (`models`).
   OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
+  OPEN_AI_FIVE_O_NANO: z.string().default('gpt-5.4-nano'),
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
+  OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4-mini-2026-03-17'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
   // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
   // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.
@@ -149,7 +151,7 @@ const EnvSchema = z.object({
   AGENT_PLAN_MAX_PARALLEL: z.coerce.number().int().positive().max(8).default(3),
   AGENT_PLAN_MAX_REPLANS: z.coerce.number().int().positive().max(5).default(2),
   // Corrective RAG: after Incorrect/thin hops, try web fallback when the agent has webSearch.
-  FF_CRAG_WEB_FALLBACK: flag('1'),
+  FF_CRAG_WEB_FALLBACK: flag('0'),
   // --- Agentic RAG ---
   // Planner/judge model for query decomposition + sufficiency ('' → default chat model).
   RAG_PLANNER_MODEL: z.string().default(''),
@@ -160,6 +162,17 @@ const EnvSchema = z.object({
   // Short-circuit the sufficiency judge when the top fused score is at least this
   // (0.032 ≈ rank-1 in both legs for a single query at RRF_K=60).
   RAG_SUFFICIENT_SCORE: z.coerce.number().positive().default(0.032),
+  RAG_RETRIEVAL_STRATEGY: z.enum(['exact', 'ann', 'shadow']).default('exact'),
+  RAG_ANN_MIN_ELIGIBLE_CHUNKS: z.coerce.number().int().positive().default(10_000),
+  RAG_HNSW_EF_SEARCH: z.coerce.number().int().min(10).max(1_000).default(100),
+  RAG_MIN_COSINE_SCORE: z.coerce.number().min(-1).max(1).default(0.5),
+  RAG_NO_MATCH_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  // Release controls are deliberately opt-in until the governed schema migration has run.
+  FF_RAG_V2_CONTEXT: flag('0'),
+  FF_RAG_V2_RETRIEVAL: flag('0'),
+  FF_RAG_CLAIM_VERIFY: flag('0'),
+  FF_PLATFORM_KNOWLEDGE: flag('0'),
+  FF_RAG_MODEL_POLICY: flag('0'),
   // Docs unverified for longer than this are demoted in retrieval and flagged in citations.
   STALE_DOC_DAYS: z.coerce.number().int().positive().default(180),
   // Optional LangSmith tracing passthrough (traces contain message content — staging only).
@@ -424,6 +437,16 @@ const EnvSchema = z.object({
   //     secret in the `x-rejection-secret` header, scoped to just that endpoint (NOT the full
   //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
   REJECTION_WEBHOOK_SECRET: z.string().default(''),
+
+  // --- Manager EFS Console (proxies servercrm /api/efs/console) ---
+  // Two flags, not one. The master switch defaults OFF, and even with it on nothing is sent unless
+  // the action's key is listed in MANAGER_EFS_LIVE_ACTIONS. Arming is therefore one money-moving
+  // call at a time rather than ~30 at once, none of which has ever been sent to EFS.
+  // Note this is OUR gate; servercrm has its own (EFS_TOUCHPOINTS_WRITES_ENABLED) which we do not
+  // control and which currently reports writesEnabled: true.
+  FF_MANAGER_EFS_WRITES_ENABLED: flag('0'),
+  /** Comma-separated action keys, e.g. `cards.pin,moneyCodes.void`. Empty means none. */
+  MANAGER_EFS_LIVE_ACTIONS: z.string().default(''),
 
   // --- Sales KPI collection + external worker-task intake ---
   // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.

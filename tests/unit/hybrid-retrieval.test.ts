@@ -75,6 +75,17 @@ describe('hybrid legs are RBAC-scoped in SQL (both legs, hostile query strings)'
     const deptParams = strings.filter((p) => (KNOWN_DEPARTMENTS as readonly string[]).includes(p));
     expect(deptParams).toEqual(['sales']);
     expect(sql).toContain('websearch_to_tsquery');
+    expect(sql).toContain("'simple'");
+  });
+
+  it('platform-domain preference is a server-owned narrowing predicate', () => {
+    const { params, sql } = knowledgeSearchRepo
+      .buildFullTextQuery(sales(), 'what can Horizon do?', 6, { domains: ['platform'] })
+      .toSQL();
+    expect(params).toContain('platform');
+    expect(sql).toContain('domain');
+    expect(sql).toContain('status');
+    expect(sql).toContain('verification_status');
   });
 });
 

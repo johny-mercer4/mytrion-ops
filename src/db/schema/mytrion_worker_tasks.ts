@@ -34,6 +34,17 @@ export const mytrionTaskTypes = pgTable(
     tenantId: text('tenant_id').notNull(),
     code: text('code').notNull(),
     label: text('label').notNull(),
+    /**
+     * Manager desk this type belongs to, or NULL for a type every desk may use.
+     *
+     * Deliberately nullable rather than defaulted: "shared" is a real, distinct state here, and a
+     * NOT NULL default would have forced one desk to own `general`. The unique key stays
+     * (tenant, code) — a code means one thing tenant-wide, so Billing cannot redefine `follow_up`
+     * to mean something else. Scope a code to a desk by setting this; widen it by nulling it.
+     */
+    department: text('department'),
+    /** Order within a desk's list. Ties break on label, so a partial ordering is fine. */
+    sortOrder: integer('sort_order').notNull().default(100),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -42,6 +53,11 @@ export const mytrionTaskTypes = pgTable(
     tenantCodeUk: uniqueIndex('mytrion_task_types_tenant_code_uk').on(
       table.tenantId,
       table.code,
+    ),
+    tenantDeptIdx: index('mytrion_task_types_tenant_dept_idx').on(
+      table.tenantId,
+      table.department,
+      table.active,
     ),
   }),
 );

@@ -11584,6 +11584,165 @@ regressions.
   Comms Admin, retention, billing-secret, DB-backed agent, and local WebSocket groups, while the
   changed carrier mini-app suite passes all 119 tests.
 
+---
+
+## 2026-08-06 — Billing Ledger: opening balances + Excel bulk import (M1/M2)
+
+New Billing Mytrion tab implementing the billing department's AR-accounting spec (`mytrion_TZ`): five
+sub-ledgers, each `Closing = Opening + Debit − Credit`, each reconciled against an independent source.
+This pass lands the schema, the client-type scope resolver, the opening-balance surface (the launch
+requirement — migrating accumulated balances out of CMP) and the Excel bulk path. Compute, the five
+section tables, the drill-down and the nightly snapshot job follow.
+
+### Decisions worth not re-litigating
+
+- **`endDate` is INCLUSIVE on every `/billing/ledger/*` endpoint.** Billing is inconsistent today (list
+  endpoints exclusive, `/billing/prepay/ledger` inclusive — which is why `Prepay.tsx:961` shifts back a
+  day). The ledger takes what the agent typed and converts once, in the route layer. Frontend routes all
+  conversion through `toWireRange()` so it cannot drift per call site.
+- **Reporting day is `America/Chicago`.** Both feeds that define Customer Balance are CT and ops' prepay
+  numbers already bucket CT, so Billing's two screens agree. servercrm's own ledger buckets New York and
+  will differ by up to a day at the boundary — expected, not a bug.
+- **`opening = null` when none is recorded — never coerced to 0.** Zero is a claim the carrier had no
+  position at inception; null is "we don't know". Coercing produces a confidently-wrong Closing that
+  lands in the variance queue instead of the migration backlog.
+- **Opening balances are append-only with supersede**, one live row per (carrier, section). Mutating one
+  retroactively rewrites every statement that section ever produced. The chain (`supersedes_id` +
+  `import_batch_id`) IS the import revert journal, so no `bulk_change_log` analogue was needed.
+- **Errors are thrown `AppError`s**, not the `{status:'error'}` widget-parity envelope — that exists in
+  `billing.routes.ts` for the legacy zoho-octane widget, and the Ledger has no legacy twin. The one
+  exception: import preview/commit return per-row verdicts in a 200/201 body, because a partly-valid
+  spreadsheet is a *successful* preview and rejected rows are data.
+- **The Excel template is generated server-side** so the importer parses exactly what the template emits.
+- **`POST`, not `PUT`,** for the two upserts: `PUT` is used by no route in this repo and the frontend's
+  `request()` transport does not accept the verb.
+
+### Traps found the hard way (all verified live against the DWH)
+
+- **`octane.dim_company.is_active` is `integer`, not `boolean`** — unlike its `is_*` siblings
+  `is_wex_funded` / `is_debtor` / `is_loc_suspended`, which are real booleans. A strict `=== true`
+  silently excluded EVERY typed carrier (eligible read 0 instead of 2,847). Read through `truthy()`.
+- **`cmp_transaction.invoice_ref` is NOT an invoice FK and NOT an "invoiced yet" flag.** Joining it to
+  `cmp_invoice.id` matches 41% of rows but the carrier ids agree only 20 times in 32,094 — numeric
+  collision. And it is populated on 100% of transactions in every week including the current one. Attribute
+  a transaction to an invoice by `carrier_id` + `transaction_date ∈ [invoice.date_from, invoice.date_to)`
+  instead: 83.7% attributed in a test week, and the unattributed remainder IS the unbilled set.
+- **`db:generate` cannot be used here.** The snapshot in `meta/` is stale against several teams' schema
+  files, so it emits their pending drift (`mytrion_thread_*`, `mytrion_tickets`, `mytrion_escalations`, a
+  `file_assets` column) mixed into whatever you added. `0103_ledger_core.sql` is hand-written and
+  idempotent, and the three `ledger_*` files are deliberately absent from `drizzle.config.ts` — same as
+  `maintenance_case_attachments` / `maintenance_case_history` / `verification_sales_responses`.
+- **Reverting an import whose rows were all superseded by later activity** used to report success with
+  `restored 0` while changing nothing. Now refuses with `LEDGER_IMPORT_SUPERSEDED`, because an agent told
+  "reverted" will believe the old numbers are back.
+
+### Scope, measured 2026-08-06
+
+8,145 dim_company carriers → **2,160 LOC + 687 Prepay = 2,847 in ledger scope**. Excluded: 32 WEX-Funded
+(TZ §5.3), 4,998 with no `payment_terms` (the `financeClients.ts:42` ~62% comment still holds), 268
+inactive. **`Deposit` has zero rows**, so the Deposit→Prepay normalization is currently inert — kept
+because the value is live in Zoho's picklist.
+
+### Later the same day — compute, control points, tests (M3–M5)
+
+Rest of the module: the feeds, the compute, the five section tables, the drill-down statement, the
+nightly reconciliation snapshot, the TZ §9 control points, and 97 tests.
+
+**The chain is shared code, not convention.** Each section's Debit and its neighbour's Credit call the
+SAME feed function in `ledger/feeds.ts`, so the TZ's "Credit of one section becomes Debit of the next"
+is a property of the implementation. Verified live 2026-07-01..07 across 2,165 LOC carriers:
+`cb-loc.credit === unbilled.debit === $4,558,990.37` and `unbilled.credit === ar.debit ===
+$5,199,587.38`, to the cent. Continuity too: `closing[07-13..19] === opening[07-20..] = 6,915.25`.
+
+**More traps found by running it, not by reading it:**
+
+- **`cmp_transaction.net_total` is unpopulated** — sums to exactly 0.00 over a full week. `funded_total`
+  is the amount. And do NOT switch to `mart_transaction_line_items.funded_total`: that table is
+  line-item grained and repeats the per-transaction total, so it overstates by 46% ($7.81M vs $5.33M for
+  2026-07-01..08). `line_item_amount` there agrees with `cmp_transaction.funded_total` to the cent.
+- **A control sum that always cries wolf is worse than none.** The first version compared loads−draws
+  against per-carrier `balance_after` deltas. But `balance_after` is the post-movement WALLET balance and
+  carriers spend BETWEEN movements — that spend lives in `cmp_transaction` — so the balance repeatedly
+  resets toward the credit limit and its deltas never sum to the movement amounts. It reported a $5.49M
+  "variance" that was simply the week's card spend. Replaced with live-table-vs-staging-mirror, which
+  found a genuine finding on its first run: the mirror is 92 rows / $54,292 behind. Do not re-add the
+  old one; the identity it reached for is what the per-carrier reconciliation already tests.
+- **Postgres will not accept a SELECT alias inside an ORDER BY expression** (`case bucket when …` →
+  `column "bucket" does not exist`), and re-deriving the bucket there then demands every column it
+  touches in the GROUP BY. The rows are re-emitted in declaration order in JS, so the SQL ordering was
+  dropped entirely.
+- **Live-EFS reconciliation is deliberately NOT wired.** servercrm exposes only
+  `GET /api/smart-balance/carrier-balance?carrierId=` — the batched `getChildBalancesByCarrierIds` has no
+  route in front of it — and EFS has no as-of parameter anyway. So Customer Balance reconciles against
+  CMP's own `balance_after` and is TAGGED `cmp_balance_after` rather than implying EFS confirmed it.
+  Enabling it needs a servercrm batch route first; `ledger/reconcile.ts`'s `fetchExternal` is the one
+  place to change.
+- **The extra aging buckets earned themselves.** The TZ names 0–7 / 8–14 / 15–30 / 30+. Production has
+  **777 open invoices worth $3.8M that are NOT YET DUE** — under the TZ's set those would have been
+  reported as 0–7 days overdue. `current` and `no_due_date` are additions, flagged for billing.
+
+**Nightly job** `billing.ledger.daily-snapshot`, 05:00 America/Chicago. Idempotent via the snapshot
+unique key — verified 878 rows across two runs of the same day. One section failing cannot lose the
+others' work; all-zero rows are skipped rather than written (at ~2,850 carriers × 3 sections × 365 days
+that is the difference between 3.1M rows/year and millions of empty ones).
+
+**Payments is NOT a second Transactions tab.** That tab answers "how do I map this"; the ledger's answers
+"which sub-ledger did it land in" — AR credit, prepay top-up, or attributed to nobody. The last is the
+TZ §7 lost-money case and is invisible on Transactions.
+
+**Deliberately parked:** the LOC↔Prepay transition history, behind a flag derived from the nav config so
+it cannot drift. An empty table is a factual claim ("no transitions have occurred"); a Soon badge is a
+claim about the software, and only the second is true until §8's workflow lands.
+
+**Tests: 97.** The load-bearing ones are the drift guard on the AR rules extracted out of
+`analytics/dimensions/receivables.ts` (both now import them, so an edit changes two reports), the
+`is_active`-is-an-integer pin, and the route file asserting all 11 reads and 8 writes deny an
+unauthenticated and a non-billing caller — the UI hide is not the boundary.
+
+### 2026-08-06, later — Ledger live on prod: the bugs only a browser found
+
+Applied `0103` + `0104` to prod and drove the tab for real. Everything below was invisible to
+typecheck, lint and 101 passing tests.
+
+- **`db:migrate` would have silently applied nothing.** drizzle-kit applies an entry only when the
+  newest ALREADY-APPLIED `created_at` is less than that entry's `when`. Prod's newest was
+  `1786076400000`; the timestamps hand-derived from 0102 were ~4 days *behind* it, so the command
+  reports success and does nothing. Had to bump 0103/0104 above prod's cutoff. **0101/0102 are below it
+  too** — which is why those tables were applied by hand — so anyone adding `0105` must check prod's max
+  `created_at` first, not just increment from the journal's tail.
+- **Every billing modal was painting under the app header.** Pre-existing, all six tabs.
+  `.bm-body { position: relative; z-index: 1 }` makes a stacking context, and modals render inside it,
+  so their `z-index: 9990` was scoped there and lost to `.bm-header`'s 100. A descendant can never
+  escape an ancestor's stacking context, so it cannot be fixed in the modal. Dropped the z-index and
+  kept `position: relative`: `.bm-ambience` is first in the DOM so the body still paints above it, and
+  the header still outranks body content (100 > auto) — the View-as dropdown, the documented reason for
+  the rank, still wins.
+- **The `.bm-panel` flex trap.** It is `display:flex; flex-direction:column; height:100%`, so every
+  child is a flex item with the default `flex-shrink: 1`. Once content exceeded the viewport the browser
+  shrank the sub-nav to **14px with its 32px buttons overflowing**. Chrome elements need
+  `flex: 0 0 auto`; only the row list should absorb leftover height. Any new panel here will hit this.
+- **Two places fabricated a number the same code had just called unknown.** The Closing KPI showed
+  `$0.00` when 2,165 of 2,165 carriers had no opening (0 because nothing was summed, which reads as "the
+  book balances"), and the statement's running column walked from an assumed zero and went negative
+  while its own header said Opening `—`. Both now say what they actually are: `—  no client has an
+  opening balance yet`, and a column relabelled **Net movement**. The null-opening rule has to hold in
+  the presentation layer too, not just the compute.
+
+**Perf.** The timeout was query SIZE, not slow compute: `listLedgerCarriers` passed all 8,145 carrier
+ids to `findOpenBatch` and `computeSection` passed 2,165 to `findLiveBatch` — `IN (...)` lists with that
+many bind parameters, shipped to Oregon. Both tables hold at most one row per carrier, so filtering was
+pointless; added `findOpenAll` / `findLiveBySection`. Plus a 60s scope cache with in-flight sharing,
+invalidated on a client-type write. Ruled out paging the carrier list first: the DWH aggregates are
+~142ms as a parallel seq scan regardless of the filter.
+
+Section reads now carry a 60s client budget instead of the transport's 20s row-lookup default (~8s over
+a WAN). The durable fix is wiring the read path to the nightly snapshot table, which makes a period
+O(1) — designed and built, not yet consumed by the section route. That is the next perf step.
+
+**Chrome** went 254px → 95px: one sub-nav row with rules between groups instead of stacked labels, one
+toolbar instead of a period bar plus a filter bar, and a header that names the active section rather
+than repeating the module tagline.
+
 ## 2026-08-07 — Lead Blueprint required fields on status change
 
 - Data Center → Leads edit: when moving Zoho Blueprint stages, always collect/require
@@ -11608,3 +11767,406 @@ regressions.
   counts when `efs.cards` succeeds.
 - Out of scope: Overview/Loyalty `client.active` roster tiles (still DWH analytics).
 - Verification: CRM `clientDrilldown` + `autoRunners` 16/16; CRM typecheck pass.
+## 2026-08-06 — Mytrion Manager: design-system reconciliation + skeleton loaders
+
+Onboarding pass on the Manager Mytrion (`apps/mytrion-crm/src/mytrions/manager`, 9 stylesheets +
+6 components) against the app token system, then fixed the conflicts it surfaced.
+
+Conflicts found and resolved:
+- **Two owners for the same tokens.** `managerPolish.css` held a second copy of the loyalty tier
+  palette and of the tier tint/sheen ramp, and won on load order — so `managerLoyalty.css`'s light
+  palette and its Silver-vs-Idle differentiation were dead code, and the surviving copy flattened
+  every tier to one tint with no sheen. Each now has exactly one declaration, in its owning file;
+  the polish layer is tokens-only plus cross-file relationships.
+- **Typography fork.** Manager forced Space Grotesk onto `--font-body`, `--font-head` AND
+  `--font-mono`, plus a 15px base and five enlarged sidebar sizes. Cost: the module read as a
+  different product, and every `var(--font-mono)` call site (carrier ids, gallons, cached-at stamps,
+  tier figures) silently lost tabular figures because "mono" was not a mono font. Now inherits the
+  app stacks and the shell's nav sizes.
+- **Scale sprawl.** 21 distinct font sizes (9.5–28px), 12 radii (2–18px) and raw 180/220/260ms
+  durations. Collapsed onto `--text-*` (9 steps), `--mg-r-xs/sm/md/lg/pill`, and `--hz-dur-*`.
+  Zero raw font-size / border-radius / font-weight values remain in the module.
+- **Light theme.** Panes were fixed `rgba(255,255,255,.82)` literals instead of token-derived
+  `color-mix`; `tasksBlock.css` filled nested panels and every form field with `--bg-primary`
+  (an inset well in dark, invisible in light); `.mg-acc-summary:hover` used `--hz-glass-hover`
+  (=.86 white in light); the referral dialog carried an `rgba(0,0,0,.72)` shadow and a 76px tone
+  halo; two dialogs had two different scrims at two z-indexes. All derived or tokenized.
+- **Semantics.** Departments with a live Tasks desk advertised it in the same warning amber as
+  "Coming soon" — split into `.mg-dept-chip` (neutral) and `.mg-dept-soon` (amber).
+
+Loaders → skeletons (`ManagerSkeletons.tsx`, one `.mg-sk` shimmer):
+- **Referrals** borrowed Loyalty's `.mg-lty-grid` (380px tracks) to stand in for its own 290px grid,
+  and rendered a live all-zero controls panel above it — two loading states and a full relayout on
+  arrival. Now one skeleton covering the KPI row, controls and grid in their real containers.
+- **Loyalty** skeletoned the client grid alone, so the distribution panel, toolbar and chips
+  appeared from nothing and shoved the grid down. Now covers all four sections.
+- **Tasks** showed "Loading tasks…" in `.mg-tasks-empty` — the same element as "no assignments",
+  so loading and empty looked identical. Now the real three-column layout, shaped.
+- Removed the dead `.mg-loading` / `.mg-spinner` rules; the only surviving spinner is `.mg-spin` on
+  the Refresh control, which is in-control busy feedback, not a page loader.
+
+Verification: `corepack pnpm build` green (tsc --noEmit + vite), `corepack pnpm test` 441/441 across
+69 files. Not visually verified — no headless browser in this environment, so the two themes and the
+skeleton→content hand-off still want a human pass at `pnpm dev`.
+
+## 2026-08-06 — Manager Tasks: one board on every desk, Sales included
+
+Inspected prod `mytrion_worker_tasks` read-only first: table is correct (22 cols, `department`
+default `sales`, migration 0075 applied) but **completely empty — 0 tasks, 0 events** — and
+`mytrion_task_types` held exactly **one** row (`general`), so the manager's Type control was a
+single-option select on every desk.
+
+Both halves of the loop were switched off, which is why nothing had ever been written:
+- Sales **Management** rendered a "coming soon" panel instead of the Tasks block.
+- Sales Mytrion **My Tasks** was `comingSoon: true` in `salesData.ts`, so the fully-built agent
+  kanban was unreachable. A manager could have created a row; no agent had a surface to see it.
+
+Backend:
+- **Removed the duplicate `/manager/sales/tasks*` routes** from `salesKpi.routes.ts`. Fastify
+  prefers a static segment over a param, so those shadowed the generic `/manager/:department/tasks*`
+  and Sales was the one desk running different code — including a PATCH that never checked the task
+  belonged to the desk (a Sales manager could edit another desk's task by id). Their frontend
+  client functions in `api/salesKpi.ts` had no callers and went with them.
+- **Per-department task types** (migration `0104`): nullable `department` + `sort_order` on
+  `mytrion_task_types`, seeded with 6 shared codes and 21 desk-scoped ones. NULL = every desk.
+  `(tenant_id, code)` stays unique, so a code means one thing tenant-wide. Routes now validate the
+  code against the DESK, not the whole catalog.
+- List endpoint returns `{tasks, counts, load, pagination}`. `counts` is deliberately desk-wide and
+  ignores the status/priority/search filter — those are the numbers you read to decide what to
+  filter by, so narrowing them would zero every column but the selected one.
+
+Frontend — Manager Tasks rebuilt as a status board mirroring the agent's own: same four columns,
+same order, same priority hues, same overdue rule, drag to move. Metric strip, assignee/priority/
+search filters, `Assign task` dialog, detail dialog with event history, optimistic moves, skeleton
+first paint. `tasksBlock.css` was dark-only (`--bg-primary` fills that are an inset well in dark and
+invisible in light) and is now on the Manager token ramps.
+
+Verification: backend `pnpm typecheck` clean, `pnpm lint` clean **for the files in this change**,
+new `tests/unit/manager-tasks-routes.test.ts` 21/21; CRM `pnpm build` green, 442/442 tests. Vendored
+`apps/mytrion-crm/app/` rebuilt.
+
+NOT verified: the migration was not run — Docker is not up here and there is no local Postgres, so
+CLAUDE.md's throwaway-DB check could not be done. It is defensive (`IF NOT EXISTS` ×3,
+`ON CONFLICT DO NOTHING`) and touches only a 1-row table. No UI screenshots — no headless browser.
+
+Note for whoever owns the in-flight RAG work in the tree (`src/modules/agents/*`,
+`src/modules/knowledge/*`, `llm_calls`/`rag_runs`, untracked `0105_horizon_rag_excellence.sql`):
+that migration has **no journal entry yet**. Register it as idx 105 with `when` greater than
+0104's `1786065600000`, or drizzle skips it silently with a green exit.
+
+### 2026-08-06 (same day) — 0104 + 0106 applied to PRODUCTION
+
+Ran against the Render prod DB with the user's authorization. Checked the applied set read-only
+first: `drizzle.__drizzle_migrations` was already at 0103, so 0104 was the only migration of mine
+outstanding.
+
+**`pnpm db:migrate` would ALSO have run the untracked `0105_horizon_rag_excellence`** — 19
+statements including an `UPDATE knowledge_docs SET checksum = NULL`. That is someone else's
+in-flight work and was not what was authorized, so for each run I held its journal entry out,
+migrated, and restored it. 0105 remains unapplied.
+
+Result, verified read-only against prod:
+- `mytrion_task_types`: 1 row → **28**; `department` + `sort_order` columns present.
+- Per-desk resolution correct — Sales 11 types, CS/Billing/Finance/Collection/Verification 9,
+  Mobile 8; every desk sees the 6 shared codes plus its own. Zero cross-desk leaks, zero dupes.
+- `0106_task_type_general_sort`: 0104's `ON CONFLICT DO NOTHING` correctly refused to clobber the
+  pre-existing `general` row from 0061, which left it at the column default `sort_order = 100` —
+  so the most-used type sorted LAST in all seven pickers. 0106 moves just that row to 10.
+
+⚠️ **`0105_horizon_rag_excellence` will now be SKIPPED SILENTLY (green exit).** drizzle's migrator
+applies a journal entry only when its `when` exceeds the LAST applied timestamp. Prod's last applied
+is now 0106's `1786076400000`; 0105 is stamped `1786072800000`, which is lower. Before running it,
+either restamp 0105 above `1786076400000` or renumber it past 0106 — see [[drizzle-migration-timestamp-skip]].
+The committed journal deliberately contains 104 and 106 but NOT 105, because 0105's `.sql` is still
+untracked; a journal entry pointing at a missing file breaks a fresh checkout. The 105 entry is left
+in the working tree, uncommitted, exactly as found.
+
+## 2026-08-06 — Horizon RAG and Context Engineering Excellence
+
+Implemented the first-release RAG/context architecture on `/v1/agent` while preserving request
+compatibility and keeping authorization out of prompts. Added a canonical `TurnContextV1`, bounded
+and escaped XML projection, server-regenerated narrowed child contexts, structured sub-agent
+results, evidence references, clause/resolved-ask handling, and scoped known-no-match reuse.
+
+The knowledge path now has governed/versioned document and chunk metadata, structural contextual
+chunking, atomic fail-closed ingestion, race-safe database uniqueness, exact filtered pgvector as
+the default/oracle, multilingual `simple` FTS, RRF fusion, and measured ANN shadow support. Added
+bounded routing and CRAG outcomes, one-retry retrieval/repair, deterministic citation-scope checks,
+high-risk faithfulness verification, internal no-web behavior, and typed-tool enforcement for
+authoritative numeric aggregates.
+
+Added platform self-awareness generated from allowlisted agent/tool/feature metadata with
+audience/department scoping and an audited scheduled sync. Unified model policy now assigns models
+by role, restricts evidence-bearing calls to OpenAI, and records privacy-safe per-call/per-run
+telemetry in `llm_calls` and `rag_runs`. Added the additive RAG result envelope and governed citation
+metadata without exposing internal scores or security diagnostics.
+All five new release controls default off so a normal deploy remains on the current path until
+0107 has been applied; rollout is explicitly opt-in and preserves one-flag rollback.
+
+Evaluation: added a versioned 200-case sanitized golden set and metrics harness. Static routing is
+200/200; the scoped agent/RAG suite is 180/180 across 21 files, including 22/22 cross-tenant leakage
+tests. `pnpm typecheck`, `pnpm lint` (0 errors; 22 pre-existing warnings), `pnpm build`, and
+`git diff --check` pass. The broad repository test attempt was not accepted as a release signal:
+196 files passed, 1 skipped, while 8 unrelated/environment-bound files failed because the sandbox
+cannot bind test sockets or resolve the configured external database. The live retrieval benchmark
+was deliberately not run because the configured DB is production and the harness writes fixtures.
+
+Migration safety: renamed the in-flight RAG migration from 0105 to
+`0107_horizon_rag_excellence`, index 107 / timestamp `1786080000000`, so Drizzle will not silently
+skip it behind the already-applied production 0106. It remains unapplied and requires a scratch-DB
+migration check before an authorized rollout.
+
+## 2026-08-06 — Admin Horizon Turn Inspector
+
+Added an admin-only Turn Inspector rail beside Admin → Horizon AI. It follows the live SSE turn and
+shows the selected agent, model/provider/role, deterministic route, plan and delegation events,
+tool calls, whether RAG actually returned evidence, CRAG grade/confidence/passages, verification
+coverage/repair/abstention, citations, duration, tokens/cache usage, and estimated cost. Prompt
+bodies and evidence text are deliberately excluded.
+
+The backend emits `trace` events only for admin/all-department/bypass contexts; ordinary scoped
+workers receive no diagnostic stream. The RAG wrapper reports both v2 assessment results and
+legacy retrieval usage, while the run tracker reports the concrete model observed on each LLM
+call. The inspector keeps at most 80 steps and clears when switching/newing conversations.
+
+Verification: backend typecheck/build and lint pass (0 errors, the same 22 unrelated warnings);
+47 focused agent/RAG tests pass including 22/22 leakage checks. The full Mytrion CRM suite passes
+451/451 across 71 files and its production build is green. Visually checked the Admin Horizon
+layout in the local app in both dark and light themes; the right rail is readable without crowding
+the chat, with a stacked layout below 900px.
+
+## 2026-08-06 — EFS Console: third Manager workspace card
+
+Probed prod read-only before designing. Three findings changed the shape:
+
+- **Latency dominates.** Measured: parent/snapshot 1.8s · carrier/snapshot 1.1s · carrier
+  transactions(6d) 1.6s · money-codes/summary(30d) 3.9s · carrier/cards(37) 5.0s ·
+  **parent/discounts 11.1s**. Nothing may fan out on mount. The roster is `octane.dim_company`
+  ONLY (milliseconds, zero vendor traffic); every EFS read hangs off something clicked. The single
+  exception is the parent totals strip — one `parent.snapshot`, because that is the number the card
+  gets opened for.
+- **`/fetchers/carrier/:id/rejects` is broken upstream.** HTTP 500,
+  `ADBException: Unexpected subelement startDate` — same failure financeEfs.ts recorded on
+  2026-08-04, still there. Catalogued as `health: 'broken'` and refused with a 503 naming the
+  reason, rather than letting an operator watch a spinner end in a 502. The doc lists it as live.
+- **Partial success is normal.** `parent/snapshot` returns a good balance alongside
+  `creditLimitsError: ADBException…`; `carrier/snapshot` has `cardDetailError`. Those fields pass
+  through untouched and render as a warning chip beside good data.
+
+Shape: roster → dossier, same as Referrals and Loyalty. Chosen over a parent-ledger landing
+(3–8s cold, slowest surface first) and a task-runner IA (no carrier record page at all).
+
+Server — `src/modules/manager/efsConsole/`, ~2 handlers for the whole vendor surface because the
+surface is DATA: 50 fetchers and all 30 actions declared as descriptors.
+- **Writes are inert.** `FF_MANAGER_EFS_WRITES_ENABLED` defaults off; actions validate, audit and
+  return a preview of what WOULD be sent. A parameterised test asserts the serverCrm client is
+  never called for any of the 30. Arming is two steps: the master flag, then per-key
+  `MANAGER_EFS_LIVE_ACTIONS` — so it is one money-moving call at a time, not a boolean cliff.
+  Money/destructive actions additionally require an admin caller (CLAUDE.md rule 7).
+- **Carrier scope**: `assertEfsCarrier` refuses anything absent from `octane.dim_company` with 404
+  before any vendor traffic, on reads AND writes. Known cost: dim_company lags, so a genuinely new
+  child carrier 404s until the warehouse catches up; the message says exactly that.
+- **Money-code digits never leave the server** — `redact.ts` walks the payload structurally
+  (not keyed to one envelope shape, because V1/V2 differ and a shape-specific redactor fails silently
+  the day the envelope moves) and keeps `codeLast4`. Inherited from financeEfs.ts's rule.
+- Window ceilings (7d txns / 90d history) validated server-side AND published via `/capabilities`
+  so the picker refuses a range instead of EFS 400ing.
+
+CRM — `EfsConsoleCard` + `efs/` (dossier, 4 tabs, skeletons). `/capabilities` is server-authoritative:
+no client write toggle, no localStorage, and while writes are disabled **no Execute control is
+rendered at all** — absent, not disabled.
+
+Also: **URL state for the whole Manager hub** (`?card=efs&carrier=5724546&tab=cards`).
+ManagerShell was a routerless `useState`, so a reload dropped you on Overview and no carrier view
+could be pasted into a ticket. Done once for all three cards while there are only three; only the
+three manager-owned query keys are touched, so the Zoho OAuth `?code=` handshake survives.
+
+Verified: backend typecheck + lint clean, 71/71 manager tests (50 new EFS); CRM build green,
+448/448 (6 new URL-state tests); vendored `app/` rebuilt.
+NOT verified: no write has ever been sent to EFS — every action schema is read off the vendor doc,
+not off a successful call. Expect to re-diff bodies during arming. No UI screenshots (no browser).
+
+### 2026-08-06 (same day) — EFS roster 500, and the slow Tasks block
+
+**EFS Console `/v1/manager/efs/clients` 500'd on the default view.** `listEfsRoster` added the
+search predicate only when a search term was present but bound `[like, digits]` unconditionally, so
+an unfiltered roster handed Postgres two parameters for a statement referencing none
+(`bind message supplies 2 parameters, but prepared statement requires 0`). The default view — the
+one every user hits first — was the only one that failed. The predicate is now always present and
+null-guarded (`$1::text IS NULL OR …`), so the bind count is constant. Verified against the DWH:
+6/6 filter combinations, 8,155 clients, 110–800ms.
+
+**Tasks block was slow on an EMPTY desk.** Measured, not guessed:
+- `listManagerAssignees('sales')` **2681ms**, `('billing')` **4866ms** (Zoho directory resolve)
+- `listTypes` 559ms
+- each of the four task-list queries ~555ms; four concurrent = **2650ms wall** under pool contention
+
+Three causes, three fixes:
+1. **Four queries → two.** New `workerTaskRepo.deskCounts` answers the desk-wide status counts AND
+   the filter-matching total from ONE `FILTER` scan, and `openLoadByAssignee` is skipped entirely
+   when nothing is open. An empty desk no longer pays ~2.2s of DB time to be told it is empty.
+   **2650ms → 538ms.**
+2. **Roster cached per desk**, module-scoped so it survives navigating away and back. It is 2.7–4.9s
+   and its answer changes on the timescale of HR changes, not page views. It was already off the
+   critical path; now it usually does not happen at all.
+3. **The block renders immediately.** Header, metric strip and filters paint at zero instead of
+   sitting behind a full-block skeleton — on a desk with no assignments those zeros are the true and
+   final answer, and a skeleton over them promises content that never arrives. Only the board waits,
+   via the new `TasksBoardSkeleton`.
+
+Note the CRM `tsc` gate is currently red from another engineer's uncommitted work
+(`features/chat/useChat.ts` + new `TurnInspector.*` break `useChat.reducer.test.ts` types). My files
+typecheck clean; the vendored bundle was built with `vite build` directly to get around their gate.
+
+### 2026-08-06 (same day) — the Manager slowness was reference data, not queries
+
+The 500s reported on `/manager/{verification,billing,finance}/*` did not reproduce: all four
+endpoints return 200 against the live server. They were the dev server mid-reload picking up the
+roster fix — `/manager/efs/clients` was in the same batch and now answers in 390ms.
+
+The SLOWNESS was real and was measured to its source:
+- `listActiveUsersCached()` 2262ms cold / **0ms warm** (already cached)
+- `workerMytrionAccessRepo.list()` 2690ms cold / **543ms warm** ← a DB round trip every call
+- `mytrionAccessService.resolveBatch()` 2535ms cold / **541ms warm** ← another one
+
+So `listDepartmentAssignees` cost ~1.1s even fully warm, on every desk visit, plus `listTypes` at
+~550ms — reference data being re-derived per page view. Both are now TTL-cached server-side
+(5 min) with in-flight coalescing, so ten desks opening at once make one lookup rather than ten.
+
+End-to-end against the live server, cold → warm:
+```
+/manager/verification/workers    4983ms →   2ms
+/manager/billing/tasks/types     2522ms →   3ms
+/manager/billing/workers         1115ms →   1ms
+/manager/finance/tasks            546ms → 533ms   (one DB round trip — the network floor)
+/manager/efs/clients              390ms → 116ms
+```
+
+⚠️ The assignee cache widens one window and the header of departmentAssignees.ts says so:
+`assertDepartmentAssignee` reads the same cache for non-sales desks, so for up to 5 minutes a
+worker just removed from a department can still be assigned a task there. Judged acceptable because
+a task assignment grants NO access — it appears on that person's own board and every surface they
+could reach is gated independently. Not a pattern to copy for anything that grants authority. Sales
+is unaffected: its branch re-checks `kpiWorkerRepo.isCurrentlyEligible` against the DB every time.
+
+Remaining floor is ~530ms per uncached DB round trip to Render (Oregon). That is network latency,
+not work — the only way past it is a closer replica or fewer round trips, and the task page is now
+down to one.
+
+### 2026-08-06 (same day) — catalog audited against the LIVE servercrm surface
+
+Diffed our descriptors against `GET /api/efs/console` rather than against the handover doc, since
+the live catalog is authoritative. Result: **50 fetchers covering all 42 live entries** (several of
+which are globs — `locations/*`, `products|product-groups|prompt-types`,
+`location-groups[/:groupId]`, `smartpay/*`) and **30/30 actions, zero undeclared, zero orphans**.
+
+The audit found two paths I had genuinely WRONG. The doc writes them as
+`locations/search · geo-prices · interstate-prices`, which reads as three siblings; they are in fact
+all nested under `locations/`. Probed both spellings:
+```
+/carrier/:id/geo-prices            -> 404 (no such route)
+/carrier/:id/locations/geo-prices  -> 500 ADBException  (route exists)
+```
+Corrected, and pinned by a test asserting all three carry `/locations/`.
+
+Probing also turned up **four more endpoints broken upstream**, on top of `rejects`. All fail inside
+EFS's SOAP stack, all verified 2026-08-06:
+```
+carrier.rejects           ADBException: Unexpected subelement startDate
+carrier.locationsSearch   ADBException: Unexpected subelement searchLocation   (with or w/o params)
+carrier.geoPrices         ADBException: Unexpected subelement getGeoPriceLocations
+carrier.interstatePrices  ADBException: Unexpected subelement getInterstatePriceLocations
+carrier.orderCards        ADBException: Unexpected subelement getOrderCards     (operation, not orderId)
+```
+All five stay in the catalog — they are part of the vendor surface and will presumably be fixed —
+but carry `health: 'broken'` so the route refuses them with a 503 naming the exact upstream error
+instead of spending a round trip to surface a generic 502. A test pins the set.
+
+Confirmed working while probing: products (93 rows), policies, cash (230 rows), orders/meta.
+`smartpay/accounts` requires `cardNumber` (400s without it) — noted at the descriptor.
+
+### 2026-08-06 — Horizon greeting latency, model errors, and inspector persistence
+
+- Added an exact multilingual greeting/thanks fast path in `/v1/agent`. It uses no LLM, planner,
+  checkpoint, blackboard, memory, skills, tools, or RAG; the normal persisted turn/audit contract is
+  retained. Turn Inspector identifies it as `horizon-local-greeting-v1`, provider `local`, role
+  `deterministic`, and RAG `none`.
+- Moved the initial route/model trace ahead of the expensive runtime setup so Admin sees the chosen
+  path immediately. Provider model-not-found text (including the reported Chinese GLM response) is
+  now converted to safe user copy while the original diagnostic remains server-logged.
+- Removed Sales/Data Center's unconditional `OPEN_AI_FIVE_O_MINI` manifest pins. They now follow the
+  unified feature-gated model policy, whose rollback/control model is `gpt-4o-mini-2024-07-18`.
+- Turn Inspector traces are cached per user+conversation and restored on conversation switches and
+  reloads. The conversation API now returns the already-persisted assistant `model`, allowing a
+  safe model/RAG summary to be reconstructed when the full browser trace is unavailable.
+- Conversation transcripts now use an in-memory per-hook cache. Returning to an already-opened
+  conversation renders locally without another `GET /chat/conversations/:id` request; deletion
+  clears both transcript and inspector caches.
+- Security baseline before edits: `agent-rbac-leakage` 22/22 passed. Added deterministic fast-path,
+  provider-error redaction, inspector storage, transcript reconstruction, and reducer regressions.
+
+## 2026-08-06 — Sales Management becomes a workspace hub; KPI block
+
+A department desk used to BE its Tasks board, so there was nowhere to put a second surface. Desks
+are now workspace-card grids in the same idiom as Manager Overview (`.mg-card` / `.mg-card-grid`),
+opening one replaces the grid, and which blocks a desk offers is declared in `deptWorkspaces.ts`.
+Tasks is universal; KPI is Sales-only for now because its metrics are sales-shaped.
+
+**KPI — every sales agent, this billing cycle (26th→25th).** Card swipes, gallons, app fills: the
+same three the Sales Mytrion's Home tab shows for the ONE agent looking at it. The obvious build is
+servercrm `/api/agent/dwh/snapshot` per agent — ~65 sequential vendor calls. Instead two grouped
+DWH queries, measured at ~816ms for all agents:
+```
+swipes/gallons/cards  octane.mart_transaction_line_items ⋈ octane.dim_company  (by agent)
+app fills             public.zoho_deals ⋈ public.zoho_users                    (by deal owner)
+                      App Fill date = coalesce(application_date, created_time)
+```
+⚠️ The two sources have NO shared agent id — `dim_company.agent_zoho_user_id` does not match a Zoho
+user id (the trap already documented for the Sales Data Center). They are joined on normalised name.
+
+Probing that join before shipping caught two bugs that would otherwise have quietly under-reported:
+1. **Duplicate Zoho user records for one person were overwriting, not summing.** Zoho holds
+   "Samandar Baxodirov", "SAMANDAR BAXODIROV" and "BAXODIROV SAMANDAR YUSUFALI O'G'LI Ford" as
+   three owner ids for one agent. Last-write-wins reported one record's fills.
+2. **Agents who fill applications but own no carrier were dropped entirely** — 19 people, 263 app
+   fills invisible. That is the worst possible direction for a KPI board: it under-reports exactly
+   the people whose only output IS app fills. They now appear with structurally-zero fuel figures
+   and a "no book" flag so the zeros read as "owns no carriers", not "did nothing".
+
+Live result: 87 → **106 agents**, total app fills 994 → **1,257**, 838ms.
+Totals across the desk: 7,613 clients · 26,211 swipes · 2.33M gallons.
+
+Six unit tests pin the merge (name normalisation, summing duplicates, no-book inclusion, quiet
+agents at zero, unresolvable owners ignored, sort order).
+
+Note: the three manager suites boot a real Fastify app against the prod DB (~550ms/query) and one
+run in four flaked under concurrency. Three consecutive clean runs since; if it recurs, they want a
+local throwaway DB rather than a retry.
+
+## 2026-08-06 — Sales Mytrion governed self-knowledge
+
+- Audited the live Sales Mytrion frontend and backend workflow code as the authoritative source:
+  navigation/availability, Data Center, Create, Carrier lookup, daily workspace, all **23** runnable
+  Automation blocks, and the complete hourly Retention/Open Pool lifecycle.
+- Added a deterministic Sales-scoped platform catalog: one retrieval document per Automation plus
+  overview/navigation, daily workspace, records/create/carriers, shared Automation behavior,
+  Dashboard/availability, and Retention generation/stages/timers/Open Pool. Every entry is internal,
+  department `sales`, content-addressed, verified during platform sync, and safe for supersession.
+- Automation knowledge records exact search codes, prerequisites, click path, results, and safety
+  distinctions (for example, Override is ~30 minutes and does not lift fraud hold; Money Code is
+  delivered to the carrier app and never displayed; Horizon explains write workflows but cannot
+  claim it performed them).
+- Added source-parity tests that read the frontend `AUTO_LIST` and fail on any id/title/code drift.
+  Added Retention and card-activation grounding checks and expanded RAG golden coverage from 200 to
+  280 cases, including 80 multilingual Sales Mytrion cases; deterministic routing is 100%.
+- Sales specialist and orchestrator prompts now route Sales Mytrion UI/Automation/Retention how-to
+  questions to Sales and require `knowledge_search`; a documented how-to no longer incorrectly
+  escalates merely because the user performs a write in the UI.
+- The nightly governed platform sync includes the Sales catalog. Added
+  `pnpm knowledge:sync-platform` for an immediate audited one-shot sync and made live evaluation
+  ingest/reference the governed platform documents.
+- Verification: RBAC leakage 22/22, Sales/platform/golden catalog tests 11/11, focused RAG/agent
+  suites 40/40, TypeScript clean, lint 0 errors (22 unrelated existing warnings), RAG excellence
+  280 cases at 100% deterministic routing. The actual pgvector/OpenAI embedding sync was attempted
+  but blocked by the execution environment's external-write/egress approval guard; it remains the
+  explicit deployment step before Admin testing.

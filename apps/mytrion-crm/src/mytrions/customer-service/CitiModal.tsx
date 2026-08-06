@@ -19,6 +19,7 @@ import {
 import { useUserContext } from '@/context/UserContextProvider';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { CitiRow } from './live';
+import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { useScrollLock } from './useScrollLock';
 
 const CANONICAL = {
@@ -240,20 +241,23 @@ export function CitiModal({
     </select>
   );
 
-  const userLookup = (field: 'Agent_Name' | 'Owner') => (
-    <select className="cs-form-input" value={values[field] ?? ''} onChange={(e) => set(field, e.target.value)}>
-      <option value="">—</option>
-      {/* keep an out-of-page current value selectable */}
-      {values[field] && !users.some((u) => u.id === values[field]) ? (
-        <option value={values[field]}>{labels[field] || values[field]}</option>
-      ) : null}
-      {users.map((u) => (
-        <option key={u.id} value={u.id}>
-          {u.name ?? u.id}
-        </option>
-      ))}
-    </select>
-  );
+  const userLookup = (field: 'Agent_Name' | 'Owner') => {
+    const current = values[field] ?? '';
+    const base: SelectOption[] = users.map((u) => ({ value: u.id, label: u.name ?? u.id }));
+    // Keep an out-of-roster current value selectable (e.g. a session default before the roster loads).
+    const opts = current && !users.some((u) => u.id === current)
+      ? [{ value: current, label: labels[field] || current }, ...base]
+      : base;
+    return (
+      <SearchableSelect
+        value={current}
+        options={opts}
+        placeholder={field === 'Agent_Name' ? 'Search agent…' : 'Search owner…'}
+        allLabel="—"
+        onChange={(v) => set(field, v)}
+      />
+    );
+  };
 
   return (
     <div className="cs-modal-backdrop" onClick={(e) => e.target === e.currentTarget && !saving && !deleting && onClose()}>

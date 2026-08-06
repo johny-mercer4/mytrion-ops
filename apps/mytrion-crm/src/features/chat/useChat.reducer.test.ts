@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { classifyStreamError, reducer } from './useChat';
+import { classifyStreamError, inspectionFromTranscript, reducer } from './useChat';
 import { ApiError } from '../../api/transport';
 import { blankMessage, type UiMessage } from './types';
 
-const EMPTY = { messages: [] as UiMessage[], conversationId: null, streaming: false, conversations: [], error: null };
+const EMPTY = {
+  messages: [] as UiMessage[],
+  conversationId: null,
+  streaming: false,
+  conversations: [],
+  error: null,
+  inspection: null,
+};
 
 function sent() {
   return reducer(EMPTY, { type: 'send', text: 'question', userId: 'u1', assistantId: 'a1' });
@@ -30,6 +37,44 @@ describe('reducer — send', () => {
 });
 
 describe('reducer — streaming lifecycle', () => {
+  it('builds a bounded turn inspection from runtime trace events', () => {
+    let s = sent();
+    s = reducer(s, {
+      type: 'inspectTrace',
+      event: {
+        stage: 'route',
+        status: 'complete',
+        label: 'Routed to orchestrator',
+        runId: 'run-1',
+        agent: 'orchestrator',
+        model: 'gpt-test',
+        route: 'knowledge',
+        ragUsed: false,
+      },
+    });
+    s = reducer(s, {
+      type: 'inspectTrace',
+      event: {
+        stage: 'rag',
+        status: 'complete',
+        label: 'Evidence sufficient',
+        ragUsed: true,
+        ragGrade: 'sufficient',
+        passages: 4,
+      },
+    });
+    expect(s.inspection).toMatchObject({
+      runId: 'run-1',
+      agent: 'orchestrator',
+      model: 'gpt-test',
+      route: 'knowledge',
+      ragUsed: true,
+      ragGrade: 'sufficient',
+      passages: 4,
+    });
+    expect(s.inspection?.steps).toHaveLength(3);
+  });
+
   it('appendToken accretes text and clears the status label', () => {
     let s = sent();
     s = reducer(s, { type: 'appendToken', text: 'Hel' });
@@ -99,6 +144,16 @@ describe('reducer — conversation switching', () => {
     expect(s.messages).toHaveLength(1);
     expect(s.error).toBeNull();
   });
+
+  it('loadTranscript restores the conversation inspection', () => {
+    const inspection = {
+      turnId: 't1', active: false, startedAt: '2026-08-06T10:00:00.000Z', steps: [], model: 'gpt-test',
+    };
+    const s = reducer(EMPTY, {
+      type: 'loadTranscript', conversationId: 'c2', messages: [], inspection,
+    });
+    expect(s.inspection).toEqual(inspection);
+  });
 });
 
 describe('classifyStreamError', () => {
@@ -108,5 +163,22 @@ describe('classifyStreamError', () => {
     expect(classifyStreamError(new ApiError('x', 'NETWORK', 0)).kind).toBe('network');
     expect(classifyStreamError(new ApiError('x', 'HTTP_400', 400)).kind).toBe('stream');
     expect(classifyStreamError(new Error('weird')).kind).toBe('stream');
+  });
+});
+
+describe('persisted inspector fallback', () => {
+  it('reconstructs model and RAG summary from the latest stored assistant message', () => {
+    const inspection = inspectionFromTranscript([
+      {
+        id: 'u1', role: 'user', content: 'question', model: null, ragPassages: null,
+        tools: [], error: null, createdAt: '2026-08-06T10:00:00.000Z',
+      },
+      {
+        id: 'a1', role: 'assistant', content: 'answer', model: 'gpt-test', ragPassages: 3,
+        tools: [], error: null, createdAt: '2026-08-06T10:00:01.000Z',
+      },
+    ]);
+    expect(inspection).toMatchObject({ model: 'gpt-test', ragUsed: true, passages: 3, active: false });
+    expect(inspection?.steps).toHaveLength(2);
   });
 });
