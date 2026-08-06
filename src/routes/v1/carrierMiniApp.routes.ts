@@ -1009,16 +1009,16 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
-   * Owner (or an existing manager) issues a MANAGER registration link for their carrier — a colleague
-   * who gets owner-equivalent company access (fleet, drivers, finances, reports). Carrier-level, not
-   * per-card. The carrier is taken from the caller's own verified registration, never the body, so a
-   * manager link can only ever bind to the caller's own carrier. requireRegisteredOwner already lets a
-   * manager through, so a manager can grow the team too (per product decision).
+   * Owner/manager self-service remains feature-flagged. A Sales agent may also issue the link while
+   * onboarding an active assigned company, even before its owner registers. Their carrier header is
+   * only a selector: the scope hook revalidates Telegram identity and the live non-debtor DWH roster.
    */
   app.post('/carrier/mini-app/manager-invites', async (request, reply) => {
-    // Flag-gated OFF (owner decision 2026-07-22): manager onboarding goes through Octane agents,
-    // not self-serve. Server-side gate — the hidden button is not the gate.
-    if (!env.FF_MINIAPP_MANAGER_INVITES_ENABLED) {
+    const isSalesOnboarding =
+      request.ctx?.role === 'sales_agent' && request.ctx.miniAppAgent !== undefined;
+    // Flag-gated OFF for customer self-service (owner decision 2026-07-22). Sales onboarding is the
+    // approved Octane-agent path and has its own narrow capability plus live portfolio re-check.
+    if (!isSalesOnboarding && !env.FF_MINIAPP_MANAGER_INVITES_ENABLED) {
       throw new AppError('Adding managers from the mini-app is disabled — ask your Octane rep to add one.', {
         statusCode: 503,
         code: 'MANAGER_INVITES_DISABLED',
@@ -1026,7 +1026,10 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       });
     }
     const body = ownerManagerInviteSchema.parse(request.body);
-    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData, 'access:manage');
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(
+      body.initData,
+      'manager:invite',
+    );
     const support = await resolveRegistrationAgent(registration);
 
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {

@@ -1,30 +1,55 @@
 /**
- * Explicit Sales-agent preview catalog. This module deliberately has no React or DOM imports so
- * the repository-level regression suite can verify the read-only boundary under the backend
- * tsconfig as well as the mini-app build.
+ * Sales-agent company-preview policy. The Services tab mirrors the full owner catalog, but only
+ * these explicitly reviewed read-only items remain interactive. Live owner write/request features
+ * are labeled `Read only`; genuinely unreleased owner features keep their normal `Soon` state.
+ *
+ * This lets Sales explain the full roadmap without gaining owner writes. The module deliberately
+ * has no React or DOM imports, so the repository-level regression suite can verify the boundary.
  */
-export const SALES_AGENT_CATALOG_DEFINITION = [
-  {
-    groupLabelKey: 'svcgrp.finance',
-    items: [
-      { key: 'agent-balance', labelKey: 'svc.balance', icon: 'wallet', action: 'balance' },
-      { key: 'agent-txns', labelKey: 'svc.txns', icon: 'list', action: 'txns' },
-      { key: 'agent-invoices', labelKey: 'svc.invoices', icon: 'doc', action: 'invoices' },
-      { key: 'agent-payment', labelKey: 'svc.payment', icon: 'card', action: 'payment' },
-    ],
-  },
-  {
-    groupLabelKey: 'svcgrp.cardMgmt',
-    items: [
-      { key: 'agent-status', labelKey: 'svc.status', icon: 'shield', action: 'status' },
-      { key: 'agent-last-used', labelKey: 'svc.lastused', icon: 'clock', action: 'lastused' },
-    ],
-  },
-] as const;
+export const SALES_AGENT_LIVE_ACTIONS = {
+  'fin-balance': 'balance',
+  'fin-txn-reports': 'txns',
+  'fin-invoice-view': 'invoices',
+  'fin-payment-status': 'payment',
+  'card-status': 'status',
+  'card-track': 'tracking',
+  'doc-billing-form': 'billingform',
+} as const;
+
+export type SalesAgentLiveCatalogKey = keyof typeof SALES_AGENT_LIVE_ACTIONS;
+
+export function salesAgentActionFor(
+  key: string,
+): (typeof SALES_AGENT_LIVE_ACTIONS)[SalesAgentLiveCatalogKey] | null {
+  return Object.prototype.hasOwnProperty.call(SALES_AGENT_LIVE_ACTIONS, key)
+    ? SALES_AGENT_LIVE_ACTIONS[key as SalesAgentLiveCatalogKey]
+    : null;
+}
+
+/** Last-used is a safe fleet read that is useful during onboarding but has no owner catalog row. */
+export const SALES_AGENT_LAST_USED_ITEM = {
+  key: 'agent-last-used',
+  labelKey: 'svc.lastused',
+  icon: 'clock',
+  action: 'lastused',
+} as const;
 
 export const SALES_AGENT_DEFAULT_PINNED = [
-  'agent-status',
-  'agent-balance',
-  'agent-txns',
-  'agent-invoices',
+  'card-status',
+  'fin-balance',
+  'fin-txn-reports',
+  'fin-invoice-view',
 ] as const;
+
+const LEGACY_PIN_KEYS: Readonly<Record<string, string>> = {
+  'agent-status': 'card-status',
+  'agent-balance': 'fin-balance',
+  'agent-txns': 'fin-txn-reports',
+  'agent-invoices': 'fin-invoice-view',
+  'agent-payment': 'fin-payment-status',
+};
+
+/** Preserve Sales agents' existing quick-action choices after adopting owner catalog keys. */
+export function migrateSalesAgentPinned(keys: readonly string[]): string[] {
+  return [...new Set(keys.map((key) => LEGACY_PIN_KEYS[key] ?? key))];
+}
