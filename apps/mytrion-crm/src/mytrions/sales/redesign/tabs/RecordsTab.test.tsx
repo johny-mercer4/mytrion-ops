@@ -29,7 +29,10 @@ vi.mock('../dcCache', () => ({
 
 const { RecordsTab } = await import('./RecordsTab');
 
-function clientRow(computedIsActive: boolean) {
+function clientRow(
+  computedIsActive: boolean,
+  status: 'active' | 'attention' | 'debtor' = 'debtor',
+) {
   return {
     id: '5808248',
     name: 'TPO EXPRESS LLC',
@@ -41,9 +44,9 @@ function clientRow(computedIsActive: boolean) {
     trucks: 12,
     gallons: '26,009',
     cycleGallons: 26_009,
-    status: 'debtor',
+    status,
     computedIsActive,
-    computedDebt: 53_027,
+    computedDebt: status === 'debtor' ? 53_027 : 0,
     mc: '',
     dot: '',
     gallonsThisMonth: 4_948,
@@ -95,8 +98,8 @@ describe('Sales Data Center pipeline tabs', () => {
     expect(screen.getByText('No deals yet')).toBeInTheDocument();
   });
 
-  it('opens an active debtor in the Sales-agent mini-app without opening the client modal', async () => {
-    state.clientRows = [clientRow(true)];
+  it('opens an eligible active company in the Sales-agent mini-app without opening the client modal', async () => {
+    state.clientRows = [clientRow(true, 'active')];
     createAgentInvite.mockResolvedValue({
       invitationId: 'sai_1',
       inviteUrl: 'https://t.me/octane_bot/app?startapp=sai_1',
@@ -116,8 +119,15 @@ describe('Sales Data Center pipeline tabs', () => {
     open.mockRestore();
   });
 
-  it('keeps mini-app launch disabled when the company is not active', () => {
-    state.clientRows = [clientRow(false)];
+  it('keeps mini-app launch disabled for an active debtor', () => {
+    state.clientRows = [clientRow(true, 'debtor')];
+    render(<RecordsTab />);
+    expect(screen.getByRole('button', { name: 'View TPO EXPRESS LLC mini-app' })).toBeDisabled();
+    expect(screen.getByText('Mini-app unavailable')).toBeInTheDocument();
+  });
+
+  it('keeps mini-app launch disabled when the company is inactive', () => {
+    state.clientRows = [clientRow(false, 'active')];
     render(<RecordsTab />);
     expect(screen.getByRole('button', { name: 'View TPO EXPRESS LLC mini-app' })).toBeDisabled();
   });
