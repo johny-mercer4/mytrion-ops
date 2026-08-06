@@ -11495,3 +11495,19 @@ regressions.
   (2 files, 5 tests); root lint/typecheck and both production app builds pass. The repository-wide
   suite still has unrelated baseline/environment failures in CS, retention, billing auto-map, and
   scripted-agent tests; the carrier mini-app suite itself passes all 117 tests in that full run.
+
+## 2026-08-06 — Block debtor company preview in Sales-agent mini-app
+
+- Corrected the post-deployment eligibility rule after the Data Center showed an enabled View
+  mini-app action on debtor cards. A company must now be both active and non-debtor to launch or
+  appear in the Sales-agent mini-app portfolio.
+- Enforced the rule in both layers: debtor cards render Mini-app unavailable in CRM, and the backend
+  filters debtors from restored portfolios and rejects a debtor carrier selector after a fresh DWH
+  roster check. The backend remains authoritative if a stale browser tries the endpoint directly.
+- Added regressions for eligible active launch, active-debtor denial, inactive denial, debtor
+  portfolio exclusion, and selected-debtor authorization failure.
+- Verification: backend debtor/portfolio coverage passes 125/125, CRM card coverage passes 4/4,
+  root lint has zero errors (22 existing warnings), root typecheck/build pass, and the vendored CRM
+  production bundle was rebuilt. The full repository run is 1,901 passed, 96 failed, 1 skipped;
+  failures remain in the same unrelated CS, retention, billing, Comms Admin, and DB-backed scripted
+  agent groups, while the carrier mini-app suite passes all 117 tests.
