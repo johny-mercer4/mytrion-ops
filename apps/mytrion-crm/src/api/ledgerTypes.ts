@@ -253,3 +253,96 @@ export interface LedgerImportBatchSummaryWire {
   committedAt: string | null;
   revertedAt: string | null;
 }
+
+// ─── Computed sections + statement ──────────────────────────────────────────────────────────
+
+export type LedgerOpeningSource = 'recorded' | 'rolled-forward' | 'missing' | 'predates-inception';
+
+export interface LedgerSectionRow {
+  carrierId: string;
+  companyName: string;
+  clientType: LedgerClientType;
+  /** RAW Zoho enum (e.g. WEEKLY_MON_SUN) — the client runs fmtCycle(). */
+  billingCycle: string;
+  section: LedgerSectionId;
+  /** null ⇒ no opening balance on file. NEVER 0 in that case. */
+  opening: number | null;
+  openingAsOf: string | null;
+  openingSource: LedgerOpeningSource;
+  debit: number;
+  credit: number;
+  /** opening + debit − credit; null when opening is null. */
+  closing: number | null;
+  /** Display-ready per-term breakdown, e.g. { 'Fuel': 5300, 'Money code': 750 }. */
+  components: Record<string, number>;
+  warnings: string[];
+}
+
+export interface LedgerSectionTotals {
+  carriers: number;
+  opening: number;
+  debit: number;
+  credit: number;
+  closing: number;
+  /** Rows that could not state a closing balance — the migration backlog. */
+  missingOpening: number;
+}
+
+export interface LedgerSectionResponse {
+  section: LedgerSectionId;
+  label: string;
+  clientType: LedgerClientType;
+  externalSource: string;
+  shouldTrendToZero: boolean;
+  /** Echoed so a reply for a period no longer displayed can be detected. */
+  period: { startDate: string; endDate: string };
+  rows: LedgerSectionRow[];
+  totals: LedgerSectionTotals;
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  excluded: { wexFunded: number; noType: number; inactive: number };
+}
+
+export type LedgerStatementRefType =
+  | 'topup'
+  | 'draw'
+  | 'transaction'
+  | 'invoice'
+  | 'payment'
+  | 'maintenance'
+  | 'money-code';
+
+export interface LedgerStatementLine {
+  /** Stable key — dates repeat, so an index key would break reconciliation on a refetch. */
+  id: string;
+  date: string;
+  description: string;
+  /** Exactly one of debit/credit is non-null. */
+  debit: number | null;
+  credit: number | null;
+  /** SERVER-computed. Never derive this client-side. */
+  running: number;
+  refType: LedgerStatementRefType;
+  refId?: string;
+}
+
+export interface LedgerStatementResponse {
+  carrierId: string;
+  companyName: string;
+  clientType: string;
+  section: LedgerSectionId;
+  sectionLabel: string;
+  period: { startDate: string; endDate: string; endDateExclusive: string };
+  opening: number | null;
+  openingAsOf: string | null;
+  openingSource: LedgerOpeningSource;
+  debit: number;
+  credit: number;
+  closing: number | null;
+  lines: LedgerStatementLine[];
+  /** True when the line cap was hit; the header totals still cover the whole period. */
+  truncated: boolean;
+  warnings: string[];
+}

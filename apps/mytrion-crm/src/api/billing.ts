@@ -19,7 +19,9 @@ import type {
   LedgerImportRowsPage,
   LedgerImportVerdict,
   LedgerSectionId,
+  LedgerSectionResponse,
   LedgerSectionsResponse,
+  LedgerStatementResponse,
   OpeningBalancesPage,
   OpeningCoverageResponse,
   OpeningHistoryResponse,
@@ -476,4 +478,48 @@ export function revertOpeningImport(
 /** Recent import batches — the history strip. */
 export function fetchOpeningImports(): Promise<{ batches: LedgerImportBatchSummaryWire[] }> {
   return billingGet('/billing/ledger/opening-balances/imports');
+}
+
+// ---- Ledger: computed sections + drill-down statement ----
+
+/**
+ * One sub-ledger over a period. `endDate` is INCLUSIVE — pass what the agent typed; go through
+ * `toWireRange()` in ledgerModel.ts rather than building the range here.
+ */
+export function fetchLedgerSection(
+  section: LedgerSectionId,
+  range: { startDate: string; endDate: string },
+  opts: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    missingOpeningOnly?: boolean;
+    sort?: 'company' | 'carrier' | 'closing' | 'debit' | 'credit';
+    dir?: 'asc' | 'desc';
+  } = {},
+): Promise<LedgerSectionResponse> {
+  const qs = new URLSearchParams({ startDate: range.startDate, endDate: range.endDate });
+  if (opts.page) qs.set('page', String(opts.page));
+  if (opts.limit) qs.set('limit', String(opts.limit));
+  if (opts.search) qs.set('search', opts.search);
+  if (opts.missingOpeningOnly) qs.set('missingOpeningOnly', 'true');
+  if (opts.sort) qs.set('sort', opts.sort);
+  if (opts.dir) qs.set('dir', opts.dir);
+  return billingGet(`/billing/ledger/sections/${encodeURIComponent(section)}?${qs.toString()}`);
+}
+
+/** One carrier's lines for one section, with the server-computed running balance. */
+export function fetchLedgerStatement(p: {
+  carrierId: string;
+  section: LedgerSectionId;
+  startDate: string;
+  endDate: string;
+}): Promise<LedgerStatementResponse> {
+  const qs = new URLSearchParams({
+    carrierId: p.carrierId,
+    section: p.section,
+    startDate: p.startDate,
+    endDate: p.endDate,
+  });
+  return billingGet(`/billing/ledger/statement?${qs.toString()}`);
 }

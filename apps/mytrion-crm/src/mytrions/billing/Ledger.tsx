@@ -18,7 +18,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
 import { canWriteMytrion } from '../../access/resolveAccess';
+import { LedgerStatementModal } from './LedgerStatementModal';
+import { LedgerTable, type StatementTarget } from './LedgerTable';
 import { OpeningBalances } from './OpeningBalances';
+import { OpeningManualModal } from './OpeningManualModal';
 import {
   LEDGER_DEFAULT_TAB,
   LEDGER_GROUPS,
@@ -26,6 +29,7 @@ import {
   getLedgerTab,
   type LedgerTabId,
 } from './ledgerSections';
+import type { LedgerSectionId } from '../../api/ledgerTypes';
 import { defaultRange, isValidRange, rangesEqual, type LedgerRange } from './ledgerModel';
 
 const P_SEARCH = 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z';
@@ -68,6 +72,11 @@ export function Ledger() {
   const [draft, setDraft] = useState<LedgerRange>(defaultRange);
   const [applied, setApplied] = useState<LedgerRange>(defaultRange);
   const [filters, setFilters] = useState<LedgerFilters>(EMPTY_FILTERS);
+  const [statement, setStatement] = useState<StatementTarget | null>(null);
+  /** Set from a section row's "no opening balance" caption — fix the gap where it is discovered. */
+  const [fixOpeningFor, setFixOpeningFor] = useState<string | null>(null);
+  /** Bumped after a manual save so the visible section recomputes with the new opening. */
+  const [dataVersion, setDataVersion] = useState(0);
 
   const activeDef = getLedgerTab(active);
   const shown = visibleFilters(active);
@@ -98,12 +107,28 @@ export function Ledger() {
     setFilters(EMPTY_FILTERS);
   }
 
-  const surfaces = useMemo<Partial<Record<LedgerTabId, ReactNode>>>(
-    () => ({
+  const surfaces = useMemo<Partial<Record<LedgerTabId, ReactNode>>>(() => {
+    const map: Partial<Record<LedgerTabId, ReactNode>> = {
       openings: <OpeningBalances canWrite={canWrite} />,
-    }),
-    [canWrite],
-  );
+    };
+    // One generic table, five configured sections — see ./LedgerTable.tsx.
+    for (const tab of LEDGER_TABS) {
+      if (!tab.isBalanceSection || tab.disabled) continue;
+      map[tab.id] = (
+        <LedgerTable
+          // Keyed on the applied period so a stale reply can never render under a new period label.
+          key={`${tab.id}:${applied.from}:${applied.to}:${dataVersion}`}
+          section={tab.id as LedgerSectionId}
+          range={applied}
+          filters={filters}
+          canWrite={canWrite}
+          onOpenStatement={setStatement}
+          onFixOpening={setFixOpeningFor}
+        />
+      );
+    }
+    return map;
+  }, [canWrite, applied, filters, dataVersion]);
 
   const surface = (id: LedgerTabId): ReactNode => {
     const node = surfaces[id];
@@ -229,15 +254,39 @@ export function Ledger() {
       ) : null}
 
       {/* ── Surfaces ── */}
-      {surface('openings')}
+      {LEDGER_TABS.map((tab) => (
+        <div key={tab.id}>{surface(tab.id)}</div>
+      ))}
 
-      {/* Balance sections, the transitions log and the payments journal land here next — the sub-nav
-          entries above are already wired, so each is a component plus one `surface(...)` line. */}
-      {activeDef.isBalanceSection || active === 'transitions' || active === 'payments' ? (
-        <div className="db-empty-state">
-          {activeDef.label} is not wired up yet — Opening Balances is available now, and the computed
-          sections follow once the ledger compute layer lands.
-        </div>
+      {/* Parked entries (transitions, payments) have no surface, so say so rather than render blank. */}
+      {activeDef.disabled ? (
+        <div className="db-empty-state">{activeDef.label} is not available yet.</div>
+      ) : null}
+
+      {statement ? (
+        <LedgerStatementModal
+          key={`${statement.carrierId}:${statement.section}:${applied.from}:${applied.to}`}
+          carrierId={statement.carrierId}
+          companyName={statement.companyName}
+          section={statement.section}
+          sectionLabel={getLedgerTab(statement.section).label}
+          column={statement.column}
+          range={applied}
+          onClose={() => setStatement(null)}
+        />
+      ) : null}
+
+      {fixOpeningFor !== null ? (
+        <OpeningManualModal
+          key={`fix-${fixOpeningFor}`}
+          initialCarrierId={fixOpeningFor}
+          onClose={() => setFixOpeningFor(null)}
+          onSaved={() => {
+            setFixOpeningFor(null);
+            // The section's opening changed, so the whole computation for it is stale.
+            setDataVersion((v) => v + 1);
+          }}
+        />
       ) : null}
     </div>
   );

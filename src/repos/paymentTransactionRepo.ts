@@ -485,6 +485,79 @@ export const paymentTransactionRepo = {
     return rows.map((r) => ({ carrierId: String(r.carrierId), source: r.source, total: Number(r.total) || 0 }));
   },
 
+  /**
+   * Money RECEIVED per carrier in a window — the Debit of the Billing Ledger's Un Top-Upped Payments
+   * sub-ledger (TZ §5.2).
+   *
+   * Differs from `sumForPrepay` above in three deliberate ways:
+   *   • Buckets on the LEDGER's Central reporting day rather than UTC midnight, so a payment lands in
+   *     the same day the ledger's other feeds put it in. (`sumForPrepay` uses UTC; it predates the
+   *     ledger and its callers depend on that, so it is left alone.)
+   *   • Excludes returned payments — money that came back out is not money received, and counting it
+   *     would leave a permanent phantom in a section that is supposed to trend to zero.
+   *   • Sums across every rail rather than an allow-list, because the question is "what did this
+   *     carrier send us", not "what did a particular rail send".
+   */
+  async sumReceivedByCarrier(
+    startYmd: string,
+    endExclusiveYmd: string,
+    carrierIds?: readonly string[],
+  ): Promise<Map<string, number>> {
+    const conds: SQL[] = [
+      sql`${paymentTransactions.carrierId} is not null`,
+      sql`${paymentTransactions.isReturned} = false`,
+      sql`(${paymentTransactions.occurredAt} AT TIME ZONE 'America/Chicago')::date >= ${startYmd}::date`,
+      sql`(${paymentTransactions.occurredAt} AT TIME ZONE 'America/Chicago')::date <  ${endExclusiveYmd}::date`,
+    ];
+    if (carrierIds?.length) {
+      conds.push(inArray(paymentTransactions.carrierId, [...new Set(carrierIds)]));
+    }
+    const rows = await db
+      .select({
+        carrierId: paymentTransactions.carrierId,
+        total: sql<string>`coalesce(sum(${paymentTransactions.amount}), 0)::text`,
+      })
+      .from(paymentTransactions)
+      .where(and(...conds))
+      .groupBy(paymentTransactions.carrierId);
+    const out = new Map<string, number>();
+    for (const r of rows) if (r.carrierId) out.set(r.carrierId, Number(r.total) || 0);
+    return out;
+  },
+
+  /**
+   * Money received but NOT yet applied to an invoice or a top-up, as of a date — the independent check
+   * for Un Top-Upped Payments' Closing balance.
+   *
+   * Point-in-time, not windowed: "what is still sitting unapplied" is a balance, not a flow. Covered by
+   * the existing `payment_transactions_mapped_idx` on (is_invoice_mapped, occurred_at).
+   */
+  async sumUnappliedByCarrier(
+    asOfExclusiveYmd: string,
+    carrierIds?: readonly string[],
+  ): Promise<Map<string, number>> {
+    const conds: SQL[] = [
+      sql`${paymentTransactions.carrierId} is not null`,
+      sql`${paymentTransactions.isInvoiceMapped} = false`,
+      sql`${paymentTransactions.isReturned} = false`,
+      sql`(${paymentTransactions.occurredAt} AT TIME ZONE 'America/Chicago')::date < ${asOfExclusiveYmd}::date`,
+    ];
+    if (carrierIds?.length) {
+      conds.push(inArray(paymentTransactions.carrierId, [...new Set(carrierIds)]));
+    }
+    const rows = await db
+      .select({
+        carrierId: paymentTransactions.carrierId,
+        total: sql<string>`coalesce(sum(${paymentTransactions.amount}), 0)::text`,
+      })
+      .from(paymentTransactions)
+      .where(and(...conds))
+      .groupBy(paymentTransactions.carrierId);
+    const out = new Map<string, number>();
+    for (const r of rows) if (r.carrierId) out.set(r.carrierId, Number(r.total) || 0);
+    return out;
+  },
+
   /** Format money for callers building NewPaymentTransaction rows. */
   money,
 };
