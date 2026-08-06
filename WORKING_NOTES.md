@@ -12170,3 +12170,35 @@ local throwaway DB rather than a retry.
   280 cases at 100% deterministic routing. The actual pgvector/OpenAI embedding sync was attempted
   but blocked by the execution environment's external-write/egress approval guard; it remains the
   explicit deployment step before Admin testing.
+
+## 2026-08-07 — the failed Render deploy was a database restart, not the code
+
+Diagnosed rather than guessed. What the evidence says:
+
+- **The migration SUCCEEDED.** `0107_horizon_rag_excellence` is recorded in
+  `drizzle.__drizzle_migrations` with `created_at = 1786087200000` (the restamp from the build
+  merge), and all of its DDL is live: 8/8 new `knowledge_docs` columns, 7/7 `knowledge_chunks`
+  columns, both `rag_runs` + `llm_calls` tables, the generated `content_tsv_simple` column, and
+  both `SET NOT NULL`s. The journal fix worked — without it that migration would have been skipped
+  forever.
+- **The built server boots clean in production mode** against the prod DB (~10s to
+  "API listening"). No route conflict, no missing secret, no boot defect. `envRuntime.ts` was
+  unchanged by the merge, so the required-secret set did not move.
+- **`pg_postmaster_start_time()` = 2026-08-06 22:36:21 UTC** — Postgres restarted seconds after the
+  boot log. That is the whole story: migrations applied, the database then went away, and every
+  retry hit `ECONNREFUSED` until the boot budget ran out and the process exited 1.
+
+Two real gaps that turned a transient DB restart into a failed deploy, both fixed:
+
+1. **`DB_BOOT_WAIT_SECONDS` 90 → 300.** It is not set on Render, so the default was the budget. A
+   managed-Postgres restart routinely exceeds 90s. Waiting five minutes is strictly better than
+   failing the deploy — the instance serves no traffic either way, and Render restarts it anyway.
+2. **`start-prod.sh` reported nothing when the API died.** `wait $BACKEND_PID` propagated the exit
+   code, so Render printed only "Exited with status 1" and the cause had to be reconstructed. It
+   now logs the status explicitly and exits with it.
+
+Also observed while diagnosing: 48 live connections (core-api 14, pgboss 11, a JDBC client 10,
+unnamed 10). Not the cause here, but worth watching — several of those are not ours.
+
+NOT changed: nothing about the merge or the migrations was rolled back, because nothing was wrong
+with them. A redeploy should now succeed; if the DB is mid-restart it will wait rather than fail.
