@@ -11364,6 +11364,225 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+## 2026-08-06 — Telegram mini-app registration/session architecture review
+
+- Reviewed the registration bootstrap, invite redemption, returning-user Telegram `initData`
+  authentication, driver card-number self-registration, registration/invitation repositories, and
+  frontend session boot without changing runtime code.
+- Confirmed the strong parts: Telegram HMAC + `auth_date` validation, server-derived identity and
+  carrier/role scope, one-shot invite redemption inside the registration transaction, tenant
+  predicates in the repositories, active-status checks on every mini-app request, and audit entries
+  for successful registration writes.
+- Main follow-ups: exchange `initData` for a first-party HttpOnly session instead of placing the raw
+  credential in the realtime URL; add database-enforced one-live-driver-per-card invariants; remove
+  the unsigned `x-telegram-chat-id` registration input; harden card-number self-registration beyond
+  its process-local per-user limiter; and remove the default-tenant assumption before partner-tenant
+  onboarding is enabled.
+- Repository-rule debt found in the same surface: `carrierMiniApp.routes.ts` performs direct DB work
+  and is 1,709 lines, while `apps/mini-app/src/App.tsx` is 4,405 lines (600-line hard cap).
+- Verification: focused mini-app + registration-repository suites pass, 114/114.
+
+## 2026-08-06 — Mini-app sales-agent multi-company requirement
+
+- Clarified the next mini-app role: a Sales agent links their Telegram identity to their verified
+  Zoho worker identity, sees all companies currently assigned to that agent, selects one company,
+  and receives owner-equivalent capabilities only inside that selected/authorized company.
+- The current `registered_mini_app_companies` row cannot model this safely: it deliberately allows
+  one carrier registration per Telegram user and its upsert overwrites the carrier. Do not add a
+  carrier-bound `sales_agent` profile to that table.
+- Recommended model: separate Telegram principal/account identity from carrier access grants. Store
+  the Sales agent's verified Zoho user id on the principal; source the portfolio dynamically from
+  the existing `fetchAgentClients` DWH authority and re-run `assertCarrierOwned` for every selected
+  carrier operation. The request's carrier id is a selector, never authority.
+- Sales agents must act as themselves in audit data (`sales_agent` actor + selected carrier), not as
+  the carrier owner. Owner-equivalent capability is effective, carrier-scoped authorization; it is
+  not impersonation and must not depend on that carrier having an owner mini-app registration.
+- No runtime changes in this clarification session.
+
+## 2026-08-06 — Mini-app backend capability policy
+
+- Added the explicit mini-app capabilities `company:read`, `financial:read`, `fleet:manage`,
+  `card:write`, `reports:send`, and `access:manage`, with a single typed role-to-capability policy.
+- Added the internal `sales_agent` role. Sales agents receive all six owner-like capabilities,
+  including `access:manage` for the registration-link flow; their generic tool-dispatcher scopes
+  remain empty so this role cannot accidentally escape through the broader assistant tool catalog.
+- Routed fleet, access delegation, financial reads, card operations, and report delivery through
+  explicit capability checks while retaining the existing owner/carrier/driver-card scopes.
+  Driver/manager invitation and revocation now explicitly require `access:manage`.
+- Kept money-code draw/void on the existing owner/manager-only boundary. The requested capability
+  set has `financial:read` but no `financial:write`, so read authority is not treated as sufficient
+  write authority for the future sales-agent path.
+- Confirmed the screenshot flow: the Sales agent stays authenticated by their verified Zoho CRM
+  session in Sales Mytrion; the generated link is redeemed by the CLIENT in Telegram. The client
+  Telegram `user_id` belongs on `registered_mini_app_companies`; agent attribution remains the
+  verified Zoho user id/name stamped onto the invite and resulting registration. A future Sales
+  agent Telegram portal still needs its own Telegram-to-Zoho principal table and must not overload
+  the one-company client registration row.
+- Added a fail-closed registration eligibility gate. A non-admin Sales agent must supply a carrier
+  id, own that carrier in the same DWH roster that feeds Data Center → Clients, and the fresh roster
+  row must be active, non-debtor, and not LOC-suspended. Stale roster fallback is disabled for link
+  creation, including when a stale-tolerant UI refresh is already in flight. The Manage panel mirrors
+  the rule by disabling the button for Debtor/Attention cards.
+- Verification: capability/RBAC/carrier mini-app/eligibility suites pass, 136/136; backend and CRM
+  typechecks pass; the CRM production build passes; lint has zero errors (22 existing warnings).
+  Full backend run: 1,886 passes and 99 existing environment/fixture failures in DB/socket, CS,
+  Comms Admin, Billing, Retention, and scripted-agent groups.
+
+## 2026-08-06 — Sales-agent mini-app authorization audit follow-up
+
+- Audited the committed capability/eligibility work end-to-end against the effective caller,
+  department/write-mode, DWH ownership, metadata attribution, tenant/RBAC, and cache boundaries.
+- Fixed a real Admin View-as bypass: carrier-management routes used the principal context directly,
+  so an admin viewing as an agent still skipped that agent's ownership/debtor/activity checks. These
+  routes now resolve the verified act-as target first; writes and reads both run with that effective
+  identity, and a target's read-only/full Sales mode is enforced on link creation.
+- Added the missing internal boundary: carrier-link creation now requires full Sales access, while
+  the card/registration management reads require Sales access. Non-Sales internal sessions and
+  customer-audience sessions fail before DWH/repository work.
+- Closed request-body attribution spoofing for non-admins and Admin View-as. The authorized DWH row
+  supplies company/agent names, the effective verified session supplies the Zoho agent id, and a
+  worker cannot choose a 30-day TTL. A plain, non-impersonating admin retains the intentional manual
+  metadata/lifetime override used by Admin Carrier Management.
+- `assertCarrierInviteEligible` now returns the exact fresh authorized roster row after checking it,
+  so authorization and persisted metadata cannot be sourced from divergent lookups.
+- New route regressions cover non-Sales denial, Admin View-as debtor denial, View-as read scoping,
+  and spoofed metadata/TTL rejection. Focused capability, carrier, Data Center, ownership, cache,
+  and RBAC verification passes 175/175; backend typecheck/build and CRM production build pass; lint
+  has zero errors (22 pre-existing warnings).
+- Full backend run on the product changes: 1,889 passed, 99 failed, 1 skipped. The failures remain in
+  the known unrelated environment/fixture groups: local socket bind is denied; DB-backed suites
+  cannot reach localhost:5433; billing webhook secrets are absent; and CS/Comms/Retention fixtures
+  resolve against the developer environment. All mini-app/Data Center/ownership/RBAC suites pass.
+- Remaining architectural debt in this surface: the real Telegram-to-Zoho `sales_agent` principal
+  and portfolio selector are still future work (the capability policy is scaffolding today);
+  `carrierMiniApp.routes.ts` is 1,749 lines and still contains direct DB select/transaction orchestration
+  instead of repository/service boundaries; `dwhClientRoster.ts` is 596 lines (under the 600 hard cap
+  but over the 580 target). Split/refactor these before adding the sales-agent Telegram portal.
+
+## 2026-08-06 — Debtor registration-link deployment fix
+
+- Traced a production UI mismatch where Data Center correctly labeled a client as `Debtor` but the
+  Manage panel still rendered an enabled registration-link action. The source-side status gate from
+  the sales-agent capability work had not reached production because the committed CRM `app/` bundle
+  was stale; Render serves that vendored bundle and does not rebuild the CRM during deployment.
+- Tightened the UI so debtor/inactive clients receive an explicit blocked-state message and no
+  registration-link button at all. The API remains the authority and independently rejects debtor,
+  inactive, or LOC-suspended client invitations after a fresh DWH eligibility check.
+- Added a component regression covering both sides of the boundary: a debtor cannot see the action,
+  while an active client can. Rebuilt the committed CRM production bundle so the status gate is in
+  the assets actually copied into the Render runtime image.
+- Verification: all CRM tests pass (69 files, 437 tests), including the new debtor/active regression;
+  CRM TypeScript checking and the Vite production build pass.
+
+## 2026-08-06 — Sales-agent Telegram mini-app workspace
+
+- Added a separate Sales-agent Telegram identity and one-time self-registration flow. The durable
+  principal binds one verified Zoho worker to one Telegram user per tenant; it does not reuse a
+  customer carrier registration because the agent owns a changing portfolio rather than one company.
+- Added a distinct mini-app workspace: Sales agents first see their live active-company portfolio,
+  then can open a company in a read-only mini-app view and return to the portfolio. Active debtors
+  remain viewable, while inactive companies are excluded. The selected carrier is only a request
+  selector and is re-authorized against a fresh, no-stale-fallback DWH roster on every scoped call.
+- Added the Data Center client-card action that opens the Sales agent's self-registration/deep link.
+  Active debtors can use View mini-app; inactive companies show a disabled action. Customer owner,
+  manager, and driver registration links remain blocked for debtor or inactive clients.
+- Split read and write capabilities so Sales agents can inspect company, financial, and fleet data
+  but cannot mutate cards, issue or void money codes, send reports/documents, manage access, or file
+  customer service requests. Registration creation and redemption are audit-logged.
+- Added migration `0103_sales_agent_mini_app.sql`, tenant-scoped repository operations, route and
+  capability regressions, CRM component regressions, translations, and rebuilt both vendored apps.
+- Verification: focused backend coverage passes (4 files, 135 tests); CRM focused coverage passes
+  (2 files, 5 tests); root lint/typecheck and both production app builds pass. The repository-wide
+  suite still has unrelated baseline/environment failures in CS, retention, billing auto-map, and
+  scripted-agent tests; the carrier mini-app suite itself passes all 117 tests in that full run.
+
+## 2026-08-06 — Block debtor company preview in Sales-agent mini-app
+
+- Corrected the post-deployment eligibility rule after the Data Center showed an enabled View
+  mini-app action on debtor cards. A company must now be both active and non-debtor to launch or
+  appear in the Sales-agent mini-app portfolio.
+- Enforced the rule in both layers: debtor cards render Mini-app unavailable in CRM, and the backend
+  filters debtors from restored portfolios and rejects a debtor carrier selector after a fresh DWH
+  roster check. The backend remains authoritative if a stale browser tries the endpoint directly.
+- Added regressions for eligible active launch, active-debtor denial, inactive denial, debtor
+  portfolio exclusion, and selected-debtor authorization failure.
+- Verification: backend debtor/portfolio coverage passes 125/125, CRM card coverage passes 4/4,
+  root lint has zero errors (22 existing warnings), root typecheck/build pass, and the vendored CRM
+  production bundle was rebuilt. The full repository run is 1,901 passed, 96 failed, 1 skipped;
+  failures remain in the same unrelated CS, retention, billing, Comms Admin, and DB-backed scripted
+  agent groups, while the carrier mini-app suite passes all 117 tests.
+
+## 2026-08-06 — Agora project-boundary review
+
+- Reviewed Agora's workspace/project/resource model and the active repositories under
+  `~/Projects/Octane` to define a practical project taxonomy for the empty Octane workspace.
+- Recommended treating Mytrion's shared Git repository as several product workstreams (core
+  platform, CRM, Telegram mini-app, and support-agent gateway) while attaching the same repository
+  root to each project; component labels should describe touched code, not replace ownership and QA
+  boundaries.
+- No product code or configuration was changed during this review.
+
+## 2026-08-06 — Agora Octane workspace skill and agent pack
+
+- Added 20 version-controlled workspace skill sources under `.agents/skills`: five shared
+  engineering/safety/documentation skills, six focused Mytrion architecture/runtime skills, and
+  nine ServerCRM skills covering runtime security, EFS, WEX, CMP billing, payments/reporting,
+  Smart Balance, scheduled jobs, and browser automation.
+- Generated the sources with the standard skill scaffolder, removed all template content, scanned
+  for unsafe instructions and credential-like values, and validated every skill with the official
+  skill validator. All 20 passed.
+- Deployed all 20 skills to the production Agora Octane workspace and read each one back to verify
+  the workspace id and persisted content. The existing `mytrion-ops-kb` remains the broad repository
+  knowledge base, bringing the workspace total to 21 skills.
+- Created workspace-visible `Octane Code Reviewer` and `Octane Documentation Writer` agents on
+  the online Codex runtime. The reviewer has 20 review/domain skills with high reasoning; the
+  documentation writer has 18 documentation/domain skills with medium reasoning. Both deliberately
+  have no MCP configuration until credentials can be attached through a non-plaintext secret path.
+- Security follow-up: the existing Deep Research Agent returned an unredacted GitHub credential in
+  its MCP configuration during inventory. Do not reuse that configuration; rotate/revoke the token
+  and reconnect GitHub through protected secret input before enabling MCP on the new agents.
+- No product TypeScript or application runtime code changed, so product lint/typecheck/test were not
+  run. Verification was limited to skill validation and production Agora read-back.
+
+## 2026-08-06 — Sales-agent selected-company mini-app layout parity
+
+- Replaced the Sales-agent preview's one-off two-column action grid with the same Home, Services,
+  Inbox, owner balance hero, quick-actions list, and bottom-tab shell that real company users see.
+  A compact sticky preview bar preserves the portfolio back action and read-only context.
+- Kept the preview read-only in both layers: the shared Home shell hides manager/fleet management for
+  Sales agents, while an explicit six-item catalog exposes only status, balance, transactions,
+  invoices, payment information, and last-used reads. Existing ActionSheet guards continue to hide
+  report/document delivery, and backend capabilities still deny all customer mutations.
+- Scoped Sales-agent pins separately from owner/driver local preferences and clear company inbox
+  state on portfolio/company transitions so one selected company's rows never flash under another.
+- Added a repository-level catalog regression and rebuilt the committed mini-app production assets.
+- Verification: mandatory RBAC leakage checks pass 32/32; focused mini-app catalog/capability/carrier
+  coverage passes 123/123; root lint passes with zero errors (22 existing warnings); root typecheck
+  and the mini-app production build pass. The full suite is 1,900 passed, 99 failed, 1 skipped; all
+  failures are in the existing CS, Comms Admin, retention, billing-secret, database-backed agent,
+  and local WebSocket groups, while the changed mini-app suites pass. Responsive browser QA could
+  not run because this session exposed no in-app or connected browser.
+
+## 2026-08-06 — Full Sales onboarding catalog and pre-owner manager invite
+
+- Changed the Sales selected-company Services tab to mirror the complete owner catalog. Safe live
+  reads stay interactive, owner write/request actions are visible as `Read only`, and genuinely
+  unreleased actions keep their `Soon` state. Fleet-only services remain hidden for owner-operator
+  companies, and legacy Sales pinned-service keys migrate to their owner-catalog equivalents.
+- Added a narrow `manager:invite` mini-app capability for Sales onboarding. A verified Sales agent
+  can now generate a manager link for a selected active, non-debtor fleet in their live DWH roster
+  even when no owner has registered yet. The carrier selector is re-authorized on every request,
+  the invite stays tenant-scoped and audit-logged, and Sales still cannot manage existing access or
+  use other customer write actions. Owner/manager self-service remains behind its feature flag.
+- Added regressions for capability policy, selected-company authorization, manager creation before
+  owner registration, foreign-company denial, and the Sales service-catalog policy. Rebuilt the
+  committed mini-app assets.
+- Verification: focused RBAC and mini-app coverage passes 157/157; root typecheck passes; root lint
+  has zero errors (22 existing warnings); mini-app typecheck/build passes. Responsive browser QA at
+  390×844 and 1280×900 confirmed the manager-link flow plus `Read only`/`Soon` service states. The
+  full repository run is 1,902 passed, 99 failed, 1 skipped; failures remain in the existing CS,
+  Comms Admin, retention, billing-secret, DB-backed agent, and local WebSocket groups, while the
+  changed carrier mini-app suite passes all 119 tests.
 
 ---
 

@@ -47,6 +47,12 @@ describe('permissions', () => {
     expect(roleAllowsAudience('driver', 'internal')).toBe(false);
     expect(roleAllowsAudience('ops', 'internal')).toBe(true);
   });
+
+  it('keeps sales agents out of the generic tool dispatcher by default', () => {
+    expect(scopesForRole('sales_agent')).toEqual([]);
+    expect(roleAllowsAudience('sales_agent', 'internal')).toBe(true);
+    expect(roleAllowsAudience('sales_agent', 'partner')).toBe(false);
+  });
 });
 
 describe('tool registry access control', () => {

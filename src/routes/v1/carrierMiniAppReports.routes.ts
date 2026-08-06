@@ -26,6 +26,7 @@ export async function carrierMiniAppReportRoutes(
     const body = cardLookupReportSchema.parse(request.body);
     const { registration, carrierId } = await requireRegisteredOwnerUser(
       body.initData,
+      'reports:send',
     );
     const { telegramUserId } = verifyTelegramUser(body.initData);
     const report = await buildCardLookupReport(

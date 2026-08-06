@@ -29,6 +29,9 @@ export const rolePermissions: Record<Role, { scopes: string[]; audiences: Audien
   viewer: { scopes: ['zoho_crm:read'], audiences: ['internal'] },
   driver: { scopes: ['partner:self:read'], audiences: ['partner'] },
   fleet_manager: { scopes: ['partner:fleet:read'], audiences: ['partner'] },
+  // Mini-app sales agents are authorized by mini-app capabilities + live carrier ownership, not by
+  // general chat/tool scopes. Keep the generic dispatcher deny-by-default for this role.
+  sales_agent: { scopes: [], audiences: ['internal'] },
 };
 
 export function scopesForRole(role: Role): string[] {
