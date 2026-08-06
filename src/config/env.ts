@@ -223,7 +223,18 @@ const EnvSchema = z.object({
    * outright — see the incident note in db/migrate.ts. Only transient codes are retried; bad SQL
    * still aborts boot immediately. 0 disables waiting entirely.
    */
-  DB_BOOT_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(90),
+  /**
+   * How long boot migrations wait for a database that is refusing connections before giving up
+   * and exiting non-zero (which Render reports as a failed deploy).
+   *
+   * Raised 90 → 300 after the 2026-08-06 deploy failed exactly this way: the migrations had
+   * already applied, then Render's Postgres restarted underneath the instance
+   * (`pg_postmaster_start_time` = 22:36:21 UTC, seconds after the boot log) and every retry hit
+   * ECONNREFUSED until the 90s budget ran out. A managed-Postgres restart routinely takes longer
+   * than 90 seconds, and waiting five minutes for the database is strictly better than failing the
+   * deploy — the instance is not serving traffic either way, and Render restarts it regardless.
+   */
+  DB_BOOT_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(300),
 
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),

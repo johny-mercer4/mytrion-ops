@@ -47,4 +47,13 @@ else
   echo "[start-prod] gateway env absent — API only"
 fi
 
+# Report WHY the container is going down. `wait` returns the backend's exit code and the container
+# exits with it, but without this line Render shows only "Exited with status 1" and the cause has to
+# be reconstructed from whatever the API managed to log first — which is exactly what made the
+# 2026-08-06 database-restart failure hard to read.
 wait $BACKEND_PID
+BACKEND_STATUS=$?
+if [ "$BACKEND_STATUS" -ne 0 ]; then
+  echo "[start-prod] API process exited with status $BACKEND_STATUS — see the API log lines above for the cause"
+fi
+exit $BACKEND_STATUS
