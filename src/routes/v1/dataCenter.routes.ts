@@ -28,8 +28,22 @@ import {
   fetchRecordNotes,
   type CrmModule,
 } from '../../modules/sales/recordActivity.js';
-import { executeLeadBlueprintTransition } from '../../modules/sales/leadBlueprint.js';
-import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import {
+  enrichLeadBlueprintTransitions,
+  executeLeadBlueprintTransition,
+} from '../../modules/sales/leadBlueprint.js';
+import { enrichLeadBlueprintFields } from '../../modules/sales/leadBlueprintRequiredFields.js';
+import {
+  LEAD_NOT_INTERESTED_REASONS,
+  LEAD_STATUS_VALUES,
+  LEAD_UNQUALIFIED_REASONS,
+} from '../../modules/sales/leadStatusValues.js';
+
+export {
+  LEAD_NOT_INTERESTED_REASONS,
+  LEAD_STATUS_VALUES,
+  LEAD_UNQUALIFIED_REASONS,
+} from '../../modules/sales/leadStatusValues.js';import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { assertCarrierOwned, resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
@@ -57,48 +71,7 @@ const editableEmail = z.union([z.string().email().max(100), z.string().max(0)]).
  * so an unexpected key 400s; every field optional+nullable (null/'' clears it); `resolveWritePayload`
  * casing-resolves before the write so an unknown key can never silently no-op.
  */
-// Verbatim Zoho Leads picklist values (live-verified). The Zoho field is `Status` (there is no
-// `Lead_Status`). No CRM dependency exists between Status and the reason fields — the post-call
-// wizard pairs them in the UI (Unqualified→Unqualified_Reason, Not Interested→Not_Interested_Reason).
-export const LEAD_STATUS_VALUES = [
-  'Interested',
-  'Not Interested',
-  'First Call',
-  'Second Call',
-  'Third Call',
-  'Follow-up',
-  'Unqualified',
-  'Application Filled',
-  'Email Follow-Up',
-  'Unaccounted', // display "New Lead"
-] as const;
-export const LEAD_UNQUALIFIED_REASONS = [
-  'Wrong / inactive phone number',
-  'Invalid email',
-  'Not in trucking industry',
-  'Not using diesel',
-  'Local driver',
-  'Low credit score for LOC',
-  'No response',
-] as const;
-export const LEAD_NOT_INTERESTED_REASONS = [
-  'Wrong language',
-  'Wrong expectations',
-  'Small discounts',
-  'Already has another fuel card',
-  'Truck stop coverage',
-  'Uncomfortable with mobile app',
-  'Unreachable after application',
-  'Has own fueling stations',
-  'Unwilling to share personal info',
-  'Low credit score / bad financials',
-  "Didn't apply / applied accidentally",
-  'Gas only',
-  'Accidental application',
-  'Low discounts',
-  'Other',
-] as const;
-
+// Status + reason enums: `leadStatusValues.ts`. The Zoho field is `Status` (no `Lead_Status`).
 const leadEditBody = z
   .object({
     MC: z.string().max(255).nullable().optional(),
@@ -112,9 +85,22 @@ const leadEditBody = z
     Status: z.enum(LEAD_STATUS_VALUES).nullable().optional(),
     Unqualified_Reason: z.enum(LEAD_UNQUALIFIED_REASONS).nullable().optional(),
     Not_Interested_Reason: z.enum(LEAD_NOT_INTERESTED_REASONS).nullable().optional(),
+    // Blueprint "Application Filled" required field — rides with Status as transition data.
+    Application_ID: z.union([z.number(), z.string().max(40)]).nullable().optional(),
   })
   .strict()
-  .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied');
+  .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied')
+  .superRefine((v, ctx) => {
+    if (v.Status === 'Unqualified' && !v.Unqualified_Reason) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Unqualified Reason is required', path: ['Unqualified_Reason'] });
+    }
+    if (v.Status === 'Not Interested' && !v.Not_Interested_Reason) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Not Interested Reason is required', path: ['Not_Interested_Reason'] });
+    }
+    if (v.Status === 'Application Filled' && (v.Application_ID === undefined || v.Application_ID === null || v.Application_ID === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Application ID is required', path: ['Application_ID'] });
+    }
+  });
 
 /** Inline-editable Deal fields (Description = the "Notes" textarea; deal value is intentionally not editable). */
 const dealEditBody = z
@@ -185,16 +171,17 @@ async function readNoteUpload(
  * Apply a Lead edit whose payload includes `Status`. Non-status fields are written normally (so they
  * persist regardless of the blueprint); `Status` is moved via a Zoho Blueprint transition — the only
  * way Zoho accepts a change to a blueprint-controlled field — falling back to a plain update when the
- * lead isn't in a blueprint. Reason fields (Unqualified_Reason / Not_Interested_Reason) ride along as
- * the transition's data. Returns the written field names; throws a clear 422 on an invalid transition.
+ * lead isn't in a blueprint. Dependent Blueprint fields (reason picklists + Application_ID) ride
+ * along as the transition's data. Returns the written field names; throws a clear 422 on an invalid
+ * transition.
  */
 async function applyLeadUpdateWithStatus(id: string, resolved: Record<string, unknown>): Promise<string[]> {
-  const REASON_KEYS = ['Unqualified_Reason', 'Not_Interested_Reason'];
+  const TRANSITION_KEYS = ['Unqualified_Reason', 'Not_Interested_Reason', 'Application_ID'];
   const targetStatus = String(resolved.Status ?? '');
   const transitionData: Record<string, unknown> = {};
-  for (const k of REASON_KEYS) if (k in resolved) transitionData[k] = resolved[k];
+  for (const k of TRANSITION_KEYS) if (k in resolved) transitionData[k] = resolved[k];
   const rest = Object.fromEntries(
-    Object.entries(resolved).filter(([k]) => k !== 'Status' && !REASON_KEYS.includes(k)),
+    Object.entries(resolved).filter(([k]) => k !== 'Status' && !TRANSITION_KEYS.includes(k)),
   );
   const written: string[] = [];
 
@@ -233,6 +220,21 @@ async function applyLeadUpdateWithStatus(id: string, resolved: Record<string, un
         `"${targetStatus}" isn't an available status transition for this lead right now (Zoho Blueprint). Allowed: ${allowed}.`,
         { statusCode: 422, code: 'BLUEPRINT_TRANSITION_INVALID', expose: true },
       );
+    }
+    // Same known required-field contracts as POST /blueprint/:transitionId (Application ID / reasons).
+    const fields = enrichLeadBlueprintFields(match.nextValue, match.fields);
+    const missing = fields.find((field) => {
+      if (!field.mandatory || field.readOnly) return false;
+      const supplied = transitionData[field.apiName];
+      return (supplied === undefined || supplied === null || supplied === '') &&
+        (field.value === undefined || field.value === null || field.value === '');
+    });
+    if (missing) {
+      throw new AppError(`Blueprint field "${missing.label}" is required.`, {
+        statusCode: 400,
+        code: 'BLUEPRINT_FIELD_REQUIRED',
+        expose: true,
+      });
     }
     try {
       await zohoCrmRecords.executeBlueprintTransition('Leads', id, match.id, transitionData);
@@ -483,7 +485,14 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
   app.get('/data-center/leads/:id/blueprint', guard, async (request) => {
     const { id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
     try {
-      return { blueprint: await zohoCrmRecords.getBlueprintDetails('Leads', id) };
+      const blueprint = await zohoCrmRecords.getBlueprintDetails('Leads', id);
+      if (!blueprint) return { blueprint: null };
+      return {
+        blueprint: {
+          ...blueprint,
+          transitions: enrichLeadBlueprintTransitions(blueprint.transitions),
+        },
+      };
     } catch (err) {
       throw crmError(err);
     }

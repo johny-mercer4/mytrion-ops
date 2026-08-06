@@ -11742,3 +11742,28 @@ O(1) — designed and built, not yet consumed by the section route. That is the 
 **Chrome** went 254px → 95px: one sub-nav row with rules between groups instead of stacked labels, one
 toolbar instead of a period bar plus a filter bar, and a header that names the active section rather
 than repeating the module tagline.
+
+## 2026-08-07 — Lead Blueprint required fields on status change
+
+- Data Center → Leads edit: when moving Zoho Blueprint stages, always collect/require
+  Application Filled → `Application_ID`, Not Interested → `Not_Interested_Reason` (picklist),
+  Unqualified → `Unqualified_Reason` (picklist) — even if Zoho omits `fields[]` metadata.
+- Server enrichment in `leadBlueprintRequiredFields.ts` (GET blueprint + execute + PATCH status);
+  CRM `LeadBlueprintEditor` applies the same contract client-side. Picklist parsing falls back to
+  `display_value` when Zoho omits `actual_value`. Status PATCH validates dependent fields via Zod
+  and forwards `Application_ID` as transition data.
+- Lead status/reason constants moved to `leadStatusValues.ts` (keeps `dataCenter.routes.ts` under
+  the file-size cap).
+- Verification: `lead-blueprint-required-fields`, `zoho-crm-blueprint`, `data-center-routes` 44/44;
+  CRM `LeadBlueprintEditor` + `LeadCallWizard` 18/18; root + CRM typecheck pass.
+
+## 2026-08-07 (2) — Live EFS card status after C-1
+
+- Bug: C-1 activate writes live EFS and shows success, but Client modal Cards + C-28 still showed
+  Inactive / 0 active because they read lagged DWH (`dim_card` / `dwh.carrier_overview`).
+- `loadClientCards` now merges `efs.cards` status over DWH enrichment (type/unit/driver); EFS
+  failure keeps DWH-only; EFS-only rows appear when DWH is missing the card.
+- `account-status` / `verification` keep overview for balance/debt but prefer live EFS active
+  counts when `efs.cards` succeeds.
+- Out of scope: Overview/Loyalty `client.active` roster tiles (still DWH analytics).
+- Verification: CRM `clientDrilldown` + `autoRunners` 16/16; CRM typecheck pass.

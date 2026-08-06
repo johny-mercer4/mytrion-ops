@@ -249,10 +249,28 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
     }
     case 'account-status':
     case 'verification': {
-      const ov = await callTouchpoint('dwh.carrier_overview', { carrierId: requireCarrier(deal) });
+      const carrierId = requireCarrier(deal);
+      // Overview still owns balance/debt; card *counts* prefer live EFS so a C-1 activate
+      // is visible on the next C-28 check (DWH dim_card / overview lag by hours).
+      const [ovResult, efsResult] = await Promise.allSettled([
+        callTouchpoint('dwh.carrier_overview', { carrierId }),
+        callTouchpoint('efs.cards', { carrierId }),
+      ]);
+      if (ovResult.status === 'rejected') throw ovResult.reason;
+      const ov = ovResult.value;
+      let activeCards = ov.cards?.active_count ?? 0;
+      if (efsResult.status === 'fulfilled') {
+        const rows = (efsResult.value.data ?? []) as Array<Record<string, unknown>>;
+        activeCards = rows.filter((r) => {
+          const x = str(r.status).toLowerCase();
+          if (/fraud|hold/.test(x)) return false;
+          if (/inactive|deactiv|suspend|closed|cancel/.test(x)) return false;
+          return /active|ok|good/.test(x);
+        }).length;
+      }
       return {
         kind: 'message',
-        message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${ov.cards?.active_count ?? 0} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
+        message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${activeCards} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
       };
     }
     case 'tracking': {
