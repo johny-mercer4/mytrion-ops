@@ -93,6 +93,17 @@ function eventTypeForStatus(from: WorkerTaskStatus, to: WorkerTaskStatus): Worke
   return 'status_changed';
 }
 
+/**
+ * Task-type catalog cache. See `listTypes`. Exported so a future admin editor can drop it after a
+ * write — a cached catalog that outlives an edit is how a newly-added type stays invisible.
+ */
+const TYPE_TTL_MS = 5 * 60_000;
+const typeCache = new Map<string, { at: number; rows: MytrionTaskType[] }>();
+
+export function clearTaskTypeCache(): void {
+  typeCache.clear();
+}
+
 export const workerTaskRepo = {
   /**
    * Active task types a desk may use: the ones scoped to it, plus the shared ones (`department IS
@@ -101,6 +112,15 @@ export const workerTaskRepo = {
    */
   async listTypes(ctx: TenantContext, department?: string): Promise<MytrionTaskType[]> {
     const desk = department?.trim();
+    /*
+     * Cached: the catalog is ~30 rows that change when an admin edits them, but the round trip is
+     * ~550ms (2.5s cold) and the Tasks block asks for it on every desk visit. Cache-on-read with a
+     * short TTL, and note the WRITE path does not exist yet — when a type editor lands it must call
+     * `clearTaskTypeCache`.
+     */
+    const key = `${ctx.tenantId}:${desk ?? '*'}`;
+    const hit = typeCache.get(key);
+    if (hit && Date.now() - hit.at < TYPE_TTL_MS) return hit.rows;
     const clauses = [eq(mytrionTaskTypes.tenantId, ctx.tenantId), eq(mytrionTaskTypes.active, true)];
     if (desk) {
       const scoped = or(
@@ -110,11 +130,13 @@ export const workerTaskRepo = {
       // `or()` is only undefined when given no arguments; the guard keeps the types honest.
       if (scoped) clauses.push(scoped);
     }
-    return db
+    const rows = await db
       .select()
       .from(mytrionTaskTypes)
       .where(and(...clauses))
       .orderBy(asc(mytrionTaskTypes.sortOrder), asc(mytrionTaskTypes.label));
+    typeCache.set(key, { at: Date.now(), rows });
+    return rows;
   },
 
   /**

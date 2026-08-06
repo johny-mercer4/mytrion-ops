@@ -11661,6 +11661,25 @@ Migration safety: renamed the in-flight RAG migration from 0105 to
 skip it behind the already-applied production 0106. It remains unapplied and requires a scratch-DB
 migration check before an authorized rollout.
 
+## 2026-08-06 — Admin Horizon Turn Inspector
+
+Added an admin-only Turn Inspector rail beside Admin → Horizon AI. It follows the live SSE turn and
+shows the selected agent, model/provider/role, deterministic route, plan and delegation events,
+tool calls, whether RAG actually returned evidence, CRAG grade/confidence/passages, verification
+coverage/repair/abstention, citations, duration, tokens/cache usage, and estimated cost. Prompt
+bodies and evidence text are deliberately excluded.
+
+The backend emits `trace` events only for admin/all-department/bypass contexts; ordinary scoped
+workers receive no diagnostic stream. The RAG wrapper reports both v2 assessment results and
+legacy retrieval usage, while the run tracker reports the concrete model observed on each LLM
+call. The inspector keeps at most 80 steps and clears when switching/newing conversations.
+
+Verification: backend typecheck/build and lint pass (0 errors, the same 22 unrelated warnings);
+47 focused agent/RAG tests pass including 22/22 leakage checks. The full Mytrion CRM suite passes
+451/451 across 71 files and its production build is green. Visually checked the Admin Horizon
+layout in the local app in both dark and light themes; the right rail is readable without crowding
+the chat, with a stacked layout below 900px.
+
 ## 2026-08-06 — EFS Console: third Manager workspace card
 
 Probed prod read-only before designing. Three findings changed the shape:
@@ -11743,3 +11762,38 @@ Three causes, three fixes:
 Note the CRM `tsc` gate is currently red from another engineer's uncommitted work
 (`features/chat/useChat.ts` + new `TurnInspector.*` break `useChat.reducer.test.ts` types). My files
 typecheck clean; the vendored bundle was built with `vite build` directly to get around their gate.
+
+### 2026-08-06 (same day) — the Manager slowness was reference data, not queries
+
+The 500s reported on `/manager/{verification,billing,finance}/*` did not reproduce: all four
+endpoints return 200 against the live server. They were the dev server mid-reload picking up the
+roster fix — `/manager/efs/clients` was in the same batch and now answers in 390ms.
+
+The SLOWNESS was real and was measured to its source:
+- `listActiveUsersCached()` 2262ms cold / **0ms warm** (already cached)
+- `workerMytrionAccessRepo.list()` 2690ms cold / **543ms warm** ← a DB round trip every call
+- `mytrionAccessService.resolveBatch()` 2535ms cold / **541ms warm** ← another one
+
+So `listDepartmentAssignees` cost ~1.1s even fully warm, on every desk visit, plus `listTypes` at
+~550ms — reference data being re-derived per page view. Both are now TTL-cached server-side
+(5 min) with in-flight coalescing, so ten desks opening at once make one lookup rather than ten.
+
+End-to-end against the live server, cold → warm:
+```
+/manager/verification/workers    4983ms →   2ms
+/manager/billing/tasks/types     2522ms →   3ms
+/manager/billing/workers         1115ms →   1ms
+/manager/finance/tasks            546ms → 533ms   (one DB round trip — the network floor)
+/manager/efs/clients              390ms → 116ms
+```
+
+⚠️ The assignee cache widens one window and the header of departmentAssignees.ts says so:
+`assertDepartmentAssignee` reads the same cache for non-sales desks, so for up to 5 minutes a
+worker just removed from a department can still be assigned a task there. Judged acceptable because
+a task assignment grants NO access — it appears on that person's own board and every surface they
+could reach is gated independently. Not a pattern to copy for anything that grants authority. Sales
+is unaffected: its branch re-checks `kpiWorkerRepo.isCurrentlyEligible` against the DB every time.
+
+Remaining floor is ~530ms per uncached DB round trip to Render (Oregon). That is network latency,
+not work — the only way past it is a closer replica or fewer round trips, and the task page is now
+down to one.
