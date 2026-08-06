@@ -233,16 +233,58 @@ const CARRIER: readonly EfsFetcher[] = ([
   { key: 'carrier.products', path: '/carrier/:carrierId/products', label: 'Products', window: 'none', latency: 'slow' },
   { key: 'carrier.productGroups', path: '/carrier/:carrierId/product-groups', label: 'Product groups', window: 'none', latency: 'slow' },
   { key: 'carrier.promptTypes', path: '/carrier/:carrierId/prompt-types', label: 'Prompt types', window: 'none', latency: 'slow' },
-  { key: 'carrier.locationsSearch', path: '/carrier/:carrierId/locations/search', label: 'Location search', window: 'none', latency: 'slow', query: ['q', 'state', 'city'] },
-  { key: 'carrier.geoPrices', path: '/carrier/:carrierId/geo-prices', label: 'Geo prices', window: 'none', latency: 'slow' },
-  { key: 'carrier.interstatePrices', path: '/carrier/:carrierId/interstate-prices', label: 'Interstate prices', window: 'none', latency: 'slow' },
+  {
+    key: 'carrier.locationsSearch',
+    path: '/carrier/:carrierId/locations/search',
+    label: 'Location search',
+    window: 'none',
+    latency: 'slow',
+    query: ['q', 'state', 'city'],
+    health: 'broken',
+    brokenReason:
+      'EFS does not recognise this operation (ADBException: Unexpected subelement searchLocation). Fails with or without parameters. Verified 2026-08-06.',
+  },
+  {
+    // NOT /carrier/:id/geo-prices — that 404s. The vendor nests all three under locations/, which
+    // the live catalog writes as `locations/*` and the handover doc as `locations/search · geo-prices
+    // · interstate-prices`. Probed both spellings to settle it.
+    key: 'carrier.geoPrices',
+    path: '/carrier/:carrierId/locations/geo-prices',
+    label: 'Geo prices',
+    window: 'none',
+    latency: 'slow',
+    health: 'broken',
+    brokenReason:
+      'EFS does not recognise this operation (ADBException: Unexpected subelement getGeoPriceLocations). Verified 2026-08-06.',
+  },
+  {
+    key: 'carrier.interstatePrices',
+    path: '/carrier/:carrierId/locations/interstate-prices',
+    label: 'Interstate prices',
+    window: 'none',
+    latency: 'slow',
+    health: 'broken',
+    brokenReason:
+      'EFS does not recognise this operation (ADBException: Unexpected subelement getInterstatePriceLocations). Verified 2026-08-06.',
+  },
   { key: 'carrier.locationGroups', path: '/carrier/:carrierId/location-groups', label: 'Location groups', window: 'none', latency: 'slow' },
   { key: 'carrier.locationGroup', path: '/carrier/:carrierId/location-groups/:groupId', label: 'One location group', window: 'none', latency: 'slow', pathParams: ['groupId'] },
   { key: 'carrier.transLocations', path: '/carrier/:carrierId/trans-locations', label: 'Transaction locations', window: 'none', latency: 'slow', query: ['cardNumber', 'policyNumber'] },
   { key: 'carrier.orders', path: '/carrier/:carrierId/orders', label: 'Card orders', window: 'history90d', latency: 'slow', query: ['from', 'to'] },
   { key: 'carrier.order', path: '/carrier/:carrierId/orders/:orderId', label: 'One order', window: 'none', latency: 'slow', pathParams: ['orderId'] },
-  { key: 'carrier.orderCards', path: '/carrier/:carrierId/orders/:orderId/cards', label: 'Cards on an order', window: 'none', latency: 'slow', pathParams: ['orderId'] },
+  {
+    key: 'carrier.orderCards',
+    path: '/carrier/:carrierId/orders/:orderId/cards',
+    label: 'Cards on an order',
+    window: 'none',
+    latency: 'slow',
+    pathParams: ['orderId'],
+    health: 'broken',
+    brokenReason:
+      'EFS does not recognise this operation (ADBException: Unexpected subelement getOrderCards). The failure is on the operation, not the order id. Verified 2026-08-06.',
+  },
   { key: 'carrier.orderMeta', path: '/carrier/:carrierId/orders/meta', label: 'Order metadata', window: 'none', latency: 'slow' },
+  // `cardNumber` is REQUIRED here — servercrm 400s without it ('cardNumber is required').
   { key: 'carrier.smartpayAccounts', path: '/carrier/:carrierId/smartpay/accounts', label: 'SmartPay accounts', window: 'none', latency: 'slow', query: ['cardNumber'] },
   { key: 'carrier.smartpayScheduled', path: '/carrier/:carrierId/smartpay/scheduled', label: 'SmartPay scheduled', window: 'none', latency: 'slow' },
   { key: 'carrier.smartpayHistory', path: '/carrier/:carrierId/smartpay/history', label: 'SmartPay history', window: 'history90d', latency: 'slow', query: ['from', 'to'] },

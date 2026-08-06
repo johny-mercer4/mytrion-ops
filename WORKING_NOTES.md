@@ -11797,3 +11797,35 @@ is unaffected: its branch re-checks `kpiWorkerRepo.isCurrentlyEligible` against 
 Remaining floor is ~530ms per uncached DB round trip to Render (Oregon). That is network latency,
 not work — the only way past it is a closer replica or fewer round trips, and the task page is now
 down to one.
+
+### 2026-08-06 (same day) — catalog audited against the LIVE servercrm surface
+
+Diffed our descriptors against `GET /api/efs/console` rather than against the handover doc, since
+the live catalog is authoritative. Result: **50 fetchers covering all 42 live entries** (several of
+which are globs — `locations/*`, `products|product-groups|prompt-types`,
+`location-groups[/:groupId]`, `smartpay/*`) and **30/30 actions, zero undeclared, zero orphans**.
+
+The audit found two paths I had genuinely WRONG. The doc writes them as
+`locations/search · geo-prices · interstate-prices`, which reads as three siblings; they are in fact
+all nested under `locations/`. Probed both spellings:
+```
+/carrier/:id/geo-prices            -> 404 (no such route)
+/carrier/:id/locations/geo-prices  -> 500 ADBException  (route exists)
+```
+Corrected, and pinned by a test asserting all three carry `/locations/`.
+
+Probing also turned up **four more endpoints broken upstream**, on top of `rejects`. All fail inside
+EFS's SOAP stack, all verified 2026-08-06:
+```
+carrier.rejects           ADBException: Unexpected subelement startDate
+carrier.locationsSearch   ADBException: Unexpected subelement searchLocation   (with or w/o params)
+carrier.geoPrices         ADBException: Unexpected subelement getGeoPriceLocations
+carrier.interstatePrices  ADBException: Unexpected subelement getInterstatePriceLocations
+carrier.orderCards        ADBException: Unexpected subelement getOrderCards     (operation, not orderId)
+```
+All five stay in the catalog — they are part of the vendor surface and will presumably be fixed —
+but carry `health: 'broken'` so the route refuses them with a 503 naming the exact upstream error
+instead of spending a round trip to surface a generic 502. A test pins the set.
+
+Confirmed working while probing: products (93 rows), policies, cash (230 rows), orders/meta.
+`smartpay/accounts` requires `cardNumber` (400s without it) — noted at the descriptor.

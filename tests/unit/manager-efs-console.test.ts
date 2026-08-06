@@ -236,6 +236,39 @@ describe('window ceilings are enforced before the call', () => {
 });
 
 describe('endpoints known to be broken upstream', () => {
+  /*
+   * Probed live on 2026-08-06. All five fail inside EFS's SOAP stack with an ADBException, so they
+   * are refused here with a 503 naming the exact upstream error rather than costing a round trip
+   * and surfacing as a generic 502. They stay in the catalog because they are part of the vendor
+   * surface and will presumably be fixed; the health flag is how the UI knows not to offer them.
+   */
+  const BROKEN = [
+    'carrier.rejects',
+    'carrier.locationsSearch',
+    'carrier.geoPrices',
+    'carrier.interstatePrices',
+    'carrier.orderCards',
+  ];
+
+  it('flags exactly the endpoints verified broken against prod', () => {
+    expect(EFS_FETCHERS.filter((f) => f.health === 'broken').map((f) => f.key).sort()).toEqual(
+      [...BROKEN].sort(),
+    );
+    for (const key of BROKEN) {
+      expect(EFS_FETCHERS.find((f) => f.key === key)?.brokenReason).toMatch(/ADBException/);
+    }
+  });
+
+  it.each(BROKEN)('refuses %s without spending a vendor round trip', async (key) => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/manager/efs/fetch/${key}?carrierId=5724546&orderId=1`,
+      headers: bearer(await token()),
+    });
+    expect(res.statusCode).toBe(503);
+    expect(crm.get).not.toHaveBeenCalled();
+  });
+
   it('refuses carrier.rejects with a specific reason rather than a spinner then a 502', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -289,9 +322,25 @@ describe('catalog integrity', () => {
   });
 
   it('declares the full vendor action surface', () => {
-    // The documented console exposes ~30 writes. If servercrm grows one and it is not declared
-    // here, it is unreachable AND ungated — this is the tripwire for that.
+    // The documented console exposes 30 writes. Audited against the LIVE `GET /api/efs/console`
+    // catalog on 2026-08-06: 30/30 declared, zero undeclared, zero orphans. If servercrm grows one
+    // and it is not declared here, it is unreachable AND ungated — this is the tripwire for that.
     expect(EFS_ACTIONS.length).toBe(30);
+  });
+
+  it('declares the full vendor READ surface', () => {
+    // 14 parent + 36 carrier. Audited against the live catalog: every one of its 42 entries (some
+    // written as globs like `locations/*` and `products|product-groups|prompt-types`) is covered.
+    expect(EFS_FETCHERS.length).toBe(50);
+    expect(EFS_FETCHERS.filter((f) => f.side === 'parent').length).toBe(14);
+    expect(EFS_FETCHERS.filter((f) => f.side === 'carrier').length).toBe(36);
+  });
+
+  it('nests the price and location reads under locations/, where the vendor actually serves them', () => {
+    // The bare paths 404. Probed both spellings on 2026-08-06 to settle the doc's `·` shorthand.
+    for (const key of ['carrier.locationsSearch', 'carrier.geoPrices', 'carrier.interstatePrices']) {
+      expect(EFS_FETCHERS.find((f) => f.key === key)?.path).toContain('/locations/');
+    }
   });
 
   it('gives every action a UI home or an explicit null', () => {
