@@ -11598,3 +11598,30 @@ Note for whoever owns the in-flight RAG work in the tree (`src/modules/agents/*`
 `src/modules/knowledge/*`, `llm_calls`/`rag_runs`, untracked `0105_horizon_rag_excellence.sql`):
 that migration has **no journal entry yet**. Register it as idx 105 with `when` greater than
 0104's `1786065600000`, or drizzle skips it silently with a green exit.
+
+### 2026-08-06 (same day) — 0104 + 0106 applied to PRODUCTION
+
+Ran against the Render prod DB with the user's authorization. Checked the applied set read-only
+first: `drizzle.__drizzle_migrations` was already at 0103, so 0104 was the only migration of mine
+outstanding.
+
+**`pnpm db:migrate` would ALSO have run the untracked `0105_horizon_rag_excellence`** — 19
+statements including an `UPDATE knowledge_docs SET checksum = NULL`. That is someone else's
+in-flight work and was not what was authorized, so for each run I held its journal entry out,
+migrated, and restored it. 0105 remains unapplied.
+
+Result, verified read-only against prod:
+- `mytrion_task_types`: 1 row → **28**; `department` + `sort_order` columns present.
+- Per-desk resolution correct — Sales 11 types, CS/Billing/Finance/Collection/Verification 9,
+  Mobile 8; every desk sees the 6 shared codes plus its own. Zero cross-desk leaks, zero dupes.
+- `0106_task_type_general_sort`: 0104's `ON CONFLICT DO NOTHING` correctly refused to clobber the
+  pre-existing `general` row from 0061, which left it at the column default `sort_order = 100` —
+  so the most-used type sorted LAST in all seven pickers. 0106 moves just that row to 10.
+
+⚠️ **`0105_horizon_rag_excellence` will now be SKIPPED SILENTLY (green exit).** drizzle's migrator
+applies a journal entry only when its `when` exceeds the LAST applied timestamp. Prod's last applied
+is now 0106's `1786076400000`; 0105 is stamped `1786072800000`, which is lower. Before running it,
+either restamp 0105 above `1786076400000` or renumber it past 0106 — see [[drizzle-migration-timestamp-skip]].
+The committed journal deliberately contains 104 and 106 but NOT 105, because 0105's `.sql` is still
+untracked; a journal entry pointing at a missing file breaks a fresh checkout. The 105 entry is left
+in the working tree, uncommitted, exactly as found.
