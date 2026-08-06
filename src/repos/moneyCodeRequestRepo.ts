@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { moneyCodeRequests, type MoneyCodeRequest, type NewMoneyCodeRequest } from '../db/schema/index.js';
 import { AppError } from '../lib/errors.js';
@@ -273,4 +273,45 @@ export const moneyCodeRequestRepo = {
 
   /** Public (code-stripped) view of one row — for void response shaping. */
   toPublicRow,
+
+  /**
+   * Money-code value issued per carrier in a window — the money-code term in a Billing Ledger
+   * Customer Balance sub-ledger (TZ §5.1/§5.2).
+   *
+   * Chosen over the EFS money-code feed (`financeEfs.fetchCarrierMoneyCodes`) because this table has
+   * unbounded history and no 90-day window cap, and it is the row-of-record for every code Octane
+   * issued. A code drawn directly in EFS outside the request flow would be missed here.
+   *
+   * `VOIDED` codes are excluded — a voided code never reached the card. Bucketed on
+   * `requested_ny_date`, the date the request itself carries. `endDateExclusive` is EXCLUSIVE.
+   */
+  async sumByCarrier(
+    startDate: string,
+    endDateExclusive: string,
+    carrierIds?: readonly string[],
+  ): Promise<Map<string, number>> {
+    const conds: SQL[] = [
+      sql`${moneyCodeRequests.status} <> 'VOIDED'`,
+      sql`${moneyCodeRequests.requestedNyDate} >= ${startDate}`,
+      sql`${moneyCodeRequests.requestedNyDate} < ${endDateExclusive}`,
+    ];
+    if (carrierIds?.length) {
+      const ids = [...new Set(carrierIds)]
+        .map((c) => Number(c))
+        .filter((c) => Number.isFinite(c));
+      if (!ids.length) return new Map();
+      conds.push(inArray(moneyCodeRequests.carrierId, ids));
+    }
+    const rows = await db
+      .select({
+        carrierId: moneyCodeRequests.carrierId,
+        amt: sql<string>`coalesce(sum(${moneyCodeRequests.moneyCodeAmount}), 0)::text`,
+      })
+      .from(moneyCodeRequests)
+      .where(and(...conds))
+      .groupBy(moneyCodeRequests.carrierId);
+    const out = new Map<string, number>();
+    for (const r of rows) out.set(String(r.carrierId), Number(r.amt) || 0);
+    return out;
+  },
 };

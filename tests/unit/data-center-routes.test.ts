@@ -537,7 +537,7 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       method: 'PATCH',
       url: '/v1/data-center/leads/555',
       headers: bearer(token),
-      payload: { Status: 'Unqualified' },
+      payload: { Status: 'Unqualified', Unqualified_Reason: 'No response' },
     });
 
     expect(res.statusCode).toBe(422);
@@ -553,10 +553,42 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
       method: 'PATCH',
       url: '/v1/data-center/leads/555',
       headers: bearer(token),
-      payload: { Status: 'Unqualified' },
+      payload: { Status: 'Unqualified', Unqualified_Reason: 'No response' },
     });
     expect(res.statusCode).toBe(502);
     expect(updateRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects Application Filled without Application_ID and accepts it as Blueprint transition data', async () => {
+    const token = await workerToken('Sales Rep');
+    const missing = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Application Filled' },
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(updateRecordMock).not.toHaveBeenCalled();
+
+    vi.mocked(zohoCrmRecords.getBlueprintDetails).mockResolvedValueOnce({
+      process: { id: 'bp-1', name: 'Lead flow', fieldApiName: 'Status', fieldLabel: 'Status', currentValue: 'Third Call' },
+      transitions: [
+        { id: 'tr-app', name: 'Application Filled', nextValue: 'Application Filled', type: 'manual', criteriaMatched: true, criteriaMessage: '', fields: [] },
+      ],
+    });
+    const ok = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Application Filled', Application_ID: '872228' },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(zohoCrmRecords.executeBlueprintTransition).toHaveBeenCalledWith(
+      'Leads',
+      '555',
+      'tr-app',
+      expect.objectContaining({ Application_ID: '872228' }),
+    );
   });
 
   it('returns the owned Lead’s live Blueprint and blocks cross-owner reads', async () => {

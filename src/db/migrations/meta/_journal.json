@@ -738,16 +738,30 @@
       "breakpoints": true
     },
     {
-      "idx": 106,
+      "idx": 105,
       "version": "7",
       "when": 1786076400000,
       "tag": "0106_task_type_general_sort",
       "breakpoints": true
     },
     {
-      "idx": 107,
+      "idx": 106,
       "version": "7",
       "when": 1786080000000,
+      "tag": "0104_ledger_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1786083600000,
+      "tag": "0105_ledger_daily_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1786087200000,
       "tag": "0107_horizon_rag_excellence",
       "breakpoints": true
     }

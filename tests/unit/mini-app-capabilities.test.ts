@@ -31,10 +31,12 @@ describe('mini-app capability policy', () => {
       'company:read',
       'financial:read',
       'fleet:read',
+      'manager:invite',
     ]);
     expect(miniAppHasCapability('sales_agent', 'financial:write')).toBe(false);
     expect(miniAppHasCapability('sales_agent', 'card:write')).toBe(false);
     expect(miniAppHasCapability('sales_agent', 'reports:send')).toBe(false);
+    expect(miniAppHasCapability('sales_agent', 'manager:invite')).toBe(true);
     expect(miniAppHasCapability('sales_agent', 'access:manage')).toBe(false);
     expect(miniAppHasCapability('sales_agent', 'service:request')).toBe(false);
   });

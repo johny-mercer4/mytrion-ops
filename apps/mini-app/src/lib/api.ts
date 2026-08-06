@@ -236,10 +236,8 @@ export interface ManagerInviteResult {
   expiresAt: string;
 }
 
-/** Owner (or an existing manager) issues a manager registration link for their carrier — a colleague
- *  with owner-equivalent company access. Carrier-level; the backend binds it to the caller's own
- *  carrier from their verified registration (never the body). `name` labels the manager on the
- *  roster and in the support-bot's allowed-user list once they register. */
+/** Owner/manager self-service or Sales onboarding issues a manager registration link. The carrier is
+ *  always server-bound: customer registration for owners, live selected-company scope for Sales. */
 export async function createManagerInvite(initData: string, name: string): Promise<ManagerInviteResult> {
   return (await request('POST', '/carrier/mini-app/manager-invites', {
     initData,

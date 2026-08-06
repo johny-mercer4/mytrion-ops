@@ -17,12 +17,20 @@ import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
+import { Ledger } from './Ledger';
 import { TicketConsole } from '@/features/comms/TicketConsole';
 import { Prepay } from './Prepay';
 import { Returns } from './Returns';
 import { Transactions } from './Transactions';
 
-type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns' | 'tickets';
+type SectionId =
+  | 'datacenter'
+  | 'transactions'
+  | 'debtors'
+  | 'prepay'
+  | 'returns'
+  | 'ledger'
+  | 'tickets';
 
 interface NavDef {
   id: SectionId;
@@ -71,6 +79,16 @@ const NAV_ITEMS: NavDef[] = [
     label: 'Returns',
     shortLabel: 'Returns',
     iconPath: 'M3 10h10a5 5 0 015 5v1M3 10l4-4M3 10l4 4',
+    disabled: false,
+  },
+  {
+    id: 'ledger',
+    label: 'Ledger',
+    shortLabel: 'Ledger',
+    // A balance scale — the sub-ledger model this tab implements. Deliberately distinct: `debtors`
+    // and `prepay` above already share one identical icon path.
+    iconPath:
+      'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
     disabled: false,
   },
   {
@@ -126,6 +144,7 @@ export function BillingShell() {
       debtors: <Debtors />,
       prepay: <Prepay />,
       returns: <Returns />,
+      ledger: <Ledger />,
       // The SHARED console, PARKED — see the NAV_ITEMS entry. Gated on the same flag so a deep link
       // cannot open a queue the nav refuses to show.
       ...(TICKETS_PARKED
@@ -220,6 +239,7 @@ export function BillingShell() {
           {panel('debtors', els.debtors)}
           {panel('prepay', els.prepay)}
           {panel('returns', els.returns)}
+          {panel('ledger', els.ledger)}
         </main>
       </div>
 

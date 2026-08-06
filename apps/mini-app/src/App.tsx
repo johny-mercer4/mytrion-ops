@@ -74,6 +74,7 @@ import {
 import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
+import { migrateSalesAgentPinned } from './lib/salesAgentCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
 import { Toast, type ToastKind, type ToastState } from './components/Toast';
 import { TabBar, TABS as HOME_TABS, type HomeTab } from './screens/TabBar';
@@ -228,21 +229,23 @@ function countdown(expiresAt: string | null | undefined): { expired: boolean; sh
 }
 
 const PINNED_KEY = 'octane.pinnedActions';
+const SALES_AGENT_PINNED_KEY = 'octane.salesAgentPinnedActions';
 
-function loadStoredPinned(): string[] | null {
+function loadStoredPinned(isSalesAgent = false): string[] | null {
   try {
-    const raw = localStorage.getItem(PINNED_KEY);
+    const raw = localStorage.getItem(isSalesAgent ? SALES_AGENT_PINNED_KEY : PINNED_KEY);
     if (!raw) return null;
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : null;
+    if (!Array.isArray(arr) || !arr.every((key) => typeof key === 'string')) return null;
+    return isSalesAgent ? migrateSalesAgentPinned(arr) : arr;
   } catch {
     return null;
   }
 }
 
-function persistPinned(list: string[]): void {
+function persistPinned(list: string[], isSalesAgent = false): void {
   try {
-    localStorage.setItem(PINNED_KEY, JSON.stringify(list));
+    localStorage.setItem(isSalesAgent ? SALES_AGENT_PINNED_KEY : PINNED_KEY, JSON.stringify(list));
   } catch {
     // ignore — pins just won't persist
   }
@@ -913,52 +916,30 @@ function SalesAgentProfileSheet({
   );
 }
 
-function SalesAgentCompanyScreen({
+function SalesAgentCompanyBar({
   company,
-  initData,
   onBack,
-  onOpenAction,
 }: {
   company: SalesAgentCompany;
-  initData: string;
   onBack: () => void;
-  onOpenAction: (target: OpenAction) => void;
 }) {
   const { t } = useI18n();
-  const actions: Array<{ key: 'status' | 'balance' | 'txns' | 'invoices' | 'payment' | 'lastused'; icon: IconName }> = [
-    { key: 'status', icon: 'shield' },
-    { key: 'balance', icon: 'wallet' },
-    { key: 'txns', icon: 'list' },
-    { key: 'invoices', icon: 'doc' },
-    { key: 'payment', icon: 'banknote' },
-    { key: 'lastused', icon: 'clock' },
-  ];
   return (
-    <div style={{ padding: '12px 16px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <button type="button" className="press" onClick={onBack} style={{ alignSelf: 'flex-start', height: 40, display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: '0 4px' }}>
-        <BackChevron /> {t('agent.backToCompanies')}
+    <div style={{ position: 'sticky', top: 0, zIndex: 8, flex: 'none', minHeight: 54, padding: '7px 16px', display: 'flex', alignItems: 'center', gap: 11, background: 'color-mix(in srgb, var(--background) 94%, transparent)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(14px)' }}>
+      <button
+        type="button"
+        className="press"
+        aria-label={t('agent.backToCompanies')}
+        onClick={onBack}
+        style={{ width: 40, height: 40, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 12, background: 'var(--secondary)', color: 'var(--fg)', cursor: 'pointer' }}
+      >
+        <BackChevron />
       </button>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--fg)', letterSpacing: '-.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company.companyName}</div>
-          <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums' }}>CR-{company.carrierId} · {t('agent.cards', { n: company.cardCount })}</div>
-        </div>
-        <span style={{ flex: 'none', fontSize: 11, fontWeight: 750, borderRadius: 999, padding: '6px 9px', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', color: 'var(--link-accent)' }}>{t('agent.readOnly')}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 750, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company.companyName}</div>
+        <div style={{ marginTop: 2, fontSize: 11.5, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>CR-{company.carrierId} · {t('agent.cards', { n: company.cardCount })}</div>
       </div>
-
-      <OwnerHero initData={initData} company={company.companyName} carrierId={company.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
-
-      <div style={{ padding: 16, borderRadius: 22, border: '1px solid var(--border)', background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', marginBottom: 12 }}>{t('agent.companyData')}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
-          {actions.map((action) => (
-            <button key={action.key} type="button" className="press" onClick={() => onOpenAction({ kind: 'service', key: action.key })} style={{ minHeight: 82, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: 13, borderRadius: 15, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", cursor: 'pointer', textAlign: 'left' }}>
-              <span style={{ color: 'var(--link-accent)', display: 'flex' }}><Icon name={action.icon} size={19} strokeWidth={1.9} className="" /></span>
-              <span style={{ fontSize: 13, lineHeight: 1.25, fontWeight: 700 }}>{t(`svc.${action.key}`)}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 750, borderRadius: 999, padding: '5px 8px', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', color: 'var(--link-accent)' }}>{t('agent.readOnly')}</span>
     </div>
   );
 }
@@ -1371,9 +1352,9 @@ function OverrideBanner({ until, onExpire }: { until: number; onExpire: () => vo
 }
 
 /**
- * Manager invite — a company-level access grant, shown on Home above the fleet card for a
- * fleet-manager owner/manager (never an owner-operator: they run a single truck alone). Each tap of
- * Generate mints a fresh, independent invite link, so a company can add as many managers as it needs.
+ * Manager invite — a company-level access grant shown to Sales while onboarding a fleet company.
+ * Owner/manager self-service remains hidden behind MANAGER_INVITE_UI. Each tap of Generate mints a
+ * fresh independent link, including when the selected company has no registered owner yet.
  */
 function ManagerInviteCard({
   onCreate,
@@ -1577,13 +1558,13 @@ function Home({
   const { t } = useI18n();
   const slideDir = useSlideDirection(tab, HOME_TABS);
 
-  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} isFleetManager={session.isFleetManager} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
+  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} isFleetManager={session.isFleetManager} isSalesAgent={session.isSalesAgent} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
   if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
   // Drop `soon` items (action === null): they cannot be opened, so a stale pin for one — e.g. a
   // driver who pinned money code before it became owner-gated — must not render as a dead home row.
   const pinnedItems = pinned
-    .map((key) => findCatalogItem(key, session.isDriver))
+    .map((key) => findCatalogItem(key, session.isDriver, session.isSalesAgent))
     .filter((x): x is NonNullable<typeof x> => !!x && x.item.action !== null);
 
   return (
@@ -1635,16 +1616,14 @@ function Home({
         </div>
       </div>
 
-      {/* Manager INVITE is disabled (owner decision 2026-07-22): managers are onboarded by Octane
-          agents, and the backend route is flag-gated off (MANAGER_INVITES_DISABLED) — hiding the
-          card here is UX, not the gate. The ROSTER (list + revoke) stays: seeing and removing
-          who has company access is an owner's right regardless of who created the access.
-          Flip MANAGER_INVITE_UI back to true together with FF_MINIAPP_MANAGER_INVITES_ENABLED. */}
-      {MANAGER_INVITE_UI && session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
-      {session.isFleetManager && <ManagersList initData={initData} />}
+      {/* Customer self-service stays disabled (owner decision 2026-07-22), but Sales is the approved
+          onboarding path and can create a manager link for its selected active company. Backend
+          scope/capability checks remain authoritative; this condition is only presentation. */}
+      {session.isFleetManager && (session.isSalesAgent || MANAGER_INVITE_UI) && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+      {session.isFleetManager && !session.isSalesAgent && <ManagersList initData={initData} />}
 
       {/* manage fleet */}
-      {session.isFleetManager && (
+      {session.isFleetManager && !session.isSalesAgent && (
         <button type="button" className="press" onClick={onViewFleet} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18, cursor: 'pointer', fontFamily: "'Geist'" }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <span style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--secondary)', color: 'var(--fg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -4161,6 +4140,7 @@ export function App() {
     if (!actor) return;
     setSalesAgentCarrierId(companyRow.carrierId);
     resetCompanyCaches();
+    setInbox([]);
     setSelectedAgentCompany(companyRow);
     setRegistration({
       id: actor.id,
@@ -4175,6 +4155,7 @@ export function App() {
     });
     setOpenAction(null);
     setProfileOpen(false);
+    setTab('home');
     setScreen('agent-company');
   }
 
@@ -4201,8 +4182,10 @@ export function App() {
     resetCompanyCaches();
     setRegistration(null);
     setSelectedAgentCompany(null);
+    setInbox([]);
     setOpenAction(null);
     setProfileOpen(false);
+    setTab('home');
     setScreen('agent-portfolio');
   }
 
@@ -4210,10 +4193,10 @@ export function App() {
   // once whenever `home` first becomes reachable — covers both the "confirm → success → home" path
   // and the "returning user, session restored straight to home" path.
   useEffect(() => {
-    if (screen !== 'home') return;
+    if (screen !== 'home' && screen !== 'agent-company') return;
     if (!pinnedInit.current) {
       pinnedInit.current = true;
-      setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
+      setPinned(loadStoredPinned(session.isSalesAgent) ?? defaultPinned(session.isDriver, session.isSalesAgent));
     }
     // REAL inbox: news + this user's notification slice. No demo seed — a fresh account with no
     // backend rows shows an empty inbox (correct), and a failed fetch leaves whatever was already
@@ -4231,12 +4214,12 @@ export function App() {
     };
     // only the arrival at `home` (and the role, if it wasn't known yet) should re-run this
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, session.isDriver]);
+  }, [screen, session.isDriver, session.isSalesAgent]);
 
   // Live inbox: the existing realtime hub, via the initData-authenticated mini-app WS route.
   // Push-only — a dropped socket costs nothing (rows arrive on the next inbox fetch).
   useEffect(() => {
-    if (screen !== 'home' || !initData) return;
+    if ((screen !== 'home' && screen !== 'agent-company') || !initData) return;
     let ws: WebSocket | null = null;
     try {
       ws = new WebSocket(inboxRealtimeUrl(initData));
@@ -4457,7 +4440,7 @@ export function App() {
     setPinned((cur) => {
       const isPinned = cur.includes(key);
       const next = isPinned ? cur.filter((k) => k !== key) : [...cur, key];
-      persistPinned(next);
+      persistPinned(next, session.isSalesAgent);
       showToast(t(isPinned ? 'toast.unpinned' : 'toast.pinned'));
       return next;
     });
@@ -4539,14 +4522,19 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
-  /** Mint a manager registration link — a colleague with owner-equivalent access. Carrier-level, so
-   *  no card; the backend binds it to this session's own carrier and carries the name onto the
-   *  registration. Returns the link to reveal + copy; throws so the caller can surface an error. */
+  /** Mint a manager registration link. For Sales, the API client carries the selected carrier and
+   *  the backend revalidates it against the live roster; no registered owner is required. */
   async function createManagerLink(name: string): Promise<{ inviteUrl: string; expiresAt: string }> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await createManagerInvite(wa.initData, name);
-    haptic('success');
-    return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+    try {
+      const res = await createManagerInvite(wa.initData, name);
+      haptic('success');
+      return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+    } catch (error) {
+      haptic('error');
+      showToast(error instanceof ApiError ? error.message : t('error.reason'), 'error');
+      throw error;
+    }
   }
 
   async function renameDriverName(cardId: string, driverName: string): Promise<void> {
@@ -4581,12 +4569,30 @@ export function App() {
           />
         )}
         {screen === 'agent-company' && selectedAgentCompany && (
-          <SalesAgentCompanyScreen
-            company={selectedAgentCompany}
-            initData={wa?.initData ?? ''}
-            onBack={backToAgentPortfolio}
-            onOpenAction={handleOpenAction}
-          />
+          <>
+            <SalesAgentCompanyBar company={selectedAgentCompany} onBack={backToAgentPortfolio} />
+            <Home
+              session={session}
+              tab={tab}
+              company={company}
+              fullName={fullName}
+              initData={wa?.initData ?? ''}
+              pinned={pinned}
+              inbox={inbox}
+              cardRevealed={cardRevealed}
+              onToggleCardReveal={toggleCardReveal}
+              onTogglePin={togglePin}
+              onOpenAction={handleOpenAction}
+              onGoToServices={() => setTab('services')}
+              onViewFleet={viewFleet}
+              onCreateManagerInvite={createManagerLink}
+              onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
+              onMarkAllRead={markAllRead}
+              onReadNotif={readNotif}
+              overrideUntil={overrideUntil}
+              onOverrideExpire={clearOverride}
+            />
+          </>
         )}
         {screen === 'home' && (
           <Home
@@ -4628,7 +4634,7 @@ export function App() {
         )}
       </div>
 
-      {screen === 'home' && <TabBar active={tab} unreadCount={inbox.filter((n) => n.unread).length} onSelect={(next) => { if (next !== tab) haptic('tap'); setTab(next); }} />}
+      {(screen === 'home' || screen === 'agent-company') && <TabBar active={tab} unreadCount={inbox.filter((n) => n.unread).length} onSelect={(next) => { if (next !== tab) haptic('tap'); setTab(next); }} />}
 
       {profileOpen && screen === 'agent-portfolio' && salesAgent ? (
         <SalesAgentProfileSheet

@@ -288,7 +288,8 @@ export type LeadEditFields = Partial<
     | 'Description'
     | 'Status'
     | 'Unqualified_Reason'
-    | 'Not_Interested_Reason',
+    | 'Not_Interested_Reason'
+    | 'Application_ID',
     string | number | null
   >
 >;

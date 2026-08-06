@@ -65,6 +65,30 @@ describe('Zoho CRM record Blueprint contract', () => {
     });
   });
 
+  it('falls back to display_value when Zoho omits picklist actual_value', async () => {
+    const wrapper = new StubZohoCrmRecords([jsonResponse({
+      blueprint: {
+        process_info: {
+          id: '1', name: 'Lead flow', api_name: 'Status', field_label: 'Status', field_value: 'Third Call',
+        },
+        transitions: [{
+          id: '2', name: 'Not Interested', next_field_value: 'Not Interested',
+          type: 'manual', criteria_matched: true, data: {},
+          fields: [{
+            api_name: 'Not_Interested_Reason', display_label: 'Not Interested Reason', data_type: 'picklist',
+            mandatory: true, read_only: false,
+            pick_list_values: [{ display_value: 'Wrong language' }],
+          }],
+        }],
+      },
+    })]);
+
+    const result = await wrapper.getBlueprintDetails('Leads', '555');
+    expect(result?.transitions[0]?.fields[0]?.options).toEqual([
+      { label: 'Wrong language', value: 'Wrong language' },
+    ]);
+  });
+
   it('returns null only for Zoho RECORD_NOT_IN_PROCESS and propagates permission failures', async () => {
     const outside = new StubZohoCrmRecords([
       jsonResponse({ code: 'RECORD_NOT_IN_PROCESS', message: 'Record not in process' }, 400),
