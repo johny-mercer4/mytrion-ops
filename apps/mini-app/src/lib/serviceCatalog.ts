@@ -12,6 +12,10 @@
 import type { IconName } from '../components/icons';
 import type { ServiceKey } from './demo';
 import type { ServiceRequestKey } from './api';
+import {
+  SALES_AGENT_CATALOG_DEFINITION,
+  SALES_AGENT_DEFAULT_PINNED,
+} from './salesAgentCatalog.js';
 
 export interface CatalogItem {
   key: string;
@@ -143,8 +147,20 @@ const OWNER_CATALOG: CatalogGroup[] = [
   // mini-app. A user's stale pin on a removed key is dropped by the Home pin renderer.
 ];
 
-export function getCatalog(isDriver: boolean, isFleetManager = true): CatalogGroup[] {
-  const groups = isDriver ? DRIVER_CATALOG : OWNER_CATALOG;
+/**
+ * Sales-agent company preview. Keep this list explicit instead of filtering OWNER_CATALOG by
+ * action name: an owner service can change from read to write without that product change silently
+ * expanding the preview. These are the read-only sheets backed by the sales-agent capabilities
+ * (`company:read`, `financial:read`, `fleet:read`).
+ */
+const SALES_AGENT_CATALOG: CatalogGroup[] = SALES_AGENT_CATALOG_DEFINITION.map((group) => ({
+  groupLabelKey: group.groupLabelKey,
+  items: group.items.map((item) => ({ ...item })),
+}));
+
+export function getCatalog(isDriver: boolean, isFleetManager = true, isSalesAgent = false): CatalogGroup[] {
+  const groups = isSalesAgent ? SALES_AGENT_CATALOG : isDriver ? DRIVER_CATALOG : OWNER_CATALOG;
+  if (isSalesAgent) return groups;
   if (isDriver || isFleetManager) return groups;
   // Owner-operator: drop fleet-only rows (and any group they empty out).
   return groups
@@ -152,17 +168,22 @@ export function getCatalog(isDriver: boolean, isFleetManager = true): CatalogGro
     .filter((g) => g.items.length > 0);
 }
 
-export function defaultPinned(isDriver: boolean): string[] {
+export function defaultPinned(isDriver: boolean, isSalesAgent = false): string[] {
   // Demand-ranked (see the catalog-order notes above). Owner: money code is the #1 ask and balance
   // already lives on the home hero, so its pin slot goes to reports instead. Only affects users
   // with no stored pins — a user's own arrangement always wins.
+  if (isSalesAgent) return [...SALES_AGENT_DEFAULT_PINNED];
   return isDriver
     ? ['drv-funds', 'drv-override-card', 'drv-txns'] // not drv-money-code: it is a `soon` (owner-authorized) item for drivers, so it isn't pinnable
     : ['fin-money-code', 'card-status', 'fin-txn-reports', 'fin-invoice-view'];
 }
 
-export function findCatalogItem(key: string, isDriver: boolean): { item: CatalogItem; groupLabelKey: string } | undefined {
-  for (const g of getCatalog(isDriver)) {
+export function findCatalogItem(
+  key: string,
+  isDriver: boolean,
+  isSalesAgent = false,
+): { item: CatalogItem; groupLabelKey: string } | undefined {
+  for (const g of getCatalog(isDriver, true, isSalesAgent)) {
     const item = g.items.find((i) => i.key === key);
     if (item) return { item, groupLabelKey: g.groupLabelKey };
   }
