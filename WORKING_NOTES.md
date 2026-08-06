@@ -11829,3 +11829,61 @@ instead of spending a round trip to surface a generic 502. A test pins the set.
 
 Confirmed working while probing: products (93 rows), policies, cash (230 rows), orders/meta.
 `smartpay/accounts` requires `cardNumber` (400s without it) — noted at the descriptor.
+
+### 2026-08-06 — Horizon greeting latency, model errors, and inspector persistence
+
+- Added an exact multilingual greeting/thanks fast path in `/v1/agent`. It uses no LLM, planner,
+  checkpoint, blackboard, memory, skills, tools, or RAG; the normal persisted turn/audit contract is
+  retained. Turn Inspector identifies it as `horizon-local-greeting-v1`, provider `local`, role
+  `deterministic`, and RAG `none`.
+- Moved the initial route/model trace ahead of the expensive runtime setup so Admin sees the chosen
+  path immediately. Provider model-not-found text (including the reported Chinese GLM response) is
+  now converted to safe user copy while the original diagnostic remains server-logged.
+- Removed Sales/Data Center's unconditional `OPEN_AI_FIVE_O_MINI` manifest pins. They now follow the
+  unified feature-gated model policy, whose rollback/control model is `gpt-4o-mini-2024-07-18`.
+- Turn Inspector traces are cached per user+conversation and restored on conversation switches and
+  reloads. The conversation API now returns the already-persisted assistant `model`, allowing a
+  safe model/RAG summary to be reconstructed when the full browser trace is unavailable.
+- Conversation transcripts now use an in-memory per-hook cache. Returning to an already-opened
+  conversation renders locally without another `GET /chat/conversations/:id` request; deletion
+  clears both transcript and inspector caches.
+- Security baseline before edits: `agent-rbac-leakage` 22/22 passed. Added deterministic fast-path,
+  provider-error redaction, inspector storage, transcript reconstruction, and reducer regressions.
+
+## 2026-08-06 — Sales Management becomes a workspace hub; KPI block
+
+A department desk used to BE its Tasks board, so there was nowhere to put a second surface. Desks
+are now workspace-card grids in the same idiom as Manager Overview (`.mg-card` / `.mg-card-grid`),
+opening one replaces the grid, and which blocks a desk offers is declared in `deptWorkspaces.ts`.
+Tasks is universal; KPI is Sales-only for now because its metrics are sales-shaped.
+
+**KPI — every sales agent, this billing cycle (26th→25th).** Card swipes, gallons, app fills: the
+same three the Sales Mytrion's Home tab shows for the ONE agent looking at it. The obvious build is
+servercrm `/api/agent/dwh/snapshot` per agent — ~65 sequential vendor calls. Instead two grouped
+DWH queries, measured at ~816ms for all agents:
+```
+swipes/gallons/cards  octane.mart_transaction_line_items ⋈ octane.dim_company  (by agent)
+app fills             public.zoho_deals ⋈ public.zoho_users                    (by deal owner)
+                      App Fill date = coalesce(application_date, created_time)
+```
+⚠️ The two sources have NO shared agent id — `dim_company.agent_zoho_user_id` does not match a Zoho
+user id (the trap already documented for the Sales Data Center). They are joined on normalised name.
+
+Probing that join before shipping caught two bugs that would otherwise have quietly under-reported:
+1. **Duplicate Zoho user records for one person were overwriting, not summing.** Zoho holds
+   "Samandar Baxodirov", "SAMANDAR BAXODIROV" and "BAXODIROV SAMANDAR YUSUFALI O'G'LI Ford" as
+   three owner ids for one agent. Last-write-wins reported one record's fills.
+2. **Agents who fill applications but own no carrier were dropped entirely** — 19 people, 263 app
+   fills invisible. That is the worst possible direction for a KPI board: it under-reports exactly
+   the people whose only output IS app fills. They now appear with structurally-zero fuel figures
+   and a "no book" flag so the zeros read as "owns no carriers", not "did nothing".
+
+Live result: 87 → **106 agents**, total app fills 994 → **1,257**, 838ms.
+Totals across the desk: 7,613 clients · 26,211 swipes · 2.33M gallons.
+
+Six unit tests pin the merge (name normalisation, summing duplicates, no-book inclusion, quiet
+agents at zero, unresolvable owners ignored, sort order).
+
+Note: the three manager suites boot a real Fastify app against the prod DB (~550ms/query) and one
+run in four flaked under concurrency. Three consecutive clean runs since; if it recurs, they want a
+local throwaway DB rather than a retry.

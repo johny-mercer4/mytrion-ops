@@ -12,6 +12,7 @@ import {
   listDepartmentAssignees,
   type ManagerTaskDepartment,
 } from '../../modules/manager/departmentAssignees.js';
+import { fetchSalesKpiBoard } from '../../modules/manager/salesKpiBoard.js';
 import { workerTaskRepo } from '../../repos/workerTaskRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -93,6 +94,17 @@ function taskDto(task: NonNullable<Awaited<ReturnType<typeof workerTaskRepo.find
 
 export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
   const auth: RouteShorthandOptions = { onRequest: [app.authenticate] };
+
+  /**
+   * Sales Management → KPI: every sales agent with this cycle's headline numbers.
+   *
+   * Two grouped DWH queries rather than a per-agent fan-out — see modules/manager/salesKpiBoard.ts
+   * for why, and for the name-join caveat between the mart and Zoho.
+   */
+  app.get('/manager/sales/kpi/board', auth, async (request) => {
+    managerContext(request);
+    return fetchSalesKpiBoard();
+  });
 
   app.get<{ Params: { department: string } }>(
     '/manager/:department/workers',
