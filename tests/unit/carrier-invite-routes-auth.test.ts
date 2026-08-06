@@ -258,9 +258,7 @@ describe('carrier registration links — Sales write scope + View-as', () => {
   });
 
   it('creates a self-registration launch for an active company in the Sales agent roster', async () => {
-    clientsMock.mockResolvedValue([
-      activeClient({ computedDebt: 500, computedDebtDays: 3 }),
-    ]);
+    clientsMock.mockResolvedValue([activeClient()]);
     const res = await app.inject({
       method: 'POST',
       url: '/v1/carrier/mini-app/sales-agent-invitations',
@@ -277,6 +275,22 @@ describe('carrier registration links — Sales write scope + View-as', () => {
         requestedCarrierId: '123',
       }),
     );
+  });
+
+  it('rejects a Sales-agent mini-app launch for an active debtor', async () => {
+    clientsMock.mockResolvedValue([
+      activeClient({ computedDebt: 500, computedDebtDays: 3 }),
+    ]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/sales-agent-invitations',
+      headers: bearer(await workerToken('Sales Rep')),
+      payload: { carrier_id: '123' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'SALES_AGENT_COMPANY_DENIED' } });
+    expect(createAgentInviteMock).not.toHaveBeenCalled();
   });
 
   it('requires Admin View before an administrator can create a Sales-agent self-registration', async () => {

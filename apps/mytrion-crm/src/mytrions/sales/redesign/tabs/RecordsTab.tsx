@@ -143,7 +143,7 @@ interface RecordVM {
   currentCards: number;
   owed: number;
   managerControlled: boolean;
-  activeCompany: boolean;
+  miniAppEligible: boolean;
   tier: TierResult;
   onClick: () => void;
 }
@@ -369,7 +369,7 @@ export function RecordsTab() {
         currentCards: c.activeCardsThisMonth,
         owed: c.computedDebt,
         managerControlled: c.managerControlled === true,
-        activeCompany: c.computedIsActive,
+        miniAppEligible: c.computedIsActive && c.status !== 'debtor',
         tier,
         onClick: () => openClient({
           id: c.id, name: c.name, carrier: c.carrier, contact: c.contact, phone: c.phone,
@@ -556,17 +556,17 @@ export function RecordsTab() {
                 />
                 <button
                   type="button"
-                  disabled={!c.activeCompany || launchingCarrier === c.id}
+                  disabled={!c.miniAppEligible || launchingCarrier === c.id}
                   aria-label={`View ${c.name} mini-app`}
-                  title={c.activeCompany ? 'Open this company in your Sales agent mini-app' : 'Only active companies can be viewed'}
+                  title={c.miniAppEligible ? 'Open this company in your Sales agent mini-app' : 'Debtor and inactive companies cannot be viewed'}
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (c.activeCompany) void openAgentMiniApp(c.id);
+                    if (c.miniAppEligible) void openAgentMiniApp(c.id);
                   }}
-                  style={s(`margin-top:13px;width:100%;height:38px;border-radius:var(--radius-sm);border:1px solid ${c.activeCompany ? 'rgba(var(--accent-rgb),.35)' : 'var(--border)'};background:${c.activeCompany ? 'rgba(var(--accent-rgb),.1)' : 'var(--alt)'};color:${c.activeCompany ? 'var(--accent)' : 'var(--faint)'};display:flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;font-size:12px;font-weight:700;cursor:${c.activeCompany ? 'pointer' : 'not-allowed'};opacity:${launchingCarrier === c.id ? .7 : 1}`)}
+                  style={s(`margin-top:13px;width:100%;height:38px;border-radius:var(--radius-sm);border:1px solid ${c.miniAppEligible ? 'rgba(var(--accent-rgb),.35)' : 'var(--border)'};background:${c.miniAppEligible ? 'rgba(var(--accent-rgb),.1)' : 'var(--alt)'};color:${c.miniAppEligible ? 'var(--accent)' : 'var(--faint)'};display:flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;font-size:12px;font-weight:700;cursor:${c.miniAppEligible ? 'pointer' : 'not-allowed'};opacity:${launchingCarrier === c.id ? .7 : 1}`)}
                 >
                   <Icon name={launchingCarrier === c.id ? 'refresh' : 'link'} size={14} />
-                  {launchingCarrier === c.id ? 'Opening mini-app…' : c.activeCompany ? 'View mini-app' : 'Mini-app unavailable'}
+                  {launchingCarrier === c.id ? 'Opening mini-app…' : c.miniAppEligible ? 'View mini-app' : 'Mini-app unavailable'}
                 </button>
               </div>
             ))}

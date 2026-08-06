@@ -581,10 +581,11 @@ describe('carrier mini-app redeem flow', () => {
 });
 
 describe('Sales-agent mini-app portfolio and selected-company scope', () => {
-  it('restores a distinct Sales-agent session with active companies only', async () => {
+  it('restores a distinct Sales-agent session with active non-debtor companies only', async () => {
     agentMiniAppRepo.findPrincipalByTelegramUserId.mockResolvedValueOnce(salesAgentPrincipal());
     agentClients.mockResolvedValueOnce([
       salesAgentClient({ computedDebt: 500, computedDebtDays: 3 }),
+      salesAgentClient({ carrierId: '5760000', companyName: 'Eligible Co' }),
       salesAgentClient({ carrierId: '999', companyName: 'Inactive Co', computedIsActive: false }),
     ]);
 
@@ -598,9 +599,7 @@ describe('Sales-agent mini-app portfolio and selected-company scope', () => {
     expect(res.json()).toMatchObject({
       kind: 'sales_agent',
       salesAgent: { id: 'sap_1', zohoUserId: '777', agentName: 'Rep Riley' },
-      companies: [
-        { carrierId: '5758544', companyName: 'Acme Transport LLC', status: 'debtor' },
-      ],
+      companies: [{ carrierId: '5760000', companyName: 'Eligible Co', status: 'active' }],
     });
     expect(agentClients).toHaveBeenCalledWith('777', 'Rep Riley', {
       force: true,
@@ -624,9 +623,11 @@ describe('Sales-agent mini-app portfolio and selected-company scope', () => {
     expect(crm.getCarrierBalance).toHaveBeenCalledWith('5758544');
   });
 
-  it('denies a selected company once it is no longer in the active Sales roster', async () => {
+  it('denies a selected company when it is a debtor even if it remains active in Sales', async () => {
     agentMiniAppRepo.findPrincipalByTelegramUserId.mockResolvedValueOnce(salesAgentPrincipal());
-    agentClients.mockResolvedValueOnce([]);
+    agentClients.mockResolvedValueOnce([
+      salesAgentClient({ computedDebt: 500, computedDebtDays: 3 }),
+    ]);
 
     const res = await app.inject({
       method: 'POST',

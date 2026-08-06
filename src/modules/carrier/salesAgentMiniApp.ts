@@ -42,7 +42,7 @@ function toCompany(row: AgentClientRow): SalesAgentMiniAppCompany {
   };
 }
 
-/** Fresh, no-stale-fallback portfolio read. Inactive companies never enter the agent mini-app. */
+/** Fresh, no-stale-fallback portfolio read. Inactive and debtor companies never enter the app. */
 export async function listActiveSalesAgentCompanies(
   ctx: TenantContext,
 ): Promise<SalesAgentMiniAppCompany[]> {
@@ -56,7 +56,10 @@ export async function listActiveSalesAgentCompanies(
       force: true,
       allowStaleOnError: false,
     });
-    return rows.filter((row) => row.computedIsActive).map(toCompany);
+    return rows
+      .filter((row) => row.computedIsActive)
+      .map(toCompany)
+      .filter((company) => company.status === 'active');
   } catch (error) {
     throw new AppError('Sales agent company list is unavailable (data warehouse)', {
       statusCode: 502,
@@ -78,7 +81,7 @@ export async function selectActiveSalesAgentCompany(
   );
   if (!company) {
     throw new RBACError(
-      `Carrier ${normalized} is not an active company in your client list.`,
+      `Carrier ${normalized} is not an eligible active, non-debtor company in your client list.`,
       { code: 'SALES_AGENT_COMPANY_DENIED' },
     );
   }
