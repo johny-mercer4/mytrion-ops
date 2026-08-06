@@ -4,8 +4,14 @@
  */
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { AppError } from '../../lib/errors.js';
+import {
+  enrichLeadBlueprintFields,
+  enrichLeadBlueprintTransitions,
+} from './leadBlueprintRequiredFields.js';
 
 export type BlueprintInputValue = string | number | boolean | null;
+
+export { enrichLeadBlueprintFields, enrichLeadBlueprintTransitions };
 
 function hasValue(value: unknown): boolean {
   return value !== null && value !== undefined && value !== '';
@@ -34,8 +40,11 @@ export async function executeLeadBlueprintTransition(
     });
   }
 
+  // Known stage contracts (Application ID / reason picklists) even when Zoho omits field metadata.
+  const fields = enrichLeadBlueprintFields(transition.nextValue, transition.fields);
+
   const writableFields = new Set(
-    transition.fields.filter((field) => !field.readOnly).map((field) => field.apiName),
+    fields.filter((field) => !field.readOnly && field.apiName).map((field) => field.apiName),
   );
   const unknownField = Object.keys(data).find((apiName) => !writableFields.has(apiName));
   if (unknownField) {
@@ -46,7 +55,7 @@ export async function executeLeadBlueprintTransition(
     });
   }
 
-  const missing = transition.fields.find(
+  const missing = fields.find(
     (field) => field.mandatory && !field.readOnly && !hasValue(data[field.apiName]) && !hasValue(field.value),
   );
   if (missing) {
