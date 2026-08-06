@@ -4,7 +4,7 @@
  * Reads PostgreSQL catalog metadata only; no rows are selected. Keeping the query in a repo
  * preserves the repository boundary (CLAUDE.md rule 2) while letting the route prefix answer 503
  * with the missing table names instead of an opaque table-not-found 500 — which is what a deploy
- * that lands before `0103_ledger_core` would otherwise produce on every ledger request.
+ * that lands before `0104_ledger_core` would otherwise produce on every ledger request.
  *
  * Mirrors ./commsReadinessRepo.ts.
  */

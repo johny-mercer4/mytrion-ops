@@ -3,7 +3,7 @@ import { ledgerReadinessRepo, type LedgerSchemaReadiness } from '../../../repos/
 
 /**
  * 30s-TTL cached readiness gate for the ledger route prefix. Without it, a deploy that reaches the
- * app before `0103_ledger_core` is applied turns every ledger request into an opaque 500 instead of
+ * app before `0104_ledger_core` is applied turns every ledger request into an opaque 500 instead of
  * a 503 that names the missing tables. Mirrors ../../comms/readiness.ts.
  */
 const READINESS_TTL_MS = 30_000;
