@@ -21,6 +21,29 @@ export const agentResultSchema = z.object({
     )
     .default([])
     .describe('Knowledge-base documents the answer is grounded in (empty if none used).'),
+  claims: z
+    .array(
+      z.object({
+        text: z.string().max(2000),
+        evidenceIds: z.array(z.string().max(160)).max(12).default([]),
+      }),
+    )
+    .max(40)
+    .default([])
+    .describe('Factual claims and the retrieved evidence identifiers supporting each claim.'),
+  toolFacts: z
+    .array(
+      z.object({
+        key: z.string().max(120),
+        value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+        source: z.string().max(160),
+        fetchedAt: z.string().max(80),
+        expiresAt: z.string().max(80).optional(),
+      }),
+    )
+    .max(30)
+    .default([]),
+  unresolved: z.array(z.string().max(1000)).max(20).default([]),
   toolsUsed: z.array(z.string()).default([]).describe('Names of tools actually called.'),
   confidence: z
     .enum(['high', 'medium', 'low'])
@@ -36,3 +59,5 @@ export const agentResultSchema = z.object({
 });
 
 export type AgentResult = z.infer<typeof agentResultSchema>;
+/** Versioned child-to-parent contract; AgentResult remains as a compatibility alias. */
+export type SubAgentResultV1 = AgentResult;

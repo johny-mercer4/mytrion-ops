@@ -4,11 +4,18 @@
  * no LLM output can widen retrieval scope.
  */
 import type { HybridChunk } from '../../../repos/knowledgeSearchRepo.js';
-import type { CragGrade } from './queryPlanner.js';
+import type { EvidenceGrade } from './evidenceAssessment.js';
 
 export interface RetrievedPassage extends HybridChunk {
   /** Reciprocal-rank-fusion score across all sub-queries and legs. Higher = better. */
   fusedScore: number;
+  signals?: {
+    vectorHits: number;
+    lexicalHits: number;
+    queryHits: number;
+    bestVectorScore?: number;
+    bestLexicalScore?: number;
+  };
 }
 
 export interface Citation {
@@ -17,6 +24,11 @@ export interface Citation {
   docId: string;
   docTitle: string | null;
   chunkIndex: number;
+  sourceVersion?: string;
+  authorityClass?: string;
+  verificationStatus?: string;
+  lastVerifiedAt?: string;
+  stale?: boolean;
 }
 
 export interface AgenticRetrievalResult {
@@ -27,11 +39,16 @@ export interface AgenticRetrievalResult {
   hops: number;
   sufficient: boolean;
   /** CRAG ternary grade from the last judge (or Correct on score short-circuit). */
-  grade: CragGrade;
+  grade: EvidenceGrade;
   /** Set when the loop exhausted without Correct — caller may web-fallback or abstain. */
   suggestWebSearch: boolean;
   /** True when the KB cannot answer and generation must abstain. */
   notDocumented: boolean;
   /** Optional UNTRUSTED web snippet appended after CRAG web fallback. */
   webFallbackBlock?: string;
+  traceId: string;
+  /** Server-only fingerprint of the exact eligible retrieval scope. */
+  scopeFingerprint: string;
+  confidence: number;
+  route: 'none' | 'knowledge' | 'tool' | 'external';
 }

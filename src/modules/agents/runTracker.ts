@@ -8,6 +8,9 @@
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import type { LLMResult } from '@langchain/core/outputs';
 import { computeCost } from '../llm/costTracker.js';
+import { recordLlmTelemetry } from '../llm/telemetry.js';
+import type { Provider } from '../llm/openaiClient.js';
+import type { TenantContext } from '../../types/tenantContext.js';
 import type { BudgetMeter } from './budget.js';
 
 interface Serialized {
@@ -22,12 +25,42 @@ export class RunTracker extends BaseCallbackHandler {
   /** Prompt tokens served from provider KV / prompt cache (when reported). */
   cachedPromptTokens = 0;
   readonly agentPath: string[] = [];
+  private readonly llmStarts = new Map<string, { at: number; model: string }>();
+  private measuredCost = 0;
 
   constructor(
     private readonly modelId: string,
     private readonly budget?: BudgetMeter,
+    private readonly telemetry?: {
+      ctx: TenantContext;
+      agentRunId: string;
+      conversationId: string;
+      role: string;
+    },
   ) {
     super();
+  }
+
+  override async handleLLMStart(
+    _llm: Serialized,
+    _prompts: string[],
+    runId: string,
+    _parentRunId?: string,
+    extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    const invocation = extraParams?.['invocation_params'];
+    const invocationModel = invocation && typeof invocation === 'object'
+      ? (invocation as Record<string, unknown>)['model'] ?? (invocation as Record<string, unknown>)['model_name']
+      : undefined;
+    const metaModel = metadata?.['ls_model_name'];
+    const model = typeof invocationModel === 'string'
+      ? invocationModel
+      : typeof metaModel === 'string'
+        ? metaModel
+        : this.modelId;
+    this.llmStarts.set(runId, { at: Date.now(), model });
   }
 
   /** Fraction of prompt tokens that were cache hits (0–1), or null when unknown. */
@@ -38,7 +71,7 @@ export class RunTracker extends BaseCallbackHandler {
     return Math.min(1, this.cachedPromptTokens / this.promptTokens);
   }
 
-  override async handleLLMEnd(output: LLMResult): Promise<void> {
+  override async handleLLMEnd(output: LLMResult, runId: string): Promise<void> {
     let prompt = 0;
     let completion = 0;
     let cached = 0;
@@ -87,9 +120,29 @@ export class RunTracker extends BaseCallbackHandler {
     this.completionTokens += completion;
     this.cachedPromptTokens += cached;
     if (this.budget) {
-      const cost = computeCost({ model: this.modelId, promptTokens: prompt, completionTokens: completion });
+      const model = this.llmStarts.get(runId)?.model ?? this.modelId;
+      const cost = computeCost({ model, promptTokens: prompt, completionTokens: completion });
       this.budget.charge(cost.totalCost);
+      this.measuredCost += cost.totalCost;
     }
+    if (this.telemetry) {
+      const started = this.llmStarts.get(runId);
+      const model = started?.model ?? this.modelId;
+      const provider: Provider = model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai';
+      await recordLlmTelemetry({
+        ctx: this.telemetry.ctx,
+        conversationId: this.telemetry.conversationId,
+        agentRunId: this.telemetry.agentRunId,
+        role: this.telemetry.role,
+        resolved: { provider, model },
+        status: 'ok',
+        latencyMs: started ? Date.now() - started.at : 0,
+        inputTokens: prompt,
+        cachedInputTokens: cached,
+        outputTokens: completion,
+      });
+    }
+    this.llmStarts.delete(runId);
   }
 
   override async handleToolStart(
@@ -120,6 +173,7 @@ export class RunTracker extends BaseCallbackHandler {
   }
 
   totalCost(): number {
+    if (this.measuredCost > 0) return this.measuredCost;
     return computeCost({
       model: this.modelId,
       promptTokens: this.promptTokens,

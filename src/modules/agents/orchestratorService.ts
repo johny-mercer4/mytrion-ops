@@ -16,11 +16,14 @@ import { auditFromContext } from '../audit/auditLogger.js';
 import { messageStore } from '../chat/messageStore.js';
 import type { SSEStream } from '../chat/streaming.js';
 import { validateCitations, type WireCitation } from '../knowledge/agentic/citationCheck.js';
+import { verifyAnswerFaithfulness } from '../knowledge/agentic/faithfulness.js';
+import { routeRetrievalIntent } from '../knowledge/agentic/router.js';
 import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
+import { narrowContext } from './authority.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
 import { buildTurnBrief, recentHistorySummary, shouldReciteGoal } from './briefBuilder.js';
-import { formatBlackboardXml, loadBlackboard, mergeBlackboard } from './blackboard.js';
+import { formatBlackboardXml, loadBlackboard, mergeBlackboard, type BlackboardPayload } from './blackboard.js';
 import { ensureCheckpointerReady, getCheckpointer, threadIdFor } from './checkpointer.js';
 import { runWithAgentContext, type RunCollector } from './context.js';
 import { resolveAgentModelId } from './models.js';
@@ -33,6 +36,7 @@ import { runHardDagWaves } from './planning/waveRunner.js';
 import { captureSkill, recallSkillHint } from './skillCache.js';
 import { consumeAgentStream, type StreamOutcome } from './streamAdapter.js';
 import { isAgentKey, type AgentManifest } from './types.js';
+import { createTurnContext, type ContextNoMatch } from './turnContext.js';
 
 export interface AgentTurnOptions {
   conversationId?: string;
@@ -51,7 +55,7 @@ export interface AgentTurnResult {
   /** 'orchestrator' or the direct child key, plus the specialists actually consulted. */
   agentKey: string;
   agentPath: string[];
-  toolCalls: Array<{ name: string; status: string; args?: any }>;
+  toolCalls: Array<{ name: string; status: string; args?: unknown }>;
   usage: {
     promptTokens: number;
     completionTokens: number;
@@ -63,6 +67,14 @@ export interface AgentTurnResult {
   ragPassages: number;
   /** Validated sources backing the answer (post-run [Sn] marker check). */
   citations: WireCitation[];
+  /** Additive RAG v2 envelope; older clients may ignore it. */
+  rag: {
+    traceId: string | null;
+    mode: 'none' | 'knowledge' | 'tool' | 'external';
+    grade: string | null;
+    confidence: number | null;
+    abstained: boolean;
+  };
   /** Present when the agent asked the user to pick from options (generative UI). */
   elicitation?: Elicitation;
 }
@@ -126,6 +138,26 @@ function deriveTitle(message: string): string {
   return `${(lastSpace > 30 ? cut.slice(0, lastSpace) : cut).trim()}…`;
 }
 
+function knownNoMatchesFrom(board?: BlackboardPayload): ContextNoMatch[] {
+  const raw = board?.facts['rag/knownNoMatch'];
+  if (!Array.isArray(raw)) return [];
+  const valid: ContextNoMatch[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row['query'] !== 'string' || typeof row['scopeFingerprint'] !== 'string' || typeof row['at'] !== 'string') {
+      continue;
+    }
+    if (!Number.isFinite(Date.parse(row['at']))) continue;
+    valid.push({
+      query: row['query'].slice(0, 1_000),
+      scopeFingerprint: row['scopeFingerprint'].slice(0, 80),
+      at: row['at'],
+    });
+  }
+  return valid.slice(-24);
+}
+
 async function executeTurn(
   message: string,
   ctx: TenantContext,
@@ -151,6 +183,7 @@ async function executeTurn(
 
   // Shared blackboard snapshot for the brief (flag-gated).
   let blackboardXml: string | undefined;
+  let blackboard: BlackboardPayload | undefined;
   if (env.FF_AGENT_BLACKBOARD) {
     const board = await loadBlackboard(ctx, conv.id);
     if (!board.goal) {
@@ -159,6 +192,7 @@ async function executeTurn(
       });
     }
     const refreshed = await loadBlackboard(ctx, conv.id);
+    blackboard = refreshed;
     blackboardXml = formatBlackboardXml(refreshed);
   }
 
@@ -179,12 +213,48 @@ async function executeTurn(
 
   const budget = new BudgetMeter();
   const agentRunId = createId();
-  const modelId = resolveAgentModelId(manifest);
-  const tracker = new RunTracker(modelId, budget);
+  const orchestratorModelRole = !manifest && routeRetrievalIntent(message).route === 'none'
+    ? 'casual'
+    : 'answer';
+  const modelId = resolveAgentModelId(manifest, orchestratorModelRole);
+  const tracker = new RunTracker(modelId, budget, {
+    ctx,
+    agentRunId,
+    conversationId: conv.id,
+    role: manifest ? 'answer' : orchestratorModelRole,
+  });
   const startedAt = Date.now();
   // Filled during the run: elicitation by choice tools, citations by knowledge_search,
   // warnings by degraded construction (e.g. Composio unreachable).
   const collect: RunCollector = {};
+  // Prompt identity is projected only from the canonical server context. Request-body identity
+  // options remain compatibility inputs to caller-context resolution and cannot become trusted XML.
+  const promptCtx = manifest ? narrowContext(ctx, manifest) : ctx;
+  const turnProfile = promptCtx.profiles?.join(', ');
+  const turnContext = env.FF_RAG_V2_CONTEXT
+    ? createTurnContext({
+        ctx: promptCtx,
+        message,
+        ...(historySummary ? { historySummary } : {}),
+        ...(promptCtx.userName ? { userName: promptCtx.userName } : {}),
+        zohoUserId: promptCtx.userId,
+        ...(turnProfile ? { profile: turnProfile } : {}),
+        role: promptCtx.callerRole ?? promptCtx.role,
+        ...(promptCtx.client ? { client: promptCtx.client } : {}),
+        knownNoMatch: knownNoMatchesFrom(blackboard),
+        ...(blackboard
+          ? {
+              toolFacts: blackboard.artifacts.slice(-16).map((artifact) => ({
+                key: artifact.key,
+                value: artifact.value,
+                source: artifact.sourceAgent,
+                fetchedAt: artifact.at,
+              })),
+              openQuestions: blackboard.openQuestions,
+            }
+          : {}),
+      })
+    : undefined;
 
   sse?.send('status', { state: 'running' });
 
@@ -205,6 +275,7 @@ async function executeTurn(
         budget,
         agentRunId,
         collect,
+        ...(turnContext ? { turnContext } : {}),
         ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
       },
       async () => {
@@ -250,6 +321,7 @@ async function executeTurn(
 
         const brief = buildTurnBrief({
           message,
+          ...(turnContext ? { turnContext } : {}),
           ...(opts.userName ?? ctx.userName ? { userName: opts.userName ?? ctx.userName } : {}),
           ...(opts.zohoUserId ?? ctx.userId ? { zohoUserId: opts.zohoUserId ?? ctx.userId } : {}),
           ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
@@ -269,7 +341,7 @@ async function executeTurn(
 
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
-          : (await buildOrchestrator(ctx)).agent;
+          : (await buildOrchestrator(ctx, orchestratorModelRole)).agent;
         // recursionLimit is the hard graph-depth backstop (deepagents' default is ~unbounded).
         // LangGraph counts EVERY super-step (model node, tool node, deepagents middleware), so one
         // tool round is several steps — the cap is tool-call rounds converted to graph steps with
@@ -336,7 +408,12 @@ async function executeTurn(
       'stripped citation markers not backed by retrieved passages',
     );
   }
-  const finalText = validated.text || 'The agent produced no answer.';
+  let finalText = validated.text || 'The agent produced no answer.';
+  const faithfulness = collect.rag
+    ? await verifyAnswerFaithfulness(finalText, collect.ragEvidence ?? [])
+    : { text: finalText, coverage: 1, repaired: false, abstained: false, unsupportedClaims: [] };
+  finalText = faithfulness.text;
+  if (collect.rag && faithfulness.abstained) collect.rag.abstained = true;
   const usage = {
     promptTokens: tracker.promptTokens,
     completionTokens: tracker.completionTokens,
@@ -378,6 +455,24 @@ async function executeTurn(
       totalCost: usage.totalCost.toFixed(6),
       durationMs: Date.now() - startedAt,
     });
+    if (
+      env.FF_AGENT_BLACKBOARD &&
+      turnContext &&
+      collect.rag?.mode === 'knowledge' &&
+      (collect.rag.grade === 'not_documented' || collect.rag.grade === 'irrelevant')
+    ) {
+      const miss: ContextNoMatch = {
+        query: turnContext.task.resolvedAsk.slice(0, 1_000),
+        scopeFingerprint: collect.rag.scopeFingerprint,
+        at: new Date().toISOString(),
+      };
+      const known = turnContext.state.knownNoMatch.filter((item) =>
+        item.query !== miss.query || item.scopeFingerprint !== miss.scopeFingerprint,
+      );
+      await mergeBlackboard({ ...ctx, actingAgent: 'orchestrator' }, conv.id, {
+        facts: { 'rag/knownNoMatch': [...known, miss].slice(-24) },
+      });
+    }
     await auditFromContext(ctx, {
       action: 'agent.turn',
       status,
@@ -390,6 +485,11 @@ async function executeTurn(
         ...(collect.warnings?.length ? { warnings: collect.warnings } : {}),
         ...(validated.strippedMarkers.length > 0
           ? { strippedMarkers: validated.strippedMarkers }
+          : {}),
+        faithfulnessCoverage: faithfulness.coverage,
+        faithfulnessRepaired: faithfulness.repaired,
+        ...(faithfulness.unsupportedClaims.length > 0
+          ? { unsupportedClaimCount: faithfulness.unsupportedClaims.length }
           : {}),
       },
     });
@@ -413,6 +513,15 @@ async function executeTurn(
     usage,
     ragPassages: collect.ragPassages ?? 0,
     citations: validated.usedCitations,
+    rag: collect.rag
+      ? {
+          traceId: collect.rag.traceId,
+          mode: collect.rag.mode,
+          grade: collect.rag.grade,
+          confidence: collect.rag.confidence,
+          abstained: collect.rag.abstained,
+        }
+      : { traceId: null, mode: 'none', grade: null, confidence: null, abstained: false },
     ...(outcome.elicitation ? { elicitation: outcome.elicitation } : {}),
   };
   sse?.send('done', result);

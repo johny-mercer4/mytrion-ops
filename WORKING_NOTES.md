@@ -11625,3 +11625,38 @@ either restamp 0105 above `1786076400000` or renumber it past 0106 — see [[dri
 The committed journal deliberately contains 104 and 106 but NOT 105, because 0105's `.sql` is still
 untracked; a journal entry pointing at a missing file breaks a fresh checkout. The 105 entry is left
 in the working tree, uncommitted, exactly as found.
+
+## 2026-08-06 — Horizon RAG and Context Engineering Excellence
+
+Implemented the first-release RAG/context architecture on `/v1/agent` while preserving request
+compatibility and keeping authorization out of prompts. Added a canonical `TurnContextV1`, bounded
+and escaped XML projection, server-regenerated narrowed child contexts, structured sub-agent
+results, evidence references, clause/resolved-ask handling, and scoped known-no-match reuse.
+
+The knowledge path now has governed/versioned document and chunk metadata, structural contextual
+chunking, atomic fail-closed ingestion, race-safe database uniqueness, exact filtered pgvector as
+the default/oracle, multilingual `simple` FTS, RRF fusion, and measured ANN shadow support. Added
+bounded routing and CRAG outcomes, one-retry retrieval/repair, deterministic citation-scope checks,
+high-risk faithfulness verification, internal no-web behavior, and typed-tool enforcement for
+authoritative numeric aggregates.
+
+Added platform self-awareness generated from allowlisted agent/tool/feature metadata with
+audience/department scoping and an audited scheduled sync. Unified model policy now assigns models
+by role, restricts evidence-bearing calls to OpenAI, and records privacy-safe per-call/per-run
+telemetry in `llm_calls` and `rag_runs`. Added the additive RAG result envelope and governed citation
+metadata without exposing internal scores or security diagnostics.
+All five new release controls default off so a normal deploy remains on the current path until
+0107 has been applied; rollout is explicitly opt-in and preserves one-flag rollback.
+
+Evaluation: added a versioned 200-case sanitized golden set and metrics harness. Static routing is
+200/200; the scoped agent/RAG suite is 180/180 across 21 files, including 22/22 cross-tenant leakage
+tests. `pnpm typecheck`, `pnpm lint` (0 errors; 22 pre-existing warnings), `pnpm build`, and
+`git diff --check` pass. The broad repository test attempt was not accepted as a release signal:
+196 files passed, 1 skipped, while 8 unrelated/environment-bound files failed because the sandbox
+cannot bind test sockets or resolve the configured external database. The live retrieval benchmark
+was deliberately not run because the configured DB is production and the harness writes fixtures.
+
+Migration safety: renamed the in-flight RAG migration from 0105 to
+`0107_horizon_rag_excellence`, index 107 / timestamp `1786080000000`, so Drizzle will not silently
+skip it behind the already-applied production 0106. It remains unapplied and requires a scratch-DB
+migration check before an authorized rollout.

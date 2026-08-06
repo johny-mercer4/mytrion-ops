@@ -62,7 +62,11 @@ async function main(): Promise<void> {
   };
 
   const hybridFlag = env.FF_RAG_HYBRID;
+  const retrievalStrategy = env.RAG_RETRIEVAL_STRATEGY;
   env.FF_RAG_HYBRID = true;
+  // The adjudication baseline must remain the exact filtered pgvector oracle even
+  // when a developer is shadowing or canarying ANN in their local environment.
+  env.RAG_RETRIEVAL_STRATEGY = 'exact';
 
   for (const q of corpus.queries) {
     const ctx = ctxFor(q.ctxDepartments);
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
   }
 
   env.FF_RAG_HYBRID = hybridFlag;
+  env.RAG_RETRIEVAL_STRATEGY = retrievalStrategy;
 
   const n = corpus.queries.length;
   // Floor gates vs 2026-07 baseline (single-shot recall@6 = 1.00). Soften slightly for agentic/CRAG noise.

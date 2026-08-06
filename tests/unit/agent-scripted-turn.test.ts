@@ -69,11 +69,13 @@ const salesCaller = () =>
   makeContext({ scopes: ['*'], audience: 'internal', departments: ['sales'], allDepartmentAccess: false });
 
 const savedComposio = env.FF_COMPOSIO_ENABLED;
+const savedBlackboard = env.FF_AGENT_BLACKBOARD;
 const savedMaxToolCalls = env.AGENT_MAX_TOOL_CALLS;
 const savedChildIterations = env.AGENT_MAX_CHILD_ITERATIONS;
 
 beforeEach(() => {
   env.FF_COMPOSIO_ENABLED = false; // no external tool construction in CI
+  env.FF_AGENT_BLACKBOARD = false; // this scripted suite is explicitly DB-free
   orchestratorModel = new ScriptedChatModel([]);
   childModels.clear();
   vi.clearAllMocks();
@@ -81,6 +83,7 @@ beforeEach(() => {
 
 afterEach(() => {
   env.FF_COMPOSIO_ENABLED = savedComposio;
+  env.FF_AGENT_BLACKBOARD = savedBlackboard;
   env.AGENT_MAX_TOOL_CALLS = savedMaxToolCalls;
   env.AGENT_MAX_CHILD_ITERATIONS = savedChildIterations;
 });

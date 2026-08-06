@@ -18,6 +18,8 @@ import { buildAgentTools } from '../tools/agentTools.js';
 import { buildScopedRagTool } from '../tools/scopedRag.js';
 import { webSearchTool } from '../tools/webSearch.js';
 import { isAgentKey, type AgentManifest } from '../types.js';
+import { xmlAttr, xmlElement, xmlText } from '../contextXml.js';
+import { createTurnContext, formatTurnContextXml } from '../turnContext.js';
 import {
   nextWave,
   planComplete,
@@ -63,6 +65,7 @@ export async function runSubAgentTask(opts: {
   brief: string;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
+  const narrowedCtx = narrowContext(opts.callerCtx, opts.manifest);
   const agent = createDeepAgent({
     model: resolveAgentModel(opts.manifest),
     systemPrompt: childSystemPrompt(opts.manifest),
@@ -71,7 +74,19 @@ export async function runSubAgentTask(opts: {
     responseFormat: agentResultSchema as never,
     middleware: [],
   });
-  const envBlock = `<Task>\n${opts.brief}\n</Task>\nRespond with the structured AgentResult only.`;
+  const childContext = createTurnContext({
+    ctx: narrowedCtx,
+    message: opts.brief,
+    ...(narrowedCtx.userName ? { userName: narrowedCtx.userName } : {}),
+    zohoUserId: narrowedCtx.userId,
+    role: narrowedCtx.callerRole ?? narrowedCtx.role,
+    ...(narrowedCtx.profiles?.length ? { profile: narrowedCtx.profiles.join(', ') } : {}),
+    ...(narrowedCtx.client ? { client: narrowedCtx.client } : {}),
+  });
+  const envBlock =
+    `${formatTurnContextXml(childContext)}\n<Task trust="conversation">\n` +
+    `${xmlElement('Objective', opts.brief, { indent: 2, maxChars: 4_000 })}\n</Task>\n` +
+    'Respond with the structured AgentResult only.';
   const out = await agent.invoke(
     { messages: [new HumanMessage(envBlock)] },
     {
@@ -106,6 +121,9 @@ export async function runSubAgentTask(opts: {
   return {
     answer: text.slice(0, 8000),
     citations: [],
+    claims: [],
+    toolFacts: [],
+    unresolved: [],
     toolsUsed: [],
     confidence: 'low',
     escalate: null,
@@ -116,9 +134,9 @@ function formatWaveResultsXml(results: WaveNodeResult[]): string {
   const body = results
     .map(
       (r) =>
-        `  <NodeResult id="${r.nodeId}" agent="${r.agent}" status="${r.status}" confidence="${r.confidence ?? ''}">\n` +
-        `    ${r.answer.slice(0, 2000)}\n` +
-        (r.escalate ? `    <Escalate to="${r.escalate.toAgent}">${r.escalate.reason}</Escalate>\n` : '') +
+        `  <NodeResult id="${xmlAttr(r.nodeId)}" agent="${xmlAttr(r.agent)}" status="${xmlAttr(r.status)}" confidence="${xmlAttr(r.confidence ?? '')}" trust="conversation">\n` +
+        `    ${xmlText(r.answer, 2_000)}\n` +
+        (r.escalate ? `    <Escalate to="${xmlAttr(r.escalate.toAgent)}">${xmlText(r.escalate.reason, 1_000)}</Escalate>\n` : '') +
         `  </NodeResult>`,
     )
     .join('\n');
@@ -265,11 +283,11 @@ export async function runHardDagWaves(opts: {
         try {
           const prior = results
             .filter((r) => r.status === 'done')
-            .map((r) => `- ${r.nodeId}/${r.agent}: ${r.answer.slice(0, 500)}`)
+            .map((r) => `- ${xmlText(r.nodeId, 40)}/${xmlText(r.agent, 40)}: ${xmlText(r.answer, 500)}`)
             .join('\n');
           const brief =
             `${node.brief}\n\n` +
-            (prior ? `<PriorWaveResults>\n${prior}\n</PriorWaveResults>\n` : '') +
+            (prior ? `<PriorWaveResults trust="conversation">\n${prior}\n</PriorWaveResults>\n` : '') +
             'Write durable IDs/results to blackboard.write when available.';
           const result = await runSubAgentTask({
             manifest,

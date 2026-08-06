@@ -18,6 +18,7 @@ import {
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
   salesBocaRequestJob,
+  platformKnowledgeSyncJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
@@ -42,6 +43,7 @@ import {
   runKpiReconcile,
 } from './salesKpi.js';
 import { runBocaRequest } from '../../browserAutomation/bocaRequest.js';
+import { runPlatformKnowledgeSync } from './platformKnowledgeSync.js';
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(agentRunJob.name, { batchSize: env.JOBS_CONCURRENCY }, handleAgentRunJobs);
@@ -116,5 +118,6 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());
   await boss.work(approvalsExpiryJob.name, { batchSize: 1 }, async () => sweepExpiredApprovals());
   await boss.work(memoryDecayJob.name, { batchSize: 1 }, async () => decayAgentMemories());
+  await boss.work(platformKnowledgeSyncJob.name, { batchSize: 1 }, async () => runPlatformKnowledgeSync());
   await boss.work(deadLetterJob.name, { batchSize: 5 }, handleDeadLetterJobs);
 }

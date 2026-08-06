@@ -12,6 +12,7 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import type { WireCitation } from '../../modules/knowledge/agentic/citationCheck.js';
 import type { BudgetMeter } from './budget.js';
 import type { ElicitationHolder } from './elicitation.js';
+import type { TurnContextV1 } from './turnContext.js';
 
 /** Everything tools/compilers report back out of a run besides the answer itself. */
 export interface RunCollector extends ElicitationHolder {
@@ -21,6 +22,17 @@ export interface RunCollector extends ElicitationHolder {
   ragPassages?: number;
   /** Degradations worth surfacing (e.g. Composio tools failed to build). */
   warnings?: string[];
+  /** RAG v2 summary for AgentResultV2 and offline traces. */
+  rag?: {
+    traceId: string;
+    scopeFingerprint: string;
+    mode: 'none' | 'knowledge' | 'tool' | 'external';
+    grade: string;
+    confidence: number;
+    abstained: boolean;
+  };
+  /** Retrieved evidence kept server-side for claim verification; never exposed as authority. */
+  ragEvidence?: Array<{ marker: string; docId: string; content: string }>;
 }
 
 export interface AgentRunContext {
@@ -34,6 +46,8 @@ export interface AgentRunContext {
   collect?: RunCollector;
   /** Emit an SSE event mid-run (absent on non-stream turns). */
   emit?: (event: string, data: unknown) => void;
+  /** Typed prompt state; tools may read it, but never use it as authorization. */
+  turnContext?: TurnContextV1;
 }
 
 const storage = new AsyncLocalStorage<AgentRunContext>();
