@@ -1,4 +1,3 @@
-import { env } from '../../../config/env.js';
 import type { AgentManifest } from '../types.js';
 import {
   BLACKBOARD_TOOLS,
@@ -69,6 +68,5 @@ export const dataCenterAgent: AgentManifest = {
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,
-  model: env.OPEN_AI_FIVE_O_MINI,
   delegatesTo: ['sales', 'verification', 'billing', 'customer-service'],
 };

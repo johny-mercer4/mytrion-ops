@@ -89,19 +89,20 @@ afterEach(() => {
 });
 
 describe('greeting short-circuit (orchestrator answers directly, zero delegation/tools)', () => {
-  it('a plain reply yields agentKey orchestrator, empty agentPath, no tool calls', async () => {
+  it('answers locally without consuming the scripted model', async () => {
     orchestratorModel = new ScriptedChatModel([new AIMessage('Hi! How can I help today?')]);
     const result = await runAgentTurn('hi', salesCaller());
     expect(result.agentKey).toBe('orchestrator');
     expect(result.agentPath).toEqual([]);
     expect(result.toolCalls).toEqual([]);
-    expect(result.message).toBe('Hi! How can I help today?');
+    expect(result.message).toBe('Hello! How can I help you today?');
+    expect(orchestratorModel.remaining).toBe(1);
     expect(result.ragPassages).toBe(0);
     expect(result.citations).toEqual([]);
     expect(messageStore.appendAssistant).toHaveBeenCalledWith(
       expect.anything(),
       'conv-scripted',
-      expect.objectContaining({ content: 'Hi! How can I help today?', tools: [] }),
+      expect.objectContaining({ content: 'Hello! How can I help you today?', model: 'horizon-local-greeting-v1', tools: [] }),
     );
   });
 });

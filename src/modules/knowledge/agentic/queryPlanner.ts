@@ -19,6 +19,13 @@ function plannerPolicy(evidenceBearing: boolean) {
   });
 }
 
+function beginModelTrace(role: 'router' | 'grader', policy: ReturnType<typeof plannerPolicy>): void {
+  getAgentContext()?.inspect?.({
+    stage: 'model', status: 'running', label: `Calling ${policy.model}`,
+    model: policy.model, modelRole: role, provider: policy.provider,
+  });
+}
+
 async function recordCall(
   role: 'router' | 'grader',
   policy: ReturnType<typeof plannerPolicy>,
@@ -29,6 +36,17 @@ async function recordCall(
 ): Promise<void> {
   const run = getAgentContext();
   if (!run) return;
+  run.inspect?.({
+    stage: 'model', status: status === 'ok' ? 'complete' : 'error',
+    label: status === 'ok' ? `${policy.model} responded` : `${policy.model} failed`,
+    model: policy.model, modelRole: role, provider: policy.provider,
+    durationMs: Date.now() - startedAt,
+    details: {
+      inputTokens: usage?.prompt_tokens ?? 0,
+      outputTokens: usage?.completion_tokens ?? 0,
+      cachedInputTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    },
+  });
   await recordLlmTelemetry({
     ctx: run.ctx,
     ...(run.conversationId ? { conversationId: run.conversationId } : {}),
@@ -48,6 +66,7 @@ async function recordCall(
 export async function planQueries(question: string): Promise<string[]> {
   const policy = plannerPolicy(false);
   const startedAt = Date.now();
+  beginModelTrace('router', policy);
   try {
     const res = await getClient(policy.provider).chat.completions.create({
       model: policy.model,
@@ -100,6 +119,7 @@ export async function judgeEvidence(
 ): Promise<EvidenceVerdict> {
   const policy = plannerPolicy(true);
   const startedAt = Date.now();
+  beginModelTrace('grader', policy);
   try {
     const context = passages
       .slice(0, 8)

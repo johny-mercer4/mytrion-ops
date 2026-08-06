@@ -125,9 +125,11 @@ function messageDto(m: Message) {
     id: m.id,
     role: m.role,
     content: m.content,
+    model: m.model ?? null,
     ragPassages: m.ragPassages ?? null,
     tools: m.tools ?? [],
-    error: m.error ?? null,
+    // Keep raw provider diagnostics in storage/logs; transcript clients receive safe retry copy.
+    error: m.error ? 'This response failed. Please retry.' : null,
     createdAt: m.createdAt.toISOString(),
   };
 }

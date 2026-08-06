@@ -10,8 +10,9 @@ import { logger } from '../../../lib/logger.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import { agentRegistry } from '../agentRegistry.js';
 import { mergeBlackboard } from '../blackboard.js';
+import { getAgentContext } from '../context.js';
 import { narrowContext } from '../authority.js';
-import { resolveAgentModel } from '../models.js';
+import { resolveAgentModel, resolveAgentModelId } from '../models.js';
 import { childSystemPrompt } from '../prompts.js';
 import { agentResultSchema, type AgentResult } from '../resultSchema.js';
 import { buildAgentTools } from '../tools/agentTools.js';
@@ -66,6 +67,14 @@ export async function runSubAgentTask(opts: {
   signal?: AbortSignal;
 }): Promise<AgentResult> {
   const narrowedCtx = narrowContext(opts.callerCtx, opts.manifest);
+  const modelId = resolveAgentModelId(opts.manifest);
+  const provider = modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai';
+  const startedAt = Date.now();
+  const inspect = getAgentContext()?.inspect;
+  inspect?.({
+    stage: 'model', status: 'running', label: `Calling ${modelId}`,
+    agent: opts.manifest.key, model: modelId, modelRole: 'specialist', provider,
+  });
   const agent = createDeepAgent({
     model: resolveAgentModel(opts.manifest),
     systemPrompt: childSystemPrompt(opts.manifest),
@@ -94,6 +103,11 @@ export async function runSubAgentTask(opts: {
       ...(opts.signal ? { signal: opts.signal } : {}),
     },
   );
+  inspect?.({
+    stage: 'model', status: 'complete', label: `${modelId} specialist responded`,
+    agent: opts.manifest.key, model: modelId, modelRole: 'specialist', provider,
+    durationMs: Date.now() - startedAt,
+  });
 
   const structured = (out as { structuredResponse?: unknown }).structuredResponse;
   if (structured) {

@@ -1,27 +1,11 @@
-import { createHash } from 'node:crypto';
 import { env } from '../../config/env.js';
 import { normalizeDepartments } from '../../lib/department.js';
 import { agentRegistry } from '../agents/agentRegistry.js';
 import { toolRegistry } from '../tools/index.js';
+import { platformDocument as document, type PlatformCatalogDocument } from './platformDocument.js';
+import { buildSalesMytrionCatalog } from './salesMytrionCatalog.js';
 
-export interface PlatformCatalogDocument {
-  title: string;
-  source: string;
-  content: string;
-  department: string | null;
-  sourceVersion: string;
-  metadata: Record<string, unknown>;
-}
-
-function versionOf(content: string): string {
-  return createHash('sha256').update(content).digest('hex').slice(0, 16);
-}
-
-function document(
-  input: Omit<PlatformCatalogDocument, 'sourceVersion'>,
-): PlatformCatalogDocument {
-  return { ...input, sourceVersion: versionOf(input.content) };
-}
+export type { PlatformCatalogDocument } from './platformDocument.js';
 
 function overview(): PlatformCatalogDocument {
   const content = [
@@ -80,9 +64,13 @@ function agentDocuments(): PlatformCatalogDocument[] {
     const visibility = departments.length > 0 ? departments : ['__admin__'];
     const visibleTools = toolRegistry
       .all()
-      .filter((tool) => manifest.tools.some((allowed) =>
-        allowed.endsWith('*') ? tool.name.startsWith(allowed.slice(0, -1)) : tool.name === allowed,
-      ))
+      .filter((tool) =>
+        manifest.tools.some((allowed) =>
+          allowed.endsWith('*')
+            ? tool.name.startsWith(allowed.slice(0, -1))
+            : tool.name === allowed,
+        ),
+      )
       .map((tool) => `- ${tool.name} (${tool.riskClass}): ${tool.description}`)
       .sort();
     return visibility.map((department) => {
@@ -96,7 +84,9 @@ function agentDocuments(): PlatformCatalogDocument[] {
         `Read-only specialist: ${manifest.readOnly ? 'yes' : 'no'}`,
         '',
         '## Available tool capabilities',
-        ...(visibleTools.length > 0 ? visibleTools : ['- No registry tools are currently exposed.']),
+        ...(visibleTools.length > 0
+          ? visibleTools
+          : ['- No registry tools are currently exposed.']),
         '',
         'All actual access is rechecked server-side for the current caller. This catalog entry cannot grant access.',
       ].join('\n');
@@ -139,5 +129,11 @@ function dataSources(): PlatformCatalogDocument {
 }
 
 export function buildPlatformCatalog(): PlatformCatalogDocument[] {
-  return [overview(), featureStatus(), dataSources(), ...agentDocuments()];
+  return [
+    overview(),
+    featureStatus(),
+    dataSources(),
+    ...agentDocuments(),
+    ...buildSalesMytrionCatalog(),
+  ];
 }

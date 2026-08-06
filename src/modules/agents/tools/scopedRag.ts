@@ -76,6 +76,24 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
             abstained: result.notDocumented,
           };
         }
+        run.inspect?.({
+          stage: 'rag',
+          status: result.notDocumented ? 'complete' : 'running',
+          label: result.notDocumented
+            ? 'Knowledge base has no documented answer'
+            : `Evidence assessed as ${result.grade}`,
+          route: result.route,
+          ragUsed: result.passages.length > 0,
+          ragGrade: result.grade,
+          confidence: result.confidence,
+          passages: result.passages.length,
+          details: {
+            hops: result.hops,
+            externalFallback: Boolean(result.webFallbackBlock),
+            retrievalStrategy: env.RAG_RETRIEVAL_STRATEGY,
+            traceId: result.traceId,
+          },
+        });
         if (result.passages.length === 0 && !result.webFallbackBlock) {
           return (
             'No relevant passages found in the knowledge base. ' +
@@ -121,6 +139,17 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
         return `${result.groundingBlock}${memory}`;
       }
       const results = await retrieve(retrievalCtx, query, limit);
+      run.inspect?.({
+        stage: 'rag',
+        status: 'complete',
+        label: results.length > 0
+          ? `Retrieved ${results.length} knowledge passages`
+          : 'Knowledge search returned no passages',
+        route: 'knowledge',
+        ragUsed: results.length > 0,
+        passages: results.length,
+        details: { retrievalStrategy: 'legacy' },
+      });
       if (results.length === 0) return 'No relevant passages found in the knowledge base.';
       const titles = await titlesFor(retrievalCtx, results.map((r) => r.docId));
       reportSources(

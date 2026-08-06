@@ -12,6 +12,7 @@ import { recordLlmTelemetry } from '../llm/telemetry.js';
 import type { Provider } from '../llm/openaiClient.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import type { BudgetMeter } from './budget.js';
+import type { TurnTraceEmitter } from './turnInspection.js';
 
 interface Serialized {
   id?: string[];
@@ -36,6 +37,7 @@ export class RunTracker extends BaseCallbackHandler {
       agentRunId: string;
       conversationId: string;
       role: string;
+      inspect?: TurnTraceEmitter;
     },
   ) {
     super();
@@ -61,6 +63,14 @@ export class RunTracker extends BaseCallbackHandler {
         ? metaModel
         : this.modelId;
     this.llmStarts.set(runId, { at: Date.now(), model });
+    this.telemetry?.inspect?.({
+      stage: 'model',
+      status: 'running',
+      label: `Calling ${model}`,
+      model,
+      modelRole: this.telemetry.role,
+      provider: model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai',
+    });
   }
 
   /** Fraction of prompt tokens that were cache hits (0–1), or null when unknown. */
@@ -115,20 +125,36 @@ export class RunTracker extends BaseCallbackHandler {
         }
       }
     }
-    if (prompt === 0 && completion === 0) return;
+    const started = this.llmStarts.get(runId);
+    const model = started?.model ?? this.modelId;
+    const provider: Provider = model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai';
+    this.telemetry?.inspect?.({
+      stage: 'model',
+      status: 'complete',
+      label: `${model} responded`,
+      model,
+      modelRole: this.telemetry.role,
+      provider,
+      durationMs: started ? Date.now() - started.at : 0,
+      details: {
+        inputTokens: prompt,
+        outputTokens: completion,
+        cachedInputTokens: cached,
+      },
+    });
+    if (prompt === 0 && completion === 0) {
+      this.llmStarts.delete(runId);
+      return;
+    }
     this.promptTokens += prompt;
     this.completionTokens += completion;
     this.cachedPromptTokens += cached;
     if (this.budget) {
-      const model = this.llmStarts.get(runId)?.model ?? this.modelId;
       const cost = computeCost({ model, promptTokens: prompt, completionTokens: completion });
       this.budget.charge(cost.totalCost);
       this.measuredCost += cost.totalCost;
     }
     if (this.telemetry) {
-      const started = this.llmStarts.get(runId);
-      const model = started?.model ?? this.modelId;
-      const provider: Provider = model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai';
       await recordLlmTelemetry({
         ctx: this.telemetry.ctx,
         conversationId: this.telemetry.conversationId,

@@ -44,6 +44,10 @@ async function semanticSupport(
   const policy = resolveModelPolicy('grader', { evidenceBearing: true });
   const startedAt = Date.now();
   const requestHash = privacyHash(claims.join('\n'));
+  run.inspect?.({
+    stage: 'model', status: 'running', label: `Calling ${policy.model}`,
+    model: policy.model, modelRole: 'faithfulness grader', provider: policy.provider,
+  });
   try {
     const evidenceBlock = evidence
       .slice(0, 12)
@@ -71,6 +75,16 @@ async function semanticSupport(
     const supported = Array.isArray(parsed.supported)
       ? new Set(parsed.supported.filter((index): index is number => Number.isInteger(index) && index >= 0 && index < claims.length))
       : new Set<number>();
+    run.inspect?.({
+      stage: 'model', status: 'complete', label: `${policy.model} verified grounded claims`,
+      model: policy.model, modelRole: 'faithfulness grader', provider: policy.provider,
+      durationMs: Date.now() - startedAt,
+      details: {
+        inputTokens: res.usage?.prompt_tokens ?? 0,
+        outputTokens: res.usage?.completion_tokens ?? 0,
+        cachedInputTokens: res.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      },
+    });
     await recordLlmTelemetry({
       ctx: run.ctx,
       ...(run.conversationId ? { conversationId: run.conversationId } : {}),
@@ -87,6 +101,11 @@ async function semanticSupport(
     return supported;
   } catch (err) {
     logger.warn({ err }, 'faithfulness grader failed; using deterministic citation coverage');
+    run.inspect?.({
+      stage: 'model', status: 'error', label: `${policy.model} verification failed`,
+      model: policy.model, modelRole: 'faithfulness grader', provider: policy.provider,
+      durationMs: Date.now() - startedAt,
+    });
     await recordLlmTelemetry({
       ctx: run.ctx,
       ...(run.conversationId ? { conversationId: run.conversationId } : {}),

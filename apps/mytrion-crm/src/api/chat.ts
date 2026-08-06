@@ -27,6 +27,7 @@ export interface TranscriptMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  model: string | null;
   ragPassages: number | null;
   tools: ToolSummary[];
   error: string | null;

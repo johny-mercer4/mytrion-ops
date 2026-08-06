@@ -11887,3 +11887,31 @@ agents at zero, unresolvable owners ignored, sort order).
 Note: the three manager suites boot a real Fastify app against the prod DB (~550ms/query) and one
 run in four flaked under concurrency. Three consecutive clean runs since; if it recurs, they want a
 local throwaway DB rather than a retry.
+
+## 2026-08-06 — Sales Mytrion governed self-knowledge
+
+- Audited the live Sales Mytrion frontend and backend workflow code as the authoritative source:
+  navigation/availability, Data Center, Create, Carrier lookup, daily workspace, all **23** runnable
+  Automation blocks, and the complete hourly Retention/Open Pool lifecycle.
+- Added a deterministic Sales-scoped platform catalog: one retrieval document per Automation plus
+  overview/navigation, daily workspace, records/create/carriers, shared Automation behavior,
+  Dashboard/availability, and Retention generation/stages/timers/Open Pool. Every entry is internal,
+  department `sales`, content-addressed, verified during platform sync, and safe for supersession.
+- Automation knowledge records exact search codes, prerequisites, click path, results, and safety
+  distinctions (for example, Override is ~30 minutes and does not lift fraud hold; Money Code is
+  delivered to the carrier app and never displayed; Horizon explains write workflows but cannot
+  claim it performed them).
+- Added source-parity tests that read the frontend `AUTO_LIST` and fail on any id/title/code drift.
+  Added Retention and card-activation grounding checks and expanded RAG golden coverage from 200 to
+  280 cases, including 80 multilingual Sales Mytrion cases; deterministic routing is 100%.
+- Sales specialist and orchestrator prompts now route Sales Mytrion UI/Automation/Retention how-to
+  questions to Sales and require `knowledge_search`; a documented how-to no longer incorrectly
+  escalates merely because the user performs a write in the UI.
+- The nightly governed platform sync includes the Sales catalog. Added
+  `pnpm knowledge:sync-platform` for an immediate audited one-shot sync and made live evaluation
+  ingest/reference the governed platform documents.
+- Verification: RBAC leakage 22/22, Sales/platform/golden catalog tests 11/11, focused RAG/agent
+  suites 40/40, TypeScript clean, lint 0 errors (22 unrelated existing warnings), RAG excellence
+  280 cases at 100% deterministic routing. The actual pgvector/OpenAI embedding sync was attempted
+  but blocked by the execution environment's external-write/egress approval guard; it remains the
+  explicit deployment step before Admin testing.

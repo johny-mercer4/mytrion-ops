@@ -13,6 +13,7 @@ import type { WireCitation } from '../../modules/knowledge/agentic/citationCheck
 import type { BudgetMeter } from './budget.js';
 import type { ElicitationHolder } from './elicitation.js';
 import type { TurnContextV1 } from './turnContext.js';
+import type { TurnTraceEmitter } from './turnInspection.js';
 
 /** Everything tools/compilers report back out of a run besides the answer itself. */
 export interface RunCollector extends ElicitationHolder {
@@ -46,6 +47,8 @@ export interface AgentRunContext {
   collect?: RunCollector;
   /** Emit an SSE event mid-run (absent on non-stream turns). */
   emit?: (event: string, data: unknown) => void;
+  /** Admin-only structured diagnostic stream; never used for authorization or prompting. */
+  inspect?: TurnTraceEmitter;
   /** Typed prompt state; tools may read it, but never use it as authorization. */
   turnContext?: TurnContextV1;
 }

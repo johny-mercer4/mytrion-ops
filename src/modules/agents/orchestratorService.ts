@@ -37,6 +37,10 @@ import { captureSkill, recallSkillHint } from './skillCache.js';
 import { consumeAgentStream, type StreamOutcome } from './streamAdapter.js';
 import { isAgentKey, type AgentManifest } from './types.js';
 import { createTurnContext, type ContextNoMatch } from './turnContext.js';
+import { createTurnTraceEmitter } from './turnInspection.js';
+import { casualFastReply } from './casualFastPath.js';
+import { knownNoMatchesFrom } from './noMatchHistory.js';
+import { presentAgentError } from './agentError.js';
 
 export interface AgentTurnOptions {
   conversationId?: string;
@@ -77,6 +81,8 @@ export interface AgentTurnResult {
   };
   /** Present when the agent asked the user to pick from options (generative UI). */
   elicitation?: Elicitation;
+  /** Safe client status; raw provider diagnostics remain server-side only. */
+  error?: { message: string; retryable: boolean };
 }
 
 /** Resolve + RBAC-check the requested child agent; audit denials. */
@@ -138,26 +144,6 @@ function deriveTitle(message: string): string {
   return `${(lastSpace > 30 ? cut.slice(0, lastSpace) : cut).trim()}…`;
 }
 
-function knownNoMatchesFrom(board?: BlackboardPayload): ContextNoMatch[] {
-  const raw = board?.facts['rag/knownNoMatch'];
-  if (!Array.isArray(raw)) return [];
-  const valid: ContextNoMatch[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, unknown>;
-    if (typeof row['query'] !== 'string' || typeof row['scopeFingerprint'] !== 'string' || typeof row['at'] !== 'string') {
-      continue;
-    }
-    if (!Number.isFinite(Date.parse(row['at']))) continue;
-    valid.push({
-      query: row['query'].slice(0, 1_000),
-      scopeFingerprint: row['scopeFingerprint'].slice(0, 80),
-      at: row['at'],
-    });
-  }
-  return valid.slice(-24);
-}
-
 async function executeTurn(
   message: string,
   ctx: TenantContext,
@@ -169,9 +155,32 @@ async function executeTurn(
   const agentKey = manifest?.key ?? 'orchestrator';
   sse?.send('start', { conversationId: conv.id, agent: agentKey });
 
+  const routeDecision = routeRetrievalIntent(message);
+  const fastReply = manifest ? null : casualFastReply(message, opts.userName ?? ctx.userName);
+  const orchestratorModelRole = !manifest && routeDecision.route === 'none' ? 'casual' : 'answer';
+  const modelId = fastReply?.model ?? resolveAgentModelId(manifest, orchestratorModelRole);
+  const budget = new BudgetMeter();
+  const agentRunId = createId();
+  const inspect = createTurnTraceEmitter(ctx, sse, agentRunId);
+  inspect?.({
+    stage: 'route', status: 'complete', label: fastReply ? 'Local greeting fast path' : `Routed to ${agentKey}`,
+    agent: agentKey, model: modelId, modelRole: fastReply ? 'deterministic' : manifest ? 'answer' : orchestratorModelRole,
+    provider: fastReply ? 'local' : modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai',
+    route: routeDecision.route, ragUsed: false,
+    details: { contextV2: env.FF_RAG_V2_CONTEXT, retrievalV2: env.FF_RAG_V2_RETRIEVAL, claimVerification: env.FF_RAG_CLAIM_VERIFY },
+  });
+  const tracker = new RunTracker(modelId, budget, {
+    ctx,
+    agentRunId,
+    conversationId: conv.id,
+    role: fastReply ? 'deterministic' : manifest ? 'answer' : orchestratorModelRole,
+    ...(inspect ? { inspect } : {}),
+  });
+  const startedAt = Date.now();
+
   await messageStore.appendUser(ctx, conv.id, message, opts.departmentScope);
 
-  const checkpointing = Boolean(getCheckpointer());
+  const checkpointing = !fastReply && Boolean(getCheckpointer());
   // Idempotent, memoized: guarantees the langgraph schema exists even though scripts/migrate.ts
   // isn't in the runtime image (deploy applies drizzle migrations only).
   if (checkpointing) await ensureCheckpointerReady();
@@ -184,7 +193,7 @@ async function executeTurn(
   // Shared blackboard snapshot for the brief (flag-gated).
   let blackboardXml: string | undefined;
   let blackboard: BlackboardPayload | undefined;
-  if (env.FF_AGENT_BLACKBOARD) {
+  if (!fastReply && env.FF_AGENT_BLACKBOARD) {
     const board = await loadBlackboard(ctx, conv.id);
     if (!board.goal) {
       await mergeBlackboard({ ...ctx, actingAgent: 'orchestrator' }, conv.id, {
@@ -198,7 +207,7 @@ async function executeTurn(
 
   // Goal re-anchoring every Nth user turn.
   let goalRecite: string | undefined;
-  if (shouldReciteGoal(conv.messageCount)) {
+  if (!fastReply && shouldReciteGoal(conv.messageCount)) {
     const board = env.FF_AGENT_BLACKBOARD ? await loadBlackboard(ctx, conv.id) : null;
     const goal = board?.goal || message.slice(0, 240);
     const step = board?.planId
@@ -208,22 +217,7 @@ async function executeTurn(
   }
 
   // Procedural skill hint (suggestion only).
-  const cachedSkillXml =
-    (await recallSkillHint(ctx, agentKey, message)) || undefined;
-
-  const budget = new BudgetMeter();
-  const agentRunId = createId();
-  const orchestratorModelRole = !manifest && routeRetrievalIntent(message).route === 'none'
-    ? 'casual'
-    : 'answer';
-  const modelId = resolveAgentModelId(manifest, orchestratorModelRole);
-  const tracker = new RunTracker(modelId, budget, {
-    ctx,
-    agentRunId,
-    conversationId: conv.id,
-    role: manifest ? 'answer' : orchestratorModelRole,
-  });
-  const startedAt = Date.now();
+  const cachedSkillXml = fastReply ? undefined : (await recallSkillHint(ctx, agentKey, message)) || undefined;
   // Filled during the run: elicitation by choice tools, citations by knowledge_search,
   // warnings by degraded construction (e.g. Composio unreachable).
   const collect: RunCollector = {};
@@ -267,7 +261,14 @@ async function executeTurn(
   let outcome: StreamOutcome;
   let status: 'ok' | 'error' = 'ok';
   let errorMsg: string | undefined;
-  try {
+  if (fastReply) {
+    outcome = { finalText: fastReply.message, toolCalls: [], agentPath: [] };
+    inspect?.({
+      stage: 'model', status: 'complete', label: 'Answered without an LLM call',
+      agent: agentKey, model: modelId, modelRole: 'deterministic', provider: 'local',
+      route: 'none', ragUsed: false, durationMs: Date.now() - startedAt,
+    });
+  } else try {
     outcome = await runWithAgentContext(
       {
         ctx,
@@ -275,6 +276,7 @@ async function executeTurn(
         budget,
         agentRunId,
         collect,
+        ...(inspect ? { inspect } : {}),
         ...(turnContext ? { turnContext } : {}),
         ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
       },
@@ -375,10 +377,9 @@ async function executeTurn(
     const wallHit = wallAbort.signal.aborted;
     errorMsg = wallHit ? 'the run hit its wall-clock time limit' : errorMessage(err);
     const budgetHit = hasBudgetCause(err) || wallHit;
-    const friendly = budgetHit
-      ? `I had to stop early: ${errorMsg}. Here is what I have so far — please narrow the request.`
-      : `The agent run failed: ${errorMsg}`;
+    const friendly = presentAgentError(errorMsg, budgetHit);
     outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
+    inspect?.({ stage: 'error', status: 'error', label: friendly });
     logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
   } finally {
     clearTimeout(wallTimer);
@@ -421,6 +422,14 @@ async function executeTurn(
     cachedPromptTokens: tracker.cachedPromptTokens,
     cacheHitRate: tracker.cacheHitRate(),
   };
+  inspect?.({
+    stage: 'verification', status: 'complete',
+    label: collect.rag ? 'Grounded claims verified' : 'No RAG evidence to verify',
+    ragUsed: (collect.ragPassages ?? 0) > 0,
+    ...(collect.rag?.grade ? { ragGrade: collect.rag.grade } : {}),
+    ...(collect.rag?.confidence !== undefined ? { confidence: collect.rag.confidence } : {}), passages: collect.ragPassages ?? 0,
+    details: { coverage: faithfulness.coverage, repaired: faithfulness.repaired, abstained: faithfulness.abstained },
+  });
 
   // Persistence + bookkeeping are best-effort: the user already has the answer.
   try {
@@ -523,7 +532,18 @@ async function executeTurn(
         }
       : { traceId: null, mode: 'none', grade: null, confidence: null, abstained: false },
     ...(outcome.elicitation ? { elicitation: outcome.elicitation } : {}),
+    ...(status === 'error' ? { error: { message: 'This response failed. Please retry.', retryable: true } } : {}),
   };
+  inspect?.({
+    stage: 'complete', status: status === 'ok' ? 'complete' : 'error', label: 'Turn complete',
+    agent: outcome.agentPath.at(-1) ?? agentKey, model: modelId,
+    route: collect.rag?.mode ?? routeDecision.route,
+    ragUsed: result.ragPassages > 0,
+    ...(result.rag.grade ? { ragGrade: result.rag.grade } : {}),
+    ...(result.rag.confidence !== null ? { confidence: result.rag.confidence } : {}), passages: result.ragPassages,
+    durationMs: Date.now() - startedAt,
+    details: { tools: result.toolCalls.length, citations: result.citations.length, totalCost: usage.totalCost },
+  });
   sse?.send('done', result);
   return result;
 }
