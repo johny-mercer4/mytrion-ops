@@ -116,9 +116,3 @@ export function agingBucketSql(buckets: readonly AgingBucketDef[]): string {
   const arms = buckets.map((b) => `    when ${b.when} then '${b.key}'`).join('\n');
   return `case\n${arms}\n    else '${buckets[buckets.length - 1]?.key ?? 'unknown'}'\n  end`;
 }
-
-/** `ORDER BY` expression that puts buckets in declaration order rather than alphabetically. */
-export function agingOrderSql(buckets: readonly AgingBucketDef[]): string {
-  const arms = buckets.map((b, i) => `    when '${b.key}' then ${i}`).join('\n');
-  return `case bucket\n${arms}\n    else ${buckets.length}\n  end`;
-}

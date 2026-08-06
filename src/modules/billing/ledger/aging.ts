@@ -17,7 +17,6 @@ import {
   OPEN_INVOICE,
   DUE,
   agingBucketSql,
-  agingOrderSql,
   type AgingBucketDef,
 } from './arRules.js';
 import { LEDGER_TZ } from './feeds.js';
@@ -68,11 +67,13 @@ export async function arAging(carrierIds?: readonly string[]): Promise<ArAgingRe
             COUNT(DISTINCT i.carrier_id)      AS carriers
        FROM public.cmp_invoice i
       WHERE ${OPEN_INVOICE}${filter}
-      GROUP BY bucket
-      ORDER BY ${agingOrderSql(LEDGER_AGING_BUCKETS)}`,
+      GROUP BY bucket`,
     params,
   );
 
+  // No ORDER BY in the query above on purpose: the rows are keyed and re-emitted in
+  // LEDGER_AGING_BUCKETS order below, and ordering by the bucket expression after GROUP BY would
+  // require every column it touches in the GROUP BY clause.
   const byKey = new Map(rows.map((r) => [r.bucket, r]));
   const buckets = LEDGER_AGING_BUCKETS.map((def) => {
     const row = byKey.get(def.key);
@@ -235,72 +236,80 @@ export interface ControlSumCheck {
 }
 
 /**
- * The top-level control sum (TZ §9's last checkpoint): total outflow from the funding account should
- * equal the total loaded onto customer balances.
+ * The top-level control sum (TZ §9's last checkpoint).
  *
- * ⚠️ Ships the CMP-INTERNAL leg only. The TZ names the EFS Parent Account as the left-hand side, but
- * `fetchEfsLoads` is per-carrier and 90-day capped — 2,800 calls is not a design. So this compares CMP's
- * own movement total against the sum of its per-carrier `balance_after` deltas: fully computable, no
- * vendor calls, and it catches the failure this check exists for (a load recorded against one side and
- * not the other). The true EFS-parent leg needs the `finance.parent_snapshot` payload inspected first —
- * open question 8 in the plan.
+ * ⚠️ THE TZ'S CHECK CANNOT BE COMPUTED TODAY, and this function deliberately does not fake it. §9 asks
+ * that total outflow from the EFS Parent Account equal total loaded onto customer balances. The parent
+ * side needs EFS parent-account data that no batched route exposes (see ./reconcile.ts), so the
+ * left-hand side of the TZ's identity is simply not available.
+ *
+ * What ships instead are checks that ARE computable and DO mean something:
+ *
+ *   1. **Mirror integrity.** `public.cmp_billing_history` and `octane.stg_cmp_billing_history` are two
+ *      views of the same movements; if they disagree, one pipeline is behind and every figure derived
+ *      from either is suspect. This is the check most likely to actually fire.
+ *   2. **Loads vs draws**, informational — the gross funding flow for the period.
+ *
+ * A REJECTED THIRD CHECK, recorded so nobody re-adds it: comparing loads−draws against the sum of
+ * per-carrier `balance_after` deltas. `balance_after` is the post-movement WALLET balance, and a carrier
+ * SPENDS between movements — that spend lives in `cmp_transaction`, not here — so the balance repeatedly
+ * resets toward the credit limit and its deltas do not sum to the movement amounts. Measured
+ * 2026-07-31..08-06: loads−draws $6,415,343 vs balance deltas $926,242, a $5.49M "variance" that is
+ * simply the week's card spend. Reintroducing it would mean a control sum that is always red, which
+ * trains agents to ignore the panel. The identity it was reaching for — opening + loads − spend =
+ * closing — is exactly what the per-carrier Customer Balance reconciliation already checks.
  */
 export async function controlSums(period: {
   startDate: string;
   endDateExclusive: string;
 }): Promise<ControlSumCheck[]> {
-  const rows = await dwh.query<{ loads: string; draws: string; carriers: string }>(
-    `SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0)  AS loads,
-            COALESCE(SUM(CASE WHEN amount < 0 THEN -amount END), 0) AS draws,
-            COUNT(DISTINCT carrier_id)                              AS carriers
-       FROM public.cmp_billing_history
-      WHERE create_date >= $1::date - interval '1 day'
-        AND create_date <  $2::date + interval '1 day'
-        AND (create_date AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date >= $1::date
-        AND (create_date AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date <  $2::date`,
-    [period.startDate, period.endDateExclusive],
-  );
-  const agg = rows[0];
-  const loads = round2(Number(agg?.loads ?? 0));
-  const draws = round2(Number(agg?.draws ?? 0));
+  const dayPredicate = (col: string): string => `
+        ${col} >= $1::date - interval '1 day'
+    AND ${col} <  $2::date + interval '1 day'
+    AND (${col} AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date >= $1::date
+    AND (${col} AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date <  $2::date`;
 
-  // The staging table carries CMP's own running balance, so the sum of its per-carrier deltas over the
-  // window is an independent restatement of the same movement.
-  const deltaRows = await dwh.query<{ delta: string }>(
-    `WITH bounds AS (
-       SELECT carrier_id,
-              (ARRAY_AGG(balance_after ORDER BY create_date DESC))[1] AS last_after,
-              (ARRAY_AGG(balance_after ORDER BY create_date ASC))[1]  AS first_after,
-              (ARRAY_AGG(amount        ORDER BY create_date ASC))[1]  AS first_amount
+  const [live, mirror] = await Promise.all([
+    dwh.query<{ loads: string; draws: string; rows: string }>(
+      `SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0)  AS loads,
+              COALESCE(SUM(CASE WHEN amount < 0 THEN -amount END), 0) AS draws,
+              COUNT(*)                                               AS rows
+         FROM public.cmp_billing_history
+        WHERE ${dayPredicate('create_date')}`,
+      [period.startDate, period.endDateExclusive],
+    ),
+    dwh.query<{ total: string; rows: string }>(
+      `SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS rows
          FROM octane.stg_cmp_billing_history
-        WHERE (create_date AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date >= $1::date
-          AND (create_date AT TIME ZONE 'UTC' AT TIME ZONE '${LEDGER_TZ}')::date <  $2::date
-          AND balance_after IS NOT NULL
-        GROUP BY carrier_id
-     )
-     SELECT COALESCE(SUM(last_after - (first_after - COALESCE(first_amount, 0))), 0) AS delta
-       FROM bounds`,
-    [period.startDate, period.endDateExclusive],
-  );
-  const balanceDelta = round2(Number(deltaRows[0]?.delta ?? 0));
-  const netMovement = round2(loads - draws);
-  const variance = round2(netMovement - balanceDelta);
+        WHERE ${dayPredicate('create_date')}`,
+      [period.startDate, period.endDateExclusive],
+    ),
+  ]);
+
+  const loads = round2(Number(live[0]?.loads ?? 0));
+  const draws = round2(Number(live[0]?.draws ?? 0));
+  const liveRows = Number(live[0]?.rows ?? 0);
+  const net = round2(loads - draws);
+  const mirrorNet = round2(Number(mirror[0]?.total ?? 0));
+  const mirrorRows = Number(mirror[0]?.rows ?? 0);
+  const mirrorVariance = round2(net - mirrorNet);
 
   return [
     {
-      key: 'cmp_internal',
-      label: 'CMP movement vs its own running balance',
-      left: { label: 'Loads − draws', amount: netMovement },
-      right: { label: 'Balance-after delta', amount: balanceDelta },
-      variance,
-      status: Math.abs(variance) <= 1 ? 'ok' : 'variance',
+      key: 'mirror_integrity',
+      label: 'Billing history vs its staging mirror',
+      left: { label: `live (${liveRows} rows)`, amount: net },
+      right: { label: `mirror (${mirrorRows} rows)`, amount: mirrorNet },
+      variance: mirrorVariance,
+      // A cent of rounding is fine; a real gap means one pipeline is behind.
+      status: Math.abs(mirrorVariance) <= 1 ? 'ok' : 'variance',
     },
     {
       key: 'loads_draws',
-      label: 'Loads vs draws',
+      label: 'Gross funding flow (informational)',
       left: { label: 'Loads', amount: loads },
       right: { label: 'Draws', amount: draws },
-      variance: netMovement,
+      variance: net,
       status: 'ok',
     },
   ];

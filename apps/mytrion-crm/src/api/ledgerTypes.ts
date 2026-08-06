@@ -346,3 +346,132 @@ export interface LedgerStatementResponse {
   truncated: boolean;
   warnings: string[];
 }
+
+// ─── Control points (TZ §9) ─────────────────────────────────────────────────────────────────
+
+export type LedgerReconStatus =
+  | 'ok'
+  | 'variance'
+  | 'no_opening'
+  | 'source_unavailable'
+  | 'stale_external';
+
+export interface LedgerSummaryResponse {
+  asOfDate: string;
+  /** null until the nightly job has ever run — the UI must say so, not show zeros. */
+  latestComputedDate: string | null;
+  stale: boolean;
+  sections: {
+    section: LedgerSectionId;
+    label: string;
+    clientType: LedgerClientType;
+    externalSource: string;
+    counts: {
+      ok: number;
+      variance: number;
+      noOpening: number;
+      sourceUnavailable: number;
+      staleExternal: number;
+    };
+    varianceTotal: number;
+  }[];
+}
+
+export interface LedgerVarianceRow {
+  carrierId: string;
+  section: LedgerSectionId;
+  clientType: string;
+  opening: number | null;
+  debit: number;
+  credit: number;
+  closing: number | null;
+  externalValue: number | null;
+  externalSource: string | null;
+  variance: number | null;
+  status: LedgerReconStatus;
+  computedAt: string;
+}
+
+export interface LedgerVariancesResponse {
+  asOfDate: string;
+  rows: LedgerVarianceRow[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface LedgerAgingBucket {
+  key: string;
+  label: string;
+  tone: 'good' | 'warn' | 'danger' | 'muted';
+  amount: number;
+  invoices: number;
+  carriers: number;
+}
+
+export interface LedgerArAgingResponse {
+  buckets: LedgerAgingBucket[];
+  total: number;
+  invoices: number;
+  noDueDate: { amount: number; invoices: number };
+}
+
+export interface LedgerUnbilledAgingResponse {
+  rows: {
+    carrierId: string;
+    companyName: string;
+    amount: number;
+    transactions: number;
+    lastInvoicedThrough: string | null;
+    oldestDays: number;
+  }[];
+  total: number;
+  totalAmount: number;
+}
+
+export interface LedgerUntoppedAgingResponse {
+  buckets: { key: string; label: string; tone: 'good' | 'warn' | 'danger'; amount: number; payments: number }[];
+  /** Past the TZ's 24-hour threshold. */
+  alarmAmount: number;
+  alarmPayments: number;
+  total: number;
+}
+
+export interface LedgerControlSumsResponse {
+  period: { startDate: string; endDate: string };
+  checks: {
+    key: string;
+    label: string;
+    left: { label: string; amount: number };
+    right: { label: string; amount: number };
+    variance: number;
+    status: 'ok' | 'variance';
+  }[];
+}
+
+// ─── Payments journal (ledger framing) ──────────────────────────────────────────────────────
+
+export interface LedgerPaymentRow {
+  id: string;
+  date: string | null;
+  source: string;
+  amount: number;
+  carrierId: string | null;
+  companyName: string | null;
+  clientType: LedgerClientType | null;
+  senderName: string | null;
+  isReturned: boolean;
+  /** WHICH sub-ledger it landed in — the thing the Transactions tab does not show. */
+  match: { state: 'matched' | 'unmatched'; target: string | null; label: string };
+  mappedBy: string | null;
+  mappedAt: string | null;
+}
+
+export interface LedgerPaymentsResponse {
+  rows: LedgerPaymentRow[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}

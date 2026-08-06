@@ -18,10 +18,17 @@ import type {
   LedgerImportPreviewResponse,
   LedgerImportRowsPage,
   LedgerImportVerdict,
+  LedgerArAgingResponse,
+  LedgerControlSumsResponse,
+  LedgerPaymentsResponse,
   LedgerSectionId,
   LedgerSectionResponse,
   LedgerSectionsResponse,
   LedgerStatementResponse,
+  LedgerSummaryResponse,
+  LedgerUnbilledAgingResponse,
+  LedgerUntoppedAgingResponse,
+  LedgerVariancesResponse,
   OpeningBalancesPage,
   OpeningCoverageResponse,
   OpeningHistoryResponse,
@@ -108,14 +115,18 @@ export function fetchReturns(page: number, limit: number): Promise<BillingReturn
   return billingGet(`/billing/returns?page=${page}&limit=${limit}`);
 }
 
-/** Candidate original payments for manually matching a return. */
+/** Candidate original payments for manually matching a return. `returnId` lets the server derive
+ *  which payment rail is eligible (MX vs Stripe) from the return itself — never send a rail/source
+ *  directly, the server owns that decision. */
 export function searchReturnCandidates(p: {
+  returnId?: string;
   query?: string;
   amount?: string;
   beforeDate?: string;
   customerName?: string;
 }): Promise<BillingReturnCandidates> {
   const qs = new URLSearchParams();
+  if (p.returnId) qs.set('returnId', p.returnId);
   if (p.query) qs.set('query', p.query);
   if (p.amount) qs.set('amount', p.amount);
   if (p.beforeDate) qs.set('beforeDate', p.beforeDate);
@@ -522,4 +533,74 @@ export function fetchLedgerStatement(p: {
     endDate: p.endDate,
   });
   return billingGet(`/billing/ledger/statement?${qs.toString()}`);
+}
+
+// ---- Ledger: control points + payments journal ----
+
+/** Per-section reconciliation status for a day, from the nightly snapshot. */
+export function fetchLedgerSummary(asOfDate?: string): Promise<LedgerSummaryResponse> {
+  const qs = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+  return billingGet(`/billing/ledger/summary${qs}`);
+}
+
+/** The variance work queue for a day, worst first. */
+export function fetchLedgerVariances(
+  opts: { asOfDate?: string; section?: LedgerSectionId; status?: string; page?: number; limit?: number } = {},
+): Promise<LedgerVariancesResponse> {
+  const qs = new URLSearchParams();
+  if (opts.asOfDate) qs.set('asOfDate', opts.asOfDate);
+  if (opts.section) qs.set('section', opts.section);
+  if (opts.status) qs.set('status', opts.status);
+  if (opts.page) qs.set('page', String(opts.page));
+  if (opts.limit) qs.set('limit', String(opts.limit));
+  const s = qs.toString();
+  return billingGet(`/billing/ledger/variances${s ? `?${s}` : ''}`);
+}
+
+export function fetchLedgerArAging(): Promise<LedgerArAgingResponse> {
+  return billingGet('/billing/ledger/aging/ar');
+}
+
+export function fetchLedgerUnbilledAging(limit = 100): Promise<LedgerUnbilledAgingResponse> {
+  return billingGet(`/billing/ledger/aging/unbilled?limit=${limit}`);
+}
+
+export function fetchLedgerUntoppedAging(): Promise<LedgerUntoppedAgingResponse> {
+  return billingGet('/billing/ledger/aging/untopped');
+}
+
+export function fetchLedgerControlSums(
+  range?: { startDate: string; endDate: string },
+): Promise<LedgerControlSumsResponse> {
+  const qs = range ? `?startDate=${range.startDate}&endDate=${range.endDate}` : '';
+  return billingGet(`/billing/ledger/control-sums${qs}`);
+}
+
+/** Payments in ledger framing — which sub-ledger each one landed in. */
+export function fetchLedgerPayments(
+  opts: {
+    page?: number;
+    limit?: number;
+    source?: 'mx' | 'zelle' | 'chase' | 'stripe';
+    match?: 'matched' | 'unmatched';
+  } = {},
+): Promise<LedgerPaymentsResponse> {
+  const qs = new URLSearchParams();
+  if (opts.page) qs.set('page', String(opts.page));
+  if (opts.limit) qs.set('limit', String(opts.limit));
+  if (opts.source) qs.set('source', opts.source);
+  if (opts.match) qs.set('match', opts.match);
+  const s = qs.toString();
+  return billingGet(`/billing/ledger/payments${s ? `?${s}` : ''}`);
+}
+
+/** Queue a snapshot recompute for a day. Write-gated server-side. */
+export function recomputeLedger(
+  asOfDate?: string,
+  sections?: LedgerSectionId[],
+): Promise<{ jobId: string; asOfDate: string; queue: string }> {
+  return request('POST', '/billing/ledger/recompute', {
+    headers: BILLING_HEADERS,
+    body: { ...(asOfDate ? { asOfDate } : {}), ...(sections?.length ? { sections } : {}) },
+  }) as Promise<{ jobId: string; asOfDate: string; queue: string }>;
 }

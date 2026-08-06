@@ -18,10 +18,12 @@ import { useMemo, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
 import { canWriteMytrion } from '../../access/resolveAccess';
+import { LedgerControls } from './LedgerControls';
 import { LedgerStatementModal } from './LedgerStatementModal';
 import { LedgerTable, type StatementTarget } from './LedgerTable';
 import { OpeningBalances } from './OpeningBalances';
 import { OpeningManualModal } from './OpeningManualModal';
+import { PaymentsJournal } from './PaymentsJournal';
 import {
   LEDGER_DEFAULT_TAB,
   LEDGER_GROUPS,
@@ -110,6 +112,8 @@ export function Ledger() {
   const surfaces = useMemo<Partial<Record<LedgerTabId, ReactNode>>>(() => {
     const map: Partial<Record<LedgerTabId, ReactNode>> = {
       openings: <OpeningBalances canWrite={canWrite} />,
+      controls: <LedgerControls canWrite={canWrite} />,
+      payments: <PaymentsJournal />,
     };
     // One generic table, five configured sections — see ./LedgerTable.tsx.
     for (const tab of LEDGER_TABS) {

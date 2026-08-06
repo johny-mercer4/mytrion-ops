@@ -28,7 +28,7 @@ import {
   unbilledOverCycle,
   untoppedAging,
 } from '../../modules/billing/ledger/aging.js';
-import { listLedgerCarriers } from '../../modules/billing/ledger/clientType.js';
+import { listLedgerCarriers, resolveLedgerCarriers } from '../../modules/billing/ledger/clientType.js';
 import { computeSection, sectionTotals, shiftYmd } from '../../modules/billing/ledger/compute.js';
 import { requireLedgerSchema } from '../../modules/billing/ledger/readiness.js';
 import { LEDGER_SECTIONS, LEDGER_SECTION_IDS, getLedgerSection } from '../../modules/billing/ledger/sections.js';
@@ -36,6 +36,7 @@ import { buildCarrierStatement } from '../../modules/billing/ledger/statement.js
 import { billingLedgerSnapshotJob } from '../../modules/jobs/catalog.js';
 import { enqueue } from '../../modules/jobs/queue.js';
 import { ledgerSnapshotRepo } from '../../repos/ledgerSnapshotRepo.js';
+import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
 import type { LedgerSnapshotStatus } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
@@ -111,12 +112,46 @@ const agingListQuery = z.object({
   limit: z.coerce.number().int().positive().max(500).default(100),
 });
 const controlQuery = z.object({ startDate: ymd.optional(), endDate: ymd.optional() });
+const paymentsQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(500).default(100),
+  startDate: ymd.optional(),
+  endDate: ymd.optional(),
+  source: z.enum(['mx', 'zelle', 'chase', 'stripe']).optional(),
+  /** 'matched' | 'unmatched' — the TZ's two outcomes for an incoming payment. */
+  match: z.enum(['matched', 'unmatched']).optional(),
+});
 const recomputeBody = z
   .object({
     asOfDate: ymd.optional(),
     sections: z.array(z.enum(LEDGER_SECTION_IDS)).max(5).optional(),
   })
   .default({});
+
+/**
+ * Which sub-ledger a payment landed in, from its PG mapping columns.
+ *
+ * `mapping_type` is written by the Transactions tab's own mapping writes, so this is a read of a
+ * decision already made — the ledger does not re-derive it, it reports it.
+ */
+function paymentDestination(
+  isMapped: boolean,
+  mappingType: string | null,
+  clientType: 'LOC' | 'Prepay' | null,
+): { state: 'matched' | 'unmatched'; target: string | null; label: string } {
+  if (!isMapped) {
+    // Money received and attributed to nobody. For a Prepay carrier it is sitting in Un Top-Upped;
+    // with no carrier at all it is the §7 unmatched queue — the "lost money" case.
+    if (!clientType) return { state: 'unmatched', target: null, label: 'Unmatched — no carrier' };
+    return clientType === 'Prepay'
+      ? { state: 'unmatched', target: 'untopped', label: 'Awaiting top-up' }
+      : { state: 'unmatched', target: null, label: 'Unmatched' };
+  }
+  const t = (mappingType ?? '').toLowerCase();
+  if (t.includes('prepay')) return { state: 'matched', target: 'cb-prepay', label: 'Top-up applied' };
+  if (t.includes('split')) return { state: 'matched', target: 'ar', label: 'Split across invoices' };
+  return { state: 'matched', target: 'ar', label: 'Applied to AR' };
+}
 
 function daysBetween(a: string, b: string): number {
   const [ay, am, ad] = a.split('-').map(Number) as [number, number, number];
@@ -370,6 +405,62 @@ export async function billingLedgerSectionsRoutes(app: FastifyInstance): Promise
     return {
       period: { startDate, endDate },
       checks: await controlSums({ startDate, endDateExclusive: shiftYmd(endDate, 1) }),
+    };
+  });
+
+/**
+   * The payments journal in LEDGER framing (TZ §7).
+   *
+   * Deliberately NOT a second copy of the Transactions tab. That tab answers "what came in and how do I
+   * map it"; this one answers the ledger question — WHICH SUB-LEDGER did each payment land in. A matched
+   * invoice payment is an AR credit; a matched prepay payment is a Customer Balance top-up; an unmatched
+   * one is money we are holding and have attributed to nobody, which is the "lost money" case §7 exists
+   * to prevent. None of that is visible on the Transactions tab.
+   *
+   * Period-independent by default: an unmatched payment from three weeks ago is exactly the row an agent
+   * needs to see today, so scoping this to the ledger's period would hide the problem it reports.
+   */
+  app.get('/billing/ledger/payments', guard, async (request) => {
+    requireLedgerRead(request);
+    const q = paymentsQuery.parse(request.query);
+    if (q.startDate && q.endDate) assertPeriod(q.startDate, q.endDate);
+
+    const page = await paymentTransactionRepo.listPage({
+      page: q.page,
+      limit: q.limit,
+      ...(q.source ? { source: q.source } : {}),
+      ...(q.match ? { isMapped: q.match === 'matched' } : {}),
+      ...(q.startDate ? { dateFrom: q.startDate } : {}),
+      // listPage's dateTo is inclusive-of-instant; shift so a whole end day is covered.
+      ...(q.endDate ? { dateTo: shiftYmd(q.endDate, 1) } : {}),
+    });
+
+    const carriers = await resolveLedgerCarriers(
+      page.rows.map((r) => r.carrierId).filter((c): c is string => Boolean(c)),
+    );
+
+    return {
+      rows: page.rows.map((r) => {
+        const carrier = r.carrierId ? carriers.get(r.carrierId) : undefined;
+        return {
+          id: String(r.id),
+          date: r.occurredAt ? r.occurredAt.toISOString().slice(0, 10) : null,
+          source: r.source,
+          amount: Number(r.amount) || 0,
+          carrierId: r.carrierId,
+          companyName: carrier?.companyName ?? null,
+          clientType: carrier?.clientType ?? null,
+          senderName: r.senderName,
+          isReturned: r.isReturned,
+          match: paymentDestination(r.isInvoiceMapped, r.mappingType, carrier?.clientType ?? null),
+          mappedBy: r.mappedBy,
+          mappedAt: r.mappedAt ? r.mappedAt.toISOString() : null,
+        };
+      }),
+      page: page.page,
+      limit: page.limit,
+      total: page.total,
+      hasMore: page.hasMore,
     };
   });
 

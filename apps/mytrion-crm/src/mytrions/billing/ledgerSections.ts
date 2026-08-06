@@ -16,7 +16,7 @@
 import type { LedgerSectionId } from '../../api/ledgerTypes';
 
 /** Everything the sub-nav can show, including the non-balance surfaces. */
-export type LedgerTabId = LedgerSectionId | 'transitions' | 'payments' | 'openings';
+export type LedgerTabId = LedgerSectionId | 'transitions' | 'controls' | 'payments' | 'openings';
 
 /** Sub-nav grouping headers, in display order. */
 export type LedgerGroup = 'LOC clients' | 'Prepay clients' | 'Client type' | 'General' | 'Setup';
@@ -101,13 +101,23 @@ export const LEDGER_TABS: readonly LedgerTabDef[] = [
     scope: 'effective-dated',
   },
   {
+    id: 'controls',
+    label: 'Control points',
+    shortLabel: 'Controls',
+    group: 'General',
+    // Reads the nightly snapshot, not the period — the reconciliation is computed per DAY.
+    periodDriven: false,
+    isBalanceSection: false,
+    scope: 'TZ §9',
+  },
+  {
     id: 'payments',
     label: 'Payments',
     shortLabel: 'Payments',
     group: 'General',
+    // Chronological and independent of the period: an old unmatched payment is still today's problem.
     periodDriven: false,
     isBalanceSection: false,
-    disabled: true,
     scope: 'LOC + Prepay',
   },
   {
@@ -137,10 +147,15 @@ export function getLedgerTab(id: LedgerTabId): LedgerTabDef {
   return def;
 }
 
-/** Read the parked flags back out of the array so they cannot drift from the nav. */
+/**
+ * Read the parked flag back out of the array so it cannot drift from the nav — the shell's own
+ * TICKETS_PARKED pattern. Only transitions is parked: the effective-dated transition WORKFLOW is
+ * deferred and no client-type change log exists yet, so a live table would render empty. An empty table
+ * is a factual claim ("no transitions have occurred"); a "Soon" badge is a claim about the software, and
+ * only the second one is true today.
+ */
 export const TRANSITIONS_PARKED = LEDGER_TABS.some((t) => t.id === 'transitions' && t.disabled === true);
-export const PAYMENTS_PARKED = LEDGER_TABS.some((t) => t.id === 'payments' && t.disabled === true);
 
-/** The first tab that is actually usable — where the panel opens. */
+/** Where the panel opens: the first usable balance section, which is what the tab is for. */
 export const LEDGER_DEFAULT_TAB: LedgerTabId =
-  LEDGER_TABS.find((t) => !t.disabled)?.id ?? 'openings';
+  LEDGER_TABS.find((t) => t.isBalanceSection && !t.disabled)?.id ?? 'openings';
