@@ -13,8 +13,9 @@ import type { IconName } from '../components/icons';
 import type { ServiceKey } from './demo';
 import type { ServiceRequestKey } from './api';
 import {
-  SALES_AGENT_CATALOG_DEFINITION,
   SALES_AGENT_DEFAULT_PINNED,
+  SALES_AGENT_LAST_USED_ITEM,
+  salesAgentActionFor,
 } from './salesAgentCatalog.js';
 
 export interface CatalogItem {
@@ -22,6 +23,8 @@ export interface CatalogItem {
   labelKey: string;
   icon: IconName;
   action: ServiceKey | 'generic' | null;
+  /** Sales onboarding can display a live owner feature without exposing its write/request flow. */
+  previewOnly?: true;
   /**
    * Set on a `generic` item to make it file a REAL Zoho Desk ticket instead of the placeholder.
    *
@@ -148,19 +151,32 @@ const OWNER_CATALOG: CatalogGroup[] = [
 ];
 
 /**
- * Sales-agent company preview. Keep this list explicit instead of filtering OWNER_CATALOG by
- * action name: an owner service can change from read to write without that product change silently
- * expanding the preview. These are the read-only sheets backed by the sales-agent capabilities
- * (`company:read`, `financial:read`, `fleet:read`).
+ * Sales onboarding mirrors every owner service and its grouping. Interactivity does not flow from
+ * the owner item: an explicit key allowlist maps reviewed read-only sheets. Live owner writes and
+ * requests become disabled `Read only` rows; unreleased owner features remain `Soon`.
  */
-const SALES_AGENT_CATALOG: CatalogGroup[] = SALES_AGENT_CATALOG_DEFINITION.map((group) => ({
+const SALES_AGENT_CATALOG: CatalogGroup[] = OWNER_CATALOG.map((group) => ({
   groupLabelKey: group.groupLabelKey,
-  items: group.items.map((item) => ({ ...item })),
+  items: [
+    ...group.items.map((item): CatalogItem => {
+      const action = salesAgentActionFor(item.key);
+      return {
+        key: item.key,
+        labelKey: item.labelKey,
+        icon: item.icon,
+        action,
+        ...(item.action !== null && action === null ? { previewOnly: true as const } : {}),
+        ...(item.fleetOnly ? { fleetOnly: true as const } : {}),
+      };
+    }),
+    ...(group.groupLabelKey === 'svcgrp.cardMgmt'
+      ? [{ ...SALES_AGENT_LAST_USED_ITEM }]
+      : []),
+  ],
 }));
 
 export function getCatalog(isDriver: boolean, isFleetManager = true, isSalesAgent = false): CatalogGroup[] {
   const groups = isSalesAgent ? SALES_AGENT_CATALOG : isDriver ? DRIVER_CATALOG : OWNER_CATALOG;
-  if (isSalesAgent) return groups;
   if (isDriver || isFleetManager) return groups;
   // Owner-operator: drop fleet-only rows (and any group they empty out).
   return groups

@@ -1,48 +1,40 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  SALES_AGENT_CATALOG_DEFINITION,
   SALES_AGENT_DEFAULT_PINNED,
+  SALES_AGENT_LAST_USED_ITEM,
+  SALES_AGENT_LIVE_ACTIONS,
+  migrateSalesAgentPinned,
+  salesAgentActionFor,
 } from '../../apps/mini-app/src/lib/salesAgentCatalog.js';
 
 describe('mini-app Sales-agent service catalog', () => {
-  it('contains only the explicit read-only company-preview actions', () => {
-    const items = [
-      ...SALES_AGENT_CATALOG_DEFINITION[0].items,
-      ...SALES_AGENT_CATALOG_DEFINITION[1].items,
-    ];
-
-    expect(items.map((item) => item.key)).toEqual([
-      'agent-balance',
-      'agent-txns',
-      'agent-invoices',
-      'agent-payment',
-      'agent-status',
-      'agent-last-used',
-    ]);
-    expect(items.map((item) => item.action)).toEqual([
-      'balance',
-      'txns',
-      'invoices',
-      'payment',
-      'status',
-      'lastused',
-    ]);
+  it('keeps only explicitly reviewed read-only owner services interactive', () => {
+    expect(SALES_AGENT_LIVE_ACTIONS).toEqual({
+      'fin-balance': 'balance',
+      'fin-txn-reports': 'txns',
+      'fin-invoice-view': 'invoices',
+      'fin-payment-status': 'payment',
+      'card-status': 'status',
+      'card-track': 'tracking',
+      'doc-billing-form': 'billingform',
+    });
+    expect(salesAgentActionFor('card-activate')).toBeNull();
+    expect(salesAgentActionFor('acct-reactivate')).toBeNull();
+    expect(SALES_AGENT_LAST_USED_ITEM.action).toBe('lastused');
   });
 
-  it('pins only services present in the read-only catalog', () => {
-    const keys = new Set<string>([
-      ...SALES_AGENT_CATALOG_DEFINITION[0].items.map((item) => item.key),
-      ...SALES_AGENT_CATALOG_DEFINITION[1].items.map((item) => item.key),
-    ]);
-
+  it('pins owner-keyed read services and migrates existing Sales preferences', () => {
     expect(SALES_AGENT_DEFAULT_PINNED).toEqual([
-      'agent-status',
-      'agent-balance',
-      'agent-txns',
-      'agent-invoices',
+      'card-status',
+      'fin-balance',
+      'fin-txn-reports',
+      'fin-invoice-view',
     ]);
-    expect(SALES_AGENT_DEFAULT_PINNED.every((key) => keys.has(key))).toBe(true);
-    expect(keys.has('fin-money-code')).toBe(false);
+    expect(migrateSalesAgentPinned(['agent-status', 'agent-balance', 'agent-last-used'])).toEqual([
+      'card-status',
+      'fin-balance',
+      'agent-last-used',
+    ]);
   });
 });

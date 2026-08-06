@@ -11562,3 +11562,24 @@ regressions.
   failures are in the existing CS, Comms Admin, retention, billing-secret, database-backed agent,
   and local WebSocket groups, while the changed mini-app suites pass. Responsive browser QA could
   not run because this session exposed no in-app or connected browser.
+
+## 2026-08-06 — Full Sales onboarding catalog and pre-owner manager invite
+
+- Changed the Sales selected-company Services tab to mirror the complete owner catalog. Safe live
+  reads stay interactive, owner write/request actions are visible as `Read only`, and genuinely
+  unreleased actions keep their `Soon` state. Fleet-only services remain hidden for owner-operator
+  companies, and legacy Sales pinned-service keys migrate to their owner-catalog equivalents.
+- Added a narrow `manager:invite` mini-app capability for Sales onboarding. A verified Sales agent
+  can now generate a manager link for a selected active, non-debtor fleet in their live DWH roster
+  even when no owner has registered yet. The carrier selector is re-authorized on every request,
+  the invite stays tenant-scoped and audit-logged, and Sales still cannot manage existing access or
+  use other customer write actions. Owner/manager self-service remains behind its feature flag.
+- Added regressions for capability policy, selected-company authorization, manager creation before
+  owner registration, foreign-company denial, and the Sales service-catalog policy. Rebuilt the
+  committed mini-app assets.
+- Verification: focused RBAC and mini-app coverage passes 157/157; root typecheck passes; root lint
+  has zero errors (22 existing warnings); mini-app typecheck/build passes. Responsive browser QA at
+  390×844 and 1280×900 confirmed the manager-link flow plus `Read only`/`Soon` service states. The
+  full repository run is 1,902 passed, 99 failed, 1 skipped; failures remain in the existing CS,
+  Comms Admin, retention, billing-secret, DB-backed agent, and local WebSocket groups, while the
+  changed carrier mini-app suite passes all 119 tests.
