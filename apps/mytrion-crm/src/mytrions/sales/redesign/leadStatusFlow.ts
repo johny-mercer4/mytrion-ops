@@ -56,6 +56,84 @@ export function reasonFieldFor(
   return null;
 }
 
+/** Blueprint stage → required transition fields when Zoho omits / under-specifies `fields[]`. */
+export type LeadBlueprintRequiredField = {
+  apiName: string;
+  label: string;
+  dataType: string;
+  mandatory: true;
+  readOnly: false;
+  value: null;
+  options: Array<{ label: string; value: string }>;
+};
+
+export function requiredFieldsForStatus(status: string): LeadBlueprintRequiredField[] {
+  if (status === 'Application Filled') {
+    return [{
+      apiName: 'Application_ID',
+      label: 'Application ID',
+      dataType: 'text',
+      mandatory: true,
+      readOnly: false,
+      value: null,
+      options: [],
+    }];
+  }
+  const reason = reasonFieldFor(status);
+  if (!reason) return [];
+  return [{
+    apiName: reason.field,
+    label: status === 'Unqualified' ? 'Unqualified Reason' : 'Not Interested Reason',
+    dataType: 'picklist',
+    mandatory: true,
+    readOnly: false,
+    value: null,
+    options: reason.options.map((value) => ({ label: value, value })),
+  }];
+}
+
+/**
+ * Merge live Zoho transition fields with the known required set for a status. Forces mandatory and
+ * backfills empty picklists so the Lead edit Blueprint UI always collects Application ID / reasons.
+ */
+export function enrichBlueprintTransitionFields<T extends {
+  apiName: string;
+  label: string;
+  dataType: string;
+  mandatory: boolean;
+  readOnly: boolean;
+  value: unknown;
+  options: Array<{ label: string; value: string }>;
+}>(nextValue: string, fields: T[]): T[] {
+  const specs = requiredFieldsForStatus(nextValue);
+  if (specs.length === 0) return fields;
+
+  const out = fields.map((field) => ({ ...field, options: [...field.options] }));
+  for (const spec of specs) {
+    const idx = out.findIndex((field) => {
+      if (field.apiName === spec.apiName) return true;
+      const needle = spec.label.toLowerCase().replace(/\s+/g, '');
+      const hay = field.label.toLowerCase().replace(/\s+/g, '');
+      return hay === needle || hay.includes(needle);
+    });
+    if (idx >= 0) {
+      const existing = out[idx]!;
+      out[idx] = {
+        ...existing,
+        mandatory: true,
+        apiName: existing.apiName || spec.apiName,
+        options: existing.options.length > 0 ? existing.options : spec.options,
+        dataType: spec.dataType === 'picklist' || existing.options.length > 0 || existing.dataType === 'picklist'
+          ? 'picklist'
+          : (existing.dataType || spec.dataType),
+      };
+      continue;
+    }
+    out.push({ ...spec } as T);
+  }
+  return out;
+}
+
 /**
  * Status phases. The "call number" (First → Second → Third Call) is advanced AUTOMATICALLY on the
  * backend from the call-log count on every ended outbound call — call statuses are NEVER manually

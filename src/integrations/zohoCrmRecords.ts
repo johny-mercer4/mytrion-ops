@@ -344,12 +344,12 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
               readOnly: field.read_only === true || field.field_read_only === true,
               value: transition.data?.[apiName] ?? null,
               options: (field.pick_list_values ?? []).flatMap((option) => {
-                const value = option.actual_value;
-                if (typeof value !== 'string') return [];
-                return [{
-                  label: typeof option.display_value === 'string' ? option.display_value : value,
-                  value,
-                }];
+                // Zoho sometimes omits `actual_value` and only sends `display_value`.
+                const actual = typeof option.actual_value === 'string' ? option.actual_value : '';
+                const display = typeof option.display_value === 'string' ? option.display_value : '';
+                const value = actual || display;
+                if (!value) return [];
+                return [{ label: display || value, value }];
               }),
             };
           }),

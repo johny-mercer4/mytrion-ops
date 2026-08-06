@@ -11583,3 +11583,17 @@ regressions.
   full repository run is 1,902 passed, 99 failed, 1 skipped; failures remain in the existing CS,
   Comms Admin, retention, billing-secret, DB-backed agent, and local WebSocket groups, while the
   changed carrier mini-app suite passes all 119 tests.
+
+## 2026-08-07 — Lead Blueprint required fields on status change
+
+- Data Center → Leads edit: when moving Zoho Blueprint stages, always collect/require
+  Application Filled → `Application_ID`, Not Interested → `Not_Interested_Reason` (picklist),
+  Unqualified → `Unqualified_Reason` (picklist) — even if Zoho omits `fields[]` metadata.
+- Server enrichment in `leadBlueprintRequiredFields.ts` (GET blueprint + execute + PATCH status);
+  CRM `LeadBlueprintEditor` applies the same contract client-side. Picklist parsing falls back to
+  `display_value` when Zoho omits `actual_value`. Status PATCH validates dependent fields via Zod
+  and forwards `Application_ID` as transition data.
+- Lead status/reason constants moved to `leadStatusValues.ts` (keeps `dataCenter.routes.ts` under
+  the file-size cap).
+- Verification: `lead-blueprint-required-fields`, `zoho-crm-blueprint`, `data-center-routes` 44/44;
+  CRM `LeadBlueprintEditor` + `LeadCallWizard` 18/18; root + CRM typecheck pass.
