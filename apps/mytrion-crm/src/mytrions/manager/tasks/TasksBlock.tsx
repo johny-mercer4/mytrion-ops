@@ -14,6 +14,7 @@ import {
   type ManagerAssigneeDto,
   type ManagerTaskDepartment,
 } from '../../../api/managerTasks';
+import { TasksSkeleton } from '../ManagerSkeletons';
 import './tasksBlock.css';
 
 function friendly(value: string): string {
@@ -169,7 +170,10 @@ export function TasksBlock({ department }: { department: ManagerTaskDepartment }
       </header>
 
       {error ? <div className="mg-tasks-error">{error}</div> : null}
-      {loading ? <div className="mg-tasks-empty">Loading tasks…</div> : null}
+      {/* The real three-column layout, shaped. It used to be a dashed `.mg-tasks-empty` box — the
+          same element that says "no assignments match this filter", so loading and empty looked
+          identical, and the box was nothing like the layout that replaced it. */}
+      {loading ? <TasksSkeleton /> : null}
 
       {!loading ? (
         <div className="mg-tasks-layout">

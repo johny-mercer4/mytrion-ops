@@ -1,3 +1,8 @@
+/* =====================================================
+   Manager workspace chrome — page head, buttons, toolbar, states, chips, field grids.
+   Every value reads from the ramps declared in manager.css. See that file's header first.
+   ===================================================== */
+
 /* ── Page head (Referrals + department landings) ───────────────────────────── */
 .mg-root .mg-page-head {
   display: flex;
@@ -19,7 +24,8 @@
 }
 .mg-root .mg-cachedat {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -40,8 +46,9 @@
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: 1;
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   box-shadow: var(--hz-glass-inset);
   transition:
@@ -92,7 +99,8 @@
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 .mg-root .mg-summary {
-  font-size: 14px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
   color: var(--text-muted);
 }
 .mg-root .mg-summary strong {
@@ -129,11 +137,10 @@
   background: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 14.5px;
+  font-size: var(--text-base);
 }
 
-/* ── Loading / error / empty — one treatment each ──────────────────────────── */
-.mg-root .mg-loading,
+/* ── Error / empty — one treatment each ────────────────────────────────────── */
 .mg-root .mg-error,
 .mg-root .mg-empty {
   display: flex;
@@ -143,15 +150,13 @@
   gap: 10px;
   padding: 48px 24px;
   text-align: center;
-  font-size: 14.5px;
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
   color: var(--text-muted);
   border-radius: var(--mg-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
   box-shadow: var(--hz-glass-inset);
-}
-.mg-root .mg-loading {
-  flex-direction: row;
 }
 .mg-root .mg-error {
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
@@ -162,26 +167,108 @@
   margin: 0;
   max-width: 60ch;
   font-family: var(--font-mono);
-  font-size: 13.5px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
   word-break: break-word;
 }
 .mg-root .mg-empty-sm {
   padding: 10px 12px;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
-/* One spinner, accent-ringed. */
-.mg-root .mg-spinner {
-  width: 15px;
-  height: 15px;
+/* =====================================================
+   THE LOADER — skeletons only.
+
+   Manager is a "one loading visual" module: a tab NEVER shows a spinner then a skeleton then the
+   content (the double loader). Every first paint is a shaped placeholder built from `.mg-sk`, laid
+   out in the SAME containers the real content uses, so nothing shifts when the data lands.
+
+   `.mg-sk` is the only shimmer in the module. Shape it at the call site with inline width/height —
+   it owns the sheen and the radius, nothing else.
+
+   Spinners survive in exactly one role: the in-place "already have data, refreshing it" spin on the
+   Refresh button (`.mg-spin`). That is a busy indicator on a control, not a page loader.
+   ===================================================== */
+.mg-root .mg-sk {
+  display: block;
+  /* Placeholders are laid out INTO the real flex containers (`.mg-rf-filters`, `.mg-toolbar`), where
+     the default `flex-shrink: 1` would quietly squash their declared widths — and a skeleton whose
+     bars are narrower than the content they stand in for is a shift waiting to happen. */
   flex: none;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  border-top-color: var(--accent);
-  animation: mgSpin 0.75s linear infinite;
-  box-shadow: 0 0 10px -2px var(--accent-glow);
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  /* Two COMMA-separated layers: the travelling sheen over the pane. --hz-pane is itself a gradient,
+     so it can only sit in an <image> slot — space-separating it as a <bg-color> invalidates the
+     whole declaration and the skeleton renders bare. */
+  background:
+    linear-gradient(100deg, transparent 20%, var(--mg-sk-sheen) 45%, transparent 70%),
+    var(--hz-pane);
+  background-size:
+    220% 100%,
+    auto;
+  background-repeat: no-repeat, no-repeat;
+  animation: mgSheen 1.25s var(--hz-ease) infinite;
 }
+/* A bare bar of "text that hasn't arrived": no border, pill ends, inherits the sheen. */
+.mg-root .mg-sk-line {
+  border: 0;
+  border-radius: var(--mg-r-pill);
+}
+/* Per-layer positions — the sheen travels, the pane underneath stays put. */
+@keyframes mgSheen {
+  from {
+    background-position:
+      130% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -30% 0,
+      0 0;
+  }
+}
+/* Rows stagger so a grid of placeholders reads as content arriving, not as one pulsing block. */
+.mg-root .mg-sk-d1 {
+  animation-delay: 120ms;
+}
+.mg-root .mg-sk-d2 {
+  animation-delay: 240ms;
+}
+
+/* A body-wide skeleton stands in for several page sections at once, so it carries the page's own
+   section rhythm — otherwise the placeholder is denser than the content and the page still moves. */
+.mg-root .mg-sk-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mg-gap-lg);
+}
+
+/* A skeleton standing in for a whole panel keeps the panel's own frame. */
+.mg-root .mg-sk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mg-root .mg-sk-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* The one surviving spinner: in-control busy feedback on Refresh. */
 .mg-root .mg-spin {
   animation: mgSpin 0.9s linear infinite;
 }
@@ -190,50 +277,53 @@
     transform: rotate(360deg);
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
-  .mg-root .mg-spinner,
+  .mg-root .mg-sk,
   .mg-root .mg-spin {
     animation: none;
   }
 }
 
 /* Sales Manager is intentionally withheld until its production workflow is ready. */
-.mg-coming-soon {
+.mg-root .mg-coming-soon {
   display: grid;
   min-height: 360px;
   place-items: center;
   align-content: center;
   gap: 10px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 18px;
+  border-radius: var(--mg-r-lg);
   background: var(--hz-pane);
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   padding: 38px;
   text-align: center;
 }
 
-.mg-coming-soon > span {
+.mg-root .mg-coming-soon > span {
   display: grid;
   width: 58px;
   height: 58px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--mg-tone) 32%, var(--hz-pane-bd));
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--mg-tone) 9%, transparent);
-  color: var(--mg-tone);
+  border: 1px solid color-mix(in srgb, var(--mg-tone, var(--accent)) 32%, var(--hz-pane-bd));
+  border-radius: var(--mg-r-lg);
+  background: color-mix(in srgb, var(--mg-tone, var(--accent)) 9%, transparent);
+  color: var(--mg-tone, var(--accent));
 }
 
-.mg-coming-soon h2 {
+.mg-root .mg-coming-soon h2 {
   margin: 2px 0 0;
-  font-size: 24px;
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
   letter-spacing: -0.025em;
 }
 
-.mg-coming-soon p {
+.mg-root .mg-coming-soon p {
   max-width: 560px;
   margin: 0;
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--text-base);
   line-height: 1.55;
 }
 
@@ -274,8 +364,10 @@
 .mg-root .mg-acc-summary::-webkit-details-marker {
   display: none;
 }
+/* --hz-pane-lift, NOT --hz-glass-hover: the latter is rgba(255,255,255,.86) in light, so a hover
+   painted the row near-opaque white and blew out of the panel it sits in. */
 .mg-root .mg-acc-summary:hover {
-  background: var(--hz-glass-hover);
+  background: var(--hz-pane-lift);
 }
 .mg-root .mg-acc-chevron {
   flex: none;
@@ -287,12 +379,12 @@
   color: var(--accent);
 }
 .mg-root .mg-acc-name {
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-base);
   color: var(--text-primary);
 }
 .mg-root .mg-acc-company {
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -311,8 +403,9 @@
   padding: 2px 9px;
   border-radius: var(--mg-r-pill);
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
   background: color-mix(in srgb, var(--accent) 11%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
   color: var(--accent);
@@ -354,8 +447,9 @@
   padding: 2px 9px;
   border-radius: var(--mg-r-pill);
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
   border: 1px solid transparent;
   white-space: nowrap;
 }
@@ -380,7 +474,7 @@
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 .mg-root .mg-na {
   background: var(--tint-neutral-bg);
@@ -410,14 +504,15 @@
   flex-wrap: wrap;
 }
 .mg-root .mg-child-name {
-  font-weight: 600;
-  font-size: 14.5px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-base);
   color: var(--text-primary);
 }
 .mg-root .mg-section-label {
   font-family: var(--font-head);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -445,15 +540,17 @@
   min-width: 0;
 }
 .mg-root .mg-dl dt {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .mg-root .mg-dl dd {
   margin: 3px 0 0;
-  font-size: 14px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
   color: var(--text-primary);
   word-break: break-word;
 }

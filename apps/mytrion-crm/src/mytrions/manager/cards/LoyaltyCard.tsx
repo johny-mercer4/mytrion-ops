@@ -28,6 +28,7 @@ import {
 import { listLoyaltyClients, type LoyaltyClient } from '../../../api/loyalty';
 import type { LoyaltyClientOverride } from '../../../api/loyalty';
 import { LoyaltyBonusModal } from './LoyaltyBonusModal';
+import { LoyaltySkeleton } from '../ManagerSkeletons';
 import { MANAGER_LOYALTY_CACHE_KEY, propagateLoyaltyOverride } from './loyaltyOverrideCache';
 
 /**
@@ -476,14 +477,10 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
         </div>
       ) : null}
 
-      {/* One loader only: the skeleton grid stands in for the whole board while it loads. */}
-      {loading && !roster ? (
-        <div className="mg-lty-grid">
-          {Array.from({ length: 9 }, (_, i) => (
-            <div key={i} className="mg-lty-sk" />
-          ))}
-        </div>
-      ) : null}
+      {/* One loader only, and it stands in for the WHOLE board: distribution, toolbar, track chips
+          and the client grid. It used to be the grid alone, so the three sections above it appeared
+          from nothing on arrival and shoved the grid down a full panel height. */}
+      {loading && !roster ? <LoyaltySkeleton /> : null}
 
       {roster ? (
         <>

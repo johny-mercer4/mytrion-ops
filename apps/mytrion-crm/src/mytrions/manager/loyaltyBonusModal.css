@@ -1,11 +1,13 @@
 .mg-root .mg-lty-modal-scrim {
   position: fixed;
-  z-index: 10030;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: center;
   padding: 22px;
-  background: color-mix(in srgb, #050814 74%, transparent);
+  /* One scrim token for both Manager dialogs — this file and referralModal.css had two different
+     veils at two different z-indexes for the same job. */
+  background: var(--mg-scrim);
   backdrop-filter: blur(12px) saturate(0.75);
 }
 
@@ -16,14 +18,10 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--mg-border-strong, var(--hz-pane-bd));
-  border-radius: 16px;
+  border-radius: var(--mg-r-lg);
   background: color-mix(in srgb, var(--surface) 97%, var(--bg-primary));
   color: var(--text-primary);
   box-shadow: var(--hz-shadow-pop);
-}
-
-[data-theme='light'] .mg-root .mg-lty-modal-scrim {
-  background: rgba(34, 43, 62, 0.32);
 }
 
 .mg-root .mg-lty-modal-head {
@@ -42,7 +40,7 @@
   width: 42px;
   height: 42px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--hz-pane-bd));
-  border-radius: 11px;
+  border-radius: var(--mg-r-md);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
 }
@@ -54,8 +52,8 @@
 .mg-root .mg-lty-modal-head > div > span,
 .mg-root .mg-lty-modal-section-head > div > span {
   color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -63,7 +61,10 @@
 .mg-root .mg-lty-modal-head h2 {
   margin: 2px 0;
   overflow: hidden;
-  font: 700 22px/1.2 var(--font-head);
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -71,7 +72,7 @@
 .mg-root .mg-lty-modal-head p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 
 .mg-root .mg-lty-modal-head > button,
@@ -84,10 +85,13 @@
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 9px;
+  border-radius: var(--mg-r-sm);
   background: var(--hz-pane-alt);
   color: var(--text-secondary);
-  font: 600 13px/1 var(--font-body);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -120,7 +124,7 @@
 .mg-root .mg-lty-modal-summary > div {
   padding: 13px 14px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 11px;
+  border-radius: var(--mg-r-md);
   background: var(--hz-pane-alt);
 }
 
@@ -129,20 +133,23 @@
   align-items: center;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
 }
 
 .mg-root .mg-lty-modal-summary strong {
   display: block;
   margin-top: 5px;
-  font: 700 19px/1.2 var(--font-head);
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .mg-root .mg-lty-modal-section {
   padding: 16px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 12px;
+  border-radius: var(--mg-r-md);
   background: var(--hz-pane);
 }
 
@@ -159,12 +166,15 @@
 
 .mg-root .mg-lty-modal-section-head h3 {
   margin: 2px 0 0;
-  font: 700 17px/1.25 var(--font-head);
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
 }
 
 .mg-root .mg-lty-modal-section-head > button {
   min-height: 31px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .mg-root .mg-lty-modal-section-head button:disabled,
@@ -176,7 +186,7 @@
 .mg-root .mg-lty-modal-help {
   margin: 9px 0 13px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
 }
 
@@ -193,7 +203,7 @@
   gap: 4px;
   padding: 13px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 10px;
+  border-radius: var(--mg-r-sm);
   background: var(--hz-pane-alt);
   color: var(--text-primary);
   text-align: left;
@@ -207,12 +217,12 @@
 }
 
 .mg-root .mg-lty-enterprise-options strong {
-  font-size: 13.5px;
+  font-size: var(--text-base);
 }
 
 .mg-root .mg-lty-enterprise-options span {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.45;
 }
 
@@ -223,19 +233,22 @@
   gap: 6px;
   margin-top: 12px;
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
 }
 
 .mg-root .mg-lty-target input,
 .mg-root .mg-lty-note textarea {
   width: 100%;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 9px;
+  border-radius: var(--mg-r-sm);
   outline: none;
   background: var(--hz-pane-alt);
   color: var(--text-primary);
-  font: 500 13.5px/1.4 var(--font-body);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
 }
 
 .mg-root .mg-lty-target input {
@@ -268,7 +281,7 @@
   min-height: 64px;
   padding: 10px 11px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 10px;
+  border-radius: var(--mg-r-sm);
   background: var(--hz-pane-alt);
   cursor: pointer;
 }
@@ -291,7 +304,7 @@
   width: 20px;
   height: 20px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 6px;
+  border-radius: var(--mg-r-xs);
   color: transparent;
   background: var(--surface);
 }
@@ -310,19 +323,19 @@
 }
 
 .mg-root .mg-lty-reward-grid strong {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .mg-root .mg-lty-reward-grid small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .mg-root .mg-lty-reward-grid em {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-style: normal;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   white-space: nowrap;
 }
 
@@ -330,10 +343,10 @@
   margin-top: 12px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--hz-pane-bd));
-  border-radius: 9px;
+  border-radius: var(--mg-r-sm);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 
 .mg-root .mg-lty-modal-foot {

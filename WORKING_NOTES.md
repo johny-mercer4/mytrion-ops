@@ -11511,3 +11511,45 @@ regressions.
   production bundle was rebuilt. The full repository run is 1,901 passed, 96 failed, 1 skipped;
   failures remain in the same unrelated CS, retention, billing, Comms Admin, and DB-backed scripted
   agent groups, while the carrier mini-app suite passes all 117 tests.
+
+## 2026-08-06 — Mytrion Manager: design-system reconciliation + skeleton loaders
+
+Onboarding pass on the Manager Mytrion (`apps/mytrion-crm/src/mytrions/manager`, 9 stylesheets +
+6 components) against the app token system, then fixed the conflicts it surfaced.
+
+Conflicts found and resolved:
+- **Two owners for the same tokens.** `managerPolish.css` held a second copy of the loyalty tier
+  palette and of the tier tint/sheen ramp, and won on load order — so `managerLoyalty.css`'s light
+  palette and its Silver-vs-Idle differentiation were dead code, and the surviving copy flattened
+  every tier to one tint with no sheen. Each now has exactly one declaration, in its owning file;
+  the polish layer is tokens-only plus cross-file relationships.
+- **Typography fork.** Manager forced Space Grotesk onto `--font-body`, `--font-head` AND
+  `--font-mono`, plus a 15px base and five enlarged sidebar sizes. Cost: the module read as a
+  different product, and every `var(--font-mono)` call site (carrier ids, gallons, cached-at stamps,
+  tier figures) silently lost tabular figures because "mono" was not a mono font. Now inherits the
+  app stacks and the shell's nav sizes.
+- **Scale sprawl.** 21 distinct font sizes (9.5–28px), 12 radii (2–18px) and raw 180/220/260ms
+  durations. Collapsed onto `--text-*` (9 steps), `--mg-r-xs/sm/md/lg/pill`, and `--hz-dur-*`.
+  Zero raw font-size / border-radius / font-weight values remain in the module.
+- **Light theme.** Panes were fixed `rgba(255,255,255,.82)` literals instead of token-derived
+  `color-mix`; `tasksBlock.css` filled nested panels and every form field with `--bg-primary`
+  (an inset well in dark, invisible in light); `.mg-acc-summary:hover` used `--hz-glass-hover`
+  (=.86 white in light); the referral dialog carried an `rgba(0,0,0,.72)` shadow and a 76px tone
+  halo; two dialogs had two different scrims at two z-indexes. All derived or tokenized.
+- **Semantics.** Departments with a live Tasks desk advertised it in the same warning amber as
+  "Coming soon" — split into `.mg-dept-chip` (neutral) and `.mg-dept-soon` (amber).
+
+Loaders → skeletons (`ManagerSkeletons.tsx`, one `.mg-sk` shimmer):
+- **Referrals** borrowed Loyalty's `.mg-lty-grid` (380px tracks) to stand in for its own 290px grid,
+  and rendered a live all-zero controls panel above it — two loading states and a full relayout on
+  arrival. Now one skeleton covering the KPI row, controls and grid in their real containers.
+- **Loyalty** skeletoned the client grid alone, so the distribution panel, toolbar and chips
+  appeared from nothing and shoved the grid down. Now covers all four sections.
+- **Tasks** showed "Loading tasks…" in `.mg-tasks-empty` — the same element as "no assignments",
+  so loading and empty looked identical. Now the real three-column layout, shaped.
+- Removed the dead `.mg-loading` / `.mg-spinner` rules; the only surviving spinner is `.mg-spin` on
+  the Refresh control, which is in-control busy feedback, not a page loader.
+
+Verification: `corepack pnpm build` green (tsc --noEmit + vite), `corepack pnpm test` 441/441 across
+69 files. Not visually verified — no headless browser in this environment, so the two themes and the
+skeleton→content hand-off still want a human pass at `pnpm dev`.

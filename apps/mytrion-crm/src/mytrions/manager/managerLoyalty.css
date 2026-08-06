@@ -1,6 +1,11 @@
 /* =====================================================
-   Loyalty Program card
-   =====================================================
+   Loyalty Program card — the single owner of the tier palette and the tier surface ramp.
+
+   Both used to be declared twice: once here and once again in managerPolish.css, which loads later
+   and therefore won. That made this file's light palette and its Silver-vs-Idle differentiation dead
+   code, and the surviving copy flattened every tier to one tint with no sheen. There is now exactly
+   one declaration of each, here.
+
    Tier palette. The shared --tier-* scale (sales/redesign/theme.css) renders BRONZE as #fb923c —
    which is orange, so bronze and the not-yet-qualified state were indistinguishable. Here bronze is
    a real bronze/copper and the not-reached state ("Building") takes the orange, which is what the
@@ -28,56 +33,63 @@
   --lty-idle-text: #868d98;
 }
 [data-theme='light'] .mg-root .mg-lty {
-  --lty-enterprise: #087ca8;
-  --lty-enterprise-text: #075d7d;
-  /* Light theme needs darker FILLS too, not just text — a #c3cfdd border vanishes on white. */
-  --lty-silver: #8496ad;
-  --lty-idle: #9ba1aa;
-  --lty-gold-text: #96620a;
-  --lty-silver-text: #45546a;
-  --lty-bronze-text: #8a4d1a;
-  --lty-building-text: #a34405;
-  --lty-idle-text: #6b7280;
+  /* Light needs darker FILLS too, not just text — a #c3cfdd border vanishes on white. These are the
+     desaturated values the polish layer had been applying on top; folded in so there is one set. */
+  --lty-enterprise: #47788f;
+  --lty-gold: #a87a2f;
+  --lty-silver: #7b8797;
+  --lty-bronze: #9a6842;
+  --lty-building: #a76635;
+  --lty-idle: #8a9099;
+  --lty-enterprise-text: #315f75;
+  --lty-gold-text: #79561e;
+  --lty-silver-text: #515d6d;
+  --lty-bronze-text: #704827;
+  --lty-building-text: #7e4720;
+  --lty-idle-text: #626873;
 }
 
-/* ── One background recipe, five tunings ──────────────────────────────────────
+/* ── One background recipe, six tunings ───────────────────────────────────────
    Every tinted surface (client card + distribution tile) reads the same two custom properties, so
-   the buckets stay a single system rather than five bespoke treatments:
+   the buckets stay a single system rather than six bespoke treatments:
 
      --tint   how strongly the bucket hue washes the surface
      --sheen  a metallic highlight band — set ONLY for the three medal tiers
 
-   That gives silver and "no cards" four independent separators (hue, tint strength, sheen, and the
-   dashed border below), so they never collapse into each other in either theme or in greyscale. */
+   The tints are deliberately restrained: colour carries the tier in the badge, the top rule and the
+   border, and a card washed at 18% competed with its own content at grid scale. The sheen stays,
+   because it is what separates the three metals from the two flat states without adding saturation —
+   which leaves hue, tint strength, sheen AND the dashed border below as four independent separators
+   between Silver and "no cards", so they never collapse in either theme or in greyscale. */
 .mg-root .mg-lty .is-gold {
-  --tint: 18%;
-  --sheen: color-mix(in srgb, var(--lty-gold) 22%, transparent);
+  --tint: 11%;
+  --sheen: color-mix(in srgb, var(--lty-gold) 16%, transparent);
 }
 .mg-root .mg-lty .is-enterprise {
-  --tint: 15%;
-  --sheen: color-mix(in srgb, #ffffff 20%, transparent);
+  --tint: 10%;
+  --sheen: color-mix(in srgb, #ffffff 14%, transparent);
 }
 .mg-root .mg-lty .is-silver {
-  --tint: 17%;
+  --tint: 10%;
   /* White, not silver — a specular highlight is what makes a surface read as polished metal. */
-  --sheen: color-mix(in srgb, #ffffff 17%, transparent);
+  --sheen: color-mix(in srgb, #ffffff 13%, transparent);
 }
 .mg-root .mg-lty .is-bronze {
-  --tint: 16%;
-  --sheen: color-mix(in srgb, var(--lty-bronze) 20%, transparent);
+  --tint: 10%;
+  --sheen: color-mix(in srgb, var(--lty-bronze) 15%, transparent);
 }
 /* Aspirational, not a metal — flat wash, no sheen. */
 .mg-root .mg-lty .is-building {
-  --tint: 12%;
+  --tint: 8%;
   --sheen: transparent;
 }
 /* Barely painted at all: the card looks unfinished on purpose. */
 .mg-root .mg-lty .is-idle {
-  --tint: 4%;
+  --tint: 3%;
   --sheen: transparent;
 }
 [data-theme='light'] .mg-root .mg-lty .is-silver {
-  --sheen: color-mix(in srgb, #ffffff 62%, transparent);
+  --sheen: color-mix(in srgb, #ffffff 55%, transparent);
 }
 
 /* ── Distribution: stacked bar + one tinted tile per tier ─────────────────────── */
@@ -127,7 +139,7 @@
     linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
     linear-gradient(
       150deg,
-      color-mix(in srgb, var(--t) var(--tint, 12%), transparent),
+      color-mix(in srgb, var(--t) var(--tint, 10%), transparent),
       transparent 62%
     ),
     var(--hz-pane-alt);
@@ -138,31 +150,30 @@
     transform var(--hz-dur-lift) var(--hz-ease);
 }
 .mg-root .mg-lty-tile:hover {
-  border-color: color-mix(in srgb, var(--t) 55%, transparent);
-  box-shadow:
-    0 8px 24px -10px color-mix(in srgb, var(--t) 42%, transparent),
-    var(--hz-glass-inset);
+  border-color: color-mix(in srgb, var(--t) 45%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
   transform: var(--hz-hover-lift-sm);
 }
-/* Selected filter — the tier gradient, never a flat fill (module rule). */
+/* Selected filter — the tier wash deepened plus an inset rule, so "which tile is on" survives at a
+   glance without the tile turning into a saturated block. */
 .mg-root .mg-lty-tile[aria-pressed='true'] {
-  border-color: color-mix(in srgb, var(--t) 70%, transparent);
+  border-color: color-mix(in srgb, var(--t) 55%, var(--hz-pane-bd));
   background:
     linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
     linear-gradient(
       150deg,
-      color-mix(in srgb, var(--t) calc(var(--tint, 12%) + 14%), transparent),
+      color-mix(in srgb, var(--t) calc(var(--tint, 10%) + 10%), transparent),
       transparent 70%
     ),
     var(--hz-pane-lift);
   box-shadow:
-    0 10px 28px -12px color-mix(in srgb, var(--t) 55%, transparent),
+    inset 3px 0 0 var(--t),
     var(--hz-glass-inset);
 }
 .mg-root .mg-lty-tile-n {
   font-family: var(--font-head);
-  font-size: 28px;
-  font-weight: 700;
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--tt);
@@ -171,8 +182,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -187,7 +199,8 @@
 }
 .mg-root .mg-lty-tile-pct {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
 }
 
@@ -203,7 +216,13 @@
   display: flex;
   flex-direction: column;
   gap: 11px;
+  width: 100%;
   padding: 15px 16px;
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-primary);
   border-radius: var(--mg-r-md);
   /* The tier hue drives the border, the wash and the top rule — a Gold card reads gold. Three
      layers: specular sheen (metals only) → bucket wash → the shared glass pane. All COMMA-separated;
@@ -213,13 +232,13 @@
     linear-gradient(115deg, transparent 26%, var(--sheen, transparent) 46%, transparent 68%),
     linear-gradient(
       157deg,
-      color-mix(in srgb, var(--t) var(--tint, 13%), transparent),
+      color-mix(in srgb, var(--t) var(--tint, 10%), transparent),
       transparent 58%
     ),
     var(--hz-pane);
   backdrop-filter: blur(var(--hz-blur-sm));
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
-  box-shadow: var(--hz-glass-inset);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     border-color var(--hz-dur-tone) var(--hz-ease),
     box-shadow var(--hz-dur-tone) var(--hz-ease),
@@ -233,17 +252,9 @@
   background: linear-gradient(90deg, var(--t), color-mix(in srgb, var(--t) 12%, transparent));
 }
 .mg-root .mg-lty-c:hover {
-  border-color: color-mix(in srgb, var(--t) 58%, transparent);
-  box-shadow:
-    0 14px 34px -14px color-mix(in srgb, var(--t) 45%, transparent),
-    var(--hz-glass-inset);
+  border-color: color-mix(in srgb, var(--t) 45%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
   transform: var(--hz-hover-lift-sm);
-}
-/* Gold gets one extra cue — a soft inner halo, so the top tier is unmistakable at a glance. */
-.mg-root .mg-lty-c.is-gold {
-  box-shadow:
-    inset 0 0 34px -14px color-mix(in srgb, var(--lty-gold) 42%, transparent),
-    var(--hz-glass-inset);
 }
 /* Not in the program (no active cards) — dashed, so the state is legible without relying on hue
    alone (colour-blind users, greyscale printouts). Shape carries the meaning too, which is the
@@ -266,8 +277,8 @@
 }
 .mg-root .mg-lty-c-name {
   min-width: 0;
-  font-weight: 600;
-  font-size: 16px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-md);
   line-height: 1.35;
   color: var(--text-primary);
   overflow: hidden;
@@ -283,12 +294,29 @@
   flex-wrap: wrap;
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
 }
 .mg-root .mg-lty-c-meta em {
   font-style: normal;
   color: var(--text-secondary);
+}
+/* The card's own call to action. Quiet until you hover the card, then it takes the tier hue. */
+.mg-root .mg-lty-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
+  transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-lty-c:hover .mg-lty-manage {
+  color: var(--tt);
 }
 
 /* Tier badge — filled with the tier hue, medal glyph inside. */
@@ -299,8 +327,9 @@
   flex: none;
   padding: 3px 10px;
   border-radius: var(--mg-r-pill);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -334,12 +363,14 @@
 }
 .mg-root .mg-lty-period header span {
   color: var(--text-primary);
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-bold);
 }
 .mg-root .mg-lty-period header strong {
   color: var(--text-muted);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -348,13 +379,17 @@
   align-items: center;
   gap: 5px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 .mg-root .mg-lty-period-main > strong {
   display: block;
   margin-top: 2px;
   color: var(--text-primary);
-  font: 750 22px/1.15 var(--font-head);
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 .mg-root .mg-lty-period dl {
@@ -368,14 +403,19 @@
 .mg-root .mg-lty-period dt {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mg-root .mg-lty-period dd {
   margin: 2px 0 0;
   color: var(--text-primary);
-  font: 650 13px/1.2 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 .mg-root .mg-lty-account {
   display: grid;
@@ -386,11 +426,16 @@
   border-radius: var(--mg-r-sm);
   background: var(--hz-pane-alt);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 .mg-root .mg-lty-account strong {
   color: var(--text-primary);
-  font: 650 13px/1 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Per-card figures ───────────────────────────────────────────────────────── */
@@ -408,8 +453,9 @@
   background: var(--hz-pane-alt);
 }
 .mg-root .mg-lty-fig dt {
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -420,8 +466,9 @@
 .mg-root .mg-lty-fig dd {
   margin: 3px 0 0;
   font-family: var(--font-mono);
-  font-size: 14.5px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
@@ -459,12 +506,13 @@
   justify-content: space-between;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
 }
 .mg-root .mg-lty-prog-lbl strong {
   color: var(--tt);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 /* ── Filter chip row (track filter) ─────────────────────────────────────────── */
@@ -481,8 +529,9 @@
   background: var(--hz-pane-alt);
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   transition:
     color var(--hz-dur-wash) var(--hz-ease),
@@ -508,23 +557,6 @@
   padding-top: 2px;
 }
 
-/* ── Skeleton — one shimmer, no double loader ───────────────────────────────── */
-.mg-root .mg-lty-sk {
-  height: 304px;
-  border-radius: var(--mg-r-md);
-  border: 1px solid var(--hz-pane-bd);
-  /* Two COMMA-separated layers: the sheen over the pane. --hz-pane is itself a gradient, so it can
-     only sit in an <image> slot — space-separating it as a <bg-color> invalidates the whole
-     declaration and the skeleton renders bare. */
-  background:
-    linear-gradient(100deg, transparent 20%, var(--hz-glass-hover) 45%, transparent 70%),
-    var(--hz-pane);
-  background-size:
-    220% 100%,
-    auto;
-  background-repeat: no-repeat, no-repeat;
-  animation: mgLtySheen 1.25s var(--hz-ease) infinite;
-}
 @media (max-width: 520px) {
   .mg-root .mg-lty-grid {
     grid-template-columns: 1fr;
@@ -533,23 +565,7 @@
     grid-template-columns: 1fr;
   }
 }
-/* Per-layer positions — the sheen travels, the pane underneath stays put. */
-@keyframes mgLtySheen {
-  from {
-    background-position:
-      130% 0,
-      0 0;
-  }
-  to {
-    background-position:
-      -30% 0,
-      0 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .mg-root .mg-lty-sk {
-    animation: none;
-  }
   .mg-root .mg-lty-c:hover,
   .mg-root .mg-lty-tile:hover {
     transform: none;

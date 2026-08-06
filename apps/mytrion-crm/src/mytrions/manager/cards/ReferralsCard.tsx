@@ -20,6 +20,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { getReferralWorkspace } from '../../../api/referrals';
+import { ReferralsSkeleton } from '../ManagerSkeletons';
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
 import { ReferralDetailModal } from './ReferralDetailModal';
 import { downloadReferralCsv, downloadReferralExcel } from './referralExport';
@@ -407,6 +408,11 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       </header>
       {exportError ? <div className="mg-rf-export-error">{exportError}</div> : null}
 
+      {/* Cold open: ONE skeleton covering the KPI row, the controls and the grid together. Rendering
+          the real (all-zero) controls panel above a grid-only placeholder was a second loading
+          state, and the KPI row then appeared from nothing and pushed everything down. */}
+      {loading && !data ? <ReferralsSkeleton /> : null}
+
       {data ? (
         <section className="mg-rf-kpis" aria-label="Referral summary">
           <div>
@@ -444,6 +450,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
         </section>
       ) : null}
 
+      {/* Not `hidden`: `.mg-rf-controls` sets `display: flex`, which beats the `[hidden]` UA rule —
+          the panel would have stayed on screen next to its own placeholder. */}
+      {loading && !data ? null : (
       <section className="mg-rf-controls">
         <label className="mg-rf-search">
           <Search size={16} />
@@ -469,14 +478,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           ))}
         </div>
       </section>
+      )}
 
-      {loading && !data ? (
-        <div className="mg-lty-grid" role="status" aria-busy="true" aria-label="Loading referrals">
-          {Array.from({ length: 9 }, (_, index) => (
-            <div key={index} className="mg-lty-sk" />
-          ))}
-        </div>
-      ) : error && !data ? (
+      {loading && !data ? null : error && !data ? (
         <div className="mg-error">
           <p>{error}</p>
           <button type="button" className="mg-btn" onClick={reload}>
