@@ -1,29 +1,61 @@
 /**
- * Billing Ledger — the five computed sections and the drill-down statement
- * (/v1/billing/ledger/sections/:section, /v1/billing/ledger/statement).
+ * Billing Ledger — the five computed sections, the drill-down statement, and the TZ §9 control points
+ * (/v1/billing/ledger/{sections/:section, statement, summary, variances, aging/*, control-sums,
+ * recompute}).
  *
  * A third route file because ./billingLedger.routes.ts is already ~490 lines against the 600-line cap.
- * Same conventions as its siblings: thrown `AppError`s, `requireLedgerRead`, module-level zod, and
- * **`endDate` INCLUSIVE** — converted to the repo layer's exclusive convention once, inside
- * `computeSection`, so no handler here re-interprets it.
+ * Same conventions as its siblings: thrown `AppError`s, module-level zod, and **`endDate` INCLUSIVE** —
+ * converted to the repo layer's exclusive convention once, inside `computeSection`, so no handler here
+ * re-interprets it.
  *
- * Both routes are READS. They compute live from the DWH + Postgres feeds; the nightly snapshot table
- * that makes an arbitrary period O(1) is a later pass, so a wide period over the whole book is
- * genuinely expensive today — hence the mandatory page cap below.
+ * TWO DIFFERENT READ PATHS, deliberately:
+ *   • `/sections/:section` and `/statement` compute LIVE from the DWH + Postgres feeds, so an agent can
+ *     pick any period and get an answer for it. That is genuinely expensive over a wide window, hence
+ *     `PERIOD_MAX_DAYS` and the mandatory page cap.
+ *   • `/summary` and `/variances` read the nightly snapshot table instead — instant, and the only place
+ *     the reconciliation status is exposed, because reconciling against an external source cannot happen
+ *     inside a page load.
+ *
+ * `/recompute` is the one write here: it queues the snapshot job.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, ValidationError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import {
+  arAging,
+  controlSums,
+  unbilledOverCycle,
+  untoppedAging,
+} from '../../modules/billing/ledger/aging.js';
 import { listLedgerCarriers } from '../../modules/billing/ledger/clientType.js';
-import { computeSection, sectionTotals } from '../../modules/billing/ledger/compute.js';
+import { computeSection, sectionTotals, shiftYmd } from '../../modules/billing/ledger/compute.js';
 import { requireLedgerSchema } from '../../modules/billing/ledger/readiness.js';
-import { LEDGER_SECTION_IDS, getLedgerSection } from '../../modules/billing/ledger/sections.js';
+import { LEDGER_SECTIONS, LEDGER_SECTION_IDS, getLedgerSection } from '../../modules/billing/ledger/sections.js';
 import { buildCarrierStatement } from '../../modules/billing/ledger/statement.js';
+import { billingLedgerSnapshotJob } from '../../modules/jobs/catalog.js';
+import { enqueue } from '../../modules/jobs/queue.js';
+import { ledgerSnapshotRepo } from '../../repos/ledgerSnapshotRepo.js';
+import type { LedgerSnapshotStatus } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment } from './helpers.js';
+import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function requireLedgerRead(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'billing', 'Billing Ledger');
+}
+
+function requireLedgerWrite(request: FastifyRequest): TenantContext {
+  return requireMytrionWrite(request, 'billing', 'Billing Ledger');
+}
+
+/** yyyy-mm-dd in the ledger's reporting zone. */
+function ledgerToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 const ymd = z
@@ -63,6 +95,28 @@ const statementQuery = z.object({
   startDate: ymd,
   endDate: ymd,
 });
+
+const summaryQuery = z.object({
+  asOfDate: ymd.optional(),
+  section: z.enum(LEDGER_SECTION_IDS).optional(),
+});
+const varianceQuery = z.object({
+  asOfDate: ymd.optional(),
+  section: z.enum(LEDGER_SECTION_IDS).optional(),
+  status: z.enum(['variance', 'source_unavailable', 'stale_external', 'no_opening', 'ok']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(500).default(100),
+});
+const agingListQuery = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(100),
+});
+const controlQuery = z.object({ startDate: ymd.optional(), endDate: ymd.optional() });
+const recomputeBody = z
+  .object({
+    asOfDate: ymd.optional(),
+    sections: z.array(z.enum(LEDGER_SECTION_IDS)).max(5).optional(),
+  })
+  .default({});
 
 function daysBetween(a: string, b: string): number {
   const [ay, am, ad] = a.split('-').map(Number) as [number, number, number];
@@ -191,5 +245,160 @@ export async function billingLedgerSectionsRoutes(app: FastifyInstance): Promise
         expose: true,
       });
     }
+  });
+
+  // ─── Control points (TZ §9) ────────────────────────────────────────────────────────────────
+
+  /**
+   * The snapshot summary for a day: per-section reconciliation status counts.
+   *
+   * Reads `ledger_daily_snapshots` — instant, and the ONLY place the nightly job's work is exposed.
+   * `computedFor` is echoed so a stale cache is labelled rather than silently served as today's truth.
+   */
+  app.get('/billing/ledger/summary', guard, async (request) => {
+    requireLedgerRead(request);
+    const q = summaryQuery.parse(request.query);
+    const asOfDate = q.asOfDate ?? ledgerToday();
+    const [counts, latest] = await Promise.all([
+      ledgerSnapshotRepo.statusCounts(asOfDate, q.section),
+      ledgerSnapshotRepo.latestComputedDate(),
+    ]);
+
+    const bySection = new Map<string, Record<string, { carriers: number; varianceTotal: number }>>();
+    for (const c of counts) {
+      const bag = bySection.get(c.section) ?? {};
+      bag[c.status] = { carriers: c.carriers, varianceTotal: c.varianceTotal };
+      bySection.set(c.section, bag);
+    }
+
+    return {
+      asOfDate,
+      /** null until the job has ever run. The UI must say "not computed yet", not show zeros. */
+      latestComputedDate: latest,
+      stale: latest !== null && latest < asOfDate,
+      sections: LEDGER_SECTIONS.filter((s) => !q.section || s.id === q.section).map((s) => {
+        const bag = bySection.get(s.id) ?? {};
+        const pick = (k: string): number => bag[k]?.carriers ?? 0;
+        return {
+          section: s.id,
+          label: s.label,
+          clientType: s.clientType,
+          externalSource: s.externalSource,
+          counts: {
+            ok: pick('ok'),
+            variance: pick('variance'),
+            noOpening: pick('no_opening'),
+            sourceUnavailable: pick('source_unavailable'),
+            staleExternal: pick('stale_external'),
+          },
+          varianceTotal: bag['variance']?.varianceTotal ?? 0,
+        };
+      }),
+    };
+  });
+
+  /** The variance queue for a day — worst first. This is the work list the module produces. */
+  app.get('/billing/ledger/variances', guard, async (request) => {
+    requireLedgerRead(request);
+    const q = varianceQuery.parse(request.query);
+    const asOfDate = q.asOfDate ?? ledgerToday();
+    const statuses = (q.status ? [q.status] : ['variance', 'source_unavailable', 'stale_external']) as LedgerSnapshotStatus[];
+    const { rows, total } = await ledgerSnapshotRepo.listByStatus({
+      asOfDate,
+      section: q.section,
+      statuses,
+      limit: q.limit,
+      offset: (q.page - 1) * q.limit,
+    });
+    return {
+      asOfDate,
+      rows: rows.map((r) => ({
+        carrierId: r.carrierId,
+        section: r.section,
+        clientType: r.clientType,
+        opening: r.opening === null ? null : Number(r.opening),
+        debit: Number(r.debit),
+        credit: Number(r.credit),
+        closing: r.closing === null ? null : Number(r.closing),
+        externalValue: r.externalValue === null ? null : Number(r.externalValue),
+        externalSource: r.externalSource,
+        variance: r.variance === null ? null : Number(r.variance),
+        status: r.status,
+        computedAt: r.computedAt.toISOString(),
+      })),
+      total,
+      page: q.page,
+      limit: q.limit,
+      hasMore: (q.page - 1) * q.limit + rows.length < total,
+    };
+  });
+
+  /** AR aging — the TZ's buckets plus `current` and `no_due_date` (see arRules.ts for why). */
+  app.get('/billing/ledger/aging/ar', guard, async (request) => {
+    requireLedgerRead(request);
+    return arAging();
+  });
+
+  /**
+   * Spend that should already have been invoiced — the Unbilled control point. Flagged per carrier
+   * against that carrier's own last invoiced-through date, not calendar arithmetic on billing_cycle.
+   */
+  app.get('/billing/ledger/aging/unbilled', guard, async (request) => {
+    requireLedgerRead(request);
+    const q = agingListQuery.parse(request.query);
+    const rows = await unbilledOverCycle(q.limit);
+    return {
+      rows,
+      total: rows.length,
+      totalAmount: Math.round(rows.reduce((n, r) => n + r.amount, 0) * 100) / 100,
+    };
+  });
+
+  /** Un Top-Upped aging — the TZ's 24-hour alarm on money received but not yet loaded. */
+  app.get('/billing/ledger/aging/untopped', guard, async (request) => {
+    requireLedgerRead(request);
+    return untoppedAging();
+  });
+
+  /** The top-level control sum. Ships the CMP-internal leg only — see aging.ts for why. */
+  app.get('/billing/ledger/control-sums', guard, async (request) => {
+    requireLedgerRead(request);
+    const q = controlQuery.parse(request.query);
+    const endDate = q.endDate ?? ledgerToday();
+    const startDate = q.startDate ?? shiftYmd(endDate, -6);
+    assertPeriod(startDate, endDate);
+    return {
+      period: { startDate, endDate },
+      checks: await controlSums({ startDate, endDateExclusive: shiftYmd(endDate, 1) }),
+    };
+  });
+
+  /**
+   * Queue a snapshot recompute. Write-gated because it consumes DWH capacity and rewrites a day's
+   * reconciliation status.
+   *
+   * Enqueues directly rather than through `triggerCatalogJob`, which is admin-only — a billing agent
+   * with write access should be able to recompute their own day.
+   */
+  app.post('/billing/ledger/recompute', guard, async (request) => {
+    const ctx = requireLedgerWrite(request);
+    const b = recomputeBody.parse(request.body ?? {});
+    const asOfDate = b.asOfDate ?? ledgerToday();
+    if (asOfDate > ledgerToday()) {
+      throw new ValidationError('Cannot recompute a future day.', { code: 'LEDGER_RECOMPUTE_FUTURE' });
+    }
+    const jobId = await enqueue(billingLedgerSnapshotJob, {
+      asOfDate,
+      trigger: 'manual',
+      ...(b.sections?.length ? { sections: b.sections } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'billing.ledger.recompute',
+      status: 'ok',
+      resourceType: 'ledger_daily_snapshot',
+      resourceId: asOfDate,
+      detail: { asOfDate, sections: b.sections ?? null, jobId },
+    });
+    return { jobId, asOfDate, queue: billingLedgerSnapshotJob.name };
   });
 }

@@ -729,6 +729,13 @@
       "when": 1785709075951,
       "tag": "0103_ledger_core",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1785712675951,
+      "tag": "0104_ledger_daily_snapshots",
+      "breakpoints": true
     }
   ]
 }

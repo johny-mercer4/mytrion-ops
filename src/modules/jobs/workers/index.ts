@@ -18,10 +18,12 @@ import {
   kpiSalesMonthCloseJob,
   kpiSalesReconcileJob,
   salesBocaRequestJob,
+  billingLedgerSnapshotJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
+import { runBillingLedgerSnapshot } from './billingLedger.js';
 import { runReferralBonusCalc } from './referralBonusCalc.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
 import { notificationDispatchJob, notificationPollJob, statementWeeklyJob } from '../catalog.js';
@@ -68,6 +70,13 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     const handler = makeAutomationHandler(spec);
     await boss.work(spec.queue, { batchSize: 1 }, async () => handler());
   }
+
+  await boss.work(billingLedgerSnapshotJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    const payload = billingLedgerSnapshotJob.schema.parse(job.data ?? {});
+    return runBillingLedgerSnapshot(payload);
+  });
 
   await boss.work(referralBonusCalcJob.name, { batchSize: 1 }, async (jobs) => {
     const job = jobs[0];

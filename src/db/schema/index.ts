@@ -75,3 +75,4 @@ export * from './maintenance_case_history.js';
 export * from './ledger_opening_balances.js';
 export * from './ledger_client_type_overrides.js';
 export * from './ledger_import_batches.js';
+export * from './ledger_daily_snapshots.js';

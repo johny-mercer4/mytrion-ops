@@ -558,6 +558,43 @@ export const paymentTransactionRepo = {
     return out;
   },
 
+  /**
+   * Unapplied, unreturned payments with their age in hours — the rows behind the Un Top-Upped 24-hour
+   * alarm (TZ §5.2). Covered by `payment_transactions_mapped_idx` on (is_invoice_mapped, occurred_at),
+   * so no new index is needed.
+   */
+  async unappliedAgeRows(
+    carrierIds?: readonly string[],
+  ): Promise<Array<{ id: number; carrierId: string; amount: number; ageHours: number; occurredAt: Date | null }>> {
+    const conds: SQL[] = [
+      sql`${paymentTransactions.carrierId} is not null`,
+      sql`${paymentTransactions.isInvoiceMapped} = false`,
+      sql`${paymentTransactions.isReturned} = false`,
+      sql`${paymentTransactions.occurredAt} is not null`,
+    ];
+    if (carrierIds?.length) {
+      conds.push(inArray(paymentTransactions.carrierId, [...new Set(carrierIds)]));
+    }
+    const rows = await db
+      .select({
+        id: paymentTransactions.id,
+        carrierId: paymentTransactions.carrierId,
+        amount: paymentTransactions.amount,
+        occurredAt: paymentTransactions.occurredAt,
+        ageHours: sql<string>`(extract(epoch from (now() - ${paymentTransactions.occurredAt})) / 3600)::text`,
+      })
+      .from(paymentTransactions)
+      .where(and(...conds))
+      .orderBy(paymentTransactions.occurredAt, paymentTransactions.id);
+    return rows.map((r) => ({
+      id: Number(r.id),
+      carrierId: String(r.carrierId),
+      amount: Number(r.amount) || 0,
+      ageHours: Number(r.ageHours) || 0,
+      occurredAt: r.occurredAt,
+    }));
+  },
+
   /** Format money for callers building NewPaymentTransaction rows. */
   money,
 };
