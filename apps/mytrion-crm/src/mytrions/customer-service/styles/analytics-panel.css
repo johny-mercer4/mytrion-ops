@@ -40,6 +40,12 @@
     box-shadow: none;
 }
 
+/* Windows dark mode leaves native <option> rows unstyled (near-invisible) without this. */
+.cs-root .cs-an-range-select option {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
 /* ── Custom date range ───────────────────────────────────────────────────────
    The rail the "Custom Range…" option reveals. This one component has no widget
    ancestor to port, so it's written in the Horizon language directly (--hz-* glass +

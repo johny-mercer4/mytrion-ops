@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
+import { lookupUsers } from '@/api/cs';
 import { CitiModal } from './CitiModal';
 import type { UserContext } from '../../context/userContext';
 
@@ -38,8 +39,10 @@ function renderCreate(user: UserContext) {
       <CitiModal client={null} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} notify={vi.fn()} />
     </div>,
   );
-  // Two user lookups render (Agent, Owner); Owner is the second combobox of that pair.
-  return () => screen.getAllByRole('combobox').at(-1) as HTMLSelectElement;
+  // Two user lookups render (Agent, Owner); Owner is the second combobox of that pair. Both are now
+  // SearchableSelect's filter <input>, not a native <select> — its displayed value is the resolved
+  // NAME, not the underlying id.
+  return () => screen.getAllByRole('combobox').at(-1) as HTMLInputElement;
 }
 
 const verified: UserContext = {
@@ -54,20 +57,20 @@ describe('CitiModal — Owner on create', () => {
   it('defaults Owner to the signed-in worker', async () => {
     const owner = renderCreate(verified);
 
-    await waitFor(() => expect(owner().value).toBe('4582000000123456'));
-    // The roster arrived, so the label comes from it rather than the out-of-roster fallback.
-    expect(owner().selectedOptions[0]?.textContent).toBe('Shohruh A');
+    // The roster arrived, so the id resolves to its name via the roster entry.
+    await waitFor(() => expect(lookupUsers).toHaveBeenCalled());
+    await waitFor(() => expect(owner().value).toBe('Shohruh A'));
   });
 
   it('shows the worker by name before the roster arrives, so the field is never a bare id', async () => {
     const owner = renderCreate(verified);
 
-    // Synchronous first paint — lookupUsers() has not resolved yet, so this is the session-seeded
-    // out-of-roster option rather than a roster entry.
-    expect(owner().value).toBe('4582000000123456');
-    expect(owner().selectedOptions[0]?.textContent).toBe('Shohruh A');
+    // Synchronous first paint — lookupUsers() has not resolved yet, so this reads from the
+    // session-seeded out-of-roster fallback rather than a roster entry, but never as a bare id.
+    expect(owner().value).toBe('Shohruh A');
     // Let the roster land inside act() so the pending state update isn't reported as a leak.
-    await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(3));
+    await waitFor(() => expect(lookupUsers).toHaveBeenCalled());
+    expect(owner().value).toBe('Shohruh A');
   });
 
   it('leaves Owner blank for an untrusted (dev-mock) session — its id is not a CRM user', async () => {
@@ -79,7 +82,7 @@ describe('CitiModal — Owner on create', () => {
       trusted: false,
     });
 
-    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThan(2));
     expect(owner().value).toBe('');
+    await waitFor(() => expect(lookupUsers).toHaveBeenCalled());
   });
 });

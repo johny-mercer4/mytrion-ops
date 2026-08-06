@@ -522,6 +522,15 @@
     box-shadow: var(--hz-glass-inset);
 }
 
+/* Native <option> rows render in the OS's own popup, not this glass surface — it ignores
+   backdrop-filter/translucency, so without an explicit opaque background+color Windows dark mode
+   falls back to near-invisible pale-on-pale text. */
+.cs-root .cs-form-input option,
+.cs-root .cs-form-select option {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
 /* ── Badges ──────────────────────────────────────────────────────────────── */
 .cs-root .cs-badge {
     backdrop-filter: blur(var(--hz-blur-sm));
