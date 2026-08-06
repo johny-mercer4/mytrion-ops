@@ -188,6 +188,11 @@
 .bm-root .rt-toolbar,
 .bm-root .pp-toolbar,
 .bm-root .tx-toolbar,
+.bm-root .lg-toolbar,
+.bm-root .lg-subnav,
+.bm-root .lg-period-bar,
+.bm-root .lg-filter-bar,
+.bm-root .lg-preview-wrap,
 .bm-root .dc-panel > .bm-table-wrap {
     background: var(--hz-pane);
     backdrop-filter: blur(var(--hz-blur-md));

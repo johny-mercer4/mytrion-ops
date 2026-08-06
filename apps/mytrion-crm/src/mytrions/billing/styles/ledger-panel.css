@@ -1,0 +1,766 @@
+/* Billing Ledger panel — the AR accounting module (TZ §5).
+   Every selector is scoped `.bm-root .bm-ledger-panel` so nothing leaks into the other billing
+   panels. Zero hardcoded colors: only the semantic tokens from shared-theme.css, so light mode is
+   free. `--bm-*` tokens do not exist in this design system.
+   The generic primitives this panel reuses (db-kpi-card, db-content-area, db-list-header,
+   db-row-item, db-search-wrap, bm-modal-*, chase-*) are glassed by bm-horizon-panels.css by class
+   NAME, so reusing them inherits the whole Horizon look without a line here. */
+
+/* ── Sign colors. Panel-scoped because prepay-panel.css scopes its own copies to
+   .bm-prepay-panel, so an unscoped .text-warning would never reach us. ── */
+.bm-root .bm-ledger-panel .text-danger  { color: var(--danger-text); }
+.bm-root .bm-ledger-panel .text-warning { color: var(--warning-text); }
+.bm-root .bm-ledger-panel .text-success { color: var(--success-text); }
+.bm-root .bm-ledger-panel .text-info    { color: var(--billing-accent); }
+
+/* ═══ Sub-nav ═══════════════════════════════════════════════════════════════
+   Horizontal + grouped. The shell already owns the left rail, so the prototype's
+   second vertical rail is not portable; groups keep the LOC/Prepay split legible. */
+.bm-root .lg-subnav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 1.25rem;
+    padding: 0.75rem 0.875rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.bm-root .lg-subnav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+}
+
+.bm-root .lg-subnav-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.bm-root .lg-subnav-btns { display: flex; gap: 0.25rem; }
+
+.bm-root .lg-subnav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.bm-root .lg-subnav-btn:hover:not(:disabled) {
+    background: var(--accent-bg-subtle);
+    color: var(--text-primary);
+    border-color: var(--accent-border);
+}
+
+.bm-root .lg-subnav-btn-active,
+.bm-root .lg-subnav-btn-active:hover:not(:disabled) {
+    background: var(--accent-bg-strong);
+    border-color: var(--accent-border-strong);
+    color: var(--accent-on);
+    font-weight: 600;
+}
+
+.bm-root .lg-subnav-btn-parked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.bm-root .lg-subnav-soon {
+    font-size: 0.5625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-full);
+    background: var(--muted-bg);
+    color: var(--text-muted);
+}
+
+/* ═══ Period bar ════════════════════════════════════════════════════════════ */
+.bm-root .lg-period-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.7rem 0.875rem;
+    margin-bottom: 0.625rem;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--billing-accent);
+    border-radius: var(--radius-md);
+}
+
+/* A dirty draft must not read as "these are the current figures". */
+.bm-root .lg-period-bar.lg-period-dirty {
+    border-left-color: var(--warning-text);
+}
+
+.bm-root .lg-period-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-period-input {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-primary);
+    color-scheme: dark;
+}
+
+.bm-root.light-mode .lg-period-input { color-scheme: light; }
+
+.bm-root .lg-period-input:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -1px;
+}
+
+.bm-root .lg-period-dash { color: var(--text-muted); }
+
+.bm-root .lg-period-apply {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.9rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    cursor: pointer;
+}
+
+.bm-root .lg-period-apply:disabled { opacity: 0.45; cursor: not-allowed; }
+.bm-root .lg-period-apply:not(:disabled):hover { filter: brightness(1.08); }
+
+.bm-root .lg-period-hint {
+    margin-left: auto;
+    max-width: 30rem;
+    font-size: 0.6875rem;
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-period-dirty .lg-period-hint { color: var(--warning-text); font-style: normal; }
+
+/* ═══ Filter bar ════════════════════════════════════════════════════════════ */
+.bm-root .lg-filter-bar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+    padding: 0.7rem 0.875rem;
+    margin-bottom: 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.bm-root .lg-filter-field { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.bm-root .lg-filter-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-filter-field input {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    min-width: 8.5rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.bm-root .lg-filter-field input::placeholder { color: var(--text-muted); opacity: 0.7; }
+
+.bm-root .lg-filter-field input:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -1px;
+}
+
+.bm-root .lg-filter-clear,
+.bm-root .lg-filter-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+}
+
+.bm-root .lg-filter-clear {
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.bm-root .lg-filter-clear:hover { background: var(--surface-alt); color: var(--text-primary); }
+
+.bm-root .lg-filter-hint {
+    margin-left: auto;
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+/* ═══ Toolbar ═══════════════════════════════════════════════════════════════ */
+.bm-root .lg-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+    padding: 0.7rem 0.875rem;
+    margin-bottom: 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.bm-root .lg-toolbar .db-search-wrap { flex: 1 1 16rem; min-width: 12rem; }
+
+/* ═══ Coverage KPIs ═════════════════════════════════════════════════════════ */
+.bm-root .bm-ledger-panel .lg-kpi-of {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.bm-root .bm-ledger-panel .lg-kpi-sub {
+    margin-top: 0.2rem;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-exclusion-note {
+    margin: -0.375rem 0 0.75rem;
+    font-size: 0.6875rem;
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-readonly-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-sm);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    font-size: 0.75rem;
+}
+
+/* ═══ Opening-balances table ════════════════════════════════════════════════
+   Reuses db-content-area / db-list-header / db-row-item and re-flexes the shared
+   db-col-* bases, the same way prepay-panel.css and returns-panel.css do. */
+.bm-root .bm-ledger-panel .db-col-carrier { flex: 0 0 88px; }
+.bm-root .bm-ledger-panel .db-col-company { flex: 1.4 1 0; min-width: 0; }
+
+.bm-root .bm-ledger-panel .lg-col-amt {
+    flex: 0 0 108px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.1rem;
+    text-align: right;
+}
+
+.bm-root .bm-ledger-panel .lg-col-meta {
+    flex: 0 0 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.bm-root .bm-ledger-panel .lg-openings-header .lg-col-amt { align-items: flex-end; }
+
+/* Rows carry a second line (as-of / actor), so they run taller than the 46px the shared
+   `contain-intrinsic-size` assumes for content-visibility. Correct it here or the scrollbar
+   geometry drifts on a long list. */
+.bm-root .bm-ledger-panel .db-row-item { contain-intrinsic-size: 0 62px; }
+
+.bm-root .bm-ledger-panel .lg-openings-row { align-items: center; }
+
+.bm-root .lg-amt-static {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.bm-root .lg-amt-asof {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.bm-root .lg-meta-when { font-size: 0.6875rem; color: var(--text-secondary); }
+.bm-root .lg-meta-who  { font-size: 0.625rem;  color: var(--text-muted); }
+
+.bm-root .lg-row-history {
+    align-self: center;
+    margin-right: 0.5rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.bm-root .lg-row-history:hover {
+    background: var(--accent-bg-subtle);
+    color: var(--accent-on);
+    border-color: var(--accent-border);
+}
+
+.bm-root .lg-list-caption {
+    margin-top: 0.625rem;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+/* ═══ Pills / tags ══════════════════════════════════════════════════════════ */
+.bm-root .lg-type-pill {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: var(--radius-full);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.5625rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.bm-root .lg-type-loc {
+    background: var(--accent-bg);
+    color: var(--accent-on);
+    border: 1px solid var(--accent-border);
+}
+
+.bm-root .lg-type-prepay {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid var(--success-border);
+}
+
+.bm-root .lg-override-tag,
+.bm-root .lg-cycle-tag,
+.bm-root .lg-inactive-tag,
+.bm-root .lg-batch-tag,
+.bm-root .lg-live-tag,
+.bm-root .lg-changed-tag,
+.bm-root .lg-saved-tag {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+    border-radius: var(--radius-full);
+    font-size: 0.5625rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.bm-root .lg-override-tag { background: var(--purple-bg);  color: var(--purple-text); }
+.bm-root .lg-cycle-tag    { background: var(--muted-bg);   color: var(--text-secondary); text-transform: none; }
+.bm-root .lg-inactive-tag { background: var(--muted-bg);   color: var(--text-muted); }
+.bm-root .lg-batch-tag    { background: var(--accent-bg-subtle); color: var(--accent-on); margin-left: 0.3rem; }
+.bm-root .lg-live-tag     { background: var(--success-bg); color: var(--success-text); }
+.bm-root .lg-changed-tag  { background: var(--warning-bg); color: var(--warning-text); margin-left: 0.4rem; }
+
+.bm-root .lg-saved-tag {
+    margin-left: 0.4rem;
+    background: none;
+    color: var(--text-muted);
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ═══ Manual-entry modal ════════════════════════════════════════════════════ */
+.bm-root .lg-inline-progress {
+    padding: 0.4rem 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.bm-root .lg-carrier-card {
+    padding: 0.625rem 0.75rem;
+    margin: 0.25rem 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-alt);
+}
+
+.bm-root .lg-carrier-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.bm-root .lg-carrier-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.3rem;
+}
+
+.bm-root .lg-carrier-meta .lg-type-pill { margin-left: 0; }
+
+.bm-root .lg-openings-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.bm-root .lg-opening-field { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.bm-root .lg-field-hint {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-footer-note {
+    margin-right: auto;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-modal-note {
+    margin: 0.875rem 0 0;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* ═══ Preview / history table ═══════════════════════════════════════════════
+   A real <table> here on purpose: dense, fixed-column, sticky header, horizontal
+   scroll — the .pl-table profile, cloned scoped rather than reused (pl-table is
+   scoped to .bm-prepay-panel). */
+.bm-root .lg-preview-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.bm-root .lg-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.bm-root .lg-preview-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.5rem 0.625rem;
+    text-align: left;
+    white-space: nowrap;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border);
+}
+
+.bm-root .lg-preview-table th.lg-th-num,
+.bm-root .lg-preview-table td.lg-td-num {
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.bm-root .lg-preview-table td {
+    padding: 0.5rem 0.625rem;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.bm-root .lg-preview-table tbody tr:last-child td { border-bottom: none; }
+.bm-root .lg-preview-table tbody tr:nth-child(even) { background: var(--surface-alt); }
+
+/* A superseded revision is history, not current — dimmed so the live row reads first. */
+.bm-root .lg-preview-table tr.lg-row--superseded td { opacity: 0.62; }
+
+.bm-root .lg-revert-btn {
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-sm);
+    background: var(--accent-bg-subtle);
+    color: var(--accent-on);
+    font-size: 0.625rem;
+    cursor: pointer;
+}
+
+.bm-root .lg-revert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ═══ Responsive ════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+    .bm-root .lg-subnav { gap: 0.875rem; }
+    .bm-root .lg-period-hint,
+    .bm-root .lg-filter-hint { margin-left: 0; width: 100%; max-width: none; }
+}
+
+@media (max-width: 760px) {
+    /* Amount columns cannot all fit — let the row wrap into a card, the returns-panel recipe. */
+    .bm-root .bm-ledger-panel .lg-openings-header { display: none; }
+    .bm-root .bm-ledger-panel .lg-openings-row { flex-wrap: wrap; gap: 0.375rem 0.75rem; }
+    .bm-root .bm-ledger-panel .db-col-carrier,
+    .bm-root .bm-ledger-panel .db-col-company { flex: 0 0 auto; }
+    .bm-root .bm-ledger-panel .lg-col-amt { flex: 0 0 auto; align-items: flex-start; text-align: left; }
+    .bm-root .bm-ledger-panel .lg-col-meta { flex: 1 1 100%; }
+    .bm-root .bm-ledger-panel .db-row-item { contain-intrinsic-size: 0 120px; }
+}
+
+/* ═══ Bulk import modal ═════════════════════════════════════════════════════
+   Numbered steps, because the flow (template → fill → upload → review → apply)
+   is not guessable and an agent runs it once per section. */
+.bm-root .lg-import-step {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.bm-root .lg-import-step:last-of-type { border-bottom: none; }
+
+.bm-root .lg-step-num {
+    flex: 0 0 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    background: var(--accent-bg);
+    color: var(--accent-on);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.bm-root .lg-step-body { flex: 1; min-width: 0; }
+
+.bm-root .lg-step-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.bm-root .lg-step-hint {
+    margin-top: 0.2rem;
+    font-size: 0.6875rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.bm-root .lg-step-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+}
+
+/* ── Dropzone ── */
+.bm-root .lg-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.625rem;
+    padding: 1.25rem 1rem;
+    border: 1px dashed var(--border-dark);
+    border-radius: var(--radius-md);
+    background: var(--surface-alt);
+    color: var(--text-muted);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.bm-root .lg-dropzone:hover,
+.bm-root .lg-dropzone:focus-visible {
+    border-color: var(--accent-border-strong);
+    background: var(--accent-bg-subtle);
+    color: var(--accent-on);
+    outline: none;
+}
+
+.bm-root .lg-dropzone--on {
+    border-color: var(--billing-accent);
+    border-style: solid;
+    background: var(--accent-bg);
+    color: var(--accent-on);
+}
+
+.bm-root .lg-drop-title { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+.bm-root .lg-drop-hint  { font-size: 0.6875rem; }
+
+.bm-root .lg-file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.bm-root .lg-file-pill {
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface-alt);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+}
+
+/* Inline, not a second panel loader — CLAUDE.md rule 10. */
+.bm-root .lg-progress {
+    margin-top: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    border-left: 2px solid var(--billing-accent);
+    background: var(--accent-bg-subtle);
+    border-radius: var(--radius-xs);
+    font-size: 0.75rem;
+    color: var(--accent-on);
+}
+
+/* ── Summary strip + tabs ── */
+.bm-root .lg-summary-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.625rem 0;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-alt);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .lg-sum-ok    { color: var(--success-text); font-weight: 600; }
+.bm-root .lg-sum-bad   { color: var(--danger-text);  font-weight: 600; }
+.bm-root .lg-sum-warn  { color: var(--warning-text); font-weight: 600; }
+.bm-root .lg-sum-muted { color: var(--text-muted); }
+.bm-root .lg-sum-sep   { color: var(--border-dark); }
+
+.bm-root .lg-tabs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.bm-root .lg-tab {
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    cursor: pointer;
+}
+
+.bm-root .lg-tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.bm-root .lg-tab:not(:disabled):hover {
+    background: var(--accent-bg-subtle);
+    border-color: var(--accent-border);
+}
+
+.bm-root .lg-tab-active,
+.bm-root .lg-tab-active:not(:disabled):hover {
+    background: var(--accent-bg-strong);
+    border-color: var(--accent-border-strong);
+    color: var(--accent-on);
+    font-weight: 600;
+}
+
+/* ── Preview row states ── */
+.bm-root .lg-preview-table tr.lg-row--rejected td { background: var(--danger-bg); }
+.bm-root .lg-preview-table tr.lg-row--changed td  { background: var(--warning-bg); }
+
+.bm-root .lg-preview-table td.lg-td-empty {
+    padding: 1.25rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.bm-root .lg-cell-delta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+/* Reasons wrap — a row can carry several, and truncating them costs an upload cycle. */
+.bm-root .lg-row-reasons {
+    margin-top: 0.2rem;
+    max-width: 22rem;
+    font-size: 0.625rem;
+    line-height: 1.45;
+    color: var(--danger-text);
+    white-space: normal;
+}
+
+.bm-root .lg-preview-table tr:not(.lg-row--rejected) .lg-row-reasons { color: var(--text-muted); }
+
+.bm-root .lg-pill-ok,
+.bm-root .lg-pill-bad,
+.bm-root .lg-pill-warn,
+.bm-root .lg-pill-muted {
+    display: inline-block;
+    padding: 0.08rem 0.4rem;
+    border-radius: var(--radius-full);
+    font-size: 0.5625rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.bm-root .lg-pill-ok    { background: var(--success-bg); color: var(--success-text); }
+.bm-root .lg-pill-bad   { background: var(--danger-bg);  color: var(--danger-text); }
+.bm-root .lg-pill-warn  { background: var(--warning-bg); color: var(--warning-text); }
+.bm-root .lg-pill-muted { background: var(--muted-bg);   color: var(--text-muted); }
+
+@media (max-width: 700px) {
+    .bm-root .lg-import-step { flex-direction: column; gap: 0.4rem; }
+    .bm-root .lg-row-reasons { max-width: none; }
+}

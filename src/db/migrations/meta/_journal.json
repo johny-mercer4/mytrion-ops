@@ -722,6 +722,13 @@
       "when": 1785705475951,
       "tag": "0102_maintenance_case_history",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1785709075951,
+      "tag": "0103_ledger_core",
+      "breakpoints": true
     }
   ]
 }

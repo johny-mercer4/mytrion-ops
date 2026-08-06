@@ -3,8 +3,29 @@
  * pins departmentAccess to ['billing'] (the generic client defaults to sales); the deal-billing
  * edit is a REST write that carries the legacy department header. Mirrors api/cs.ts.
  */
-import { request } from './transport';
+import { request, requestBlob, requestMultipart } from './transport';
 import { callTouchpoint } from './touchpoints';
+import type {
+  CarrierOpeningsResponse,
+  ClientTypeBookResponse,
+  ClientTypeOverrideResult,
+  ClientTypeOverrideWire,
+  ClientTypeResolution,
+  LedgerClientType,
+  LedgerImportBatchSummaryWire,
+  LedgerImportChangeKind,
+  LedgerImportCommitResult,
+  LedgerImportPreviewResponse,
+  LedgerImportRowsPage,
+  LedgerImportVerdict,
+  LedgerSectionId,
+  LedgerSectionsResponse,
+  OpeningBalancesPage,
+  OpeningCoverageResponse,
+  OpeningHistoryResponse,
+  OpeningRevertResult,
+  OpeningUpsertResult,
+} from './ledgerTypes';
 import type {
   BillingFuzzyResult,
   BillingInvoicesResult,
@@ -254,4 +275,205 @@ export function broadcastMapping(payload: MappingBroadcast): void {
     headers: BILLING_HEADERS,
     body: payload,
   }).catch(() => undefined);
+}
+
+// ---- Billing Ledger (/v1/billing/ledger/*) ----
+// Reads and writes for the AR accounting module. Unlike the mapping writes above, these THROW an
+// ApiError on failure instead of returning a `{status:'error'}` envelope — the ledger is new, so it
+// uses the modern convention rather than the legacy widget-parity one. See api/ledgerTypes.ts.
+
+/** The section catalog. Drives the Ledger sub-nav so the client keeps no parallel list. */
+export function fetchLedgerSections(): Promise<LedgerSectionsResponse> {
+  return billingGet('/billing/ledger/sections');
+}
+
+/** Saved opening balances (live revisions only), paged. */
+export function fetchOpeningBalances(
+  page: number,
+  limit: number,
+  filters: { section?: LedgerSectionId; carrierId?: string } = {},
+): Promise<OpeningBalancesPage> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.section) qs.set('section', filters.section);
+  if (filters.carrierId) qs.set('carrierId', filters.carrierId);
+  return billingGet(`/billing/ledger/opening-balances?${qs.toString()}`);
+}
+
+/**
+ * One carrier's identity + live openings — the manual-entry lookup. Resolves (never throws) for an
+ * unknown or out-of-scope carrier: `found:false` plus a `reason` the modal turns into a message.
+ */
+export function fetchCarrierOpenings(carrierId: string): Promise<CarrierOpeningsResponse> {
+  return billingGet(`/billing/ledger/opening-balances/${encodeURIComponent(carrierId)}`);
+}
+
+export function fetchOpeningHistory(
+  carrierId: string,
+  section?: LedgerSectionId,
+): Promise<OpeningHistoryResponse> {
+  const qs = section ? `?section=${encodeURIComponent(section)}` : '';
+  return billingGet(`/billing/ledger/opening-balances/${encodeURIComponent(carrierId)}/history${qs}`);
+}
+
+/** Migration progress per section (recorded vs eligible carriers). */
+export function fetchOpeningCoverage(): Promise<OpeningCoverageResponse> {
+  return billingGet('/billing/ledger/opening-balances-coverage');
+}
+
+/**
+ * Save one opening balance. `expectedRevisionId` is the live revision the agent was looking at —
+ * the server 409s (`LEDGER_OB_STALE`) rather than overwriting someone else's correction.
+ */
+export function saveOpeningBalance(body: {
+  carrierId: string;
+  section: LedgerSectionId;
+  asOfDate: string;
+  amount: number;
+  note?: string;
+  expectedRevisionId?: string | null;
+}): Promise<OpeningUpsertResult> {
+  return request('POST', '/billing/ledger/opening-balances', {
+    headers: BILLING_HEADERS,
+    body,
+  }) as Promise<OpeningUpsertResult>;
+}
+
+/** Restore a superseded revision as a NEW revision (never un-supersedes in place). */
+export function revertOpeningBalance(revisionId: string): Promise<OpeningRevertResult> {
+  return request('POST', `/billing/ledger/opening-balances/${encodeURIComponent(revisionId)}/revert`, {
+    headers: BILLING_HEADERS,
+  }) as Promise<OpeningRevertResult>;
+}
+
+/** Resolved client type for one carrier (LOC/Prepay, DWH value vs override, WEX flag). */
+export function fetchClientType(carrierId: string): Promise<ClientTypeResolution> {
+  return billingGet(`/billing/ledger/client-types?carrierId=${encodeURIComponent(carrierId)}`);
+}
+
+/** The whole in-scope book, with the counts of what was excluded and why. */
+export function fetchClientTypeBook(): Promise<ClientTypeBookResponse> {
+  return billingGet('/billing/ledger/client-types');
+}
+
+export function saveClientTypeOverride(
+  carrierId: string,
+  body: { clientType: LedgerClientType; reason: string; effectiveFrom?: string },
+): Promise<ClientTypeOverrideResult> {
+  return request('POST', `/billing/ledger/client-types/${encodeURIComponent(carrierId)}`, {
+    headers: BILLING_HEADERS,
+    body,
+  }) as Promise<ClientTypeOverrideResult>;
+}
+
+/** Drop the override — the carrier reverts to DWH truth. */
+export function clearClientTypeOverride(carrierId: string): Promise<{ cleared: ClientTypeOverrideWire }> {
+  return request('DELETE', `/billing/ledger/client-types/${encodeURIComponent(carrierId)}`, {
+    headers: BILLING_HEADERS,
+  }) as Promise<{ cleared: ClientTypeOverrideWire }>;
+}
+
+// ---- Ledger: Excel template + bulk import ----
+
+/** Download a URL as a file, reusing the transport's auth + 401-refresh via requestBlob. */
+async function downloadBlob(path: string, fallbackName: string): Promise<void> {
+  const blob = await requestBlob(path, { headers: BILLING_HEADERS });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/**
+ * The fill-in template for one section. Built server-side so the importer parses exactly what the
+ * template emits — see src/modules/billing/ledger/excelTemplate.ts.
+ */
+export function downloadOpeningTemplate(
+  section: LedgerSectionId,
+  includeCarriers: 'all' | 'missing' | 'with-value' = 'missing',
+): Promise<void> {
+  const qs = new URLSearchParams({ section, includeCarriers });
+  return downloadBlob(
+    `/billing/ledger/opening-balances/template?${qs.toString()}`,
+    `opening-balances-${section}.xlsx`,
+  );
+}
+
+/** Export the balances already saved. */
+export function downloadOpeningExport(section?: LedgerSectionId): Promise<void> {
+  const qs = section ? `?section=${encodeURIComponent(section)}` : '';
+  return downloadBlob(
+    `/billing/ledger/opening-balances/export${qs}`,
+    'opening-balances-saved.xlsx',
+  );
+}
+
+/** The rejected rows, annotated with a Reason column — how a large file actually gets fixed. */
+export function downloadRejectedRows(batchId: string): Promise<void> {
+  return downloadBlob(
+    `/billing/ledger/opening-balances/import/${encodeURIComponent(batchId)}/rejected.xlsx`,
+    'opening-balances-rejected.xlsx',
+  );
+}
+
+/** Upload for validation. Writes NOTHING — returns a batchId plus the summary. */
+export function previewOpeningImport(file: File): Promise<LedgerImportPreviewResponse> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return requestMultipart('/billing/ledger/opening-balances/import/preview', form, {
+    headers: BILLING_HEADERS,
+  }) as Promise<LedgerImportPreviewResponse>;
+}
+
+/** Page the stored per-row verdicts. */
+export function fetchOpeningImportRows(
+  batchId: string,
+  page: number,
+  limit: number,
+  filters: { verdict?: LedgerImportVerdict; changeKind?: LedgerImportChangeKind } = {},
+): Promise<LedgerImportRowsPage> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.verdict) qs.set('verdict', filters.verdict);
+  if (filters.changeKind) qs.set('changeKind', filters.changeKind);
+  return billingGet(
+    `/billing/ledger/opening-balances/import/${encodeURIComponent(batchId)}?${qs.toString()}`,
+  );
+}
+
+/**
+ * Apply the previewed rows. Sends only the batchId — never the rows, so a client cannot write values
+ * the validator never saw. `acknowledgeChanged` is required when the batch would overwrite existing
+ * balances.
+ */
+export function commitOpeningImport(
+  batchId: string,
+  acknowledgeChanged: boolean,
+): Promise<LedgerImportCommitResult> {
+  return request('POST', `/billing/ledger/opening-balances/import/${encodeURIComponent(batchId)}/commit`, {
+    headers: BILLING_HEADERS,
+    body: { acknowledgeChanged },
+  }) as Promise<LedgerImportCommitResult>;
+}
+
+export function discardOpeningImport(batchId: string): Promise<{ batchId: string; status: string }> {
+  return request('POST', `/billing/ledger/opening-balances/import/${encodeURIComponent(batchId)}/discard`, {
+    headers: BILLING_HEADERS,
+  }) as Promise<{ batchId: string; status: string }>;
+}
+
+/** Undo a committed batch. Refuses when later changes have replaced everything it wrote. */
+export function revertOpeningImport(
+  batchId: string,
+): Promise<{ batchId: string; restored: number; cleared: number }> {
+  return request('POST', `/billing/ledger/opening-balances/import/${encodeURIComponent(batchId)}/revert`, {
+    headers: BILLING_HEADERS,
+  }) as Promise<{ batchId: string; restored: number; cleared: number }>;
+}
+
+/** Recent import batches — the history strip. */
+export function fetchOpeningImports(): Promise<{ batches: LedgerImportBatchSummaryWire[] }> {
+  return billingGet('/billing/ledger/opening-balances/imports');
 }

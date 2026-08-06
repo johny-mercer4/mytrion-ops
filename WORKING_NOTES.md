@@ -11364,3 +11364,62 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+
+---
+
+## 2026-08-06 — Billing Ledger: opening balances + Excel bulk import (M1/M2)
+
+New Billing Mytrion tab implementing the billing department's AR-accounting spec (`mytrion_TZ`): five
+sub-ledgers, each `Closing = Opening + Debit − Credit`, each reconciled against an independent source.
+This pass lands the schema, the client-type scope resolver, the opening-balance surface (the launch
+requirement — migrating accumulated balances out of CMP) and the Excel bulk path. Compute, the five
+section tables, the drill-down and the nightly snapshot job follow.
+
+### Decisions worth not re-litigating
+
+- **`endDate` is INCLUSIVE on every `/billing/ledger/*` endpoint.** Billing is inconsistent today (list
+  endpoints exclusive, `/billing/prepay/ledger` inclusive — which is why `Prepay.tsx:961` shifts back a
+  day). The ledger takes what the agent typed and converts once, in the route layer. Frontend routes all
+  conversion through `toWireRange()` so it cannot drift per call site.
+- **Reporting day is `America/Chicago`.** Both feeds that define Customer Balance are CT and ops' prepay
+  numbers already bucket CT, so Billing's two screens agree. servercrm's own ledger buckets New York and
+  will differ by up to a day at the boundary — expected, not a bug.
+- **`opening = null` when none is recorded — never coerced to 0.** Zero is a claim the carrier had no
+  position at inception; null is "we don't know". Coercing produces a confidently-wrong Closing that
+  lands in the variance queue instead of the migration backlog.
+- **Opening balances are append-only with supersede**, one live row per (carrier, section). Mutating one
+  retroactively rewrites every statement that section ever produced. The chain (`supersedes_id` +
+  `import_batch_id`) IS the import revert journal, so no `bulk_change_log` analogue was needed.
+- **Errors are thrown `AppError`s**, not the `{status:'error'}` widget-parity envelope — that exists in
+  `billing.routes.ts` for the legacy zoho-octane widget, and the Ledger has no legacy twin. The one
+  exception: import preview/commit return per-row verdicts in a 200/201 body, because a partly-valid
+  spreadsheet is a *successful* preview and rejected rows are data.
+- **The Excel template is generated server-side** so the importer parses exactly what the template emits.
+- **`POST`, not `PUT`,** for the two upserts: `PUT` is used by no route in this repo and the frontend's
+  `request()` transport does not accept the verb.
+
+### Traps found the hard way (all verified live against the DWH)
+
+- **`octane.dim_company.is_active` is `integer`, not `boolean`** — unlike its `is_*` siblings
+  `is_wex_funded` / `is_debtor` / `is_loc_suspended`, which are real booleans. A strict `=== true`
+  silently excluded EVERY typed carrier (eligible read 0 instead of 2,847). Read through `truthy()`.
+- **`cmp_transaction.invoice_ref` is NOT an invoice FK and NOT an "invoiced yet" flag.** Joining it to
+  `cmp_invoice.id` matches 41% of rows but the carrier ids agree only 20 times in 32,094 — numeric
+  collision. And it is populated on 100% of transactions in every week including the current one. Attribute
+  a transaction to an invoice by `carrier_id` + `transaction_date ∈ [invoice.date_from, invoice.date_to)`
+  instead: 83.7% attributed in a test week, and the unattributed remainder IS the unbilled set.
+- **`db:generate` cannot be used here.** The snapshot in `meta/` is stale against several teams' schema
+  files, so it emits their pending drift (`mytrion_thread_*`, `mytrion_tickets`, `mytrion_escalations`, a
+  `file_assets` column) mixed into whatever you added. `0103_ledger_core.sql` is hand-written and
+  idempotent, and the three `ledger_*` files are deliberately absent from `drizzle.config.ts` — same as
+  `maintenance_case_attachments` / `maintenance_case_history` / `verification_sales_responses`.
+- **Reverting an import whose rows were all superseded by later activity** used to report success with
+  `restored 0` while changing nothing. Now refuses with `LEDGER_IMPORT_SUPERSEDED`, because an agent told
+  "reverted" will believe the old numbers are back.
+
+### Scope, measured 2026-08-06
+
+8,145 dim_company carriers → **2,160 LOC + 687 Prepay = 2,847 in ledger scope**. Excluded: 32 WEX-Funded
+(TZ §5.3), 4,998 with no `payment_terms` (the `financeClients.ts:42` ~62% comment still holds), 268
+inactive. **`Deposit` has zero rows**, so the Deposit→Prepay normalization is currently inert — kept
+because the value is live in Zoho's picklist.

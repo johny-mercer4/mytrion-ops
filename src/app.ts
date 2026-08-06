@@ -60,6 +60,8 @@ import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
+import { billingLedgerRoutes } from './routes/v1/billingLedger.routes.js';
+import { billingLedgerImportRoutes } from './routes/v1/billingLedgerImport.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
@@ -439,6 +441,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(csMaintenanceRoutes);
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
+      await v1.register(billingLedgerRoutes);
+      await v1.register(billingLedgerImportRoutes);
       await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
