@@ -11711,3 +11711,35 @@ Verified: backend typecheck + lint clean, 71/71 manager tests (50 new EFS); CRM 
 448/448 (6 new URL-state tests); vendored `app/` rebuilt.
 NOT verified: no write has ever been sent to EFS — every action schema is read off the vendor doc,
 not off a successful call. Expect to re-diff bodies during arming. No UI screenshots (no browser).
+
+### 2026-08-06 (same day) — EFS roster 500, and the slow Tasks block
+
+**EFS Console `/v1/manager/efs/clients` 500'd on the default view.** `listEfsRoster` added the
+search predicate only when a search term was present but bound `[like, digits]` unconditionally, so
+an unfiltered roster handed Postgres two parameters for a statement referencing none
+(`bind message supplies 2 parameters, but prepared statement requires 0`). The default view — the
+one every user hits first — was the only one that failed. The predicate is now always present and
+null-guarded (`$1::text IS NULL OR …`), so the bind count is constant. Verified against the DWH:
+6/6 filter combinations, 8,155 clients, 110–800ms.
+
+**Tasks block was slow on an EMPTY desk.** Measured, not guessed:
+- `listManagerAssignees('sales')` **2681ms**, `('billing')` **4866ms** (Zoho directory resolve)
+- `listTypes` 559ms
+- each of the four task-list queries ~555ms; four concurrent = **2650ms wall** under pool contention
+
+Three causes, three fixes:
+1. **Four queries → two.** New `workerTaskRepo.deskCounts` answers the desk-wide status counts AND
+   the filter-matching total from ONE `FILTER` scan, and `openLoadByAssignee` is skipped entirely
+   when nothing is open. An empty desk no longer pays ~2.2s of DB time to be told it is empty.
+   **2650ms → 538ms.**
+2. **Roster cached per desk**, module-scoped so it survives navigating away and back. It is 2.7–4.9s
+   and its answer changes on the timescale of HR changes, not page views. It was already off the
+   critical path; now it usually does not happen at all.
+3. **The block renders immediately.** Header, metric strip and filters paint at zero instead of
+   sitting behind a full-block skeleton — on a desk with no assignments those zeros are the true and
+   final answer, and a skeleton over them promises content that never arrives. Only the board waits,
+   via the new `TasksBoardSkeleton`.
+
+Note the CRM `tsc` gate is currently red from another engineer's uncommitted work
+(`features/chat/useChat.ts` + new `TurnInspector.*` break `useChat.reducer.test.ts` types). My files
+typecheck clean; the vendored bundle was built with `vite build` directly to get around their gate.

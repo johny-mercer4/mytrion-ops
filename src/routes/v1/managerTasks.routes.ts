@@ -134,28 +134,24 @@ export async function managerTasksRoutes(app: FastifyInstance): Promise<void> {
         ...(query.q ? { search: query.q } : {}),
       };
       /*
-       * Three reads, deliberately:
-       *   tasks    the page
-       *   total    how many match the SAME filter (so the pager is honest)
-       *   counts   status totals for the whole desk, IGNORING status/priority/search
+       * TWO round trips, not four. A prod DB round trip is ~550ms, so the old four-way fan-out
+       * charged an EMPTY desk ~2.2s of database time to report that it is empty.
+       *   tasks       the page
+       *   deskCounts  desk-wide status totals AND the filter-matching total, from one FILTER scan
        *
-       * `counts` must not follow the status filter — the board's column headers and its metric
-       * strip are the thing you use to decide which status to filter BY, so narrowing them to the
-       * current filter would zero every column except the one you are looking at.
+       * The per-assignee load is a third query, so it is skipped entirely when nothing is open —
+       * on an empty desk there is no workload to describe.
        */
-      const [tasks, total, counts, load] = await Promise.all([
+      const [tasks, summary] = await Promise.all([
         workerTaskRepo.list(ctx, { ...filter, limit, offset }),
-        workerTaskRepo.countMatching(ctx, filter),
-        workerTaskRepo.countByStatusForDepartment(
-          ctx,
-          department,
-          query.assigneeZohoUserId || undefined,
-        ),
-        workerTaskRepo.openLoadByAssignee(ctx, department),
+        workerTaskRepo.deskCounts(ctx, department, filter),
       ]);
+      const active = summary.counts.open + summary.counts.in_progress;
+      const load = active > 0 ? await workerTaskRepo.openLoadByAssignee(ctx, department) : [];
+      const total = summary.matching;
       return {
         tasks: tasks.map((task) => taskDto(task)),
-        counts,
+        counts: summary.counts,
         load,
         pagination: { limit, offset, total, hasMore: offset + tasks.length < total },
       };

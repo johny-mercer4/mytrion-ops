@@ -142,6 +142,37 @@ export function LoyaltySkeleton({ cards = 9 }: { cards?: number }) {
  */
 const TASK_COLUMN_CARDS = [3, 2, 3, 1];
 
+/**
+ * The BOARD only — used while the task list loads under chrome that is already real.
+ *
+ * The block's header, metric strip and filters render immediately at zero rather than behind a
+ * placeholder: on a desk with no assignments those zeros are the true and final answer, and a
+ * skeleton over them is a promise of content that never arrives. Only the board, which genuinely
+ * does not know yet whether it has cards, waits.
+ */
+export function TasksBoardSkeleton() {
+  return (
+    <div className="mg-tk-board" role="status" aria-busy="true" aria-label="Loading assignments">
+      {TASK_COLUMN_CARDS.map((cards, col) => (
+        <div key={col} className="mg-tk-col" aria-hidden="true">
+          <div className="mg-tk-col-head">
+            <div className="mg-sk-col">
+              <Bar w="78px" h="12px" delay={(col % 3) as 0 | 1 | 2} />
+              <Bar w="62px" h="9px" delay={(col % 3) as 0 | 1 | 2} />
+            </div>
+            <Bar w="30px" h="22px" line={false} delay={(col % 3) as 0 | 1 | 2} />
+          </div>
+          <div className="mg-tk-col-body">
+            {Array.from({ length: cards }, (_, card) => (
+              <Block key={card} h="86px" delay={(card % 3) as 0 | 1 | 2} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function TasksSkeleton() {
   return (
     <div

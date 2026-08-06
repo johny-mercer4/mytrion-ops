@@ -108,8 +108,19 @@ export async function listEfsRoster(
   const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
   const offset = Math.max(filter.offset ?? 0, 0);
 
-  const where: string[] = ['carrier_id IS NOT NULL'];
-  if (like) where.push(`(company_name ILIKE $1 OR ($2::text IS NOT NULL AND carrier_id::text LIKE $2 || '%'))`);
+  /*
+   * The search predicate is ALWAYS present and always references both placeholders, guarded by
+   * `$1::text IS NULL`. Adding it conditionally meant an unfiltered roster bound two parameters to
+   * a statement that referenced none, which Postgres rejects outright ("bind message supplies 2
+   * parameters, but prepared statement requires 0") — so the default view, the one every user hits
+   * first, was the one that 500'd.
+   */
+  const where: string[] = [
+    'carrier_id IS NOT NULL',
+    `($1::text IS NULL
+        OR company_name ILIKE $1
+        OR ($2::text IS NOT NULL AND carrier_id::text LIKE $2 || '%'))`,
+  ];
   if (status === 'active') where.push('is_active = 1');
   if (status === 'inactive') where.push('coalesce(is_active, 0) <> 1');
   if (status === 'debtor') where.push('is_debtor IS TRUE');

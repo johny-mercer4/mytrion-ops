@@ -29,6 +29,7 @@ vi.mock('../../src/repos/workerTaskRepo.js', async (importOriginal) => {
       isTypeAllowed: vi.fn(),
       list: vi.fn(),
       countMatching: vi.fn(),
+      deskCounts: vi.fn(),
       countByStatusForDepartment: vi.fn(),
       openLoadByAssignee: vi.fn(),
       findById: vi.fn(),
@@ -115,11 +116,10 @@ beforeEach(() => {
   repo.listTypes.mockResolvedValue([]);
   repo.list.mockResolvedValue([]);
   repo.countMatching.mockResolvedValue(0);
-  repo.countByStatusForDepartment.mockResolvedValue({
-    open: 0,
-    in_progress: 0,
-    completed: 0,
-    cancelled: 0,
+  // One FILTER scan now answers both the desk-wide status counts and the filter-matching total.
+  repo.deskCounts.mockResolvedValue({
+    counts: { open: 0, in_progress: 0, completed: 0, cancelled: 0 },
+    matching: 0,
   });
   repo.openLoadByAssignee.mockResolvedValue([]);
   assertAssignee.mockResolvedValue(undefined);
@@ -185,13 +185,11 @@ describe('Sales goes through the same generic route as every other desk', () => 
 
   it('returns desk-wide counts and an honest total alongside the page', async () => {
     repo.list.mockResolvedValue([task(), task({ id: 'mwt_2' })] as never);
-    repo.countMatching.mockResolvedValue(37);
-    repo.countByStatusForDepartment.mockResolvedValue({
-      open: 12,
-      in_progress: 5,
-      completed: 20,
-      cancelled: 0,
+    repo.deskCounts.mockResolvedValue({
+      counts: { open: 12, in_progress: 5, completed: 20, cancelled: 0 },
+      matching: 37,
     });
+    repo.openLoadByAssignee.mockResolvedValue([]);
     const token = await managerToken();
     const res = await app.inject({
       method: 'GET',
@@ -217,10 +215,12 @@ describe('Sales goes through the same generic route as every other desk', () => 
       expect.anything(),
       expect.objectContaining({ status: 'open' }),
     );
-    expect(repo.countByStatusForDepartment).toHaveBeenCalledWith(
+    // deskCounts receives the department plus the filter; it ignores status/priority/search when
+    // computing the per-status totals, which is what keeps the other columns non-zero.
+    expect(repo.deskCounts).toHaveBeenCalledWith(
       expect.anything(),
       'sales',
-      undefined,
+      expect.objectContaining({ status: 'open' }),
     );
   });
 

@@ -149,6 +149,56 @@ export const workerTaskRepo = {
     return Number(rows[0]?.n ?? 0);
   },
 
+  /**
+   * The board's numbers in ONE round trip: desk-wide status counts AND the count matching the
+   * caller's filter.
+   *
+   * These used to be two queries plus a third for per-assignee load. A single round trip to the
+   * prod DB costs ~550ms, so a desk with ZERO tasks paid ~2.2s of database time to be told it has
+   * nothing — which is exactly what made an empty Tasks block feel broken. `FILTER` answers both
+   * from one scan.
+   *
+   * The status counts deliberately ignore status/priority/search — they are what you read to decide
+   * what to filter BY. Only the assignee filter narrows them, because "this agent's board" is a
+   * different board rather than a filtered view of the same one.
+   */
+  async deskCounts(
+    ctx: TenantContext,
+    department: string,
+    filter: ListWorkerTaskFilter = {},
+  ): Promise<{ counts: Record<WorkerTaskStatus, number>; matching: number }> {
+    const scope = [
+      eq(mytrionWorkerTasks.tenantId, ctx.tenantId),
+      eq(mytrionWorkerTasks.department, department),
+    ];
+    if (filter.assigneeZohoUserId) {
+      scope.push(eq(mytrionWorkerTasks.assigneeZohoUserId, filter.assigneeZohoUserId));
+    }
+    const matching = and(...listClauses(ctx, { ...filter, department }));
+
+    const rows = await db
+      .select({
+        open: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'open')::int`,
+        inProgress: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'in_progress')::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'completed')::int`,
+        cancelled: sql<number>`count(*) FILTER (WHERE ${mytrionWorkerTasks.status} = 'cancelled')::int`,
+        matching: sql<number>`count(*) FILTER (WHERE ${matching})::int`,
+      })
+      .from(mytrionWorkerTasks)
+      .where(and(...scope));
+
+    const row = rows[0];
+    return {
+      counts: {
+        open: Number(row?.open ?? 0),
+        in_progress: Number(row?.inProgress ?? 0),
+        completed: Number(row?.completed ?? 0),
+        cancelled: Number(row?.cancelled ?? 0),
+      },
+      matching: Number(row?.matching ?? 0),
+    };
+  },
+
   async countByStatus(
     ctx: TenantContext,
     assigneeZohoUserId: string,

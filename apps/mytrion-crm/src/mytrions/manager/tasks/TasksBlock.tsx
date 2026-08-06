@@ -42,12 +42,22 @@ import {
   isOverdue,
   priorityTone,
 } from './taskModel';
-import { TasksSkeleton } from '../ManagerSkeletons';
+import { TasksBoardSkeleton } from '../ManagerSkeletons';
 import './tasksBlock.css';
 
 const MIME = 'application/x-mytrion-task-id';
 const PAGE_SIZE = 200;
 const EMPTY_COUNTS: ManagerTaskCounts = { open: 0, in_progress: 0, completed: 0, cancelled: 0 };
+
+/**
+ * Per-desk roster cache, module-scoped so it survives navigating between departments and back.
+ * The underlying call is 2.7–4.9s and its answer changes on the timescale of HR changes, not of
+ * a page view.
+ */
+const rosterCache = new Map<
+  ManagerTaskDepartment,
+  { workers: ManagerAssigneeDto[]; types: TaskTypeDto[] }
+>();
 
 export function TasksBlock({
   department,
@@ -87,18 +97,31 @@ export function TasksBlock({
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  /** The roster and type catalog change rarely; they load once per desk, not per filter change. */
+  /**
+   * The roster and type catalog change rarely and are SLOW — `listManagerAssignees` measured
+   * 2.7s for Sales and 4.9s for Billing (it resolves the Zoho user directory). They are therefore
+   * cached per desk for the session and, critically, are NOT on the board's critical path: the
+   * board renders from the task list alone, and the agent filter and Assign button simply fill in
+   * when the roster lands.
+   */
   useEffect(() => {
     let cancelled = false;
+    const cached = rosterCache.get(department);
+    if (cached) {
+      setWorkers(cached.workers);
+      setTypes(cached.types);
+      return;
+    }
     void Promise.all([listManagerAssignees(department), listManagerDeptTaskTypes(department)])
       .then(([workerRows, typeRows]) => {
+        rosterCache.set(department, { workers: workerRows, types: typeRows });
         if (cancelled) return;
         setWorkers(workerRows);
         setTypes(typeRows);
       })
       .catch(() => {
-        // A failed roster is not a failed board — the task list below still renders and reports
-        // its own error. It only means the assign dialog has nobody to offer.
+        // A failed roster is not a failed board — the task list still renders and reports its own
+        // error. It only means the assign dialog has nobody to offer yet.
         if (!cancelled) setWorkers([]);
       });
     return () => {
@@ -268,10 +291,12 @@ export function TasksBlock({
         </div>
       </header>
 
-      {loading ? (
-        <TasksSkeleton />
-      ) : (
-        <>
+      {/*
+       * The block's own chrome — metrics, filters — renders IMMEDIATELY, at zero, and fills in.
+       * It used to sit behind a full-block skeleton, so a desk with no records still showed a
+       * loading graphic for as long as the round trip took. A block whose numbers are all zero is
+       * a truthful answer; a skeleton is a promise that something is coming.
+       */}
           <div className="mg-tk-metrics">
             <div>
               <span>Active</span>
@@ -373,7 +398,9 @@ export function TasksBlock({
             </div>
           ) : null}
 
-          {!error && tasks.length === 0 ? (
+          {loading ? <TasksBoardSkeleton /> : null}
+
+          {!loading && !error && tasks.length === 0 ? (
             <div className="mg-empty">
               {filtered
                 ? 'No tasks match these filters.'
@@ -381,7 +408,7 @@ export function TasksBlock({
             </div>
           ) : null}
 
-          {!error && tasks.length > 0 ? (
+          {!loading && !error && tasks.length > 0 ? (
             <div className="mg-tk-board">
               {TASK_COLUMNS.map((column) => {
                 const rows = board[column.id];
@@ -473,8 +500,6 @@ export function TasksBlock({
               reach the rest.
             </p>
           ) : null}
-        </>
-      )}
 
       {assignOpen ? (
         <TaskAssignModal
