@@ -161,6 +161,7 @@ import { resetRateBucketsForTests } from '../../src/modules/security/rateBucket.
 import { buildCardLookupReport } from '../../src/modules/carrier/cardLookupReport.js';
 import { fetchAgentClients, type AgentClientRow } from '../../src/integrations/dwhClientRoster.js';
 import { salesAgentMiniAppRepo } from '../../src/repos/salesAgentMiniAppRepo.js';
+import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 
 const inviteRepo = vi.mocked(carrierInvitationRepo);
 const registrationRepo = vi.mocked(registeredMiniAppCompanyRepo);
@@ -173,6 +174,7 @@ const efs = vi.mocked(efsWrapper);
 const cardLookupReport = vi.mocked(buildCardLookupReport);
 const agentClients = vi.mocked(fetchAgentClients);
 const agentMiniAppRepo = vi.mocked(salesAgentMiniAppRepo);
+const auditLog = vi.mocked(auditFromContext);
 
 let app: FastifyInstance;
 
@@ -354,6 +356,26 @@ function salesAgentClient(overrides: Partial<AgentClientRow> = {}): AgentClientR
     gallonsPrevMonth: 450,
     inNetworkGallonsPrevMonth: 425,
     activeCardsPrevMonth: 3,
+    ...overrides,
+  };
+}
+
+function managerInviteDto(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'inv_mgr',
+    profile: 'manager' as const,
+    carrierId: '5758544',
+    applicationId: 'APP-9',
+    companyName: 'Acme Transport LLC',
+    cardId: null,
+    driverName: 'Ops Manager',
+    companyType: 'fleet-manager' as const,
+    cardCount: null,
+    agentName: 'Rep Riley',
+    agentZohoUserId: '777',
+    status: 'pending' as const,
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    createdAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -623,6 +645,60 @@ describe('Sales-agent mini-app portfolio and selected-company scope', () => {
     expect(crm.getCarrierBalance).toHaveBeenCalledWith('5758544');
   });
 
+  it('creates a manager link for an assigned fleet before its owner registers', async () => {
+    agentMiniAppRepo.findPrincipalByTelegramUserId.mockResolvedValueOnce(salesAgentPrincipal());
+    agentClients.mockResolvedValueOnce([salesAgentClient()]);
+    registrationRepo.findActiveOwnerByCarrier.mockResolvedValueOnce(undefined);
+    inviteRepo.create.mockResolvedValueOnce(managerInviteDto());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'x-mini-app-carrier-id': '5758544' },
+      payload: { initData: 'signed', name: 'Ops Manager' },
+    });
+
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.json()).toMatchObject({ invite: { id: 'inv_mgr' } });
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({
+      profile: 'manager',
+      carrierId: '5758544',
+      companyName: 'Acme Transport LLC',
+      driverName: 'Ops Manager',
+      agentName: 'Rep Riley',
+      agentZohoUserId: '777',
+    });
+    expect(registrationRepo.findActiveOwnerByCarrier).not.toHaveBeenCalled();
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'sales_agent' }),
+      expect.objectContaining({
+        action: 'mini_app.manager_invite.create',
+        detail: expect.objectContaining({
+          carrierId: '5758544',
+          invitedBy: 'sales_agent',
+        }),
+      }),
+    );
+  });
+
+  it('does not create a manager link for a company outside the Sales live portfolio', async () => {
+    agentMiniAppRepo.findPrincipalByTelegramUserId.mockResolvedValueOnce(salesAgentPrincipal());
+    agentClients.mockResolvedValueOnce([
+      salesAgentClient({ carrierId: '5760000', companyName: 'Assigned Co' }),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'x-mini-app-carrier-id': '5758544' },
+      payload: { initData: 'signed', name: 'Ops Manager' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'SALES_AGENT_COMPANY_DENIED' } });
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
   it('denies a selected company when it is a debtor even if it remains active in Sales', async () => {
     agentMiniAppRepo.findPrincipalByTelegramUserId.mockResolvedValueOnce(salesAgentPrincipal());
     agentClients.mockResolvedValueOnce([
@@ -745,26 +821,6 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   function managerReg(overrides: Record<string, unknown> = {}) {
     // A manager carries fleet-manager companyType (inviteService pins it) — owner-equivalent everywhere.
     return registrationRow({ profile: 'manager', telegramUsername: 'ops_manager', ...overrides });
-  }
-
-  function managerInviteDto(overrides: Record<string, unknown> = {}) {
-    return {
-      id: 'inv_mgr',
-      profile: 'manager' as const,
-      carrierId: '5758544',
-      applicationId: 'APP-9',
-      companyName: 'Acme Transport LLC',
-      cardId: null,
-      driverName: null,
-      companyType: 'fleet-manager' as const,
-      cardCount: null,
-      agentName: 'Rep Riley',
-      agentZohoUserId: '777',
-      status: 'pending' as const,
-      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-      createdAt: new Date().toISOString(),
-      ...overrides,
-    };
   }
 
   it('grants a manager the owner-only money views (invoices) — owner-equivalent', async () => {

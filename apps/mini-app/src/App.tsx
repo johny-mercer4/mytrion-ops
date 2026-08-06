@@ -74,6 +74,7 @@ import {
 import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
+import { migrateSalesAgentPinned } from './lib/salesAgentCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
 import { Toast, type ToastKind, type ToastState } from './components/Toast';
 import { TabBar, TABS as HOME_TABS, type HomeTab } from './screens/TabBar';
@@ -235,7 +236,8 @@ function loadStoredPinned(isSalesAgent = false): string[] | null {
     const raw = localStorage.getItem(isSalesAgent ? SALES_AGENT_PINNED_KEY : PINNED_KEY);
     if (!raw) return null;
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : null;
+    if (!Array.isArray(arr) || !arr.every((key) => typeof key === 'string')) return null;
+    return isSalesAgent ? migrateSalesAgentPinned(arr) : arr;
   } catch {
     return null;
   }
@@ -1350,9 +1352,9 @@ function OverrideBanner({ until, onExpire }: { until: number; onExpire: () => vo
 }
 
 /**
- * Manager invite — a company-level access grant, shown on Home above the fleet card for a
- * fleet-manager owner/manager (never an owner-operator: they run a single truck alone). Each tap of
- * Generate mints a fresh, independent invite link, so a company can add as many managers as it needs.
+ * Manager invite — a company-level access grant shown to Sales while onboarding a fleet company.
+ * Owner/manager self-service remains hidden behind MANAGER_INVITE_UI. Each tap of Generate mints a
+ * fresh independent link, including when the selected company has no registered owner yet.
  */
 function ManagerInviteCard({
   onCreate,
@@ -1614,12 +1616,10 @@ function Home({
         </div>
       </div>
 
-      {/* Manager INVITE is disabled (owner decision 2026-07-22): managers are onboarded by Octane
-          agents, and the backend route is flag-gated off (MANAGER_INVITES_DISABLED) — hiding the
-          card here is UX, not the gate. The ROSTER (list + revoke) stays: seeing and removing
-          who has company access is an owner's right regardless of who created the access.
-          Flip MANAGER_INVITE_UI back to true together with FF_MINIAPP_MANAGER_INVITES_ENABLED. */}
-      {MANAGER_INVITE_UI && session.isFleetManager && !session.isSalesAgent && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+      {/* Customer self-service stays disabled (owner decision 2026-07-22), but Sales is the approved
+          onboarding path and can create a manager link for its selected active company. Backend
+          scope/capability checks remain authoritative; this condition is only presentation. */}
+      {session.isFleetManager && (session.isSalesAgent || MANAGER_INVITE_UI) && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
       {session.isFleetManager && !session.isSalesAgent && <ManagersList initData={initData} />}
 
       {/* manage fleet */}
@@ -4522,14 +4522,19 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
-  /** Mint a manager registration link — a colleague with owner-equivalent access. Carrier-level, so
-   *  no card; the backend binds it to this session's own carrier and carries the name onto the
-   *  registration. Returns the link to reveal + copy; throws so the caller can surface an error. */
+  /** Mint a manager registration link. For Sales, the API client carries the selected carrier and
+   *  the backend revalidates it against the live roster; no registered owner is required. */
   async function createManagerLink(name: string): Promise<{ inviteUrl: string; expiresAt: string }> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await createManagerInvite(wa.initData, name);
-    haptic('success');
-    return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+    try {
+      const res = await createManagerInvite(wa.initData, name);
+      haptic('success');
+      return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+    } catch (error) {
+      haptic('error');
+      showToast(error instanceof ApiError ? error.message : t('error.reason'), 'error');
+      throw error;
+    }
   }
 
   async function renameDriverName(cardId: string, driverName: string): Promise<void> {

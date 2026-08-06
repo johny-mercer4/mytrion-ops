@@ -57,7 +57,9 @@ export function ServicesTab({
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: '0 2px' }}>{t(g.groupLabelKey)}</div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 20, padding: '0 15px' }}>
             {g.items.map((it) => {
-              const soon = !it.action;
+              const previewOnly = it.previewOnly === true;
+              const soon = !it.action && !previewOnly;
+              const disabled = !it.action;
               const isPinned = pinned.includes(it.key);
               return (
                 <div
@@ -69,7 +71,7 @@ export function ServicesTab({
                     gap: 14,
                     padding: '16px 0',
                     borderTop: '1px solid var(--border)',
-                    cursor: soon ? 'default' : 'pointer',
+                    cursor: disabled ? 'default' : 'pointer',
                   }}
                 >
                   <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
@@ -77,7 +79,8 @@ export function ServicesTab({
                   </span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
                   {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('services.soon')}</span>}
-                  {!soon && (
+                  {previewOnly && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--link-accent)', background: 'color-mix(in srgb, var(--link-accent) 12%, transparent)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('agent.readOnly')}</span>}
+                  {!disabled && (
                     <button
                       type="button"
                       className="press"
