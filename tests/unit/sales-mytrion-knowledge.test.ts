@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildSalesMytrionCatalog } from '../../src/modules/knowledge/salesMytrionCatalog.js';
-import { SALES_AUTOMATION_KNOWLEDGE } from '../../src/modules/knowledge/salesMytrionAutomations.js';
+import {
+  SALES_AUTOMATION_KNOWLEDGE,
+  SALES_AUTOMATION_SECTIONS,
+} from '../../src/modules/knowledge/salesMytrionAutomations.js';
 
 interface FrontendAutomation {
   id: string;
   title: string;
   codes: string[];
+  dept: string;
 }
 
 function frontendAutomations(): FrontendAutomation[] {
@@ -15,25 +19,68 @@ function frontendAutomations(): FrontendAutomation[] {
     'utf8',
   );
   const list = source.match(/export const AUTO_LIST[\s\S]*?\n\];/)?.[0] ?? '';
-  return [...list.matchAll(/\{ id: '([^']+)', title: '([^']+)', codes: \[([^\]]*)\]/g)].map(
-    ([, id = '', title = '', rawCodes = '']) => ({
-      id,
-      title,
-      codes: [...rawCodes.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? ''),
-    }),
-  );
+  return [
+    ...list.matchAll(
+      /\{ id: '([^']+)', title: '([^']+)', codes: \[([^\]]*)\], dept: '([^']+)'/g,
+    ),
+  ].map(([, id = '', title = '', rawCodes = '', dept = '']) => ({
+    id,
+    title,
+    codes: [...rawCodes.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? ''),
+    dept,
+  }));
 }
 
 describe('Sales Mytrion governed self-knowledge', () => {
-  it('covers every live Automation id, title, and service code', () => {
+  it('covers every live Automation id, title, service code, and catalog section', () => {
     const frontend = frontendAutomations();
-    const governed = SALES_AUTOMATION_KNOWLEDGE.map(({ id, title, codes }) => ({
+    const governed = SALES_AUTOMATION_KNOWLEDGE.map(({ id, title, codes, dept }) => ({
       id,
       title,
       codes: [...codes],
+      dept,
     }));
     expect(frontend).toHaveLength(23);
     expect(governed).toEqual(frontend);
+  });
+
+  it('mirrors the frontend section labels and tells the reader which section a block sits in', () => {
+    const source = readFileSync(
+      new URL(
+        '../../apps/mytrion-crm/src/mytrions/sales/redesign/autoCatalogOrder.ts',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    const live = Object.fromEntries(
+      [...source.matchAll(/\{ code: '([CQVM])', label: '([^']+)'/g)].map(([, code = '', label = '']) => [
+        code,
+        label,
+      ]),
+    );
+    expect(live).toEqual(SALES_AUTOMATION_SECTIONS);
+
+    const docs = buildSalesMytrionCatalog().filter(
+      (doc) => doc.metadata['kind'] === 'sales-automation',
+    );
+    const activation = docs.find((doc) => doc.metadata['automationId'] === 'card-activation');
+    expect(activation?.content).toMatch(/Catalog section: Customer Service/);
+    expect(activation?.metadata['section']).toBe('Customer Service');
+    const balance = docs.find((doc) => doc.metadata['automationId'] === 'balance');
+    expect(balance?.content).toMatch(/Catalog section: Billing/);
+    expect(docs.every((doc) => /Catalog section: (Customer Service|Billing)/.test(doc.content))).toBe(
+      true,
+    );
+  });
+
+  it('explains catalog search, section grouping, and per-device reorder', () => {
+    const guide = buildSalesMytrionCatalog().find(
+      (doc) => doc.metadata['kind'] === 'sales-automations-guide',
+    );
+    expect(guide?.content).toMatch(/matches the block title, its description text and its service codes/);
+    expect(guide?.content).toMatch(/Customer Service \(C codes\) and Billing \(Q codes\)/);
+    expect(guide?.content).toMatch(/an empty section is hidden/);
+    expect(guide?.content).toMatch(/saved per agent on that device only/);
   });
 
   it('emits one deterministic, Sales-scoped document for every Automation', () => {

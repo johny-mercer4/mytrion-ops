@@ -12202,3 +12202,80 @@ unnamed 10). Not the cause here, but worth watching — several of those are not
 
 NOT changed: nothing about the merge or the migrations was rolled back, because nothing was wrong
 with them. A redeploy should now succeed; if the DB is mid-restart it will wait rather than fail.
+
+## 2026-08-07 — Sales self-knowledge: made it actually reachable (branch `feature/AIChat`)
+
+Picked up the Sales Mytrion self-knowledge work. The catalog content from `733c3651` was accurate —
+all 23 automation ids/titles/codes and every action verb match the live `AUTO_LIST`, and
+`fraud.hold_release` really is a *request* that routes to the fraud team, as documented. What was
+missing was everything between "the documents exist" and "Horizon answers from them".
+
+### The corpus was gated off, not just unsynced
+
+`FF_PLATFORM_KNOWLEDGE` defaults to `'0'` and was **not set in `.env`**. The Sales catalog ingests
+with `domain: 'platform'`, and with the flag off:
+
+- `knowledge/agentic/loop.ts` hard-scopes retrieval to `{ domains: ['operations'] }` — every Sales
+  document is invisible on the agentic path;
+- `jobs/workers/platformKnowledgeSync.ts` returns `{ skipped: true }`, so the nightly sync never runs.
+
+It only *appeared* to work because `FF_RAG_V2_RETRIEVAL` is also unset, so `buildScopedRagTool`
+falls through to legacy `retrieve()`, which has no domain filter. Turning on V2 retrieval without
+also turning on platform knowledge would silently hide the whole corpus again. Set
+`FF_PLATFORM_KNOWLEDGE=1` in `.env`; **it still needs setting on Render.**
+
+### Two live router bugs that broke the exact brief scenario
+
+`chatService.retrieveGrounding` uses `agenticRetrieve` whenever `FF_RAG_ENABLED && FF_AGENTIC_RAG`
+— both on — so `router.ts` decides real turns today.
+
+1. **A how-to naming an entity was routed to a live tool.** `TOOL_AGGREGATE` matches `clients?` /
+   `invoices?` and `LIVE_SCOPE` matches `my` / `carrier`, so *"How do I activate a card for my
+   client?"* and *"how do I request invoices for a carrier"* both returned
+   `route=tool, passages=0, notDocumented=true` — Horizon told the user it wasn't documented. Added
+   a `PROCEDURAL` guard (EN/RU/UZ) that wins over `TOOL_AGGREGATE`. Genuine aggregates
+   ("How many cards does my client have?") still route to tools.
+2. **The governed doc lost to a table of contents.** Bare *"how to activate card"* returned
+   `SalesHandbook.md` ×4 — an unverified `operations` handbook about the external EFS/WEX portals,
+   winning on its lexically dense **table of contents**. Sales-Mytrion surfaces, service codes
+   (`C-1`…), and automation action verbs now set `platformPreferred`, which is a hop-1 bias only —
+   the loop still broadens when platform evidence is insufficient.
+
+Golden routing stayed at **280/280 (100%)** across both changes.
+
+### Content gap: the catalog is grouped, and that was undocumented
+
+`autoCatalogOrder.ts` groups blocks into labelled sections — Customer Service (18 blocks, C codes)
+and Billing (5, Q codes); Verification/Management exist in the layout but hold nothing live and are
+hidden when empty. Order is drag-reorderable and saved per agent *per device*. None of that was in
+the knowledge, so "where is Balance Check?" had no answer. Each automation document now carries its
+`Catalog section:` and a `section` metadata field, `dept` is mirrored from the frontend, and the
+guide explains that search matches title + description + codes. The parity test now also asserts
+`dept` and the section labels against `AUTO_CATEGORIES`, so a renamed section fails CI.
+
+### Verified against a real pgvector store, not by inspection
+
+Migrated the local throwaway DB on `:5433` to head (109 migrations, 114 tables) and ran
+`knowledge:sync-platform` against it — **46 docs → 217 chunks, 217/217 embedded**. Then probed the
+real path (`effectiveRetrievalContext(admin, salesAgent)` → `ragScope: ['sales']`) with 12 questions
+on both retrieval paths. After the fixes, card activation, retention generation, Open Pool claiming,
+money code, override-vs-fraud-hold, limits (350), invoices, lead creation and the "which section"
+question all return their own governed document; RU works; the section question resolves.
+
+Gates: typecheck clean, lint 0 errors (23 pre-existing non-null-assertion warnings, none in touched
+files), RBAC leakage 22/22, and 84 knowledge/RAG/agent tests green.
+
+### Known limitation, not papered over
+
+**Uzbek retrieval is weak.** `kartani qanday aktivlashtirish mumkin` peaks at ~0.25 similarity
+against the English documents and the evidence judge flips between `sufficient` and
+`not_documented` across identical runs. This is pre-existing (English corpus + multilingual query),
+not caused by these changes, and it is the next thing to fix if UZ matters — probably UZ/RU aliases
+in the document text rather than a retrieval-tuning change.
+
+### Still required before Admin testing
+
+The prod pgvector store does **not** have the catalog — `.env`'s `MYTRION_OPS_DATABASE_URL` points at
+Render, and the local DB has 0 tenants/users so Admin AI Chat cannot be logged into locally. Testing
+in Admin → Horizon needs `FF_PLATFORM_KNOWLEDGE=1` on Render plus one
+`pnpm knowledge:sync-platform` against prod. Left for an explicit decision — it is a production write.
