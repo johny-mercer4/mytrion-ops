@@ -12512,3 +12512,39 @@ including that `hydrated` on settled state returns the SAME object (no needless 
 
 Gates: frontend 554 passed / 87 files, typecheck clean, bundle rebuilt and verified (opaque
 `background:var(--surface)` at `z-index:60`, header `z-index:3`, "Restoring your conversation").
+
+## 2026-08-08 — Horizon RAG: Phase 0 baseline (measured, not guessed)
+
+Added `scripts/benchSalesChat.ts`: posts four canonical Sales self-knowledge questions at
+`/v1/agent`, then reads back the telemetry the run already writes — `rag_runs` and `llm_calls` — and
+prints wall/LLM/RAG timings, hops, tool calls, grades, models and whether the expected document was
+cited. Local DB on `:5433` (prod Postgres drops connections and corrupts exactly these timings).
+
+**Baseline, 83 MCP tools bound, all flags as found:**
+
+| case | wall | llm calls | llm ms | rag_runs | hops | tools | cited expected |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| card-activation | 13780ms | 2 | 11619 | 0 | 0 | 1 | yes |
+| retention-generation | 11204ms | 2 | 10603 | 0 | 0 | 1 | yes |
+| open-pool-claim | 6584ms | 0 | 0 | 0 | 0 | 0 | **FAILED** |
+| limit-max | 15205ms | 1 | 8290 | 0 | 0 | 0 | **FAILED** |
+
+Mean **11,693ms**. Cost **$0.0537** for four questions. 3/4 cited the right document; **2/4 failed**.
+
+Three things this proves rather than suspects:
+
+1. **The failures are 429s, not network faults.**
+   `429 Rate limit reached for gpt-4o-mini … on tokens per min (TPM): Limit 200000, Used 200000`.
+   Four how-to questions saturated the org's entire per-minute token quota. This is almost certainly
+   what the user's "network error" at +56.4s was too, and what "Mytrion feels unstable" means.
+2. **71,130 input tokens per model call** (avg over 5 calls, max 71,848) — for "how do I activate a
+   card". That is the ~102 tool schemas. Two calls per turn ≈ 142k tokens, so the 200k TPM ceiling
+   allows **~1.4 questions per minute** before failing. Latency, cost and instability are all one
+   root cause.
+3. **`rag_runs` is 0 for every case** — the agentic loop genuinely never executes; only
+   `agenticRetrieve` writes those rows. And every call is `role=answer, model=gpt-4o-mini`, confirming
+   the model collapse: orchestrator, tool selection and answering all on the weakest model.
+
+Note the two successes cited a *neighbouring* doc alongside the right one (Card Deactivation next to
+Card Activation; Transactions Report next to Retention) — the ranking imprecision expected from
+single-shot kNN with no grading or reranking.
