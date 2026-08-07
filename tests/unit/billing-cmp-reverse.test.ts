@@ -49,7 +49,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true });
 
     expect(res).toMatchObject({ ok: true, kind: 'invoice', reversed: entries });
     expect(paths()).toEqual([RESOLVE, REVERSE]);
@@ -62,7 +62,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('reconcile manually');
@@ -75,7 +75,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
 
-    await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, invoiceNumber: 'INV-42' });
+    await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true, invoiceNumber: 'INV-42' });
 
     expect(post.mock.calls[0]?.[1]).toMatchObject({ invoiceNumber: 'INV-42' });
   });
@@ -87,7 +87,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
     );
     const isEntryClaimed = vi.fn().mockResolvedValue(true);
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, isEntryClaimed });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true, isEntryClaimed });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('already attributed');
@@ -101,7 +101,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
       (path === RESOLVE ? { status: 'success', entries } : {}) as never,
     );
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, dryRun: true });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true, dryRun: true });
 
     expect(res).toMatchObject({ ok: true, kind: 'invoice', reversed: entries });
     expect(paths()).toEqual([RESOLVE]); // RESOLVE only — REVERSE is never called
@@ -112,7 +112,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
       (path === RESOLVE ? { status: 'error', message: 'no unambiguous payment' } : {}) as never,
     );
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('no unambiguous payment');
@@ -122,7 +122,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
   it('an ambiguous resolve that returns no entries is a failure, not a no-op', async () => {
     post.mockImplementation(async (path: string) => (path === RESOLVE ? { status: 'success', entries: [] } : {}) as never);
 
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('reconcile manually');
@@ -137,7 +137,7 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
   });
 
   it('refuses to guess for a CRM-Sync mapping — flags it for a human', async () => {
-    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, mappingType: 'CRM-Sync (Invoice)' });
+    const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: true, mappingType: 'CRM-Sync (Invoice)' });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('CRM-Sync');
@@ -145,11 +145,33 @@ describe('reverseMapping — mapped charge with no stored CMP ref', () => {
   });
 
   it('cannot look up a payment without a carrier — says so instead of succeeding', async () => {
-    const res = await reverseMapping({ ...mappedNoRef, carrierId: null, resolveMissingRef: true });
+    const res = await reverseMapping({ ...mappedNoRef, carrierId: null, resolveMissingRef: true, allowCmpLookup: true });
 
     expect(res.ok).toBe(false);
     expect(res.message).toContain('reconcile manually');
     expect(paths()).toEqual([]);
+  });
+
+  // Regression pin (P0): the CMP lookup-by-(carrier, amount, day) path only makes sense for MX,
+  // where the portal auto-applies charges independent of our own mapping — for any other rail it
+  // risks deleting a same-carrier/amount/day payment that belongs to a DIFFERENT transaction (e.g. a
+  // Zelle transfer). `allowCmpLookup` must default to closed even when every other precondition
+  // (resolveMissingRef, carrier, amount, no CRM-Sync mapping) would otherwise let it through.
+  describe('allowCmpLookup gate (default false — the CMP-guess-delete hole)', () => {
+    it('refuses the lookup when allowCmpLookup is omitted, even with carrier+amount+resolveMissingRef all present', async () => {
+      const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true });
+
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('reconcile manually');
+      expect(paths()).toEqual([]); // never calls CMP at all
+    });
+
+    it('refuses the lookup when allowCmpLookup is explicitly false', async () => {
+      const res = await reverseMapping({ ...mappedNoRef, resolveMissingRef: true, allowCmpLookup: false });
+
+      expect(res.ok).toBe(false);
+      expect(paths()).toEqual([]);
+    });
   });
 });
 
@@ -186,10 +208,24 @@ describe('reverseMapping — stored refs still take the direct path', () => {
       carrierId: '5801437',
       amount: 100,
       resolveMissingRef: true,
+      allowCmpLookup: true,
     });
 
     expect(res).toMatchObject({ ok: true, kind: 'invoice', reversed: entries });
     expect(paths()).toEqual([RESOLVE, REVERSE]);
     expect(post.mock.calls[0]?.[1]).toMatchObject({ invoiceNumber: 'OCT-123' });
+  });
+
+  it('an invoice ref missing its paymentId is NOT resolved without allowCmpLookup', async () => {
+    const res = await reverseMapping({
+      cmpRef: { kind: 'invoice', invoiceNumber: 'OCT-123' },
+      carrierId: '5801437',
+      amount: 100,
+      resolveMissingRef: true,
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain('no CMP paymentId to reverse');
+    expect(paths()).toEqual([]);
   });
 });

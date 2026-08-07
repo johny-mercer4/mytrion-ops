@@ -39,6 +39,8 @@ export interface ReturnMatchModalProps {
 }
 
 export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMatchModalProps) {
+  const isStripeDispute = ret.returnType === 'Stripe-Dispute';
+  const railLabel = isStripeDispute ? 'Stripe' : 'MX';
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -48,8 +50,9 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  /* Search MX transactions. Empty query = suggestion mode (server decides: same amount / same
-     customer, on-or-before the return date); a single character is too short to search. */
+  /* Search candidate transactions on the return's own rail (server-derived from returnId — see
+     billing.routes.ts's candidateRailFor). Empty query = suggestion mode (server decides: same
+     amount / same customer, on-or-before the return date); a single character is too short. */
   async function runSearch(rawQuery: string): Promise<void> {
     const q = rawQuery.trim();
     if (q.length === 1 || searching) return;
@@ -59,6 +62,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
     setSelectedId('');
     try {
       const data = await searchReturnCandidates({
+        returnId: ret.recordId,
         query: q,
         amount: String(ret.amount),
         beforeDate: ret.returnDate.slice(0, 10),
@@ -75,10 +79,18 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
     }
   }
 
-  /* Deliberately NO reference prefill: unmatched returns are unmatched BECAUSE the reference lookup
-     already failed — searching it again finds nothing. Open in suggestion mode. */
+  /* MX: deliberately NO reference prefill — unmatched returns are unmatched BECAUSE the reference
+     lookup already failed there, so searching it again finds nothing; open in suggestion mode.
+     Stripe: the reference IS a strong key (the charge's payment-intent id) — the automatic linker
+     only tries an EXACT match, so a looser ilike search here can still surface it (a timing gap, or
+     a near-miss). Prefill and auto-search it when we have one. */
   useEffect(() => {
-    void runSearch('');
+    if (isStripeDispute && ret.referenceNumber) {
+      setQuery(ret.referenceNumber);
+      void runSearch(ret.referenceNumber);
+    } else {
+      void runSearch('');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -147,7 +159,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
             {formatDay(ret.returnDate)}
           </div>
 
-          {/* Search MX transactions */}
+          {/* Search candidate transactions (MX or Stripe — see railLabel above) */}
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <input
               type="text"
@@ -179,7 +191,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
           {/* Results */}
           {searching ? (
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.75rem 0' }}>
-              Searching MX transactions…
+              Searching {railLabel} transactions…
             </div>
           ) : results.length && mode === 'suggest' ? (
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
@@ -187,7 +199,8 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
             </div>
           ) : results.length && mode === 'window' ? (
             <div style={{ fontSize: '0.6875rem', color: 'var(--warning-text, #eab308)', marginBottom: '0.4rem' }}>
-              No amount/customer matches — showing all MX transactions from the 7 days before the return
+              No amount/customer matches — showing all {railLabel} transactions from the{' '}
+              {isStripeDispute ? '180 days' : '7 days'} before the return
             </div>
           ) : null}
 
@@ -263,8 +276,8 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
             </div>
           ) : !searching && searched ? (
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.75rem 0' }}>
-              No MX transactions found — try part of the customer name or the payment id, or clear the box and hit
-              Search for suggestions.
+              No {railLabel} transactions found — try part of the customer name or the payment id, or clear the box
+              and hit Search for suggestions.
             </div>
           ) : null}
 

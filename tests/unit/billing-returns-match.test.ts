@@ -6,17 +6,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../src/lib/errors.js';
-import { assertReturnMatchable } from '../../src/modules/billing/returnsMatch.js';
+import { amountsMatch, assertReturnMatchable } from '../../src/modules/billing/returnsMatch.js';
 
 const ret = (over: Partial<Parameters<typeof assertReturnMatchable>[0]> = {}) => ({
   id: 7,
   matched: false,
   matchedBy: null,
+  source: 'mx-ach',
   ...over,
 });
 const tx = (over: Partial<Parameters<typeof assertReturnMatchable>[1]> = {}) => ({
   id: 99,
   isReturned: false,
+  source: 'mx',
   ...over,
 });
 
@@ -51,5 +53,45 @@ describe('assertReturnMatchable', () => {
     const err = conflict(() => assertReturnMatchable(ret(), tx({ isReturned: true })));
     expect(err.statusCode).toBe(409);
     expect(err.message).toContain('already flagged returned');
+  });
+
+  it('refuses a Stripe dispute matched against an MX transaction', () => {
+    const err = conflict(() => assertReturnMatchable(ret({ source: 'stripe-dispute' }), tx({ source: 'mx' })));
+    expect(err.statusCode).toBe(409);
+    expect(err.message).toContain('wrong payment rail');
+  });
+
+  it('refuses an MX return matched against a Stripe transaction', () => {
+    const err = conflict(() => assertReturnMatchable(ret({ source: 'mx-dispute' }), tx({ source: 'stripe' })));
+    expect(err.statusCode).toBe(409);
+  });
+
+  it('allows a Stripe dispute matched against a Stripe transaction', () => {
+    expect(() => assertReturnMatchable(ret({ source: 'stripe-dispute' }), tx({ source: 'stripe' }))).not.toThrow();
+  });
+
+  it('allows an unknown/legacy return source against any transaction (fail open)', () => {
+    expect(() => assertReturnMatchable(ret({ source: 'legacy' }), tx({ source: 'zelle' }))).not.toThrow();
+  });
+});
+
+describe('amountsMatch', () => {
+  it('matches equal amounts to the cent', () => {
+    expect(amountsMatch('2000.00', 2000)).toBe(true);
+    expect(amountsMatch(1234.5, '1234.50')).toBe(true);
+  });
+
+  it('rejects a partial amount (dispute smaller than the original charge)', () => {
+    expect(amountsMatch(500, 2000)).toBe(false);
+  });
+
+  it('rejects when either side is missing rather than guessing', () => {
+    expect(amountsMatch(null, 2000)).toBe(false);
+    expect(amountsMatch(2000, undefined)).toBe(false);
+    expect(amountsMatch(null, null)).toBe(false);
+  });
+
+  it('rejects a non-numeric amount', () => {
+    expect(amountsMatch('not-a-number', 2000)).toBe(false);
   });
 });

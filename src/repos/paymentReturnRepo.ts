@@ -74,6 +74,43 @@ export const paymentReturnRepo = {
     return rows[0];
   },
 
+  /**
+   * Ingest upsert for a single row whose conflict-update is a no-op once the return is `matched` —
+   * for the Stripe-dispute webhook, whose Zapier feed can resend the same event (a lifecycle email
+   * re-parsed, a Zap retry). Without this guard a redelivery could silently overwrite amount/reason/
+   * date on a return that has ALREADY been matched (and possibly reversed in CMP), leaving the row
+   * describing different money than what was actually deleted. MX's own `upsertMany` is untouched —
+   * it re-syncs continuously from a poller and deliberately never touches match columns either way.
+   */
+  async upsertDisputeUnlessMatched(row: NewPaymentReturn): Promise<PaymentReturn> {
+    await db
+      .insert(paymentReturns)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [paymentReturns.source, paymentReturns.sourceRecordId],
+        set: {
+          returnType: sql`excluded.return_type`,
+          customerName: sql`excluded.customer_name`,
+          referenceNumber: sql`excluded.reference_number`,
+          last4: sql`excluded.last4`,
+          amount: sql`excluded.amount`,
+          returnDate: sql`excluded.return_date`,
+          reason: sql`excluded.reason`,
+          raw: sql`excluded.raw`,
+          updatedAt: sql`now()`,
+        },
+        setWhere: eq(paymentReturns.matched, false),
+      });
+    const rows = await db
+      .select()
+      .from(paymentReturns)
+      .where(and(eq(paymentReturns.source, row.source), eq(paymentReturns.sourceRecordId, row.sourceRecordId)))
+      .limit(1);
+    const found = rows[0];
+    if (!found) throw new Error(`upsertDisputeUnlessMatched: row missing after upsert (${row.source}:${row.sourceRecordId})`);
+    return found;
+  },
+
   /** Ingest upsert (new data only); conflict updates the source facts, never the match columns. */
   async upsertMany(rows: NewPaymentReturn[]): Promise<number> {
     if (!rows.length) return 0;
@@ -99,7 +136,12 @@ export const paymentReturnRepo = {
     return inserted.length;
   },
 
-  /** Link a return to its original payment after the CMP reversal (or a no-reversal match). */
+  /**
+   * Link a return to its original payment after the CMP reversal (or a no-reversal match).
+   * `isReversed` never downgrades true→false: a concurrent redelivery/race that lands here AFTER a
+   * real reversal already succeeded must not overwrite that with a later "reconcile manually" note
+   * that would invite a human to delete the same CMP payment a second time.
+   */
   async linkMatch(returnId: number, input: LinkMatchInput): Promise<PaymentReturn | undefined> {
     const rows = await db
       .update(paymentReturns)
@@ -109,10 +151,35 @@ export const paymentReturnRepo = {
         matchNote: input.matchNote,
         matchedBy: input.matchedBy,
         matchedAt: new Date(),
-        isReversed: input.isReversed,
+        isReversed: sql`${paymentReturns.isReversed} OR ${input.isReversed}`,
         updatedAt: new Date(),
       })
       .where(eq(paymentReturns.id, returnId))
+      .returning();
+    return rows[0];
+  },
+
+  /**
+   * Claim a return for matching WITHOUT deciding the CMP outcome yet — the first step of a
+   * claim-then-act sequence (`matched=true` flips before any CMP call is attempted), so a
+   * concurrent redelivery or a race with the human queue sees `matched=true` and aborts rather than
+   * both racing to reverse the same payment. Conditional `WHERE matched=false`: zero rows back means
+   * someone/something else already claimed it — the caller must not touch CMP.
+   */
+  async claimForMatch(
+    returnId: number,
+    input: { originalTransactionId: number; matchedBy: string },
+  ): Promise<PaymentReturn | undefined> {
+    const rows = await db
+      .update(paymentReturns)
+      .set({
+        matched: true,
+        originalTransactionId: input.originalTransactionId,
+        matchedBy: input.matchedBy,
+        matchedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(paymentReturns.id, returnId), eq(paymentReturns.matched, false)))
       .returning();
     return rows[0];
   },
