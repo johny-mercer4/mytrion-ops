@@ -12367,3 +12367,42 @@ can leave a `backdrop-filter` card unpainted; `transition: all` re-rasterises th
 
 **Not done, by request:** the 600-line cap as an ESLint rule. 22 files exceed it (5 in backend
 `src/`, `carrierMiniApp.routes.ts` at 1,912).
+
+### CI red on first run — and the earlier "2409 passed" was measured wrong
+
+CI failed on `cs-maintenance-routes` (40) and `cs-routes` (17): 403 where 200/400 was expected.
+
+**My earlier verification was not representative.** I measured the suite against my long-lived local
+database, which had accumulated 10 rows in `mytrion_profile_defaults` from past Admin → User
+Management use. CI gets a database that has only ever seen migrations. Reproduced by creating a
+fresh DB and migrating it: 2 files, 57 tests fail — exactly CI. A fresh migrate produces only 2
+profile-default rows (the two HR ones, inserted by `0086_hr_workspace_recovery`), and the tests sign
+a worker token with `profile: 'Customer Retention'`, whose department grant is resolved from the DB
+by `mytrionAccessService.resolveWorkerAccess`. No row, no grant, 403.
+
+Root cause: `0035_customer_retention_cs_mytrion.sql` describes itself as an "idempotent upsert" but
+is **only an UPDATE**. On a database where the `Customer Retention` row was never inserted it does
+nothing, so that mapping exists only where a human created it through the admin UI.
+
+The real finding is bigger than the tests: **department access configuration is environment state,
+not versioned schema.** A brand-new environment — CI, a new laptop, a new tenant — has no working
+Customer Service mapping, and the same is true for Sales, Billing and the rest (my local DB has 8
+such rows that no migration creates). I fixed only what CI needs; seeding the remaining profiles is
+a real decision about who gets what access and belongs to whoever owns that, not to a CI fix.
+
+`0110_seed_customer_retention_profile_default.sql` inserts the mapping following the
+`0086_hr_workspace_recovery` pattern (id derived from tenant, always include the default `octane`
+tenant, `ON CONFLICT (tenant_id, profile_key) DO NOTHING`), plus 0035's repair for a row seeded
+empty. It can only ADD a missing default — never widen or narrow configured access.
+
+Verified both directions:
+
+- **Fresh DB:** dropped and recreated, migrated, `Customer Retention → ["customer-service"]` is
+  seeded, and the full suite with no `.env` is **2409 passed, 1 skipped, 0 failed**.
+- **Already-configured DB (the production shape):** migration ran and left the row byte-identical —
+  same id, same `allowed_mytrions`, `updated_at` unchanged, still exactly one row. Provably a no-op
+  where the row already exists.
+
+Note the new journal guard earned its place immediately: I first numbered this migration `0108`,
+which `origin/build` already uses, and the duplicate-number test caught it before it was applied
+anywhere.
