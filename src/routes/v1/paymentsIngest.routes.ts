@@ -53,7 +53,8 @@ function requireIngestSecret(request: FastifyRequest): void {
 }
 
 /** Tolerant of formatted amounts from email parsers ("$1,277.00", "1 277,00 " → 1277). An
- *  unparseable amount becomes undefined rather than a 400. Shared by every ingest body below. */
+ *  unparseable amount becomes undefined rather than a 400. Shared by every ingest body below
+ *  EXCEPT the dispute body — see `centsAmount`. */
 const tolerantAmount = z.preprocess((v) => {
   if (v === null || v === undefined || v === '') return undefined;
   if (typeof v === 'number') return v;
@@ -62,8 +63,21 @@ const tolerantAmount = z.preprocess((v) => {
 }, z.number().optional());
 
 /**
- * One inbound Stripe dispute (chargeback) from a Zapier email parser — the dispute twin of the
- * payment webhook below. `disputeId` is the ONLY required id, with no fallback chain: a charge id
+ * Stripe's own API (the dispute Zap uses Zapier's native Stripe trigger, not an email parse) reports
+ * `amount` in the smallest currency unit — cents for USD — matching every other Stripe amount field
+ * (`charge.amount`, `balance_transaction.amount`, …). Every OTHER ingest source (MX/Chase email
+ * parses via `tolerantAmount`, the general payment webhook) already arrives in dollars, so this
+ * conversion is scoped to the dispute body alone rather than folded into `tolerantAmount`.
+ */
+const centsAmount = z.preprocess((v) => {
+  if (v === null || v === undefined || v === '') return undefined;
+  const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n / 100 : undefined;
+}, z.number().optional());
+
+/**
+ * One inbound Stripe dispute (chargeback) from Zapier's native Stripe trigger — the dispute twin of
+ * the payment webhook below. `disputeId` is the ONLY required id, with no fallback chain: a charge id
  * substituted in its place would collide with a SECOND dispute on the same charge and silently
  * overwrite the first return's amount/date/reason on redelivery (see
  * `paymentReturnRepo.upsertDisputeUnlessMatched`'s docstring). `paymentIntentId` is optional — when
@@ -76,7 +90,7 @@ const disputeBody = z.object({
   disputeId: z.string().min(1).max(120),
   paymentIntentId: z.string().max(160).optional(),
   chargeId: z.string().max(160).optional(),
-  amount: tolerantAmount,
+  amount: centsAmount,
   disputeDate: z.string().max(40).optional(),
   reason: z.string().max(500).optional(),
   cardLast4: z.string().max(8).optional(),
