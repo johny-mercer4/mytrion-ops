@@ -71,7 +71,28 @@ export async function planQueries(question: string): Promise<string[]> {
     const res = await getClient(policy.provider).chat.completions.create({
       model: policy.model,
       max_completion_tokens: 200,
-      response_format: { type: 'json_object' },
+      // Strict schema rather than `json_object`: the parse below has a fallback to the original
+      // question, and a silent fallback is indistinguishable from a working planner in the traces.
+      // Constrained decoding makes malformed output impossible instead of merely recoverable.
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'rag_query_plan',
+          strict: true,
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['queries'],
+            properties: {
+              queries: {
+                type: 'array',
+                items: { type: 'string' },
+                description: `1-${env.RAG_MULTIQUERY_MAX} short knowledge-base search queries`,
+              },
+            },
+          },
+        },
+      },
       messages: [
         {
           role: 'system',
@@ -130,7 +151,35 @@ export async function judgeEvidence(
     const res = await getClient(policy.provider).chat.completions.create({
       model: policy.model,
       max_completion_tokens: 260,
-      response_format: { type: 'json_object' },
+      // Same reasoning as the planner, and it matters more here: a malformed grade falls back to the
+      // deterministic assessment, so a broken judge looks exactly like a confident one.
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'rag_evidence_verdict',
+          strict: true,
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['grade', 'confidence', 'missingQueries'],
+            properties: {
+              grade: {
+                type: 'string',
+                enum: [
+                  'sufficient',
+                  'partial',
+                  'irrelevant',
+                  'conflict',
+                  'outdated',
+                  'not_documented',
+                ],
+              },
+              confidence: { type: 'number' },
+              missingQueries: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
       messages: [
         {
           role: 'system',

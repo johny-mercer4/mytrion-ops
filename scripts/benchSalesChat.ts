@@ -9,7 +9,12 @@
  * Usage:
  *   BENCH_API=http://localhost:3011 \
  *   MYTRION_OPS_DATABASE_URL=postgresql://octane:octane@localhost:5433/octane_assistant \
- *   pnpm tsx scripts/benchSalesChat.ts [--json]
+ *   pnpm tsx scripts/benchSalesChat.ts [--json] [--runs N]
+ *
+ * Use `--runs 3` before making a decision on a flag. Expected-doc coverage is NOT stable across
+ * identical runs — measured 8/10 then 9/10 back to back, with `balance-and-cards` flipping between
+ * 1/2 and 2/2 — because which documents the model chooses to cite varies. A single run cannot
+ * distinguish a real quality change from that noise; latency and call counts are far steadier.
  *
  * Point it at a LOCAL database. The Render instance drops connections mid-run, which corrupts
  * exactly the timings this script exists to measure.
@@ -102,6 +107,11 @@ interface AgentResponse {
 
 const API = process.env['BENCH_API'] ?? 'http://localhost:3011';
 const AS_JSON = process.argv.includes('--json');
+const RUNS = (() => {
+  const at = process.argv.indexOf('--runs');
+  const n = at >= 0 ? Number(process.argv[at + 1]) : 1;
+  return Number.isInteger(n) && n > 0 ? n : 1;
+})();
 
 async function ask(bench: BenchCase): Promise<{ res: AgentResponse; wallMs: number }> {
   const startedAt = Date.now();
@@ -155,6 +165,7 @@ interface Row {
 
 async function main(): Promise<void> {
   const rows: Row[] = [];
+  for (let run = 0; run < RUNS; run += 1)
   for (const bench of CASES) {
     const { res, wallMs } = await ask(bench);
     const conversationId = res.conversationId ?? '';
@@ -218,6 +229,20 @@ async function main(): Promise<void> {
       `failures ${rows.filter((r) => r.failed).length}  ·  ` +
       `forbidden tool calls ${rows.reduce((s, r) => s + r.forbiddenCalled.length, 0)}\n\n`,
   );
+  if (RUNS > 1) {
+    process.stdout.write(`per-case stability over ${RUNS} runs:\n`);
+    for (const bench of CASES) {
+      const mine = rows.filter((r) => r.id === bench.id);
+      const cov = mine.map((r) => `${r.matched}/${r.expected}`);
+      const stable = new Set(cov).size === 1;
+      const meanMs = Math.round(mine.reduce((s2, r) => s2 + r.wallMs, 0) / (mine.length || 1));
+      process.stdout.write(
+        `  ${bench.id.padEnd(26)} ${cov.join(' ')}  ${stable ? 'stable' : 'UNSTABLE'}  mean ${meanMs}ms\n`,
+      );
+    }
+    process.stdout.write('\n');
+  }
+
   for (const r of rows) {
     process.stdout.write(`${r.id}\n  tools: ${r.toolCalls.join(', ') || '-'}\n`);
     process.stdout.write(`  grades: ${r.grades.join(', ') || '-'}\n`);

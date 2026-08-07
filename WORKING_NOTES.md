@@ -12880,3 +12880,50 @@ Center, where issued codes are viewed. A recall problem across two document *kin
 problem, which is consistent with rerank not helping.
 
 Backend **2449** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Phase D + a correction to the Phase C rerank claim
+
+**Strict structured output.** `planQueries` and `judgeEvidence` moved from
+`response_format: { type: 'json_object' }` + hand-parsing to strict `json_schema` (constrained
+decoding). Both keep their fallbacks — the point is that they now fire far less often. This mattered
+most for the judge: a malformed grade silently degrades to the deterministic assessment, so a broken
+judge is indistinguishable from a confident one in the traces. Verified live: 0 planner/judge parse
+failures across a full bench run, latency unchanged (mean 5,803ms vs 5,779ms — noise).
+
+### Correction: the rerank rejection was over-claimed
+
+I wrote that rerank was "slower AND less accurate", citing coverage 9/10 → 8/10. That second half was
+wrong. Running the **identical** configuration twice more produced 8/10 and then 9/10, with
+`balance-and-cards` flipping between 1/2 and 2/2. A one-point coverage difference is inside run-to-run
+variance, so it is not evidence of anything.
+
+What survives scrutiny:
+
+- **Latency is real and mechanical**: +21% mean wall, +55% retrieval time, because rerank adds an LLM
+  call per retrieval. Reproducible by construction.
+- **No measurable accuracy benefit**: it did not fix `money-codes-view-and-draw`, which is stably 1/2
+  with and without it.
+
+So: rejected on latency for no measured gain — not because it degrades quality. `.env` now records
+that framing instead of the original over-claim.
+
+**The metric itself was the deeper problem**, since "measure before enabling" is worthless with a
+metric that moves on its own. `benchSalesChat.ts` now takes `--runs N` and prints per-case stability:
+
+```
+per-case stability over 3 runs:
+  card-activation            1/1 1/1 1/1  stable  mean 10313ms
+  fraud-options              2/2 2/2 2/2  stable  mean  5409ms
+  balance-and-cards          1/2 1/2 1/2  stable  mean  6658ms
+  money-codes-view-and-draw  1/2 1/2 1/2  stable  mean  5786ms
+```
+
+Stable *within* a batch, but that same case read 2/2 in an earlier batch — so use `--runs 3` before
+deciding anything on coverage, and treat a 1-point gap as no signal.
+
+Current honest state: coverage **8–9/10**, the four single-document cases rock solid at 1/1,
+`fraud-options` solid at 2/2, and the two remaining multi-document cases borderline —
+`money-codes-view-and-draw` reproducibly misses the Data Center document, which is a recall problem
+across document *kinds*, not an ordering one.
+
+Backend **2449** passed / 1 skipped, lint 0 errors.
