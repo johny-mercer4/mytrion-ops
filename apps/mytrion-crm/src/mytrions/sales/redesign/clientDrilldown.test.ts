@@ -14,7 +14,7 @@ vi.mock('@/api/dataCenter', () => ({
   getClientBilling: vi.fn(),
 }));
 
-import { loadClientCards } from './clientDrilldown';
+import { loadClientCards, loadClientEfsBalance } from './clientDrilldown';
 
 const carrierId = '5840175';
 const cardNumber = '7083050000317340';
@@ -91,5 +91,39 @@ describe('loadClientCards', () => {
       driverId: null,
       driverName: null,
     }]);
+  });
+});
+
+describe('loadClientEfsBalance', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('formats live EFS balance for the Overview tile', async () => {
+    callTouchpointMock.mockResolvedValue({
+      efs_balance: 12450.4,
+      payment_terms: 'Prepay',
+    });
+
+    await expect(loadClientEfsBalance(carrierId)).resolves.toEqual({
+      display: '$12,450',
+      paymentTerms: 'Prepay',
+      efsError: null,
+    });
+    expect(callTouchpointMock).toHaveBeenCalledWith('dwh.carrier_balance', { carrierId });
+  });
+
+  it('falls back to balance when efs_balance is missing and surfaces efs_error', async () => {
+    callTouchpointMock.mockResolvedValue({
+      balance: 0,
+      efs_error: 'timeout',
+      payment_terms: 'LOC',
+    });
+
+    await expect(loadClientEfsBalance(carrierId)).resolves.toEqual({
+      display: '$0',
+      paymentTerms: 'LOC',
+      efsError: 'timeout',
+    });
   });
 });
