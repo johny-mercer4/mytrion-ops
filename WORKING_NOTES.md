@@ -12295,3 +12295,114 @@ with them. A redeploy should now succeed; if the DB is mid-restart it will wait 
 - Ran `pnpm build:widget` and recommitted `apps/mytrion-crm/app` so deploy picks up the UI.
 - Documented the rule in `CLAUDE.md` + `AGENTS.md` (**Vendored frontend builds**): UI PRs must
   rebuild and commit `apps/mytrion-crm/app` / `apps/mini-app/app` before opening the PR.
+
+## 2026-08-07 — CI/CD guardrails: gates that run where review happens
+
+Audited why migrations, UI updates and backend changes keep going wrong. One root cause: **the
+quality gates didn't run where the review happened.** `ci.yml` triggered on `main` only, but the
+team's flow is branch → PR to `build` → merge → `build` into `main`. So every PR was reviewed with
+zero automated verification, and CI first ran at merge-to-main — deploy time, after the decision it
+should have informed. Even then it barely gated: `pnpm test` and the whole frontend job were
+`continue-on-error: true`.
+
+### The test gate was fixable, not fundamentally broken
+
+The suite looked hopeless (Codex counted 68 route failures) but that was purely a missing database.
+Measured against a real Postgres, it was 2382/2404. The remaining failures were two missing env
+vars, not product bugs:
+
+- 22 failures in one file — `BILLING_INGEST_SECRET` unset, so `paymentsIngest.routes.ts` answered
+  503 before ever reaching the auth assertion.
+- 2 failures in `ledger-routes` — `API_KEY` unset, so `apiKeyAuth.ts:30` answered 503 for the same
+  reason.
+
+With a `pgvector/pg16` service and those two dummy values, and **no `.env` present at all** (the real
+CI condition, simulated with `DOTENV_CONFIG_PATH=/dev/null`): **2409 passed, 1 skipped, 0 failed**.
+So `pnpm test` is now a hard gate, as is the frontend job — its typecheck is clean, and the
+"in-flight WIP errors" comment justifying `continue-on-error` was stale.
+
+### Migration journal guard
+
+`tests/unit/migration-journal.test.ts` asserts journal↔file agreement, consecutive `idx`, no reused
+migration numbers, and — the one that matters — that `when` never decreases as `idx` increases,
+since Drizzle skips any entry not newer than the newest applied and exits 0 green.
+
+Two pre-existing violations are **grandfathered, not fixed**: idx 79 (`0079_maintenance_cases`,
+`when` below idx 78) and the duplicate `0104` number. Restamping or renaming an already-applied
+migration changes its tag, which would make Drizzle treat it as new and re-run it against local and
+production. Verified harmless — a fresh `db:migrate` applies all 111 entries and `maintenance_cases`
+exists. A fifth test fails if either is ever repaired, so the allowlist can't outlive the problem.
+
+### `db:migrate` blast radius
+
+`.env` on this machine pointed at the Render production database, so a routine local migration was
+one command from migrating prod. `pnpm db:migrate` now goes through `scripts/guardedMigrate.ts`,
+which refuses a non-local host unless `ALLOW_REMOTE_DB_MIGRATE=1`. `db:migrate:raw` keeps the
+unguarded path. **Production is unaffected** — Render migrates in-process at boot via
+`runMigrationsOnBoot()` (`DB_MIGRATE_ON_BOOT=1`), which never invokes this script. `.env.example`
+now defaults to the local `:5433` database instead of blank with a "no local DB" comment that
+stopped being true.
+
+### Vendored bundle
+
+CI now fails a PR that changes `apps/mytrion-crm/src` without touching `apps/mytrion-crm/app` — the
+exact PR #149 failure mode. It compares changed paths from the merge base rather than rebuilding and
+diffing bytes, so it can't fail on environment-dependent Vite output, and it ignores `*.test.tsx`
+and `__tests__/` since those never reach the bundle.
+
+I did **not** switch the Dockerfile to build the frontend and drop the committed bundle. The
+frontend typechecks clean so it's now viable, but it would put the UI build on the critical path of
+every Render deploy — a frontend break would become a deploy break. The staleness check removes the
+failure mode with zero production risk; the Docker switch is a separate, deliberate change.
+
+### `modern-web-guidance` installed
+
+CLAUDE.md hard rule 10 required a skill that did not exist, which quietly taught everyone the rules
+file is advisory. Written from this codebase, not generically: the single token system
+(`theme.css` + Tailwind `@theme inline`, and why there is no `dark:` variant), per-Mytrion accents
+via `data-mytrion`, the Horizon glass primitives, the app-wide `prefers-reduced-motion` contract,
+the one-loader-per-region rule with the `MytrionLoader`/skeleton/stale-content split, and the
+composited-layer traps documented in `AutoCatalog.tsx` (a permanent `transform` promotes a layer and
+can leave a `backdrop-filter` card unpainted; `transition: all` re-rasterises the blur).
+
+**Not done, by request:** the 600-line cap as an ESLint rule. 22 files exceed it (5 in backend
+`src/`, `carrierMiniApp.routes.ts` at 1,912).
+
+### CI red on first run — and the earlier "2409 passed" was measured wrong
+
+CI failed on `cs-maintenance-routes` (40) and `cs-routes` (17): 403 where 200/400 was expected.
+
+**My earlier verification was not representative.** I measured the suite against my long-lived local
+database, which had accumulated 10 rows in `mytrion_profile_defaults` from past Admin → User
+Management use. CI gets a database that has only ever seen migrations. Reproduced by creating a
+fresh DB and migrating it: 2 files, 57 tests fail — exactly CI. A fresh migrate produces only 2
+profile-default rows (the two HR ones, inserted by `0086_hr_workspace_recovery`), and the tests sign
+a worker token with `profile: 'Customer Retention'`, whose department grant is resolved from the DB
+by `mytrionAccessService.resolveWorkerAccess`. No row, no grant, 403.
+
+Root cause: `0035_customer_retention_cs_mytrion.sql` describes itself as an "idempotent upsert" but
+is **only an UPDATE**. On a database where the `Customer Retention` row was never inserted it does
+nothing, so that mapping exists only where a human created it through the admin UI.
+
+The real finding is bigger than the tests: **department access configuration is environment state,
+not versioned schema.** A brand-new environment — CI, a new laptop, a new tenant — has no working
+Customer Service mapping, and the same is true for Sales, Billing and the rest (my local DB has 8
+such rows that no migration creates). I fixed only what CI needs; seeding the remaining profiles is
+a real decision about who gets what access and belongs to whoever owns that, not to a CI fix.
+
+`0110_seed_customer_retention_profile_default.sql` inserts the mapping following the
+`0086_hr_workspace_recovery` pattern (id derived from tenant, always include the default `octane`
+tenant, `ON CONFLICT (tenant_id, profile_key) DO NOTHING`), plus 0035's repair for a row seeded
+empty. It can only ADD a missing default — never widen or narrow configured access.
+
+Verified both directions:
+
+- **Fresh DB:** dropped and recreated, migrated, `Customer Retention → ["customer-service"]` is
+  seeded, and the full suite with no `.env` is **2409 passed, 1 skipped, 0 failed**.
+- **Already-configured DB (the production shape):** migration ran and left the row byte-identical —
+  same id, same `allowed_mytrions`, `updated_at` unchanged, still exactly one row. Provably a no-op
+  where the row already exists.
+
+Note the new journal guard earned its place immediately: I first numbered this migration `0108`,
+which `origin/build` already uses, and the duplicate-number test caught it before it was applied
+anywhere.
