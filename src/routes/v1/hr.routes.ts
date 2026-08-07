@@ -5,9 +5,9 @@
  * Reads: any authenticated internal worker. Writes + sync: Mytrion Admin
  * (`allDepartmentAccess` / bypass / role admin) only.
  */
-import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fastify';
+import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
+import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { syncHrEmployeesFromZoho } from '../../modules/hr/hrEmployeeSync.js';
@@ -16,65 +16,8 @@ import { departmentWouldCycle, employeeWouldCycle } from '../../modules/hr/orgRe
 import { hrDepartmentRepo } from '../../repos/hrDepartmentRepo.js';
 import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
-import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment } from './helpers.js';
-
-/**
- * READ access to the HR directory — requires the 'hr' department grant.
- *
- * This used to check only `audience === 'internal'`, which is not a gate at all: every signed-in
- * worker, a sales agent included, could read all 213 employee rows (names, emails, mobiles, joining
- * dates, reporting lines) and the whole org structure. `requireDepartment` handles the admin /
- * all-department / bypass paths identically to every other module, so HR now sits behind the same
- * boundary as Billing or CS instead of behind none.
- */
-function requireHrInternal(request: FastifyRequest): TenantContext {
-  return requireDepartment(request, 'hr', 'HR directory');
-}
-
-/** Create / edit / delete / Zoho sync — Mytrion Admin (all-department) only. */
-function requireHrAdmin(request: FastifyRequest): TenantContext {
-  const ctx = requireHrInternal(request);
-  if (!ctx.allDepartmentAccess && !ctx.bypassRbac && ctx.role !== 'admin') {
-    throw new RBACError('Mytrion Admin access required to change employees');
-  }
-  return ctx;
-}
-
-function toDto(row: HrEmployeeRow) {
-  return {
-    id: row.id,
-    zohoRecordId: row.zohoRecordId,
-    employeeId: row.employeeId,
-    firstName: row.firstName,
-    lastName: row.lastName,
-    email: row.email,
-    departmentId: row.departmentId,
-    department: row.department,
-    departmentZohoId: row.departmentZohoId,
-    designation: row.designation,
-    location: row.location,
-    status: row.status,
-    role: row.role,
-    dateOfJoining: row.dateOfJoining,
-    mobile: row.mobile,
-    faceId: row.faceId,
-    telegramUsername: row.telegramUsername,
-    reportingTo: row.reportingTo,
-    reportingToZohoId: row.reportingToZohoId,
-    reportingToEmployeeId: row.reportingToEmployeeId,
-    photoUrl: row.photoUrl,
-    zohoUserId: row.zohoUserId,
-    zohoUserIdSource: row.zohoUserIdSource,
-    zohoUserLinkedAt: row.zohoUserLinkedAt?.toISOString() ?? null,
-    canvasX: row.canvasX,
-    canvasY: row.canvasY,
-    source: row.source,
-    lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
+// Guards + DTO are shared with hrPeople.routes.ts — see hrAccess.ts for why they are not duplicated.
+import { hrEmployeeDto as toDto, requireHrAdmin, requireHrInternal } from './hrAccess.js';
 
 const listQuery = z.object({
   q: z.string().max(200).optional(),

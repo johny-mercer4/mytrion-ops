@@ -9,6 +9,39 @@ vi.hoisted(() => {
   process.env.HR_ATTENDANCE_WEBHOOK_SECRET = 'att-test-secret';
 });
 
+// Params spelled out so `mock.calls[n][6]` is a reachable tuple element, not `never`.
+const { teamListMock } = vi.hoisted(() => ({
+  teamListMock: vi.fn(async (
+    _ctx: unknown,
+    _selfId: string,
+    _from: string,
+    _to: string,
+    _scope: string,
+    _q: string,
+    _options?: { withTotals?: boolean },
+  ) => ({
+    from: '2026-08-03',
+    to: '2026-08-09',
+    scope: 'all',
+    canViewAll: true,
+    counts: { direct: 0, all: 0 },
+    unmappedPunches: 0,
+    items: [],
+  })),
+}));
+
+const { syncMock } = vi.hoisted(() => ({
+  syncMock: vi.fn(async (_ctx: unknown, from: string, to: string) => ({
+    from,
+    to,
+    fetched: 0,
+    inserted: 0,
+    linked: 0,
+    skipped: 0,
+    cached: false,
+  })),
+}));
+
 vi.mock('../../src/modules/hr/attendance/ingestWebhook.js', () => ({
   ingestAttendanceWebhook: vi.fn(async () => ({
     success: 1,
@@ -38,6 +71,8 @@ vi.mock('../../src/repos/hrAttendancePunchRepo.js', () => ({
     listForEmployeesRange: vi.fn(async () => []),
     lastForEmployees: vi.fn(async () => new Map()),
     countUnmappedRange: vi.fn(async () => 0),
+    // Assigning a shift now rebuckets the work dates it invalidates.
+    rebucketWorkDates: vi.fn(async () => undefined),
   },
 }));
 
@@ -56,6 +91,18 @@ vi.mock('../../src/repos/hrDepartmentRepo.js', () => ({
     listIdsLedBy: vi.fn(async () => []),
   },
 }));
+
+vi.mock('../../src/modules/hr/attendance/teamSummary.js', () => ({
+  buildAttendanceTeamList: teamListMock,
+}));
+
+vi.mock('../../src/modules/hr/attendance/syncFromDwh.js', async (importOriginal) => {
+  // Real module except for the DWH round trip, so the route's own validation (window cap, ordering)
+  // is exercised rather than stubbed past.
+  const mod =
+    await importOriginal<typeof import('../../src/modules/hr/attendance/syncFromDwh.js')>();
+  return { ...mod, syncAttendanceFromDwh: syncMock };
+});
 
 vi.mock('../../src/modules/hr/attendance/summary.js', () => ({
   buildAttendanceSummary: vi.fn(async (_ctx, employeeId: string, from: string, to: string) => ({
@@ -87,11 +134,13 @@ import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { ingestAttendanceWebhook } from '../../src/modules/hr/attendance/ingestWebhook.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { hrAttendancePunchRepo } from '../../src/repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../src/repos/hrAttendanceShiftRepo.js';
 import { hrEmployeeRepo } from '../../src/repos/hrEmployeeRepo.js';
 
 const ingest = vi.mocked(ingestAttendanceWebhook);
 const shifts = vi.mocked(hrAttendanceShiftRepo);
+const punches = vi.mocked(hrAttendancePunchRepo);
 const employees = vi.mocked(hrEmployeeRepo);
 
 let app: FastifyInstance;
@@ -233,6 +282,11 @@ describe('HR attendance shifts', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ assigned: ['hre_report'] });
+    /**
+     * Assigning a shift retroactively changes which DAY an overnight punch belongs to, so the route has
+     * to rebucket the rows already stored — the same repair the punch-link paths already run.
+     */
+    expect(punches.rebucketWorkDates).toHaveBeenCalledWith(expect.anything(), 'hre_report');
     expect(shifts.assign).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ shiftId: 'hrs_ganga', employeeId: 'hre_report' }),
@@ -330,5 +384,103 @@ describe('HR attendance team visibility', () => {
       headers: bearer(await workerToken('HR Staff')),
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('HR attendance DWH sync', () => {
+  it('refuses a caller without HR access — it writes to the punch table', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('Sales Rep')),
+      payload: { from: '2026-08-03', to: '2026-08-07' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(syncMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unauthenticated caller', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/hr/attendance/sync', payload: {} });
+    expect(res.statusCode).toBe(401);
+    expect(syncMock).not.toHaveBeenCalled();
+  });
+
+  it('syncs the requested window for an HR reader', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('HR Manager')),
+      payload: { from: '2026-08-03', to: '2026-08-07' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), '2026-08-03', '2026-08-07', {
+      force: false,
+    });
+  });
+
+  it('defaults to the week around `weekOf` so the page need not compute it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('HR Manager')),
+      payload: { weekOf: '2026-08-05' },
+    });
+    expect(res.statusCode).toBe(200);
+    const [, from, to] = syncMock.mock.calls[0] ?? [];
+    expect(from).toBe('2026-08-03');
+    expect(to).toBe('2026-08-09');
+  });
+
+  it('passes `force` through, so Refresh is not answered from the cooldown', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('HR Manager')),
+      payload: { from: '2026-08-03', to: '2026-08-07', force: true },
+    });
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), '2026-08-03', '2026-08-07', {
+      force: true,
+    });
+  });
+
+  /** A year-wide window is 387k rows off a shared analytics DB — rejected before it is attempted. */
+  it('rejects a window beyond the cap without calling the DWH', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('HR Manager')),
+      payload: { from: '2026-01-01', to: '2026-12-31' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(syncMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('roster fetches a directory by default', () => {
+  it('passes withTotals:false through when the page asks for ?totals=0', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/team?scope=all&totals=0&from=2026-08-03&to=2026-08-09',
+      headers: bearer(await workerToken('HR Manager')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(teamListMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      '2026-08-03',
+      '2026-08-09',
+      'all',
+      '',
+      { withTotals: false },
+    );
+  });
+
+  it('keeps totals for a caller that does not opt out', async () => {
+    await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/team?scope=all&from=2026-08-03&to=2026-08-09',
+      headers: bearer(await workerToken('HR Manager')),
+    });
+    expect(teamListMock.mock.calls[0]?.[6]).toEqual({ withTotals: true });
   });
 });

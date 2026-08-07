@@ -11090,6 +11090,11 @@ today's records — but the end-to-end POST is untested and should be exercised 
   all Card Lookup tests pass.
 - Rebuilt the mini-app and Mytrion CRM production bundles.
 
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green. CRM 16 failed / 3 files
+(pre-existing). Backend across four runs: 160 / 10 / 9 / 9 failures — the documented post-build
+timeout flakiness; `analytics-reports-routes` passed in every run. Suite total is now 1837 (+9).
+
 ## 2026-08-04 — Sales Card Status Report automation
 
 - Added `Card Status Report` directly after the invoice/transaction reporting actions in Sales
@@ -11364,6 +11369,77 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+
+## 2026-08-05 — Dropbox for the general file pipeline (uploads/imports + generated exports)
+
+Dropbox was already fully built in this repo — the API v2 client
+(`src/integrations/dropbox.ts`: refresh-token auth, single-shot + chunked upload, download,
+streaming, temporary links, delete, 401-refresh/429 retries) and a complete `ObjectStorage`
+adapter (`storage/dropboxStorage.ts`). It was only reachable by **comms chat attachments**, via
+`COMMS_STORAGE_PROVIDER`. The general pipeline was hardcoded to S3 on one line of `fileService.ts`.
+
+### What changed
+
+- **`FILE_STORAGE_PROVIDER`** (`s3` | `dropbox`, default `s3`) — where a NEW general-pipeline file
+  goes: `POST /v1/files/upload` (import) and every generated artifact (`file.generate_csv` /
+  `_excel` / `_pdf` export). `storeFile` now defaults to `fileStorageProvider()` instead of the
+  literal `'s3'`.
+- Kept **separate** from `COMMS_STORAGE_PROVIDER` rather than collapsing both into one switch: a
+  customer's chat attachment and an internal revenue export are not the same retention problem, and
+  one of the two may need to move without the other.
+- **Boot check** (`envRuntime.ts`) now requires the three Dropbox credentials when *either*
+  pipeline selects Dropbox, not just comms.
+- `scripts/dropbox-smoke.ts` + `pnpm dropbox:smoke` — live round-trip through the adapter (so the
+  key→path mapping is covered, not just the raw client).
+
+### `getStorage()` deliberately does NOT follow the new env
+
+This is the trap in this change and it is now commented at the definition plus locked by a test.
+`maintenance_case_attachments` stores an `s3_key` with **no `storage_provider` column** and resolves
+both its writes and its reads through `getStorage()`. Had that function honoured
+`FILE_STORAGE_PROVIDER`, flipping to Dropbox would have sent new attachments to Dropbox *and*
+simultaneously repointed every existing row's read at Dropbox — where those bytes are not. Reads
+404, deletes silently no-op against the wrong store. CS maintenance attachments therefore stay on
+S3 until that table gains the column (a migration, deliberately not done here).
+
+The general pipeline is safe to flip precisely because `file_assets.storage_provider` already exists
+and already accepts `'dropbox'` — no migration needed. `storeFile` records the provider per row and
+every read/delete goes back through `storageFor(row.storageProvider)`, so flipping the env changes
+the destination of the NEXT file and nothing about the ones already stored. It is not retroactive:
+existing S3 files keep resolving to S3.
+
+### Test determinism — the FF_ZOHO_MCP_ENABLED bug class, again
+
+Neither storage provider was pinned in the vitest `env` baseline, so once a developer's `.env` set
+`FILE_STORAGE_PROVIDER=dropbox` for `pnpm dev`, **every `storeFile()` in the suite would have
+defaulted to Dropbox and attempted live API calls with a real refresh token**. Both providers are
+now pinned to `'s3'` in `vitest.config.ts`, exactly as that file's own comment prescribes. The
+dropbox suite sets `FILE_STORAGE_PROVIDER` itself in `vi.hoisted` (before `env` parses eagerly)
+where it needs the other value.
+
+### Local config
+
+`.env` now runs BOTH pipelines on Dropbox (`FILE_STORAGE_PROVIDER=dropbox`,
+`COMMS_STORAGE_PROVIDER=dropbox`) with the real app key / secret / refresh token. This also works
+around S3/MinIO being unavailable locally — the file tools now function without docker. Credentials
+are in `.env` only (gitignored); `.env.example` documents the switch with empty placeholders.
+Also documented there: changing `DROPBOX_ROOT_PATH` after files exist ORPHANS them, since the root
+is applied at read time and the stored key is the only route back to the bytes.
+
+### Checks
+
+`pnpm typecheck` clean. `pnpm lint` 0 errors (22 pre-existing warnings, none in touched files).
+`dropbox-storage.test.ts` 22 passed (+2 for the new provider defaults, incl. the `getStorage()`
+regression guard). `pnpm dropbox:smoke` **fully green against live Dropbox** — put / temporary-link
+/ getBuffer / getStream / oversized-read-rejected / delete / delete-again-idempotent, with bytes
+compared byte-for-byte rather than by length.
+
+Full-suite state is unchanged by this work and cannot go green on this machine: the DB-backed suites
+point at the REMOTE Render Postgres (`MYTRION_OPS_DATABASE_URL` is *not* localhost:5433, contrary to
+the CLAUDE.md description of the local stack), so they fail on latency/state regardless of the local
+container. Verified by stashing this branch's changes and reproducing the same failures on a clean
+tree.
+
 ## 2026-08-06 — Telegram mini-app registration/session architecture review
 
 - Reviewed the registration bootstrap, invite redemption, returning-user Telegram `initData`
@@ -11511,3 +11587,1121 @@ regressions.
   production bundle was rebuilt. The full repository run is 1,901 passed, 96 failed, 1 skipped;
   failures remain in the same unrelated CS, retention, billing, Comms Admin, and DB-backed scripted
   agent groups, while the carrier mini-app suite passes all 117 tests.
+
+## 2026-08-06 — Employee photos re-hosted to Dropbox (HR Mytrion)
+
+HR avatars have always rendered as initials. The cause was never the component: `hr_employees.photo_url`
+holds Zoho People's `Photo_downloadUrl`, which is OAuth-gated, so every `<img src>` in the directory
+401'd — 213 doomed requests per render, then the initials fallback. `hr_employees.photo_file_id` had
+existed since migration 0067 for exactly this, and was never wired to anything.
+
+### What changed
+
+- **`POST /hr/employees/:id/photo`** (Mytrion Admin) takes a client-resized data URL — same shape as
+  `/auth/me/avatar`, reusing `resizeImageToDataUrl` at 512px — decodes it, and puts the bytes through
+  the ordinary `storeFile` pipeline. `FILE_STORAGE_PROVIDER=dropbox`, so they land in Dropbox and the
+  provider is recorded on the `file_assets` row; a later flip of that env cannot strand an avatar.
+- The asset is tagged `department: 'hr'`, so `fileVisibilityFilter` keeps a headshot out of the generic
+  `/v1/files` list for a worker with no HR grant. The read route is gated on the same department.
+- Replace repoints the row FIRST and deletes the old object second. The reverse order strands the
+  employee on a deleted file when the store fails, which renders as a permanently broken avatar. A
+  failed cleanup is swallowed: the row is authoritative and the user's action did land.
+- **`DELETE /hr/employees/:id/photo`** clears the row and the object; no photo is not an error.
+- **`GET /hr/employees/:id/photo-link`** presigns lazily, exactly like the comms-attachment `/link`
+  route and for the same reason: a Dropbox link is a round trip that Dropbox expires after ~4h, so one
+  per row would make the directory 213 requests slower AND hand out URLs that die mid-session. The
+  caller never names a file — the id comes off the employee row.
+- **DTO: `photoUrl` → `photoFileId`**, on both the employee and org-structure payloads. The Zoho URL is
+  no longer sent to the browser at all; it stays on the row for provenance and a future backfill.
+- **`HrAvatar`** now takes `employeeId` + `photoFileId` and resolves the link through a module-level
+  cache keyed by file id, with in-flight dedupe — the same face on a card, in the department modal and
+  on the org canvas costs one request, not three. A new upload mints a new file id, so the cache needs
+  no invalidation. Fixed alongside: `failed` was never reset, so an instance React reused for a
+  different person stayed stuck on the previous person's failure.
+- Upload / change / remove live on the employee detail modal, next to `HrZohoUserLink` — the existing
+  home for actions that need a saved employee id.
+
+### Deliberately not done
+
+No backfill. `photo_file_id` is null for all 213 people, so the directory shows initials until someone
+uploads. Re-hosting the existing Zoho photos server-side (where we DO hold the token) is the thing that
+fixes everyone at once, and it can reuse this exact path — but it is ~213 Zoho reads plus 213 Dropbox
+writes and wants its own dry-run.
+
+### Checks
+
+Root lint 0 errors (22 pre-existing warnings, unchanged). Root + CRM `tsc --noEmit` clean. New coverage:
+10 backend cases on the photo routes (reader refused, non-image body rejected, department tag, repoint
+-before-delete ordering asserted via invocation order, cleanup failure still succeeds, clear, idempotent
+clear, link presigned from the row, 404 without presigning, no-HR-grant refused) and 6 on `HrAvatar`
+(initials, resolution, one-request-for-three-avatars, failure fallback, reuse-for-another-person
+recovery, expired-cache re-resolve). `hr-routes` 23/23, HR CRM suites 29/29, the four RBAC suites 93/93,
+`dropbox-storage` green.
+
+## 2026-08-06 — HR person view: what "View as" opens
+
+Second half of the HR session. Asked for: picking an employee in the "View as" picker should show that
+person's team, department, attendance and time off.
+
+### What "View as" actually did in HR: nothing
+
+Worth recording because it is not obvious. The act-as machinery is real and well-guarded —
+`applyActAs` in `callerIdentity.ts` rebuilds the whole context as the target (userId, role, departments,
+allDepartmentAccess, profiles), refuses to let a non-admin view-as an all-access user, and audits every
+use. But it only runs inside `buildCallerContext`, which chat/files/tools call. **Every HR route uses
+`requireContext`**, which returns `request.ctx` straight from the access token and never looks at
+`x-act-as-*`. No HR file read `useImpersonation()` either. So selecting someone in the HR picker set a
+localStorage slot, attached headers nobody read, and changed nothing on screen.
+
+Given the choice between wiring true impersonation and building a per-person view, we took the view:
+it delivers the four things asked for without moving the HR RBAC boundary.
+
+### What changed
+
+- **`GET /hr/employees/:id/overview`** returns the whole panel in ONE payload — employee, department
+  (+ headcount), manager, team, attendance week, time-off balances and requests. Five blocks meant five
+  fetches and five skeletons flickering in separately.
+- **Team = direct reports ∪ members of departments they lead**, the same definition `teamScope.ts`
+  already uses for attendance. Deduped with direct-report winning, and the subject is excluded from
+  their own team (a lead who is also in the department they lead was otherwise listed under themselves).
+- **Attendance degrades, it does not fail.** It is scoped tighter than the directory, so the builder
+  asks `assertCanViewEmployeeAttendance` per viewer and returns `canView: false` with a null summary
+  instead of throwing. A 403 there made the whole page look broken rather than partly private. A
+  non-RBAC error still propagates — silently hiding a database failure as "restricted" would be worse.
+- **`GET /hr/employees/by-zoho-user/:zohoUserId`** bridges the picker (which knows a Zoho SIGN-IN) to
+  the directory (keyed by employee id). Its own route, not a query param, so the two id spaces stay
+  distinct. A 404 is normal — it means nobody has linked that sign-in yet, and the panel says so with
+  an empty state rather than a red banner.
+- **`HrPersonView`** renders in place of the tab content while a person is selected, keyed on them so
+  switching people remounts. It reuses `HrAttendanceWeek` verbatim. The panel states plainly that you
+  are still signed in as yourself — it is a lens, not a disguise.
+
+### File-size cap
+
+The photo work had pushed `hr.routes.ts` to 630 and `api/hr.ts` to 603, both over the 600 cap. Split:
+guards + employee DTO into `routes/v1/hrAccess.ts` (shared, so the two route files cannot drift on who
+may read or write), per-person routes into `routes/v1/hrPeople.routes.ts`, and the per-person client
+calls into `api/hrPerson.ts`. Now 429 / 228 / 79 and 568 / 129.
+
+### Checks
+
+Root lint 0 errors (22 pre-existing warnings, unchanged). Root + CRM `tsc --noEmit` clean. New coverage:
+6 cases on the overview builder (week range, attendance permitted / refused / unlinked viewer, real
+errors still thrown, team dedupe + relation precedence, no-department) and 6 route cases (HR gate on
+both new routes, 404s, payload shape), plus 4 on `HrPersonView` (renders the four blocks, unlinked
+sign-in empty state, restricted-attendance copy, real failure as an alert). 9 backend HR/RBAC suites
+82/82, HR CRM suites 33/33.
+
+### Still true
+
+HR routes remain act-as-blind. If true impersonation is wanted later, `applyActAs` is the piece to
+reuse — and it will need its own escalation/cross-tenant tests before it can ship.
+
+## 2026-08-06 — Org canvas: per-department colour, and a No Department bucket
+
+Two reports off the org-structure screenshot: every department was the same colour, and unassigned
+people were scattered loose at the bottom of the chart.
+
+### One colour for twenty-two departments
+
+`departmentTone` fell back to `var(--accent)` whenever `icon_color` was null — and it is null for
+essentially every department, because the Zoho migration never set it and only the modal's picker ever
+writes it. So the canvas painted the whole company HR red, which is exactly the information a colour is
+supposed to carry.
+
+`departmentTone(token, seed)` now takes a stable seed and hashes it into the palette when no token is
+stored. Seeded on the department ID rather than the name, so a rename does not reshuffle the chart, and
+every call site passes it — card, canvas node, minimap, modal, employee chip, person view — so one
+department is one colour everywhere. An explicit pick still wins. The palette grew from 8 to 13 tokens
+(the rest of the Horizon scale, already themed for light and dark); slate is excluded from
+auto-assignment because it is the unassigned bucket's neutral and a real department landing on it would
+read as "these people are unassigned too".
+
+### No Department
+
+People with no `department_id` — or one pointing at a deleted department — were drawn as bare roots: a
+row of person-cards beside the company with nothing saying what they had in common. They now hang off a
+synthetic `NO_DEPARTMENT_ID` node, which means the ordinary department walk gives them a chevron, a
+headcount and a hidden-count for free.
+
+It is a label, not a record, and every write path has to refuse it:
+- no "+" and no open button, and a click does nothing (without that guard, clicking it hit the
+  "record has not loaded yet" banner, which would be a lie);
+- no position write — there is no row to PATCH, so a drag is session-local;
+- `orgBranchIds` gets its own branch for it, or collapsing the bucket left its managers expanded;
+- "Expand all" includes it, which it must, since it is the group HR most wants to work through.
+
+**Dropping a person onto it detaches their department.** That affordance has been described in the
+`HrOrgCanvas` header the whole time — "drop onto the unassigned strip" — and never existed; the bucket
+is the strip. It maps to `reparent(id, null, 'department')`, which the backend already supports.
+Dropping a *department* onto it is refused with a message.
+
+The bucket is drawn last and only when non-empty: an org with everyone assigned carries no empty box.
+
+### Checks
+
+Root lint 0 errors (22 pre-existing warnings). Root + CRM typecheck clean. Three orgGraph tests that
+pinned the old scatter-as-roots behaviour were rewritten to the new contract, and the "every employee is
+drawn or deliberately hidden" invariant now has to include the bucket in its expanded set — it got
+stricter, not looser. New: 7 cases on `departmentTone` (stored token wins, distinct per seed, stable
+across reloads, slate never auto-assigned over 200 seeds, accent with no seed, unknown token cannot
+reach a style rule) and 4 more on the bucket (grouping, dangling department id, omitted when empty,
+collapsed hidden-count, plus its `orgBranchIds` branch). HR CRM suites 43/43, backend HR 35/35.
+
+Full CRM suite: 16 failed / 444 passed. The same 16 fail on a stashed clean tree (`stream.test.ts`,
+`touchpoints.test.ts`) — pre-existing and unrelated.
+
+## 2026-08-06 — Org canvas: compact nodes
+
+The chart was asked to be smaller. Node sizes and layout spacing came down together:
+
+| | before | after |
+|---|---|---|
+| department node | 248 × 96 | 212 × 76 |
+| person node | 216 × 88 | 184 × 72 |
+| dagre `nodesep` / `ranksep` | 34 / 78 | 22 / 52 |
+
+`ranksep` matters more than the node height on a top-down chart — a 20-department org is a dozen ranks
+deep once staff are expanded — so that is where most of the compaction comes from.
+
+The box cannot simply be made smaller: it has to stay taller than the card's own content, or the expand
+chevron hangs out of the bottom (which is exactly what happened when EMP_H was 76 against 80px of
+content). So the CSS internals came down first — 10px→7px padding, 8px→6px gap, 32px→26px glyph — and
+the constants were then derived from the result: 7+7+26+6+19 ≈ 65px of content, leaving 11px of slack on
+a department and 7px on a person, the same margin as before. The shared `.hr-avatar-sm` is scoped down
+to 26px INSIDE a node only; the department members list and the person panel still want 32px.
+
+### The sync is now a test, not a comment
+
+`DEPT_W/H` and `EMP_W/H` are two copies of four numbers — once in `orgGraph.ts`, once in
+`hr-workspace.css` — and only a comment held them together. They have now moved twice. `orgGraph.test.ts`
+parses the stylesheet and asserts the rules match the constants, plus that both heights clear the content
+budget. Verified the guard actually fails by changing DEPT_W to 999 (it did) before restoring.
+
+Note for anyone extending it: the CSS has to be read with `fs`, not imported. Vitest runs with
+`css: false`, so a plain import AND `?raw` both return an empty string and every assertion would
+vacuously pass.
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings), HR CRM suites 46/46.
+
+## 2026-08-06 — Org canvas: portrait node cards
+
+Redesigned the org nodes to the reference layout the user supplied: the face centred and half-outside
+the top of the card, name and one supporting line beneath it, and the expand control as a badge on the
+connector rather than a row inside the card.
+
+Note: CLAUDE.md rule 10 says to consult the `modern-web-guidance` skill for UI work. **That skill is not
+installed** (checked `~/.claude/skills`), so this followed the module's own documented Horizon language
+instead — which is the substance of the rule anyway.
+
+### Structure, not skin
+
+The reference is a light pastel chart. Copying it literally would have fought the app's dark Horizon
+theme and its light/dark token contract, so what was adopted is the SHAPE — portrait card, centred face,
+two lines, count badge on the edge — with colour still coming from `--tone-*`.
+
+- The overhang lives INSIDE the node box: `.hr-onode` is the transparent rectangle dagre laid out, the
+  card is inset 17px from its top, and the face fills that gap. Letting the avatar escape the box would
+  have hidden it from the layout engine and collided it with the rank above.
+- Both node types are 78px tall on purpose — equal ranks read as one grid. Departments fold headcount
+  and lead onto the single sub-line to stay a two-line card like a person.
+- Moving the chevron out of the card and onto the bottom edge is what buys back the height the face
+  costs. It also puts it where the eye already is when asking "does this branch continue?".
+- Open / add are pinned to the card's top-right and only appear on hover or focus; 200 nodes each
+  showing two buttons is noise, not affordance.
+
+### Branch colour
+
+The reference colours a whole subtree alike, and the per-department tones from the previous pass made
+that nearly free. `EmpNodeData` now carries `{tone, toneSeed}` inherited from the department a person
+hangs under and passed on down the reporting line, resolved through the SAME `departmentTone(token,
+seed)` the department node uses — so a person is always exactly their department's colour. Unassigned
+people inherit the bucket's slate. Only a reporting ring, which no department walk reaches, falls back
+to the accent.
+
+### Careless step worth recording
+
+Ran `vite build` purely as a CSS syntax check and it rewrote the vendored production bundle — 138 tracked
+files. Reverted with `git clean -fd apps/mytrion-crm/app` + `git checkout -- apps/mytrion-crm/app`.
+Rebuilding the bundle is a release step; do it deliberately, not as a side effect of validating CSS.
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings), HR CRM suites 51/51. Production
+build succeeded (which is what proved the CSS parses) before the bundle was reverted. Cross-checked every
+`hr-onode*` class between `OrgNodes.tsx` and the stylesheets: no unstyled class, no dead rule. The
+geometry guard was updated to the portrait budget — the old one asserted the pre-redesign arithmetic and
+would have passed vacuously.
+
+NOT visually verified: no browser has rendered this. The chart needs the API plus data, and the local DB
+is migrated but empty. Worth a look before it goes near a PR.
+
+## 2026-08-06 — Collapsible sidebar (shared Mytrion chrome)
+
+Asked for from the HR sidebar, built in `MytrionShell` — the rail is shared, so every Mytrion gets it.
+248px expanded, 68px icon-only rail collapsed.
+
+- **The preference is global, not per-Mytrion.** Someone who wants a narrow rail wants it narrow in
+  Sales and in HR. One `localStorage` key, read and written through try/catch: storage throws in private
+  mode, and a sidebar preference must never be the reason a page fails to render.
+- **Collapsing hides labels, never destinations.** Every nav button already carried `title` and
+  `aria-label`, so the rail stays usable by pointer, keyboard and screen reader. `.navActive` keeps its
+  accent fill and left bar, so the current view still reads with no label.
+- **The search field goes with the labels.** It filters on text the rail no longer shows, so leaving it
+  would be a filter you cannot see. The query is also CLEARED on collapse — otherwise reopening restored
+  a rail filtered to nothing with no explanation on screen.
+- **Nested children are not rendered collapsed.** A 68px rail has nowhere to put a nested label list.
+  The parent still activates on click; navigating into a child needs the rail open.
+- **Below 768px it forces itself open.** The sidebar is already a horizontal strip at that width (there
+  has been a media query for it all along), where "collapsed" means nothing — without the override, a
+  preference set on a desktop left a phone showing a row of unlabelled icons. The rail CSS is scoped to
+  `min-width: 769px` so the two cannot fight.
+- Width animates (not transform) so the centre pane actually reflows into the space, with a
+  `prefers-reduced-motion` opt-out that keeps the layout change and drops the sweep.
+
+No keyboard shortcut. Cmd/Ctrl+B is the obvious one but it is a global key grab in an app with existing
+handlers — worth adding deliberately, not as a side effect of this.
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings). 7 new tests on the shell: ARIA
+state, `data-collapsed` actually landing on the nav (asserting only the button's ARIA would let the
+attribute stop being emitted and kill the whole stylesheet while the suite stayed green), destinations
+still reachable, preference surviving a remount, the filter reset, the narrow-viewport override, and
+storage throwing. Verified two of them bite by breaking the reset and the attribute — both failed, then
+passed again on restore.
+
+Note for anyone testing this shell: this jsdom exposes `localStorage` as a bare object with no Storage
+prototype, so `.clear()` and `Storage.prototype` spies do not exist. The suite installs its own stub.
+
+Full CRM suite 16 failed / 459 passed — the same 16 pre-existing failures (`stream`, `touchpoints`).
+
+NOT visually verified: no browser has rendered the rail.
+
+## 2026-08-07 — Org canvas: active-only, and a full-width centre when the rail is closed
+
+### "Show terminated" is gone
+
+An org chart is who works here NOW, so the answer never changes and a toggle nobody flips is just a
+control to mis-read. The chip and its state are removed from the Org Structure tab, and the canvas
+builds with `includeTerminated: false`.
+
+`buildOrgGraph` still ACCEPTS the other value — it is what the "a terminated manager's reports re-home
+onto their department" behaviour is defined against, and its test documents that — but nothing in the
+app passes it any more. Noted in a comment at the call site so the branch does not read as an accident.
+Deliberately untouched: the Employees directory keeps its Active/Terminated chips. That is a people
+register, where the terminated ARE the record; this was only about the chart.
+
+### Collapsing the sidebar now gives the page the space
+
+`--hr-measure` is a READABILITY cap — it stops prose and form grids stretching into unreadable lines on
+a wide monitor. With the rail closed it stopped being a cap and started being a waste: the content
+stayed put and the 180px it gained became empty margin, the exact opposite of what closing the sidebar
+is for. `.hr-page` now drops the cap while collapsed. (The canvas was already exempt via `.hr-page-wide`.)
+
+The mechanism is worth knowing: the shell publishes `data-sidebar-collapsed` on its ROOT, not just on
+the `<nav>`. CSS-module class names are hashed and unreachable from a module's own global stylesheet, so
+`hr.css` could not otherwise see the rail state. Only HR writes a rule against it today; every other
+Mytrion is unchanged until it opts in.
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings). One more shell test — that the root
+attribute is actually published — verified to bite by stubbing it to `undefined`. HR + shell suites
+59/59. Full CRM suite 16 failed / 460 passed, the same pre-existing `stream` / `touchpoints` failures.
+
+Cosmetic follow-up, not done: with the chip gone the Org toolbar is a bordered panel holding one line of
+hint text. It reads fine, but it may want to lose the panel chrome and become a plain caption.
+
+NOT visually verified — still no browser on any of this session's UI work.
+
+## 2026-08-07 — Cards ⇄ list, and terminated last
+
+### Terminated sort to the end
+
+The directory ordered by department → active → name, which put a leaver between two colleagues inside
+EVERY department block: the people who still work here were never a contiguous run, which is what the
+directory is mostly used to read. Now Active first → department → name, so everyone who has left lands
+after everyone who has not, still grouped by department within each half.
+
+The comparator was inline in a `useMemo`, i.e. untestable without mounting the tab — exactly the kind of
+rule a later edit quietly inverts while the screenshot still looks fine. Extracted to
+`hrData.sortDirectory` next to `filterEmployees`, with 6 cases (the ordering itself, grouping within a
+half, unassigned last not first, blank department, case-insensitive status, no mutation). Verified the
+key one bites by restoring the old comparator — it failed, then passed again.
+
+### Cards ⇄ list
+
+A view toggle on Employees and Departments, remembered per tab. Cards stay the default: a person or a
+department is an entity with an identity — a face, a glyph, a colour — and the card is what carries it.
+A list is the right answer for the other job, comparing many rows on the same few fields, and the app
+cannot guess which job you are doing.
+
+- Real `<table>`s, not grids of divs. This is tabular data and the semantics are what give a screen
+  reader "Department, column 4" instead of a wall of text.
+- The NAME is the button; the row is a mouse convenience. Making the `<tr>` focusable would put a tab
+  stop on each of 222 rows and bury the admin actions inside it.
+- The table scrolls inside its own wrapper — a seven-column directory otherwise pushes the whole page
+  sideways and scrolls the toolbar away from the rows it belongs to.
+- The department list keeps the card's THREE headcount states: `undefined` (directory still loading) is
+  not the same as a department with nobody in it.
+- Two radio buttons rather than one toggle: a lone icon button has to encode both the current state and
+  the action in one glyph, and gets read as the wrong one.
+
+Both tabs stayed well under the 600-line cap by putting each list in its own file (434 / 309 for the
+tabs; 155 / 113 / 85 for the new ones).
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings). HR + shared suites 93/93. Full CRM
+suite 16 failed / 466 passed — the same pre-existing `stream` / `touchpoints` failures.
+
+The app is running locally now (localhost:5173), so this session's UI work is finally verifiable by eye —
+worth a pass over the org canvas, the collapsible rail and these lists together.
+
+## 2026-08-07 — Summary tiles above the filters
+
+Moved the filter row below the summary tiles: page head → tiles → filters → content. The tiles are the
+answer to "what is in here"; the filters are how you narrow it. Reading the totals first and then
+reaching for a control is the order people actually work in, and it puts the filter row directly above
+the rows it filters instead of separated from them by three stat cards.
+
+Applied to all THREE tabs that have both — Employees, Departments and Org Structure. They are visually
+identical siblings, so leaving one in the old order would read as a bug rather than a choice. Revert the
+other two if only Employees was meant.
+
+Watch out when reordering these JSX blocks: the Employees tiles carry an explanatory comment and a
+DIFFERENT guard from the toolbar (`!firstLoad && directory.data`, because tiles counted off a failed
+directory read 0 rather than blank). A naive block swap stranded the comment above the toolbar; it is
+back with the tiles.
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors (22 pre-existing warnings), Mytrion suites 365/365.
+
+## 2026-08-07 — Employee detail: "Upload photo" was landing on the badge row
+
+Reported as a UI bug from a screenshot. Cause was mine, from the photo-upload work earlier in this
+session: `.hr-empd-ident` is a plain block, and BOTH `.hr-empd-badges` and `.hr-empd-photo-actions` were
+`display: inline-flex`. Two inline-level siblings share a line, so "Upload photo" rendered as a red
+underlined link jammed against the department chip — reading as a third badge rather than an action.
+
+Fixed by making the actions row `display: flex` (block-level), so it takes its own line under the
+badges. One property; the surrounding header layout is untouched.
+
+Also tightened while in there: `.hr-modal` had `max-height: min(90vh, 720px)` while its backdrop adds
+24px of padding top and bottom. Below ~480px of viewport height the dialog exceeded the box it sits in,
+and because the backdrop CENTRES its child the overflow splits across both ends — putting the top of the
+dialog somewhere no scroll can reach. Now `min(720px, calc(100vh - 48px))`, which cannot overflow at any
+height. Not what the screenshot showed (that was cropped, not clipped), but it is a real edge case.
+
+Audited the other inline-flex elements added this session for the same collision: `.hr-person-badges` is
+the only inline child of its block parent, and `.hr-person-dept` sits inside a flex container. No others.
+
+### Not fixed, needs a decision
+
+`.hr-empd { max-width: 620px }` is DEAD. `.hr-modal` sets `width: min(100%, 560px)`, and a max-width
+above the used width does nothing — so the employee detail dialog has always been 560px despite
+declaring it wants to be wider. Someone clearly intended the detail view to be roomier than a form
+dialog. Left alone rather than silently widening a dialog nobody complained about: either make it
+effective (set the width) or delete the line, but it should not stay as a rule that lies.
+
+### Checks
+
+hr.css parses (brace-balanced), CRM typecheck clean, root lint 0 errors, Mytrion suites 365/365.
+Not verified in a browser: the in-app browser hits the Zoho sign-in gate and signing in is not mine to do.
+
+## 2026-08-07 — Custom select (`HrSelect`)
+
+A native `<select>` renders its option list as OS chrome — a white system popup on macOS — and no
+stylesheet reaches inside it. So the dark HR toolbar opened a bright panel belonging to no part of this
+app. Replaced with our own control on the two Employees filters (department, designation).
+
+Built to the ARIA "select-only combobox" pattern: focus never leaves the trigger and the current row is
+pointed at with `aria-activedescendant`. Keeping focus on the button is deliberate — it means this can
+later drop into a modal without negotiating with the dialog's focus trap.
+
+Everything a native select gives away for free had to be rebuilt, and each of these is a way to ship it
+subtly broken:
+
+- Arrow keys, Home/End, Enter/Space to commit, Escape to dismiss, Tab closing on the way out.
+- Type-ahead WITH accumulation — "c" then "o" means "co" (Corporate), not two independent jumps.
+- Movement CLAMPS instead of wrapping: a wrapping list makes "am I at the end?" unanswerable without
+  counting.
+- Click-outside on `pointerdown`, not `click`, so a press landing on another control is not eaten here.
+- Active option scrolled into view; one highlight only, driven by the active index, so hovering moves
+  that index rather than painting a second "current" row the keyboard disagrees with.
+- The popup FLIPS UP when there is no room below. `.hr-root` is a scroll container, so a list running
+  past its bottom edge is clipped, not scrolled to.
+- An empty option set refuses to open — an empty popup reads as a load that failed.
+- A value matching no option shows the placeholder rather than blank.
+
+### Checks
+
+14 tests. Two were verified to bite by breaking the implementation (clamp → wrap, and dropping the
+type-ahead buffer). The first type-ahead test did NOT bite: with only one option starting with "c" the
+assertion passed whether or not the buffer accumulated. Added a second "c" option so the case actually
+discriminates, then re-broke it to confirm. Worth remembering — a type-ahead test needs two options
+sharing a prefix or it tests nothing.
+
+CRM typecheck clean, root lint 0 errors, full CRM suite 16 failed / 480 passed (the same pre-existing
+`stream` / `touchpoints` failures).
+
+### Not done
+
+15 native `<select>`s remain elsewhere in HR: HrEmployeeForm (4), HrAttendanceSettings (4),
+HrDepartmentModal (2), HrLeaveSettings (2), and one each in HrAttendanceTeam, HrDepartmentMembers,
+HrZohoUserLink. They have the same white-popup problem. The swap is mechanical now, but most sit inside
+modals and `fieldset[disabled]`, so it wants a deliberate pass with its own check of the focus trap and
+the disabled state — not a drive-by.
+
+## 2026-08-07 — Modal redesign
+
+CLAUDE.md rule 10 wants `modern-web-guidance` consulted for UI work; it is still not installed, so this
+ran the installed `redesign-existing-projects` skill instead and applied its audit. Kept Horizon tokens
+throughout — the skill's palette/font advice is aimed at greenfield work and this codebase already has a
+documented design language.
+
+What the audit actually caught here, and what changed:
+
+- **"Cards should exist only where elevation communicates hierarchy."** The employee detail had NINE
+  individually bordered, filled tiles inside an already-bordered dialog — boxes in a box, nine outlines
+  competing with the one that mattered. They are now borderless rows on a hairline grid. A side effect
+  worth having: an odd field count no longer looks broken, because the last row just ends instead of
+  leaving a lone box beside a gap. The department modal's read view reuses `.hr-empd-grid`, so it gets
+  the same treatment.
+- **Hierarchy inverted.** Labels were 700-weight uppercase against 400-weight values — the scaffolding
+  outweighed the content. Labels are now lighter and smaller, values heavier and larger.
+- **Tabular figures** on the values, so IDs, phone numbers and dates line up column to column.
+- **"Footer that scrolls away."** Header and actions are now `position: sticky`; only the body between
+  them moves. The negative side margins are load-bearing — the panel owns the horizontal padding, so a
+  pinned bar has to bleed back to the border box or its background stops short and content shows through
+  either side. Written as a bleed rather than per-child padding because `.hr-modal-actions` is a DIRECT
+  child in the detail dialog and nested inside `<form>` in the editors; a bleed is correct at both
+  depths, per-child padding would double up at one.
+- **"Perfectly even gradients."** The header wash is radial from a corner, not a 45° linear fade, and
+  carries the record's department tone.
+- **"Colored, tinted shadows."** The panel shadow now takes the department hue instead of black. (Light
+  theme keeps its existing flat shadow — that override predates this and is deliberate.)
+- **"Uniform border-radius on everything."** Container softened to 18px; inner surfaces stay tighter.
+- **The Zoho block was shouting.** An accent-tinted border and fill made the one administrative footnote
+  the loudest thing on the record. Now a hairline-separated section; colour is reserved for the
+  Linked/not state.
+
+Deliberately NOT taken from the audit: the font swap (Horizon's type scale is established and shared
+with every other Mytrion), sentence-case labels (the uppercase micro-label is a convention used across
+HR — changing it here only would be inconsistent), and noise/grain overlays (the module already has an
+ambient backdrop).
+
+### Checks
+
+CRM typecheck clean, root lint 0 errors, full CRM suite 16 failed / 480 passed (the same pre-existing
+`stream` / `touchpoints` failures). CSS validated with a production build sent to a THROWAWAY outDir
+(`--outDir /tmp/...`) so the vendored bundle stayed clean — last time a validation build rewrote 138
+tracked files and had to be reverted.
+
+Not verified in a browser: the in-app browser hits the Zoho sign-in gate.
+
+## 2026-08-07 — HR is purple; header menus
+
+### HR was two different colours
+
+The Mytrion picker has always drawn HR's card purple (`HORIZON_BY_ID.hr = purple` — "purple-500,
+deliberately a step warmer than Admin's violet"), but entering the module set `--accent` to coral. The
+card promised one identity and the workspace delivered another. `[data-mytrion='hr']` is now purple-400
+on dark / purple-600 on light, the family the card's chip and glow are already built from.
+
+No HR stylesheet hardcodes a red — everything routes through `--accent` — so this was a single edit.
+The config `hue` also moved from `'red'` to `'purple'`: it feeds `var(--${hue})` in `MytrionGuard`, so
+the loader flashed a red spinner and then resolved into a purple workspace.
+
+### Two header menus, both reachable from the rail
+
+The header carried five loose controls (View as, a Switch Mytrion link, a theme button, an avatar, a
+Sign out button). Now three, each a menu:
+
+- **`DropdownMenu`** (`components/`) — the ARIA menu-button pattern. Unlike the listbox built earlier,
+  focus MOVES INTO the menu: a listbox is a value you are picking so focus stays on the control, a menu
+  is a set of commands so the commands are what you arrow through. Escape returns focus to the trigger;
+  Tab closes but lets focus travel; an outside press closes WITHOUT pulling focus back, because the
+  pointer is already going somewhere else. Direction is a prop, not measured — the header hangs down and
+  the rail hangs up, and both call sites already know which.
+- **`AccountMenu`** — Profile, Theme, Sign out. It owns the profile modal rather than taking a callback,
+  so the header avatar and the sidebar user row both get Profile without each keeping its own state.
+  Theme deliberately does NOT close the menu: you judge a theme change by looking at it.
+- **`MytrionMenu`** — Switch Mytrion now lists the workspaces instead of navigating out to the picker.
+  Built from `resolveAccessibleMytrions`, the same resolver the router gates on, so it cannot offer a
+  door that then refuses to open. The current workspace is marked and inert (re-navigating there would
+  remount the workspace and discard its state). "All workspaces" still reaches the picker.
+
+**View as stays its own control.** It is already a searchable roster popover; burying a search inside a
+menu makes it harder to reach, not tidier.
+
+The sidebar's user row is now the AccountMenu trigger, opening upward — it used to jump straight to the
+profile modal while the header held the actions, so "where do I sign out" depended on which one you
+happened to look at.
+
+`.root` on the menu is `display: flex`, not `inline-flex`: in the header's flex row that sizes to
+content, in the sidebar's flex column it stretches to the full-width user row. One rule, both call
+sites, no prop to remember.
+
+### Checks
+
+13 new tests (9 primitive, 4 switcher); verified two bite by breaking Escape's focus return and the
+current-workspace guard. Typecheck clean, root lint 0 errors, build green to a throwaway outDir (the
+vendored bundle stayed clean).
+
+I broke my own `MytrionShell.test.tsx` doing this — the rail's user row is now an AccountMenu, which
+calls `useTheme()`, and the harness has no ThemeProvider. Caught it by watching the suite total go 16 →
+24 failures; mocked the hook. Worth noting the habit: the pre-existing failure count is the baseline, so
+a jump in it is the signal.
+
+Full suite back to 16 failed / 493 passed — the same pre-existing `stream` / `touchpoints` /
+`transport.refresh` failures.
+
+Not verified in a browser.
+
+## 2026-08-07 — HR pages were left-aligned, and the list was in a prose cap
+
+Reported as "a lot of space here" with the employee list squeezed and its row actions clipped. Two
+separate causes:
+
+1. **`.hr-page` had `max-width` and no auto margin.** A max-width block with no `margin: auto` is
+   LEFT-aligned, so on any monitor wider than `--hr-measure` the whole module hugged the left edge and
+   every pixel of slack piled up on the right. Reads as a broken layout, not as a reading width. Now
+   `margin-inline: auto`.
+2. **The list view was inside that reading cap.** `--hr-measure` exists for prose and cards; a
+   seven-column table is neither. Squeezed into it, the text columns pushed the table past its wrapper
+   and the row actions were clipped against the panel edge — while the page sat in a pool of empty
+   space. Both list views now add `.hr-page-wide` (the same opt-out the org canvas already used).
+
+Also: the actions column took a full equal share of the width AND was still clipped. Fixed-content
+columns now use the `width: 1%` + `nowrap` idiom so the flexible text columns absorb what is left.
+
+Targeted by CLASS, not `:last-child` — the first attempt used `:last-child`, which would also have hit
+the departments list's Description column, the one column that most needs the remaining width. Caught
+before it shipped by checking what each list actually ends with.
+
+### Checks
+
+Typecheck clean, root lint 0 errors, suite 16 failed / 493 passed (unchanged baseline), build green to a
+throwaway outDir with the vendored bundle untouched.
+
+## 2026-08-07 — Attendance consistency pass
+
+Attendance was the one HR tab none of this session's work had reached.
+
+- **Summary tiles**, the KPI row every other tab opens with, and the tab where live numbers matter most.
+  Two sets, because the panes answer different questions: My Data is a week of one person (right now /
+  present / absent / unscheduled), Team-All is a roster at this moment (people / in office now / needs
+  review / no shift). The roster counts are derived from the rows already on screen and reported up
+  through an `onSummary` callback — the same shape as the org canvas's `onHiddenCount`. Deliberately not
+  a second endpoint: the tiles have to agree with the rows underneath them, and a separate query is a
+  second chance for them not to.
+- Switching panes CLEARS the counts. The roster component is keyed on `pane` so it remounts and
+  refetches, but the tab's copy would survive that gap and show All's totals under "Your team". Stale
+  numbers with a confident new label are worse than no numbers.
+- **All five native selects gone** (1 in the Team pane, 4 in Settings) — the OS popup problem. HR now
+  has 10 left, all in the department/employee/leave forms.
+- **`hr-page-wide`** — the Team pane is a roster + detail split, wide content that a reading measure
+  only squeezes.
+- **`type="time"`** on the shift start/end fields. They were free text validated only by the server's
+  `isValidHhMm`, so a typo travelled to the API to be rejected.
+
+### A bug I nearly shipped
+
+The option arrays for the new pickers were inserted ABOVE `const empLabel`, and `employeeOptions` calls
+it inside a `.map` that runs immediately — a temporal-dead-zone crash on first render. Typecheck did NOT
+catch it: the call sits inside a callback, so TS does not treat it as use-before-declaration. Found it
+by reading back the declaration order rather than trusting the green typecheck. Moved the lists below.
+
+### Checks
+
+Typecheck clean, root lint 0 errors, suite 16 failed / 493 passed (unchanged baseline), build green to a
+throwaway outDir with the vendored bundle untouched. All three attendance files well under the 600 cap.
+
+### Still open on this tab (not in this pass)
+
+- `canViewOrgAttendance` reads `user.role`; the backend's `teamScope.ts` only reads `profiles`. A
+  role-only "HR Manager" is offered the All tab and then quietly gets their managed team, labelled
+  "org-wide".
+- Frontend coverage is still just `HrAttendanceWeek` (2 cases). `attendanceTime` (`tashkentToday`,
+  `weekRangeContaining`) is pure date maths and completely unguarded.
+
+## 2026-08-07 — Attendance was scoring night shifts wrong (stale `work_date`)
+
+Reported as "attendance showing not correctly". Found a real, systemic data bug.
+
+### The bug
+
+`work_date` is denormalised onto every punch and is the column every read filters and groups on. For an
+OVERNIGHT shift it is NOT the calendar date — `workDateForPunch` buckets a 02:00 exit back onto the
+previous day's shift. `ingestWebhook` gets that right, but only from what was true when the punch
+arrived. Two later events change the correct answer, and NOTHING revisited it:
+
+- a shift is **assigned** to someone whose punches are already stored — exactly what the 2026-07-30
+  rollout did, punches first and shifts after;
+- previously-unmapped punches are **linked** to an employee when their Face ID is finally set. Those
+  were ingested with no employee, so ingest's `if (employee)` shift lookup never ran and they were
+  stored on plain calendar dates.
+
+On the shipped 19:00–03:00 shift the 19:00 entry lands on day D and the 02:00 exit on D+1, so:
+
+- **D** has an unclosed session → "missing checkout", `needs_review`, **0 hours**;
+- **D+1** has an exit with no entry → no `firstIn` → counted **Absent**, plus a stray unmatched scan.
+
+A full-time night worker reads as never present and always absent. It looks like a display fault, which
+is why it is worth writing down that it is not one.
+
+### The fix
+
+`recomputeWorkDates(ctx, employeeId, { from })` re-derives and rewrites only the rows that moved. It
+mirrors `ingestWebhook`'s two-step shift resolution deliberately — two places must not disagree about
+which day a punch belongs to. Wired into both write paths: the shift-assign route (from `effectiveFrom`
+MINUS A DAY, because a punch in the small hours of the effective date belongs to the day before it) and
+after every `linkUnmappedForEmployee`.
+
+`scripts/hr-recompute-work-dates.ts` repairs rows already in the table — dry run by default, `--apply`
+to write. NOT RUN by me: `MYTRION_OPS_DATABASE_URL` points at the remote Render database.
+
+### Checks
+
+7 new tests. Two of them run the REAL summary builder to demonstrate the symptom and its repair: stale
+dates give 0 hours + `needs_review` + next day Absent; corrected dates give Present, 7h, complete. The
+route wiring is pinned too, and verified to bite by deleting the call.
+
+I broke `hr-attendance-routes.test.ts` doing this — the assign route now touches two more repo methods
+and returns `repairedPunches`. Fixed the mock and updated the assertion rather than trimming the
+response.
+
+Root typecheck clean, lint 0 errors, 8 HR backend suites 75/75.
+
+### Still open on attendance
+
+- `canViewOrgAttendance` reads `user.role`; `teamScope.ts` only reads `profiles`.
+- `attendanceTime` on the client (`tashkentToday`, `weekRangeContaining`) is still untested.
+
+### Correction to the entry above (same day)
+
+Half of that diagnosis was wrong, and the fix has been reworked.
+
+`hrAttendancePunchRepo` ALREADY had `rebucketMappedGangaPunches` — a raw-SQL re-derivation of `work_date`
+from the shift in force — and it already ran on both punch-LINK paths. I missed it because I read
+`linkUnmappedForEmployee` with a truncated window that stopped just before the call, and because I
+grepped the repo for `workDate` (camelCase) while that function is written in `work_date` SQL. So the
+Face-ID half of the story was never broken, and the call I added there was redundant.
+
+What IS real: `rebucketMappedGangaPunches` has exactly two callers, both link paths. **Assigning a shift
+never rebucketed**, so a retroactive assignment — which is what the rollout did — left every already
+stored night on the wrong day.
+
+Reworked accordingly:
+- deleted my parallel TypeScript `recomputeWorkDates` (writing a second implementation of the overnight
+  rule was the one thing my own comment said not to do);
+- exposed the existing routine as `hrAttendancePunchRepo.rebucketWorkDates(ctx, employeeId?)`;
+- the assign route calls that;
+- removed the redundant call after `linkUnmappedForEmployee`;
+- the backfill script calls the same repo routine, and reports a stale COUNT first so a dry run is
+  meaningful.
+
+Kept: the two tests that drive the REAL summary builder to show the symptom and its repair, and the
+route test pinning that assignment rebuckets (verified to bite).
+
+Lesson worth keeping: grep the SQL spelling as well as the field name, and read a function to its end
+before concluding what it does not do.
+
+Typecheck clean, lint 0 errors, 8 HR backend suites 70/70.
+
+## 2026-08-07 — Local attendance testing harness
+
+Testing attendance by hand has three sharp edges, and I hit all three this session:
+
+1. **The dev API writes to Render.** `MYTRION_OPS_DATABASE_URL` in `.env` is the remote database, so a
+   test punch posted at `localhost:3001` inserts a fabricated row against a real employee.
+2. **The webhook payload is a BARE ARRAY** of `{empCode, event_date_time, door_name}`. My first attempt
+   used a wrapped `{events:[...]}` with `punchTime`/`doorName` and got `skipped:1` — the endpoint does
+   not reject a wrong shape, it silently ignores it.
+3. **Only `%Ganga%` doors are stored at all**; `isAllowedAttendanceDoor` drops everything else, so a
+   plausible-looking door name yields nothing and no error.
+
+`scripts/hr-attendance-local.ts` (`pnpm hr:attendance-local seed|verify|reset`) handles all three. It
+REFUSES to run unless the database URL is localhost — a seeded fake employee in the production directory
+is not something you can quietly undo — seeds a 19:00–03:00 night worker with a Face ID, and prints the
+curl with the shape that actually works. `verify` prints the stored work dates and the resulting summary,
+and says what a 00:00 + `needs_review` night means.
+
+Also added `pnpm hr:fix-work-dates` for the backfill.
+
+### Verified end to end
+
+Guard fires against the Render URL. Then, with a SECOND api on :3011 pointed at the local database (so
+the running :3001 was never touched), a real webhook POST returned `success:2`, both punches stored on
+`work_date=2026-08-05`, and the summary read **Present, 07:08, complete**. The temporary api was stopped
+afterwards; :3001 still healthy.
+
+### The recipe
+
+```
+LOCAL='postgresql://octane:octane@localhost:5433/octane_assistant'
+MYTRION_OPS_DATABASE_URL=$LOCAL pnpm hr:attendance-local seed
+MYTRION_OPS_DATABASE_URL=$LOCAL PORT=3011 pnpm dev        # or :3001 if nothing else is on it
+curl ... localhost:3011/v1/hr/attendance/webhook          # printed by `seed`
+MYTRION_OPS_DATABASE_URL=$LOCAL pnpm hr:attendance-local verify
+```
+
+Note the API must point at the SAME database as the harness, or the punches land somewhere else and
+`verify` shows nothing.
+
+### Correction: the harness printed a command that would have hit production
+
+The first version of `seed` printed a curl aimed at **localhost:3001** — which is the API started from
+`.env`, i.e. the one connected to the REMOTE database. Pasting it with a valid secret would have written
+a fabricated punch against a real employee. The script's own guard protects the SCRIPT from touching
+production; it did nothing about the command the script told you to run.
+
+Two smaller faults in the same output: `$HR_ATTENDANCE_WEBHOOK_SECRET` is not exported in a normal shell
+(it lives in `.env`), so the header would have been empty and returned 401; and the `verify` line omitted
+the database URL, so it would have hit the guard.
+
+Now: the printed port defaults to **3011** (overridable with `LOCAL_API_PORT`) and is explicitly framed
+as "an API you started against the local database on purpose"; the secret is read from `.env` by a shell
+substitution at run time rather than printed into scrollback; and both follow-up commands carry the
+database URL. Verified by running the printed command verbatim — `success:2`, both punches on the same
+`work_date`, summary Present 07:08.
+
+Lesson: a safety guard on the tool is not a safety guard on the instructions the tool emits. Any command
+a script prints has to be checked as carefully as a command the script runs.
+
+## 2026-08-07 — A sleeping database read as "the feature is broken"
+
+`pnpm dev:all` came up, the Attendance page 500'd, and the log ended in:
+
+```
+PostgresError: the database system is starting up
+```
+
+Not a code fault. `dev:all` reads `.env`, which points at the **remote Render** Postgres; that instance
+sleeps when idle, and the first request after a quiet spell arrives while it is still coming up
+(SQLSTATE 57P03). It answered ~12s later. The database, not the request, was the problem.
+
+What WAS a fault is that this reached the browser as a bare `500 INTERNAL_ERROR` with a Drizzle stack.
+Three separate things had to be wrong for that, and each hid the next:
+
+**1. The pattern was missing.** `TRANSIENT_DB_ERROR_PATTERNS` covered socket-level failures
+(`ECONNRESET`, `socket hang up`, …) but not Postgres *answering* that it is not ready yet. On a
+sleep-when-idle instance that is the single most common transient failure, and it was the one case not
+listed. Added the 57P03 family: starting up / shutting down / in recovery mode / cannot connect now.
+
+**2. The message was in `cause`, and the classifier only read the top.** This is the part that would
+have shipped a fix that did not work. Drizzle wraps the driver error:
+
+```js
+class DrizzleQueryError extends Error {
+  constructor(query, params, cause) { super(`Failed query: ${query}\nparams: ${params}`); this.cause = cause }
+}
+```
+
+So the message a route actually catches says only that *a query failed* — the words "the database system
+is starting up" are never in it. `isTransientDbError` read `err.message` alone, so adding the pattern
+changed nothing on its own. It now walks the `cause` chain (depth-capped, cycle-guarded; it runs inside
+the error handler, where a loop would take down the reporter).
+
+I only caught this because I checked `DrizzleQueryError`'s real constructor instead of trusting the
+message I had hand-written into my own test. The first test passed against a string I invented, not
+against the shape that actually arrives. The test now builds the real wrapper and asserts
+`wrapped.message` does NOT contain "starting up" before asserting the classifier still sees it — if that
+premise ever stops holding, the test says so instead of quietly proving nothing.
+
+**3. Only one route handled transients at all.** `/hr/attendance/team` had its own try/catch mapping
+transients to a 503; every other route returned the bare 500. Which route is "first after idle" is
+arbitrary, so this belongs in one place: `plugins/errorHandler.ts` now maps any transient DB failure to
+`503 DB_UNAVAILABLE` + `Retry-After: 5`, and the per-route wrapper is gone. `isAppError` deliberately
+stays ahead of it — a route that explicitly wraps a DWH/carrier failure as 502 meant that.
+
+### Why the status code was not cosmetic
+
+`apps/mytrion-crm/src/api/transport.ts` already retries idempotent GETs on `{429, 502, 503, 504}`, honours
+`Retry-After`, and caps the wait at 5s. A 500 is not in that set. So the old behaviour didn't just label
+the outage wrong — it **defeated a retry the client already had**. With the 503 the page now waits and
+retries once by itself, which is usually all a waking instance needs.
+
+Also downgraded the log line: a sleeping database waking up is operational noise, not something to page
+on, so it's one `warn` line with no stack (the stack was always identical and said nothing).
+
+### Pre-existing, unrelated: two things the full suite turned up
+
+Both predate this change; neither is caused by it. Recorded so the next person doesn't re-diagnose them.
+
+- **`billing-auto-map-route.test.ts` fails 6/6 locally, deterministically.** It does
+  `const SECRET = env.BILLING_INGEST_SECRET`, which is **absent from `.env`**, so it sends `''` and
+  `paymentsIngest.routes.ts:90` correctly 503s `SERVER_MISCONFIGURED`. The test silently depends on a
+  developer's local `.env`; it should pin the secret itself (`vi.hoisted`, as `hr-routes.test.ts` does
+  with `API_KEY`). Confirmed unrelated by reverting the error-handler branch — it fails identically.
+- **`pnpm test` runs against the PRODUCTION Render database.** This is the big one, and it explains the
+  whole flaky-suite story. `vitest.config.ts` pins a long list of env vars — specifically so suites don't
+  make live calls with a developer's real credentials — but not `MYTRION_OPS_DATABASE_URL`, so it falls
+  through to `.env`, which is Render. Verified directly: a probe importing `databaseUrl` logs
+  `dpg-…-a.oregon-postgres.render.com`.
+
+  Symptoms it accounts for: trivial RBAC assertions taking 4–50s (one file 51134ms, one test timing out
+  at 30000ms); ~20 route suites failing intermittently under parallelism with a *different* set each run.
+  I first wrote this off as CPU contention — it is not. It is network latency plus connection-pool
+  pressure against a remote, sometimes-sleeping database, and it means test results depend on production
+  being awake.
+
+  Measured, same commit: **parallel → 148 failed / 2035**; **`--no-file-parallelism` → 7 failed / 2035**
+  (6 of them the billing env issue above, 1 a 30s timeout). So the suite is effectively green; the noise
+  is the database round trip.
+
+  A healthy local Postgres (`octane-postgres`, `localhost:5433`) has been up and unused this whole time.
+  Pinning the URL in `vitest.config.ts` is the obvious fix, but it needs the local schema migrated and a
+  check that CI's own value isn't clobbered, so it is filed rather than done here.
+
+## 2026-08-07 — Attendance now PULLS from the DWH instead of waiting to be pushed
+
+Replaced the webhook as the way attendance data arrives. `public.acs_event` in the DWH already holds
+the same door events as queryable history, so the page reads a window from it on open.
+
+Why this is better than the webhook regardless of convenience: a push listener only ever learns about
+events that happen while it is listening. Anything sent during a deploy, a restart, or an outage is
+simply gone — there is no replay. A pull is self-healing and backfillable: open last month and last
+month appears, whatever the listener was doing at the time.
+
+### What the source actually looks like (measured, not assumed)
+
+```
+emp_code text | event_date_time timestamp WITHOUT tz | event_date date | event_time time
+door_name text | emp_name text | dept_name text
+```
+387,627 Ganga rows, 2025-09-09 → live. ~940/day. Doors present include the **Oybek** office and a
+stray `Device 01`, which is why the query lists the six Ganga doors explicitly instead of matching
+`like 'Ganga%'` — an office we do not track must not start producing attendance for people silently.
+
+### The trap: `timestamp without time zone`
+
+`event_date_time` holds **Tashkent wall clock** (it matches `event_time`). node-postgres builds a Date
+from a naive timestamp using the *Node process's* zone. On this laptop (`Asia/Tashkent`) that is
+accidentally correct; on the server (UTC) the identical row lands **five hours off**, and every night
+shift crosses the day boundary the wrong way.
+
+Verified live: `wall=2026-08-07 18:55:44`, `event_time=18:55:44`, driver Date `13:55:44Z`.
+
+So the query does `to_char(event_date_time,'YYYY-MM-DD HH24:MI:SS')` and the string goes through
+`parseUzbWallClock` — the same function the webhook path uses. Result is independent of where it runs.
+A test pins the `to_char`, because "simplifying" it back is a one-line change with no visible symptom
+on a developer machine in Tashkent.
+
+### The 17:00–03:00 band, and why the tail is 07:00
+
+Shohruh asked to fetch only 17:00–03:00, which is right: the hourly histogram peaks 18:00–22:00 and
+again 00:00–02:00. It is a night operation. 127 people badge in a week and 122 of them badge inside
+the band; the five who never do are day staff this page does not report on.
+
+But a hard 03:00 stop clips real check-outs. `OVERNIGHT_CHECKOUT_GRACE_MINUTES` already lets a shift's
+check-out count for four hours after the shift ends, so stopping at 03:00 fetches the check-in and
+leaves the matching check-out in the DWH — **280 of them in one measured week**, each rendering as a
+night with 0 hours and `needs_review`: exactly the bug fixed earlier today. The tail is therefore
+`03:00 + OVERNIGHT_CHECKOUT_GRACE_MINUTES`, derived from the constant so the two cannot drift.
+
+Cost of the correct version over the clipped one: 4341 rows/week vs 4002. Still 19% under unfiltered.
+
+### Shape
+
+- `modules/hr/attendance/syncFromDwh.ts` — query, map, insert, link, rebucket.
+- `hrAttendancePunchRepo.insertMany` — chunked at 500 (Postgres caps a statement at 65535 bind
+  params; a week at ~10 columns sails past that) with `onConflictDoNothing`. The per-row `insert`
+  catching a unique violation is right for a webhook's handful of events and wrong for re-reading
+  6.5k rows of which nearly all are already stored.
+- `reconcileUnmapped` / `rebucketWorkDates` gained an optional `{from,to}`. Both were correct
+  unbounded, but they now run on a **page load**, and a whole-tenant sweep is not something an
+  interactive request should pay for. Filtered on `punched_at`, not `work_date` — the statement exists
+  to correct `work_date`, so filtering on the column it rewrites would skip the rows that are wrong.
+- `POST /hr/attendance/sync`, same HR gate as the reads. It grants nothing a caller cannot already
+  read; it only makes it current.
+- The page runs the sync **alongside** the read, not before it, and re-reads only if the sync says it
+  wrote something. Blocking first paint on an analytics query would make every visit wait to be told
+  nothing changed. A failure degrades to a warning banner — stale attendance is worth reading.
+- 60s server-side cooldown, in-flight collapse (both panes mount at once and ask for the same week),
+  31-day cap. Refresh sends `force` and bypasses the cooldown.
+
+### Verified end to end against the live DWH → LOCAL database
+
+```
+cold  : fetched 4354  inserted 4354  linked 12  skipped 0
+warm  : fetched 4354  inserted 0                 <- dedup index held
+cooldown hit: 0 ms, cached=true
+parallel identical windows -> one run, same object
+punches inside the excluded 07:00-17:00 hole: 0
+warm re-read end to end: 1055 ms
+```
+Weekend dip (Sat 408, Sun 172 vs ~1000 weekdays) is a good sanity signal that bucketing is right.
+
+17 sync tests + 6 route tests. Each protection mutation-tested: dropping the band, using a hard 03:00
+cutoff, unbounding the reconcile, removing the in-flight collapse, setting the cooldown before the
+fetch, removing the RBAC gate, removing the window cap — all caught.
+
+### The webhook is still there, deliberately
+
+`POST /hr/attendance/webhook` was left wired. Deleting a live ingress that an external system may still
+be posting to is an outward-facing change, and it costs nothing to keep: both paths land in the same
+table behind the same dedup index, so overlap is a no-op. Say the word and it goes.
+
+### Unrelated pre-existing failures (confirmed by stashing my changes)
+
+`src/api/stream.test.ts`, `touchpoints.test.ts`, `transport.refresh.test.ts` — 16 failures in the CRM
+suite, identical with my work stashed. Not investigated; not mine.
+
+### Same day — "Could not reach the backend. Load failed" was an IPv4-only bind
+
+The Attendance page showed the sync warning AND a failed roster read, both saying `Load failed`. The
+API was up the whole time: `curl localhost:3001/health` returned 200, CORS was configured correctly.
+
+The bind was IPv4-only:
+
+```ts
+await app.listen({ port: env.PORT, host: '0.0.0.0' });   // IPv4 only
+```
+
+Vite serves on `[::1]:5173`, so the browser loads the page over IPv6 and then resolves
+`localhost:3001` to `::1` too — where nothing was listening.
+
+```
+IPv4 127.0.0.1:3001 -> 200
+IPv6 [::1]:3001     -> refused      <- every fetch from the page
+```
+
+Safari reports a refused connection as `Load failed`, which reads exactly like "the server is off".
+`curl` hid it by silently falling back to IPv4 — which is why the health check kept passing and sent me
+looking at CORS first. (It also cost me a wrong turn: I truncated the preflight response at 14 lines,
+missed `access-control-allow-origin` below the cut, and briefly blamed CORS. The header was there.)
+
+Now binds `::` — dual-stack, IPv6 natively plus IPv4 via v4-mapped addresses — with a fallback to
+`0.0.0.0` on `EAFNOSUPPORT`/`EADDRNOTAVAIL`/`EINVAL` for hosts with IPv6 disabled at the kernel, which
+some container runtimes do. Verified: both stacks 200, socket shows `IPv6 *:3001`, and the page's own
+calls (`POST /hr/attendance/sync`, `GET /hr/attendance/team`) reach the server over IPv6 with the right
+CORS header, returning 401 for a missing session rather than failing to connect.
+
+Worth remembering: `curl` succeeding is not proof a browser can connect. Test the family the browser
+will actually pick, or bind both.
+
+### Same day — dropped the Team tab, and put the attendance reads behind the SWR cache
+
+**Team tab removed.** It was pinned to `scope: 'direct'` — literally the caller's own direct reports.
+An Administrator is rarely anyone's manager, so for the people who mostly use this page it was an
+always-empty tab that read as broken; for a manager it was a strictly smaller slice of what the roster
+already showed. Now there is one roster, always `scope: 'all'`, and the SERVER decides what "all"
+means: every Active employee for HR/Admin, reportees ∪ led departments for a manager.
+
+That last point is why this does not take anything away from managers — same query, and they keep the
+tab (labelled "Team" for them, "All" for org-wide viewers). What is genuinely gone is the admin's
+"just my direct reports" filter, which is what was asked for.
+
+**Both attendance reads now go through `_shared/swrCache`.** This is the fix for the real complaint.
+The page pulls from the DWH on open, so a refetch races every single visit — and the reads were
+hand-rolled `useState` + fetch, which meant that refetch blanked the view to a loader, and to
+`Could not reach the backend` with an empty table underneath when the warehouse was slow. The rows
+were fine the whole time.
+
+- `hr:attendance:me:${weekOf}` and `hr:attendance:team:${scope}:${weekOf}:${q}` — every input that
+  changes the answer is in the key, so each week and search term keeps its own entry.
+- A sync that actually wrote rows calls `invalidateSwrCache('hr:attendance:')`. Subscribers refetch
+  **with their data still on screen**. This replaced bumping a remount key, which threw away the open
+  person, the search text and the scroll position every time a punch arrived.
+- A fetch error now only takes over the page when there is nothing cached behind it. With rows on
+  screen it degrades to a warning (`role="status"`, not `alert`) — the rows are real, just older.
+- The roster caption says `· just now` / `· 4m ago` / `· updating…`. Cached data that silently passes
+  for live is worse than a spinner; if we are showing yesterday's numbers the user has to be able to
+  tell.
+- Split `actionError` out from the roster's fetch error. They shared one slot, so a failed shift
+  assignment and an unreachable roster looked identical, and a successful refetch silently wiped the
+  message saying the assignment had failed.
+
+5 component tests in `HrAttendanceTeam.cache.test.tsx`. Mutation-tested: restoring the
+error-blanks-data behaviour, dropping the freshness label, and dropping the week from the cache key
+each fail exactly one test.
+
+One trap worth recording: the `refreshToken` effect deliberately ignores its own initial value, so
+*mounting* with a different token does not revalidate — only bumping it on a mounted component does,
+which is what the Refresh button actually does. My first test mounted fresh with `refreshToken={1}`,
+saw no refetch, and failed for the right reason.
+
+### Same day — the roster stopped computing a week of attendance for everyone
+
+"It takes too much time fetching employee attendance." Measured, not guessed — against production,
+`buildAttendanceTeamList` for the 146-person org-wide roster:
+
+```
+resolveAttendanceTeam (the list itself)   3280 ms   146 employees
+listForEmployeesRange (the week)          3455 ms   2305 punches   <- deferred
+assignmentsForEmployeesDate                829 ms
+lastForEmployees                           571 ms
+countUnmappedRange                         625 ms
+```
+
+The inner three run in parallel, so the endpoint was ~7.5s, and half of it was one query: reading every
+punch for every listed person so each card could render `4 present · 0 absent` — a line most visits
+never read, on a page whose detail panel already fetches the full week for whoever you click.
+
+`buildAttendanceTeamList` now takes `{ withTotals }`. Off, it skips the range read and returns
+`totals: null`. Measured on the same data: **7502ms → 2713ms**.
+
+The reason this is safe is worth writing down, because it is not obvious: *everything else the roster
+renders comes from the last punch and the current assignment, never from the week's records*. The
+top-level `currentState` is `presenceStateForLastPunch(last, now)`, and `shift` is the assignment. So
+all four summary tiles — Everyone / In office now / Needs review / No shift — are unaffected. Verified
+against production rather than argued: both paths returned `{inOffice:28, needsReview:1, noShift:24}`.
+
+`totals: null`, not zeroes. Zeroes are a lie the UI cannot detect — "0 present" is a measurement.
+
+The card shows the shift name where the tally used to be, so the row still says whether the person can
+be scored at all, which is the thing you need before opening them.
+
+Also raised the sync's client timeout to 90s. It was on the transport's 20s default, which is why the
+screenshot showed *"the backend took too long to respond"* — a cold window really does take longer than
+that (warehouse query, ~4.4k inserts, link, rebucket), and it was going to succeed. Waiting costs
+nothing now that the page renders from cache and only re-reads when the sync reports new rows.
+
+5 module tests + 2 route tests. Mutation-tested: always reading the week, returning zeroes instead of
+null, and ignoring `?totals=0` each fail exactly one test.
+
+Still slow and NOT addressed: `resolveAttendanceTeam` is 3.3s for 146 rows. That is now the whole cost
+of the roster. It is remote-DB latency on a query that should be milliseconds — the same Render round
+trip that makes the test suite flaky. Worth a look, but it is a different problem from this one.
+
+### Same day — the roster is a list now, not a stack of cards
+
+Rejected design, fairly. It was 145 bordered panels, each four lines tall (name / role / shift /
+status pill), so a directory you scan to find one person was a page of chrome you scroll through. A
+card earns its border when elevation means something; here every row is a peer of every other row and
+the border was just repeated 145 times.
+
+Rows now: hairline separators inside one bordered container, a presence dot, name + role·department on
+two tight lines, state right-aligned. **59px per row**, down from ~130px.
+
+Three judgement calls worth recording:
+
+- **The shift name is gone from the row.** I had put it where the week tally used to be, an hour
+  earlier — and it was the worst thing on the card, because nearly everyone is on the same shift, so it
+  printed `UZB Tashkent · Ganga` 145 times. Its ABSENCE is the fact worth seeing, so now only "No
+  shift" appears, as a small amber chip.
+- **Presence is a dot, not a pill.** At this length the colour is what you scan; 145 pills is 145
+  things competing for attention. The word stays right-aligned for anyone who cannot use the colour,
+  and the dot is `aria-hidden` so a screen reader hears the state once, not twice.
+- **The container is `--surface`, NOT the `--hz-pane` gradient** every other panel uses. That token is
+  a `150deg` linear-gradient, which is right for a card you see all of at once and wrong for a scroller
+  holding 145 rows: the gradient spans the whole scroll height, so the same row is tinted differently
+  depending on where it has been scrolled to and identical rows stop looking identical.
+
+Checked it rather than asserting it, since I had already shipped one design that was rejected: built a
+static harness against the REAL stylesheets (`theme.css` + `horizon.css` + the four `hr-*.css`) and
+screenshotted it in both themes. Two things that came out of looking rather than reasoning:
+
+1. I eyeballed the rows at ~73px and was wrong — they measure 59px. The screenshot was 1.9× scaled.
+2. `getComputedStyle(...).backgroundColor` on the container read `rgba(0,0,0,0)` and I nearly filed it
+   as a missing token. `--hz-pane` is a *gradient*, so it lives in `background-image`; the panel was
+   painting correctly all along. That is what surfaced the scroller/gradient problem above.
+
+Also removed the now-dangling `.hr-att-person` rules from `hr-polish.css` and `hr-attendance-v2.css`
+and re-pointed the light-theme surface rule at `.hr-att-roster`.

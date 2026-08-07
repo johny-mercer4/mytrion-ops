@@ -18,7 +18,7 @@ import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModa
 import { HrEmployeeDetail } from '../HrEmployeeDetail';
 import { HrEmployeeForm, type EmployeeFormMode } from '../HrEmployeeForm';
 import { HrOrgCanvas, type OrgCanvasHandlers } from '../HrOrgCanvas';
-import { orgBranchIds } from '../orgGraph';
+import { NO_DEPARTMENT_ID, orgBranchIds } from '../orgGraph';
 import {
   invalidateHrDepartments,
   invalidateHrEmployees,
@@ -57,7 +57,6 @@ export function HrOrgStructure() {
   const designations = useHrDesignations();
 
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [includeTerminated, setIncludeTerminated] = useState(false);
   /** People the current collapse state is hiding, reported up by the canvas. */
   const [hiddenCount, setHiddenCount] = useState(0);
   const [error, setError] = useState('');
@@ -108,6 +107,9 @@ export function HrOrgStructure() {
     const ids = new Set<string>();
     for (const d of org.data?.departments ?? []) ids.add(d.id);
     for (const e of org.data?.employees ?? []) ids.add(e.id);
+    // The unassigned bucket is a real collapse target even though it is not a real department; leaving
+    // it out meant "Expand all" opened everything except the one group HR most wants to work through.
+    if (org.data?.employeeUnlinkedCount) ids.add(NO_DEPARTMENT_ID);
     return ids;
   }, [org.data]);
 
@@ -218,28 +220,6 @@ export function HrOrgStructure() {
       />
 
       {!firstLoad ? (
-        <div className="hr-toolbar">
-          <div className="hr-chips" role="group" aria-label="Canvas options">
-            <button
-              type="button"
-              className="hr-chip"
-              aria-pressed={includeTerminated}
-              onClick={() => setIncludeTerminated((v) => !v)}
-            >
-              Show terminated
-            </button>
-          </div>
-          <p className="hr-hint">
-            {admin
-              ? 'Click a node to open it · drag onto another to re-parent · “+” adds under a node · chevron expands staff'
-              : 'Click a node to open details. Changing the structure needs Mytrion Admin.'}
-            {/* Text only, no second spinner: the chart is already up, only the record behind a click is not. */}
-            {directory.loading ? ' · employee details still loading' : ''}
-          </p>
-        </div>
-      ) : null}
-
-      {!firstLoad ? (
         <HrSummaryTiles
           label="Organization structure summary"
           items={[
@@ -275,6 +255,18 @@ export function HrOrgStructure() {
         />
       ) : null}
 
+      {!firstLoad ? (
+        <div className="hr-toolbar">
+          <p className="hr-hint">
+            {admin
+              ? 'Click a node to open it · drag onto another to re-parent · “+” adds under a node · chevron expands staff'
+              : 'Click a node to open details. Changing the structure needs Mytrion Admin.'}
+            {/* Text only, no second spinner: the chart is already up, only the record behind a click is not. */}
+            {directory.loading ? ' · employee details still loading' : ''}
+          </p>
+        </div>
+      ) : null}
+
       {banner ? (
         <p className="hr-banner-error" role="alert">
           {banner}
@@ -294,7 +286,6 @@ export function HrOrgStructure() {
           data={org.data}
           admin={admin}
           expanded={expanded}
-          includeTerminated={includeTerminated}
           onToggle={onToggle}
           handlers={handlers}
           onGraphChanged={onGraphChanged}
@@ -376,6 +367,11 @@ export function HrOrgStructure() {
           onEdit={(emp) => {
             setEmpDetail(null);
             setEmpForm({ kind: 'edit', employee: emp });
+          }}
+          /* The canvas node draws the same face, and it reads from the org payload — refetch both. */
+          onPhotoChanged={() => {
+            invalidateHrEmployees();
+            org.reload();
           }}
         />
       ) : null}

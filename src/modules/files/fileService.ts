@@ -10,7 +10,7 @@ import { fileRepo } from '../../repos/fileRepo.js';
 import type { FileAsset } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
-import { storageFor, type StorageProvider } from './storage/index.js';
+import { fileStorageProvider, storageFor, type StorageProvider } from './storage/index.js';
 
 export interface StoreFileInput {
   name: string;
@@ -22,8 +22,8 @@ export interface StoreFileInput {
   conversationId?: string;
   agentTaskId?: string;
   /**
-   * Where to put the bytes. Defaults to S3 — the general pipeline is unchanged. Comms attachments pass
-   * `commsStorageProvider()` so chat files land on Dropbox without moving anything else.
+   * Where to put the bytes. Defaults to `FILE_STORAGE_PROVIDER` (S3 unless configured otherwise). Comms
+   * attachments pass `commsStorageProvider()` explicitly so chat files can follow their own setting.
    */
   storageProvider?: StorageProvider | undefined;
 }
@@ -68,7 +68,7 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
   const key = `${ctx.tenantId}/${input.kind}/${month}/${fileId}/${name}`;
   // The provider is decided ONCE per file and then recorded, so every later read and delete resolves the
   // same store regardless of what the env says by then.
-  const provider = input.storageProvider ?? 's3';
+  const provider = input.storageProvider ?? fileStorageProvider();
   const storage = storageFor(provider);
   await storage.put(key, input.buffer, { contentType: input.mime });
   await fileRepo.create(ctx, {

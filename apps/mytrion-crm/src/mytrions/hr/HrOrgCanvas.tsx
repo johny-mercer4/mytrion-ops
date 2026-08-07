@@ -45,7 +45,15 @@ import '@xyflow/react/dist/style.css';
 import { reparentHrOrgNode, setHrOrgPosition, type HrOrgStructureDto } from '../../api/hr';
 import { departmentTone } from './departmentAppearance';
 import { ORG_NODE_TYPES, setOrgNodeCallbacks } from './OrgNodes';
-import { buildOrgGraph, DEPT_H, DEPT_W, EMP_H, EMP_W, type OrgNodeData } from './orgGraph';
+import {
+  buildOrgGraph,
+  DEPT_H,
+  DEPT_W,
+  EMP_H,
+  EMP_W,
+  NO_DEPARTMENT_ID,
+  type OrgNodeData,
+} from './orgGraph';
 
 /** A drag can end many times a second; one write per settled position is enough. */
 const POSITION_DEBOUNCE_MS = 400;
@@ -55,9 +63,9 @@ const POSITION_DEBOUNCE_MS = 400;
  * below the parent, and the step that pushes a row clear of what it lands on. The last one mirrors the
  * auto-layout's own nudge gap (orgGraph keeps that constant private).
  */
-const ROW_GAP_X = 20;
-const ROW_GAP_Y = 36;
-const ROW_PUSH_GAP = 24;
+const ROW_GAP_X = 14;
+const ROW_GAP_Y = 26;
+const ROW_PUSH_GAP = 18;
 
 interface Box {
   x: number;
@@ -95,7 +103,6 @@ function CanvasInner({
   handlers,
   onGraphChanged,
   onError,
-  includeTerminated,
 }: {
   data: HrOrgStructureDto;
   admin: boolean;
@@ -105,11 +112,17 @@ function CanvasInner({
   /** A successful re-parent — the tab refetches, which is what redraws the edges. */
   onGraphChanged: () => void;
   onError: (message: string) => void;
-  includeTerminated: boolean;
 }) {
+  /**
+   * Terminated people are never drawn. The canvas used to carry a "Show terminated" chip; the product
+   * decision is that an org chart is who works here NOW, so the answer is always the same and a toggle
+   * that is never flipped is just a control to mis-read. `buildOrgGraph` still accepts the other value —
+   * it is what the "re-home a terminated manager's reports" behaviour is defined against — but nothing
+   * in the app passes it.
+   */
   const built = useMemo(
-    () => buildOrgGraph(data, { expanded, includeTerminated }),
-    [data, expanded, includeTerminated],
+    () => buildOrgGraph(data, { expanded, includeTerminated: false }),
+    [data, expanded],
   );
 
   // Surfaced rather than silently dropped: a canvas that hides 180 people without saying so reads as an
@@ -341,6 +354,9 @@ function CanvasInner({
   const persistPosition = useCallback(
     (node: Node<OrgNodeData>): void => {
       if (!admin) return;
+      // The "No Department" bucket has no `hr_departments` row, so a position write for it is a
+      // guaranteed 404. It is laid out fresh every render; the drag stands for this session only.
+      if (node.id === NO_DEPARTMENT_ID) return;
       const existing = timers.current.get(node.id);
       if (existing) window.clearTimeout(existing);
       const kind = node.data.kind;
@@ -436,6 +452,20 @@ function CanvasInner({
         return;
       }
       const targetKind = hit.data.kind;
+      /**
+       * Dropping a person onto "No Department" DETACHES them — the affordance the header of this file
+       * has always described as "drop onto the unassigned strip" and which never actually existed. It is
+       * a null parent, not a re-parent onto the bucket: there is no row behind it to point at.
+       */
+      if (hit.id === NO_DEPARTMENT_ID) {
+        if (node.data.kind !== 'employee') {
+          rollbackPosition(node.id);
+          onError('“No Department” holds people, not departments.');
+          return;
+        }
+        void reparent(node.id, null, 'department', true);
+        return;
+      }
       if (node.data.kind === 'department' && targetKind === 'employee') {
         rollbackPosition(node.id);
         onError('A department cannot sit under a person.');
@@ -527,6 +557,11 @@ function CanvasInner({
   const onConnect = useCallback(
     (c: Connection): void => {
       if (!admin || !c.source || !c.target) return;
+      // Same meaning as dropping onto it: an edge drawn out of the bucket unassigns the target.
+      if (c.source === NO_DEPARTMENT_ID) {
+        void reparent(c.target, null, 'department');
+        return;
+      }
       const parent = nodes.find((n) => n.id === c.source);
       if (!parent) return;
       void reparent(c.target, c.source, parent.data.kind);
@@ -568,6 +603,8 @@ function CanvasInner({
   /** Single click opens the department / employee modal (chevron and "+" stopPropagation). */
   const onNodeClick = useCallback(
     (_ev: ReactMouseEvent, node: Node<OrgNodeData>): void => {
+      // The bucket is a label with no record behind it — a click must not look like a failed open.
+      if (node.id === NO_DEPARTMENT_ID) return;
       if (node.data.kind === 'department') handlers.onOpenDepartment(node.id);
       else handlers.onOpenEmployee(node.id);
     },
@@ -606,7 +643,7 @@ function CanvasInner({
           maskColor="color-mix(in srgb, var(--bg-primary) 62%, transparent)"
           nodeColor={(n) => {
             const d = n.data as OrgNodeData;
-            return d.kind === 'department' ? departmentTone(d.tone) : 'var(--text-muted)';
+            return d.kind === 'department' ? departmentTone(d.tone, n.id) : 'var(--text-muted)';
           }}
           nodeStrokeWidth={2}
         />
