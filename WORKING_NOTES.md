@@ -12608,3 +12608,72 @@ Backend 2419 passed / 1 skipped, lint 0 errors, typecheck clean.
 
 **Still on the legacy retrieval path** — `rag_runs` is 0 for every case, so none of the CRAG loop ran
 yet. Phase 3 next.
+
+## 2026-08-08 — Phase 3: the CRAG loop is live, and the lexical leg was dead
+
+Enabled `FF_RAG_V2_RETRIEVAL=1` (the gate `scopedRag` needs alongside `FF_AGENTIC_RAG`) and
+`FF_RAG_MODEL_POLICY=1` (role-based models). The loop started running — `rag_runs` went from 0 to 1
+per turn, models split correctly into `answer:gpt-5.4-mini` / `router:gpt-5.4-nano` — but it was
+**slower**: mean 10,105ms, 5 LLM calls per question, `hops=2` every time, grades `partial/0.62`.
+
+`partial/0.62` is the literal deterministic-partial constant, so `assessEvidence` was never reaching
+its `sufficient` branch. Rather than tune the threshold I instrumented the fusion, and found the
+actual defect:
+
+**The full-text leg returned zero rows for every natural-language question.**
+`buildFullTextQuery` used `websearch_to_tsquery('simple', <the whole question>)`. websearch ANDs its
+terms and the `simple` config removes no stop words, so a chunk had to contain "how", "do", "i", "a"
+and "in" as literal lexemes. Measured against the Sales corpus: `'activate card'` matched 5 chunks,
+`"How do I activate a card in Sales Mytrion?"` matched **0**. The leg swallowed nothing and logged
+nothing — it simply always found nothing.
+
+The cost of that was much larger than lost recall. `assessEvidence` needs vector/lexical `agreement`
+to certify evidence as `sufficient`; with the leg dead, `agreement` was unreachable, so every
+question fell through to the semantic judge and then a corrective second hop — two extra model calls
+per turn to re-derive what a working keyword match already knew.
+
+Two changes:
+
+1. **`orOfTerms` + the english column.** The leg now builds `activate or card or sales or mytrion` and
+   runs `websearch_to_tsquery('english', …)` against `content_tsv` (english stems and drops stop
+   words; both columns are GIN-indexed). OR restores recall — a question shares only some words with
+   its answer — while `ts_rank_cd` keeps precision by rewarding term density: for
+   "how are retention cases generated" the top three ranked chunks are all the correct document
+   (0.90, 0.90, 0.70). Still `websearch_to_tsquery`, not `to_tsquery`, so hostile text degrades
+   instead of throwing. Terms are de-duplicated, capped at 12, interrogatives dropped, and intra-word
+   hyphens kept so `C-16` survives as one term.
+2. **Corroboration now moves confidence** in `assessEvidence` (+0.06 vector/lexical agreement, +0.03
+   multi-query, cap 0.98). It previously only gated the branch, so with the lexical leg dead the only
+   route past `shouldUseDeterministic`'s 0.85 bar was cosine ≥ 0.733 — rare, since on-target Sales
+   documents measure 0.54–0.82. Two retrieval methods independently surfacing the same chunk is the
+   standard hybrid-search precision signal; it should count.
+
+### Measured
+
+| metric | baseline | after 1+2 | after 3 |
+| --- | --- | --- | --- |
+| mean wall | 11,693ms | 5,450ms | **6,180ms** |
+| LLM calls (4 questions) | 5 | 8 | 13 |
+| hops per question | n/a (loop off) | n/a | **1** |
+| evidence grade | — | — | **sufficient/0.90–0.91** |
+| retrieval ms | 0 (loop off) | 0 | 1,456–2,227 |
+| failures | 2 of 4 | 0 | 0 |
+| on-target citation | 3 of 4 | 4 of 4 | 4 of 4, exactly one doc each |
+| cost (4 questions) | $0.0537 | $0.0143 | $0.0755 |
+
+Versus the first Phase 3 attempt (10,105ms, 20 calls, hops=2, partial grades) this is 39% faster with
+7 fewer model calls. Versus the original baseline: **1.9× faster, zero failures, 4/4 citations**, and
+now with genuine evidence grading rather than a single-shot kNN.
+
+**Cost is the honest regression**: $0.0537 → $0.0755, because answers moved from `gpt-4o-mini` to
+`gpt-5.4-mini`. That is the model that fixed tool selection, so I would keep it; if cost matters more
+than answer quality, `resolveModelPolicy`'s `answer` role is the one dial to change.
+
+`limit-max` used 4 calls rather than 3 — its confidence landed just under the bar, so the judge ran.
+That is the adaptive behaviour working, not a defect.
+
+Tests: 6 new `assessEvidence` cases (corroboration raises confidence, cannot rescue a sub-floor
+match, cannot override `outdated`, caps at 0.98) and 6 for `orOfTerms` (OR form, interrogatives
+dropped, codes intact, de-dup/cap, empty input, injection-safe). The existing full-text RBAC test now
+asserts the transformed query is the parameter — its real point, that department names inside a
+question never become filters, is unchanged and still passes. Backend 2431 passed, lint 0 errors.

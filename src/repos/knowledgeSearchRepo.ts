@@ -153,27 +153,68 @@ async function countEligible(ctx: TenantContext, scope?: RetrievalScope): Promis
   return rows[0]?.count ?? 0;
 }
 
+/** Terms too generic to be worth OR-ing; `english` drops most stop words, these are the leftovers. */
+const LEXICAL_NOISE = new Set(['what', 'which', 'where', 'when', 'how', 'why', 'who', 'does', 'do']);
+/** Enough terms to describe a question; more only broadens the candidate set without adding signal. */
+const MAX_LEXICAL_TERMS = 12;
+
+/**
+ * Rewrite free text as a websearch OR expression: `activate or card or sales`. Keeps intra-word
+ * hyphens so service codes ("C-16") survive as one term. Returns '' when nothing useful remains,
+ * which yields an empty tsquery and therefore no rows — the correct answer for a term-free question.
+ */
+export function orOfTerms(query: string): string {
+  const terms = query
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}-]+/u)
+    .map((term) => term.replace(/^-+|-+$/g, ''))
+    .filter((term) => term.length > 1 && !LEXICAL_NOISE.has(term));
+  return [...new Set(terms)].slice(0, MAX_LEXICAL_TERMS).join(' or ');
+}
+
 export const knowledgeSearchRepo = {
   /** Vector leg (exposed as a builder so tests can assert the WHERE offline via .toSQL()). */
   buildVectorQuery(ctx: TenantContext, embedding: number[], k: number, scope?: RetrievalScope) {
     return vectorQuery(db, ctx, embedding, k, scope);
   },
 
-  /** Full-text leg over the generated content_tsv column (websearch syntax, ts_rank_cd order). */
+  /**
+   * Full-text leg. OR-of-terms over the english `content_tsv`, ranked by `ts_rank_cd`.
+   *
+   * This used to be `websearch_to_tsquery('simple', <the whole question>)`, which returned **zero
+   * rows for every natural-language question**: websearch ANDs its terms, and the `simple` config
+   * removes no stop words, so a chunk had to contain "how", "do", "i", "a" and "in" as literal
+   * lexemes. Measured — 'activate card' matched 5 chunks, "How do I activate a card in Sales
+   * Mytrion?" matched 0.
+   *
+   * A silently empty lexical leg is expensive far beyond lost recall: `assessEvidence` needs
+   * vector/lexical `agreement` to certify evidence as `sufficient`, so without it every question fell
+   * through to the semantic CRAG judge and then a second corrective hop — two extra model calls per
+   * turn to re-learn what a working keyword match already knew.
+   *
+   * OR semantics restore recall (a question shares only some of its words with the answer) while
+   * `ts_rank_cd` keeps precision: it scores by how many distinct terms matched and how close they
+   * are, so the on-topic document still ranks first and RRF fuses from there. `english` is chosen
+   * over `simple` because it stems and drops stop words; the cost is slightly weaker bare-code
+   * matching ("C-16" alone), which the vector leg and `ts_rank_cd` term-density both cover.
+   *
+   * `websearch_to_tsquery` (rather than `to_tsquery`) keeps this injection-safe and syntax-error
+   * proof: unbalanced quotes or stray operators in user text degrade instead of throwing.
+   */
   buildFullTextQuery(ctx: TenantContext, query: string, k: number, scope?: RetrievalScope) {
     const effective = resolveRetrievalContext(ctx, scope);
-    const tsQuery = sql`websearch_to_tsquery('simple', ${query})`;
+    const tsQuery = sql`websearch_to_tsquery('english', ${orOfTerms(query)})`;
     return db
       .select({
         ...baseSelection(),
-        score: sql<number>`ts_rank_cd(${knowledgeChunks.contentTsvSimple}, ${tsQuery})`,
+        score: sql<number>`ts_rank_cd(${knowledgeChunks.contentTsv}, ${tsQuery})`,
       })
       .from(knowledgeChunks)
       .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
       .where(
         and(
           baseWhere(effective, scope),
-          sql`${knowledgeChunks.contentTsvSimple} @@ ${tsQuery}`,
+          sql`${knowledgeChunks.contentTsv} @@ ${tsQuery}`,
         ),
       )
       .orderBy((aliases) => desc(aliases.score))
