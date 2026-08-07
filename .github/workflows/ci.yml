@@ -1,14 +1,44 @@
 name: CI
 
+# Runs on `build` as well as `main`. Team flow is: branch -> PR to `build` -> merge -> `build` into
+# `main` -> deploy. With main-only triggers every PR was reviewed with zero automated verification
+# and CI first ran at merge-to-main, i.e. at deploy time, after the decision it should have informed.
 on:
   push:
-    branches: [main]
+    branches: [main, build]
   pull_request:
-    branches: [main]
+    branches: [main, build]
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+
+    # Most of the suite is DB-backed route tests. Without a database they answer 503 and the
+    # gate is meaningless, which is why the test step used to be advisory. pgvector/pg16 matches
+    # docker-compose; migration 0000 creates the `vector` extension itself.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: octane
+          POSTGRES_PASSWORD: octane
+          POSTGRES_DB: octane_assistant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MYTRION_OPS_DATABASE_URL: postgresql://octane:octane@localhost:5432/octane_assistant
+      # Dummy values, not secrets. Routes behind a shared secret answer 503 when it is unset
+      # (apiKeyAuth.ts, paymentsIngest.routes.ts), which makes auth assertions fail for the wrong
+      # reason. Every other value the suite needs is pinned in vitest.config.ts.
+      API_KEY: ci-test-api-key
+      BILLING_INGEST_SECRET: ci-test-ingest-secret
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,24 +59,71 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # Advisory: much of the suite is DB-backed route tests (return 503 without a Postgres, which
-      # this runner has no service for) plus in-flight feature tests. Surface failures without
-      # hard-failing until CI gains a postgres service and the WIP tests settle. Lint, typecheck,
-      # and build remain hard gates. Re-tighten once a DB service is wired here.
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      # Hard gate. Verified green end to end with only the env above and no .env file present:
+      # 2409 passed, 1 skipped, 0 failed.
       - name: Test
-        continue-on-error: true
         run: pnpm test
 
       - name: Build
         run: pnpm build
 
-      - name: Web install
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The vendored-bundle check diffs this branch against its merge base.
+          fetch-depth: 0
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install web dependencies
         run: pnpm -C apps/mytrion-crm install --frozen-lockfile
 
-      # Advisory only: apps/mytrion-crm is an actively-developed React app whose typecheck currently
-      # carries in-flight WIP errors. Prod serves the VENDORED bundle (apps/mytrion-crm/app, built
-      # separately and committed), so these never affect the deploy — surface them without hard-failing
-      # the gate. Re-tighten (drop continue-on-error) once the frontend tree is clean.
-      - name: Web typecheck + test
-        continue-on-error: true
-        run: pnpm -C apps/mytrion-crm typecheck && pnpm -C apps/mytrion-crm test
+      # Hard gate: the frontend tree typechecks clean. It was advisory because of in-flight WIP
+      # errors that no longer exist.
+      - name: Web typecheck
+        run: pnpm -C apps/mytrion-crm typecheck
+
+      - name: Web test
+        run: pnpm -C apps/mytrion-crm test
+
+      # Render serves the COMMITTED bundle in apps/mytrion-crm/app and never runs Vite, so a PR
+      # that changes src without rebuilding looks merged on GitHub while production shows the old
+      # screen (the EFS Balance tile, PR #149). This compares which paths a PR touched rather than
+      # rebuilding and diffing bytes, so it cannot fail for environment-dependent build output.
+      - name: Vendored bundle is rebuilt
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Three-dot: diff from the merge base, i.e. exactly what this PR changed — not whatever
+          # else landed on the base branch meanwhile.
+          changed=$(git diff --name-only "$BASE...$HEAD")
+          # Test files under src/ never reach the bundle, so they must not demand a rebuild.
+          src_changed=$(echo "$changed" \
+            | grep '^apps/mytrion-crm/src/' \
+            | grep -vE '\.test\.(ts|tsx)$|/__tests__/' \
+            | grep -c . || true)
+          app_changed=$(echo "$changed" | grep -c '^apps/mytrion-crm/app/' || true)
+          echo "mytrion-crm src files changed (excluding tests): $src_changed"
+          echo "mytrion-crm app files changed: $app_changed"
+          if [ "$src_changed" -gt 0 ] && [ "$app_changed" -eq 0 ]; then
+            echo ""
+            echo "::error::This PR changes apps/mytrion-crm/src but does not update the committed"
+            echo "::error::bundle in apps/mytrion-crm/app. Production serves that bundle, so this"
+            echo "::error::change would merge without altering the live UI."
+            echo "::error::Run 'pnpm build:widget' and commit apps/mytrion-crm/app in this PR."
+            exit 1
+          fi
+          echo "Bundle check OK."

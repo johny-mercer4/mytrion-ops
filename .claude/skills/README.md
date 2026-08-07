@@ -24,3 +24,9 @@ Reference skills for this repo. Each `SKILL.md` is auto-surfaced by Claude Code 
 | --- | --- |
 | [`external-databases`](external-databases/SKILL.md) | Connecting to external SQL DBs — read-only DWH **Postgres** (`integrations/dwh.ts`, `pg`) + AWS RDS/Aurora **MySQL** (`integrations/awsMysql.ts`, `mysql2`): pooling, URI vs IAM auth, TLS, read-only enforcement, the `$1` vs `?` placeholder gotcha, RDS network prerequisites. |
 | [`llm-providers`](llm-providers/SKILL.md) | LLM provider strategy — OpenAI + adding Groq via the OpenAI-compatible `baseURL`, model routing, tool-call safety net. |
+
+## Frontend
+
+| Skill | Covers |
+| --- | --- |
+| [`modern-web-guidance`](modern-web-guidance/SKILL.md) | **Required by CLAUDE.md hard rule 10 before any UI/UX work.** The one token system (`theme.css` + Tailwind `@theme inline`, no `dark:` variant), per-Mytrion accents, Horizon glass primitives, motion + `prefers-reduced-motion`, the single-loader rule and skeleton patterns, composited-layer traps (`transform`/`overflow`/`transition: all` on blurred cards), and the vendored-bundle rebuild requirement. |

@@ -12295,3 +12295,75 @@ with them. A redeploy should now succeed; if the DB is mid-restart it will wait 
 - Ran `pnpm build:widget` and recommitted `apps/mytrion-crm/app` so deploy picks up the UI.
 - Documented the rule in `CLAUDE.md` + `AGENTS.md` (**Vendored frontend builds**): UI PRs must
   rebuild and commit `apps/mytrion-crm/app` / `apps/mini-app/app` before opening the PR.
+
+## 2026-08-07 — CI/CD guardrails: gates that run where review happens
+
+Audited why migrations, UI updates and backend changes keep going wrong. One root cause: **the
+quality gates didn't run where the review happened.** `ci.yml` triggered on `main` only, but the
+team's flow is branch → PR to `build` → merge → `build` into `main`. So every PR was reviewed with
+zero automated verification, and CI first ran at merge-to-main — deploy time, after the decision it
+should have informed. Even then it barely gated: `pnpm test` and the whole frontend job were
+`continue-on-error: true`.
+
+### The test gate was fixable, not fundamentally broken
+
+The suite looked hopeless (Codex counted 68 route failures) but that was purely a missing database.
+Measured against a real Postgres, it was 2382/2404. The remaining failures were two missing env
+vars, not product bugs:
+
+- 22 failures in one file — `BILLING_INGEST_SECRET` unset, so `paymentsIngest.routes.ts` answered
+  503 before ever reaching the auth assertion.
+- 2 failures in `ledger-routes` — `API_KEY` unset, so `apiKeyAuth.ts:30` answered 503 for the same
+  reason.
+
+With a `pgvector/pg16` service and those two dummy values, and **no `.env` present at all** (the real
+CI condition, simulated with `DOTENV_CONFIG_PATH=/dev/null`): **2409 passed, 1 skipped, 0 failed**.
+So `pnpm test` is now a hard gate, as is the frontend job — its typecheck is clean, and the
+"in-flight WIP errors" comment justifying `continue-on-error` was stale.
+
+### Migration journal guard
+
+`tests/unit/migration-journal.test.ts` asserts journal↔file agreement, consecutive `idx`, no reused
+migration numbers, and — the one that matters — that `when` never decreases as `idx` increases,
+since Drizzle skips any entry not newer than the newest applied and exits 0 green.
+
+Two pre-existing violations are **grandfathered, not fixed**: idx 79 (`0079_maintenance_cases`,
+`when` below idx 78) and the duplicate `0104` number. Restamping or renaming an already-applied
+migration changes its tag, which would make Drizzle treat it as new and re-run it against local and
+production. Verified harmless — a fresh `db:migrate` applies all 111 entries and `maintenance_cases`
+exists. A fifth test fails if either is ever repaired, so the allowlist can't outlive the problem.
+
+### `db:migrate` blast radius
+
+`.env` on this machine pointed at the Render production database, so a routine local migration was
+one command from migrating prod. `pnpm db:migrate` now goes through `scripts/guardedMigrate.ts`,
+which refuses a non-local host unless `ALLOW_REMOTE_DB_MIGRATE=1`. `db:migrate:raw` keeps the
+unguarded path. **Production is unaffected** — Render migrates in-process at boot via
+`runMigrationsOnBoot()` (`DB_MIGRATE_ON_BOOT=1`), which never invokes this script. `.env.example`
+now defaults to the local `:5433` database instead of blank with a "no local DB" comment that
+stopped being true.
+
+### Vendored bundle
+
+CI now fails a PR that changes `apps/mytrion-crm/src` without touching `apps/mytrion-crm/app` — the
+exact PR #149 failure mode. It compares changed paths from the merge base rather than rebuilding and
+diffing bytes, so it can't fail on environment-dependent Vite output, and it ignores `*.test.tsx`
+and `__tests__/` since those never reach the bundle.
+
+I did **not** switch the Dockerfile to build the frontend and drop the committed bundle. The
+frontend typechecks clean so it's now viable, but it would put the UI build on the critical path of
+every Render deploy — a frontend break would become a deploy break. The staleness check removes the
+failure mode with zero production risk; the Docker switch is a separate, deliberate change.
+
+### `modern-web-guidance` installed
+
+CLAUDE.md hard rule 10 required a skill that did not exist, which quietly taught everyone the rules
+file is advisory. Written from this codebase, not generically: the single token system
+(`theme.css` + Tailwind `@theme inline`, and why there is no `dark:` variant), per-Mytrion accents
+via `data-mytrion`, the Horizon glass primitives, the app-wide `prefers-reduced-motion` contract,
+the one-loader-per-region rule with the `MytrionLoader`/skeleton/stale-content split, and the
+composited-layer traps documented in `AutoCatalog.tsx` (a permanent `transform` promotes a layer and
+can leave a `backdrop-filter` card unpainted; `transition: all` re-rasterises the blur).
+
+**Not done, by request:** the 600-line cap as an ESLint rule. 22 files exceed it (5 in backend
+`src/`, `carrierMiniApp.routes.ts` at 1,912).
