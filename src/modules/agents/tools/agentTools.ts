@@ -25,6 +25,37 @@ function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '__');
 }
 
+/**
+ * The parameter schema OpenAI gets for one tool. Two things must hold, and BOTH were broken for
+ * MCP-backed tools:
+ *
+ *  - MCP tools declare `inputSchema: z.unknown()` because the MCP server validates arguments; their
+ *    real JSON Schema lives on `rawParameters`. Deriving from the zod schema therefore threw the
+ *    actual parameters away, so the model could never fill them in.
+ *  - `zodToJsonSchema(z.unknown())` is `{}` — no `type`. OpenAI requires a function's parameters to
+ *    be `type: "object"` and rejects the ENTIRE request otherwise, reporting the missing key as
+ *    `got 'type: "None"'`. One such tool in the bound set failed every agent turn with
+ *    "The AI service failed to complete this request", whatever the user asked.
+ *
+ * So: prefer the tool's own JSON Schema, and guarantee an object-typed root either way.
+ */
+export function openAiToolSchema(rt: RegisteredTool): Record<string, unknown> {
+  const raw = rt.rawParameters;
+  const derived: unknown = raw && Object.keys(raw).length > 0 ? raw : zodToJsonSchema(rt.inputSchema);
+  const base: Record<string, unknown> =
+    typeof derived === 'object' && derived !== null && !Array.isArray(derived)
+      ? (derived as Record<string, unknown>)
+      : {};
+  if (base['type'] === 'object') return base;
+  // A non-object root (or none at all) cannot describe named arguments — present it as an empty
+  // object schema rather than letting it invalidate the whole request.
+  const properties =
+    typeof base['properties'] === 'object' && base['properties'] !== null
+      ? base['properties']
+      : {};
+  return { ...base, type: 'object', properties };
+}
+
 function toLangChainTool(
   rt: RegisteredTool,
   manifest: AgentManifest,
@@ -74,7 +105,7 @@ function toLangChainTool(
       }
     },
     // Registry schemas are classic (v3) zod; convert to JSON Schema so LangChain v1 accepts them.
-    { name: safeName(rt.name), description: rt.description, schema: zodToJsonSchema(rt.inputSchema) },
+    { name: safeName(rt.name), description: rt.description, schema: openAiToolSchema(rt) },
   ) as unknown as StructuredTool; // JSON-schema tool() overload returns a compatible runtime tool
 }
 

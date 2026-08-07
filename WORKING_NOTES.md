@@ -12406,3 +12406,80 @@ Verified both directions:
 Note the new journal guard earned its place immediately: I first numbered this migration `0108`,
 which `origin/build` already uses, and the duplicate-number test caught it before it was applied
 anywhere.
+
+## 2026-08-07 — AI Chat in Mytrion Admin: the failure was one malformed tool schema
+
+Consulted the `modern-web-guidance` skill first (hard rule 10 — it exists now).
+
+### Why EVERY Horizon answer failed, not just card activation
+
+The chat's "The AI service failed to complete this request" had nothing to do with Sales
+self-knowledge. Reproduced against a live server and read the actual log line:
+
+```
+400 Invalid schema for function 'zoho_mcp__ZohoCRM_getWebhookAssociatedModules':
+schema must be a JSON Schema of 'type: "object"', got 'type: "None"'
+```
+
+`"None"` is OpenAI reporting a **missing** `type` key, not a literal string. The chain:
+
+1. MCP tools declare `inputSchema: z.unknown()` (the MCP server validates arguments); their real
+   JSON Schema lives on `rawParameters`.
+2. `agentTools.ts` built every tool's schema with `zodToJsonSchema(rt.inputSchema)`, so for MCP
+   tools that is `zodToJsonSchema(z.unknown())` → `{}` — no `type`.
+3. OpenAI validates the WHOLE tool list per request and rejects all of it if one function's
+   parameters are not `type: "object"`.
+
+So one MCP tool in the bound set failed every agent turn regardless of the question. Two bugs in
+one: the model also never saw those tools' real parameters, because the zod schema threw them away.
+
+`openAiToolSchema()` now prefers `rawParameters` and guarantees an object-typed root. Also hardened
+`mcpTools.paramsForOpenAi` to strip invalid `type` values recursively and report which upstream tools
+it repaired, so a genuinely bad Zoho schema degrades one argument instead of every conversation.
+Nothing caught this because `vitest.config.ts` pins `FF_ZOHO_MCP_ENABLED=0`, so no test ever built an
+MCP-backed tool set.
+
+**Verified live** (server on :3011 against the local DB, which carries the synced catalog): the brief's
+scenario now answers exactly as specified — `ERROR: None`, 5 passages, cited to
+`Sales Mytrion — Card Activation (C-1)`, walking Automations → search "Card Activation"/C-1 → the
+block under the **Customer Service section** → client → card → Activate Card.
+
+### Switch Mytrion
+
+Now a plain `<Link to="/main">` instead of a dropdown — one click lands on the picker. `TopBar`'s
+`mytrion` prop went unused and was dropped. `MytrionMenu` is left in place (still tested) in case a
+bespoke shell wants the shortcut later; nothing renders it today.
+
+### Light/dark contrast
+
+`MessageBubble.module.css` was written dark-only: `#fff`, `#e2e8f0` and `rgba(255,255,255,…)` text on
+light tints. In light mode the error box was white-on-pink (the screenshot), markdown `h3` was
+white-on-white, and inline `code` was near-white text on a near-invisible background. Converted 23
+colour-bearing rules to the token scale — status chips and citation errors onto `--tint-*`, citation
+chips and picker states onto `--accent-*` so they recolour per Mytrion, `.pickerConfirm` onto
+`--on-accent`, and the dark-only scrollbar thumb onto `--border`. The only hardcoded `rgba` left is
+the sheen on the accent-filled user bubble, which is correct in both themes.
+
+### Test as: Zoho user
+
+The backend already did the hard part: `x-act-as-zoho-user-id` is the ONLY trusted input, the
+target's name/profile/role come from the CRM directory, and `actAsContext` runs the turn with the
+target's own DB-resolved grant, role, scopes and `userId` — with the real admin recorded as
+`impersonatorUserId`. Escalation-guarded.
+
+Added a **chat-scoped** target (`features/chat/testAs.ts`) deliberately separate from the per-Mytrion
+"View as" store: reusing that would re-scope the Knowledge Base and database browsers to the test
+user too. Only the chat endpoints send it, only the id is sent, admin-only, and changing the target
+starts a new conversation so one transcript never mixes two identities.
+
+Rebuilt `apps/mytrion-crm/app` and confirmed `Test as` / `Testing as` / `octane.chatTestAs.v1` are in
+the hashed bundle.
+
+Gates: backend 2412 passed / 1 skipped, frontend 549 passed, typecheck clean both trees, lint 0
+errors (23 pre-existing warnings).
+
+**Aside on the ERR_CONNECTION_REFUSED you saw:** that was simply the API not running on :3001 — the
+`/v1/auth/me` and `/v1/knowledge/*` calls had nothing to answer them. Worth knowing separately: the
+Render prod Postgres dropped this machine's connection twice during testing and killed the server
+("Connection terminated unexpectedly"), which is the same flakiness that interrupted the catalog
+sync. Local work is much steadier against `:5433`.

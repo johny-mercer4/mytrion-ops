@@ -7,7 +7,7 @@
   flex-direction: column;
   gap: var(--space-4);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--border-strong, var(--border)) transparent;
 }
 
 .list::-webkit-scrollbar {

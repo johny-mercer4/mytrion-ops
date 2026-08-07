@@ -10,7 +10,7 @@ vi.hoisted(() => {
 vi.stubGlobal('fetch', fetchMock);
 
 import { callMcpTool, listMcpTools, resetMcpSession } from '../../src/integrations/zohoMcp.js';
-import { classifyMcpRisk, loadMcpTools } from '../../src/modules/tools/mcpTools.js';
+import { classifyMcpRisk, loadMcpTools, paramsForOpenAi } from '../../src/modules/tools/mcpTools.js';
 import { ToolRegistry } from '../../src/modules/tools/registry.js';
 
 /** A fetch Response stub whose body is a JSON-RPC result. */
@@ -134,6 +134,60 @@ describe('loadMcpTools', () => {
     // rawParameters is the MCP JSON Schema with the $schema meta key stripped.
     expect(getRecords?.rawParameters).toMatchObject({ type: 'object', properties: { path_variables: {} } });
     expect(getRecords?.rawParameters).not.toHaveProperty('$schema');
+  });
+
+  /**
+   * Regression: Zoho's MCP server shipped `"type": "None"` for
+   * ZohoCRM_getWebhookAssociatedModules. OpenAI validates EVERY function definition in a request,
+   * so that one tool made every agent turn fail with
+   * `400 Invalid schema for function ...: got 'type: "None"'` — the chat's generic
+   * "The AI service failed to complete this request" for all questions, not just that tool's.
+   */
+  it('repairs an upstream schema OpenAI would reject instead of poisoning every turn', () => {
+    const bad = paramsForOpenAi({
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'None',
+      properties: {
+        module: { type: 'None' },
+        depth: { type: 'integer' },
+        nested: { type: 'object', properties: { inner: { type: 'None' } } },
+        anyOfCase: { anyOf: [{ type: 'None' }, { type: 'string' }] },
+      },
+    });
+
+    expect(bad.repaired).toBe(true);
+    // The root must be object-typed or OpenAI rejects the whole request.
+    expect(bad.parameters['type']).toBe('object');
+    const props = bad.parameters['properties'] as Record<string, Record<string, unknown>>;
+    // Invalid types are dropped (a typeless schema is valid + permissive); valid ones survive.
+    expect(props['module']).not.toHaveProperty('type');
+    expect(props['depth']).toMatchObject({ type: 'integer' });
+    expect((props['nested']?.['properties'] as Record<string, unknown>)['inner']).not.toHaveProperty('type');
+    expect(props['anyOfCase']?.['anyOf']).toEqual([{}, { type: 'string' }]);
+    expect(bad.parameters).not.toHaveProperty('$schema');
+    // No 'None' survives anywhere — that string is what OpenAI rejected.
+    expect(JSON.stringify(bad.parameters)).not.toContain('None');
+  });
+
+  it('leaves a valid schema alone and reports it as untouched', () => {
+    const ok = paramsForOpenAi({
+      type: 'object',
+      properties: { module: { type: 'string' } },
+      required: ['module'],
+    });
+    expect(ok.repaired).toBe(false);
+    expect(ok.parameters).toEqual({
+      type: 'object',
+      properties: { module: { type: 'string' } },
+      required: ['module'],
+    });
+  });
+
+  it('turns a missing or non-object schema into an empty object schema', () => {
+    expect(paramsForOpenAi(undefined).parameters).toEqual({ type: 'object', properties: {} });
+    expect(paramsForOpenAi(null).parameters).toEqual({ type: 'object', properties: {} });
+    expect(paramsForOpenAi('nope').parameters).toEqual({ type: 'object', properties: {} });
+    expect(paramsForOpenAi(undefined).repaired).toBe(true);
   });
 
   it('registered MCP tools can be added to a ToolRegistry and looked up', async () => {

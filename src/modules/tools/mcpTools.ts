@@ -36,13 +36,74 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Shallow-clean a JSON Schema for OpenAI: drop the `$schema` meta key (kept otherwise verbatim). */
-function paramsForOpenAi(schema: Record<string, unknown>): Record<string, unknown> {
-  const { $schema, ...rest } = schema as { $schema?: unknown } & Record<string, unknown>;
-  return Object.keys(rest).length > 0 ? rest : { type: 'object', properties: {} };
+/** The only `type` values OpenAI accepts in a function parameter schema. */
+const JSON_SCHEMA_TYPES = new Set([
+  'object',
+  'array',
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'null',
+]);
+
+/**
+ * Recursively drop `type` values that are not valid JSON Schema types. Zoho's MCP server has shipped
+ * `"type": "None"` (a Python `None` serialized as a string) — and because OpenAI validates EVERY
+ * function definition in a request, one such tool makes the whole turn fail with
+ * `400 Invalid schema for function ...`, not just that tool. A schema with no `type` is valid and
+ * permissive, so dropping the key degrades one argument rather than every conversation.
+ */
+function sanitizeSchemaNode(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(sanitizeSchemaNode);
+  if (!isRecord(node)) return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === '$schema') continue;
+    if (key === 'type') {
+      const ok =
+        (typeof value === 'string' && JSON_SCHEMA_TYPES.has(value)) ||
+        (Array.isArray(value) && value.every((v) => typeof v === 'string' && JSON_SCHEMA_TYPES.has(v)));
+      if (ok) out[key] = value;
+      continue;
+    }
+    out[key] = sanitizeSchemaNode(value);
+  }
+  return out;
 }
 
-function buildMcpTool(def: McpToolDef, riskClass: RiskClass): RegisteredTool {
+/**
+ * A JSON Schema OpenAI will accept for this tool's parameters. The root MUST be `type: "object"` —
+ * anything else is rejected — so the root type is forced rather than dropped.
+ *
+ * Returns the schema plus whether anything had to be repaired, so boot can report which upstream
+ * tools are malformed instead of failing silently.
+ */
+export function paramsForOpenAi(schema: unknown): {
+  parameters: Record<string, unknown>;
+  repaired: boolean;
+} {
+  const cleaned = sanitizeSchemaNode(isRecord(schema) ? schema : {});
+  const base = isRecord(cleaned) ? cleaned : {};
+  const rootTypeOk = isRecord(schema) && schema['type'] === 'object';
+  const properties = isRecord(base['properties']) ? base['properties'] : {};
+  const parameters: Record<string, unknown> = { ...base, type: 'object', properties };
+  const repaired = !rootTypeOk || JSON.stringify(base) !== JSON.stringify(stripMeta(schema));
+  return { parameters, repaired };
+}
+
+/** `schema` minus `$schema`, for comparing against the sanitized result. */
+function stripMeta(schema: unknown): Record<string, unknown> {
+  if (!isRecord(schema)) return {};
+  const { $schema, ...rest } = schema as { $schema?: unknown } & Record<string, unknown>;
+  return rest;
+}
+
+function buildMcpTool(
+  def: McpToolDef,
+  riskClass: RiskClass,
+  parameters: Record<string, unknown>,
+): RegisteredTool {
   return {
     name: `zoho_mcp.${def.name}`,
     description: `[Zoho CRM · MCP] ${def.description}`.slice(0, 1024),
@@ -53,7 +114,7 @@ function buildMcpTool(def: McpToolDef, riskClass: RiskClass): RegisteredTool {
     allowedAudiences: ['internal', 'customer', 'partner'],
     requiredScopes: riskClass === 'read' ? ['zoho_crm:read'] : ['zoho_crm:write'],
     rateLimit: { perMinute: 30 },
-    rawParameters: paramsForOpenAi(def.inputSchema),
+    rawParameters: parameters,
     run: (rawInput, ctx) => callMcpTool(def.name, isRecord(rawInput) ? rawInput : {}, ctx),
   };
 }
@@ -67,17 +128,28 @@ export async function loadMcpTools(): Promise<RegisteredTool[]> {
   const defs = await listMcpTools();
   const tools: RegisteredTool[] = [];
   let skippedWrites = 0;
+  const repairedSchemas: string[] = [];
   for (const def of defs) {
     const riskClass = classifyMcpRisk(def.name);
     if (riskClass !== 'read' && !env.FF_ZOHO_MCP_WRITES) {
       skippedWrites += 1;
       continue;
     }
-    tools.push(buildMcpTool(def, riskClass));
+    const { parameters, repaired } = paramsForOpenAi(def.inputSchema);
+    if (repaired) repairedSchemas.push(def.name);
+    tools.push(buildMcpTool(def, riskClass, parameters));
   }
   logger.info(
     { discovered: defs.length, registered: tools.length, skippedWrites },
     'zoho mcp: tools loaded',
   );
+  // Loud but non-fatal: before this was repaired, ONE malformed upstream schema 400'd every agent
+  // turn ("Invalid schema for function ..."), because OpenAI validates the whole tool list.
+  if (repairedSchemas.length > 0) {
+    logger.warn(
+      { tools: repairedSchemas },
+      'zoho mcp: repaired malformed upstream parameter schemas (an invalid one would fail every turn)',
+    );
+  }
   return tools;
 }

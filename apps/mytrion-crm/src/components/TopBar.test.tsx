@@ -44,4 +44,14 @@ describe('TopBar switch link', () => {
     renderBar();
     expect(screen.getByText('Switch Mytrion')).toBeInTheDocument();
   });
+
+  // It used to be a dropdown trigger. One click must land on the picker, so it has to be a real
+  // link to /main with no menu in front of it.
+  it('is a plain link to the picker, not a menu trigger', () => {
+    mockCtx.current = { accessibleMytrions: ['sales', 'billing'], allDepartmentAccess: false };
+    renderBar();
+    const control = screen.getByRole('link', { name: 'Switch Mytrion' });
+    expect(control).toHaveAttribute('href', '/main');
+    expect(control).not.toHaveAttribute('aria-expanded');
+  });
 });

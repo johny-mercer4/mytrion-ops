@@ -7,6 +7,7 @@
  * the non-idempotent turn once is safe) and respect an AbortSignal at every await.
  */
 import { ApiError, authHeaders, refreshBearer } from './transport';
+import { chatTestAsHeaders } from '../features/chat/testAs';
 import { getSession } from './session';
 import { resolveApiConfig, v1Url } from './config';
 
@@ -149,6 +150,8 @@ async function runSSE(
   body: unknown,
   handlers: StreamHandlers,
   signal?: AbortSignal,
+  /** Last-wins overrides — the chat's "Test as" act-as target. */
+  extraHeaders?: Record<string, string>,
 ): Promise<void> {
   const { baseUrl } = resolveApiConfig();
   const url = v1Url(baseUrl, path);
@@ -156,7 +159,11 @@ async function runSSE(
   const doFetch = (): Promise<Response> =>
     fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(extraHeaders ?? {}),
+      },
       body: JSON.stringify(body),
       credentials: 'same-origin',
       ...(signal ? { signal } : {}),
@@ -226,10 +233,10 @@ async function runSSE(
 
 /** Legacy single-agent chat (always-on RAG). Kept as a fallback when the agent runtime is off. */
 export function streamChat(body: ChatRequestBody, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
-  return runSSE('/chat/stream', body, handlers, signal);
+  return runSSE('/chat/stream', body, handlers, signal, chatTestAsHeaders());
 }
 
 /** Orchestrator / department-agent turn. RAG is model-invoked (a greeting triggers no retrieval). */
 export function streamAgent(body: ChatRequestBody, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
-  return runSSE('/agent', { ...body, stream: true }, handlers, signal);
+  return runSSE('/agent', { ...body, stream: true }, handlers, signal, chatTestAsHeaders());
 }
