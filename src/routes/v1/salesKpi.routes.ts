@@ -38,28 +38,6 @@ const taskBodySchema = z.object({
   priority: prioritySchema.optional(),
   externalId: z.string().trim().max(200).optional(),
 });
-const managerPatchSchema = z
-  .object({
-    version: z.number().int().positive(),
-    assigneeZohoUserId: z.string().trim().min(1).max(120).optional(),
-    type: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).optional(),
-    subject: z.string().trim().min(1).max(200).optional(),
-    description: z.string().max(10_000).nullable().optional(),
-    content: z.record(z.unknown()).nullable().optional(),
-    deadlineAt: z.string().datetime({ offset: true }).nullable().optional(),
-    priority: prioritySchema.optional(),
-    status: statusSchema.optional(),
-    comment: z.string().trim().min(1).max(4000).optional(),
-  })
-  .refine((value) => Object.keys(value).some((key) => key !== 'version'), {
-    message: 'At least one task change is required',
-  });
-const listTaskQuerySchema = z.object({
-  assigneeZohoUserId: z.string().max(120).optional(),
-  status: statusSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(500).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-});
 const myTaskQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -236,84 +214,13 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
     return { workers: await kpiWorkerRepo.list(ctx, true) };
   });
 
-  app.get('/manager/sales/tasks/types', guard, async (request) => {
-    const ctx = managerContext(request);
-    return { types: await workerTaskRepo.listTypes(ctx) };
-  });
-  app.get('/manager/sales/tasks', guard, async (request) => {
-    const ctx = managerContext(request);
-    const query = listTaskQuerySchema.parse(request.query ?? {});
-    const tasks = await workerTaskRepo.list(ctx, {
-      department: 'sales',
-      ...(query.assigneeZohoUserId !== undefined
-        ? { assigneeZohoUserId: query.assigneeZohoUserId }
-        : {}),
-      ...(query.status !== undefined ? { status: query.status } : {}),
-      ...(query.limit !== undefined ? { limit: query.limit } : {}),
-      ...(query.offset !== undefined ? { offset: query.offset } : {}),
-    });
-    return { tasks: tasks.map((task) => taskDto(task)) };
-  });
-  app.post('/manager/sales/tasks', guard, async (request, reply) => {
-    const ctx = managerContext(request);
-    const body = taskBodySchema.parse(request.body ?? {});
-    await assertEligibleAssignee(ctx, body.assigneeZohoUserId);
-    await assertTaskType(ctx, body.type);
-    const task = await workerTaskRepo.create(ctx, ctx.userId, {
-      assigneeZohoUserId: body.assigneeZohoUserId,
-      taskType: body.type,
-      subject: body.subject,
-      description: body.description ?? null,
-      content: body.content ?? null,
-      deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
-      priority: body.priority ?? 'normal',
-      source: 'manager',
-      department: 'sales',
-      externalId: body.externalId ?? null,
-    });
-    await auditFromContext(ctx, {
-      action: 'worker_task.create',
-      status: 'ok',
-      resourceType: 'mytrion_worker_task',
-      resourceId: task.id,
-      detail: { assigneeZohoUserId: task.assigneeZohoUserId, taskType: task.taskType },
-    });
-    reply.code(201);
-    return { task: taskDto(task) };
-  });
-  app.patch('/manager/sales/tasks/:taskId', guard, async (request) => {
-    const ctx = managerContext(request);
-    const taskId = z.string().min(1).parse((request.params as { taskId?: string }).taskId);
-    const body = managerPatchSchema.parse(request.body ?? {});
-    if (body.assigneeZohoUserId !== undefined) {
-      await assertEligibleAssignee(ctx, body.assigneeZohoUserId);
-    }
-    if (body.type !== undefined) await assertTaskType(ctx, body.type);
-    const task = await workerTaskRepo.update(ctx, ctx.userId, taskId, {
-      expectedVersion: body.version,
-      ...(body.assigneeZohoUserId !== undefined
-        ? { assigneeZohoUserId: body.assigneeZohoUserId }
-        : {}),
-      ...(body.type !== undefined ? { taskType: body.type } : {}),
-      ...(body.subject !== undefined ? { subject: body.subject } : {}),
-      ...(body.description !== undefined ? { description: body.description } : {}),
-      ...(body.content !== undefined ? { content: body.content } : {}),
-      ...(body.deadlineAt !== undefined
-        ? { deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null }
-        : {}),
-      ...(body.priority !== undefined ? { priority: body.priority } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.comment !== undefined ? { comment: body.comment } : {}),
-    });
-    await auditFromContext(ctx, {
-      action: 'worker_task.update',
-      status: 'ok',
-      resourceType: 'mytrion_worker_task',
-      resourceId: task.id,
-      detail: { version: task.version, status: task.status },
-    });
-    return { task: taskDto(task) };
-  });
+  /*
+   * `/manager/sales/tasks*` used to be re-implemented here, shadowing the generic
+   * `/manager/:department/tasks*` in managerTasks.routes.ts — Fastify prefers the static `sales`
+   * segment, so the Sales desk was the ONE desk served by different code. The copies also skipped
+   * the `existing.department === department` check on PATCH, so a Sales manager could edit another
+   * desk's task by id. Removed; every desk including Sales now goes through managerTasks.routes.ts.
+   */
 
   app.get('/sales/tasks', guard, async (request) => {
     const ctx = salesContext(request);

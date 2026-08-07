@@ -1,0 +1,354 @@
+/* =====================================================
+   EFS Console — scoped under .mg-root, on the Manager ramps.
+
+   Every size, radius and duration comes from the block at the top of manager.css. Nothing here
+   declares a raw px font-size or radius, and nothing borrows Finance's `.fi-*` namespace: this is
+   a Manager card and it speaks Manager.
+   ===================================================== */
+
+.mg-root .mg-efs {
+  --efs-tone: var(--tone-blue);
+}
+
+/* ── Parent account strip ──────────────────────────────────────────────────
+   Deliberately the widest, quietest thing on the page. It is one EFS call (~1.8s) and it answers
+   the question the card gets opened for, so it sits above the roster rather than behind a tab. */
+.mg-root .mg-efs-parent {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: linear-gradient(135deg, var(--hz-pane-lift), var(--hz-pane));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-efs-parent > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mg-root .mg-efs-parent span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mg-root .mg-efs-parent strong {
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.mg-root .mg-efs-parent-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  padding: 5px 10px;
+  border-radius: var(--mg-r-pill);
+  border: 1px solid var(--tint-warn-bd);
+  background: var(--tint-warn-bg);
+  color: var(--warning);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
+}
+
+/* EFS answers 200-with-a-failed-leg more often than it fails outright. A warning beside good data,
+   never an error page that hides a perfectly good balance behind a card bug. */
+.mg-root .mg-efs-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--tint-warn-bd);
+  background: var(--tint-warn-bg);
+  color: var(--warning);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+.mg-root .mg-efs-warn > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mg-root .mg-efs-warn span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+.mg-root .mg-efs-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mg-root .mg-efs-controls .mg-search {
+  flex: 1 1 280px;
+}
+.mg-root .mg-efs-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────
+   EFS row shapes differ per endpoint and between V1/V2, so the dossier renders a generic table
+   whose columns come from the data. It therefore has to scroll inside itself — a Manager page is
+   measure-capped and must never push the document sideways. */
+.mg-root .mg-efs-tablewrap {
+  overflow-x: auto;
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-efs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.mg-root .mg-efs-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-raised);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+.mg-root .mg-efs-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  vertical-align: top;
+  white-space: nowrap;
+}
+.mg-root .mg-efs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.mg-root .mg-efs-table tbody tr:hover td {
+  background: var(--hz-pane-lift);
+}
+.mg-root .mg-efs-table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-efs-table.is-roster td:first-child {
+  white-space: normal;
+  min-width: 220px;
+}
+.mg-root .mg-efs-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.mg-root .mg-efs-rowlink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-efs-rowlink:hover {
+  color: var(--accent);
+}
+
+/* ── Badges ───────────────────────────────────────────────────────────────── */
+.mg-root .mg-efs-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--mg-r-pill);
+  border: 1px solid var(--tint-neutral-bd);
+  background: var(--tint-neutral-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mg-root .mg-efs-badge.is-good {
+  border-color: var(--tint-good-bd);
+  background: var(--tint-good-bg);
+  color: var(--success);
+}
+.mg-root .mg-efs-badge.is-warn {
+  border-color: var(--tint-warn-bd);
+  background: var(--tint-warn-bg);
+  color: var(--warning);
+}
+.mg-root .mg-efs-badge.is-bad {
+  border-color: var(--tint-bad-bd);
+  background: var(--tint-bad-bg);
+  color: var(--danger);
+}
+
+/* ── Dossier ──────────────────────────────────────────────────────────────── */
+.mg-root .mg-efs-dossier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mg-gap);
+}
+.mg-root .mg-efs-dossier-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mg-root .mg-efs-dossier-id {
+  flex: 1;
+  min-width: 0;
+}
+.mg-root .mg-efs-dossier-id h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.018em;
+  color: var(--text-primary);
+}
+.mg-root .mg-efs-dossier-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+.mg-root .mg-efs-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.mg-root .mg-efs-tabs button {
+  padding: 8px 13px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--mg-r-sm) var(--mg-r-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-efs-tabs button:hover {
+  color: var(--text-primary);
+  background: var(--hz-pane-lift);
+}
+.mg-root .mg-efs-tabs button.is-on {
+  border-color: var(--hz-pane-bd);
+  background: var(--hz-pane);
+  color: var(--accent);
+}
+/* The vendor ceiling, stated where the range is chosen — not discovered as a 400 six seconds in. */
+.mg-root .mg-efs-window-note {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mg-root .mg-efs-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mg-root .mg-efs-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.mg-root .mg-efs-figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 15px;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-efs-figures span {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mg-root .mg-efs-figures strong {
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.mg-root .mg-efs-overview .mg-efs-table {
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  overflow: hidden;
+}
+
+/* Skeleton rows share the table's rhythm so the swap is invisible. */
+.mg-root .mg-efs-sk-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+@media (max-width: 720px) {
+  .mg-root .mg-efs-count {
+    margin-left: 0;
+  }
+  .mg-root .mg-efs-window-note {
+    margin-left: 0;
+    width: 100%;
+  }
+}

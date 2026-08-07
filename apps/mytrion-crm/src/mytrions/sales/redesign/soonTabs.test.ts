@@ -35,10 +35,17 @@ describe('soonTabs', () => {
     expect(soonTabMeta('tickets').title).toBe('Tickets');
   });
 
-  it('parks My Tasks and Verification with shared coming-soon metadata', () => {
-    expect(parked).toEqual(expect.arrayContaining(['tasks', 'verification']));
-    expect(soonTabMeta('tasks').title).toBe('My Tasks');
+  it('parks Verification with shared coming-soon metadata', () => {
+    expect(parked).toContain('verification');
     expect(soonTabMeta('verification').title).toBe('Verification Pipeline');
+  });
+
+  it('has My Tasks LIVE — the agent half of the manager task loop', () => {
+    // The board reads `mytrion_worker_tasks`, the same table the Manager department desks assign
+    // into. Re-parking this silently breaks assignment delivery: a manager can still create the
+    // row, the agent just never has a surface on which to see it. Its SOON_TABS entry stays behind
+    // (harmless, and the parked ⊆ SOON_TABS check above tolerates extras) so parking is one edit.
+    expect(parked).not.toContain('tasks');
   });
 
   it('falls back for unknown sections', () => {

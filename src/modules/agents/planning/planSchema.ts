@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { env } from '../../../config/env.js';
 import { isAgentKey } from '../types.js';
+import { xmlAttr, xmlText } from '../contextXml.js';
 
 export const planNodeSchema = z.object({
   id: z.string().min(1).max(40),
@@ -139,8 +140,8 @@ export function formatExecutionPlanXml(plan: ExecutionPlan): string {
   const nodes = plan.nodes
     .map(
       (n) =>
-        `  <Node id="${n.id}" agent="${n.agent}" dependsOn="${n.dependsOn.join(',')}">${n.brief}</Node>`,
+        `  <Node id="${xmlAttr(n.id)}" agent="${xmlAttr(n.agent)}" dependsOn="${xmlAttr(n.dependsOn.join(','))}">${xmlText(n.brief, 4_000)}</Node>`,
     )
     .join('\n');
-  return `<ExecutionPlan>\n  <Goal>${plan.goal}</Goal>\n${nodes}\n</ExecutionPlan>`;
+  return `<ExecutionPlan>\n  <Goal>${xmlText(plan.goal, 2_000)}</Goal>\n${nodes}\n</ExecutionPlan>`;
 }

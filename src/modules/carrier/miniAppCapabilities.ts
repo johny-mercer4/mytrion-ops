@@ -16,6 +16,7 @@ export const MINI_APP_CAPABILITIES = [
   'fleet:manage',
   'card:write',
   'reports:send',
+  'manager:invite',
   'access:manage',
   'service:request',
 ] as const;
@@ -36,9 +37,9 @@ export const MINI_APP_CAPABILITIES_BY_PROFILE = {
   owner: OWNER_CAPABILITIES,
   manager: OWNER_CAPABILITIES,
   driver: ['company:read', 'card:write', 'reports:send', 'service:request'],
-  // Sales agents can inspect an active assigned company, but cannot mutate the customer's account,
-  // issue financial instruments, send documents, or create customer-facing requests from it.
-  sales_agent: ['company:read', 'financial:read', 'fleet:read'],
+  // Sales agents can inspect an active assigned company and issue a manager onboarding link. They
+  // still cannot mutate the account, manage existing access, send documents, or file requests.
+  sales_agent: ['company:read', 'financial:read', 'fleet:read', 'manager:invite'],
 } as const satisfies Record<MiniAppActorProfile, readonly MiniAppCapability[]>;
 
 export function miniAppCapabilitiesFor(profile: MiniAppActorProfile): readonly MiniAppCapability[] {

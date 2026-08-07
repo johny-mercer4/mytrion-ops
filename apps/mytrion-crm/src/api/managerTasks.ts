@@ -39,6 +39,7 @@ export async function listManagerAssignees(
   return data.workers;
 }
 
+/** Types this desk may use: its own, plus the shared (`department: null`) ones. */
 export async function listManagerDeptTaskTypes(
   department: ManagerTaskDepartment,
 ): Promise<TaskTypeDto[]> {
@@ -48,14 +49,51 @@ export async function listManagerDeptTaskTypes(
   return data.types;
 }
 
+export interface ManagerTaskCounts {
+  open: number;
+  in_progress: number;
+  completed: number;
+  cancelled: number;
+}
+
+/** Open + in-progress load per assignee on this desk, with how much of it is past its deadline. */
+export interface ManagerAssigneeLoad {
+  assigneeZohoUserId: string;
+  open: number;
+  overdue: number;
+}
+
+export interface ManagerTaskPage {
+  tasks: WorkerTaskDto[];
+  /**
+   * Status totals for the WHOLE desk — they deliberately ignore the status/priority/search filter,
+   * because these are the numbers you read to decide what to filter by.
+   */
+  counts: ManagerTaskCounts;
+  load: ManagerAssigneeLoad[];
+  pagination: { limit: number; offset: number; total: number; hasMore: boolean };
+}
+
+export interface ManagerTaskFilter {
+  assigneeZohoUserId?: string;
+  status?: WorkerTaskStatus;
+  priority?: WorkerTaskPriority;
+  /** Free text over subject / description / type. */
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export async function listManagerDeptTasks(
   department: ManagerTaskDepartment,
-  filter: { assigneeZohoUserId?: string; status?: WorkerTaskStatus } = {},
-): Promise<WorkerTaskDto[]> {
-  const data = (await request('GET', `/manager/${deptPath(department)}/tasks`, {
-    query: filter,
-  })) as { tasks: WorkerTaskDto[] };
-  return data.tasks;
+  filter: ManagerTaskFilter = {},
+): Promise<ManagerTaskPage> {
+  // Spread into a plain record: `request`'s query param is an index signature, and an interface
+  // (unlike a type alias) has no implicit one.
+  const query: Record<string, string | number | undefined> = { ...filter };
+  return (await request('GET', `/manager/${deptPath(department)}/tasks`, {
+    query,
+  })) as ManagerTaskPage;
 }
 
 export async function createManagerDeptTask(

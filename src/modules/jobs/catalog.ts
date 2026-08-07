@@ -240,11 +240,34 @@ export const checkpointSweepJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600 },
 });
 
+/** Nightly deterministic Horizon platform capability catalog refresh. */
+export const platformKnowledgeSyncJob = defineJob({
+  name: 'maintenance.platform-knowledge-sync',
+  schema: emptyPayload,
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 900 },
+});
+
 /** Dead-letter sink: audit + mark the linked task failed. */
 export const deadLetterJob = defineJob({
   name: DEAD_LETTER_QUEUE,
   schema: z.object({ taskId: z.string().optional() }).passthrough(),
   queue: {},
+});
+
+/**
+ * Billing Ledger daily snapshot (TZ §9) — recompute every section's Closing for a day and reconcile it
+ * against the independent source. Singleton so two runs never overlap; an hour to expire because a full
+ * book pass touches the DWH several times per section.
+ */
+export const billingLedgerSnapshotJob = defineJob({
+  name: 'billing.ledger.daily-snapshot',
+  schema: z.object({
+    /** Defaults to today in America/Chicago. A past date recomputes that day (the upsert is idempotent). */
+    asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    sections: z.array(z.string()).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
 export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
@@ -261,8 +284,10 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   kpiSalesDailyRollupJob,
   kpiSalesMonthCloseJob,
   salesBocaRequestJob,
+  billingLedgerSnapshotJob,
   verificationRecheckJob,
   checkpointSweepJob,
+  platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
   // workers boss.work() these names and notifyMiniApp enqueues 'notification.dispatch'. Missing
   // them meant the queues were never created and dispatch threw under FF_JOBS_ENABLED (the dev
@@ -301,6 +326,8 @@ export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
 
 /** Cron schedule per automation queue. Per-job timezone overrides preserve existing schedules. */
 export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: string }> = [
+  // 05:00 Central — after the DWH's nightly refresh and after the 02:15/04:00 ET jobs.
+  { name: billingLedgerSnapshotJob.name, cron: '0 5 * * *', timezone: 'America/Chicago' },
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
   // Every hour: DWH → retention cases (incl. auto-close Returned). Singleton so runs never
   // overlap; Admin can also enqueue on demand for a manual / backfill pass.
@@ -311,6 +338,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
+  { name: platformKnowledgeSyncJob.name, cron: '15 4 * * *' }, // nightly, after maintenance jobs
   { name: notificationPollJob.name, cron: '*/2 * * * *' }, // card_status diff (no-op w/o pilot carriers)
   { name: statementWeeklyJob.name, cron: '0 7 * * 1' }, // weekly accounting bundle (no-op w/o pilot carriers)
   { name: kpiSalesHourlySyncJob.name, cron: '10 * * * *', timezone: 'America/New_York' },
@@ -321,6 +349,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
 export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
+  billingLedgerSnapshotJob.name,
   debtorSweepJob.name,
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
@@ -329,4 +358,5 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,
+  platformKnowledgeSyncJob.name,
 ]);

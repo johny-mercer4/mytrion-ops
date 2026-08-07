@@ -44,7 +44,58 @@ export interface ManagerAssigneeDto {
   currentRoleName: string | null;
 }
 
+/**
+ * Per-department assignee cache.
+ *
+ * Measured against prod: cold ~5s, and even WARM ~1.1s because two DB round trips
+ * (`workerMytrionAccessRepo.list` + whatever `resolveBatch` reads) sit behind it at ~550ms each.
+ * The Manager Tasks block calls this on every desk visit, so an operator flicking between
+ * departments paid seconds per hop to re-derive a roster that changes when HR changes.
+ *
+ * TTL rather than invalidation on purpose: the answer is derived from the Zoho user directory and
+ * per-worker Mytrion overrides, neither of which this process owns, so there is no write here to
+ * hang an invalidation off.
+ *
+ * SECURITY NOTE, stated plainly because the cache does widen a window: `assertDepartmentAssignee`
+ * reads this same cache for non-sales desks, so for up to ASSIGNEE_TTL_MS a worker removed from a
+ * department can still be assigned a task there. That is judged acceptable because a task
+ * assignment grants NO access — the assignee sees the task on their own board and nothing else,
+ * and every surface they could reach is gated independently. It is emphatically not a pattern to
+ * copy for anything that grants authority. Sales is unaffected: its branch re-checks
+ * `kpiWorkerRepo.isCurrentlyEligible` against the DB on every assignment.
+ */
+const ASSIGNEE_TTL_MS = 5 * 60_000;
+const assigneeCache = new Map<string, { at: number; rows: ManagerAssigneeDto[] }>();
+/** In-flight promises, so ten desks opening at once make one lookup rather than ten. */
+const assigneeInflight = new Map<string, Promise<ManagerAssigneeDto[]>>();
+
+export function clearDepartmentAssigneeCache(): void {
+  assigneeCache.clear();
+  assigneeInflight.clear();
+}
+
 export async function listDepartmentAssignees(
+  ctx: TenantContext,
+  department: ManagerTaskDepartment,
+): Promise<ManagerAssigneeDto[]> {
+  const key = `${ctx.tenantId}:${department}`;
+  const hit = assigneeCache.get(key);
+  if (hit && Date.now() - hit.at < ASSIGNEE_TTL_MS) return hit.rows;
+
+  const inflight = assigneeInflight.get(key);
+  if (inflight) return inflight;
+
+  const run = computeDepartmentAssignees(ctx, department)
+    .then((rows) => {
+      assigneeCache.set(key, { at: Date.now(), rows });
+      return rows;
+    })
+    .finally(() => assigneeInflight.delete(key));
+  assigneeInflight.set(key, run);
+  return run;
+}
+
+async function computeDepartmentAssignees(
   ctx: TenantContext,
   department: ManagerTaskDepartment,
 ): Promise<ManagerAssigneeDto[]> {

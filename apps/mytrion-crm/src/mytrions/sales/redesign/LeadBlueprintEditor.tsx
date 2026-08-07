@@ -9,7 +9,7 @@ import {
 import { getImpersonation } from '@/api/impersonation';
 import { s } from './dc';
 import { Icon } from './icons';
-import { statusMeta } from './leadStatusFlow';
+import { enrichBlueprintTransitionFields, statusMeta } from './leadStatusFlow';
 
 export interface LeadBlueprintSelection {
   transitionId: string;
@@ -125,10 +125,16 @@ export function LeadBlueprintEditor({
     return () => { active = false; };
   }, [leadId]);
 
-  const transitions = useMemo(
-    () => blueprint?.transitions.filter((transition) => transition.type === 'manual' && transition.criteriaMatched) ?? [],
-    [blueprint],
-  );
+  const transitions = useMemo(() => {
+    const manual = blueprint?.transitions.filter(
+      (transition) => transition.type === 'manual' && transition.criteriaMatched,
+    ) ?? [];
+    // Defense in depth: even if GET already enriched, re-apply known required fields locally.
+    return manual.map((transition) => ({
+      ...transition,
+      fields: enrichBlueprintTransitionFields(transition.nextValue, transition.fields),
+    }));
+  }, [blueprint]);
   const selected = transitions.find((transition) => transition.id === selectedId) ?? null;
 
   const pick = (transition: LeadBlueprintTransition): void => {

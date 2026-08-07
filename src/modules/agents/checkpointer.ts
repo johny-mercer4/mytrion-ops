@@ -16,6 +16,7 @@ import { SystemMessage } from '@langchain/core/messages';
 import { databaseUrl, env } from '../../config/env.js';
 import { dbSslOption } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
+import { xmlElement } from './contextXml.js';
 
 export const CHECKPOINT_SCHEMA = 'langgraph';
 
@@ -52,12 +53,12 @@ export function parseMemorySummary(raw: unknown): MemorySummaryPayload | null {
 }
 
 export function formatMemorySummaryXml(summary: MemorySummaryPayload): string {
-  const lines = ['<MemorySummary>'];
-  if (summary.goal) lines.push(`  <Goal>${summary.goal}</Goal>`);
-  if (summary.entities.length) lines.push(`  <Entities>${summary.entities.join('; ')}</Entities>`);
-  if (summary.openTasks.length) lines.push(`  <OpenTasks>${summary.openTasks.join('; ')}</OpenTasks>`);
-  if (summary.decisions.length) lines.push(`  <Decisions>${summary.decisions.join('; ')}</Decisions>`);
-  if (summary.narrative) lines.push(`  <Narrative>${summary.narrative}</Narrative>`);
+  const lines = ['<MemorySummary trust="conversation">'];
+  if (summary.goal) lines.push(xmlElement('Goal', summary.goal, { indent: 2, maxChars: 2_000 }));
+  if (summary.entities.length) lines.push(xmlElement('Entities', summary.entities.join('; '), { indent: 2, maxChars: 2_000 }));
+  if (summary.openTasks.length) lines.push(xmlElement('OpenTasks', summary.openTasks.join('; '), { indent: 2, maxChars: 2_000 }));
+  if (summary.decisions.length) lines.push(xmlElement('Decisions', summary.decisions.join('; '), { indent: 2, maxChars: 2_000 }));
+  if (summary.narrative) lines.push(xmlElement('Narrative', summary.narrative, { indent: 2, maxChars: 4_000 }));
   lines.push('</MemorySummary>');
   return lines.join('\n');
 }

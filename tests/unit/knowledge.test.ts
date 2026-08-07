@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkText } from '../../src/modules/knowledge/chunker.js';
+import { chunkText, contextualizeChunk } from '../../src/modules/knowledge/chunker.js';
 import { knowledgeRepo } from '../../src/repos/knowledgeRepo.js';
 import { makeContext } from '../fixtures/seed.js';
 
@@ -24,6 +24,23 @@ describe('chunker', () => {
       // overlap can push slightly past chunkSize; allow headroom.
       expect(chunk.content.length).toBeLessThanOrEqual(260);
     });
+  });
+
+  it('preserves structural headings and keeps contextual text separate from citation content', () => {
+    const chunks = chunkText('# Billing SOP\n## Late payment\n1. Contact the carrier.\n2. Record the result.');
+    expect(chunks[0]).toMatchObject({
+      sectionPath: 'Billing SOP > Late payment',
+      content: '1. Contact the carrier.\n2. Record the result.',
+    });
+    const retrievalText = contextualizeChunk(chunks[0]!, {
+      title: 'Billing Manual',
+      source: 'sop://billing',
+      domain: 'sop',
+      language: 'en',
+    });
+    expect(retrievalText).toContain('Document: Billing Manual');
+    expect(retrievalText).toContain('Section: Billing SOP > Late payment');
+    expect(chunks[0]?.content).not.toContain('Document: Billing Manual');
   });
 });
 

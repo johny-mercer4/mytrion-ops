@@ -79,6 +79,55 @@ describe('LeadBlueprintEditor', () => {
     });
   });
 
+  it('requires Application ID / Not Interested reason even when Zoho omits fields[]', async () => {
+    hoisted.getLeadBlueprint.mockResolvedValueOnce({
+      process: {
+        id: '1', name: 'Lead flow', fieldApiName: 'Status', fieldLabel: 'Status', currentValue: 'Third Call',
+      },
+      transitions: [
+        {
+          id: '10', name: 'Application Filled', nextValue: 'Application Filled', type: 'manual',
+          criteriaMatched: true, criteriaMessage: '', fields: [],
+        },
+        {
+          id: '11', name: 'Not Interested', nextValue: 'Not Interested', type: 'manual',
+          criteriaMatched: true, criteriaMessage: '', fields: [],
+        },
+      ],
+    });
+    const onChange = vi.fn();
+    render(<LeadBlueprintEditor leadId="555" onChange={onChange} />);
+
+    expect(await screen.findByRole('radio', { name: 'Application Filled' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Application Filled' }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      nextValue: 'Application Filled', valid: false, data: {},
+    }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Application ID' }), {
+      target: { value: '872228' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      transitionId: '10',
+      nextValue: 'Application Filled',
+      data: { Application_ID: '872228' },
+      valid: true,
+    });
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Not Interested' }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      nextValue: 'Not Interested', valid: false,
+    }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Not Interested Reason' }), {
+      target: { value: 'Already has another fuel card' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      transitionId: '11',
+      nextValue: 'Not Interested',
+      data: { Not_Interested_Reason: 'Already has another fuel card' },
+      valid: true,
+    });
+  });
+
   it('shows explicit no-process and vendor-error states', async () => {
     hoisted.getLeadBlueprint.mockResolvedValueOnce(null);
     const { unmount } = render(<LeadBlueprintEditor leadId="555" onChange={vi.fn()} />);

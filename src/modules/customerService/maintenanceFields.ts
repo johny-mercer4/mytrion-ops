@@ -82,6 +82,13 @@ export const MAINTENANCE_PICKLISTS = {
 /** The one Payment_Method servercrm's prepay ledger counts against the EFS balance. */
 export const PREPAY_PAYMENT_METHOD = 'Prepay / EFS';
 
+/**
+ * The Payment_Method that hits a LOC carrier's EFS card — the LOC counterpart of
+ * PREPAY_PAYMENT_METHOD above. `Prepay / Card`, `Prepay / Zelle` and `Selfpay` are settled outside
+ * the card, so they must NOT reach a Customer Balance sub-ledger (Billing Ledger, TZ §5.1/§5.2).
+ */
+export const LOC_PAYMENT_METHOD = 'LOC';
+
 /** Columns a client may write through the create/update routes. */
 export const MAINTENANCE_EDITABLE = [
   'name',

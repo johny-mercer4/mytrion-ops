@@ -4,11 +4,12 @@
  * `departmentFilter` is the single chokepoint that makes reformulated queries structurally
  * unable to widen access (the RBAC-leakage suite asserts this on the built SQL).
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { env } from '../config/env.js';
-import { db } from '../db/client.js';
-import { knowledgeChunks, knowledgeDocs } from '../db/schema/index.js';
+import { db, type DbOrTx } from '../db/client.js';
+import { knowledgeChunks, knowledgeDocs, type KnowledgeDomain } from '../db/schema/index.js';
 import { normalizeDepartments } from '../lib/department.js';
+import { logger } from '../lib/logger.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { departmentFilter } from './knowledgeRepo.js';
 import { toVectorLiteral } from './util.js';
@@ -16,6 +17,8 @@ import { toVectorLiteral } from './util.js';
 /** Optional narrowing (never widening) of retrieval departments — e.g. an agent's RAG cap. */
 export interface RetrievalScope {
   departments?: string[];
+  /** Internal routing preference; never comes from model-generated filters. */
+  domains?: KnowledgeDomain[];
 }
 
 export interface HybridChunk {
@@ -29,6 +32,14 @@ export interface HybridChunk {
   stale: boolean;
   /** Leg-specific relevance (cosine similarity / ts_rank_cd) — used for ranking only. */
   score: number;
+  domain?: KnowledgeDomain;
+  authorityClass?: string;
+  sourceVersion?: string;
+  verificationStatus?: string;
+  lastVerifiedAt?: Date | null;
+  expiresAt?: Date | null;
+  contentHash?: string;
+  sectionPath?: string | null;
 }
 
 function intersect(a: string[], b: string[]): string[] {
@@ -56,52 +67,113 @@ function baseSelection() {
     docTitle: knowledgeDocs.title,
     chunkIndex: knowledgeChunks.chunkIndex,
     content: knowledgeChunks.content,
+    contentHash: knowledgeChunks.contentHash,
+    sectionPath: knowledgeChunks.sectionPath,
     departmentAccess: knowledgeChunks.departmentAccess,
+    domain: knowledgeDocs.domain,
+    authorityClass: knowledgeDocs.authorityClass,
+    sourceVersion: knowledgeDocs.sourceVersion,
+    verificationStatus: knowledgeDocs.verificationStatus,
+    lastVerifiedAt: knowledgeDocs.lastVerifiedAt,
+    expiresAt: knowledgeDocs.expiresAt,
     stale: sql<boolean>`coalesce(${knowledgeDocs.expiresAt} < now(), false)
       OR coalesce(${knowledgeDocs.lastVerifiedAt} < now() - make_interval(days => ${env.STALE_DOC_DAYS}), false)`,
   };
 }
 
+function baseWhere(ctx: TenantContext, scope?: RetrievalScope) {
+  return and(
+    eq(knowledgeChunks.tenantId, ctx.tenantId),
+    eq(knowledgeChunks.audience, ctx.audience),
+    eq(knowledgeDocs.status, 'ready'),
+    sql`${knowledgeDocs.verificationStatus} <> 'superseded'`,
+    departmentFilter(ctx),
+    scope?.domains?.length ? inArray(knowledgeDocs.domain, scope.domains) : undefined,
+  );
+}
+
+function vectorQuery(
+  runner: DbOrTx,
+  ctx: TenantContext,
+  embedding: number[],
+  k: number,
+  scope?: RetrievalScope,
+) {
+  const effective = resolveRetrievalContext(ctx, scope);
+  const literal = toVectorLiteral(embedding);
+  return runner
+    .select({
+      ...baseSelection(),
+      score: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${literal}::vector)`,
+    })
+    .from(knowledgeChunks)
+    .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
+    .where(baseWhere(effective, scope))
+    .orderBy(sql`${knowledgeChunks.embedding} <=> ${literal}::vector`)
+    .limit(k);
+}
+
+async function exactVectorSearch(
+  ctx: TenantContext,
+  embedding: number[],
+  k: number,
+  scope?: RetrievalScope,
+): Promise<HybridChunk[]> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`set local enable_indexscan = off`);
+    return vectorQuery(tx, ctx, embedding, k, scope);
+  });
+}
+
+async function annVectorSearch(
+  ctx: TenantContext,
+  embedding: number[],
+  k: number,
+  scope?: RetrievalScope,
+): Promise<HybridChunk[]> {
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`set local hnsw.iterative_scan = 'strict_order'`);
+      await tx.execute(sql`select set_config('hnsw.ef_search', ${String(env.RAG_HNSW_EF_SEARCH)}, true)`);
+      return vectorQuery(tx, ctx, embedding, k, scope);
+    });
+  } catch (err) {
+    logger.warn({ err }, 'pgvector iterative scan unavailable; using standard ANN query');
+    return vectorQuery(db, ctx, embedding, k, scope);
+  }
+}
+
+async function countEligible(ctx: TenantContext, scope?: RetrievalScope): Promise<number> {
+  const effective = resolveRetrievalContext(ctx, scope);
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(knowledgeChunks)
+    .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
+    .where(baseWhere(effective, scope));
+  return rows[0]?.count ?? 0;
+}
+
 export const knowledgeSearchRepo = {
   /** Vector leg (exposed as a builder so tests can assert the WHERE offline via .toSQL()). */
   buildVectorQuery(ctx: TenantContext, embedding: number[], k: number, scope?: RetrievalScope) {
-    const effective = resolveRetrievalContext(ctx, scope);
-    const literal = toVectorLiteral(embedding);
-    return db
-      .select({
-        ...baseSelection(),
-        score: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${literal}::vector)`,
-      })
-      .from(knowledgeChunks)
-      .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
-      .where(
-        and(
-          eq(knowledgeChunks.tenantId, effective.tenantId),
-          eq(knowledgeChunks.audience, effective.audience),
-          departmentFilter(effective),
-        ),
-      )
-      .orderBy(sql`${knowledgeChunks.embedding} <=> ${literal}::vector`)
-      .limit(k);
+    return vectorQuery(db, ctx, embedding, k, scope);
   },
 
   /** Full-text leg over the generated content_tsv column (websearch syntax, ts_rank_cd order). */
   buildFullTextQuery(ctx: TenantContext, query: string, k: number, scope?: RetrievalScope) {
     const effective = resolveRetrievalContext(ctx, scope);
-    const tsQuery = sql`websearch_to_tsquery('english', ${query})`;
+    const tsQuery = sql`websearch_to_tsquery('simple', ${query})`;
     return db
       .select({
         ...baseSelection(),
-        score: sql<number>`ts_rank_cd(${knowledgeChunks.contentTsv}, ${tsQuery})`,
+        score: sql<number>`ts_rank_cd(${knowledgeChunks.contentTsvSimple}, ${tsQuery})`,
       })
       .from(knowledgeChunks)
       .innerJoin(knowledgeDocs, eq(knowledgeChunks.docId, knowledgeDocs.id))
       .where(
         and(
-          eq(knowledgeChunks.tenantId, effective.tenantId),
-          eq(knowledgeChunks.audience, effective.audience),
-          departmentFilter(effective),
-          sql`${knowledgeChunks.contentTsv} @@ ${tsQuery}`,
+          baseWhere(effective, scope),
+          sql`${knowledgeChunks.contentTsvSimple} @@ ${tsQuery}`,
         ),
       )
       .orderBy((aliases) => desc(aliases.score))
@@ -114,8 +186,25 @@ export const knowledgeSearchRepo = {
     k: number,
     scope?: RetrievalScope,
   ): Promise<HybridChunk[]> {
-    return this.buildVectorQuery(ctx, embedding, k, scope);
+    const strategy = env.RAG_RETRIEVAL_STRATEGY;
+    if (strategy === 'exact') return exactVectorSearch(ctx, embedding, k, scope);
+    if (strategy === 'ann') {
+      const eligible = await countEligible(ctx, scope);
+      return eligible >= env.RAG_ANN_MIN_ELIGIBLE_CHUNKS
+        ? annVectorSearch(ctx, embedding, k, scope)
+        : exactVectorSearch(ctx, embedding, k, scope);
+    }
+    const [exact, ann] = await Promise.all([
+      exactVectorSearch(ctx, embedding, k, scope),
+      annVectorSearch(ctx, embedding, k, scope),
+    ]);
+    const exactIds = new Set(exact.map((row) => row.id));
+    const overlap = ann.filter((row) => exactIds.has(row.id)).length / Math.max(1, exact.length);
+    logger.info({ overlap, k, tenantId: ctx.tenantId }, 'RAG exact-vs-ANN shadow recall');
+    return exact;
   },
+
+  countEligibleChunks: countEligible,
 
   async searchFullText(
     ctx: TenantContext,

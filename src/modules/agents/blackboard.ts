@@ -7,6 +7,7 @@ import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { agentBlackboardRepo } from '../../repos/agentBlackboardRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { xmlAttr, xmlElement, xmlText } from './contextXml.js';
 
 export const blackboardArtifactSchema = z.object({
   key: z.string().min(1).max(120),
@@ -59,25 +60,23 @@ function capPayload(payload: BlackboardPayload): BlackboardPayload {
 export function formatBlackboardXml(payload: BlackboardPayload): string {
   const facts = Object.entries(payload.facts)
     .slice(0, 16)
-    .map(([k, v]) => `    <Fact key="${k}">${typeof v === 'string' ? v : JSON.stringify(v)}</Fact>`)
+    .map(([k, v]) => `    <Fact key="${xmlAttr(k)}" trust="tool-observed">${xmlText(v, 1_500)}</Fact>`)
     .join('\n');
   const arts = payload.artifacts
     .slice(-12)
     .map(
       (a) =>
-        `    <Artifact key="${a.key}" source="${a.sourceAgent}">${
-          typeof a.value === 'string' ? a.value : JSON.stringify(a.value)
-        }</Artifact>`,
+        `    <Artifact key="${xmlAttr(a.key)}" source="${xmlAttr(a.sourceAgent)}" trust="tool-observed">${xmlText(a.value, 2_000)}</Artifact>`,
     )
     .join('\n');
   return [
     '<Blackboard>',
-    payload.goal ? `  <Goal>${payload.goal}</Goal>` : '',
-    payload.planId ? `  <PlanId>${payload.planId}</PlanId>` : '',
+    payload.goal ? xmlElement('Goal', payload.goal, { indent: 2, maxChars: 2_000 }) : '',
+    payload.planId ? xmlElement('PlanId', payload.planId, { indent: 2, maxChars: 80 }) : '',
     facts ? `  <Facts>\n${facts}\n  </Facts>` : '',
     arts ? `  <Artifacts>\n${arts}\n  </Artifacts>` : '',
     payload.openQuestions.length
-      ? `  <OpenQuestions>${payload.openQuestions.join('; ')}</OpenQuestions>`
+      ? xmlElement('OpenQuestions', payload.openQuestions.join('; '), { indent: 2, maxChars: 2_000 })
       : '',
     '</Blackboard>',
   ]

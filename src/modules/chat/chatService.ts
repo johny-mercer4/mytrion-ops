@@ -175,7 +175,7 @@ async function retrieveGrounding(
       const { agenticRetrieve } = await import('../knowledge/agentic/loop.js');
       const result = await agenticRetrieve(ctx, query, {
         k: DEFAULT_RETRIEVAL_K,
-        allowWebFallback: Boolean(ctx.allDepartmentAccess),
+        allowExternalSearch: Boolean(ctx.allDepartmentAccess),
       });
       if (result.passages.length === 0 && !result.webFallbackBlock && !result.notDocumented) {
         return null;

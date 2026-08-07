@@ -16,6 +16,7 @@ import {
   Archive,
   BadgeCheck,
   CreditCard,
+  Fuel,
   Headphones,
   LineChart,
   Share2,
@@ -26,7 +27,7 @@ import {
 import type { UserContext } from '../../context/userContext';
 
 /** Cards on the Overview hub. Add an id here as new hub blocks land (payouts, approvals, KPIs, …). */
-export type ManagerCardId = 'referrals' | 'loyalty';
+export type ManagerCardId = 'referrals' | 'loyalty' | 'efs';
 
 export type ManagerDepartmentId =
   | 'sales'
@@ -89,6 +90,21 @@ export const MANAGER_CARDS: ManagerCard[] = [
     // Amber reads as the program's own signal (Gold/Bronze live on this scale) without colliding
     // with Referrals' pink or any department hue.
     tone: 'var(--tone-amber)',
+    access: () => true,
+  },
+  {
+    id: 'efs',
+    label: 'EFS Console',
+    tag: 'Live',
+    description:
+      'Live EFS state for every client — parent balance, contracts, cards, transactions and money codes, read straight from the vendor.',
+    icon: Fuel,
+    // Blue reads as the fuel network's own signal and stays clear of Referrals' pink and Loyalty's
+    // amber, so the three hub cards are distinguishable at a glance.
+    tone: 'var(--tone-blue)',
+    // Same Layer-2 posture as the other two: entering Manager is the gate. The real boundary is
+    // the `management`-gated /v1/manager/efs/* endpoint, which additionally refuses any carrier
+    // that is not in octane.dim_company.
     access: () => true,
   },
 ];

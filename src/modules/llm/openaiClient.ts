@@ -78,6 +78,9 @@ export function setGLMClient(stub: OpenAI): void {
 
 export const models = {
   default: env.OPEN_AI_FOUR_O_MINI,
+  nano: env.OPEN_AI_FIVE_O_NANO,
+  grounded: env.OPEN_AI_FIVE_O_MINI,
   reasoning: env.OPEN_AI_FIVE_O_MINI,
+  hard: env.OPEN_AI_HARD_MODEL,
   embedding: env.OPEN_AI_EMBEDDING_SMALL,
 } as const;

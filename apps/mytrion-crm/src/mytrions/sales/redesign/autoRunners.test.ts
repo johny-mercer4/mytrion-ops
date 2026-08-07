@@ -157,6 +157,54 @@ describe('live EFS card state', () => {
     });
   });
 
+  it('prefers live EFS active card counts over stale carrier overview', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.carrier_overview') {
+        return {
+          company_name: 'Divergent',
+          is_active: true,
+          cards: { count: 4, active_count: 0 },
+          cmp_debt: { total_debt: 0 },
+        };
+      }
+      if (key === 'efs.cards') {
+        return {
+          data: [
+            { cardNumber: card.number, status: 'ACTIVE' },
+            { cardNumber: '7083050000002222', status: 'INACTIVE' },
+          ],
+        };
+      }
+      throw new Error(`unexpected touchpoint ${key}`);
+    });
+
+    await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
+      kind: 'message',
+      message: 'Divergent: account active, 1 active cards, open debt $0.',
+    });
+    expect(callTouchpointMock).toHaveBeenCalledWith('efs.cards', { carrierId: deal.carrier });
+  });
+
+  it('falls back to overview card counts when EFS is unavailable', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.carrier_overview') {
+        return {
+          company_name: 'Divergent',
+          is_active: true,
+          cards: { count: 4, active_count: 2 },
+          cmp_debt: { total_debt: 0 },
+        };
+      }
+      if (key === 'efs.cards') throw new Error('EFS down');
+      throw new Error(`unexpected touchpoint ${key}`);
+    });
+
+    await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
+      kind: 'message',
+      message: 'Divergent: account active, 2 active cards, open debt $0.',
+    });
+  });
+
   it('keeps live EFS status and reads the DWH last_used_date fallback', async () => {
     callTouchpointMock.mockImplementation(async (key: string) => {
       if (key === 'efs.cards') {

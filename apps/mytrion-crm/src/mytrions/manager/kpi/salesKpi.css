@@ -1,0 +1,96 @@
+/* =====================================================
+   Sales Management → KPI. Scoped under .mg-root, on the Manager ramps.
+   Reuses the Tasks block's chrome (.mg-block, .mg-tk-metrics, .mg-tk-filters) and the EFS table
+   primitives (.mg-efs-tablewrap, .mg-efs-table) — a third table style would be a third thing to
+   keep in step for no gain.
+   ===================================================== */
+
+.mg-root .mg-kpi-table td:first-child {
+  min-width: 220px;
+  white-space: normal;
+}
+.mg-root .mg-kpi-agent {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+}
+
+/* Rank against the leader on the ACTIVE sort column. Five columns of digits are hard to rank by
+   eye; one bar per row makes the shape of the desk readable at a glance. */
+.mg-root .mg-kpi-bar {
+  display: block;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: var(--mg-r-pill);
+  background: var(--hz-pane-alt);
+  overflow: hidden;
+}
+.mg-root .mg-kpi-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--mg-tone, var(--accent)) 55%, transparent),
+    var(--mg-tone, var(--accent))
+  );
+  transition: width var(--hz-dur-lift) var(--hz-ease);
+}
+
+/* The header IS the sort control — a separate affordance beside it would be a second thing to aim
+   at for the same action. */
+.mg-root .mg-kpi-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-kpi-sort:hover {
+  color: var(--text-primary);
+}
+.mg-root .mg-kpi-sort.is-on {
+  color: var(--accent);
+}
+.mg-root .mg-kpi-sort.is-on::after {
+  content: ' ↓';
+}
+
+/* A zero that might be a name-join miss rather than a real zero. See salesKpiBoard.ts — the mart
+   and Zoho have no shared agent id, so they are joined on name. */
+.mg-root .mg-kpi-flag {
+  display: inline-flex;
+  margin-left: 5px;
+  color: var(--warning);
+  vertical-align: middle;
+}
+
+@media (max-width: 720px) {
+  .mg-root .mg-kpi-table td:first-child {
+    min-width: 160px;
+  }
+}
+
+/* An agent who fills applications but owns no carrier in the warehouse. Their fuel columns are
+   structurally zero, so the row needs to say why — otherwise it reads as a bad cycle. */
+.mg-root .mg-kpi-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: var(--mg-r-pill);
+  border: 1px solid var(--tint-warn-bd);
+  background: var(--tint-warn-bg);
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
