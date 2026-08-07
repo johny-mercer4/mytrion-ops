@@ -205,6 +205,17 @@ describe('POST /v1/billing/ingest/dispute', () => {
     expect(resolveStripeDisputeMatchMock).toHaveBeenCalledWith(expect.objectContaining({ amount: 10 }));
   });
 
+  it('stores the raw Stripe dispute status in stripeStatus (informational, not the lifecycle stage gate)', async () => {
+    upsertDisputeUnlessMatchedMock.mockResolvedValue(unmatchedReturn);
+    resolveStripeDisputeMatchMock.mockResolvedValue({ outcome: 'unlinked', isReversed: false, detail: {} });
+
+    await post('/v1/billing/ingest/dispute', { disputeId: 'du_1', amount: 1000, stage: 'needs_response' });
+
+    expect(upsertDisputeUnlessMatchedMock).toHaveBeenCalledWith(
+      expect.objectContaining({ stripeStatus: 'needs_response' }),
+    );
+  });
+
   it('no paymentIntentId parsed from the email: recorded unlinked, no claim, no CMP call', async () => {
     upsertDisputeUnlessMatchedMock.mockResolvedValue(unmatchedReturn);
     resolveStripeDisputeMatchMock.mockResolvedValue({ outcome: 'unlinked', isReversed: false, detail: {} });

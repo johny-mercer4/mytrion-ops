@@ -34,6 +34,9 @@ export const paymentReturns = pgTable(
     amount: numeric('amount', { precision: 14, scale: 2 }),
     returnDate: timestamp('return_date', { withTimezone: true }),
     reason: text('reason'),
+    // Raw Stripe dispute status at ingest time (needs_response/under_review/…) — informational only,
+    // never re-read for lifecycle decisions (see stage handling in paymentsIngest.routes.ts).
+    stripeStatus: text('stripe_status'),
     matched: boolean('matched').notNull().default(false),
     originalTransactionId: bigint('original_transaction_id', { mode: 'number' }), // soft ref
     matchNote: text('match_note'),
