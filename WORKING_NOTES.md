@@ -12927,3 +12927,56 @@ Current honest state: coverage **8–9/10**, the four single-document cases rock
 across document *kinds*, not an ordering one.
 
 Backend **2449** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Knowledge lifecycle: a sync endpoint, because the cron flag is a loaded gun
+
+The nightly `maintenance.platform-knowledge-sync` never runs in production. The obvious fix — set
+`FF_JOBS_ENABLED=1` on Render — is **not safe**, and it took reading the job catalog to see why.
+
+Cron scheduling has no per-job switch. `scheduler.ts` filters `CRON_SCHEDULES` by exactly three
+things: `DISABLED_JOB_QUEUES` (the weekly retention scan + 4 KPI jobs) and a `FF_ORCHESTRATOR_ENABLED`
+gate on two LLM automations — which render.yaml already sets to `1`. So flipping the flag registers
+**11 schedules at once**, including:
+
+- `notification.poll` every **2 minutes** — card-status, receipt and invoice messages over Telegram.
+- `notification.statement-weekly`, Mondays 07:00 — `runWeeklyStatements()` sends fuel-transaction and
+  EFS money-code reports (PDF + XLSX, including discount pricing) to carrier owners.
+
+The catalog comments call both "no-op w/o pilot carriers". **That comment is stale.** `pilotCarriers()`
+selects every row in `registered_mini_app_companies` with `status='active'` and `profile != 'driver'`;
+`NOTIFY_POLL_CARRIERS` is only a manual *extras* list. And unlike the pollers, `runWeeklyStatements`
+has **no first-run baseline guard** — its dedupe key covers the text notification, not the document
+sends, and `retryLimit: 0` because those sends are not idempotent. The first Monday after such a flip
+would mail last week's bundle to real paying customers. A nightly knowledge refresh is not worth that.
+
+A Render Cron Job running the existing one-shot is also impossible as things stand: the runtime image
+carries only `scripts/docker/start-prod.sh`, and `tsx` is a devDependency under `pnpm install --prod`.
+
+**So: `POST /v1/knowledge/platform-sync`** (`knowledge.routes.ts`, `adminGuard`), which reuses
+`syncPlatformKnowledge` verbatim. Any scheduler can hit it with the API key.
+
+Verified live against the local corpus:
+
+| call | result |
+| --- | --- |
+| first | `ready: 4, skipped: 42` in 1,946ms |
+| second | `ready: 0, skipped: 46` in **131ms** |
+| two concurrent | one `200`, one `409 SYNC_IN_FLIGHT` |
+| unauthenticated | `401` |
+
+Two things worth noting from that. A warm re-run is **essentially free** — `ingestDocument` resolves
+the checksum (line 128) before it embeds (line 192), so an unchanged document costs one query and no
+OpenAI call. And the 4 that *were* re-ingested are the agent-capability documents: they are generated
+from the manifests, so editing the Sales persona and its MCP tool list correctly invalidated them. The
+catalog tracks code, which is the whole point of it being generated.
+
+Deliberately independent of `FF_PLATFORM_KNOWLEDGE`, matching the one-shot script: you need to
+populate the corpus *before* exposing it.
+
+Four tests: unauthenticated refused, admin gets counts + duration, concurrent second call gets 409
+without a second sync, and the in-flight guard clears after a failure so one bad run cannot wedge the
+endpoint. Backend **2453** passed / 1 skipped, lint 0 errors.
+
+**Not changed:** `FF_JOBS_ENABLED` stays off. Fixing the stale "no-op w/o pilot carriers" comments and
+giving `runWeeklyStatements` a first-run guard would be the prerequisites for ever enabling it, and
+both are separate work with real customer-facing risk.
