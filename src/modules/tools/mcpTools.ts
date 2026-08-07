@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { callMcpTool, listMcpTools, type McpToolDef } from '../../integrations/zohoMcp.js';
+import { ALL_AGENT_MANIFESTS } from '../agents/manifests/index.js';
 import type { RegisteredTool, RiskClass } from './types.js';
 
 /**
@@ -151,5 +152,54 @@ export async function loadMcpTools(): Promise<RegisteredTool[]> {
       'zoho mcp: repaired malformed upstream parameter schemas (an invalid one would fail every turn)',
     );
   }
+  warnOnMissingAllowlistedTools(tools.map((tool) => tool.name));
+  warnOnOversizedSchemas(tools);
   return tools;
+}
+
+/**
+ * A tool's parameter schema is prompt weight on EVERY model call that binds it. Zoho ships some
+ * enormous ones — 37 of 203 exceed this threshold, and two we briefly allowlisted cost ~15,000
+ * tokens each, which alone would have eaten a seventh of the org's per-minute quota per call.
+ * Flag them so adding one to a manifest is a visible decision rather than a silent tax.
+ */
+const MCP_SCHEMA_CHAR_BUDGET = 4_000;
+
+function warnOnOversizedSchemas(tools: RegisteredTool[]): void {
+  const named = new Set(
+    ALL_AGENT_MANIFESTS.flatMap((manifest) =>
+      manifest.tools.filter((name) => name.startsWith('zoho_mcp.')),
+    ),
+  );
+  const heavy = tools
+    .filter((tool) => named.has(tool.name))
+    .map((tool) => ({ name: tool.name, chars: JSON.stringify(tool.rawParameters ?? {}).length }))
+    .filter((row) => row.chars > MCP_SCHEMA_CHAR_BUDGET)
+    .sort((a, b) => b.chars - a.chars);
+  if (heavy.length === 0) return;
+  logger.warn(
+    { tools: heavy, budgetChars: MCP_SCHEMA_CHAR_BUDGET },
+    'zoho mcp: an allowlisted tool has an oversized parameter schema — it is charged as input tokens on every bound model call',
+  );
+}
+
+/**
+ * Manifests now name MCP tools individually instead of wildcarding them, which is what keeps the
+ * bound tool set small. The cost of naming is drift: if Zoho renames or drops a tool, that agent
+ * quietly loses a capability. Say so at boot instead.
+ */
+function warnOnMissingAllowlistedTools(registered: string[]): void {
+  const available = new Set(registered);
+  const missing = new Map<string, string[]>();
+  for (const manifest of ALL_AGENT_MANIFESTS) {
+    const absent = manifest.tools.filter(
+      (name) => name.startsWith('zoho_mcp.') && !name.endsWith('*') && !available.has(name),
+    );
+    if (absent.length > 0) missing.set(manifest.key, absent);
+  }
+  if (missing.size === 0) return;
+  logger.warn(
+    { agents: Object.fromEntries(missing) },
+    'zoho mcp: manifests reference MCP tools this server did not expose — those agents lost a capability',
+  );
 }

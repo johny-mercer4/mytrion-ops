@@ -366,7 +366,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     );
     try {
       const mcpTools = await Promise.race([loadMcpTools(), deadline]);
-      applyDepartmentPolicy(mcpTools); // no agent lists MCP tools → admin-only
+      // Stamps allowedDepartments from the manifests. Sales/Data Center and Manager DO name specific
+      // MCP tools (SALES_MCP_TOOLS / MANAGER_MCP_TOOLS), so those become department-visible; every
+      // other discovered tool matches no manifest and stays admin-only.
+      applyDepartmentPolicy(mcpTools);
       toolRegistry.register(mcpTools);
     } catch (err) {
       logger.error(

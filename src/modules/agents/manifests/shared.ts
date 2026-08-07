@@ -90,6 +90,49 @@ export const DBT_MCP_TOOLS = ['dbt_mcp.*'] as const;
 export const WAREHOUSE_TOOLS = ['warehouse.my_gallons'] as const;
 
 /**
+ * Zoho MCP tools, NAMED rather than wildcarded — and this is load-bearing, not tidiness.
+ *
+ * `zoho_mcp.*` bound all 83 discovered read tools (41 CRM + 42 Desk) to any agent listing it. Every
+ * one of their schemas ships as input tokens on every model call: measured at **71,130 input tokens
+ * per call** for "how do I activate a card", which at ~2 calls per turn spent the org's whole
+ * 200k-tokens-per-minute quota in about 1.4 questions and returned 429s as "network error". It also
+ * wrecked tool choice — a how-to question picked `zoho_crm.query` out of ~102 options.
+ *
+ * So each agent gets only what it actually uses. Anything omitted is still reachable through the
+ * all-department analyst/manager agents. If a name here stops being discovered upstream,
+ * `loadMcpTools` warns at boot rather than dropping it silently.
+ */
+
+/**
+ * Sales/Data Center: Lead + Deal reads and the metadata needed to shape a COQL query.
+ *
+ * Two omissions are measured, not stylistic. Zoho ships some pathological schemas — 37 of its 203
+ * tools exceed 4,000 characters — and `ZohoCRM_getRecordCount` (~15,200 tokens) plus
+ * `ZohoCRM_getRelatedRecords` (~15,400 tokens) were 30,700 of the 32,000 tokens this list cost.
+ * Native `zoho_crm.query` does both jobs in COQL (`SELECT COUNT(*)`, related-list joins) for ~0
+ * prompt overhead, so dropping them costs capability nothing and pays for itself many times over.
+ * `ZohoCRM_executeCOQLQuery` is omitted for the same reason as always: two tools for one job is
+ * exactly what confuses selection. No Desk tools — Sales files tickets through Create, not MCP.
+ */
+export const SALES_MCP_TOOLS = [
+  'zoho_mcp.ZohoCRM_getLeadsRecords',
+  'zoho_mcp.ZohoCRM_getDealsRecords',
+  'zoho_mcp.ZohoCRM_getFields',
+  'zoho_mcp.ZohoCRM_getModuleByApiName',
+] as const;
+
+/**
+ * Manager (read-only, cross-department reporting): record reads plus Desk throughput metrics.
+ * `ZohoCRM_getRecordCount` is excluded for the size reason above — counts go through
+ * `zoho_crm.query`. `ZohoCRM_getModules` (~5,300 tokens) is excluded on the same grounds.
+ */
+export const MANAGER_MCP_TOOLS = [
+  'zoho_mcp.ZohoCRM_getRecords',
+  'zoho_mcp.ZohoDesk_getTicketsMetrics',
+  'zoho_mcp.ZohoDesk_getAgentsTicketsCount',
+] as const;
+
+/**
  * servercrm client/carrier self-service READ tools (owner-scoped per call). Given to agents that
  * serve clients by carrier (sales, customer-service) and cross-department read agents.
  * ui.request_choice is the generative-UI elicitation tool that pairs with crm.list_my_clients.

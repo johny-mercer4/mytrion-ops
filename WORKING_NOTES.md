@@ -12548,3 +12548,63 @@ Three things this proves rather than suspects:
 Note the two successes cited a *neighbouring* doc alongside the right one (Card Deactivation next to
 Card Activation; Transactions Report next to Retention) — the ranking imprecision expected from
 single-shot kNN with no grading or reranking.
+
+## 2026-08-08 — Phases 1+2: tool surface cut, prompt contradiction removed
+
+### Measured result
+
+| metric | baseline | after 1+2 | change |
+| --- | --- | --- | --- |
+| mean wall per question | 11,693ms | **5,450ms** | 2.1× faster |
+| input tokens per model call | 71,130 | **11,558** | **6.2× less** |
+| model latency per call | 6,102ms | 2,420ms | 2.5× faster |
+| cost, four questions | $0.0537 | **$0.0143** | 3.8× cheaper |
+| failures | **2 of 4** (429s) | **0 of 4** | fixed |
+| on-target citation | 3 of 4 | **4 of 4** | fixed |
+| tool calls per question | 0–1 | 1 (`knowledge_search`) | no CRM calls |
+
+Per turn is now ~23k tokens against the 200k TPM ceiling instead of ~142k — roughly 8.6 questions
+per minute rather than 1.4, which is why the 429s stopped.
+
+### What changed
+
+**Named MCP tools instead of `zoho_mcp.*`** (`manifests/shared.ts` → `SALES_MCP_TOOLS`,
+`MANAGER_MCP_TOOLS`; applied in `sales.ts`, `dataCenter.ts`, `manager.ts`). The wildcard bound all 83
+discovered read tools to Sales.
+
+The first cut only got 71k → 35k, so I measured the schemas individually rather than assuming.
+**Two of the six tools I had allowlisted were 30,665 of the remaining 32,005 tokens** —
+`ZohoCRM_getRecordCount` (~15,247) and `ZohoCRM_getRelatedRecords` (~15,418). Zoho ships pathological
+schemas: **37 of its 203 tools exceed 4,000 characters**, and `ZohoCRM_getModules` is ~5,296 tokens.
+Both were dropped; native `zoho_crm.query` does counts (`SELECT COUNT(*)`) and related-list joins in
+COQL for no prompt overhead. Sales' MCP surface is now ~1,341 tokens.
+
+Two boot guards in `loadMcpTools`, because naming tools trades a token problem for a drift problem:
+- warn when a manifest names an MCP tool discovery did not return (that agent silently lost a
+  capability);
+- warn when an allowlisted tool's schema exceeds 4,000 chars, so the next 15k-token schema is a
+  visible decision instead of a silent tax.
+
+Fixed the stale `app.ts` comment claiming no agent lists MCP tools — sales and manager both did.
+
+**Prompt contradiction removed** (`sales.ts`). The persona carried the self-knowledge rule *and*
+"Use these directly **to avoid searching the knowledge base** for basic queries". The CRM/MCP hints
+are now explicitly scoped to *record* questions, and the self-knowledge block states that a how-to
+answer comes from `knowledge_search` alone — naming `zoho_crm.query`, `zoho_mcp.*`, `crm.*`,
+`warehouse.*`, `dbt_mcp.*` as off-limits for "how do I / where is / what does <code> do", plus "one
+search is normally enough; do not repeat the same search".
+
+### Tests
+
+- `agent-golden.test.ts`: no manifest may wildcard `zoho_mcp`; a simulated 83-tool discovery must
+  keep every agent under a 30-tool budget (a wildcard reintroduction fails it); the matcher itself is
+  pinned; and the Sales persona must not contain "avoid searching the knowledge base" while it must
+  name the forbidden how-to tools. 20 tests in that file now.
+- `department-agents.test.ts` updated to the tighter policy: each MCP tool is visible only to the
+  departments that named it, and a discovered-but-un-allowlisted tool is admin-only. These two tests
+  failing was the change working — they encoded the old wildcard behaviour.
+
+Backend 2419 passed / 1 skipped, lint 0 errors, typecheck clean.
+
+**Still on the legacy retrieval path** — `rag_runs` is 0 for every case, so none of the CRAG loop ran
+yet. Phase 3 next.
