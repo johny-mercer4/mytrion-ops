@@ -12202,3 +12202,11 @@ unnamed 10). Not the cause here, but worth watching — several of those are not
 
 NOT changed: nothing about the merge or the migrations was rolled back, because nothing was wrong
 with them. A redeploy should now succeed; if the DB is mid-restart it will wait rather than fail.
+
+## 2026-08-07 — Client Overview: live EFS balance tile
+
+- Data Center → Clients → client modal Overview now shows **EFS Balance** beside Cards / Gallons
+  (same `dwh.carrier_balance` source as Automations C-8). Payment terms shown as a subtitle when
+  present; soft `efs_error` note kept if upstream flags it.
+- Loader: `loadClientEfsBalance` in `clientDrilldown.ts`.
+- Verification: CRM `clientDrilldown` 5/5; CRM typecheck pass.
