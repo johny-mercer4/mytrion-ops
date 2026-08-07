@@ -102,7 +102,12 @@ export function ChatPanel({
       </div>
 
       <div className={styles.bodyWrap}>
-        <MessageList messages={chat.messages} onPick={chat.send} onRetry={chat.retry} />
+        <MessageList
+          messages={chat.messages}
+          onPick={chat.send}
+          onRetry={chat.retry}
+          hydrating={chat.hydrating}
+        />
         {historyOpen && (
           <ConversationList
             conversations={chat.conversations}

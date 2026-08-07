@@ -97,11 +97,14 @@
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 40;
+  z-index: 60;
   width: 300px;
   max-width: min(300px, calc(100vw - var(--space-6)));
   padding: var(--space-2);
-  background: var(--surface-raised);
+  /* OPAQUE on purpose. `--surface-raised` is a ~4% tint meant to sit ON a surface, not to be one —
+     using it here left the menu 95% transparent, so the transcript read straight through the user
+     rows. A listbox that overlaps content must be readable, so this is `--surface` plus elevation. */
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg, var(--shadow-md));

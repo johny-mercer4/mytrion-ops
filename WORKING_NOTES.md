@@ -12483,3 +12483,32 @@ errors (23 pre-existing warnings).
 Render prod Postgres dropped this machine's connection twice during testing and killed the server
 ("Connection terminated unexpectedly"), which is the same flakiness that interrupted the catalog
 sync. Local work is much steadier against `:5433`.
+
+### Test-as menu was unreadable, and the restore flashed
+
+Two defects visible in one screenshot of the open "Test as" list.
+
+**Transparency.** I had used `--surface-raised` as the dropdown's background. That token is
+`rgba(255,255,255,0.045)` — a ~4% tint designed to sit ON an opaque surface, not to BE one — so the
+menu was ~95% transparent and the transcript read straight through the user rows. Now `--surface`
+(opaque `#1b212c` / `#ffffff`) plus elevation. Checked the neighbours: the History overlay already
+used opaque `--surface-alt`, and the two other `--surface-raised` backgrounds (the scroll-to-bottom
+FAB, a header chip) are glass-over-opaque-panel by design, so they stay.
+
+**Stacking.** The accent-filled user bubble painted ON TOP of the open menu. `.bodyWrap` is
+positioned and every bubble carries `backdrop-filter`, which makes each its own stacking context, so
+a menu inside the unpositioned header lost. `.header` now has `position: relative; z-index: 3` and
+the menu sits at `z-index: 60`.
+
+**Restore loader.** `useChat` had no notion of hydrating: on mount it restored the previous
+conversation asynchronously, so `MessageList` painted the "Horizon AI" welcome and then swapped in
+the messages — a flash that reads as a broken panel. Added `hydrating` to the reducer, seeded lazily
+from `getLastConversationId` so a user with no stored conversation never sees a skeleton at all, and
+settled on every exit: transcript loaded, explicit `hydrated` (covers nothing-to-restore AND the
+silent stale-id failure, via `.finally`), or the user starting a new conversation. `MessageList`
+renders skeleton turns mirroring the real bubble geometry — one affordance for the region, no spinner
+layered on top, and `role="status"` so it is announced. Five reducer tests cover the settle paths,
+including that `hydrated` on settled state returns the SAME object (no needless re-render).
+
+Gates: frontend 554 passed / 87 files, typecheck clean, bundle rebuilt and verified (opaque
+`background:var(--surface)` at `z-index:60`, header `z-index:3`, "Restoring your conversation").

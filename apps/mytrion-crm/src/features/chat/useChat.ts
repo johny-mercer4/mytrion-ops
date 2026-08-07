@@ -31,6 +31,12 @@ interface State {
   conversations: ConversationSummary[];
   error: string | null;
   inspection: TurnInspection | null;
+  /**
+   * Restoring the previous conversation on mount. Without this the transcript is briefly empty, so
+   * the "Horizon AI" welcome painted and was then replaced by the restored messages — a flash that
+   * read as a broken panel. True only when there IS something to restore.
+   */
+  hydrating: boolean;
 }
 
 export interface TurnInspection extends Omit<TurnTraceEvent, 'stage' | 'status' | 'label' | 'at' | 'details'> {
@@ -57,9 +63,10 @@ type Action =
   | { type: 'loadTranscript'; conversationId: string; messages: UiMessage[]; inspection?: TurnInspection | null }
   | { type: 'newConversation' }
   | { type: 'setError'; error: string | null }
-  | { type: 'inspectTrace'; event: TurnTraceEvent };
+  | { type: 'inspectTrace'; event: TurnTraceEvent }
+  | { type: 'hydrated' };
 
-const EMPTY: State = { messages: [], conversationId: null, streaming: false, conversations: [], error: null, inspection: null };
+const EMPTY: State = { messages: [], conversationId: null, streaming: false, conversations: [], error: null, inspection: null, hydrating: false };
 
 function appendInspection(current: TurnInspection | null, event: TurnTraceEvent): TurnInspection | null {
   if (!current) return null;
@@ -241,14 +248,17 @@ export function reducer(state: State, action: Action): State {
         messages: action.messages,
         error: null,
         inspection: action.inspection ?? null,
+        hydrating: false,
       };
     case 'newConversation':
       // Optimistically unlock the composer: a proxy stream can't be cancelled, so we don't wait for
       // its (now-ignored) response to flip streaming off. The stale stream's frames are dropped by
       // its abort signal, and its finally won't touch state once a newer controller has replaced it.
-      return { ...state, conversationId: null, messages: [], error: null, streaming: false, inspection: null };
+      return { ...state, conversationId: null, messages: [], error: null, streaming: false, inspection: null, hydrating: false };
     case 'inspectTrace':
       return { ...state, inspection: appendInspection(state.inspection, action.event) };
+    case 'hydrated':
+      return state.hydrating ? { ...state, hydrating: false } : state;
     case 'setError':
       return { ...state, error: action.error };
     default:
@@ -263,6 +273,8 @@ export interface ChatController {
   streaming: boolean;
   error: string | null;
   inspection: TurnInspection | null;
+  /** Restoring the previous conversation on mount — render the transcript skeleton, not the welcome. */
+  hydrating: boolean;
   send(text: string): void;
   /** Abort the in-flight generation, keeping the partial answer. */
   stop(): void;
@@ -279,7 +291,11 @@ export function useChat(
   department: string | string[] | null,
   agentKey: AgentKey | null = null,
 ): ChatController {
-  const [state, dispatch] = useReducer(reducer, EMPTY);
+  // Lazy init so a user with no stored conversation never sees a skeleton at all.
+  const [state, dispatch] = useReducer(reducer, EMPTY, (base): State => ({
+    ...base,
+    hydrating: Boolean(ctx.userId && getLastConversationId(ctx.userId)),
+  }));
   const abortRef = useRef<AbortController | null>(null);
   const restoredForRef = useRef<string | null>(null);
   const transcriptCacheRef = useRef(new Map<string, UiMessage[]>());
@@ -557,8 +573,12 @@ export function useChat(
     restoredForRef.current = zohoUserId;
     const last = getLastConversationId(zohoUserId);
     if (last && state.messages.length === 0 && !state.streaming) {
-      void openConversation(last, { silent: true });
+      // `hydrated` also fires on the failure path (openConversation swallows a stale id silently),
+      // so the skeleton can never outlive the attempt.
+      void openConversation(last, { silent: true }).finally(() => dispatch({ type: 'hydrated' }));
+      return;
     }
+    dispatch({ type: 'hydrated' });
   }, [zohoUserId, state.messages.length, state.streaming, openConversation]);
 
   // Create-up-front is intentionally omitted: /chat/stream auto-creates and returns the id in `start`.
@@ -569,6 +589,7 @@ export function useChat(
     streaming: state.streaming,
     error: state.error,
     inspection: state.inspection,
+    hydrating: state.hydrating,
     send,
     stop,
     retry,
