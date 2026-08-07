@@ -6,6 +6,12 @@ export interface TokenUsage {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  /**
+   * Prompt tokens the provider served from its prefix cache. Billed at a discount, so charging them
+   * at the full input rate overstates cost — and it overstates it badly here: a measured 90–97% of
+   * our ~11k-token prefix is a cache hit from the second call of a turn onward.
+   */
+  cachedPromptTokens?: number;
 }
 
 export interface CostBreakdown extends TokenUsage {
@@ -38,7 +44,12 @@ export function computeCost(usage: TokenUsage): CostBreakdown {
   }
   const input = pricing?.input ?? 0;
   const output = pricing?.output ?? 0;
-  const inputCost = (usage.promptTokens / 1_000_000) * input;
+  // Cached input is billed at `cachedInput` when the price table knows it; fall back to the full
+  // input rate so an unpriced model can never be under-charged (the budget guard must still trip).
+  const cachedRate = pricing?.cachedInput ?? input;
+  const cached = Math.min(Math.max(usage.cachedPromptTokens ?? 0, 0), usage.promptTokens);
+  const fresh = usage.promptTokens - cached;
+  const inputCost = (fresh / 1_000_000) * input + (cached / 1_000_000) * cachedRate;
   const outputCost = (usage.completionTokens / 1_000_000) * output;
   return {
     ...usage,

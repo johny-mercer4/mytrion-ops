@@ -12725,3 +12725,69 @@ Two fixes:
   final result drops them.
 
 Backend 2431 passed / 1 skipped with the shorter timeout.
+
+## 2026-08-08 — Phase A: prompt caching was already working; the telemetry was lying
+
+Concept #14 (KV/prefix caching) looked completely unexploited: **0.0% cache hits across 61 real
+calls** at ~10,400 input tokens each, and `llm_calls.ttft_ms` existed with nothing writing it. The
+plan's first step was to measure rather than optimise, which turned out to matter — the expensive half
+of the plan was unnecessary.
+
+**A1, the experiment.** Sent the real Sales child system prompt plus the real bound tool schemas
+directly to OpenAI three times, different user message each time:
+
+| call | prompt | cached | latency |
+| --- | --- | --- | --- |
+| 1 | 4,914 | 0 (cold) | 2,425ms |
+| 2 | 4,909 | **4,736 (96.5%)** | 1,392ms |
+| 3 | 4,911 | **4,736 (96.4%)** | 1,286ms |
+
+Caching engages, and nearly halves latency. Then instrumented a real agent turn to see what the
+runtime actually receives:
+
+| call | input_tokens | cache_read |
+| --- | --- | --- |
+| 1 | 11,225 | 0 (cold) |
+| 2 | 12,025 | **10,880 (90.5%)** |
+| 3 | 11,225 | **10,880 (96.9%)** |
+| 4 | 12,049 | **10,880 (90.3%)** |
+
+So the prefix was **always** caching at 90–97%. `childSystemPrompt` is static (persona +
+`SHARED_AGENT_RULES` + escalation targets) and the volatile `<TurnContext>` sits in the human message,
+i.e. the suffix — the design was right all along.
+
+**The bug** was one branch in `runTracker.handleLLMEnd`. `llmOutput.tokenUsage` exists and carries
+exactly `promptTokens` / `completionTokens` / `totalTokens` — **no cache fields** — so that branch won
+every time and hardcoded `cached = 0`, never reaching the `usage_metadata` that does carry
+`input_token_details.cache_read`. Cache reads are now harvested from `usage_metadata` regardless of
+which source supplied the counts (`usageFromGenerations`).
+
+**Consequences fixed alongside it:**
+
+- **`ttft_ms` now recorded** via `handleLLMNewToken` (first token per LLM run). `latencyMs` measures
+  the whole generation, which hides exactly what caching improves. Measured **1,145ms** average TTFT.
+  Router/grader stay blank because they use the raw non-streaming client — correct, not missing.
+- **Cost was overstated.** `computeCost` billed all ~11k prompt tokens at the full input rate while
+  10,880 of them were cache reads. Added `cachedInput` rates to `MODEL_PRICING` and split the input
+  charge. An unpriced model falls back to the full rate so the `AGENT_MAX_COST_USD` guard can never
+  trip too late.
+- **A4 dropped as unnecessary.** It existed to stabilise the prefix; the prefix was never unstable.
+
+### Measured after Phase A
+
+| metric | before A | after A |
+| --- | --- | --- |
+| cache hit rate | 0.0% (reported) | **92.5%** (real, now visible) |
+| TTFT | not recorded | **1,145ms** |
+| reported cost, 4 questions | $0.0755 | **$0.0166** |
+| mean wall | 6,180ms | 5,977ms (unchanged, as expected) |
+| on-target citations | 4 of 4 | 4 of 4 |
+
+**Read that cost line carefully: this did not save money.** Real spend was always ~$0.0166 — the old
+figure was a measurement error. The useful consequence is that **the per-question cost is ~$0.0041,
+not $0.0189**, so the earlier "~$830/month at 100 agents" projection is wrong by ~4.5×; it is closer
+to **~$180/month**. That materially changes the infrastructure-spend advice given earlier.
+
+Tests: 5 new `computeCost` cases (cached billed at the cached rate, unchanged when nothing cached,
+cached clamped to prompt tokens so cost cannot go negative, negative input ignored, unpriced model
+never discounted). Backend **2436** passed / 1 skipped, lint 0 errors, typecheck clean.
