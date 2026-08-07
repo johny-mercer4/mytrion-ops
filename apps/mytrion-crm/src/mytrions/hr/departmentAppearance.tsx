@@ -128,9 +128,31 @@ export const DEPARTMENT_TONES: Record<string, { label: string; cssVar: string }>
   'tone-amber': { label: 'Amber', cssVar: 'var(--tone-amber)' },
   'tone-violet': { label: 'Violet', cssVar: 'var(--tone-violet)' },
   'tone-cyan': { label: 'Cyan', cssVar: 'var(--tone-cyan)' },
+  // The rest of the Horizon scale. Eight tokens for ~22 departments meant heavy collisions in the
+  // auto-assignment below; these are already defined for both themes in styles/horizon.css.
+  'tone-blue': { label: 'Blue', cssVar: 'var(--tone-blue)' },
+  'tone-purple': { label: 'Purple', cssVar: 'var(--tone-purple)' },
+  'tone-orange': { label: 'Orange', cssVar: 'var(--tone-orange)' },
+  'tone-pink': { label: 'Pink', cssVar: 'var(--tone-pink)' },
+  'tone-slate': { label: 'Slate', cssVar: 'var(--tone-slate)' },
 };
 
 export const DEPARTMENT_TONE_NAMES = Object.keys(DEPARTMENT_TONES);
+
+/**
+ * The tones auto-assignment may pick from.
+ *
+ * Slate is excluded deliberately: it is the neutral the org canvas gives its "No Department" bucket, so
+ * a real department landing on it by hash would read as "these people are unassigned too".
+ */
+const AUTO_TONE_NAMES = DEPARTMENT_TONE_NAMES.filter((name) => name !== 'tone-slate');
+
+/** Stable bucket from a seed string — same department, same colour, on every screen and every reload. */
+function toneBucket(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) % 65_521;
+  return h % AUTO_TONE_NAMES.length;
+}
 
 /** Resolve a stored icon name to a component. Unknown / null → the default glyph. */
 export function departmentIcon(name: string | null | undefined): LucideIcon {
@@ -139,10 +161,24 @@ export function departmentIcon(name: string | null | undefined): LucideIcon {
 }
 
 /**
- * Resolve a stored tone token to a CSS value. Unknown / null → the HR module accent, so an
- * un-themed department still looks deliberate rather than colourless.
+ * Resolve a stored tone token to a CSS value.
+ *
+ * WHY THE SEED. `icon_color` is null for every department nobody has hand-coloured, which is nearly all
+ * of them — the Zoho migration never set it. Falling straight back to `--accent` therefore painted all
+ * ~22 departments the same HR red, on the cards and across the whole org canvas, which is precisely the
+ * information a colour is supposed to carry. Passing a stable seed (the department ID, so a rename does
+ * not reshuffle the chart) picks a deterministic tone instead: distinct at a glance, identical on every
+ * surface, and still overridden the moment someone picks a colour in the modal.
+ *
+ * With no seed and no stored token it is still the module accent — that is the right answer for
+ * "a department, in the abstract".
  */
-export function departmentTone(name: string | null | undefined): string {
+export function departmentTone(name: string | null | undefined, seed?: string | null): string {
   const hit = name ? DEPARTMENT_TONES[name] : undefined;
-  return hit?.cssVar ?? 'var(--accent)';
+  if (hit) return hit.cssVar;
+  if (seed) {
+    const token = AUTO_TONE_NAMES[toneBucket(seed)];
+    if (token) return DEPARTMENT_TONES[token]!.cssVar;
+  }
+  return 'var(--accent)';
 }

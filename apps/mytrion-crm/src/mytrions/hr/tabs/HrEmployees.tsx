@@ -14,12 +14,16 @@ import { deleteHrEmployee, type HrEmployeeDto } from '../../../api/hr';
 import { formatCachedAt } from '../../_shared/swrCache';
 import { useUserContext } from '../../../context/UserContextProvider';
 import { HrEmployeeCard } from '../HrEmployeeCard';
+import { HrEmployeeList } from '../HrEmployeeList';
+import { HrSelect, type HrSelectOption } from '../HrSelect';
+import { HrViewToggle, useHrViewMode } from '../HrViewToggle';
 import { HrEmployeeDetail } from '../HrEmployeeDetail';
 import { HrEmployeeForm, type EmployeeFormMode } from '../HrEmployeeForm';
 import {
   DIRECTORY_WINDOW,
   invalidateHrEmployees,
   isActiveStatus,
+  sortDirectory,
   useFilteredEmployees,
   useHrDepartments,
   useHrDesignations,
@@ -81,6 +85,7 @@ export function HrEmployees() {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
   /** A failed DELETE. Kept apart from the loader's error so neither can be read as the other. */
   const [deleteError, setDeleteError] = useState('');
+  const [view, setView] = useHrViewMode('employees');
 
   const directory = useHrDirectory();
   const departments = useHrDepartments();
@@ -103,23 +108,28 @@ export function HrEmployees() {
     // matched on a column the local predicate does not check.
     serverMode ? { ...filters, q: '' } : filters,
   );
-  const visible = useMemo(() => {
-    const rows = [...filteredEmployees];
-    const byName = (a: HrEmployeeDto, b: HrEmployeeDto): number =>
-      displayName(a).localeCompare(displayName(b));
-    const activeRank = (employee: HrEmployeeDto): number =>
-      isActiveStatus(employee.status) ? 0 : 1;
-    // Default directory order: department → Active first → name.
-    rows.sort((a, b) => {
-      const aDepartment = a.department?.trim() || '\uffff';
-      const bDepartment = b.department?.trim() || '\uffff';
-      return aDepartment.localeCompare(bDepartment) || activeRank(a) - activeRank(b) || byName(a, b);
-    });
-    return rows;
-  }, [filteredEmployees]);
+  const visible = useMemo(() => sortDirectory(filteredEmployees), [filteredEmployees]);
 
   const deptOptions = departments.data?.items ?? [];
   const designationOptions = designations.data ?? [];
+  /**
+   * Filter options, with "all" as a real entry rather than a magic empty string handled elsewhere — the
+   * dropdown then has one uniform list and no special case for "nothing selected".
+   */
+  const departmentFilterOptions = useMemo<HrSelectOption[]>(
+    () => [
+      { value: '', label: 'All departments' },
+      ...deptOptions.map((d) => ({ value: d.id, label: d.name })),
+    ],
+    [deptOptions],
+  );
+  const designationFilterOptions = useMemo<HrSelectOption[]>(
+    () => [
+      { value: '', label: 'All designations' },
+      ...designationOptions.map((d) => ({ value: d, label: d })),
+    ],
+    [designationOptions],
+  );
   /** id → iconColor token — cards colour their department chip from this, not a fixed accent. */
   const deptColorById = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -202,7 +212,9 @@ export function HrEmployees() {
   const cachedCaption = useMemo(() => formatCachedAt(source.cachedAt), [source.cachedAt]);
 
   return (
-    <div className="hr-page">
+    /* A seven-column table is not prose: it opts out of the reading measure so the row actions are
+       not squeezed against the panel edge while the page sits in a pool of empty space. */
+    <div className={`hr-page${view === 'list' ? ' hr-page-wide' : ''}`}>
       <HrPageHead
         tab="employees"
         actions={
@@ -237,55 +249,6 @@ export function HrEmployees() {
         }
       />
 
-      {!firstLoad ? (
-        <div className="hr-toolbar">
-          <label className="hr-search">
-            <Search size={14} />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name, email, employee id…"
-              aria-label="Search employees"
-            />
-          </label>
-          <div className="hr-chips" role="group" aria-label="Status filter">
-            {(['all', 'Active', 'Terminated'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="hr-chip"
-                aria-pressed={status === s}
-                onClick={() => setStatus(s)}
-              >
-                {s === 'all' ? 'All' : s}
-              </button>
-            ))}
-          </div>
-          <label className="hr-select">
-            <span className="hr-sr">Department</span>
-            <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-              <option value="">All departments</option>
-              {deptOptions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="hr-select">
-            <span className="hr-sr">Designation</span>
-            <select value={designation} onChange={(e) => setDesignation(e.target.value)}>
-              <option value="">All designations</option>
-              {designationOptions.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : null}
-
       {/* Counted from the directory, so they need the directory — three tiles reading 0 over a failed
           load are a measurement, not a blank. */}
       {!firstLoad && directory.data ? (
@@ -315,6 +278,46 @@ export function HrEmployees() {
             },
           ]}
         />
+      ) : null}
+
+      {!firstLoad ? (
+        <div className="hr-toolbar">
+          <label className="hr-search">
+            <Search size={14} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, email, employee id…"
+              aria-label="Search employees"
+            />
+          </label>
+          <div className="hr-chips" role="group" aria-label="Status filter">
+            {(['all', 'Active', 'Terminated'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="hr-chip"
+                aria-pressed={status === s}
+                onClick={() => setStatus(s)}
+              >
+                {s === 'all' ? 'All' : s}
+              </button>
+            ))}
+          </div>
+          <HrSelect
+            label="Department"
+            value={departmentId}
+            onChange={setDepartmentId}
+            options={departmentFilterOptions}
+          />
+          <HrSelect
+            label="Designation"
+            value={designation}
+            onChange={setDesignation}
+            options={designationFilterOptions}
+          />
+          <HrViewToggle mode={view} onChange={setView} label="Directory view" />
+        </div>
       ) : null}
 
       {/* Two failures, two banners. A load error only captions rows that are STILL on screen (a failed
@@ -371,6 +374,18 @@ export function HrEmployees() {
                 : 'No employee records in the directory yet.'
           }
         />
+      ) : view === 'list' ? (
+        <HrEmployeeList
+          employees={visible}
+          admin={admin}
+          isBusy={(id) => deletingIds.has(id)}
+          departmentColor={(departmentId) =>
+            departmentId ? (deptColorById.get(departmentId) ?? null) : null
+          }
+          onOpen={setDetail}
+          onEdit={(emp) => setFormMode({ kind: 'edit', employee: emp })}
+          onDelete={(emp) => void onDelete(emp)}
+        />
       ) : (
         <div className="hr-empc-grid">
           {visible.map((e) => (
@@ -402,6 +417,8 @@ export function HrEmployees() {
             setDetail(null);
             setFormMode({ kind: 'edit', employee: emp });
           }}
+          /* The modal owns the live avatar; this is so the CARD behind it stops showing the old one. */
+          onPhotoChanged={invalidateHrEmployees}
         />
       ) : null}
 

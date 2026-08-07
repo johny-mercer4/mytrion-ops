@@ -48,7 +48,10 @@
     "eval:retrieval": "tsx scripts/evalRetrieval.ts",
     "eval:rag-excellence": "node --import tsx scripts/evalRagExcellence.ts",
     "eval:live": "tsx scripts/evalLive.ts",
-    "analytics:smoke": "tsx scripts/analytics-smoke.ts"
+    "analytics:smoke": "tsx scripts/analytics-smoke.ts",
+    "dropbox:smoke": "tsx scripts/dropbox-smoke.ts",
+    "hr:attendance-local": "tsx scripts/hr-attendance-local.ts",
+    "hr:fix-work-dates": "tsx scripts/hr-recompute-work-dates.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1078.0",

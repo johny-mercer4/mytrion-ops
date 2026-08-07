@@ -50,7 +50,8 @@ export interface HrOrgEmployeeNode {
   status: string;
   departmentId: string | null;
   reportingToEmployeeId: string | null;
-  photoUrl: string | null;
+  /** Re-hosted avatar as a `file_assets` id; the canvas resolves it through `/photo-link`. */
+  photoFileId: string | null;
   canvasX: number | null;
   canvasY: number | null;
 }
@@ -107,7 +108,7 @@ export async function buildHrOrgStructure(ctx: TenantContext): Promise<HrOrgStru
         status: hrEmployees.status,
         departmentId: hrEmployees.departmentId,
         reportingToEmployeeId: hrEmployees.reportingToEmployeeId,
-        photoUrl: hrEmployees.photoUrl,
+        photoFileId: hrEmployees.photoFileId,
         canvasX: hrEmployees.canvasX,
         canvasY: hrEmployees.canvasY,
       })

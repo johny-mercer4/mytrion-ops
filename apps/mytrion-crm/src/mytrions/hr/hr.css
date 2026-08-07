@@ -42,9 +42,25 @@
   gap: var(--hr-gap-lg);
   width: 100%;
   max-width: var(--hr-measure);
+  /* CENTRED. A max-width block with no auto margin is left-aligned, so on any monitor wider than the
+     measure the entire module hugged the left edge and every pixel of slack piled up on the right —
+     which reads as a broken layout, not as a reading width. */
+  margin-inline: auto;
   padding: var(--hr-pad);
   box-sizing: border-box;
   animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+}
+
+/**
+ * Collapsing the sidebar gives the page its space back.
+ *
+ * `--hr-measure` is a READABILITY cap, not a layout one — it stops prose and form grids stretching into
+ * unreadable lines on a wide monitor. But with the rail closed it stopped being a cap and started being
+ * a waste: the content stayed put and the 180px it gained turned into empty margin, which is the exact
+ * opposite of what closing the sidebar is for. The canvas already opted out via `.hr-page-wide`.
+ */
+[data-sidebar-collapsed='true'] .hr-root .hr-page {
+  max-width: none;
 }
 
 @keyframes hrIn {
@@ -599,15 +615,58 @@
 }
 .hr-root .hr-modal {
   width: min(100%, 560px);
-  max-height: min(90vh, 720px);
+  /* The backdrop adds 24px of padding top and bottom, so 90vh could exceed the box it sits in — and the
+     backdrop CENTRES its child, which splits any overflow across both ends and puts the top of the
+     dialog somewhere no scroll can reach. Subtracting the padding makes that impossible at any height. */
+  max-height: min(720px, calc(100vh - 48px));
   overflow: auto;
   overscroll-behavior: contain;
-  border-radius: var(--hr-r-lg);
+  /* Softer on the container than on anything inside it — a uniform radius everywhere reads as a
+     template. Inner surfaces use --hr-r-sm. */
+  border-radius: 18px;
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-lift, var(--hz-pane));
-  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
-  padding: 18px 18px 16px;
+  /* Tinted, not black: a neutral drop shadow on a coloured field looks like a sticker. --dc is the
+     record's department tone where the dialog sets one, the module accent otherwise. */
+  box-shadow:
+    0 32px 64px -28px color-mix(in srgb, var(--dc, var(--accent)) 30%, transparent),
+    var(--hz-shadow-rest),
+    var(--hz-glass-inset);
+  padding: 0 20px 18px;
 }
+
+/**
+ * Header and actions PIN; only the body between them scrolls.
+ *
+ * The dialog used to scroll as one block, so on a long record the Close/Edit row simply left the screen
+ * and the only way back was to scroll past the thing you had finished reading. Sticky resolves against
+ * `.hr-modal`, which is the scroll container.
+ *
+ * THE NEGATIVE MARGINS ARE LOAD-BEARING. The panel owns the horizontal padding, so a pinned bar has to
+ * bleed back out to the border box or its background stops 20px short and scrolling content shows
+ * through either side. Written as a bleed rather than "put the padding on each child" because
+ * `.hr-modal-actions` is a DIRECT child in the detail dialog and nested inside `<form>` in the editors —
+ * a bleed is correct at both depths; per-child padding would double up at one of them.
+ */
+.hr-root .hr-modal-head,
+.hr-root .hr-empd-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -20px;
+  padding: 18px 20px 14px;
+  background: var(--hz-pane-lift, var(--hz-pane));
+}
+.hr-root .hr-modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 18px -20px -18px;
+  padding: 12px 20px 16px;
+  background: var(--hz-pane-lift, var(--hz-pane));
+  border-top: 1px solid var(--hz-pane-bd);
+}
+
 .hr-root .hr-modal-head {
   display: flex;
   align-items: center;
@@ -655,7 +714,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 @media (max-width: 560px) {
   .hr-root .hr-form-grid {
@@ -1201,8 +1260,16 @@
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  padding-bottom: 16px;
   border-bottom: 1px solid var(--hz-pane-bd);
+  /* A RADIAL wash from the corner rather than a 45° linear fade — an even diagonal gradient is the
+     most recognisable "generated" surface there is. Carries the person's department tone. */
+  background:
+    radial-gradient(
+      420px 160px at 8% -30%,
+      color-mix(in srgb, var(--dc, var(--accent)) 20%, transparent),
+      transparent 70%
+    ),
+    var(--hz-pane-lift, var(--hz-pane));
 }
 .hr-root .hr-empd-ident {
   flex: 1;
@@ -1211,10 +1278,13 @@
 .hr-root .hr-empd-ident h2 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 700;
-  letter-spacing: -0.012em;
+  /* Tighter tracking as the size goes up — large text set at default spacing reads loose. */
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .hr-root .hr-empd-ident p {
   margin: 3px 0 0;
@@ -1230,32 +1300,135 @@
   flex-wrap: wrap;
 }
 
+/* ── Employee photo control (admin) ───────────────────────────────────────────────────────────── */
+
+.hr-root .hr-empd-photo {
+  position: relative;
+  flex-shrink: 0;
+  line-height: 0;
+}
+/* A write in flight: dim the face, but keep it in place rather than swapping in a spinner — the
+   label beside it already says what is happening, and two loaders on one action is one too many. */
+.hr-root .hr-empd-photo[data-busy='on'] {
+  opacity: 0.55;
+  transition: opacity 0.18s ease;
+}
+.hr-root .hr-empd-photo-btn {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--hz-pane-bd);
+  /* Sits on the avatar's edge, so it needs the pane colour behind it to stay legible on any face. */
+  background: var(--hz-pane);
+  color: var(--text-secondary, inherit);
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+.hr-root .hr-empd-photo-btn:hover:not(:disabled),
+.hr-root .hr-empd-photo-btn:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  transform: scale(1.06);
+}
+.hr-root .hr-empd-photo-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/**
+ * `flex`, NOT `inline-flex`.
+ *
+ * `.hr-empd-ident` is a plain block, so an inline-level child sits on the same line as whatever inline
+ * element precedes it — which put "Upload photo" on the badge row, reading as a third badge crammed
+ * against the department chip. Block-level flex gives it its own line under the badges, which is where
+ * an action belongs relative to the labels describing the record.
+ */
+.hr-root .hr-empd-photo-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: 9px;
+  min-height: 20px;
+}
+.hr-root .hr-empd-photo-actions button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hr-root .hr-empd-photo-actions button:hover {
+  opacity: 0.8;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hr-root .hr-empd-photo-btn {
+    transition: none;
+  }
+  .hr-root .hr-empd-photo-btn:hover:not(:disabled),
+  .hr-root .hr-empd-photo-btn:focus-visible {
+    transform: none;
+  }
+}
+
+/**
+ * NINE TILES BECAME NINE ROWS.
+ *
+ * Every field used to be its own bordered, filled card inside an already-bordered dialog: boxes in a
+ * box, nine outlines competing with the one that matters. A card should only exist where elevation
+ * means something, and "this is a phone number" is not elevation. The grid now carries the structure —
+ * a hairline between rows, nothing around each cell — so the eye reads columns of values instead of a
+ * wall of rectangles. An odd field count also stops looking broken: with no border, the last row simply
+ * ends, where before it left a lone box beside a gap.
+ */
 .hr-root .hr-empd-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
-  margin: 16px 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0 22px;
+  margin: 4px 0 0;
 }
 .hr-root .hr-empd-field {
-  padding: 11px 13px;
-  border-radius: var(--hr-r-sm, 8px);
-  border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane-alt, var(--hz-pane));
   min-width: 0;
+  padding: 11px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--hz-pane-bd) 55%, transparent);
 }
 .hr-root .hr-empd-field dt {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  /* Quieter than before, on purpose: the label is scaffolding and the VALUE is the content. Weight and
+     size now separate them, where a 700-weight label next to a 400-weight value did the opposite. */
+  color: color-mix(in srgb, var(--text-muted) 85%, transparent);
+}
+.hr-root .hr-empd-field dt svg {
+  color: color-mix(in srgb, var(--dc, var(--accent)) 70%, var(--text-muted));
 }
 .hr-root .hr-empd-field dd {
-  margin: 6px 0 0;
-  font-size: 13.5px;
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text-primary);
+  /* IDs, phone numbers and dates line up column-to-column instead of shimmying. */
+  font-variant-numeric: tabular-nums;
   /* Values wrap rather than overflow the tile — an email is long and a name can be longer. */
   overflow-wrap: anywhere;
 }
@@ -1302,4 +1475,557 @@
 .hr-root .hr-prefixed > input:focus {
   outline: none;
   box-shadow: none;
+}
+
+/* ── Person view (the "View as" lens) ─────────────────────────────────────────────────────────── */
+
+.hr-root .hr-person-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.hr-root .hr-person-bar-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: var(--hr-r-lg, 14px);
+  border: 1px solid var(--hz-pane-bd);
+  /* The department tone bleeds in from the left so the person reads as belonging somewhere, without
+     tinting the whole card the way a full background would. */
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--dc, var(--accent)) 12%, transparent), transparent 42%),
+    var(--hz-pane);
+  margin-bottom: 18px;
+}
+.hr-root .hr-person-ident {
+  min-width: 0;
+  flex: 1;
+}
+.hr-root .hr-person-ident h1 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.014em;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-person-ident p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.hr-root .hr-person-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.hr-root .hr-person-dept,
+.hr-root .hr-person-manager {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hz-pane-bd);
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+.hr-root .hr-person-dept {
+  border-color: color-mix(in srgb, var(--dc, var(--accent)) 38%, var(--hz-pane-bd));
+  color: var(--dc, var(--accent));
+}
+
+.hr-root .hr-person-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+/* Attendance and time off carry wide content (a seven-day strip, a balance row), so they span the
+   grid rather than being squeezed into a half-width column. */
+.hr-root .hr-person-wide {
+  grid-column: 1 / -1;
+}
+.hr-root .hr-person-card {
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--hr-r-lg, 14px);
+  background: var(--hz-pane);
+  padding: 16px 18px;
+  min-width: 0;
+}
+.hr-root .hr-person-card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+.hr-root .hr-person-card > header h2 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.008em;
+  color: var(--text-primary);
+}
+.hr-root .hr-person-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-lede {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-none {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hr-root .hr-person-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.hr-root .hr-person-facts dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-facts dd {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hr-root .hr-person-team {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A lead with 40 department members must not push Attendance off the screen. */
+  max-height: 320px;
+  overflow-y: auto;
+}
+.hr-root .hr-person-team li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--hr-r-sm, 8px);
+  background: var(--hz-pane-alt, transparent);
+  min-width: 0;
+}
+.hr-root .hr-person-team-ident {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.hr-root .hr-person-team-ident strong {
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-person-team-ident span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.hr-root .hr-person-relation {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-relation[data-relation='direct_report'] {
+  color: var(--success);
+}
+
+.hr-root .hr-person-balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.hr-root .hr-person-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 13px;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, transparent);
+}
+.hr-root .hr-person-balance span {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.hr-root .hr-person-balance strong {
+  font-family: var(--font-head);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.hr-root .hr-person-balance small {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.hr-root .hr-person-requests {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hr-root .hr-person-requests li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  font-size: 12.5px;
+}
+.hr-root .hr-person-request-type {
+  font-weight: 650;
+}
+.hr-root .hr-person-request-dates {
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.hr-root .hr-person-request-days {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Cards ⇄ list ─────────────────────────────────────────────────────────────────────────────── */
+
+.hr-root .hr-viewtoggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--hr-r-sm, 8px);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt, transparent);
+  flex: none;
+}
+.hr-root .hr-viewtoggle-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-viewtoggle-btn:hover {
+  color: var(--text-primary);
+}
+.hr-root .hr-viewtoggle-btn[aria-checked='true'] {
+  background: var(--hz-pane-lift);
+  color: var(--accent);
+}
+
+/* The table scrolls INSIDE this wrapper. Without it a seven-column directory pushes the whole page
+   sideways, and the toolbar and summary tiles scroll away from the rows they belong to.
+
+   The page itself opts out of `--hr-measure` in list view (see `.hr-page-wide` on the tab): the measure
+   is a READING width for prose and cards, and squeezing seven columns into it left the row actions
+   clipped against the panel edge with empty page either side. */
+.hr-root .hr-listwrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+}
+.hr-root .hr-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.hr-root .hr-list thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* Opaque, not translucent: rows scrolling under a see-through header is unreadable. */
+  background: var(--hz-pane-alt, var(--bg-primary));
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.hr-root .hr-list tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, var(--hz-pane-bd) 60%, transparent);
+  transition: background var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-list tbody tr:last-child {
+  border-bottom: 0;
+}
+.hr-root .hr-list tbody tr:hover {
+  background: color-mix(in srgb, var(--dc, var(--accent)) 8%, transparent);
+}
+.hr-root .hr-list tbody tr.is-terminated {
+  opacity: 0.55;
+}
+.hr-root .hr-list tbody tr.is-busy {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.hr-root .hr-list td {
+  padding: 8px 12px;
+  vertical-align: middle;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-list-person {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.hr-root .hr-list-glyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--dc, var(--accent)) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc, var(--accent)) 30%, transparent);
+  color: var(--dc, var(--accent));
+}
+/* The row's real affordance: a keyboard user tabs to this, not to 222 focusable table rows. */
+.hr-root .hr-list-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 650;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-list-name:hover {
+  color: var(--dc, var(--accent));
+}
+.hr-root .hr-list-dim {
+  color: var(--text-muted);
+}
+.hr-root .hr-list-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hr-root .hr-list-tg {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.hr-root .hr-list-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hr-root .hr-list-blurb {
+  max-width: 320px;
+  color: var(--text-muted);
+}
+.hr-root .hr-list-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+/**
+ * Fixed-content columns size to themselves instead of taking an equal share.
+ *
+ * `width: 1%` with `white-space: nowrap` is the standard way to say "exactly as wide as its content" —
+ * the flexible text columns (designation, contact, description) then absorb what is left. Without it
+ * the actions column took a full share AND was still clipped, because the text columns had pushed the
+ * table past its wrapper.
+ *
+ * Targeted by class, NOT `:last-child`: the departments list ends in Description, which is the one
+ * column that most needs the remaining width.
+ */
+.hr-root .hr-list-actions-col,
+.hr-root .hr-list-count {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* ── Custom select ────────────────────────────────────────────────────────────────────────────────
+   Replaces `<select>` in the toolbar. A native option list is OS chrome — a white system popup on
+   macOS — that no stylesheet can reach into, so a dark toolbar opened a panel belonging to no part of
+   this app. Everything below is ordinary DOM, so it themes like everything else. */
+
+.hr-root .hr-cselect {
+  position: relative;
+  flex: none;
+}
+.hr-root .hr-cselect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* Matches .hr-select's box so the toolbar's controls still line up on one baseline. */
+  height: 34px;
+  min-width: 168px;
+  max-width: min(42vw, 220px);
+  padding: 0 10px;
+  border-radius: var(--hr-r-sm);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    background var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-cselect-btn:hover {
+  background: var(--hz-pane-lift);
+}
+.hr-root .hr-cselect[data-open='true'] .hr-cselect-btn,
+.hr-root .hr-cselect-btn:focus-visible {
+  border-color: var(--accent);
+  background: var(--hz-pane-lift);
+  outline: none;
+}
+.hr-root .hr-cselect-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-cselect-value.is-placeholder {
+  color: var(--text-muted);
+}
+.hr-root .hr-cselect-caret {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--hz-dur-tone) var(--hz-ease);
+}
+.hr-root .hr-cselect[data-open='true'] .hr-cselect-caret {
+  transform: rotate(180deg);
+}
+
+.hr-root .hr-cselect-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  /* Wide enough for a long department name without forcing the trigger to be that wide. */
+  max-width: min(80vw, 320px);
+  max-height: 288px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: var(--hr-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-lift, var(--hz-pane));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+}
+/* Flipped when there is no room below — `.hr-root` is a scroll container, so a popup running past its
+   bottom edge is CLIPPED, not scrolled to. */
+.hr-root .hr-cselect-list.is-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.hr-root .hr-cselect-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--hr-r-sm);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+/* One highlight, driven by the active index — so the keyboard and the pointer cannot disagree about
+   which row is "current" (hovering moves the active index rather than painting a second highlight). */
+.hr-root .hr-cselect-opt.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-primary);
+}
+.hr-root .hr-cselect-opt[aria-selected='true'] {
+  color: var(--accent);
+  font-weight: 650;
+}
+.hr-root .hr-cselect-opt-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/**
+ * The custom select inside a FORM field.
+ *
+ * Its trigger carries a `min-width` sized for a toolbar filter, which is wrong in a two-column form
+ * grid: the cell has already decided how wide the control gets. These call sites hand that decision
+ * back to the grid.
+ */
+.hr-root .hr-settings-form-grid .hr-cselect,
+.hr-root .hr-att-assign .hr-cselect {
+  width: 100%;
+}
+.hr-root .hr-settings-form-grid .hr-cselect-btn,
+.hr-root .hr-att-assign .hr-cselect-btn {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }

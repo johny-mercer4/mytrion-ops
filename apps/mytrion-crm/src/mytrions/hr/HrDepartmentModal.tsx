@@ -245,7 +245,8 @@ export function HrDepartmentModal({
     !(form.leadEmployeeId ?? '').trim() &&
     Boolean(mode.department.leadName);
 
-  const tone = departmentTone(form.iconColor);
+  // Seeded so an existing department keeps the same auto-colour the card and canvas already show.
+  const tone = departmentTone(form.iconColor, mode.kind === 'edit' ? mode.department.id : null);
   const Icon = departmentIcon(form.icon);
   const dialogRef = useModalFocus<HTMLDivElement>();
   const iconIndex = DEPARTMENT_ICON_NAMES.indexOf(form.icon ?? '');

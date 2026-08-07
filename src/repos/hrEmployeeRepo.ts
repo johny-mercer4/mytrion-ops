@@ -567,6 +567,28 @@ export const hrEmployeeRepo = {
     return rows.length > 0;
   },
 
+  /**
+   * Point the employee at a re-hosted avatar in `file_assets` (or clear it).
+   *
+   * Deliberately NOT part of `ManualEmployeeInput`. The generic PATCH body is admin-supplied JSON, so
+   * carrying `photoFileId` there would let any admin aim an employee row at an arbitrary file id —
+   * including one belonging to another department, whose bytes the photo-link route would then happily
+   * presign for every HR user. The only writer is the upload route, which stores the bytes itself and
+   * therefore knows the id is one it just created.
+   */
+  async setPhotoFileId(
+    ctx: TenantContext,
+    id: string,
+    photoFileId: string | null,
+  ): Promise<HrEmployeeRow | undefined> {
+    const rows = await db
+      .update(hrEmployees)
+      .set({ photoFileId, updatedAt: new Date() })
+      .where(and(eq(hrEmployees.tenantId, ctx.tenantId), eq(hrEmployees.id, id)))
+      .returning(EMPLOYEE_COLUMNS);
+    return firstOrUndefined(rows);
+  },
+
   async delete(ctx: TenantContext, id: string): Promise<boolean> {
     const rows = await db
       .delete(hrEmployees)

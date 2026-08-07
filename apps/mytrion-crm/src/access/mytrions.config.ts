@@ -236,7 +236,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'HR',
     icon: 'hr',
     blurb: 'People operations — employee directory, attendance, requests and profiles.',
-    hue: 'red',
+    // Purple, matching the picker card (HORIZON_BY_ID.hr) and the module accent. This also drives the
+    // loading screen (`var(--${hue})` in MytrionGuard) — left on 'red' it flashed a red spinner and
+    // then resolved into a purple workspace.
+    hue: 'purple',
     department: 'hr',
     allDepartments: false,
     // Placeholder until the real Zoho CRM profile/role names for HR are confirmed.

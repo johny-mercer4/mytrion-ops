@@ -15,7 +15,7 @@
  * The buttons all `stopPropagation`, or expanding a department would also open its modal.
  */
 import type { CSSProperties } from 'react';
-import { ChevronDown, ChevronRight, ExternalLink, Plus, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Plus, UserMinus, Users } from 'lucide-react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { HrAvatar } from './HrAvatar';
 import { departmentIcon, departmentTone } from './departmentAppearance';
@@ -61,6 +61,13 @@ function keepEnter(ev: React.KeyboardEvent): void {
   if (ev.key === 'Enter') ev.stopPropagation();
 }
 
+/**
+ * The expand control, as a badge straddling the card's bottom edge.
+ *
+ * Moved out of the card body deliberately: it sits ON the connector, where the eye already is when it
+ * asks "does this branch continue?", and it buys back the whole footer row of height that the taller
+ * avatar-on-top layout costs. A collapsed badge reads as the count of what is folded away.
+ */
 function Chevron({ id, expanded, count }: { id: string; expanded: boolean; count: number }) {
   if (count === 0) return null;
   return (
@@ -75,8 +82,8 @@ function Chevron({ id, expanded, count }: { id: string; expanded: boolean; count
         callbacks.onToggle(id);
       }}
     >
-      {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
       <span className="hr-onode-chev-n">{count}</span>
+      {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
     </button>
   );
 }
@@ -141,43 +148,55 @@ function openKeyHandler(id: string, kind: 'department' | 'employee') {
 }
 
 export function OrgDepartmentNode({ id, data, selected }: NodeProps<OrgDeptNode>) {
-  const Icon = departmentIcon(data.icon);
+  /**
+   * The "No Department" bucket is a label, not a record: there is nothing to open and nothing to add a
+   * child to, so it gets neither button. Its own glyph too — a Building icon on the one node that is
+   * NOT a building reads as just another department.
+   */
+  const synthetic = data.synthetic === true;
+  const Icon = synthetic ? UserMinus : departmentIcon(data.icon);
   return (
     <div
-      className={`hr-onode is-dept${selected ? ' is-selected' : ''}`}
-      style={{ ['--dc' as string]: departmentTone(data.tone) } as CSSProperties}
-      onKeyDown={openKeyHandler(id, 'department')}
+      className={`hr-onode is-dept${selected ? ' is-selected' : ''}${synthetic ? ' is-unassigned' : ''}`}
+      style={{ ['--dc' as string]: departmentTone(data.tone, id) } as CSSProperties}
+      onKeyDown={synthetic ? undefined : openKeyHandler(id, 'department')}
       role="group"
-      aria-label={`${data.label} department, ${data.active} active`}
+      aria-label={
+        synthetic
+          ? `No Department, ${data.total} unassigned ${data.total === 1 ? 'person' : 'people'}`
+          : `${data.label} department, ${data.active} active`
+      }
       /* The description is otherwise carried to the canvas and never shown. */
       title={data.description ? `${data.label} — ${data.description}` : data.label}
     >
       <Handle type="target" position={Position.Top} className="hr-ohandle" />
 
-      <div className="hr-onode-row">
-        <span className="hr-onode-glyph" aria-hidden="true">
-          <Icon size={17} />
-        </span>
-        <div className="hr-onode-main">
-          <span className="hr-onode-label">{data.label}</span>
-          <span className="hr-onode-sub">
-            {data.code ? <span className="hr-mono">{data.code}</span> : null}
-            {data.leadName ? <span>{data.leadName}</span> : null}
-          </span>
-        </div>
-        <OpenButton id={id} kind="department" />
-        <AddButton id={id} kind="department" />
-      </div>
+      <span className="hr-onode-face" aria-hidden="true">
+        <Icon size={17} />
+      </span>
 
-      <div className="hr-onode-foot">
-        <span className="hr-onode-count">
-          <Users size={11} />
+      <div className="hr-onode-card">
+        <span className="hr-onode-label">{data.label}</span>
+        {/* Headcount and lead share ONE line so a department card is the same two-line box as a person
+            card — ranks line up, and the chart reads as one grid instead of two. Ellipsised, because the
+            node is a fixed size dagre has already laid out against. */}
+        <span className="hr-onode-sub">
+          <Users size={10} aria-hidden="true" />
           <strong>{data.active}</strong>
           {data.total !== data.active ? <span className="hr-onode-dim">/{data.total}</span> : null}
+          {data.leadName || data.code ? (
+            <span className="hr-onode-lead">· {data.leadName || data.code}</span>
+          ) : null}
         </span>
-        <Chevron id={id} expanded={data.expanded} count={data.directReports} />
+        {synthetic ? null : (
+          <span className="hr-onode-tools">
+            <OpenButton id={id} kind="department" />
+            <AddButton id={id} kind="department" />
+          </span>
+        )}
       </div>
 
+      <Chevron id={id} expanded={data.expanded} count={data.directReports} />
       <Handle type="source" position={Position.Bottom} className="hr-ohandle" />
     </div>
   );
@@ -188,6 +207,9 @@ export function OrgEmployeeNode({ id, data, selected }: NodeProps<OrgEmpNode>) {
   return (
     <div
       className={`hr-onode is-emp${selected ? ' is-selected' : ''}${terminated ? ' is-terminated' : ''}`}
+      // Inherited from the department this person hangs under, resolved through the SAME seeded helper
+      // the department node uses — so a branch is one colour from the org unit down to its last report.
+      style={{ ['--dc' as string]: departmentTone(data.tone, data.toneSeed) } as CSSProperties}
       onKeyDown={openKeyHandler(id, 'employee')}
       role="group"
       aria-label={`${data.label}${data.designation ? `, ${data.designation}` : ''}`}
@@ -195,22 +217,21 @@ export function OrgEmployeeNode({ id, data, selected }: NodeProps<OrgEmpNode>) {
     >
       <Handle type="target" position={Position.Top} className="hr-ohandle" />
 
-      <div className="hr-onode-row">
-        <HrAvatar name={data.label} photoUrl={data.photoUrl} size="sm" />
-        <div className="hr-onode-main">
-          <span className="hr-onode-label">{data.label}</span>
-          <span className="hr-onode-sub">{data.designation ?? '—'}</span>
-        </div>
-        <OpenButton id={id} kind="employee" />
-        <AddButton id={id} kind="employee" />
+      <span className="hr-onode-face">
+        {/* The node id IS the employee id — that is what the photo-link route is keyed by. */}
+        <HrAvatar name={data.label} employeeId={id} photoFileId={data.photoFileId} size="sm" />
+      </span>
+
+      <div className="hr-onode-card">
+        <span className="hr-onode-label">{data.label}</span>
+        <span className="hr-onode-sub">{data.designation ?? '—'}</span>
+        <span className="hr-onode-tools">
+          <OpenButton id={id} kind="employee" />
+          <AddButton id={id} kind="employee" />
+        </span>
       </div>
 
-      {data.directReports > 0 ? (
-        <div className="hr-onode-foot">
-          <Chevron id={id} expanded={data.expanded} count={data.directReports} />
-        </div>
-      ) : null}
-
+      <Chevron id={id} expanded={data.expanded} count={data.directReports} />
       <Handle type="source" position={Position.Bottom} className="hr-ohandle" />
     </div>
   );

@@ -12,11 +12,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   process.env.DROPBOX_ROOT_PATH = '/comms';
+  // Dropbox-selected for the general pipeline, so the assertions below run against the configuration that
+  // is actually dangerous. `env` is parsed eagerly at import, so this has to be set before the imports.
+  process.env.FILE_STORAGE_PROVIDER = 'dropbox';
 });
 
 import { keyToDropboxPath } from '../../src/modules/files/storage/dropboxStorage.js';
 import { dropboxInternals } from '../../src/integrations/dropbox.js';
 import {
+  fileStorageProvider,
   getStorage,
   setStorageForTests,
   storageFor,
@@ -91,15 +95,27 @@ describe('storageFor — the ROW decides, not the env', () => {
     expect(storageFor('gdrive')).toBe(s3Storage);
   });
 
-  it('the default pipeline is still S3, so nothing existing moves', () => {
-    expect(getStorage()).toBe(s3Storage);
-  });
-
   it('the test override wins for both entry points', () => {
     const fake = { put: vi.fn() } as unknown as typeof s3Storage;
     setStorageForTests(fake);
     expect(getStorage()).toBe(fake);
     expect(storageFor('dropbox')).toBe(fake);
+  });
+});
+
+describe('provider defaults for a NEW file', () => {
+  it('the general pipeline follows FILE_STORAGE_PROVIDER', () => {
+    // Safe to read from env only because `storeFile` persists the result on the row; reads never consult
+    // the env again.
+    expect(fileStorageProvider()).toBe('dropbox');
+  });
+
+  it('getStorage() stays S3 even with FILE_STORAGE_PROVIDER=dropbox', () => {
+    // THE REGRESSION GUARD. `maintenance_case_attachments` has no storage_provider column and resolves both
+    // its writes and its reads through getStorage(). If this function ever followed the env, flipping to
+    // Dropbox would send new attachments to Dropbox AND repoint every existing row's read at Dropbox, where
+    // those bytes are not — reads 404 and deletes silently no-op against the wrong store.
+    expect(getStorage()).toBe(s3Storage);
   });
 });
 

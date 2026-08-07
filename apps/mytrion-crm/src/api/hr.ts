@@ -25,7 +25,13 @@ export interface HrEmployeeDto {
   reportingToZohoId: string | null;
   /** The manager as a stable id — what the org canvas links on (a name cannot survive a rename). */
   reportingToEmployeeId: string | null;
-  photoUrl: string | null;
+  /**
+   * Re-hosted avatar as a `file_assets` id — resolve it with `getHrEmployeePhotoLink`.
+   *
+   * NOT a URL. Zoho People's photo endpoint is OAuth-gated and 401s in an `<img>`, so the API stopped
+   * sending it; `<HrAvatar>` takes this id and fetches a short-lived link only for the faces on screen.
+   */
+  photoFileId: string | null;
   /** Zoho CRM sign-in linked to this employee for HR RBAC. */
   zohoUserId: string | null;
   zohoUserIdSource: string | null;
@@ -166,7 +172,7 @@ export interface HrOrgEmployeeDto {
   status: string;
   departmentId: string | null;
   reportingToEmployeeId: string | null;
-  photoUrl: string | null;
+  photoFileId: string | null;
   canvasX: number | null;
   canvasY: number | null;
 }
@@ -469,13 +475,14 @@ export interface AttendanceTeamListItem {
   departmentId: string | null;
   relation: AttendanceTeamRelation;
   shift: AttendanceSummaryDto['shift'];
+  /** Null when the roster was fetched as a directory — the detail fetch carries the week. */
   totals: {
     payableDays: number;
     present: number;
     weekend: number;
     absent: number;
     unscheduled: number;
-  };
+  } | null;
   lastPunch: AttendanceSummaryDto['lastPunch'];
   currentState: AttendanceSummaryDto['currentState'];
 }
@@ -497,6 +504,8 @@ export async function getAttendanceTeam(
     weekOf?: string;
     scope?: AttendanceTeamScope;
     q?: string;
+    /** Ask for the per-person week tally. Off for the roster — it costs ~3.5s for 146 people. */
+    withTotals?: boolean;
     signal?: AbortSignal;
   } = {},
 ): Promise<AttendanceTeamListDto> {
@@ -507,9 +516,49 @@ export async function getAttendanceTeam(
       weekOf: opts.weekOf,
       scope: opts.scope,
       q: opts.q,
+      ...(opts.withTotals ? {} : { totals: '0' }),
     },
     ...(opts.signal ? { signal: opts.signal } : {}),
   })) as AttendanceTeamListDto;
+}
+
+/** What one DWH refresh did. `cached` means a recent identical sync stood in for this one. */
+export interface AttendanceSyncDto {
+  from: string;
+  to: string;
+  fetched: number;
+  inserted: number;
+  linked: number;
+  skipped: number;
+  cached: boolean;
+}
+
+/**
+ * Pull the week's door events from the DWH before reading them.
+ *
+ * `retry: false` — this is a POST, so the transport would not retry it anyway, but saying so keeps the
+ * intent explicit: a sync that fails is not worth a second wait, because the page renders whatever is
+ * already stored regardless.
+ */
+export async function syncAttendanceFromDwh(opts: {
+  from?: string;
+  to?: string;
+  weekOf?: string;
+  /** Skip the server's cooldown. Set by the Refresh button, never by an automatic load. */
+  force?: boolean;
+}): Promise<AttendanceSyncDto> {
+  return (await request('POST', '/hr/attendance/sync', {
+    body: opts,
+    /**
+     * Well past the 20s default, because a COLD window legitimately needs it: the warehouse query,
+     * then ~4.4k inserts, then the link and rebucket. Measured at ~1s warm, but a first-ever week (or
+     * one the user scrolled back to) does real work, and timing out at 20s turned that into a warning
+     * banner on a sync that was going to succeed.
+     *
+     * Costs nothing to wait: the page renders from cache and only re-reads if this reports new rows.
+     */
+    timeoutMs: 90_000,
+  })) as AttendanceSyncDto;
 }
 
 export async function exportAttendanceCsv(opts: {

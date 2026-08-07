@@ -11090,6 +11090,11 @@ today's records — but the end-to-end POST is untested and should be exercised 
   all Card Lookup tests pass.
 - Rebuilt the mini-app and Mytrion CRM production bundles.
 
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green. CRM 16 failed / 3 files
+(pre-existing). Backend across four runs: 160 / 10 / 9 / 9 failures — the documented post-build
+timeout flakiness; `analytics-reports-routes` passed in every run. Suite total is now 1837 (+9).
+
 ## 2026-08-04 — Sales Card Status Report automation
 
 - Added `Card Status Report` directly after the invoice/transaction reporting actions in Sales
@@ -11364,6 +11369,77 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+
+## 2026-08-05 — Dropbox for the general file pipeline (uploads/imports + generated exports)
+
+Dropbox was already fully built in this repo — the API v2 client
+(`src/integrations/dropbox.ts`: refresh-token auth, single-shot + chunked upload, download,
+streaming, temporary links, delete, 401-refresh/429 retries) and a complete `ObjectStorage`
+adapter (`storage/dropboxStorage.ts`). It was only reachable by **comms chat attachments**, via
+`COMMS_STORAGE_PROVIDER`. The general pipeline was hardcoded to S3 on one line of `fileService.ts`.
+
+### What changed
+
+- **`FILE_STORAGE_PROVIDER`** (`s3` | `dropbox`, default `s3`) — where a NEW general-pipeline file
+  goes: `POST /v1/files/upload` (import) and every generated artifact (`file.generate_csv` /
+  `_excel` / `_pdf` export). `storeFile` now defaults to `fileStorageProvider()` instead of the
+  literal `'s3'`.
+- Kept **separate** from `COMMS_STORAGE_PROVIDER` rather than collapsing both into one switch: a
+  customer's chat attachment and an internal revenue export are not the same retention problem, and
+  one of the two may need to move without the other.
+- **Boot check** (`envRuntime.ts`) now requires the three Dropbox credentials when *either*
+  pipeline selects Dropbox, not just comms.
+- `scripts/dropbox-smoke.ts` + `pnpm dropbox:smoke` — live round-trip through the adapter (so the
+  key→path mapping is covered, not just the raw client).
+
+### `getStorage()` deliberately does NOT follow the new env
+
+This is the trap in this change and it is now commented at the definition plus locked by a test.
+`maintenance_case_attachments` stores an `s3_key` with **no `storage_provider` column** and resolves
+both its writes and its reads through `getStorage()`. Had that function honoured
+`FILE_STORAGE_PROVIDER`, flipping to Dropbox would have sent new attachments to Dropbox *and*
+simultaneously repointed every existing row's read at Dropbox — where those bytes are not. Reads
+404, deletes silently no-op against the wrong store. CS maintenance attachments therefore stay on
+S3 until that table gains the column (a migration, deliberately not done here).
+
+The general pipeline is safe to flip precisely because `file_assets.storage_provider` already exists
+and already accepts `'dropbox'` — no migration needed. `storeFile` records the provider per row and
+every read/delete goes back through `storageFor(row.storageProvider)`, so flipping the env changes
+the destination of the NEXT file and nothing about the ones already stored. It is not retroactive:
+existing S3 files keep resolving to S3.
+
+### Test determinism — the FF_ZOHO_MCP_ENABLED bug class, again
+
+Neither storage provider was pinned in the vitest `env` baseline, so once a developer's `.env` set
+`FILE_STORAGE_PROVIDER=dropbox` for `pnpm dev`, **every `storeFile()` in the suite would have
+defaulted to Dropbox and attempted live API calls with a real refresh token**. Both providers are
+now pinned to `'s3'` in `vitest.config.ts`, exactly as that file's own comment prescribes. The
+dropbox suite sets `FILE_STORAGE_PROVIDER` itself in `vi.hoisted` (before `env` parses eagerly)
+where it needs the other value.
+
+### Local config
+
+`.env` now runs BOTH pipelines on Dropbox (`FILE_STORAGE_PROVIDER=dropbox`,
+`COMMS_STORAGE_PROVIDER=dropbox`) with the real app key / secret / refresh token. This also works
+around S3/MinIO being unavailable locally — the file tools now function without docker. Credentials
+are in `.env` only (gitignored); `.env.example` documents the switch with empty placeholders.
+Also documented there: changing `DROPBOX_ROOT_PATH` after files exist ORPHANS them, since the root
+is applied at read time and the stored key is the only route back to the bytes.
+
+### Checks
+
+`pnpm typecheck` clean. `pnpm lint` 0 errors (22 pre-existing warnings, none in touched files).
+`dropbox-storage.test.ts` 22 passed (+2 for the new provider defaults, incl. the `getStorage()`
+regression guard). `pnpm dropbox:smoke` **fully green against live Dropbox** — put / temporary-link
+/ getBuffer / getStream / oversized-read-rejected / delete / delete-again-idempotent, with bytes
+compared byte-for-byte rather than by length.
+
+Full-suite state is unchanged by this work and cannot go green on this machine: the DB-backed suites
+point at the REMOTE Render Postgres (`MYTRION_OPS_DATABASE_URL` is *not* localhost:5433, contrary to
+the CLAUDE.md description of the local stack), so they fail on latency/state regardless of the local
+container. Verified by stashing this branch's changes and reproducing the same failures on a clean
+tree.
+
 ## 2026-08-06 — Telegram mini-app registration/session architecture review
 
 - Reviewed the registration bootstrap, invite redemption, returning-user Telegram `initData`
@@ -12203,106 +12279,19 @@ unnamed 10). Not the cause here, but worth watching — several of those are not
 NOT changed: nothing about the merge or the migrations was rolled back, because nothing was wrong
 with them. A redeploy should now succeed; if the DB is mid-restart it will wait rather than fail.
 
-## 2026-08-07 — Sales self-knowledge: made it actually reachable (branch `feature/AIChat`)
+## 2026-08-07 — Client Overview: live EFS balance tile
 
-Picked up the Sales Mytrion self-knowledge work. The catalog content from `733c3651` was accurate —
-all 23 automation ids/titles/codes and every action verb match the live `AUTO_LIST`, and
-`fraud.hold_release` really is a *request* that routes to the fraud team, as documented. What was
-missing was everything between "the documents exist" and "Horizon answers from them".
+- Data Center → Clients → client modal Overview now shows **EFS Balance** beside Cards / Gallons
+  (same `dwh.carrier_balance` source as Automations C-8). Payment terms shown as a subtitle when
+  present; soft `efs_error` note kept if upstream flags it.
+- Loader: `loadClientEfsBalance` in `clientDrilldown.ts`.
+- Verification: CRM `clientDrilldown` 5/5; CRM typecheck pass.
 
-### The corpus was gated off, not just unsynced
+## 2026-08-07 — Rebuild vendored CRM app for EFS Balance tile
 
-`FF_PLATFORM_KNOWLEDGE` defaults to `'0'` and was **not set in `.env`**. The Sales catalog ingests
-with `domain: 'platform'`, and with the flag off:
-
-- `knowledge/agentic/loop.ts` hard-scopes retrieval to `{ domains: ['operations'] }` — every Sales
-  document is invisible on the agentic path;
-- `jobs/workers/platformKnowledgeSync.ts` returns `{ skipped: true }`, so the nightly sync never runs.
-
-It only *appeared* to work because `FF_RAG_V2_RETRIEVAL` is also unset, so `buildScopedRagTool`
-falls through to legacy `retrieve()`, which has no domain filter. Turning on V2 retrieval without
-also turning on platform knowledge would silently hide the whole corpus again. Set
-`FF_PLATFORM_KNOWLEDGE=1` in `.env`; **it still needs setting on Render.**
-
-### Two live router bugs that broke the exact brief scenario
-
-`chatService.retrieveGrounding` uses `agenticRetrieve` whenever `FF_RAG_ENABLED && FF_AGENTIC_RAG`
-— both on — so `router.ts` decides real turns today.
-
-1. **A how-to naming an entity was routed to a live tool.** `TOOL_AGGREGATE` matches `clients?` /
-   `invoices?` and `LIVE_SCOPE` matches `my` / `carrier`, so *"How do I activate a card for my
-   client?"* and *"how do I request invoices for a carrier"* both returned
-   `route=tool, passages=0, notDocumented=true` — Horizon told the user it wasn't documented. Added
-   a `PROCEDURAL` guard (EN/RU/UZ) that wins over `TOOL_AGGREGATE`. Genuine aggregates
-   ("How many cards does my client have?") still route to tools.
-2. **The governed doc lost to a table of contents.** Bare *"how to activate card"* returned
-   `SalesHandbook.md` ×4 — an unverified `operations` handbook about the external EFS/WEX portals,
-   winning on its lexically dense **table of contents**. Sales-Mytrion surfaces, service codes
-   (`C-1`…), and automation action verbs now set `platformPreferred`, which is a hop-1 bias only —
-   the loop still broadens when platform evidence is insufficient.
-
-Golden routing stayed at **280/280 (100%)** across both changes.
-
-### Content gap: the catalog is grouped, and that was undocumented
-
-`autoCatalogOrder.ts` groups blocks into labelled sections — Customer Service (18 blocks, C codes)
-and Billing (5, Q codes); Verification/Management exist in the layout but hold nothing live and are
-hidden when empty. Order is drag-reorderable and saved per agent *per device*. None of that was in
-the knowledge, so "where is Balance Check?" had no answer. Each automation document now carries its
-`Catalog section:` and a `section` metadata field, `dept` is mirrored from the frontend, and the
-guide explains that search matches title + description + codes. The parity test now also asserts
-`dept` and the section labels against `AUTO_CATEGORIES`, so a renamed section fails CI.
-
-### Verified against a real pgvector store, not by inspection
-
-Migrated the local throwaway DB on `:5433` to head (109 migrations, 114 tables) and ran
-`knowledge:sync-platform` against it — **46 docs → 217 chunks, 217/217 embedded**. Then probed the
-real path (`effectiveRetrievalContext(admin, salesAgent)` → `ragScope: ['sales']`) with 12 questions
-on both retrieval paths. After the fixes, card activation, retention generation, Open Pool claiming,
-money code, override-vs-fraud-hold, limits (350), invoices, lead creation and the "which section"
-question all return their own governed document; RU works; the section question resolves.
-
-Gates: typecheck clean, lint 0 errors (23 pre-existing non-null-assertion warnings, none in touched
-files), RBAC leakage 22/22, and 84 knowledge/RAG/agent tests green.
-
-### Known limitation, not papered over
-
-**Uzbek retrieval is weak.** `kartani qanday aktivlashtirish mumkin` peaks at ~0.25 similarity
-against the English documents and the evidence judge flips between `sufficient` and
-`not_documented` across identical runs. This is pre-existing (English corpus + multilingual query),
-not caused by these changes, and it is the next thing to fix if UZ matters — probably UZ/RU aliases
-in the document text rather than a retrieval-tuning change.
-
-### Still required before Admin testing
-
-The prod pgvector store does **not** have the catalog — `.env`'s `MYTRION_OPS_DATABASE_URL` points at
-Render, and the local DB has 0 tenants/users so Admin AI Chat cannot be logged into locally. Testing
-in Admin → Horizon needs `FF_PLATFORM_KNOWLEDGE=1` on Render plus one
-`pnpm knowledge:sync-platform` against prod. Left for an explicit decision — it is a production write.
-
-### Prod sync completed (approved) — and prod still needs one flag
-
-Ran `knowledge:sync-platform` against the Render DB. It took three passes because Render Postgres
-dropped the connection mid-run twice (`CONNECTION_CLOSED`, then `CONNECT_TIMEOUT` — the same
-flakiness as the 2026-08-07 deploy note, not a schema or data fault). The sync is idempotent, so
-each retry resolved already-present checksums and only inserted the gaps; the second pass lost
-Card Activation (C-1) and Card Deactivation (C-3), and the third landed both.
-
-Final prod state, verified directly:
-
-- **30 Sales catalog docs** (7 guides + 23 automations), all `status=ready`,
-  `verification=verified`, 23/23 automations present.
-- **146 chunks, 146/146 embedded**, every chunk `department_access=sales` — RBAC isolation intact.
-- Retrieval confirmed against prod on both paths: card activation, retention generation, Open Pool
-  claiming, the 350-gallon limit and "which section is Balance Check in" each return their own
-  governed document.
-
-**Prod cannot answer yet.** `render.yaml` explicitly sets `FF_AGENTIC_RAG=1`, so prod runs the
-agentic path, and `FF_PLATFORM_KNOWLEDGE` is not declared anywhere — so prod retrieval is still
-hard-scoped to `domains: ['operations']` and ignores all 30 documents. Set
-**`FF_PLATFORM_KNOWLEDGE=1`** on Render before testing Admin → Horizon. Note the other RAG flags
-live in `render.yaml` rather than the dashboard, so declaring it there would be more consistent.
-
-Also worth knowing: `FF_JOBS_ENABLED` is deliberately off on Render, so the nightly governed sync
-never runs in prod regardless of the flag. Whenever the catalog changes, prod needs another
-`pnpm knowledge:sync-platform` — the flag governs retrieval, not refresh.
+- PR #147 landed source for Overview EFS Balance, but prod serves committed
+  `apps/mytrion-crm/app/` — that bundle was not rebuilt, so the tile was missing on
+  octane-ops-ai.onrender.com.
+- Ran `pnpm build:widget` and recommitted `apps/mytrion-crm/app` so deploy picks up the UI.
+- Documented the rule in `CLAUDE.md` + `AGENTS.md` (**Vendored frontend builds**): UI PRs must
+  rebuild and commit `apps/mytrion-crm/app` / `apps/mini-app/app` before opening the PR.
