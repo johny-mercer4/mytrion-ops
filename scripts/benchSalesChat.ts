@@ -25,36 +25,68 @@ import { and, eq } from 'drizzle-orm';
 interface BenchCase {
   id: string;
   question: string;
-  /** Substring expected in a winning citation title — the quality half of the measurement. */
-  expectDoc: string;
+  /**
+   * Title substrings the answer should cite. Multi-entry cases are deliberately AMBIGUOUS — they
+   * span two documents, which is the only shape where passage ordering matters. The four
+   * single-document cases are clean vector hits, so measuring a reranker against those alone would
+   * be rigged in its favour: there is nothing to reorder.
+   */
+  expectDocs: string[];
   /** Tools that must NOT be called: a documented how-to needs no live data. */
   forbidTools: string[];
 }
 
+const NO_LIVE_DATA = ['zoho_crm.query', 'zoho_crm.search', 'warehouse.my_gallons'];
+
 const CASES: readonly BenchCase[] = [
+  // --- single-document: clean vector hits, the latency/regression baseline ---
   {
     id: 'card-activation',
     question: 'How do I activate a card in Sales Mytrion?',
-    expectDoc: 'Card Activation',
-    forbidTools: ['zoho_crm.query', 'zoho_crm.search', 'warehouse.my_gallons'],
+    expectDocs: ['Card Activation'],
+    forbidTools: NO_LIVE_DATA,
   },
   {
     id: 'retention-generation',
     question: 'How are Retention cases generated in Sales Mytrion?',
-    expectDoc: 'Retention',
-    forbidTools: ['zoho_crm.query', 'warehouse.my_gallons'],
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
   },
   {
     id: 'open-pool-claim',
     question: 'How do I claim a case from the Open Pool?',
-    expectDoc: 'Retention',
-    forbidTools: ['zoho_crm.query', 'warehouse.my_gallons'],
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
   },
   {
     id: 'limit-max',
     question: 'What is the maximum limit change per run in Automations?',
-    expectDoc: 'Limits',
-    forbidTools: ['zoho_crm.query', 'warehouse.my_gallons'],
+    expectDocs: ['Limits'],
+    forbidTools: NO_LIVE_DATA,
+  },
+  // --- ambiguous: two documents each, where passage ordering can actually change the answer ---
+  {
+    // Fraud Hold / Release (C-10) requests a release; Override the Card (C-16) grants a ~30 minute
+    // window WITHOUT lifting the hold. Semantically adjacent and easy to conflate — a complete
+    // answer needs both.
+    id: 'fraud-options',
+    question: "A client's card is on fraud hold — what are my options in Sales Mytrion?",
+    expectDocs: ['Fraud Hold', 'Override'],
+    forbidTools: NO_LIVE_DATA,
+  },
+  {
+    // Balance Check (C-8/Q-8) and Card Status Report (C-30) are two separate automations.
+    id: 'balance-and-cards',
+    question: "How do I check a client's balance and see their card list?",
+    expectDocs: ['Balance Check', 'Card Status'],
+    forbidTools: NO_LIVE_DATA,
+  },
+  {
+    // Money codes appear in Data Center (viewing issued codes) AND as automation C-17 (drawing one).
+    id: 'money-codes-view-and-draw',
+    question: 'Where do I see issued money codes, and how do I draw a new one?',
+    expectDocs: ['Money Code', 'Data Center'],
+    forbidTools: NO_LIVE_DATA,
   },
 ] as const;
 
@@ -106,7 +138,8 @@ interface Row {
   id: string;
   wallMs: number;
   failed: boolean;
-  citedExpected: boolean;
+  expected: number;
+  matched: number;
   citations: string[];
   toolCalls: string[];
   forbiddenCalled: string[];
@@ -135,7 +168,8 @@ async function main(): Promise<void> {
       id: bench.id,
       wallMs,
       failed: Boolean(res.error),
-      citedExpected: citations.some((t) => t.includes(bench.expectDoc)),
+      expected: bench.expectDocs.length,
+      matched: bench.expectDocs.filter((want) => citations.some((t) => t.includes(want))).length,
       citations: [...new Set(citations)],
       toolCalls,
       forbiddenCalled: toolCalls.filter((name) => bench.forbidTools.includes(name)),
@@ -157,7 +191,7 @@ async function main(): Promise<void> {
 
   const pad = (s: string, n: number): string => s.padEnd(n);
   process.stdout.write(
-    `\n${pad('case', 22)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('cited?', 8)}bad\n`,
+    `\n${pad('case', 22)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('docs', 8)}bad\n`,
   );
   process.stdout.write(`${'-'.repeat(96)}\n`);
   for (const r of rows) {
@@ -170,7 +204,7 @@ async function main(): Promise<void> {
         pad(`${r.ragMs}ms`, 8) +
         pad(String(r.hops), 6) +
         pad(String(r.toolCalls.length), 7) +
-        pad(r.failed ? 'FAILED' : r.citedExpected ? 'yes' : 'NO', 8) +
+        pad(r.failed ? 'FAILED' : `${r.matched}/${r.expected}`, 8) +
         (r.forbiddenCalled.length > 0 ? r.forbiddenCalled.join(',') : '-') +
         '\n',
     );
@@ -180,7 +214,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `\ntotal wall ${total}ms  ·  mean ${Math.round(total / rows.length)}ms  ·  ` +
       `llm calls ${rows.reduce((s, r) => s + r.llmCalls, 0)}  ·  cost $${cost.toFixed(4)}\n` +
-      `on-target citations ${rows.filter((r) => r.citedExpected).length}/${rows.length}  ·  ` +
+      `expected-doc coverage ${rows.reduce((s2, r) => s2 + r.matched, 0)}/${rows.reduce((s2, r) => s2 + r.expected, 0)}  ·  ` +
       `failures ${rows.filter((r) => r.failed).length}  ·  ` +
       `forbidden tool calls ${rows.reduce((s, r) => s + r.forbiddenCalled.length, 0)}\n\n`,
   );

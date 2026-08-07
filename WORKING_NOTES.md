@@ -12820,3 +12820,63 @@ from, which is correct.
 Four new tests cover the gap: unmarked answer falls back, cited subset still wins when the answer did
 cite, all-hallucinated markers fall back after stripping, and nothing retrieved reports nothing.
 Backend **2440** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Phase C: the ambiguous cases immediately found a real bug, and rerank lost
+
+Added three deliberately ambiguous bench cases spanning two documents each — fraud hold vs override,
+balance vs card list, viewing money codes vs drawing one — and changed the quality metric from a
+boolean to **expected-doc coverage**. The existing four are clean single-document vector hits, so a
+reranker measured only against those would have had nothing to reorder and the test would have been
+rigged in its favour.
+
+### The new cases found a silent abstention bug before rerank was even tried
+
+`balance-and-cards` scored **0/2** with `hops: 0`, `duration_ms: 3`. `rag_runs` said
+`route: tool, grade: not_documented, abstained: true`. The agent had called `knowledge_search` and been
+told "use a live-data tool instead".
+
+Cause: `routeRetrievalIntent` judges a USER utterance — "how do I…" stays on knowledge, "how many
+gallons this month" goes to a tool. But `scopedRag` feeds it the MODEL's keyword query
+("client balance account cards"), which has no procedural markers and so reads as a live-data
+aggregate. Deciding *not* to retrieve belongs to the chat layer, before the tool is called; once the
+model has called `knowledge_search`, the request should be honoured. `agenticRetrieve` now takes
+`explicitKnowledgeRequest` and coerces a `tool` verdict to `knowledge`. Casual/empty still abstains —
+searching a greeting is waste, not a lost answer — and external intent is untouched.
+
+Also extended `PROCEDURAL`: **"what are my options"** was a how-to phrasing the first pass missed
+(`TOOL_AGGREGATE` matched `client`, `LIVE_SCOPE` matched `my`, nothing marked it procedural), so
+"A client's card is on fraud hold — what are my options?" routed to a live tool. Genuine aggregates
+that say "my" ("what is my total gallons this month") still route to tools; golden routing stays
+280/280.
+
+That fix alone took coverage **8/10 → 9/10**.
+
+### Rerank: measured, and rejected
+
+| | rerank OFF | rerank ON |
+| --- | --- | --- |
+| mean wall | **5,779ms** | 6,967ms (+21%) |
+| retrieval | 1,353–1,659ms | 2,169–2,709ms (+55%) |
+| expected-doc coverage | **9/10** | **8/10** |
+| cost (7 questions) | $0.0292 | $0.0283 |
+
+Slower **and** less accurate — it regressed `balance-and-cards` from 2/2 back to 1/2 and did not fix
+the one case it might have. `rerankPassages` asks `models.default` (gpt-4o-mini) to reorder candidates
+that RRF already ranked using vector/lexical agreement; a cheap listwise judgement is noisier than
+that signal, so it can only degrade it. `FF_RAG_RERANK=0` is now explicit in `.env` with these numbers
+in a comment, so it does not get flipped on hopefully later.
+
+### Scratchpad: deliberately NOT measured, because the bench cannot show it anything
+
+A scratchpad earns its keep on multi-step computation. Every question in this bench is documentation
+lookup, so implementing one and "measuring" it here would be theatre in the opposite direction —
+guaranteed to look useless regardless of merit. The honest trigger is a question class we do not test
+yet: retention-timer arithmetic ("client breached 5 days ago with 3 failed attempts — when does it
+reach Open Pool?"), which needs business-day counting across the retention rules. Adding those cases
+is the prerequisite, and verifying them needs judgement rather than substring matching.
+
+Remaining miss: `money-codes-view-and-draw` at 1/2 — cites the Money Code automation but not Data
+Center, where issued codes are viewed. A recall problem across two document *kinds*, not an ordering
+problem, which is consistent with rerank not helping.
+
+Backend **2449** passed / 1 skipped, lint 0 errors.

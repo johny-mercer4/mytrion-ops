@@ -59,3 +59,22 @@ describe('bounded RAG intent router', () => {
     expect(routeRetrievalIntent(query).platformPreferred).toBe(true);
   });
 });
+
+/**
+ * "What are my options" is a how-to question that the first PROCEDURAL pass missed: TOOL_AGGREGATE
+ * matched `client`, LIVE_SCOPE matched `my`, and nothing marked it procedural — so
+ * "A client's card is on fraud hold — what are my options?" routed to a live-data tool.
+ */
+describe('procedural phrasings beyond "how do I"', () => {
+  it.each([
+    "A client's card is on fraud hold — what are my options in Sales Mytrion?",
+    'What can I do when my client has a fraud hold?',
+    'My options for a declined card?',
+  ])('keeps an options-style question on knowledge: %s', (query) => {
+    expect(routeRetrievalIntent(query).route).toBe('knowledge');
+  });
+
+  it('does not swallow a genuine live aggregate that happens to say "my"', () => {
+    expect(routeRetrievalIntent('What is my total gallons this month?').route).toBe('tool');
+  });
+});

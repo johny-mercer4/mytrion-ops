@@ -27,6 +27,21 @@ export interface AgenticRetrieveOptions {
   /** Deprecated compatibility input; never enables internal-policy fallback. */
   allowWebFallback?: boolean;
   resolvedAsk?: string;
+  /**
+   * Set when the caller IS the agent's `knowledge_search` tool, i.e. the model has already decided it
+   * wants documentation.
+   *
+   * `routeRetrievalIntent` was written to judge a USER utterance — "how do I…" keeps it on knowledge,
+   * "how many gallons this month" sends it to a live tool. But a tool call carries the model's own
+   * KEYWORD query ("client balance account cards"), which has no procedural markers and so reads as a
+   * live-data aggregate. Measured: "How do I check a client's balance and see their card list?" ended
+   * as `route: tool, abstained: true, hops: 0` in 3ms — the agent asked for documentation and got a
+   * refusal, then answered with nothing cited.
+   *
+   * Deciding NOT to retrieve is the chat layer's job, before the tool is ever called. Once the model
+   * has called it, honour the request.
+   */
+  explicitKnowledgeRequest?: boolean;
 }
 
 interface HopTrace {
@@ -141,7 +156,13 @@ export async function agenticRetrieve(
   const traceId = createId();
   const scopeFingerprint = scopeFingerprintFor(ctx);
   const ask = opts.resolvedAsk?.trim() || question.trim();
-  const route = routeRetrievalIntent(ask);
+  const routed = routeRetrievalIntent(ask);
+  // A 'tool' verdict cannot override an explicit knowledge_search. 'none' (casual/empty) still
+  // abstains: if the model searched for a greeting, retrieving is waste, not a lost answer.
+  const route =
+    opts.explicitKnowledgeRequest && routed.route === 'tool'
+      ? { ...routed, route: 'knowledge' as const, reason: 'explicit-knowledge-request' }
+      : routed;
   const k = opts.k ?? 6;
 
   if (route.route === 'none' || route.route === 'tool') {
