@@ -12791,3 +12791,32 @@ to **~$180/month**. That materially changes the infrastructure-spend advice give
 Tests: 5 new `computeCost` cases (cached billed at the cached rate, unchanged when nothing cached,
 cached clamped to prompt tokens so cost cannot go negative, negative input ignored, unpriced model
 never discounted). Backend **2436** passed / 1 skipped, lint 0 errors, typecheck clean.
+
+## 2026-08-08 — Phase B: a grounded answer was showing no sources
+
+Reproduced: `grade: sufficient / 0.926`, `ragPassages: 5`, correct answer — and `citations: []`, so
+Admin's source list was empty on a properly grounded answer.
+
+`citationCheck.validateCitations` had two paths and was missing the third. Markers present and used →
+the cited subset. No markers at all (classic retrieval) → everything retrieved. But **markers present
+and the answer used none** fell into the first path's filter and produced `[]`.
+
+Whether the model writes `[S1]` is a stylistic accident; it says nothing about whether the answer was
+grounded. An answer that *looks* ungrounded costs more trust than a slightly broad source list, so an
+unmarked (or entirely-hallucinated-marker) answer now falls back to the retrieved set — the same
+semantics the classic path already had. It cannot invent sources: nothing retrieved still reports
+nothing.
+
+Also fixed the instruction that caused it. `RAG_USAGE_RULE` ended "Cite the docId of any passage you
+rely on", while `buildGroundingBlock` tells the model to "cite the [Sn] marker" — and `[Sn]` is what
+`validateCitations` checks and what the UI's source list is built from. The persona was training the
+model to emit citations the pipeline then discarded. It now asks for the markers.
+
+**Verified live on the orchestrator path** that produced the empty list:
+`CITATIONS: ['Sales Mytrion — Card Activation (C-1)']`, with `markers in answer: []` — the model still
+did not write `[S1]`, and the source shows anyway. Five passages deduped to the one document they came
+from, which is correct.
+
+Four new tests cover the gap: unmarked answer falls back, cited subset still wins when the answer did
+cite, all-hallucinated markers fall back after stripping, and nothing retrieved reports nothing.
+Backend **2440** passed / 1 skipped, lint 0 errors.

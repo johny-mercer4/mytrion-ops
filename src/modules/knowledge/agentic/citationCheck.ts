@@ -55,13 +55,21 @@ export function validateCitations(text: string, citations: WireCitation[]): Cita
     return '';
   });
 
-  // Marker-based grounding: sources = the markers actually cited. Classic (unmarked)
-  // retrieval: sources = everything retrieved this run — same semantics as the passage
-  // count the widget shows today.
-  const used =
-    markerNumbers.size > 0
-      ? citations.filter((c) => c.marker && usedNumbers.has(Number(c.marker.replace(/^S/, ''))))
-      : citations;
+  /**
+   * Marker-based grounding: sources = the markers actually cited. Classic (unmarked) retrieval:
+   * sources = everything retrieved this run — same semantics as the passage count the widget shows.
+   *
+   * The third case is the one that bit us. When markers were AVAILABLE but the answer used none, the
+   * filter returned an empty list and Admin showed **no sources at all** on an answer with
+   * `grade: sufficient / 0.928` — observed directly on the orchestrator path. Whether the model
+   * chooses to write `[S1]` is a stylistic accident; it says nothing about whether the answer was
+   * grounded, and an answer that looks ungrounded costs more trust than a slightly broad source list.
+   * So an unmarked answer falls back to the retrieved set, exactly like the classic path.
+   */
+  const marked = citations.filter(
+    (c) => c.marker && usedNumbers.has(Number(c.marker.replace(/^S/, ''))),
+  );
+  const used = markerNumbers.size > 0 && marked.length > 0 ? marked : citations;
 
   return {
     // Collapse doubled spaces left by removed markers, but keep newlines intact.

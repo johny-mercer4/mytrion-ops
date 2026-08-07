@@ -57,3 +57,38 @@ describe('validateCitations (classic, unmarked retrieval)', () => {
     expect(v.strippedMarkers).toEqual([]);
   });
 });
+
+/**
+ * The gap between the two describes above: markers were AVAILABLE but the answer used none.
+ * The filter returned [] and Admin showed **no sources** on an answer graded
+ * `sufficient / 0.928` — observed on the orchestrator path. Whether the model writes `[S1]` is a
+ * stylistic accident and says nothing about whether the answer was grounded, so an unmarked answer
+ * now falls back to the retrieved set, exactly like the classic path.
+ */
+describe('validateCitations — grounded answer that omitted its markers', () => {
+  it('falls back to the retrieved passages instead of reporting no sources', () => {
+    const v = validateCitations('Open Automations, search C-1, then click Card Activation.', marked);
+    expect(v.strippedMarkers).toEqual([]);
+    expect(v.usedCitations.length).toBeGreaterThan(0);
+    // Deduped by doc: doc_a (S1/S3) and doc_b (S2).
+    expect(v.usedCitations.map((c) => c.id)).toEqual(['doc_a', 'doc_b']);
+  });
+
+  it('still prefers the cited subset when the answer DID cite', () => {
+    const v = validateCitations('Only this one matters [S2].', marked);
+    expect(v.usedCitations.map((c) => c.id)).toEqual(['doc_b']);
+  });
+
+  it('falls back when every marker the answer used was hallucinated', () => {
+    // S9 does not exist, so it is stripped and nothing valid remains cited — but the answer was
+    // still built on retrieved passages, so the reader should see them.
+    const v = validateCitations('Per policy [S9].', marked);
+    expect(v.strippedMarkers).toEqual(['S9']);
+    expect(v.usedCitations.map((c) => c.id)).toEqual(['doc_a', 'doc_b']);
+  });
+
+  it('reports nothing when nothing was retrieved — the fallback cannot invent sources', () => {
+    const v = validateCitations('An answer with no retrieval behind it.', []);
+    expect(v.usedCitations).toEqual([]);
+  });
+});

@@ -31,7 +31,12 @@ export const RAG_USAGE_RULE =
   'NOT answer these from your own memory, and if the search returns nothing relevant, say you don’t ' +
   'have it documented rather than guessing. Do NOT search for greetings, small talk, or live ' +
   'client-account questions (balances, cards, transactions, payments) — those come from your crm.* ' +
-  'and agent.* tools, not the knowledge base. Cite the docId of any passage you rely on.';
+  'and agent.* tools, not the knowledge base. ' +
+  // Was "cite the docId", which contradicted the grounding block's own instruction to cite [Sn].
+  // The markers are what citationCheck validates and what the UI's source list is built from, so
+  // asking for docIds trained the model to produce citations the pipeline then discarded.
+  'When a knowledge_search result arrives with [S1]…[Sn] markers, cite the marker inline for every ' +
+  'claim you take from a passage — that is what links your answer to its sources for the reader.';
 
 export const READ_ONLY_RULE =
   'You are strictly read-only: you may look up and analyze data, but never perform writes or ' +
