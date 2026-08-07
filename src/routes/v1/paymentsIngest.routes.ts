@@ -276,6 +276,7 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
       amount: b.amount != null ? (paymentTransactionRepo.money(b.amount) ?? null) : null,
       returnDate: disputeDate && !Number.isNaN(disputeDate.getTime()) ? disputeDate : null,
       reason: b.reason ?? null,
+      stripeStatus: b.stage ?? null,
       // Full original payload (incl. any fields not modelled above) for traceability.
       raw: (request.body ?? {}) as Record<string, unknown>,
     };

@@ -96,6 +96,7 @@ export const paymentReturnRepo = {
           amount: sql`excluded.amount`,
           returnDate: sql`excluded.return_date`,
           reason: sql`excluded.reason`,
+          stripeStatus: sql`excluded.stripe_status`,
           raw: sql`excluded.raw`,
           updatedAt: sql`now()`,
         },
