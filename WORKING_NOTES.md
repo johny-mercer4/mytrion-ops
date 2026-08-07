@@ -12210,3 +12210,12 @@ with them. A redeploy should now succeed; if the DB is mid-restart it will wait 
   present; soft `efs_error` note kept if upstream flags it.
 - Loader: `loadClientEfsBalance` in `clientDrilldown.ts`.
 - Verification: CRM `clientDrilldown` 5/5; CRM typecheck pass.
+
+## 2026-08-07 — Rebuild vendored CRM app for EFS Balance tile
+
+- PR #147 landed source for Overview EFS Balance, but prod serves committed
+  `apps/mytrion-crm/app/` — that bundle was not rebuilt, so the tile was missing on
+  octane-ops-ai.onrender.com.
+- Ran `pnpm build:widget` and recommitted `apps/mytrion-crm/app` so deploy picks up the UI.
+- Documented the rule in `CLAUDE.md` + `AGENTS.md` (**Vendored frontend builds**): UI PRs must
+  rebuild and commit `apps/mytrion-crm/app` / `apps/mini-app/app` before opening the PR.

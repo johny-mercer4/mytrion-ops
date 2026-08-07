@@ -48,6 +48,29 @@ answer is almost always `agent-gateway` — not `agent-telegram-bot`.
 - Append a dated entry to `WORKING_NOTES.md` for each session.
 - Run `pnpm lint && pnpm typecheck && pnpm test` before pushing.
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`.
+- **UI PRs — rebuild vendored frontends before opening/pushing the PR** (see below). Source-only
+  merges do **not** change production UI.
+
+## Vendored frontend builds (REQUIRED before UI PRs)
+
+Prod (Render) serves **committed** static bundles — it does **not** run Vite at deploy time:
+
+| App | Source | Served from (commit these) | Rebuild command |
+| --- | --- | --- | --- |
+| Sales / CRM Mytrion | `apps/mytrion-crm/src/` | `apps/mytrion-crm/app/` | `pnpm build:widget` |
+| Telegram mini-app | `apps/mini-app/src/` | `apps/mini-app/app/` | `pnpm -C apps/mini-app build` (then commit `app/`) |
+
+**Before every PR that changes UI under those `src/` trees:**
+
+1. Run the rebuild command for the app you touched.
+2. Commit the updated `app/` (and `app/index.html`) in the **same PR** as the source change.
+3. Confirm the new behavior string exists in the hashed bundle (e.g. `rg 'EFS Balance' apps/mytrion-crm/app`).
+
+Skipping this ships code that looks merged on GitHub while prod still shows the old screen
+*(2026-08-07: Overview EFS Balance tile missing until `app/` was rebuilt — PR #149).*
+
+`pnpm dev:all` / Vite dev server is fine for local preview; it is **not** a substitute for
+committing `app/` when opening a PR to `build` / `main`.
 
 ## Build & tooling conventions (read before editing imports)
 
