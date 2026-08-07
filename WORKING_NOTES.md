@@ -12279,3 +12279,30 @@ The prod pgvector store does **not** have the catalog — `.env`'s `MYTRION_OPS_
 Render, and the local DB has 0 tenants/users so Admin AI Chat cannot be logged into locally. Testing
 in Admin → Horizon needs `FF_PLATFORM_KNOWLEDGE=1` on Render plus one
 `pnpm knowledge:sync-platform` against prod. Left for an explicit decision — it is a production write.
+
+### Prod sync completed (approved) — and prod still needs one flag
+
+Ran `knowledge:sync-platform` against the Render DB. It took three passes because Render Postgres
+dropped the connection mid-run twice (`CONNECTION_CLOSED`, then `CONNECT_TIMEOUT` — the same
+flakiness as the 2026-08-07 deploy note, not a schema or data fault). The sync is idempotent, so
+each retry resolved already-present checksums and only inserted the gaps; the second pass lost
+Card Activation (C-1) and Card Deactivation (C-3), and the third landed both.
+
+Final prod state, verified directly:
+
+- **30 Sales catalog docs** (7 guides + 23 automations), all `status=ready`,
+  `verification=verified`, 23/23 automations present.
+- **146 chunks, 146/146 embedded**, every chunk `department_access=sales` — RBAC isolation intact.
+- Retrieval confirmed against prod on both paths: card activation, retention generation, Open Pool
+  claiming, the 350-gallon limit and "which section is Balance Check in" each return their own
+  governed document.
+
+**Prod cannot answer yet.** `render.yaml` explicitly sets `FF_AGENTIC_RAG=1`, so prod runs the
+agentic path, and `FF_PLATFORM_KNOWLEDGE` is not declared anywhere — so prod retrieval is still
+hard-scoped to `domains: ['operations']` and ignores all 30 documents. Set
+**`FF_PLATFORM_KNOWLEDGE=1`** on Render before testing Admin → Horizon. Note the other RAG flags
+live in `render.yaml` rather than the dashboard, so declaring it there would be more consistent.
+
+Also worth knowing: `FF_JOBS_ENABLED` is deliberately off on Render, so the nightly governed sync
+never runs in prod regardless of the flag. Whenever the catalog changes, prod needs another
+`pnpm knowledge:sync-platform` — the flag governs retrieval, not refresh.
