@@ -152,6 +152,37 @@ export async function loadClientBilling(carrierId: string): Promise<ClientBillin
   return getClientBilling(carrierId);
 }
 
+/** Live EFS available balance for the client modal Overview tile (same source as C-8). */
+export interface ClientEfsBalanceVM {
+  /** Formatted `$…` for display, or `—` when the amount is missing. */
+  display: string;
+  paymentTerms: string | null;
+  /** Soft upstream note when EFS itself errored but a fallback figure may still exist. */
+  efsError: string | null;
+}
+
+export async function loadClientEfsBalance(carrierId: string): Promise<ClientEfsBalanceVM> {
+  if (!carrierId) {
+    return { display: '—', paymentTerms: null, efsError: null };
+  }
+  const bal = await callTouchpoint('dwh.carrier_balance', { carrierId });
+  const raw = bal.efs_balance ?? bal.balance;
+  const amount = raw != null && String(raw).trim() !== '' && Number.isFinite(Number(raw))
+    ? Number(raw)
+    : null;
+  const terms = bal.payment_terms != null && String(bal.payment_terms).trim()
+    ? String(bal.payment_terms).trim()
+    : null;
+  const efsError = bal.efs_error != null && String(bal.efs_error).trim()
+    ? String(bal.efs_error).trim()
+    : null;
+  return {
+    display: amount == null ? '—' : money(amount),
+    paymentTerms: terms,
+    efsError,
+  };
+}
+
 export interface ClientActivityVM {
   title: string;
   sub: string;

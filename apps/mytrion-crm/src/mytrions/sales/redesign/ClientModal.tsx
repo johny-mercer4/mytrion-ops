@@ -8,6 +8,7 @@ import {
   loadClientCards,
   loadClientActivity,
   loadClientBilling,
+  loadClientEfsBalance,
   CLIENT_ACTIVITY_PAGE,
   type ClientActivityVM,
   type ClientBillingVM,
@@ -181,6 +182,7 @@ export function ClientModal({
   );
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
   const billingL = useLoad(() => loadClientBilling(client.id), [client.id]);
+  const balanceL = useLoad(() => loadClientEfsBalance(client.id), [client.id]);
   const [actRows, setActRows] = useState<ClientActivityVM[]>([]);
   const [actLimit, setActLimit] = useState(CLIENT_ACTIVITY_PAGE);
   const [actHasMore, setActHasMore] = useState(false);
@@ -309,8 +311,8 @@ export function ClientModal({
         </div>
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:20px')}>
           {clientTab === 'overview' && (
-            <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-              <div style={s(`grid-column:1 / span 2;${tile}`)}>
+            <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
+              <div style={s(`grid-column:1 / -1;${tile}`)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Primary Contact</div>
                 <div style={s('font-size:15px;font-weight:700;margin-top:5px')}>{client.contact}</div>
                 <div style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.phone}</div>
@@ -322,6 +324,24 @@ export function ClientModal({
               <div style={s(tile)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Gallons · Cycle</div>
                 <div style={s("font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;margin-top:5px;color:var(--violet)")}>{client.gallons}</div>
+              </div>
+              <div style={s(tile)}>
+                <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>EFS Balance</div>
+                {balanceL.loading && !balanceL.data ? (
+                  <div style={s(`${tVal};color:var(--muted)`)}>…</div>
+                ) : balanceL.error ? (
+                  <div style={s(`${tVal};color:var(--danger);font-size:15px`)}>Unavailable</div>
+                ) : (
+                  <>
+                    <div style={s(`${tVal};color:var(--ok)`)}>{balanceL.data?.display ?? '—'}</div>
+                    {balanceL.data?.paymentTerms ? (
+                      <div style={s('font-size:12px;color:var(--muted);margin-top:4px')}>{balanceL.data.paymentTerms}</div>
+                    ) : null}
+                    {balanceL.data?.efsError ? (
+                      <div style={s('font-size:11px;color:var(--warn);margin-top:4px')}>{balanceL.data.efsError}</div>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
           )}
