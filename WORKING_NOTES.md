@@ -12217,3 +12217,5 @@ with them. A redeploy should now succeed; if the DB is mid-restart it will wait 
   `apps/mytrion-crm/app/` — that bundle was not rebuilt, so the tile was missing on
   octane-ops-ai.onrender.com.
 - Ran `pnpm build:widget` and recommitted `apps/mytrion-crm/app` so deploy picks up the UI.
+- Documented the rule in `CLAUDE.md` + `AGENTS.md` (**Vendored frontend builds**): UI PRs must
+  rebuild and commit `apps/mytrion-crm/app` / `apps/mini-app/app` before opening the PR.

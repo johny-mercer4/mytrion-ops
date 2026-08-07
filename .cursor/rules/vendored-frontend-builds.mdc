@@ -1,0 +1,14 @@
+---
+description: Rebuild and commit vendored CRM/mini-app app/ bundles before any UI PR
+globs: apps/mytrion-crm/src/**/*,apps/mini-app/src/**/*
+alwaysApply: false
+---
+
+# Vendored frontend builds
+
+Production serves **committed** static output, not Vite at deploy time:
+
+- CRM UI: edit `apps/mytrion-crm/src/` → run `pnpm build:widget` → commit `apps/mytrion-crm/app/`
+- Mini-app: edit `apps/mini-app/src/` → run `pnpm -C apps/mini-app build` → commit `apps/mini-app/app/`
+
+Do this **before opening or pushing a PR** that changes those UIs. Source-only PRs leave prod on the old screen. Full rule: `CLAUDE.md` / `AGENTS.md` → **Vendored frontend builds**.
