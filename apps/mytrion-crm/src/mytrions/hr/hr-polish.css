@@ -263,7 +263,7 @@
 [data-theme='light'] .hr-root .hr-empc,
 [data-theme='light'] .hr-root .hr-deptc,
 [data-theme='light'] .hr-root .hr-settings-card,
-[data-theme='light'] .hr-root .hr-att-person,
+[data-theme='light'] .hr-root .hr-att-roster,
 [data-theme='light'] .hr-root .hr-att-detail,
 [data-theme='light'] .hr-root .hr-att-day,
 [data-theme='light'] .hr-root .hr-modal,
@@ -288,7 +288,6 @@
 
 [data-theme='light'] .hr-root .hr-empc:hover,
 [data-theme='light'] .hr-root .hr-deptc:hover,
-[data-theme='light'] .hr-root .hr-att-person:hover,
 [data-theme='light'] .hr-root .hr-onode:hover {
   border-color: color-mix(in srgb, var(--accent) 28%, rgba(70, 86, 112, 0.12));
   box-shadow: 0 8px 22px -14px rgba(40, 54, 78, 0.12);

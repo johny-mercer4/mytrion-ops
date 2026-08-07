@@ -23,7 +23,6 @@ import {
 import { listCitifuel } from '@/api/cs';
 import {
   getMaintenanceMeta,
-  getMaintenanceStats,
   listMaintenance,
   type MaintenanceFacets,
   type MaintenanceMeta,
@@ -548,14 +547,16 @@ export async function loadAnalytics(
   const mTotals: Partial<MaintenanceAnalytics['data']['totals']> = maint.data?.totals ?? {};
 
   // Manager leaderboard: tickets keyed by Desk id, calls by CRM email — join on email (widget parity).
+  // Both DWH queries are org-wide (unscoped by department), so the join against the CS-only roster
+  // also DOUBLES as the department filter — an agent absent from `roster` is not on the CS team and
+  // must not appear on either board (QA 2026-08-07: other departments' agents were leaking through).
   const rosterById = new Map(roster.map((r) => [r.id, r]));
-  const callsByEmail = new Map(
-    (calls.data?.agents ?? [])
-      .filter((c) => c.email)
-      .map((c) => [String(c.email).toLowerCase(), c] as const),
+  const rosterByEmail = new Map(
+    roster.filter((r) => r.email).map((r) => [String(r.email).toLowerCase(), r] as const),
   );
   const ticketBoard: LeaderboardRow[] = tAgents
     .filter((a) => a.assignee_id != null)
+    .filter((a) => !isManager || rosterById.has(String(a.assignee_id)))
     .map((a) => {
       const entry = rosterById.get(String(a.assignee_id));
       return {
@@ -568,6 +569,7 @@ export async function loadAnalytics(
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
   const callBoard: LeaderboardRow[] = (calls.data?.agents ?? [])
+    .filter((c) => !isManager || (c.email && rosterByEmail.has(String(c.email).toLowerCase())))
     .map((c) => ({
       agent: c.name ?? (c.email ? String(c.email).split('@')[0] ?? '' : `Agent ${String(c.owner_id ?? '').slice(-4)}`),
       col1: c.total ?? 0,
@@ -587,7 +589,6 @@ export async function loadAnalytics(
     }))
     .sort((a, b) => b.col1 - a.col1)
     .slice(0, 15);
-  void callsByEmail; // reserved for future merged-board parity
 
   return {
     unmatched: tickets.unmatched === true || calls.unmatched === true,
@@ -712,10 +713,6 @@ export function invalidateDealsCache(): void {
 
 export async function loadMaintenance(q: MaintenanceQuery): Promise<MaintenancePage> {
   return listMaintenance(q);
-}
-
-export async function loadMaintenanceStats(): Promise<MaintenanceFacets> {
-  return getMaintenanceStats();
 }
 
 export async function loadMaintenanceMeta(): Promise<MaintenanceMeta> {

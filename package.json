@@ -16,7 +16,8 @@
     "build:widget": "corepack pnpm -C apps/mytrion-crm install --frozen-lockfile && corepack pnpm -C apps/mytrion-crm build",
     "start": "node dist/server.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/guardedMigrate.ts",
+    "db:migrate:raw": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed.ts",
     "seed:support-kb": "tsx scripts/seed-support-bot-knowledge.ts",
@@ -48,7 +49,10 @@
     "eval:retrieval": "tsx scripts/evalRetrieval.ts",
     "eval:rag-excellence": "node --import tsx scripts/evalRagExcellence.ts",
     "eval:live": "tsx scripts/evalLive.ts",
-    "analytics:smoke": "tsx scripts/analytics-smoke.ts"
+    "analytics:smoke": "tsx scripts/analytics-smoke.ts",
+    "dropbox:smoke": "tsx scripts/dropbox-smoke.ts",
+    "hr:attendance-local": "tsx scripts/hr-attendance-local.ts",
+    "hr:fix-work-dates": "tsx scripts/hr-recompute-work-dates.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1078.0",

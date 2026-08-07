@@ -163,14 +163,18 @@ export function formatDay(raw: string): string {
   return `${month} ${parseInt(m[3], 10)}, ${m[1]}`;
 }
 
-/** "Card-Chargeback" → "Chargeback"; otherwise the raw type (or an em dash). */
+/** "Card-Chargeback" → "Chargeback", "Stripe-Dispute" → "Stripe Dispute"; otherwise the raw type
+ *  (or an em dash). */
 export function typeLabel(t: string): string {
-  return t === 'Card-Chargeback' ? 'Chargeback' : t || '—';
+  if (t === 'Card-Chargeback') return 'Chargeback';
+  if (t === 'Stripe-Dispute') return 'Stripe Dispute';
+  return t || '—';
 }
 
-/** Type-column chip colour (design typeChip): Chargeback → purple, else → accent. */
+/** Type-column chip colour (design typeChip): both dispute-style types (MX chargeback, Stripe
+ *  dispute) → purple; else → accent. */
 export function typeBadgeClass(t: string): string {
-  return t === 'Card-Chargeback' ? 'bm-badge-purple' : 'bm-badge-info';
+  return t === 'Card-Chargeback' || t === 'Stripe-Dispute' ? 'bm-badge-purple' : 'bm-badge-info';
 }
 
 /** Whether a candidate's amount equals the return amount, to the cent. */

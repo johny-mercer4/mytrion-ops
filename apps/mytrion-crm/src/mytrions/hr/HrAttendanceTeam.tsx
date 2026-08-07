@@ -3,7 +3,7 @@
  * Managers: Team = reportees ∪ departments they lead.
  * Admins / HR Manager: Team = direct reports; All = every Active employee.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, Search, Users, X } from 'lucide-react';
 import {
   assignAttendanceShift,
@@ -16,8 +16,25 @@ import {
   type AttendanceTeamListItem,
   type AttendanceTeamScope,
 } from '../../api/hr';
+import { formatCachedAt, useCachedLoad } from '../_shared/swrCache';
 import { HrBusy, HrEmpty, HrPageLoader } from './HrBits';
+import { HrSelect, type HrSelectOption } from './HrSelect';
 import { HrAttendanceWeek } from './HrAttendanceWeek';
+
+export interface TeamSummary {
+  people: number;
+  inOffice: number;
+  needsReview: number;
+  noShift: number;
+}
+
+/** The same wording the tab's tiles and the day rows use, so one state is never named two ways. */
+const PRESENCE_TEXT: Record<string, string> = {
+  in_office: 'In office',
+  out_of_office: 'Out',
+  needs_review: 'Needs review',
+  no_activity: 'No activity',
+};
 
 export function HrAttendanceTeam({
   scope,
@@ -25,6 +42,7 @@ export function HrAttendanceTeam({
   weekOf,
   orgWide = false,
   refreshToken = 0,
+  onSummary,
 }: {
   scope: AttendanceTeamScope;
   /**
@@ -44,12 +62,15 @@ export function HrAttendanceTeam({
    * user's navigation.
    */
   refreshToken?: number;
+  /**
+   * Roster counts, reported up so the TAB can show them in its summary row — the same shape as the org
+   * canvas's `onHiddenCount`. The tiles belong above the pane switcher with every other HR tab's, and
+   * only this component knows the roster.
+   */
+  onSummary?: ((summary: TeamSummary) => void) | undefined;
 }) {
   const [q, setQ] = useState('');
   const [qDebounced, setQDebounced] = useState('');
-  const [data, setData] = useState<AttendanceTeamListDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** The row as it was picked, so a search that filters the person out still names them. */
   const [selectedEmp, setSelectedEmp] = useState<AttendanceTeamListItem | null>(null);
@@ -64,7 +85,6 @@ export function HrAttendanceTeam({
     null,
   );
   /** Guards against an earlier roster (older search text or week) landing after a newer one. */
-  const rosterSeqRef = useRef(0);
   /** The `today` the assign default was derived from, so a rollover can tell default from edit. */
   const defaultDayRef = useRef(today);
 
@@ -82,33 +102,46 @@ export function HrAttendanceTeam({
     setEffectiveFrom((current) => (current === previous ? today : current));
   }, [today]);
 
-  const load = useCallback(async (): Promise<void> => {
-    // No AbortSignal on purpose: passing one opts this GET out of the transport's single
-    // controlled retry, which is what recovers the team route's 503 DB flaps. The sequence
-    // guard does the same job for us without turning a superseded request into a rejection.
-    const seq = ++rosterSeqRef.current;
-    setLoading(true);
-    setError('');
-    try {
-      const team = await getAttendanceTeam({
+  /**
+   * The roster, through the shared stale-while-revalidate store.
+   *
+   * The key carries every input that changes the answer, so each week and each search term keeps its
+   * own entry and going back to one is instant. Crucially a refetch never clears `data`: the DWH sync
+   * fires on page open and again on every week change, and without this the roster blanked to a
+   * loader — or to "Could not reach the backend" — while it ran.
+   *
+   * No AbortSignal on purpose: passing one opts this GET out of the transport's single controlled
+   * retry, which is what recovers the team route's 503 DB flaps. The hook's own run-id guard already
+   * discards superseded responses, which is what the removed sequence ref was for.
+   */
+  const roster = useCachedLoad<AttendanceTeamListDto>(
+    `hr:attendance:team:${scope}:${weekOf}:${qDebounced}`,
+    () =>
+      getAttendanceTeam({
         weekOf,
         scope,
         ...(qDebounced ? { q: qDebounced } : {}),
-      });
-      if (seq !== rosterSeqRef.current) return;
-      setData(team);
-    } catch (err) {
-      if (seq !== rosterSeqRef.current) return;
-      setData(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (seq === rosterSeqRef.current) setLoading(false);
-    }
-  }, [weekOf, scope, qDebounced, refreshToken]);
+      }),
+  );
+  const data = roster.data;
+  const loading = roster.loading;
+  /**
+   * Kept apart from `roster.error`, which the cache hook owns.
+   *
+   * These are the SIDE operations — loading the shift list, opening a person, assigning a shift. They
+   * used to share the roster's error slot, so a failed shift assignment and an unreachable roster were
+   * indistinguishable, and a successful roster refetch silently wiped the message telling you the
+   * assignment had failed.
+   */
+  const [actionError, setActionError] = useState('');
 
+  // Refresh is a force: same key, but the user asked for a round trip rather than the cached copy.
+  const firstToken = useRef(refreshToken);
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (refreshToken === firstToken.current) return;
+    firstToken.current = refreshToken;
+    roster.reload();
+  }, [refreshToken, roster]);
 
   // Re-runs on Refresh: shifts are created/deactivated on HR → Settings while this pane stays
   // mounted, and without the old remount `key` nothing else would pick them up. `cancelled`
@@ -128,7 +161,7 @@ export function HrAttendanceTeam({
         );
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setActionError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
@@ -153,7 +186,7 @@ export function HrAttendanceTeam({
       .catch((err: unknown) => {
         if (!cancelled) {
           setDetail(null);
-          setError(err instanceof Error ? err.message : String(err));
+          setActionError(err instanceof Error ? err.message : String(err));
         }
       })
       .finally(() => {
@@ -168,6 +201,27 @@ export function HrAttendanceTeam({
   // on the next search or week. The fresh row wins when present (so the assign refresh updates
   // the shift line); the picked row keeps the name on screen, because an assign target whose
   // name is nowhere in the panel reads as a write against the wrong employee.
+  /**
+   * Counts for the tab's summary row. Derived from the roster we already hold rather than asked for
+   * separately — the numbers must agree with the rows underneath them, and a second endpoint is a
+   * second chance for them not to.
+   */
+  useEffect(() => {
+    if (!onSummary) return;
+    const items = data?.items ?? [];
+    onSummary({
+      people: items.length,
+      inOffice: items.filter((item) => item.currentState === 'in_office').length,
+      needsReview: items.filter((item) => item.currentState === 'needs_review').length,
+      noShift: items.filter((item) => !item.shift).length,
+    });
+  }, [data, onSummary]);
+
+  const shiftOptions: HrSelectOption[] = shifts.map((shift) => ({
+    value: shift.id,
+    label: `${shift.name} · ${shift.startLocal}–${shift.endLocal}`,
+  }));
+
   const selected: AttendanceTeamListItem | null =
     data?.items.find((i) => i.employeeId === selectedId) ?? selectedEmp;
 
@@ -175,7 +229,7 @@ export function HrAttendanceTeam({
     if (!selectedId || !assignShiftId || assigning) return;
     setAssigning(true);
     setAssignMessage(null);
-    setError('');
+    setActionError('');
     try {
       await assignAttendanceShift(assignShiftId, {
         employeeIds: [selectedId],
@@ -186,9 +240,11 @@ export function HrAttendanceTeam({
         employeeId: selectedId,
         text: `${assignedShift?.name ?? 'Shift'} assigned from ${effectiveFrom}.`,
       });
-      await load();
+      // A retroactive assignment changes which DAY existing overnight punches belong to, so the
+      // roster's numbers are stale the moment this returns.
+      roster.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setAssigning(false);
     }
@@ -216,13 +272,37 @@ export function HrAttendanceTeam({
           <span className="hr-att-count">
             {data.items.length} people
             {orgWide ? ' · org-wide' : scope === 'direct' ? ' · direct reports' : ' · managed team'}
+            {/* Showing a cached roster without saying so is how someone reads yesterday's numbers as
+                today's. `revalidating` is the honest label while a refetch is in flight. */}
+            {roster.revalidating
+              ? ' · updating…'
+              : roster.cachedAt
+                ? ` · ${formatCachedAt(roster.cachedAt)}`
+                : ''}
           </span>
         ) : null}
       </div>
 
-      {error ? (
+      {/*
+        A failed fetch only takes over the page when there is nothing behind it. With a cached roster
+        still on screen it degrades to a warning, because the rows below are real — just older than the
+        user asked for. This is the whole point of routing these reads through the cache.
+      */}
+      {roster.error && !data ? (
         <p className="hr-banner-error" role="alert">
-          {error}
+          {roster.error}
+        </p>
+      ) : roster.error ? (
+        <p className="hr-banner" role="status">
+          <span>
+            <strong>Showing the last loaded roster.</strong> Could not refresh it — {roster.error}
+          </span>
+        </p>
+      ) : null}
+
+      {actionError ? (
+        <p className="hr-banner-error" role="alert">
+          {actionError}
         </p>
       ) : null}
 
@@ -239,37 +319,34 @@ export function HrAttendanceTeam({
                 <li key={item.employeeId}>
                   <button
                     type="button"
-                    className={`hr-att-person${on ? ' is-on' : ''}`}
+                    className={`hr-att-row${on ? ' is-on' : ''}`}
+                    aria-current={on ? 'true' : undefined}
                     onClick={() => {
                       setSelectedId(item.employeeId);
                       setSelectedEmp(item);
                     }}
                   >
-                    <span className="hr-att-person-name">
-                      {item.firstName} {item.lastName}
+                    {/* Presence as a dot, not a pill: at 145 rows the colour is what you scan, and a
+                        pill per row is 145 competing badges. The word is still on the right for
+                        anyone who cannot use the colour. */}
+                    <span
+                      className="hr-att-row-dot"
+                      data-state={item.currentState}
+                      aria-hidden="true"
+                    />
+                    <span className="hr-att-row-main">
+                      <span className="hr-att-row-name">
+                        {item.firstName} {item.lastName}
+                      </span>
+                      <span className="hr-att-row-meta">
+                        {[item.designation, item.department].filter(Boolean).join(' · ') || '—'}
+                        {/* Deliberately NOT the shift name. Nearly everyone is on the same shift, so
+                            printing it 145 times says nothing; its ABSENCE is the fact worth seeing. */}
+                        {item.shift ? null : <em className="hr-att-row-flag">No shift</em>}
+                      </span>
                     </span>
-                    <span className="hr-att-person-meta">
-                      {[item.designation, item.department].filter(Boolean).join(' · ') || '—'}
-                    </span>
-                    <span className="hr-att-person-stats">
-                      <em>{item.totals.present}</em> present
-                      <span aria-hidden="true"> · </span>
-                      {item.shift ? (
-                        <>
-                          <em>{item.totals.absent}</em> absent
-                        </>
-                      ) : (
-                        <em>Not scheduled</em>
-                      )}
-                    </span>
-                    <span className="hr-att-person-presence" data-state={item.currentState}>
-                      {item.currentState === 'in_office'
-                        ? 'In office'
-                        : item.currentState === 'needs_review'
-                          ? 'Needs review'
-                          : item.currentState === 'out_of_office'
-                            ? 'Out of office'
-                            : 'No activity'}
+                    <span className="hr-att-row-state" data-state={item.currentState}>
+                      {PRESENCE_TEXT[item.currentState] ?? 'No activity'}
                     </span>
                   </button>
                 </li>
@@ -313,17 +390,13 @@ export function HrAttendanceTeam({
                 </div>
                 <label>
                   <span>Shift</span>
-                  <select
+                  <HrSelect
+                    label="Shift"
                     value={assignShiftId}
-                    onChange={(event) => setAssignShiftId(event.target.value)}
-                  >
-                    <option value="">Choose shift</option>
-                    {shifts.map((shift) => (
-                      <option key={shift.id} value={shift.id}>
-                        {shift.name} · {shift.startLocal}–{shift.endLocal}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setAssignShiftId}
+                    options={shiftOptions}
+                    placeholder="Choose shift"
+                  />
                 </label>
                 <label>
                   <span>Effective from</span>

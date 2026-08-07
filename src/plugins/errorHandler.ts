@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { FastifyError, FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import { isAppError } from '../lib/errors.js';
+import { isTransientDbError } from '../modules/jobs/bossErrors.js';
 import { resolveWidgetDir } from './widgetStatic.js';
 
 interface ErrorResponse {
@@ -100,6 +101,20 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
       message = error.message;
       details = error.validation;
       expose = true;
+    } else if (isTransientDbError(error)) {
+      /**
+       * The link to Postgres was down, not the request wrong.
+       *
+       * Handled centrally rather than per route: this deployment's database sleeps when idle, so the
+       * first read after a quiet spell fails — and which route happens to be first is arbitrary. One
+       * route had its own try/catch for this and every other one returned a bare 500 with a Drizzle
+       * stack, which reads as "the feature is broken" rather than "try again in a moment".
+       */
+      statusCode = 503;
+      code = 'DB_UNAVAILABLE';
+      message = 'The database is temporarily unavailable — please retry in a moment.';
+      expose = true;
+      void reply.header('Retry-After', '5');
     } else if (typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500) {
       statusCode = error.statusCode;
       code = error.code ?? 'REQUEST_ERROR';
@@ -108,7 +123,14 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
       expose = true;
     }
 
-    if (statusCode >= 500) {
+    if (code === 'DB_UNAVAILABLE') {
+      // A sleeping database waking up is expected operational noise, not a fault to page on. One line,
+      // no stack — the stack is always the same and says nothing about the request.
+      request.log.warn(
+        { code, msg: error.message, requestId: request.requestId },
+        'database unavailable — transient',
+      );
+    } else if (statusCode >= 500) {
       request.log.error({ err: error, requestId: request.requestId }, 'request failed');
     } else {
       request.log.warn({ code, msg: error.message, requestId: request.requestId }, 'request error');

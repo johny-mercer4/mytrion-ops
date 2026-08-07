@@ -625,6 +625,9 @@ export interface TouchpointMap {
     params: { lastSyncTime?: string };
     result: CsDataCenterDeals;
   };
+  /** Same Deal-level lookup as 'carrier.trucking_number_request' (Sales), no carrier-ownership gate
+   *  — CS looks up any carrier a client calls about, not "their own book". */
+  'cs.carrier.trucking_number_request': { params: { carrierId: string }; result: TrackingResult };
   // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
   // The transaction/return WRITES (map/top-up/sync/split/unmap, carrier.saveMemory, returns.match), the
   // list/search/fuzzy/memory READS, and the mapping-picker invoice search all moved to Postgres-backed

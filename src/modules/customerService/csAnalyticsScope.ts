@@ -9,8 +9,11 @@
  * name allowlist) may scope freely or see org-wide aggregates.
  */
 import { env } from '../../config/env.js';
-import { zohoDesk } from '../../integrations/zohoDesk.js';
+import { DESK_DEPARTMENTS, zohoDesk } from '../../integrations/zohoDesk.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
+import { resolveAllDepartmentAccess } from '../../lib/department.js';
+import { listActiveUsersCached } from '../auth/actAsDirectory.js';
+import { mytrionAccessService } from '../access/mytrionAccessService.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 const ROSTER_TTL_MS = 10 * 60 * 1000;
@@ -87,7 +90,9 @@ export async function fetchDeskAgentRoster(): Promise<DeskAgent[]> {
   }
   let agents: DeskAgent[];
   try {
-    agents = await zohoDesk.listAgents();
+    // CS-department only — an unscoped roster leaked other departments' agents into the
+    // Analytics leaderboards (they resolve names off this map; see live.ts's ticketBoard/callBoard).
+    agents = await zohoDesk.listAgents(DESK_DEPARTMENTS.cs);
   } catch {
     agents = await fetchRosterViaDeluge();
   }
@@ -97,6 +102,65 @@ export async function fetchDeskAgentRoster(): Promise<DeskAgent[]> {
   }
   rosterCache = { fetchedAt: Date.now(), agents, byEmail };
   return agents;
+}
+
+/**
+ * The TRUE CS roster, for the Analytics leaderboard join — every Zoho user whose admin-granted
+ * Mytrion access includes customer-service, cross-referenced with the Desk roster for their
+ * assignee id.
+ *
+ * Desk DEPARTMENT membership (`fetchDeskAgentRoster` above) is NOT a safe proxy for "is this
+ * really CS": agents get cross-assigned to the CS Desk department for ticket overflow while their
+ * actual job — and their admin-granted Mytrion access — is Verification/Billing/etc. QA
+ * 2026-08-07 caught exactly that (a Verification agent's tickets/calls showing on the CS
+ * leaderboard even after the Desk-department scoping fix). This instead reuses the SAME access
+ * authority `requireDepartment(..., 'customer-service')` gates the whole module on
+ * (`mytrionAccessService`), so the leaderboard's notion of "who's CS" can never diverge from the
+ * route's own gate again.
+ *
+ * ONE more filter on top of that access check: a marker-admin identity (profile "Administrator" /
+ * role "Zoho Admin" / "CEO", etc — `resolveAllDepartmentAccess`, the same detector
+ * `combineAccess` uses) is EXCLUDED regardless of what its access resolves to. `combineAccess`
+ * expands an all-department grant's `accessibleMytrions` to literally every Mytrion id (see
+ * mytrionAccessService.ts's `combineAccess`, `fullSet = allDept ? [...MYTRION_IDS] : allowed`) —
+ * so "has customer-service access" is trivially true for every admin, and QA 2026-08-07 (round 2)
+ * caught two IT admins (Islombek Mamurov, Amir Alimov — both profile "Administrator" / role "Zoho
+ * Admin") on the leaderboard as a result. Being ALLOWED to see CS data (correct, for an admin) is
+ * not the same question as WORKING CS tickets (what the leaderboard means to show) — only a
+ * per-user override or role/profile default naming customer-service SPECIFICALLY should count, and
+ * that is exactly what survives once marker-admins are excluded first.
+ */
+export async function fetchCsEligibleRoster(ctx: TenantContext): Promise<DeskAgent[]> {
+  const [users, deskAgents] = await Promise.all([listActiveUsersCached(), fetchDeskAgentRoster()]);
+  const deskByEmail = new Map(
+    deskAgents.filter((a): a is DeskAgent & { email: string } => Boolean(a.email)).map((a) => [a.email, a]),
+  );
+  const effective = await mytrionAccessService.resolveBatch(
+    ctx.tenantId,
+    users.map((u) => ({
+      tenantId: ctx.tenantId,
+      zohoUserId: u.zohoUserId,
+      profileName: u.profile,
+      zohoRole: u.role,
+      userName: u.name,
+    })),
+  );
+
+  const out: DeskAgent[] = [];
+  for (const u of users) {
+    const access = effective.get(u.zohoUserId);
+    if (!access) continue;
+    const markerAdmin = resolveAllDepartmentAccess({ profile: u.profile, role: u.role, userName: u.name });
+    if (markerAdmin) continue;
+    const allowed = access.accessibleMytrions ?? [];
+    if (!(access.allDepartmentAccess || allowed.includes('customer-service'))) continue;
+    const email = u.email?.toLowerCase() ?? null;
+    const desk = email ? deskByEmail.get(email) : undefined;
+    // No Desk id ⇒ this person never has a Desk assignee_id to match, so the ticket board's join
+    // naturally omits them (they can still surface on the email-keyed calls board).
+    out.push({ id: desk?.id ?? '', name: u.name, email });
+  }
+  return out;
 }
 
 /** The caller's Desk agent id (email join), or null when no roster entry matches. */

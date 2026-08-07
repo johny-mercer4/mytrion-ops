@@ -13,8 +13,9 @@
  * /cs/analytics/maintenance.
  */
 import { z } from 'zod';
+import { fetchTruckingNumbers } from '../../../integrations/salesCrmActions.js';
 import type { Touchpoint } from '../types.js';
-import { idString, limit } from './common.js';
+import { carrierId, idString, limit } from './common.js';
 
 const CS_DEPARTMENTS = ['customer-service'] as const;
 
@@ -68,5 +69,23 @@ export const csDelugeTouchpoints: Touchpoint[] = [
     unwrap: 'status',
     // lastSyncTime '' = full load; a COQL timestamp = delta since then (widget parity).
     paramsSchema: z.object({ lastSyncTime: z.string().max(40).default('') }),
+  },
+  /**
+   * Card-order tracking (QA 2026-08-07) — same Deal-level lookup Sales uses
+   * (`carrier.trucking_number_request` in carrierDeluge.ts), but a SEPARATE key rather than adding
+   * `customer-service` to that entry's `departments`: that entry keeps `carrierParam`, which routes
+   * every non-admin caller through `assertCarrierOwned` — the Sales "own book" DWH-roster check.
+   * CS agents have no such book (they look up ANY carrier a client calls about), so widening the
+   * shared entry alone still 403'd every CS lookup with "not in your client list". Deliberately NO
+   * `carrierParam` here, matching the billing "portfolio role" pattern in serverCrmBilling.ts.
+   */
+  {
+    kind: 'local',
+    key: 'cs.carrier.trucking_number_request',
+    title: 'Tracking numbers (FedEx card shipments)',
+    riskClass: 'read',
+    departments: CS_DEPARTMENTS,
+    paramsSchema: z.object({ carrierId }),
+    handler: (_ctx, params) => fetchTruckingNumbers(String(params.carrierId)),
   },
 ];

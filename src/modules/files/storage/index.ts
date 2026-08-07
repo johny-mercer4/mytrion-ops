@@ -16,22 +16,42 @@
  */
 import { env } from '../../../config/env.js';
 import type { ObjectStorage } from './types.js';
-import { dropboxStorage } from './dropboxStorage.js';
+import { dropboxMaintenanceStorage, dropboxStorage } from './dropboxStorage.js';
 import { s3Storage } from './s3Storage.js';
 
 export type { ObjectStorage } from './types.js';
 
-/** Values persisted in `file_assets.storage_provider`. Adding one means adding a migration value too. */
-export type StorageProvider = 's3' | 'dropbox';
+/**
+ * Values persisted in a row's storage-provider column. Each TABLE only ever writes the values it
+ * actually has a folder for — `file_assets.storage_provider` is `CommsStorageProvider`,
+ * `maintenance_case_attachments.storage_provider` is `MaintenanceStorageProvider` — so a typo like
+ * handing Maintenance's provider to `fileRepo.create` is a compile error, not a 404 discovered later.
+ * `dropbox_maintenance` is a distinct value from `dropbox` even though both are Dropbox — the value is
+ * what tells `storageFor` which ROOT FOLDER to resolve, and comms/Maintenance must never share one.
+ * Adding a new value anywhere means adding a migration for it too.
+ */
+export type CommsStorageProvider = 's3' | 'dropbox';
+export type MaintenanceStorageProvider = 's3' | 'dropbox_maintenance';
+export type StorageProvider = CommsStorageProvider | MaintenanceStorageProvider;
 
 let override: ObjectStorage | null = null;
 
 const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   s3: s3Storage,
   dropbox: dropboxStorage,
+  dropbox_maintenance: dropboxMaintenanceStorage,
 };
 
-/** The default provider for the general file pipeline. */
+/**
+ * S3, always — for the callers that do NOT record a provider alongside their key.
+ *
+ * DO NOT make this honour `FILE_STORAGE_PROVIDER`. `maintenance_case_attachments` stores an `s3_key` with
+ * no `storage_provider` column and resolves both its writes and its reads through this function, so a
+ * global switch would send new attachments to Dropbox and simultaneously repoint every existing row's read
+ * at Dropbox — where those bytes are not. Reads would 404 and deletes would silently no-op.
+ *
+ * Callers that CAN follow the env are the ones whose row records the answer: see `fileStorageProvider()`.
+ */
 export function getStorage(): ObjectStorage {
   return override ?? s3Storage;
 }
@@ -49,8 +69,25 @@ export function storageFor(provider: string | null | undefined): ObjectStorage {
 }
 
 /** Where a NEW comms attachment goes. */
-export function commsStorageProvider(): StorageProvider {
+export function commsStorageProvider(): CommsStorageProvider {
   return env.COMMS_STORAGE_PROVIDER;
+}
+
+/** Where a NEW Maintenance attachment goes. */
+export function maintenanceStorageProvider(): MaintenanceStorageProvider {
+  return env.MAINTENANCE_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW general-pipeline file goes — uploads (import) and generated CSV/Excel/PDF (export).
+ *
+ * Only safe to read from env because `storeFile` persists the result on the `file_assets` row, so flipping
+ * this changes the destination of the NEXT file and nothing about the ones already stored. Narrowed to
+ * `CommsStorageProvider`, not the broader `StorageProvider` — this feeds `file_assets.storage_provider`,
+ * which (like comms) has no `dropbox_maintenance` folder to resolve.
+ */
+export function fileStorageProvider(): CommsStorageProvider {
+  return env.FILE_STORAGE_PROVIDER;
 }
 
 export function setStorageForTests(storage: ObjectStorage | null): void {

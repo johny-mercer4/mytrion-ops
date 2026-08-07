@@ -81,6 +81,13 @@ export interface CandidateFilters {
   beforeDate?: string | undefined;
   customerName?: string | undefined;
   limit?: number | undefined;
+  /** Which `payment_transactions.source` values are eligible candidates — derived server-side from
+   *  the return's own `source` (never client-supplied), so a Stripe dispute can only ever match a
+   *  Stripe charge and an MX return can only ever match an MX charge. Defaults to `['mx']`. */
+  sources?: string[] | undefined;
+  /** Window-mode lookback, in days before `beforeDate` (mode docstring below). MX returns land
+   *  within days of the charge (7 fits); Stripe card disputes can land weeks-to-months later. */
+  windowDays?: number | undefined;
 }
 
 /**
@@ -209,7 +216,9 @@ export const paymentTransactionRepo = {
    */
   async findReturnCandidates(f: CandidateFilters): Promise<CandidateResult> {
     const limit = Math.min(500, Math.max(1, f.limit ?? 50));
-    const isMx = eq(paymentTransactions.source, 'mx');
+    const sources = f.sources && f.sources.length ? f.sources : ['mx'];
+    const onRail = inArray(paymentTransactions.source, sources);
+    const windowDays = f.windowDays ?? 7;
     const page = (where: SQL | undefined): Promise<PaymentTransaction[]> =>
       db.select().from(paymentTransactions).where(where).orderBy(NEWEST_FIRST).limit(limit);
 
@@ -219,12 +228,12 @@ export const paymentTransactionRepo = {
     if (query.length >= 2) {
       const like = `%${query}%`;
       const hit = or(
-        ilike(paymentTransactions.externalTxnId, like), // MX Reference
+        ilike(paymentTransactions.externalTxnId, like), // MX Reference / Stripe payment-intent id
         ilike(paymentTransactions.sourceRecordId, like), // MX Payment ID (Zoho: Name)
         ilike(paymentTransactions.senderName, like),
         ilike(paymentTransactions.name, like),
       );
-      return { rows: await page(and(isMx, hit)), mode: 'text' };
+      return { rows: await page(and(onRail, hit)), mode: 'text' };
     }
 
     // ── SUGGEST: same amount OR same customer, on/before the return date. The reference already
@@ -242,7 +251,7 @@ export const paymentTransactionRepo = {
       if (nameCond) terms.push(nameCond);
     }
     if (terms.length) {
-      const conds: SQL[] = [isMx];
+      const conds: SQL[] = [onRail];
       const anyTerm = terms.length === 1 ? terms[0] : or(...terms);
       if (anyTerm) conds.push(anyTerm);
       if (endBound) conds.push(sql`${paymentTransactions.occurredAt} <= ${endBound}`);
@@ -250,12 +259,12 @@ export const paymentTransactionRepo = {
       if (rows.length) return { rows, mode: 'suggest' };
     }
 
-    // ── WINDOW: nothing suggested → the 7 days leading up to the return, so there is something to scan.
+    // ── WINDOW: nothing suggested → the days leading up to the return, so there is something to scan.
     if (endBound && f.beforeDate) {
       const rows = await page(
         and(
-          isMx,
-          sql`${paymentTransactions.occurredAt} >= ${dayStartBefore(f.beforeDate, 7)}`,
+          onRail,
+          sql`${paymentTransactions.occurredAt} >= ${dayStartBefore(f.beforeDate, windowDays)}`,
           sql`${paymentTransactions.occurredAt} <= ${endBound}`,
         ),
       );
@@ -276,6 +285,30 @@ export const paymentTransactionRepo = {
       .select()
       .from(paymentTransactions)
       .where(and(eq(paymentTransactions.source, source), eq(paymentTransactions.sourceRecordId, sourceRecordId)))
+      .limit(1);
+    return rows[0];
+  },
+
+  /**
+   * The original MX charge behind a return, by its MX-native reference — an exact key, not a
+   * search: ACH returns carry the customer trace number (`payment_transactions.external_txn_id`,
+   * `services/mxReturns.js`'s `fetchAchReturns`); card chargebacks carry the MX payment id
+   * (`source_record_id`, via `vtxPayment.externalId`, `fetchCardDisputes`). Checking both columns
+   * costs nothing extra — the two id formats don't collide — and covers both return types with one
+   * method rather than requiring the caller to know which rail produced which field.
+   */
+  async findByReturnReference(referenceNumber: string): Promise<PaymentTransaction | undefined> {
+    const ref = referenceNumber.trim();
+    if (!ref) return undefined;
+    const rows = await db
+      .select()
+      .from(paymentTransactions)
+      .where(
+        and(
+          eq(paymentTransactions.source, 'mx'),
+          or(eq(paymentTransactions.externalTxnId, ref), eq(paymentTransactions.sourceRecordId, ref)),
+        ),
+      )
       .limit(1);
     return rows[0];
   },
@@ -421,11 +454,13 @@ export const paymentTransactionRepo = {
   },
 
   /** Flag a payment as returned/charged-back (mapping is KEPT — widget parity). */
+  /** Conditional on `is_returned=false` — a second call (a race between two return-match attempts
+   *  on the same transaction) is a safe no-op instead of redundantly re-stamping `returned_at`. */
   async setReturned(id: number, at: Date): Promise<PaymentTransaction | undefined> {
     const rows = await db
       .update(paymentTransactions)
       .set({ isReturned: true, returnedAt: at, updatedAt: new Date() })
-      .where(eq(paymentTransactions.id, id))
+      .where(and(eq(paymentTransactions.id, id), eq(paymentTransactions.isReturned, false)))
       .returning();
     return rows[0];
   },

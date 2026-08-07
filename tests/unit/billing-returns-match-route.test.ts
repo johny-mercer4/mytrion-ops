@@ -12,7 +12,7 @@ import type { FastifyInstance } from 'fastify';
 const { returnRepo, txRepo, resolveReturnCmpReversalMock, reverseMappingMock, auditFromContextMock } = vi.hoisted(
   () => ({
     returnRepo: { getById: vi.fn(), linkMatch: vi.fn() },
-    txRepo: { getById: vi.fn(), applyMapping: vi.fn(), setReturned: vi.fn() },
+    txRepo: { getById: vi.fn(), applyMapping: vi.fn(), setReturned: vi.fn(), findReturnCandidates: vi.fn() },
     resolveReturnCmpReversalMock: vi.fn(),
     reverseMappingMock: vi.fn(),
     auditFromContextMock: vi.fn(async (_ctx: unknown, _fields: { action: string; [k: string]: unknown }) => undefined),
@@ -54,8 +54,8 @@ afterAll(async () => {
   await app.close();
 });
 
-const baseReturn = { id: 55, matched: false, matchedBy: null };
-const mxTx = { id: 900, source: 'mx', isReturned: false, isInvoiceMapped: false };
+const baseReturn = { id: 55, matched: false, matchedBy: null, source: 'mx-ach', amount: '250.00' };
+const mxTx = { id: 900, source: 'mx', isReturned: false, isInvoiceMapped: false, amount: '250.00' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -63,6 +63,7 @@ beforeEach(() => {
   txRepo.getById.mockResolvedValue(mxTx as never);
   returnRepo.linkMatch.mockResolvedValue({ id: 55 } as never);
   txRepo.setReturned.mockResolvedValue(undefined as never);
+  txRepo.findReturnCandidates.mockResolvedValue({ rows: [], mode: 'suggest' } as never);
 });
 
 function matchReturn(id: number, transactionRecordId: number, token: string) {
@@ -147,6 +148,47 @@ describe('already-mapped transaction — unchanged (regression pin)', () => {
     expect(resolveReturnCmpReversalMock).not.toHaveBeenCalled();
     expect(txRepo.applyMapping).not.toHaveBeenCalled(); // precedent: never re-stamps after a reversal
   });
+
+  it('passes allowCmpLookup:true for an MX transaction (the only rail that lookup is safe for)', async () => {
+    txRepo.getById.mockResolvedValue({ ...mxTx, isInvoiceMapped: true, carrierId: '5801437', mappingType: 'Invoice' } as never);
+    reverseMappingMock.mockResolvedValue({ ok: true, kind: 'invoice', reversed: [{ invoiceId: 'I', paymentId: 'P' }] });
+
+    await matchReturn(55, 900, await adminToken());
+
+    expect(reverseMappingMock).toHaveBeenCalledWith(expect.objectContaining({ allowCmpLookup: true }));
+  });
+
+  it('passes allowCmpLookup:false for a non-MX transaction (closes the CMP-guess-delete hole)', async () => {
+    // A stripe-dispute return matched to a stripe transaction — the rail-compatibility guard in
+    // returnsMatch.ts refuses an mx-ach-return/stripe-transaction pairing outright, so both sides
+    // must agree here to reach the CMP-write logic this test actually targets.
+    returnRepo.getById.mockResolvedValue({ ...baseReturn, source: 'stripe-dispute' } as never);
+    txRepo.getById.mockResolvedValue({
+      ...mxTx,
+      source: 'stripe',
+      isInvoiceMapped: true,
+      carrierId: '5801437',
+      mappingType: 'Invoice',
+    } as never);
+    reverseMappingMock.mockResolvedValue({ ok: true, kind: 'invoice', reversed: [{ invoiceId: 'I', paymentId: 'P' }] });
+
+    await matchReturn(55, 900, await adminToken());
+
+    expect(reverseMappingMock).toHaveBeenCalledWith(expect.objectContaining({ allowCmpLookup: false }));
+  });
+
+  it('a mismatched amount (partial dispute) skips reverseMapping entirely — no CMP call', async () => {
+    returnRepo.getById.mockResolvedValue({ ...baseReturn, amount: '500.00' } as never); // charge was 250.00
+    txRepo.getById.mockResolvedValue({ ...mxTx, isInvoiceMapped: true, carrierId: '5801437', mappingType: 'Invoice' } as never);
+
+    const res = await matchReturn(55, 900, await adminToken());
+
+    expect(res.json()).toMatchObject({ isReversed: false });
+    expect(res.json().matchNote).toContain('does not match transaction amount');
+    expect(reverseMappingMock).not.toHaveBeenCalled();
+    // Still links the return — only the CMP step is skipped.
+    expect(returnRepo.linkMatch).toHaveBeenCalledWith(55, expect.objectContaining({ isReversed: false }));
+  });
 });
 
 describe('guards unchanged', () => {
@@ -166,5 +208,45 @@ describe('guards unchanged', () => {
     const res = await matchReturn(55, 900, await adminToken());
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('GET /billing/returns/candidates — rail derived server-side from returnId', () => {
+  async function getCandidates(qs: string, token: string) {
+    return app.inject({ method: 'GET', url: `/v1/billing/returns/candidates?${qs}`, headers: auth(token) });
+  }
+
+  it('no returnId: defaults to MX (backwards-compatible)', async () => {
+    const res = await getCandidates('query=abc', await adminToken());
+
+    expect(res.statusCode).toBe(200);
+    expect(txRepo.findReturnCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ sources: ['mx'], windowDays: 7 }),
+    );
+  });
+
+  it('returnId pointing at a stripe-dispute return: scopes candidates to source=stripe with a wider window', async () => {
+    returnRepo.getById.mockResolvedValue({ id: 700, source: 'stripe-dispute' } as never);
+
+    const res = await getCandidates('returnId=700&query=abc', await adminToken());
+
+    expect(res.statusCode).toBe(200);
+    expect(txRepo.findReturnCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ sources: ['stripe'], windowDays: 180 }),
+    );
+    // The client can never smuggle a rail in directly — only returnId is accepted, and the server
+    // looks the return up itself rather than trusting a client-supplied source.
+    const calledWith = txRepo.findReturnCandidates.mock.calls[0]?.[0];
+    expect(calledWith).not.toHaveProperty('returnId');
+  });
+
+  it('returnId pointing at an mx-ach return: MX rail, standard 7-day window', async () => {
+    returnRepo.getById.mockResolvedValue({ id: 701, source: 'mx-ach' } as never);
+
+    await getCandidates('returnId=701', await adminToken());
+
+    expect(txRepo.findReturnCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ sources: ['mx'], windowDays: 7 }),
+    );
   });
 });

@@ -89,7 +89,9 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Zip_Code', label: 'Zip Code', type: 'readonly', get: () => null },
   { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },
   { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: () => null },
-  { field: 'Tracking_Number', label: 'Tracking Number', type: 'readonly', get: () => null },
+  // Bulk-fetched on the Clients-tab table (see Applications.tsx) — already on the row by the time
+  // this modal opens, so no extra lookup here.
+  { field: 'Tracking_Number', label: 'Tracking Number', type: 'readonly', get: (a) => a.trackingNumber ?? null },
   { field: 'Verification_Notes', label: 'Verification Notes', type: 'readonly', get: () => null },
   { field: 'Cards_Ordered', label: 'Cards Ordered', type: 'readonly', get: () => null },
   { field: 'Modified_By', label: 'Modified By', type: 'readonly', get: () => null },

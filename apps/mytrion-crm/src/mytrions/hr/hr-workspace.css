@@ -563,141 +563,188 @@
   opacity: 1;
 }
 
-/* ── Org nodes ─────────────────────────────────────────────────────────────── */
+/* ── Org nodes ─────────────────────────────────────────────────────────────────
+   PORTRAIT CARDS. The face sits half-outside the top of the card, centred, with the name and one
+   supporting line beneath it — the shape a family/org tree is normally drawn in, and far easier to scan
+   down a rank than the old left-aligned row.
+
+   The overhang lives INSIDE the node box: `.hr-onode` is the transparent rectangle dagre laid out, the
+   visible card is inset 17px from its top, and the face fills that gap. Letting the avatar escape the
+   box instead would have hidden it from the layout engine and collided with the rank above.
+
+   Geometry here is load-bearing — DEPT_W/H and EMP_W/H in orgGraph.ts are derived from these numbers and
+   a test asserts the two agree. */
 .hr-root .hr-onode {
   --dc: var(--accent);
+  --hr-face: 34px;
+  position: relative;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--hr-r-md);
-  border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane-lift);
-  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   color: var(--text-primary);
   cursor: grab;
-  transition:
-    border-color var(--hz-dur-tone) var(--hz-ease),
-    box-shadow var(--hz-dur-tone) var(--hz-ease),
-    transform var(--hz-dur-lift) var(--hz-ease);
 }
 .hr-root .hr-onode.is-dept {
-  width: 248px;
-  height: 96px;
-  background:
-    linear-gradient(152deg, color-mix(in srgb, var(--dc) 12%, transparent), transparent 62%),
-    var(--hz-pane-lift);
+  width: 188px;
+  height: 78px;
 }
-/* Height MUST match EMP_H in orgGraph.ts — dagre lays out against that constant and the canvas measures
-   drop targets with it. 76px was shorter than the node's own content, so the chevron on anyone with
-   direct reports hung outside the card. */
 .hr-root .hr-onode.is-emp {
-  width: 216px;
-  height: 88px;
+  width: 168px;
+  height: 78px;
 }
-.hr-root .hr-onode:hover {
-  border-color: color-mix(in srgb, var(--dc) 50%, var(--hz-pane-bd));
-  box-shadow:
-    0 14px 34px -14px color-mix(in srgb, var(--dc) 34%, transparent),
-    var(--hz-glass-inset);
-  transform: var(--hz-hover-lift-sm);
-}
-/* A drop target has to be unmistakable mid-drag, so the selected/hover ring is a full outline rather
-   than a border tint — a 1px colour change is invisible while the pointer is moving. */
-.hr-root .hr-onode.is-selected,
-.hr-root .react-flow__node.dragging .hr-onode {
-  border-color: var(--dc);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dc) 45%, transparent), var(--hz-shadow-rest);
-}
-.hr-root .hr-onode.is-terminated {
-  border-left: 3px solid var(--danger);
-}
-.hr-root .hr-onode.is-terminated .hr-avatar {
-  filter: grayscale(1);
-  opacity: 0.7;
-}
-.hr-root .hr-onode-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-.hr-root .hr-onode-glyph {
+
+/* The face. Half of it overlaps the card; the ring is what keeps a dark photo from bleeding into the
+   card edge behind it. */
+.hr-root .hr-onode-face {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--dc) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--dc) 30%, transparent);
+  width: var(--hr-face);
+  height: var(--hr-face);
+  border-radius: 50%;
+  background: var(--hz-pane-lift);
+  border: 2px solid color-mix(in srgb, var(--dc) 45%, var(--hz-pane-bd));
   color: var(--dc);
+  overflow: hidden;
 }
-.hr-root .hr-onode-main {
+/* The shared avatar is a rounded square sized for a card grid; in a node it is the round face. */
+.hr-root .hr-onode-face .hr-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  font-size: 11px;
+}
+
+.hr-root .hr-onode-card {
+  position: absolute;
+  inset: calc(var(--hr-face) / 2) 0 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
-  min-width: 0;
-  flex: 1;
+  /* Top padding clears the lower half of the face; the rest is the two text lines. */
+  padding: 20px 9px 9px;
+  box-sizing: border-box;
+  border-radius: var(--hr-r-md);
+  border: 1px solid color-mix(in srgb, var(--dc) 26%, var(--hz-pane-bd));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--dc) 14%, transparent), transparent 70%),
+    var(--hz-pane-lift);
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease);
 }
+
+/* "No Department" is a bucket, not an org unit — a dashed edge and no tint say so at a glance. */
+.hr-root .hr-onode.is-dept.is-unassigned .hr-onode-card {
+  border-style: dashed;
+  background: var(--hz-pane);
+}
+.hr-root .hr-onode.is-dept.is-unassigned .hr-onode-label {
+  color: var(--text-secondary);
+}
+
+.hr-root .hr-onode:hover .hr-onode-card {
+  border-color: color-mix(in srgb, var(--dc) 55%, var(--hz-pane-bd));
+  box-shadow:
+    0 12px 28px -14px color-mix(in srgb, var(--dc) 38%, transparent),
+    var(--hz-glass-inset);
+}
+/* A drop target has to be unmistakable mid-drag, so this is a full ring rather than a border tint —
+   a 1px colour change is invisible while the pointer is moving. */
+.hr-root .hr-onode.is-selected .hr-onode-card,
+.hr-root .react-flow__node.dragging .hr-onode .hr-onode-card {
+  border-color: var(--dc);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--dc) 26%, transparent),
+    var(--hz-glass-inset);
+}
+.hr-root .hr-onode.is-terminated .hr-onode-card {
+  opacity: 0.6;
+}
+
+/* Both lines are single-line and ellipsised: the box is a fixed size dagre has already committed to,
+   so wrapped text would overflow a layout that cannot be recomputed. Full values are on the record. */
 .hr-root .hr-onode-label {
+  max-width: 100%;
   font-family: var(--font-head);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: -0.008em;
-  line-height: 1.25;
-  /* One line with an ellipsis: node height is fixed so dagre's layout stays stable, which means text
-     cannot be allowed to wrap and overflow the box. The full name is on the record. */
+  line-height: 1.28;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .hr-root .hr-onode-sub {
-  display: flex;
-  gap: 7px;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.3;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hr-root .hr-onode-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: auto;
-}
-.hr-root .hr-onode-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.hr-root .hr-onode-count svg {
+.hr-root .hr-onode-sub svg {
+  flex: none;
   color: var(--dc);
 }
-.hr-root .hr-onode-count strong {
-  color: var(--text-primary);
+.hr-root .hr-onode-sub strong {
+  color: var(--text-secondary);
+}
+.hr-root .hr-onode-lead {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .hr-root .hr-onode-dim {
   opacity: 0.7;
 }
+
+/* Open / add. Pinned to the card's top-right so they never fight the centred text, and only visible on
+   hover or keyboard focus — 200 nodes each showing two buttons is noise, not affordance. */
+.hr-root .hr-onode-tools {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+.hr-root .hr-onode:hover .hr-onode-tools,
+.hr-root .hr-onode-tools:focus-within {
+  opacity: 1;
+}
+
+/* The expand control straddles the bottom edge, ON the connector — where the eye already is when it
+   asks whether the branch continues. Keeping it out of the card is what buys the height the face costs. */
 .hr-root .hr-onode-chev {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px 2px 4px;
+  gap: 1px;
+  padding: 1px 4px 1px 6px;
   border-radius: var(--hr-r-pill);
-  border: 1px solid var(--hz-pane-bd);
+  border: 1px solid color-mix(in srgb, var(--dc) 34%, var(--hz-pane-bd));
   background: var(--hz-pane-alt);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 10.5px;
+  font-size: 9.5px;
+  line-height: 1.5;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -708,9 +755,10 @@
 }
 .hr-root .hr-onode-chev:hover {
   color: var(--dc);
-  border-color: color-mix(in srgb, var(--dc) 42%, transparent);
-  background: color-mix(in srgb, var(--dc) 12%, transparent);
+  border-color: color-mix(in srgb, var(--dc) 55%, transparent);
+  background: color-mix(in srgb, var(--dc) 14%, transparent);
 }
+
 .hr-root .hr-onode-add {
   display: inline-flex;
   align-items: center;

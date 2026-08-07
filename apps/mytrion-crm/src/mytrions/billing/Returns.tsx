@@ -51,6 +51,7 @@ const TYPE_FILTERS: { value: string; label: string }[] = [
   { value: 'ACH', label: 'ACH' },
   { value: 'Wire', label: 'Wire' },
   { value: 'Card-Chargeback', label: 'Chargeback' },
+  { value: 'Stripe-Dispute', label: 'Stripe Dispute' },
 ];
 
 const CMP_FILTERS: { value: CmpFilter; label: string; hint: string }[] = [

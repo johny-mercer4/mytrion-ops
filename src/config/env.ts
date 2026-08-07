@@ -492,12 +492,23 @@ const EnvSchema = z.object({
   // Hard cap for uploads AND generated artifacts.
   FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
 
-  // --- Dropbox: the storage for comms chat attachments ---
+  // --- Dropbox: storage for comms chat attachments and the general file pipeline ---
   //
   // Which provider a NEW comms attachment lands on. Per-provider rather than global because every
   // existing file_assets row is on S3 and must keep resolving there — the row records its own provider, so
   // flipping this only changes where the next upload goes.
   COMMS_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
+  // Where a NEW file in the GENERAL pipeline lands: `POST /v1/files/upload` (import) and every generated
+  // artifact (file.generate_csv / _excel / _pdf export). Separate from COMMS_STORAGE_PROVIDER so chat
+  // attachments and business documents can live in different stores — a customer's chat file and an
+  // internal revenue export are not the same retention problem.
+  //
+  // Safe to flip at any time: `storeFile` records the resolved provider on the `file_assets` row and every
+  // read/delete goes back through `storageFor(row.storageProvider)`, so files already written stay
+  // readable wherever they are. It does NOT retroactively move anything.
+  //
+  // This deliberately does NOT govern `getStorage()` — see the note in modules/files/storage/index.ts.
+  FILE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox']).default('s3'),
   // Refresh-token grant. Dropbox access tokens last ~4h, so the refresh token is the durable credential;
   // there is no place to persist a rotated one, which is why rotation must stay off on the Dropbox app.
   DROPBOX_APP_KEY: z.string().default(''),
@@ -506,6 +517,12 @@ const EnvSchema = z.object({
   // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
   // serve every tenant without their files interleaving.
   DROPBOX_ROOT_PATH: z.string().default('/comms'),
+  // Which provider a NEW Maintenance attachment lands on. Separate from COMMS_STORAGE_PROVIDER because
+  // Maintenance attachments are a distinct table (maintenance_case_attachments), not file_assets.
+  MAINTENANCE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_maintenance']).default('s3'),
+  // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
+  // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
+  DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.

@@ -150,10 +150,16 @@ export function Transactions() {
   }, [page1]);
 
   // A mapping change (optimistic/remote patch) shifts the global mapped/unmapped split → refresh
-  // the whole-dataset stats so the summary tiles stay accurate. Cheap aggregate; low frequency.
+  // the whole-dataset stats so the summary tiles stay accurate. useLoad's reload() has no
+  // cancellation/de-dup — each call fires an independent, never-aborted request — so mapping
+  // several transactions in a row (or several remote peers mapping at once) used to pile up that
+  // many concurrent stats queries, each holding a DB connection for its duration and starving the
+  // actual mapping writes on the same (10-connection) pool. Debounce so a burst of patches
+  // collapses into a single reload once mapping activity settles.
   const statsReload = statsLoad.reload;
   useEffect(() => {
-    statsReload();
+    const t = setTimeout(statsReload, 500);
+    return () => clearTimeout(t);
   }, [patches, statsReload]);
 
   useEffect(() => {
@@ -359,7 +365,7 @@ export function Transactions() {
       if (openId === id) {
         const who = e.mappedBy || 'another user';
         if (e.action === 'returned') {
-          notify('error', 'This transaction was returned / charged back (payment reversed in CMP)');
+          notify('error', 'This transaction was returned / charged back (CMP reconciled where applicable)');
         } else if (e.action === 'unmap') {
           notify('success', `Updated — ${who} just unmapped this transaction`);
         } else {
@@ -617,7 +623,7 @@ export function Transactions() {
                             {tx.isReturned ? (
                               <span
                                 className="bm-badge"
-                                title="This payment was returned / charged back — the money was reversed in CMP. The mapping is kept for reference."
+                                title="This payment was returned / charged back — CMP was reconciled where applicable. The mapping is kept for reference."
                                 style={{ fontSize: '0.55rem', padding: '0.1rem 0.45rem', marginLeft: '0.25rem', fontWeight: 800, background: 'var(--danger-bg)', color: 'var(--danger-text)', border: '1px solid var(--danger-border)' }}
                               >
                                 RETURNED

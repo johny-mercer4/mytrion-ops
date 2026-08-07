@@ -378,72 +378,133 @@
   align-items: start;
   min-height: 360px;
 }
+/*
+ * The roster is a LIST, not a stack of cards.
+ *
+ * It was 145 bordered panels, each four lines tall — name, role, shift, a status pill — so a directory
+ * you scan to find one person became a page of chrome you scroll through. A card earns its border when
+ * elevation means something; here every row is a peer of every other row, and the border was just
+ * repeated 145 times.
+ *
+ * Now: hairline-separated rows, one hit target each, two lines of text, colour carrying the state.
+ */
 .hr-root .hr-att-roster {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   max-height: min(70vh, 720px);
   overflow: auto;
-  padding-right: 2px;
-}
-.hr-root .hr-att-person {
-  width: 100%;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  overscroll-behavior: contain;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  background: var(--hz-pane, var(--surface));
+  border-radius: 14px;
+  /*
+   * Flat surface, NOT the `--hz-pane` gradient the panels elsewhere use. That token is a 150deg
+   * linear-gradient, which is right for a card you see all of at once and wrong for a scroller holding
+   * 145 rows: the gradient spans the whole scroll height, so the same row is tinted differently
+   * depending on where it has been scrolled to, and identical rows stop looking identical.
+   */
+  background: var(--surface);
+}
+/* One rule, one hairline: the container owns the outer edge, the rows own the dividers. */
+.hr-root .hr-att-roster > li + li {
+  border-top: 1px solid color-mix(in srgb, var(--hz-pane-bd, var(--border)) 60%, transparent);
+}
+
+.hr-root .hr-att-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
   color: inherit;
-  cursor: pointer;
   font: inherit;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast, 140ms) var(--ease-standard, ease),
+    box-shadow var(--dur-fast, 140ms) var(--ease-standard, ease);
 }
-.hr-root .hr-att-person:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd, var(--border)));
+.hr-root .hr-att-row:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
-.hr-root .hr-att-person.is-on {
-  border-color: var(--accent);
+.hr-root .hr-att-row:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+/* The selected row is the anchor for the whole detail panel, so it reads louder than hover. */
+.hr-root .hr-att-row.is-on {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
   box-shadow: inset 3px 0 0 var(--accent);
 }
-.hr-root .hr-att-person-name {
-  font-size: 13.5px;
-  font-weight: 700;
+
+.hr-root .hr-att-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
 }
-.hr-root .hr-att-person-meta {
-  font-size: 11.5px;
+.hr-root .hr-att-row-dot[data-state='in_office'] {
+  background: var(--tone-emerald, var(--success));
+  /* A quiet halo so "who is here right now" survives a fast scroll. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone-emerald, var(--success)) 18%, transparent);
+}
+.hr-root .hr-att-row-dot[data-state='needs_review'] {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.hr-root .hr-att-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+/* Truncate, never wrap: a uniform row height is what makes a long list scannable. */
+.hr-root .hr-att-row-name,
+.hr-root .hr-att-row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-root .hr-att-row-name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.hr-root .hr-att-row-meta {
+  font-size: 11px;
   color: var(--text-muted);
 }
-.hr-root .hr-att-person-stats {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.hr-root .hr-att-person-stats em {
+.hr-root .hr-att-row-flag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 9.5px;
   font-style: normal;
-  font-weight: 750;
-  color: var(--text-primary);
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-.hr-root .hr-att-person-presence {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
-  color: var(--text-muted);
-  font-size: 10.5px;
   font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
-.hr-root .hr-att-person-presence[data-state='in_office'] {
-  background: color-mix(in srgb, var(--tone-emerald, var(--success)) 13%, transparent);
+
+.hr-root .hr-att-row-state {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.hr-root .hr-att-row-state[data-state='in_office'] {
   color: var(--tone-emerald, var(--success));
 }
+.hr-root .hr-att-row-state[data-state='needs_review'] {
+  color: var(--warning);
+}
+
 .hr-root .hr-att-detail-placeholder {
   display: flex;
   flex-direction: column;

@@ -124,6 +124,14 @@ function automationGuide(): PlatformCatalogDocument {
 
 Open Sales Mytrion → Automations. Search by automation title, service code such as C-1 or C-16, or a keyword, then click the matching block. There are 23 runnable blocks in the current catalog; each has its own governed knowledge document.
 
+## Finding a block
+- The search box matches the block title, its description text and its service codes, case-insensitively. Searching \`fraud\`, \`C-16\` or \`override\` all reach Override the Card.
+- With no search term the catalog is grouped into labelled sections: Customer Service (C codes) and Billing (Q codes). Verification and Management sections exist in the layout but hold no live block today, and an empty section is hidden rather than shown empty.
+- Customer Service holds Transactions Report, Card Status Report, Tracking Number Request, Card Last Used Check, Card Activation, Card Deactivation, Increase / Decrease Limits, Unit / Driver Change, Fraud Hold / Release, Override the Card, Card Replacement, Account Reactivation, Money Code, BOCA Link Request, Close Application, Application Update — WEX Tasks, WEX Applications and EFS Login.
+- Billing holds Request Invoices, Check Payment Information, Billing Forms, Balance Check and Account Status Check.
+- Each card shows its service-code chips and a one-line description. Blocks can be dragged into a preferred order, which is saved per agent on that device only and does not change anyone else's catalog. Order is a personal preference, so describe a block by its section and codes rather than by position.
+- When a search matches nothing the catalog says “No actions match your search” and suggests a code like C-16 or a keyword like fraud.
+
 ## Shared behavior
 - Deals/clients load only when the selected automation needs them. Most account actions start with a client selection.
 - Card actions then load the client's live cards. Fraud Hold / Release and Override show fraud-held cards only.

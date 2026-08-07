@@ -20,7 +20,7 @@ import { searchCompanies } from '../../integrations/dwhCompanies.js';
 import { AppError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { maxFileBytes } from '../../modules/files/fileService.js';
-import { getStorage } from '../../modules/files/storage/index.js';
+import { maintenanceStorageProvider, storageFor } from '../../modules/files/storage/index.js';
 import {
   diffMaintenanceCase,
   MAINTENANCE_EDITABLE,
@@ -52,12 +52,25 @@ const attachmentIdParam = idParam.extend({
 });
 
 /**
- * R2/S3 isn't gated by a feature flag for Maintenance attachments (unlike the generic
+ * Storage isn't gated by a feature flag for Maintenance attachments (unlike the generic
  * FF_FILES_ENABLED file system) — so an unconfigured environment must fail with a clear message
- * here rather than an opaque 500 from deep inside the AWS SDK (`AuthorizationHeaderMalformed`,
- * which reveals nothing about WHY to whoever is looking at the browser network tab).
+ * here rather than an opaque 500 from deep inside the AWS SDK or Dropbox client (which reveals
+ * nothing about WHY to whoever is looking at the browser network tab).
+ *
+ * Checks the provider a NEW upload would use, not every provider ever seen — a Dropbox-configured
+ * env still has S3 creds from before the switch, and a stale S3 credential must not block uploads
+ * once Dropbox is the live path.
  */
 function requireStorageConfigured(): void {
+  if (maintenanceStorageProvider() === 'dropbox_maintenance') {
+    if (!env.DROPBOX_APP_KEY || !env.DROPBOX_APP_SECRET || !env.DROPBOX_REFRESH_TOKEN) {
+      throw new AppError(
+        'File storage is not configured in this environment (DROPBOX_APP_KEY/DROPBOX_APP_SECRET/DROPBOX_REFRESH_TOKEN) — attachments are unavailable here.',
+        { statusCode: 503, code: 'STORAGE_NOT_CONFIGURED', expose: true },
+      );
+    }
+    return;
+  }
   if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY || !env.S3_BUCKET) {
     throw new AppError(
       'File storage is not configured in this environment (S3_ENDPOINT/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY/S3_BUCKET) — attachments are unavailable here.',
@@ -375,13 +388,17 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     const fileName = sanitizeFileName(part.filename || 'attachment');
     const mime = part.mimetype || 'application/octet-stream';
     const s3Key = `maintenance/${id}/${createId()}-${fileName}`;
-    await getStorage().put(s3Key, buffer, { contentType: mime });
+    // Decided ONCE per file and then recorded, so every later read/delete resolves the same store
+    // regardless of what the env says by then — see file_assets.storage_provider for the same rule.
+    const provider = maintenanceStorageProvider();
+    await storageFor(provider).put(s3Key, buffer, { contentType: mime });
     const row = await maintenanceAttachmentRepo.insert({
       caseId: id,
       fileName,
       mime,
       sizeBytes: buffer.length,
       s3Key,
+      storageProvider: provider,
       uploadedByUserId: ctx.userId,
       ...(ctx.userName !== undefined ? { uploadedByName: ctx.userName } : {}),
     });
@@ -409,7 +426,7 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     if (!attachment || attachment.caseId !== id) {
       throw new AppError('Attachment not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
     }
-    const { url, expiresAt } = await getStorage().presignGet(attachment.s3Key, {
+    const { url, expiresAt } = await storageFor(attachment.storageProvider).presignGet(attachment.s3Key, {
       filename: attachment.fileName,
     });
     return { id: attachment.id, name: attachment.fileName, url, expiresAt };
@@ -426,7 +443,7 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     await maintenanceAttachmentRepo.delete(attId);
     // Best-effort: the metadata row is the source of truth for the UI, so it's gone either way. A
     // failed blob delete here just leaves an orphaned object in storage, not a broken reference.
-    await getStorage()
+    await storageFor(attachment.storageProvider)
       .delete(attachment.s3Key)
       .catch(() => undefined);
     await auditFromContext(ctx, {

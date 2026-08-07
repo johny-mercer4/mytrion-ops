@@ -106,6 +106,28 @@
   color: var(--text-muted);
 }
 
+/* The avatar is now a menu trigger. The button contributes no chrome of its own — the chip below is
+   the whole visual — so it only carries the focus ring and the press feedback. */
+.avatarBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.avatarBtn:hover .avatar {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.avatarBtn:active {
+  transform: translateY(1px);
+}
+.avatarBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
 .avatar {
   display: inline-flex;
   align-items: center;

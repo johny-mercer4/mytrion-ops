@@ -6,7 +6,6 @@ import type { FastifyInstance, FastifyRequest, RouteShorthandOptions } from 'fas
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { AppError, AuthError, NotFoundError, RBACError, ValidationError } from '../../lib/errors.js';
-import { isTransientDbError } from '../../modules/jobs/bossErrors.js';
 import { safeEqual } from '../../lib/crypto.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { systemContext } from '../../modules/auth/authService.js';
@@ -23,6 +22,11 @@ import {
   uzbDateString,
   weekRangeContaining,
 } from '../../modules/hr/attendance/uzbTime.js';
+import {
+  MAX_SYNC_DAYS,
+  syncAttendanceFromDwh,
+} from '../../modules/hr/attendance/syncFromDwh.js';
+import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../repos/hrAttendanceShiftRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -64,6 +68,13 @@ async function resolveSelfEmployeeId(
     throw new NotFoundError('No employee record linked to this sign-in');
   }
   return row.id;
+}
+
+/** Inclusive day count between two `YYYY-MM-DD` strings — both ends counted. */
+function daysInclusive(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000) + 1;
 }
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -178,6 +189,39 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Refresh punches for a window from the DWH. The Attendance page calls this before it reads.
+   *
+   * A POST because it writes, but it is not a command the user composes — it takes only the window
+   * already being viewed, and re-running it changes nothing (the dedup index decides what is new). Any
+   * HR reader may trigger it for that reason: it grants no data the same person cannot already read
+   * through `/hr/attendance/*`, it just makes that data current.
+   *
+   * Failures here are deliberately NOT fatal to the page — see the frontend. Stale attendance is worth
+   * showing; a blank screen because an analytics database was busy is not.
+   */
+  app.post('/hr/attendance/sync', auth, async (request) => {
+    const ctx = requireHrInternal(request);
+    const body = z
+      .object({
+        from: dateStr.optional(),
+        to: dateStr.optional(),
+        weekOf: dateStr.optional(),
+        // The server holds a completed sync for a minute so page views are cheap. An explicit Refresh
+        // is the user saying they do not believe what is on screen, so it must bypass that.
+        force: z.boolean().optional(),
+      })
+      .parse(request.body ?? {});
+    const range = weekRangeContaining(body.weekOf ?? uzbDateString(new Date()));
+    const from = body.from ?? range.from;
+    const to = body.to ?? range.to;
+    if (from > to) throw new ValidationError('from must be on or before to');
+    if (daysInclusive(from, to) > MAX_SYNC_DAYS) {
+      throw new ValidationError(`Sync window may not exceed ${MAX_SYNC_DAYS} days`);
+    }
+    return syncAttendanceFromDwh(ctx, from, to, { force: body.force ?? false });
+  });
+
+  /**
    * Team attendance directory.
    * Managers: Direct = reportees; All = reportees ∪ department members they lead.
    * HR Manager / Admin: Direct = their reportees; All = every Active employee.
@@ -191,6 +235,12 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
         weekOf: dateStr.optional(),
         scope: z.enum(['direct', 'all']).default('direct'),
         q: z.string().max(120).optional(),
+        /**
+         * Opt OUT of the per-person week tally. Default stays on so an existing caller keeps the
+         * shape it was written against; the roster passes `0` because it renders a directory and
+         * fetches the week for the one person the user opens.
+         */
+        totals: z.enum(['0', '1']).optional(),
       })
       .parse(request.query);
     let from = q.from;
@@ -203,20 +253,11 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     }
     if (from > to) throw new ValidationError('from must be on or before to');
     const selfId = await resolveSelfEmployeeId(ctx, true);
-    try {
-      return await buildAttendanceTeamList(ctx, selfId, from, to, q.scope, q.q ?? '');
-    } catch (err) {
-      // Render Postgres flaps show up as opaque 500s in the Attendance UI — surface a retryable 503.
-      if (isTransientDbError(err)) {
-        throw new AppError('Attendance directory temporarily unavailable — retry in a moment', {
-          statusCode: 503,
-          code: 'DB_UNAVAILABLE',
-          expose: true,
-          cause: err,
-        });
-      }
-      throw err;
-    }
+    // Transient database failures become a retryable 503 in the error handler, for every route rather
+    // than only this one — see plugins/errorHandler.ts.
+    return buildAttendanceTeamList(ctx, selfId, from, to, q.scope, q.q ?? '', {
+      withTotals: q.totals !== '0',
+    });
   });
 
   app.get('/hr/attendance/export', auth, async (request) => {
@@ -333,6 +374,16 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
           effectiveFrom: body.effectiveFrom,
           ...(body.effectiveTo !== undefined ? { effectiveTo: body.effectiveTo } : {}),
         });
+        /**
+         * The shift decides which DAY an overnight punch belongs to, so assigning one retroactively
+         * changes the answer for punches already stored. Without this, a night worker's existing week
+         * keeps its calendar-date bucketing: every worked night shows a missing checkout and 0 hours,
+         * and every following morning counts as an absence.
+         *
+         * The SAME rebucket the link paths run — deliberately not a second implementation of the
+         * overnight rule, which is the one thing that must not have two versions.
+         */
+        await hrAttendancePunchRepo.rebucketWorkDates(ctx, emp.id);
         assigned.push(emp.id);
       }
       await auditFromContext(ctx, {

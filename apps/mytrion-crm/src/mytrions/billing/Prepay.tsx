@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchPrepayCompanies, fetchPrepayExternals, fetchPrepayLedger, fetchPrepayRmve } from '@/api/billing';
 import type { BillingPrepayCompanies, BillingPrepayLedger } from '@/api/touchpointTypes';
+import { chunkErrorMessage, isChunkLoadError } from '@/lib/chunkError';
 import { useLoad } from '../_shared/useLoad';
 import { fmtCurrency } from './data';
 
@@ -980,7 +981,14 @@ function PrepayLedgerModal({
       .catch((e: unknown) => {
         // eslint-disable-next-line no-console
         console.error('Prepay Excel export failed:', e);
-        alert('Excel export failed: ' + (e instanceof Error ? e.message : String(e)));
+        // Same on-demand exceljs chunk as Debtors.tsx — a stale tab across a deploy 404s on click.
+        if (isChunkLoadError(e)) {
+          if (window.confirm(chunkErrorMessage(e, 'Excel export') + '\n\nReload now?')) {
+            window.location.reload();
+            return;
+          }
+        }
+        alert(chunkErrorMessage(e, 'Excel export'));
       })
       .finally(() => setExporting(false));
   }

@@ -122,6 +122,13 @@ export const maintenanceCases = pgTable(
     zohoUk: uniqueIndex('maintenance_cases_zoho_uk')
       .on(table.zohoRecordId)
       .where(sql`${table.zohoRecordId} IS NOT NULL`),
+    /** PARTIAL for the same reason as zohoUk: legacy Zoho rows (and, in principle, a future manual
+     *  entry) can leave this blank. Reference numbers were never actually unique-checked before —
+     *  the generator's uniqueness was "accidental" via a Postgres sequence's atomicity — this closes
+     *  that gap now that generation moves to a random draw with an application-level retry. */
+    referenceNumberUk: uniqueIndex('maintenance_cases_reference_number_uk')
+      .on(table.referenceNumber)
+      .where(sql`${table.referenceNumber} IS NOT NULL`),
     /** Ascending order + the `case_date` RANGE predicates (analytics windows, prepay day buckets).
      *  Closed with `id` so the sort is total — an offset page cannot skip or duplicate a row when
      *  many cases share a date. */

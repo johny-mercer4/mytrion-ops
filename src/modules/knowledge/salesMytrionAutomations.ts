@@ -1,9 +1,21 @@
 import { platformDocument, type PlatformCatalogDocument } from './platformDocument.js';
 
+/** Catalog section codes mirrored from the frontend AUTO_CATEGORIES (C/Q are the only live ones). */
+export type SalesAutomationDept = 'C' | 'Q' | 'V' | 'M';
+
+export const SALES_AUTOMATION_SECTIONS: Readonly<Record<SalesAutomationDept, string>> = {
+  C: 'Customer Service',
+  Q: 'Billing',
+  V: 'Verification',
+  M: 'Management',
+};
+
 export interface SalesAutomationKnowledge {
   id: string;
   title: string;
   codes: readonly string[];
+  /** Catalog section the block sits in. Kept in parity with the frontend `dept` by test. */
+  dept: SalesAutomationDept;
   purpose: string;
   prerequisites: readonly string[];
   steps: readonly string[];
@@ -20,6 +32,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'invoices',
     title: 'Request Invoices',
     codes: ['C-20', 'Q-1'],
+    dept: 'Q',
     purpose: 'Fetch carrier invoices for a date range and download them from WorkDrive.',
     prerequisites: ['A client', 'A preset or custom date range', 'Optional PAID or PENDING status'],
     steps: [
@@ -34,6 +47,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'transactions',
     title: 'Transactions Report',
     codes: ['C-15'],
+    dept: 'C',
     purpose: 'Build a carrier fuel-transaction report for a preset or custom window.',
     prerequisites: ['A client', 'A preset or complete custom date range'],
     steps: [
@@ -48,6 +62,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'view-manage-cards',
     title: 'Card Status Report',
     codes: ['C-30'],
+    dept: 'C',
     purpose: 'View the live EFS card roster for a carrier.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Get Report.'],
@@ -57,6 +72,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'payments',
     title: 'Check Payment Information',
     codes: ['C-18', 'Q-2'],
+    dept: 'Q',
     purpose: 'View recent carrier invoices and payments.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Check Payments.'],
@@ -71,6 +87,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'billing-form',
     title: 'Billing Forms',
     codes: ['Q-9'],
+    dept: 'Q',
     purpose: 'View submitted billing forms and verification notes for a deal.',
     prerequisites: ['A client/deal'],
     steps: ['Select the client/deal.', 'Click Fetch Billing Form.'],
@@ -80,6 +97,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'balance',
     title: 'Balance Check',
     codes: ['C-8', 'Q-8'],
+    dept: 'Q',
     purpose: 'Check a carrier’s current available balance and credit line.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Check Balance.'],
@@ -89,6 +107,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'account-status',
     title: 'Account Status Check',
     codes: ['Q-7', 'C-28'],
+    dept: 'Q',
     purpose: 'Check EFS balance, outstanding debt and card counts together.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Check Status.'],
@@ -98,6 +117,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'tracking',
     title: 'Tracking Number Request',
     codes: ['C-22'],
+    dept: 'C',
     purpose: 'Find card-order tracking numbers and shipment status.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Get Tracking.'],
@@ -107,6 +127,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'card-last-used',
     title: 'Card Last Used Check',
     codes: ['C-24'],
+    dept: 'C',
     purpose: 'See when each card on a carrier account was last used.',
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Check Last Used.'],
@@ -118,6 +139,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'card-activation',
     title: 'Card Activation',
     codes: ['C-1'],
+    dept: 'C',
     purpose: 'Activate an EFS card and optionally update its driver/unit prompts.',
     prerequisites: ['A client', 'A card from that client’s live card list'],
     steps: [
@@ -137,6 +159,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'card-deactivation',
     title: 'Card Deactivation',
     codes: ['C-3'],
+    dept: 'C',
     purpose: 'Deactivate an EFS card immediately.',
     prerequisites: ['A client', 'A card from that client’s live card list'],
     steps: [
@@ -150,6 +173,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'limits-change',
     title: 'Increase / Decrease Limits',
     codes: ['C-4', 'C-5'],
+    dept: 'C',
     purpose: 'Increase or decrease an EFS product limit on a card.',
     prerequisites: [
       'A client',
@@ -170,6 +194,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'unit-driver',
     title: 'Unit / Driver Change',
     codes: ['C-26'],
+    dept: 'C',
     purpose: 'Update driver name, unit number and/or driver ID prompts on a card.',
     prerequisites: ['A client', 'A card', 'At least one field to change'],
     steps: [
@@ -184,6 +209,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'fraud-hold-release',
     title: 'Fraud Hold / Release',
     codes: ['C-10'],
+    dept: 'C',
     purpose:
       'Request release of a fraud-held card after confirming the swipe pattern is legitimate.',
     prerequisites: [
@@ -205,6 +231,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'override-card',
     title: 'Override the Card',
     codes: ['C-16'],
+    dept: 'C',
     purpose: 'Give a fraud-held card a temporary active window without removing its hold.',
     prerequisites: ['A client', 'A card currently marked with fraud status'],
     steps: ['Select the client.', 'Choose the fraud-held card.', 'Click Override Card.'],
@@ -215,6 +242,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'card-replacement',
     title: 'Card Replacement',
     codes: ['C-6'],
+    dept: 'C',
     purpose: 'Request replacement cards through the service email workflow.',
     prerequisites: [
       'A client',
@@ -232,6 +260,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'reactivation',
     title: 'Account Reactivation',
     codes: ['C-7'],
+    dept: 'C',
     purpose: 'Request reactivation of a suspended or inactive account.',
     prerequisites: ['A client', 'The signed-in agent email'],
     steps: ['Select the client.', 'Confirm the request.', 'Click Request Reactivation.'],
@@ -241,6 +270,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'money-code',
     title: 'Money Code',
     codes: ['C-17'],
+    dept: 'C',
     purpose: 'Check eligibility and draw an emergency EFS money code for a stranded driver.',
     prerequisites: [
       'A client',
@@ -265,6 +295,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'boca-boe-link',
     title: 'BOCA Link Request',
     codes: ['C-27'],
+    dept: 'C',
     purpose: 'Send a BOCA onboarding task in WEX through guarded browser automation.',
     prerequisites: [
       'A client/deal with a WEX application ID',
@@ -283,6 +314,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'close-app',
     title: 'Close Application',
     codes: ['C-14'],
+    dept: 'C',
     purpose: 'Close a WEX application that is no longer moving forward.',
     prerequisites: [
       'A client/deal with a WEX application ID',
@@ -301,6 +333,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'wex-tasks',
     title: 'Application Update — WEX Tasks',
     codes: ['C-2', 'C-19'],
+    dept: 'C',
     purpose: 'Read WEX application updates and task responses for a deal.',
     prerequisites: ['A client/deal with a WEX application ID'],
     steps: ['Select the client/deal.', 'Click Get WEX Tasks.'],
@@ -310,6 +343,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'wex-apps',
     title: 'WEX Applications',
     codes: ['C-29'],
+    dept: 'C',
     purpose: 'Search WEX applications by applicant details.',
     prerequisites: ['Applicant name, company, MC, DOT, email, phone or application ID'],
     steps: [
@@ -323,6 +357,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     id: 'efs-login',
     title: 'EFS Login',
     codes: ['C-12'],
+    dept: 'C',
     purpose: 'Open the official WEX EFS eManager credentials guide.',
     prerequisites: [],
     steps: ['Open the automation block.', 'Click Open Guide.'],
@@ -339,13 +374,14 @@ function renderAutomation(entry: SalesAutomationKnowledge): string {
     '',
     `Automation ID: ${entry.id}`,
     `Service code(s): ${entry.codes.join(', ')}`,
+    `Catalog section: ${SALES_AUTOMATION_SECTIONS[entry.dept]}`,
     `Purpose: ${entry.purpose}`,
     '',
     '## Where to find it',
     '1. Open Sales Mytrion.',
     '2. Select Automations in the sidebar.',
     `3. Search for “${entry.title}”, ${entry.codes.join(' or ')}, or a matching keyword.`,
-    `4. Click the ${entry.title} block.`,
+    `4. Click the ${entry.title} block. Without a search it sits under the ${SALES_AUTOMATION_SECTIONS[entry.dept]} section of the catalog.`,
     '',
     '## Required before running',
     ...(entry.prerequisites.length > 0
@@ -379,6 +415,7 @@ export function buildSalesAutomationDocuments(): PlatformCatalogDocument[] {
         mytrion: 'sales',
         automationId: entry.id,
         serviceCodes: entry.codes,
+        section: SALES_AUTOMATION_SECTIONS[entry.dept],
         audience: 'internal',
         department: 'sales',
       },

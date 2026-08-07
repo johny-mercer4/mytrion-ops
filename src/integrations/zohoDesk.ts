@@ -492,12 +492,21 @@ export class ZohoDeskWrapper extends ZohoWrapper {
    * List Desk agents (`GET /agents`, paginated) — the CS analytics roster source. Ids are
    * Desk agent ids (the DWH tickets' `assignee_id` space); the email is the join key to
    * CRM identities.
+   *
+   * `departmentId` filters to one Desk department (e.g. `DESK_DEPARTMENTS.cs`) via the `/agents`
+   * endpoint's own `departmentIds` param — omit it for the org-wide roster.
    */
-  async listAgents(): Promise<Array<{ id: string; name: string | null; email: string | null }>> {
+  async listAgents(
+    departmentId?: string,
+  ): Promise<Array<{ id: string; name: string | null; email: string | null }>> {
     const out: Array<{ id: string; name: string | null; email: string | null }> = [];
     const LIMIT = 99; // Desk agents page cap
     for (let from = 1; from <= 1 + LIMIT * 9; from += LIMIT) {
-      const rows = await this.listGet<Record<string, unknown>>('/agents', { from, limit: LIMIT });
+      const rows = await this.listGet<Record<string, unknown>>('/agents', {
+        from,
+        limit: LIMIT,
+        ...(departmentId ? { departmentIds: departmentId } : {}),
+      });
       for (const a of rows) {
         if (a.id === undefined || a.id === null) continue;
         const first = typeof a.firstName === 'string' ? a.firstName : '';

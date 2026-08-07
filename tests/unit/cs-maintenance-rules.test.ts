@@ -31,7 +31,7 @@ import type { NewMaintenanceCase } from '../../src/db/schema/maintenance_cases.j
 beforeEach(() => {
   vi.clearAllMocks();
   searchCompaniesMock.mockResolvedValue([]);
-  pgMock.mockResolvedValue([{ v: '500000001' }]);
+  pgMock.mockResolvedValue([{ taken: false }]);
 });
 
 describe('rule 1 — Compensation Prepopulation, on create', () => {
@@ -164,21 +164,41 @@ describe('rule 2 — UpdateCompanyForMaintenance, on create', () => {
 });
 
 describe('Reference Number auto-generation — no Zoho equivalent, Mytrion-only', () => {
-  it('fills a blank reference number from the sequence', async () => {
-    pgMock.mockResolvedValue([{ v: '500000007' }]);
+  // 9 digits, clear of the legacy Zoho range (1..400,826,792) — see maintenanceRules.ts's doc
+  // comment. A monotonic sequence used to fill this and was replaced (CS feedback 2026-08-07: it
+  // produced repeated-digit values like "500000005") — these pin the random+unique-checked draw.
+  const REF_RE = /^\d{9}$/;
+
+  it('fills a blank reference number with a random draw in the 9-digit band, checked for uniqueness', async () => {
     const out = await withGeneratedReferenceNumber({ name: 'ACME' });
-    expect(out.referenceNumber).toBe('500000007');
+    expect(out.referenceNumber).toMatch(REF_RE);
+    expect(Number(out.referenceNumber)).toBeGreaterThanOrEqual(500_000_000);
+    expect(Number(out.referenceNumber)).toBeLessThan(1_000_000_000);
     expect(pgMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on a collision instead of returning a duplicate', async () => {
+    pgMock.mockResolvedValueOnce([{ taken: true }]).mockResolvedValueOnce([{ taken: false }]);
+    const out = await withGeneratedReferenceNumber({ name: 'ACME' });
+    expect(out.referenceNumber).toMatch(REF_RE);
+    expect(pgMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after repeated collisions rather than silently issuing a duplicate', async () => {
+    pgMock.mockResolvedValue([{ taken: true }]);
+    await expect(withGeneratedReferenceNumber({ name: 'ACME' })).rejects.toThrow(
+      /unique reference number/i,
+    );
   });
 
   it('treats null and a cleared input as empty, same rule as the compensation fields', async () => {
     const out = await withGeneratedReferenceNumber({ referenceNumber: null });
-    expect(out.referenceNumber).toBe('500000001');
+    expect(out.referenceNumber).toMatch(REF_RE);
     const out2 = await withGeneratedReferenceNumber({ referenceNumber: '  ' });
-    expect(out2.referenceNumber).toBe('500000001');
+    expect(out2.referenceNumber).toMatch(REF_RE);
   });
 
-  it('leaves an agent-entered reference number untouched and never queries the sequence', async () => {
+  it('leaves an agent-entered reference number untouched and never checks uniqueness', async () => {
     const out = await withGeneratedReferenceNumber({ referenceNumber: '7000001' });
     expect(out.referenceNumber).toBe('7000001');
     expect(pgMock).not.toHaveBeenCalled();
