@@ -11090,6 +11090,11 @@ today's records — but the end-to-end POST is untested and should be exercised 
   all Card Lookup tests pass.
 - Rebuilt the mini-app and Mytrion CRM production bundles.
 
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM build green. CRM 16 failed / 3 files
+(pre-existing). Backend across four runs: 160 / 10 / 9 / 9 failures — the documented post-build
+timeout flakiness; `analytics-reports-routes` passed in every run. Suite total is now 1837 (+9).
+
 ## 2026-08-04 — Sales Card Status Report automation
 
 - Added `Card Status Report` directly after the invoice/transaction reporting actions in Sales
@@ -11364,6 +11369,77 @@ regressions.
 - Verification for this pass: 115 tests green across `zoho-oauth`, `caller-identity`, `mytrion-access`,
   `mytrion-access-breakglass`, `department-access`, `auth-zoho-callback`, `agent-authority`, plus the two
   new suites (11).
+
+## 2026-08-05 — Dropbox for the general file pipeline (uploads/imports + generated exports)
+
+Dropbox was already fully built in this repo — the API v2 client
+(`src/integrations/dropbox.ts`: refresh-token auth, single-shot + chunked upload, download,
+streaming, temporary links, delete, 401-refresh/429 retries) and a complete `ObjectStorage`
+adapter (`storage/dropboxStorage.ts`). It was only reachable by **comms chat attachments**, via
+`COMMS_STORAGE_PROVIDER`. The general pipeline was hardcoded to S3 on one line of `fileService.ts`.
+
+### What changed
+
+- **`FILE_STORAGE_PROVIDER`** (`s3` | `dropbox`, default `s3`) — where a NEW general-pipeline file
+  goes: `POST /v1/files/upload` (import) and every generated artifact (`file.generate_csv` /
+  `_excel` / `_pdf` export). `storeFile` now defaults to `fileStorageProvider()` instead of the
+  literal `'s3'`.
+- Kept **separate** from `COMMS_STORAGE_PROVIDER` rather than collapsing both into one switch: a
+  customer's chat attachment and an internal revenue export are not the same retention problem, and
+  one of the two may need to move without the other.
+- **Boot check** (`envRuntime.ts`) now requires the three Dropbox credentials when *either*
+  pipeline selects Dropbox, not just comms.
+- `scripts/dropbox-smoke.ts` + `pnpm dropbox:smoke` — live round-trip through the adapter (so the
+  key→path mapping is covered, not just the raw client).
+
+### `getStorage()` deliberately does NOT follow the new env
+
+This is the trap in this change and it is now commented at the definition plus locked by a test.
+`maintenance_case_attachments` stores an `s3_key` with **no `storage_provider` column** and resolves
+both its writes and its reads through `getStorage()`. Had that function honoured
+`FILE_STORAGE_PROVIDER`, flipping to Dropbox would have sent new attachments to Dropbox *and*
+simultaneously repointed every existing row's read at Dropbox — where those bytes are not. Reads
+404, deletes silently no-op against the wrong store. CS maintenance attachments therefore stay on
+S3 until that table gains the column (a migration, deliberately not done here).
+
+The general pipeline is safe to flip precisely because `file_assets.storage_provider` already exists
+and already accepts `'dropbox'` — no migration needed. `storeFile` records the provider per row and
+every read/delete goes back through `storageFor(row.storageProvider)`, so flipping the env changes
+the destination of the NEXT file and nothing about the ones already stored. It is not retroactive:
+existing S3 files keep resolving to S3.
+
+### Test determinism — the FF_ZOHO_MCP_ENABLED bug class, again
+
+Neither storage provider was pinned in the vitest `env` baseline, so once a developer's `.env` set
+`FILE_STORAGE_PROVIDER=dropbox` for `pnpm dev`, **every `storeFile()` in the suite would have
+defaulted to Dropbox and attempted live API calls with a real refresh token**. Both providers are
+now pinned to `'s3'` in `vitest.config.ts`, exactly as that file's own comment prescribes. The
+dropbox suite sets `FILE_STORAGE_PROVIDER` itself in `vi.hoisted` (before `env` parses eagerly)
+where it needs the other value.
+
+### Local config
+
+`.env` now runs BOTH pipelines on Dropbox (`FILE_STORAGE_PROVIDER=dropbox`,
+`COMMS_STORAGE_PROVIDER=dropbox`) with the real app key / secret / refresh token. This also works
+around S3/MinIO being unavailable locally — the file tools now function without docker. Credentials
+are in `.env` only (gitignored); `.env.example` documents the switch with empty placeholders.
+Also documented there: changing `DROPBOX_ROOT_PATH` after files exist ORPHANS them, since the root
+is applied at read time and the stored key is the only route back to the bytes.
+
+### Checks
+
+`pnpm typecheck` clean. `pnpm lint` 0 errors (22 pre-existing warnings, none in touched files).
+`dropbox-storage.test.ts` 22 passed (+2 for the new provider defaults, incl. the `getStorage()`
+regression guard). `pnpm dropbox:smoke` **fully green against live Dropbox** — put / temporary-link
+/ getBuffer / getStream / oversized-read-rejected / delete / delete-again-idempotent, with bytes
+compared byte-for-byte rather than by length.
+
+Full-suite state is unchanged by this work and cannot go green on this machine: the DB-backed suites
+point at the REMOTE Render Postgres (`MYTRION_OPS_DATABASE_URL` is *not* localhost:5433, contrary to
+the CLAUDE.md description of the local stack), so they fail on latency/state regardless of the local
+container. Verified by stashing this branch's changes and reproducing the same failures on a clean
+tree.
+
 ## 2026-08-06 — Telegram mini-app registration/session architecture review
 
 - Reviewed the registration bootstrap, invite redemption, returning-user Telegram `initData`

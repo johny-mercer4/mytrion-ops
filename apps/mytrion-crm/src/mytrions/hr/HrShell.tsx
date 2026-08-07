@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { MytrionShell, type NavItem, type NavSection } from '../_shared/MytrionShell';
+import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
+import { HrPersonView } from './HrPersonView';
 import { accessibleHrTabs, canOpenHrTab, type HrTabId } from './hrNav';
 import { HrAttendance } from './tabs/HrAttendance';
 import { HrDepartments } from './tabs/HrDepartments';
@@ -28,9 +30,16 @@ import './hr-attendance-v2.css';
  * (AGENT_KEYS has no 'hr', and `agentKeyFor('hr')` deliberately returns null).
  *
  * Every view switch goes through the Layer-2 RBAC predicate so stale state can't bypass the sidebar.
+ *
+ * "VIEW AS" IS A LENS HERE, NOT A LOGIN. Elsewhere in the app the picker re-runs a surface as the
+ * chosen agent. HR does not: the act-as headers it sets are ignored by every HR route (they read the
+ * session context directly), so pretending the chrome had changed would be a lie about what the data
+ * behind it is scoped to. Instead a selection opens that person's RECORD — department, team, attendance,
+ * time off — read with the signed-in user's own permissions.
  */
 export function HrShell() {
   const user = useUserContext();
+  const { actingAs, setActingAs } = useImpersonation();
   const [view, setView] = useState<HrTabId>('home');
   const tabs = accessibleHrTabs(user);
   const settingsTab = tabs.find((tab) => tab.id === 'settings');
@@ -72,13 +81,29 @@ export function HrShell() {
   return (
     <MytrionShell id="hr" navSections={navSections} footerNav={footerNav} enableNavSearch>
       <div className="hr-root">
-        {view === 'home' ? <HrHome onOpen={open} /> : null}
-        {view === 'employees' ? <HrEmployees /> : null}
-        {view === 'departments' ? <HrDepartments /> : null}
-        {view === 'org' ? <HrOrgStructure /> : null}
-        {view === 'attendance' ? <HrAttendance /> : null}
-        {view === 'requests' ? <HrRequests /> : null}
-        {view === 'settings' ? <HrSettings /> : null}
+        {actingAs ? (
+          /*
+           * Keyed on the person so switching straight from one to another remounts rather than showing
+           * the previous employee's team under the new name while the next payload lands.
+           */
+          <HrPersonView
+            key={actingAs.zohoUserId}
+            zohoUserId={actingAs.zohoUserId}
+            name={actingAs.name}
+            subtitle={[actingAs.profile, actingAs.role].filter(Boolean).join(' · ')}
+            onExit={() => setActingAs(null)}
+          />
+        ) : (
+          <>
+            {view === 'home' ? <HrHome onOpen={open} /> : null}
+            {view === 'employees' ? <HrEmployees /> : null}
+            {view === 'departments' ? <HrDepartments /> : null}
+            {view === 'org' ? <HrOrgStructure /> : null}
+            {view === 'attendance' ? <HrAttendance /> : null}
+            {view === 'requests' ? <HrRequests /> : null}
+            {view === 'settings' ? <HrSettings /> : null}
+          </>
+        )}
       </div>
     </MytrionShell>
   );

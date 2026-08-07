@@ -186,12 +186,21 @@
   min-width: 0;
 }
 
+/**
+ * A quiet section, not a callout.
+ *
+ * This carried an accent-tinted border and fill, which made the one administrative footnote on the
+ * employee record the loudest thing on it — louder than the person's own details. Colour is reserved
+ * for the link STATE (Linked / not), and the block itself now separates with a hairline the way every
+ * other section does.
+ */
 .hr-zoho-link {
-  margin: 14px 0 0;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--hz-pane-bd, var(--border)));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--hz-pane-alt, transparent));
-  padding: 12px;
+  margin: 16px 0 0;
+  padding: 14px 0 2px;
+  border: 0;
+  border-top: 1px solid var(--hz-pane-bd, var(--border));
+  border-radius: 0;
+  background: none;
 }
 
 .hr-zoho-link-head,

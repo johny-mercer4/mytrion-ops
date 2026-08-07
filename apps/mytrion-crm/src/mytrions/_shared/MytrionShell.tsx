@@ -1,13 +1,37 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { AccountMenu } from '../../components/AccountMenu';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
 import { horizonSkin } from './horizonSkin';
-import { UserProfileModal } from './UserProfileModal';
 import styles from './MytrionShell.module.css';
+
+/**
+ * Collapsed/expanded is a WORKSPACE preference, not a per-Mytrion one: someone who wants the rail narrow
+ * wants it narrow in Sales and in HR. One global key, read through try/catch because storage throws in
+ * private mode and a sidebar must never be the reason a page fails to render.
+ */
+const COLLAPSE_KEY = 'octane.sidebar.collapsed.v1';
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(value: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, value ? '1' : '0');
+  } catch {
+    // A preference that cannot be saved is still a preference that works for this session.
+  }
+}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -62,14 +86,20 @@ function filterSections(sections: NavSection[], q: string): NavSection[] {
 function NavItemButton({
   item,
   chatView,
+  collapsed,
   onSelect,
 }: {
   item: NavItem;
   chatView: boolean;
+  /** Icon-only rail: labels are hidden and nested children are not reachable. */
+  collapsed: boolean;
   onSelect: (item: NavItem) => void;
 }) {
   const hasChildren = Boolean(item.children?.length);
-  const open = hasChildren && (item.active || Boolean(item.children?.some((c) => c.active)));
+  // Children are labels in a nested list, which a 64px rail has nowhere to put. The parent still
+  // activates on click, so nothing becomes unreachable — it just needs the rail open to navigate into.
+  const open =
+    hasChildren && !collapsed && (item.active || Boolean(item.children?.some((c) => c.active)));
   const selected = Boolean(item.active) && !chatView && !hasChildren;
   return (
     <div>
@@ -158,7 +188,34 @@ export function MytrionShell({
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  const toggleSidebar = useCallback((): void => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeCollapsed(next);
+      // Drop any filter on the way in. The rail hides the labels the query filters on, so leaving it
+      // set would silently hide destinations with nothing on screen explaining why.
+      if (next) setNavQuery('');
+      return next;
+    });
+  }, []);
+
+  /**
+   * Below 768px the sidebar is a horizontal strip, not a rail (see the media query), so "collapsed" has
+   * no meaning there. Force it open on the way down so a preference set on a desktop does not leave a
+   * phone with a row of unlabelled icons.
+   */
+  useEffect(() => {
+    const narrow = window.matchMedia('(max-width: 768px)');
+    const sync = (): void => {
+      if (narrow.matches) setCollapsed(false);
+      else setCollapsed(readCollapsed());
+    };
+    sync();
+    narrow.addEventListener('change', sync);
+    return () => narrow.removeEventListener('change', sync);
+  }, []);
   const flatFallback: NavItem[] = nav ?? [
     { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
   ];
@@ -177,15 +234,41 @@ export function MytrionShell({
   };
 
   return (
-    <div className={styles.shell} data-mytrion={id} data-horizon={horizonSkin(id)}>
-      <TopBar contextBadge={m.tag} showSwitch />
+    <div
+      className={styles.shell}
+      data-mytrion={id}
+      data-horizon={horizonSkin(id)}
+      /* Published on the ROOT, not just the <nav>, so a module's own global stylesheet can respond —
+         CSS-module class names are hashed and unreachable from hr.css, but a data attribute is not.
+         Modules opt in by writing a rule; none are affected until they do. */
+      data-sidebar-collapsed={collapsed ? 'true' : undefined}
+    >
+      <TopBar contextBadge={m.tag} mytrion={id} showSwitch />
       {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
           modules that haven't opted into the skin (see horizonSkin.ts). */}
       <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
-        <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
+        <nav
+          id="mytrion-sidebar"
+          className={styles.sidebar}
+          data-collapsed={collapsed ? 'true' : undefined}
+          aria-label={`${m.title} navigation`}
+        >
           <div className={styles.navTop}>
-            {showSearch ? (
+            <div className={styles.navHead}>
+              <button
+                type="button"
+                className={styles.navToggle}
+                aria-expanded={!collapsed}
+                aria-controls="mytrion-sidebar"
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                onClick={toggleSidebar}
+              >
+                {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+              </button>
+            </div>
+            {showSearch && !collapsed ? (
               <label className={styles.navSearch}>
                 <SearchIcon />
                 <input
@@ -211,6 +294,7 @@ export function MytrionShell({
                         key={item.key}
                         item={item}
                         chatView={chatView}
+                        collapsed={collapsed}
                         onSelect={select}
                       />
                     ))}
@@ -226,6 +310,7 @@ export function MytrionShell({
                 key={item.key}
                 item={item}
                 chatView={chatView}
+                collapsed={collapsed}
                 onSelect={select}
               />
             ))}
@@ -243,28 +328,27 @@ export function MytrionShell({
                 <span className={styles.navLabel}>Chat</span>
               </button>
             )}
-            <button
-              type="button"
-              className={styles.userBtn}
-              title={`Open profile · ${displayName}`}
-              aria-label={`Open profile for ${displayName}`}
-              onClick={() => {
-                setChatView(false);
-                setProfileOpen(true);
-              }}
-            >
-              <span className={styles.userAvatar} aria-hidden="true">
-                {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="" />
-                ) : (
-                  initials(displayName)
-                )}
-              </span>
-              <span className={styles.userMeta}>
-                <span className={styles.userName}>{displayName}</span>
-                {roleLine ? <span className={styles.userRole}>{roleLine}</span> : null}
-              </span>
-            </button>
+            {/*
+              The same menu the header avatar opens, so "where do I sign out" has one answer wherever
+              you look. Profile is its first item — this row used to jump straight there.
+              Opens UPWARD: it sits at the bottom of the rail.
+            */}
+            <AccountMenu
+              placement="up"
+              align="start"
+              triggerClassName={styles.userBtn}
+              trigger={
+                <>
+                  <span className={styles.userAvatar} aria-hidden="true">
+                    {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials(displayName)}
+                  </span>
+                  <span className={styles.userMeta}>
+                    <span className={styles.userName}>{displayName}</span>
+                    {roleLine ? <span className={styles.userRole}>{roleLine}</span> : null}
+                  </span>
+                </>
+              }
+            />
           </div>
         </nav>
 
@@ -281,7 +365,6 @@ export function MytrionShell({
           )}
         </div>
       </div>
-      {profileOpen ? <UserProfileModal onClose={() => setProfileOpen(false)} /> : null}
     </div>
   );
 }

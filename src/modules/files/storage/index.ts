@@ -42,7 +42,16 @@ const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   dropbox_maintenance: dropboxMaintenanceStorage,
 };
 
-/** The default provider for the general file pipeline. */
+/**
+ * S3, always — for the callers that do NOT record a provider alongside their key.
+ *
+ * DO NOT make this honour `FILE_STORAGE_PROVIDER`. `maintenance_case_attachments` stores an `s3_key` with
+ * no `storage_provider` column and resolves both its writes and its reads through this function, so a
+ * global switch would send new attachments to Dropbox and simultaneously repoint every existing row's read
+ * at Dropbox — where those bytes are not. Reads would 404 and deletes would silently no-op.
+ *
+ * Callers that CAN follow the env are the ones whose row records the answer: see `fileStorageProvider()`.
+ */
 export function getStorage(): ObjectStorage {
   return override ?? s3Storage;
 }
@@ -67,6 +76,18 @@ export function commsStorageProvider(): CommsStorageProvider {
 /** Where a NEW Maintenance attachment goes. */
 export function maintenanceStorageProvider(): MaintenanceStorageProvider {
   return env.MAINTENANCE_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW general-pipeline file goes — uploads (import) and generated CSV/Excel/PDF (export).
+ *
+ * Only safe to read from env because `storeFile` persists the result on the `file_assets` row, so flipping
+ * this changes the destination of the NEXT file and nothing about the ones already stored. Narrowed to
+ * `CommsStorageProvider`, not the broader `StorageProvider` — this feeds `file_assets.storage_provider`,
+ * which (like comms) has no `dropbox_maintenance` folder to resolve.
+ */
+export function fileStorageProvider(): CommsStorageProvider {
+  return env.FILE_STORAGE_PROVIDER;
 }
 
 export function setStorageForTests(storage: ObjectStorage | null): void {

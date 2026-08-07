@@ -18,6 +18,15 @@ import { Graph, layout as dagreLayout } from '@dagrejs/dagre';
 import type { Edge, Node } from '@xyflow/react';
 import type { HrOrgDepartmentDto, HrOrgEmployeeDto, HrOrgStructureDto } from '../../api/hr';
 
+/**
+ * The bucket for people with no department.
+ *
+ * A reserved id rather than a real row: nothing in `hr_departments` corresponds to it, so every write
+ * path has to refuse it. `synthetic` on the node data is what the UI keys that refusal off — see
+ * `OrgNodes` (no "+", no record to open) and `HrOrgCanvas` (no position write, and a drop MEANS detach).
+ */
+export const NO_DEPARTMENT_ID = '__hr_no_department__';
+
 export interface DeptNodeData extends Record<string, unknown> {
   kind: 'department';
   label: string;
@@ -31,6 +40,8 @@ export interface DeptNodeData extends Record<string, unknown> {
   /** People hanging directly off this department — drives the expand chevron. */
   directReports: number;
   expanded: boolean;
+  /** True only for the "No Department" bucket, which has no row behind it. */
+  synthetic?: boolean;
 }
 
 export interface EmpNodeData extends Record<string, unknown> {
@@ -38,7 +49,18 @@ export interface EmpNodeData extends Record<string, unknown> {
   label: string;
   designation: string | null;
   status: string;
-  photoUrl: string | null;
+  photoFileId: string | null;
+  /**
+   * The BRANCH this person belongs to, inherited from their department and passed down the reporting
+   * line: the stored tone token (usually null) plus the department id the auto-colour is seeded from.
+   *
+   * Carrying both means the employee node resolves its colour through exactly the same
+   * `departmentTone(token, seed)` the department node uses, so a person is always the same colour as the
+   * department they sit in. A branch that shares one colour is what makes a 200-node chart readable at a
+   * glance. Null for anyone reached outside a department — the unassigned bucket, a reporting ring.
+   */
+  tone: string | null;
+  toneSeed: string | null;
   /** Direct reports, so a manager node can show a count and an expand chevron. */
   directReports: number;
   expanded: boolean;
@@ -50,14 +72,22 @@ export type OrgNodeData = DeptNodeData | EmpNodeData;
  * Node geometry. Fixed sizes keep dagre's output stable — a measured layout jitters as fonts load, and
  * every drop test in the canvas measures against these numbers.
  *
- * They MUST match the heights in hr-workspace.css exactly. The employee node was 76px, which is less
- * than its own content: 20px padding + a 32px avatar row + an 8px gap + a ~20px chevron row is 80px, so
- * on anyone with direct reports the expand control hung out of the bottom of the card.
+ * THEY MUST MATCH hr-workspace.css EXACTLY, and they must stay TALLER than the card's own content. The
+ * employee node was once 76px against 80px of content, and the expand chevron hung out of the bottom of
+ * the card for everyone with direct reports. The compact sizes below were derived from the content, not
+ * guessed at:
+ *
+ *   17px avatar overhang + 20px card padding-top + 16px name + 2px gap + 13px sub + 9px padding-bottom
+ *
+ * = 77px, so 78 leaves a pixel of slack. The portrait layout puts the face half-outside the card, and
+ * that overhang is INSIDE the node box — the card is offset down by 17px rather than the avatar being
+ * allowed to escape, because anything drawn outside the box is invisible to dagre and would collide
+ * with the rank above. Both types are the same height on purpose: equal ranks read as one grid.
  */
-export const DEPT_W = 248;
-export const DEPT_H = 96;
-export const EMP_W = 216;
-export const EMP_H = 88;
+export const DEPT_W = 188;
+export const DEPT_H = 78;
+export const EMP_W = 168;
+export const EMP_H = 78;
 
 export interface BuildOptions {
   /**
@@ -69,6 +99,9 @@ export interface BuildOptions {
   /** Hide terminated people. On by default: an org chart is who works here now. */
   includeTerminated: boolean;
 }
+
+/** A department's colour identity, handed to everyone drawn beneath it. */
+type Branch = { tone: string | null; seed: string } | null;
 
 interface Built {
   nodes: Node<OrgNodeData>[];
@@ -109,7 +142,16 @@ export function orgBranchIds(data: HrOrgStructureDto, rootId: string): ReadonlyS
     }
   };
 
-  if (data.departments.some((department) => department.id === rootId)) {
+  if (rootId === NO_DEPARTMENT_ID) {
+    // The bucket is not in `data.departments`, so the department branch below cannot find its members.
+    // Its staff are exactly the people no department claims — the same rule `index()` buckets on.
+    const departmentIds = new Set(data.departments.map((department) => department.id));
+    for (const employee of data.employees) {
+      if (employee.departmentId && departmentIds.has(employee.departmentId)) continue;
+      ids.add(employee.id);
+      addReports(employee.id);
+    }
+  } else if (data.departments.some((department) => department.id === rootId)) {
     const departmentIds = new Set<string>();
     const addDepartment = (departmentId: string): void => {
       if (departmentIds.has(departmentId)) return;
@@ -181,6 +223,10 @@ function index(data: HrOrgStructureDto, includeTerminated: boolean) {
     }
   }
 
+  // Unassigned people hang off the synthetic bucket exactly as staff hang off a real department, so the
+  // ordinary walk gives them a collapse chevron, a headcount and a hidden-count for free.
+  if (floating.length > 0) deptStaff.set(NO_DEPARTMENT_ID, floating);
+
   return { employees, empById, childDepts, deptStaff, reports, floating };
 }
 
@@ -224,7 +270,7 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
   };
 
   /** Walk a person and, if expanded, their reports. */
-  const walkEmployee = (e: HrOrgEmployeeDto): void => {
+  const walkEmployee = (e: HrOrgEmployeeDto, branch: Branch): void => {
     // Already on the canvas: stop. This is what terminates a reporting ring, and it also guarantees
     // unique node ids (a duplicate is a React key collision).
     if (drawn.has(e.id)) return;
@@ -242,7 +288,9 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
         label: `${e.firstName} ${e.lastName}`.trim(),
         designation: e.designation,
         status: e.status,
-        photoUrl: e.photoUrl,
+        photoFileId: e.photoFileId,
+        tone: branch?.tone ?? null,
+        toneSeed: branch?.seed ?? null,
         directReports,
         expanded,
       },
@@ -256,7 +304,8 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
     }
     for (const r of reports.get(e.id) ?? []) {
       pushEdge(e.id, r.id, 'report');
-      walkEmployee(r);
+      // Reports inherit their manager's branch colour, so a whole reporting line reads as one unit.
+      walkEmployee(r, branch);
     }
   };
 
@@ -285,6 +334,7 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
         active: d.activeEmployeeCount,
         directReports: staff.length,
         expanded,
+        ...(d.id === NO_DEPARTMENT_ID ? { synthetic: true } : {}),
       },
       initialWidth: DEPT_W,
       initialHeight: DEPT_H,
@@ -307,7 +357,7 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
     }
     for (const s of staff) {
       pushEdge(d.id, s.id, 'staff');
-      walkEmployee(s);
+      walkEmployee(s, { tone: d.iconColor, seed: d.id });
     }
   };
 
@@ -327,22 +377,46 @@ export function buildOrgGraph(data: HrOrgStructureDto, opts: BuildOptions): Buil
   }
 
   /**
+   * "No Department" — one labelled home for everyone the org chart cannot place.
+   *
+   * These people used to be drawn as bare roots: a scatter of person-cards floating beside the company,
+   * with nothing to say what they had in common or why they were there. Grouping them under a node makes
+   * the gap countable, collapsible, and obvious as work to be done — which is the point, because every
+   * one of them is a row someone has to assign.
+   *
+   * It is drawn LAST so it sits after the real structure, and only when it would not be empty: an org
+   * with everyone assigned should not carry a permanent empty bucket.
+   */
+  if (floating.length > 0) {
+    walkDepartment({
+      id: NO_DEPARTMENT_ID,
+      name: 'No Department',
+      code: null,
+      leadName: null,
+      parentId: null,
+      description: 'People who are not assigned to any department yet.',
+      icon: null,
+      iconColor: 'tone-slate',
+      canvasX: null,
+      canvasY: null,
+      employeeCount: floating.length,
+      activeEmployeeCount: floating.filter((e) => e.status.toLowerCase() !== 'terminated').length,
+    });
+  }
+
+  /**
    * THE INVARIANT: every employee row is either on the canvas, or deliberately omitted by a collapsed
    * ancestor / the terminated filter. Nothing may simply be missing.
    *
-   * `floating` covers the ordinary cases (no department, or a department that was deleted). The second
+   * The bucket above covers the ordinary cases (no department, or a department that was deleted). This
    * pass is what makes the invariant hold for hostile data: two people who manage each other form a ring
-   * that no department or floating root reaches, so a `floating`-only pass left BOTH of them off the
-   * chart entirely — invisible, and impossible to fix from the UI that is supposed to fix it. They now
-   * surface as roots, where HR can see the loop and re-drag one of them.
+   * that no department reaches, so without it BOTH were left off the chart entirely — invisible, and
+   * impossible to fix from the UI that is supposed to fix it. They surface as roots, where HR can see the
+   * loop and re-drag one of them.
    */
-  for (const e of floating) {
-    if (accounted.has(e.id)) continue;
-    walkEmployee(e);
-  }
   for (const e of employees) {
     if (accounted.has(e.id)) continue;
-    walkEmployee(e);
+    walkEmployee(e, null);
   }
   /**
    * Drop any edge whose endpoints are not both on the canvas.
@@ -388,7 +462,9 @@ function layout(nodes: Node<OrgNodeData>[], edges: Edge[], pinned: ReadonlySet<s
   if (nodes.length === 0) return;
 
   const g = new Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 34, ranksep: 78, marginx: 24, marginy: 24 });
+  // Tightened with the node sizes. `ranksep` is the dominant cost on a top-down chart — a 20-department
+  // org is a dozen ranks deep once staff are expanded, so it is worth more than the node height itself.
+  g.setGraph({ rankdir: 'TB', nodesep: 22, ranksep: 52, marginx: 16, marginy: 16 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const n of nodes) {
     const isDept = n.data.kind === 'department';
@@ -438,7 +514,7 @@ function layout(nodes: Node<OrgNodeData>[], edges: Edge[], pinned: ReadonlySet<s
 }
 
 /** Gap left between a nudged node and the pinned node it was overlapping. */
-const NUDGE_GAP = 24;
+const NUDGE_GAP = 18;
 
 function box(n: Node<OrgNodeData>): { x: number; y: number; w: number; h: number } {
   const isDept = n.data.kind === 'department';

@@ -117,22 +117,32 @@
   --accent-glow: rgba(13, 148, 136, 0.2);
 }
 
+/**
+ * HR is PURPLE, not coral.
+ *
+ * The Mytrion picker has always drawn HR's card in purple (`HORIZON_BY_ID.hr = purple` in
+ * app/horizonGlass.ts — "purple-500, deliberately a step warmer than Admin's violet"), but entering the
+ * module swapped the accent to coral. The card promised one identity and the workspace delivered
+ * another. These now match: purple-400 on dark and purple-600 on light, the same family the card's
+ * icon chip and glow are built from.
+ */
 [data-mytrion='hr'] {
-  --accent: #f26d6d;
-  --accent-2: #fb923c;
-  --accent-strong: #f89a9a;
-  --on-accent: #2b0a0a;
-  --accent-soft: rgba(242, 109, 109, 0.13);
-  --accent-glow: rgba(242, 109, 109, 0.28);
+  --accent: #c084fc;
+  --accent-2: #a855f7;
+  --accent-strong: #d8b4fe;
+  /* Ink on a filled accent button — purple-400 is light enough to need a dark foreground. */
+  --on-accent: #2e1065;
+  --accent-soft: rgba(192, 132, 252, 0.13);
+  --accent-glow: rgba(168, 85, 247, 0.28);
 }
 [data-theme='light'] [data-mytrion='hr'] {
-  /* Softer coral — #dc2626 was a hard primary red that made light HR feel sharp. */
-  --accent: #c24b4b;
-  --accent-2: #d97706;
-  --accent-strong: #a33d3d;
+  /* Stepped down for a pale field: purple-400 on white is too low-contrast for text and borders. */
+  --accent: #9333ea;
+  --accent-2: #7e22ce;
+  --accent-strong: #7e22ce;
   --on-accent: #fff;
-  --accent-soft: rgba(194, 75, 75, 0.08);
-  --accent-glow: rgba(194, 75, 75, 0.14);
+  --accent-soft: rgba(147, 51, 234, 0.08);
+  --accent-glow: rgba(147, 51, 234, 0.16);
 }
 
 [data-mytrion='recruit'] {

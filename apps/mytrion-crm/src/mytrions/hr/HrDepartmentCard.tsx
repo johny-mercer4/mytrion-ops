@@ -44,7 +44,7 @@ export function HrDepartmentCard({
   busy?: boolean;
 }) {
   const Icon = departmentIcon(department.icon);
-  const tone = departmentTone(department.iconColor);
+  const tone = departmentTone(department.iconColor, department.id);
   const blurb = summarize(department.description);
 
   return (

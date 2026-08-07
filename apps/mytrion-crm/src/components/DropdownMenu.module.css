@@ -1,0 +1,148 @@
+/**
+ * `flex`, not `inline-flex`, on purpose. In the header's flex ROW this sizes to its content; in the
+ * sidebar's flex COLUMN it stretches, which is what the full-width user row needs. One rule, both
+ * call sites, no `fullWidth` prop to remember to pass.
+ */
+.root {
+  position: relative;
+  display: flex;
+}
+
+.menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 208px;
+  max-width: 280px;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised, var(--surface));
+  /* Tinted with the workspace accent rather than a neutral drop — a black shadow over a coloured
+     header reads as a sticker sitting on top of the page. */
+  box-shadow:
+    0 24px 48px -20px color-mix(in srgb, var(--accent) 26%, rgba(6, 9, 16, 0.5)),
+    0 2px 6px rgba(6, 9, 16, 0.28);
+  animation: menuIn 140ms var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+.down {
+  top: calc(100% + 6px);
+}
+.up {
+  bottom: calc(100% + 6px);
+}
+.alignEnd {
+  right: 0;
+}
+.alignStart {
+  left: 0;
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    /* Transform only — animating `top` would run on the layout thread for a 140ms flourish. */
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.up {
+  animation-name: menuInUp;
+}
+@keyframes menuInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast, 140ms) var(--ease-standard),
+    color var(--dur-fast, 140ms) var(--ease-standard);
+}
+.item:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+}
+/* Keyboard focus has to read at least as strongly as hover — this is how a keyboard user knows where
+   they are, and a menu is navigated almost entirely by arrow keys. */
+.item:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.item:active {
+  /* A press should feel like one. */
+  transform: translateY(1px);
+}
+.danger:hover,
+.danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.itemIcon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  flex: none;
+  color: var(--text-muted);
+}
+.item:hover .itemIcon,
+.item:focus-visible .itemIcon {
+  color: inherit;
+}
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itemHint {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.separator {
+  height: 1px;
+  margin: 5px 8px;
+  background: color-mix(in srgb, var(--border) 85%, transparent);
+}
+
+.heading {
+  padding: 7px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

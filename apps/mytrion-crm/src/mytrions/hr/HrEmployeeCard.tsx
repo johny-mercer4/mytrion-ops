@@ -47,7 +47,7 @@ export function HrEmployeeCard({
   const name = displayName(employee);
   const terminated = employee.status.toLowerCase() === 'terminated';
   const handle = (employee.telegramUsername ?? '').trim().replace(/^@+/, '');
-  const deptTone = departmentTone(departmentColor ?? null);
+  const deptTone = departmentTone(departmentColor ?? null, employee.departmentId);
 
   return (
     <article
@@ -67,7 +67,12 @@ export function HrEmployeeCard({
         <span className="hr-empc-shimmer" aria-hidden="true" />
 
         <span className="hr-empc-top">
-          <HrAvatar name={name} photoUrl={employee.photoUrl} size="lg" />
+          <HrAvatar
+            name={name}
+            employeeId={employee.id}
+            photoFileId={employee.photoFileId}
+            size="lg"
+          />
           <span className="hr-empc-id">
             {/* Status first: whether someone still works here outranks their id. */}
             <Pill label={employee.status} tone={toneFor(employee.status)} />

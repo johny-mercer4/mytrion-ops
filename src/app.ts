@@ -67,6 +67,7 @@ import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
 import { hrRoutes } from './routes/v1/hr.routes.js';
+import { hrPeopleRoutes } from './routes/v1/hrPeople.routes.js';
 import { hrDepartmentsRoutes } from './routes/v1/hrDepartments.routes.js';
 import { hrAttendanceRoutes } from './routes/v1/hrAttendance.routes.js';
 import { hrLeaveRoutes } from './routes/v1/hrLeave.routes.js';
@@ -450,6 +451,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
       await v1.register(hrRoutes);
+      await v1.register(hrPeopleRoutes);
       await v1.register(hrDepartmentsRoutes);
       await v1.register(hrAttendanceRoutes);
       await v1.register(hrLeaveRoutes);

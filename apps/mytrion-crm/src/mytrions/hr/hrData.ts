@@ -137,6 +137,32 @@ export function isTerminatedStatus(status: string): boolean {
   return status.trim().toLowerCase() === 'terminated';
 }
 
+/**
+ * The directory's default order: Active first → department → name.
+ *
+ * Status leads the sort, not department. Ordering by department first scattered the terminated through
+ * the whole directory — a leaver between two colleagues inside every department block — so the people
+ * who still work here were never a contiguous run you could scan. Everyone who has left now lands after
+ * everyone who has not, still grouped by department within each half.
+ *
+ * Pure and exported so the ordering can be asserted without mounting the tab: it is the kind of rule
+ * that gets quietly inverted by a later edit and looks fine on a screenshot.
+ */
+export function sortDirectory(rows: readonly HrEmployeeDto[]): HrEmployeeDto[] {
+  const name = (e: HrEmployeeDto): string => `${e.firstName} ${e.lastName}`.trim();
+  const activeRank = (e: HrEmployeeDto): number => (isActiveStatus(e.status) ? 0 : 1);
+  return [...rows].sort((a, b) => {
+    // Unassigned sorts last within its half: '\uffff' is above every real department name.
+    const aDepartment = a.department?.trim() || '\uffff';
+    const bDepartment = b.department?.trim() || '\uffff';
+    return (
+      activeRank(a) - activeRank(b) ||
+      aDepartment.localeCompare(bDepartment) ||
+      name(a).localeCompare(name(b))
+    );
+  });
+}
+
 export interface HrEmployeeFilters {
   q: string;
   status: 'all' | 'Active' | 'Terminated';
