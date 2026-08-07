@@ -3,41 +3,42 @@
 
    Structure + rhythm only. The frosted surface, the hover lift, the accent-tinted border and the
    focus ring all come from the Horizon layer (cs-horizon.css / cs-horizon-panels.css), which is
-   imported AFTER this sheet and so wins at equal specificity — `.cs-mt-card` and `.cs-mt-stat-card`
-   are registered in its pane + hover selector lists. Anything visual that this file sets and Horizon
-   also sets will lose, deliberately.
+   imported AFTER this sheet and so wins at equal specificity — `.cs-mt-card` is registered in its
+   pane + hover selector lists. Anything visual that this file sets and Horizon also sets will lose,
+   deliberately. (`.cs-mt-filters` was deliberately REMOVED from that pane list — CS feedback
+   2026-08-07 — so it stays a plain field row, not a glass card.)
    ===================================================== */
 
-/* ── Summary tiles ───────────────────────────────────────────────────────── */
-/* Same auto-fill recipe as .cs-citi-summary so the two tabs' header strips line up. */
-.cs-root .cs-mt-summary {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.875rem;
-    margin: 0.5rem 0 0.25rem;
+/* ── View toggle (Card / List / Kanban — CS feedback 2026-08-07) ─────────────── */
+.cs-root .cs-mt-view-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 8px);
+    overflow: hidden;
 }
 
-.cs-root .cs-mt-stat-card {
-    border-radius: var(--r-md);
-    padding: 0.875rem 1rem;
-    text-align: center;
-}
-
-.cs-root .cs-mt-stat-value {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 1.45rem;
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: 0.01em;
-}
-
-.cs-root .cs-mt-stat-label {
-    margin-top: 0.2rem;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+.cs-root .cs-mt-view-btn {
+    padding: 0 0.7rem;
+    height: 32px;
+    border: none;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
     color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 140ms ease, background 140ms ease;
+}
+.cs-root .cs-mt-view-btn:last-child {
+    border-right: none;
+}
+.cs-root .cs-mt-view-btn:hover {
+    color: var(--text-primary);
+}
+.cs-root .cs-mt-view-btn.active {
+    background: var(--cs-accent-softer, color-mix(in srgb, var(--cs-accent) 12%, transparent));
+    color: var(--cs-accent);
 }
 
 /* ── Toolbar: search + status tabs ───────────────────────────────────────── */
@@ -98,16 +99,18 @@
 
 /* ── Filter rail ─────────────────────────────────────────────────────────── */
 /*
- * `z-index` here is LOAD-BEARING — do not "tidy" it away as redundant.
+ * Plain by design (CS feedback 2026-08-07: "overdesigned for what it needs to do... a plain list of
+ * filter fields is fine on its own"). No pane background/blur/border here any more — it's a bare
+ * hairline-separated row of label+control pairs, not a glass card (removed from the shared Horizon
+ * pane selector list in cs-horizon-panels.css, which is where the card look came from).
  *
+ * `z-index` stays LOAD-BEARING even without the pane treatment — do not "tidy" it away.
  * The owner dropdown sets `position: absolute; z-index: 300` and was still painted UNDER the cards.
- * The value was never the problem: this pane receives `backdrop-filter: blur(...)` from the Horizon
- * pane recipe in cs-horizon-panels.css, and backdrop-filter CREATES A STACKING CONTEXT. With this
- * element's own z-index left at `auto`, everything inside it — 300 included — is sealed in, and the
- * card grid is a LATER SIBLING, so the cards win on DOM order no matter what the dropdown asks for.
- *
- * Raising the PANE lifts its whole subtree, dropdown included. 20 clears the grid while staying far
- * below the modal layer. (Same trap as the RingCentral card versus `.cs-root { isolation: isolate }`.)
+ * `.cs-mt-filters` needs its OWN stacking context for that z-index to have any effect at all, since
+ * without one the dropdown's 300 is compared against the card grid — a LATER SIBLING — which wins on
+ * DOM order regardless of z-index. `position: relative` here creates that context; 20 clears the
+ * grid while staying far below the modal layer. (Same trap as the RingCentral card versus
+ * `.cs-root { isolation: isolate }`.)
  */
 .cs-root .cs-mt-filters {
     position: relative;
@@ -115,10 +118,11 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: 0.75rem;
+    gap: 0.75rem 1.5rem;
     margin: 0.75rem 0 0.25rem;
-    padding: 0.875rem 1rem;
-    border-radius: var(--r-md);
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
 }
 
 .cs-root .cs-mt-filter {
@@ -541,6 +545,190 @@
 .cs-root .cs-mt-tab-active {
     color: var(--cs-sky);
     border-bottom-color: var(--cs-sky);
+}
+
+/* ── List view (CS feedback 2026-08-07) ──────────────────────────────────── */
+.cs-root .cs-mt-list-wrap {
+    margin-top: 1rem;
+}
+.cs-root .cs-mt-list-row {
+    cursor: pointer;
+}
+.cs-root .cs-mt-list-company {
+    font-weight: 600;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-root .cs-mt-list-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary, var(--text-muted));
+    white-space: nowrap;
+}
+.cs-root .cs-mt-list-open {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.cs-root .cs-mt-list-owner {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-root .cs-mt-list-amount {
+    text-align: right;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* ── Kanban view (CS feedback 2026-08-07 — read-only columns, no drag/drop) ── */
+.cs-root .cs-mt-kanban {
+    display: flex;
+    gap: 12px;
+    margin-top: 1rem;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.cs-root .cs-mt-kanban-col {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 260px;
+    min-width: 260px;
+    max-height: 70vh;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 8px);
+    background: var(--surface);
+}
+
+.cs-root .cs-mt-kanban-col-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.cs-root .cs-mt-kanban-col-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-mt-kanban-col-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    overflow-y: auto;
+}
+
+.cs-root .cs-mt-kanban-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm, 6px);
+    background: var(--hz-pane-alt, var(--surface));
+    text-align: left;
+    font-family: inherit;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.cs-root .cs-mt-kanban-card:hover {
+    border-color: color-mix(in srgb, var(--cs-accent) 32%, var(--border));
+}
+
+.cs-root .cs-mt-kanban-card-company {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-root .cs-mt-kanban-card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-mt-kanban-card-amount {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.cs-root .cs-mt-kanban-card-owner {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Timeline (one row per field change, not per save — QA 2026-08-07) ──────── */
+.cs-root .cs-mt-tl {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.cs-root .cs-mt-tl-row {
+    display: flex;
+    gap: 10px;
+    padding: 7px 0;
+    position: relative;
+}
+
+/* The connecting rail — one continuous line behind every dot, not a border per row. */
+.cs-root .cs-mt-tl-row:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 16px;
+    bottom: -7px;
+    width: 1px;
+    background: var(--border);
+}
+
+.cs-root .cs-mt-tl-dot {
+    position: relative;
+    z-index: 1;
+    margin-top: 5px;
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--cs-accent);
+}
+
+.cs-root .cs-mt-tl-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-root .cs-mt-tl-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-mt-tl-text {
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-mt-tl-created {
+    font-weight: 700;
 }
 
 /* ── Narrow screens ──────────────────────────────────────────────────────── */

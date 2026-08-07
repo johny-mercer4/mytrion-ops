@@ -1,6 +1,7 @@
 import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../db/client.js';
+import { withDbRetry } from '../db/retry.js';
 import { maintenanceCases, type MaintenanceCase, type NewMaintenanceCase } from '../db/schema/index.js';
 import { PREPAY_PAYMENT_METHOD } from '../modules/customerService/maintenanceFields.js';
 import { firstOrUndefined } from './util.js';
@@ -239,14 +240,21 @@ export const maintenanceCaseRepo = {
      * back together instead of as two queries. The previous Promise.all pair measured ~3 network
      * round-trips against the hosted DB versus ~2 for the heavy query alone; one statement removes
      * that. The window is evaluated after WHERE but before LIMIT, which is exactly the total we want.
+     *
+     * withDbRetry: this is the query behind the Maintenance tab's Refresh button — CS feedback
+     * 2026-08-07 reported it throwing "Internal server error" (see db/retry.ts for why: a pooled
+     * connection idling while the agent reads the list can be severed before our own idle_timeout
+     * notices, and the read is idempotent so one retry on a fresh connection is safe).
      */
-    const rows = await db
-      .select({ ...CARD_COLUMNS, total: sql<number>`count(*) OVER ()::int` })
-      .from(maintenanceCases)
-      .where(where)
-      .orderBy(order)
-      .limit(perPage)
-      .offset(offset);
+    const rows = await withDbRetry(() =>
+      db
+        .select({ ...CARD_COLUMNS, total: sql<number>`count(*) OVER ()::int` })
+        .from(maintenanceCases)
+        .where(where)
+        .orderBy(order)
+        .limit(perPage)
+        .offset(offset),
+    );
 
     // An empty page carries no window value — fall back to 0 for page 1, and for a page past the end
     // keep the caller's offset honest rather than reporting a total of 0 for a non-empty table.
@@ -261,24 +269,30 @@ export const maintenanceCaseRepo = {
    * Each facet is computed with every filter EXCEPT the one it drives: the status counts ignore the
    * selected status, so the tabs keep showing how many cases each other status holds instead of
    * collapsing to "the tab you're on: N, everything else: 0".
+   *
+   * withDbRetry wraps the whole batch (see listPage's comment) — simplest correct behavior for a
+   * transient failure in any one of the four parallel queries is to retry all four; they're plain
+   * reads, so re-running the ones that already succeeded costs nothing but a little latency.
    */
   async facets(filters: MaintenanceFilters = {}): Promise<MaintenanceFacets> {
     const withoutStatus = { ...filters, status: undefined };
     const withoutCaseType = { ...filters, caseType: undefined };
     const withoutPaymentStatus = { ...filters, paymentStatus: undefined };
 
-    const [byStatus, byCaseType, byPaymentStatus, totals] = await Promise.all([
-      groupCount(maintenanceCases.status, withoutStatus),
-      groupCount(maintenanceCases.caseType, withoutCaseType),
-      groupCount(maintenanceCases.paymentStatus, withoutPaymentStatus),
-      db
-        .select({
-          n: sql<number>`count(*)::int`,
-          amt: sql<string>`coalesce(sum(${maintenanceCases.totalAmount}), 0)::text`,
-        })
-        .from(maintenanceCases)
-        .where(whereOf(filters)),
-    ]);
+    const [byStatus, byCaseType, byPaymentStatus, totals] = await withDbRetry(() =>
+      Promise.all([
+        groupCount(maintenanceCases.status, withoutStatus),
+        groupCount(maintenanceCases.caseType, withoutCaseType),
+        groupCount(maintenanceCases.paymentStatus, withoutPaymentStatus),
+        db
+          .select({
+            n: sql<number>`count(*)::int`,
+            amt: sql<string>`coalesce(sum(${maintenanceCases.totalAmount}), 0)::text`,
+          })
+          .from(maintenanceCases)
+          .where(whereOf(filters)),
+      ]),
+    );
 
     return {
       total: totals[0]?.n ?? 0,

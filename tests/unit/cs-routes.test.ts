@@ -38,6 +38,15 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
     }),
   };
 });
+vi.mock('../../src/integrations/zohoCrm.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoCrm.js')>();
+  return {
+    ...mod,
+    zohoCrm: Object.assign(Object.create(Object.getPrototypeOf(mod.zohoCrm)), mod.zohoCrm, {
+      runCoql: vi.fn(async () => ({ rows: [], count: 0, moreRecords: false })),
+    }),
+  };
+});
 vi.mock('../../src/integrations/serverCrm.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/serverCrm.js')>();
   return { ...mod, serverCrm: { ...mod.serverCrm, get: vi.fn(async () => ({ ok: true })) } };
@@ -46,15 +55,33 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
 });
+// fetchCsEligibleRoster's two inputs — kept deterministic (real ones hit live Zoho CRM + the
+// DB-backed access resolver, which `resolveWorkerAccess` for ctx-building already exercises for
+// real elsewhere in this file; only the ROSTER needs a fixed, known set to assert against).
+vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/auth/actAsDirectory.js')>();
+  return { ...mod, listActiveUsersCached: vi.fn(async () => []) };
+});
+vi.mock('../../src/modules/access/mytrionAccessService.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/access/mytrionAccessService.js')>();
+  return {
+    ...mod,
+    mytrionAccessService: { ...mod.mytrionAccessService, resolveBatch: vi.fn(async () => new Map()) },
+  };
+});
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { serverCrm } from '../../src/integrations/serverCrm.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
+import { zohoCrm } from '../../src/integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
+import { listActiveUsersCached } from '../../src/modules/auth/actAsDirectory.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { mytrionAccessService } from '../../src/modules/access/mytrionAccessService.js';
 import { invalidateRosterCache } from '../../src/modules/customerService/csAnalyticsScope.js';
+import type { MytrionId } from '../../src/lib/mytrions.js';
 import { invalidateFieldCache } from '../../src/modules/customerService/fieldResolver.js';
 import { getTouchpoint, listTouchpoints } from '../../src/modules/touchpoints/catalog/index.js';
 import { canInvokeTouchpoint } from '../../src/modules/touchpoints/dispatcher.js';
@@ -63,6 +90,9 @@ import type { TenantContext } from '../../src/types/tenantContext.js';
 const records = vi.mocked(zohoCrmRecords, true);
 const deluge = vi.mocked(executeZohoFunctionWithFallback);
 const dwhGet = vi.mocked(serverCrm.get);
+const activeUsers = vi.mocked(listActiveUsersCached);
+const resolveBatch = vi.mocked(mytrionAccessService.resolveBatch);
+const runCoql = vi.mocked(zohoCrm.runCoql);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -95,6 +125,9 @@ beforeEach(() => {
     { api_name: 'Name' },
     { api_name: 'Status_of_App', pick_list_values: [{ actual_value: 'In process' }] },
   ]);
+  activeUsers.mockResolvedValue([]);
+  resolveBatch.mockResolvedValue(new Map());
+  runCoql.mockResolvedValue({ rows: [], count: 0, moreRecords: false });
 });
 
 async function workerToken(opts: {
@@ -154,8 +187,13 @@ function csCtx(overrides: Partial<TenantContext> = {}): TenantContext {
 }
 
 describe('cs touchpoint catalog', () => {
-  it('registers the three cs.* entries, all customer-service scoped reads', () => {
-    const keys = ['cs.home.metrics', 'cs.applications.list', 'cs.datacenter.deals'];
+  it('registers the four cs.* entries, all customer-service scoped reads', () => {
+    const keys = [
+      'cs.home.metrics',
+      'cs.applications.list',
+      'cs.datacenter.deals',
+      'cs.carrier.trucking_number_request',
+    ];
     for (const key of keys) {
       const tp = getTouchpoint(key);
       expect(tp, key).toBeDefined();
@@ -229,6 +267,40 @@ describe('/cs/* route gates', () => {
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('bulk card tracking (Clients tab Tracking # column)', () => {
+  it('chunks carrier ids into one COQL call and maps Carrier_ID -> Fedex_Tracking', async () => {
+    runCoql.mockResolvedValue({
+      rows: [
+        { Carrier_ID: 111, Fedex_Tracking: '1Z999' },
+        { Carrier_ID: 222, Fedex_Tracking: '' },
+      ],
+      count: 2,
+      moreRecords: false,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/tracking',
+      headers: bearer(await csAgent()),
+      payload: { carrierIds: ['111', '222', '333'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ tracking: { '111': '1Z999', '222': '' } });
+    expect(runCoql).toHaveBeenCalledTimes(1);
+    expect(runCoql).toHaveBeenCalledWith(expect.stringContaining('Carrier_ID in (111,222,333)'));
+  });
+
+  it('is gated the same as every other CS route (sales worker refused)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/cs/applications/tracking',
+      headers: bearer(await salesAgent()),
+      payload: { carrierIds: ['111'] },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(runCoql).not.toHaveBeenCalled();
   });
 });
 
@@ -421,21 +493,83 @@ describe('analytics scope forcing', () => {
     );
   });
 
-  it('the roster is manager-only', async () => {
-    deluge.mockResolvedValue({ data: [{ id: 'desk-1', email: 'a@b.c' }] });
+  it('the roster is manager-only, and scoped to admin-granted CS access, not Desk department membership', async () => {
+    // Desk reports ALL THREE as CS-department agents (e.g. cross-assigned for ticket overflow) —
+    // the regression this guards (QA 2026-08-07, two rounds):
+    //  - round 1: a Verification agent (Cooper Rodrigo) showed up because the roster trusted Desk
+    //    department tags instead of actual admin-granted access.
+    //  - round 2: switching to admin-granted access alone let TWO IT admins (Islombek Mamurov,
+    //    Amir Alimov — real names from the report) through, because combineAccess expands an
+    //    all-department grant's accessibleMytrions to literally every Mytrion id, "customer-service"
+    //    included. Being allowed to SEE CS data (correct, for an admin) isn't the same as WORKING
+    //    CS tickets (what the leaderboard means to show).
+    deluge.mockResolvedValue({
+      data: [
+        { id: 'desk-1', email: 'true-cs@octanefuel.com' },
+        { id: 'desk-2', email: 'verification-overflow@octanefuel.com' },
+        { id: 'desk-3', email: 'it-admin@octanefuel.com' },
+      ],
+    });
+    activeUsers.mockResolvedValue([
+      {
+        zohoUserId: '101',
+        name: 'True CS',
+        email: 'true-cs@octanefuel.com',
+        profile: 'Standard Plus',
+        role: 'Customer Service Agent',
+        isOnline: false,
+      },
+      {
+        zohoUserId: '102',
+        name: 'Cooper Rodrigo',
+        email: 'verification-overflow@octanefuel.com',
+        profile: 'Standard Plus',
+        role: 'Verification Agent',
+        isOnline: false,
+      },
+      {
+        zohoUserId: '103',
+        name: 'Islombek Mamurov',
+        email: 'it-admin@octanefuel.com',
+        profile: 'Administrator',
+        role: 'Zoho Admin',
+        isOnline: false,
+      },
+    ]);
+    const access = (mytrions: MytrionId[], allDepartmentAccess = false) => ({
+      accessibleMytrions: mytrions,
+      homeMytrion: null,
+      allDepartmentAccess,
+      departments: allDepartmentAccess ? [] : mytrions,
+      viewAsUserIds: [],
+      mytrionAccessModes: {},
+    });
+    resolveBatch.mockResolvedValue(
+      new Map([
+        ['101', access(['customer-service'])],
+        ['102', access(['verification'])],
+        // Mirrors combineAccess's real behavior for a marker-admin: every Mytrion id, including
+        // customer-service, plus allDepartmentAccess: true.
+        ['103', access(['sales', 'billing', 'customer-service', 'verification'], true)],
+      ]),
+    );
+
     const denied = await app.inject({
       method: 'GET',
       url: '/v1/cs/analytics/roster',
       headers: bearer(await csAgent()),
     });
     expect(denied.statusCode).toBe(403);
+
     const allowed = await app.inject({
       method: 'GET',
       url: '/v1/cs/analytics/roster',
       headers: bearer(await csDirector()),
     });
     expect(allowed.statusCode).toBe(200);
-    expect(allowed.json().agents).toHaveLength(1);
+    const agents = allowed.json().agents;
+    expect(agents).toHaveLength(1);
+    expect(agents[0]).toMatchObject({ id: 'desk-1', email: 'true-cs@octanefuel.com' });
   });
 
   it('/cs/context returns the backend manager verdict', async () => {

@@ -57,7 +57,7 @@ export function assertRuntimeSecrets(): void {
 
   // Only when Dropbox is actually selected: the three credentials are optional otherwise, and warning
   // about them on every S3 deploy would train people to ignore this list.
-  if (env.COMMS_STORAGE_PROVIDER === 'dropbox') {
+  if (env.COMMS_STORAGE_PROVIDER === 'dropbox' || env.MAINTENANCE_STORAGE_PROVIDER === 'dropbox_maintenance') {
     if (!env.DROPBOX_APP_KEY) missing.push('DROPBOX_APP_KEY');
     if (!env.DROPBOX_APP_SECRET) missing.push('DROPBOX_APP_SECRET');
     if (!env.DROPBOX_REFRESH_TOKEN) missing.push('DROPBOX_REFRESH_TOKEN');

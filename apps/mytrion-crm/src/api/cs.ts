@@ -6,7 +6,7 @@
  */
 import { request, requestMultipart } from './transport';
 import { callTouchpoint } from './touchpoints';
-import type { TouchpointKey, TouchpointMap } from './touchpointTypes';
+import type { TouchpointKey, TouchpointMap, TrackingResult } from './touchpointTypes';
 
 const CS_HEADERS = { 'x-department-access': 'customer-service' } as const;
 const CS_DEPARTMENTS = ['customer-service'];
@@ -57,6 +57,36 @@ export function toggleOnboarding(
     headers: CS_HEADERS,
     body: { field, value },
   }) as Promise<SaveApplicationResult>;
+}
+
+// ---- Card tracking (additional card orders — QA 2026-08-07) ----
+
+/**
+ * FedEx tracking for a carrier's card shipments — the Deal-level `Tracking_Information` subform,
+ * not the Applications record (that module never carried real tracking data; see the empty
+ * "Tracking #" column this replaced).
+ *
+ * A separate touchpoint key from Sales' `carrier.trucking_number_request` (same handler
+ * underneath) — that one carries `carrierParam`, which gates non-admins to their own DWH-owned
+ * carrier book. CS has no such book: an agent looks up whatever carrier a client calls about, so
+ * `cs.carrier.trucking_number_request` (csDeluge.ts) omits it entirely, same as the Billing
+ * portfolio-role touchpoints.
+ */
+export function getCardTrackingNumbers(carrierId: string): Promise<TrackingResult> {
+  return csTouchpoint('cs.carrier.trucking_number_request', { carrierId });
+}
+
+/**
+ * Bulk FedEx tracking for the Clients tab's Tracking # column — one call for every carrierId on
+ * the current page, not one per row (see fetchFedexTrackingBulk on the backend for why that
+ * matters: up to 2000 rows × 2 Zoho calls each would be the naive per-row alternative).
+ */
+export function getCardTrackingBulk(carrierIds: string[]): Promise<Record<string, string>> {
+  if (carrierIds.length === 0) return Promise.resolve({});
+  return request('POST', '/cs/applications/tracking', {
+    headers: CS_HEADERS,
+    body: { carrierIds },
+  }).then((r) => (r as { tracking: Record<string, string> }).tracking);
 }
 
 // ---- Citifuel ----

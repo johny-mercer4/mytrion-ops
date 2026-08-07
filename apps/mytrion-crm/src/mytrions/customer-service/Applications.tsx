@@ -6,8 +6,9 @@
  */
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 
-import { toggleOnboarding, type OnboardingField } from '@/api/cs';
+import { getCardTrackingBulk, toggleOnboarding, type OnboardingField } from '@/api/cs';
 import { ApplicationModal } from './ApplicationModal';
+import { CardTracking } from './CardTracking';
 import { copyWithToast } from './copyToast';
 import {
   AppRow,
@@ -24,9 +25,14 @@ import { invalidateApplicationsCache, loadApplications, useLoad } from './live';
 /** Widget parity: search fires debounced (App ID / Carrier ID / name / phone, server-side). */
 const SEARCH_DEBOUNCE_MS = 400;
 
-const TABS: { id: SubTab; label: string }[] = [
+/** Card Tracking (QA 2026-08-07) has its own carrier search — it isn't a page of `Application`
+ *  rows like the other two, so it stays out of `SubTab`/`columnsFor`/`loadApplications`. */
+type PanelTab = SubTab | 'tracking';
+
+const TABS: { id: PanelTab; label: string }[] = [
   { id: 'apps', label: 'Apps in Process' },
   { id: 'clients', label: 'Clients' },
+  { id: 'tracking', label: 'Card Tracking' },
 ];
 
 const REFRESH_PATH =
@@ -36,6 +42,9 @@ const REFRESH_PATH =
 
 export function Applications() {
   const [subTab, setSubTab] = useState<SubTab>('apps');
+  // Separate from `subTab`: switching to Card Tracking must not touch the Applications-table
+  // query state, so flipping back to Apps/Clients shows exactly what was there before, unrefetched.
+  const [activeTab, setActiveTab] = useState<PanelTab>('apps');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -46,6 +55,9 @@ export function Applications() {
   const [pendingToggle, setPendingToggle] = useState<string | null>(null);
   // Optimistic per-row overrides layered over the loaded page (tick-boxes update in place).
   const [overrides, setOverrides] = useState<Record<string, Partial<Application>>>({});
+  // Bulk-fetched FedEx tracking numbers, keyed by row id — see the effect below. Kept separate
+  // from `overrides` (that one is specifically the tick-box optimistic-update mechanism).
+  const [trackingById, setTrackingById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -61,13 +73,42 @@ export function Applications() {
   );
   const loading = pageData.loading || pageData.refreshing;
 
+  // Clients-tab only — Tracking # is Deal-level data an "apps in process" row has no use for.
+  // One bulk call for the whole page rather than one lookup per row (see getCardTrackingBulk /
+  // the backend's fetchFedexTrackingBulk for why a per-row call doesn't scale to a 2000-row page).
+  useEffect(() => {
+    if (subTab !== 'clients') return;
+    const clientRows = pageData.data?.rows ?? [];
+    const carrierIds = [...new Set(clientRows.map((r) => r.carrierId).filter(Boolean))];
+    if (carrierIds.length === 0) return;
+    let cancelled = false;
+    getCardTrackingBulk(carrierIds)
+      .then((byCarrier) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        // Every row that HAD a carrierId resolves to a string now, even '' — a carrier with no
+        // matching Deal must render '—', not spin forever waiting for a match that'll never come.
+        for (const r of clientRows) next[r.id] = byCarrier[r.carrierId] ?? '';
+        setTrackingById(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [subTab, pageData.data]);
+
   const rows = useMemo(() => {
     const base = pageData.data?.rows ?? [];
     return base.map((a) => {
       const o = overrides[a.id];
-      return o ? { ...a, ...o } : a;
+      const tracking = trackingById[a.id];
+      return {
+        ...a,
+        ...o,
+        ...(tracking !== undefined ? { trackingNumber: tracking } : {}),
+      };
     });
-  }, [pageData.data, overrides]);
+  }, [pageData.data, overrides, trackingById]);
 
   const hasMore = pageData.data?.moreRecords === true;
   // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
@@ -103,8 +144,14 @@ export function Applications() {
     [notify],
   );
 
-  function switchTab(id: SubTab) {
-    if (loading || subTab === id) return;
+  function switchTab(id: PanelTab) {
+    if (activeTab === id) return;
+    if (id === 'tracking') {
+      setActiveTab(id);
+      return;
+    }
+    if (loading) return;
+    setActiveTab(id);
     setSubTab(id);
     setPage(1);
   }
@@ -153,72 +200,80 @@ export function Applications() {
         <div>
           <h2 className="cs-title">Applications</h2>
           <div className="cs-subtitle">
-            {rows.length} on page · Page {page}
-            {loading ? <span style={{ color: 'var(--cs-accent)', marginLeft: '0.5rem' }}>Loading…</span> : null}
+            {activeTab === 'tracking' ? (
+              'FedEx shipment tracking for additional card orders'
+            ) : (
+              <>
+                {rows.length} on page · Page {page}
+                {loading ? <span style={{ color: 'var(--cs-accent)', marginLeft: '0.5rem' }}>Loading…</span> : null}
+              </>
+            )}
           </div>
         </div>
-        <div className="cs-app-header-tools">
-          <div className={`cs-app-search${search ? ' has-value' : ''}`}>
-            <svg
-              className="cs-app-search-icon"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by App ID, Carrier ID, Name or Phone…"
-            />
-            {search ? (
-              <button
-                type="button"
-                className="cs-app-search-clear"
-                aria-label="Clear search"
-                title="Clear search"
-                onClick={() => setSearch('')}
+        {activeTab === 'tracking' ? null : (
+          <div className="cs-app-header-tools">
+            <div className={`cs-app-search${search ? ' has-value' : ''}`}>
+              <svg
+                className="cs-app-search-icon"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
               >
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            ) : null}
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by App ID, Carrier ID, Name or Phone…"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  className="cs-app-search-clear"
+                  aria-label="Clear search"
+                  title="Clear search"
+                  onClick={() => setSearch('')}
+                >
+                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+            <button className="cs-refresh-btn" onClick={pageData.refresh} disabled={loading}>
+              <svg
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                className={loading ? 'spin-icon' : undefined}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+              </svg>
+              Refresh
+            </button>
           </div>
-          <button className="cs-refresh-btn" onClick={pageData.refresh} disabled={loading}>
-            <svg
-              width="13"
-              height="13"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              className={loading ? 'spin-icon' : undefined}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
-            </svg>
-            Refresh
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* ── Sub-tabs (Apps in Process / Clients) ── */}
+      {/* ── Sub-tabs (Apps in Process / Clients / Card Tracking) ── */}
       <div className="cs-app-toolbar">
         <div className="cs-app-tabs">
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              className={`cs-app-tab${subTab === tab.id ? ' active' : ''}`}
-              disabled={loading}
+              className={`cs-app-tab${activeTab === tab.id ? ' active' : ''}`}
+              disabled={tab.id !== 'tracking' && loading}
               onClick={() => switchTab(tab.id)}
             >
               {tab.label}
@@ -227,8 +282,9 @@ export function Applications() {
         </div>
       </div>
 
-      {/* ── Skeleton ── */}
-      {loading ? (
+      {activeTab === 'tracking' ? (
+        <CardTracking />
+      ) : loading ? (
         <div className="cs-table-wrap">
           {Array.from({ length: 10 }, (_, i) => (
             <div key={i} className="cs-skeleton" style={{ height: 36, borderRadius: 4, marginBottom: 2 }} />
@@ -292,7 +348,7 @@ export function Applications() {
       )}
 
       {/* ── Pagination ── */}
-      {page > 1 || hasMore ? (
+      {activeTab !== 'tracking' && (page > 1 || hasMore) ? (
         <div className="cs-app-pagination">
           <button className="cs-btn cs-btn-ghost" disabled={page <= 1 || loading} onClick={() => goToPage(page - 1)}>
             ← Prev

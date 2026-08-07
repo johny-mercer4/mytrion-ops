@@ -75,6 +75,8 @@ const storagePresignGetMock = vi.fn(async (_key: string, _opts?: { filename?: st
 const storageDeleteMock = vi.fn(async (_key: string) => undefined);
 vi.mock('../../src/modules/files/storage/index.js', () => ({
   getStorage: () => ({ put: storagePutMock, presignGet: storagePresignGetMock, delete: storageDeleteMock }),
+  storageFor: () => ({ put: storagePutMock, presignGet: storagePresignGetMock, delete: storageDeleteMock }),
+  maintenanceStorageProvider: () => 's3',
 }));
 // Storage isn't feature-flagged for Maintenance attachments — the route checks env directly
 // (requireStorageConfigured). Defaults to "configured"; individual tests blank a field to hit the
@@ -92,12 +94,13 @@ vi.mock('../../src/config/env.js', async (importOriginal) => {
     },
   };
 });
-// withGeneratedReferenceNumber's raw sequence query — same seam cs-maintenance-rules.test.ts stubs.
-// Real `db` (and everything else this module exports) stays intact: the app's own session/auth
-// plumbing depends on it, and a bare `{ pg }` mock would silently blank that out for the WHOLE app.
+// withGeneratedReferenceNumber's raw uniqueness-check query — same seam cs-maintenance-rules.test.ts
+// stubs. `taken: false` so a generated candidate is always accepted on the first attempt. Real `db`
+// (and everything else this module exports) stays intact: the app's own session/auth plumbing
+// depends on it, and a bare `{ pg }` mock would silently blank that out for the WHOLE app.
 vi.mock('../../src/db/client.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/db/client.js')>();
-  return { ...mod, pg: vi.fn(async () => [{ v: '500000001' }]) };
+  return { ...mod, pg: vi.fn(async () => [{ taken: false }]) };
 });
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
@@ -674,7 +677,12 @@ describe('Attachments (CS feedback 2026-07-31)', () => {
     expect(Buffer.isBuffer(buf)).toBe(true);
 
     const inserted = attachmentRepo.insert.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(inserted).toMatchObject({ caseId: 'mtc_abc123', fileName: 'invoice.pdf', mime: 'application/pdf' });
+    expect(inserted).toMatchObject({
+      caseId: 'mtc_abc123',
+      fileName: 'invoice.pdf',
+      mime: 'application/pdf',
+      storageProvider: 's3',
+    });
     expect(audited).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: 'cs.maintenance.attachment_upload', status: 'ok' }),

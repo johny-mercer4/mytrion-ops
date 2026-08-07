@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { getSession } from '@/api/session';
 import type { CsSectionId } from './csNav';
 import { greeting, type ActivityRow, type PriorityRow } from './data';
+import { deskTicketUrl } from './deskUrls';
 import { loadHome, useLoad } from './live';
 
 const PRIORITY_COLORS: Record<PriorityRow['tone'], string> = {
@@ -317,7 +318,14 @@ export function Home({ onNavigate }: HomeProps) {
               {openTicketRows.length > 0 ? (
                 <div className="cs-home-ticket-list">
                   {openTicketRows.map((t) => (
-                    <div key={t.id} className="cs-home-ticket-row">
+                    <a
+                      key={t.id}
+                      className="cs-home-ticket-row"
+                      href={deskTicketUrl(t.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open in Zoho Desk"
+                    >
                       <span className="cs-home-ticket-num">#{t.ticketNumber ?? t.id}</span>
                       <span className="cs-home-ticket-subject" title={t.subject ?? undefined}>
                         {t.subject ?? '—'}
@@ -334,7 +342,7 @@ export function Home({ onNavigate }: HomeProps) {
                       <span className="cs-home-ticket-owner" title={t.owner ?? 'Unassigned'}>
                         {t.owner ?? 'Unassigned'}
                       </span>
-                    </div>
+                    </a>
                   ))}
                 </div>
               ) : null}

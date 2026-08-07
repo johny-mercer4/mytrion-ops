@@ -506,6 +506,12 @@ const EnvSchema = z.object({
   // Folder prefix inside the Dropbox app folder. Tenant and thread are appended, so one Dropbox app can
   // serve every tenant without their files interleaving.
   DROPBOX_ROOT_PATH: z.string().default('/comms'),
+  // Which provider a NEW Maintenance attachment lands on. Separate from COMMS_STORAGE_PROVIDER because
+  // Maintenance attachments are a distinct table (maintenance_case_attachments), not file_assets.
+  MAINTENANCE_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_maintenance']).default('s3'),
+  // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
+  // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
+  DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.

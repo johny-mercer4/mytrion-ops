@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   process.env.DROPBOX_ROOT_PATH = '/comms';
+  process.env.DROPBOX_MAINTENANCE_ROOT_PATH = '/maintenance';
 });
 
 import { keyToDropboxPath } from '../../src/modules/files/storage/dropboxStorage.js';
@@ -22,7 +23,7 @@ import {
   storageFor,
 } from '../../src/modules/files/storage/index.js';
 import { s3Storage } from '../../src/modules/files/storage/s3Storage.js';
-import { dropboxStorage } from '../../src/modules/files/storage/dropboxStorage.js';
+import { dropboxMaintenanceStorage, dropboxStorage } from '../../src/modules/files/storage/dropboxStorage.js';
 
 afterEach(() => {
   setStorageForTests(null);
@@ -72,12 +73,22 @@ describe('keyToDropboxPath — a stored key must resolve to the same path foreve
     expect(() => keyToDropboxPath('///')).toThrow(/empty key/i);
     expect(() => keyToDropboxPath('..')).toThrow(/empty key/i);
   });
+
+  it('an explicit root overrides the env default — Maintenance never lands under /comms', () => {
+    expect(keyToDropboxPath('mtc_1/report.pdf', '/maintenance')).toBe('/maintenance/mtc_1/report.pdf');
+  });
 });
 
 describe('storageFor — the ROW decides, not the env', () => {
-  it("resolves 's3' and 'dropbox' to their own adapters", () => {
+  it("resolves 's3', 'dropbox', and 'dropbox_maintenance' to their own adapters", () => {
     expect(storageFor('s3')).toBe(s3Storage);
     expect(storageFor('dropbox')).toBe(dropboxStorage);
+    expect(storageFor('dropbox_maintenance')).toBe(dropboxMaintenanceStorage);
+  });
+
+  it('comms and Maintenance are different adapter instances, bound to different roots', () => {
+    // If these were ever the same object, Maintenance uploads would silently land in /comms.
+    expect(dropboxStorage).not.toBe(dropboxMaintenanceStorage);
   });
 
   it('treats a null/undefined provider as S3 — every pre-Dropbox row is there', () => {

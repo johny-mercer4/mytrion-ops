@@ -9,6 +9,7 @@
  * IDs interpolated into Zoho search criteria (Owner / Application_ID / Carrier_ID) are validated numeric
  * first — a non-numeric id can't be smuggled into the criteria string.
  */
+import { zohoCrm } from './zohoCrm.js';
 import { zohoCrmRecords } from './zohoCrmRecords.js';
 
 type Row = Record<string, unknown>;
@@ -285,4 +286,41 @@ export async function fetchTruckingNumbers(carrierId: string): Promise<Row> {
   } catch (err) {
     return { status: 'error', message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// 6b. TRUCKING NUMBER — BULK (CS Applications "Clients" tab, Tracking # column)
+//    A page of that table can carry up to APPLICATIONS_PAGE_SIZE (2000) rows. Doing what
+//    fetchTruckingNumbers does — search + getRecord PER row — would be up to 4000 Zoho API calls
+//    per page load. One COQL query per ≤100 carrier ids (Zoho v8's `in (...)` cap) instead: 1-2
+//    calls per 100 rows. Only the single Fedex_Tracking field, not the Tracking_Information
+//    subform — COQL can't select subforms, and a table cell isn't the place for a shipment list
+//    anyway; that detail lives on the dedicated Card Tracking lookup (cs.carrier.trucking_number_request).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+const COQL_IN_CHUNK = 100; // Zoho v8 COQL: max 100 values in an `in (...)` list.
+
+export async function fetchFedexTrackingBulk(carrierIds: string[]): Promise<Record<string, string>> {
+  const ids = [...new Set(carrierIds.filter(numericId))];
+  const out: Record<string, string> = {};
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += COQL_IN_CHUNK) chunks.push(ids.slice(i, i + COQL_IN_CHUNK));
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const { rows } = await zohoCrm.runCoql(
+          `select Carrier_ID, Fedex_Tracking from Deals where Carrier_ID in (${chunk.join(',')}) limit 0, 2000`,
+        );
+        for (const r of rows) {
+          const cid = str(r.Carrier_ID);
+          // First match wins: a carrier with more than one Deal just needs SOME tracking number
+          // here, not a merged history — that's the dedicated lookup's job.
+          if (cid && out[cid] === undefined) out[cid] = str(r.Fedex_Tracking);
+        }
+      } catch {
+        // One bad chunk must not blank the rest of the page — those carriers just render '—'.
+      }
+    }),
+  );
+  return out;
 }
