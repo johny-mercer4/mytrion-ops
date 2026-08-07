@@ -38,7 +38,17 @@ const sql = postgres(databaseUrl, {
   ssl: dbSslOption(databaseUrl),
   // Seconds. Recycle idle sockets well under Render's reaper / LB idle window.
   idle_timeout: 20,
-  connect_timeout: 30,
+  /**
+   * Seconds to wait for a NEW connection. This was 30, and postgres.js retries, so an unreachable
+   * database turned a chat turn into a ~122s hang that died at the agent's 120s wall — the user saw
+   * two minutes of nothing and then "Failed query: insert into conversations", which reads like a
+   * schema bug rather than "the database is not answering".
+   *
+   * A reachable Postgres completes a handshake in tens of milliseconds (measured: 14ms local, and
+   * Render's DB sits beside the app), so 8s is generous for a healthy path and fails fast on a dead
+   * one. Boot is unaffected: runMigrationsOnBoot has its own retry budget (DB_BOOT_WAIT_SECONDS).
+   */
+  connect_timeout: 8,
   onnotice: (notice) => logger.debug({ notice }, 'pg notice'),
 });
 

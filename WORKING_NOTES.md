@@ -12677,3 +12677,51 @@ match, cannot override `outdated`, caps at 0.98) and 6 for `orOfTerms` (OR form,
 dropped, codes intact, de-dup/cap, empty input, injection-safe). The existing full-text RBAC test now
 asserts the transformed query is the parameter — its real point, that department names inside a
 question never become filters, is unchanged and still passes. Backend 2431 passed, lint 0 errors.
+
+## 2026-08-08 — "hello" took 122s because the production database was unreachable
+
+Reported: a bare "hello" hung for 122.4s and died with
+`Failed query: insert into "conversations" …`. The params in that error are all valid, so it was
+never a schema fault — the insert was waiting on a connection.
+
+Measured directly: the Render Postgres is **`CONNECT_TIMEOUT` after 47s** from this machine. Not slow,
+not rate-limited — it does not complete a handshake. It worked earlier today (the catalog sync and the
+first agent runs went through it), so it changed state during the session; the same fault killed the
+dev server twice mid-bench with "Connection terminated unexpectedly" and forced three passes to sync
+the catalog.
+
+`postgres.js` had `connect_timeout: 30` and retries, so ~4 attempts × 30s ≈ 122s, at which point the
+agent's 120s wall fired. The user waited two minutes and got a message that reads like a schema bug.
+
+Two fixes:
+
+1. **`.env` now points at the local database** (`localhost:5433`, measured **0.014s** vs unreachable).
+   The old URL is preserved as a commented `MYTRION_OPS_DATABASE_URL_PROD`. The local DB is fully
+   usable: 112 migrations, the 30 Sales self-knowledge docs, and an `Administrator` profile default
+   carrying all-department access — so a real Zoho admin session resolves the same authority it would
+   in prod. Only conversation history is empty. This is what CLAUDE.md's local run stack always
+   prescribed; `.env` pointing at prod was the hazard.
+2. **`connect_timeout` 30 → 8 seconds** (`src/db/client.ts`). A reachable Postgres handshakes in tens
+   of milliseconds, so 8s is generous for a healthy path and fails fast on a dead one — seconds with a
+   clear error instead of a two-minute hang. Boot is unaffected: `runMigrationsOnBoot` keeps its own
+   retry budget (`DB_BOOT_WAIT_SECONDS`).
+
+### Verified
+
+| request | before | after |
+| --- | --- | --- |
+| `hello` | **122,400ms**, failed | **42ms**, "Hello, John! How can I help you today?", zero tools |
+| "How do I activate a card in Sales Mytrion?" | failed | 24,716ms, `grade: sufficient / 0.928`, one `knowledge_search`, no CRM call, correct click path including the Customer Service section |
+
+### Two findings this surfaced — not yet fixed
+
+- **The orchestrator costs ~18s.** Pinned to `agent: 'sales'` the same question is 6,180ms; routed
+  through the orchestrator it is 24,716ms. That is the "+11.7s Consulting Sales" from the original
+  trace, and Admin chat always goes through the orchestrator. It is now the largest remaining latency
+  item — bigger than everything Phases 1–3 removed.
+- **Citations are lost on the orchestrator path.** `rag.grade` is `sufficient` and the answer is
+  correctly grounded, but `citations: []` reaches the client, so the UI shows no sources. Pinned to
+  the child, citations populate. Something between the child's `reportSources` and the orchestrator's
+  final result drops them.
+
+Backend 2431 passed / 1 skipped with the shorter timeout.
