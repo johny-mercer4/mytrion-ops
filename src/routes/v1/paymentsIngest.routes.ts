@@ -25,12 +25,70 @@ import { z } from 'zod';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { env } from '../../config/env.js';
 import { safeEqual } from '../../lib/crypto.js';
-import { AppError, AuthError } from '../../lib/errors.js';
-import type { NewPaymentTransaction } from '../../db/schema/index.js';
+import { AppError, AuthError, NotFoundError } from '../../lib/errors.js';
+import type { NewPaymentReturn, NewPaymentTransaction } from '../../db/schema/index.js';
 import { audit } from '../../modules/audit/auditLogger.js';
+import { resolveMxReturnMatch } from '../../modules/billing/mxReturnMatch.js';
+import { resolveStripeDisputeMatch } from '../../modules/billing/stripeDisputeMatch.js';
+import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
 
 const SECRET_HEADER = 'x-ingest-secret';
+
+/** Shared shared-secret check (Zapier can't present a session/JWT) — every route in this file uses
+ *  the SAME weaker credential, deliberately: a leaked ingest secret can only reach these endpoints,
+ *  never the full API_KEY surface. */
+function requireIngestSecret(request: FastifyRequest): void {
+  const secret = env.BILLING_INGEST_SECRET;
+  if (!secret) {
+    throw new AppError('Payment ingest secret is not configured', {
+      statusCode: 503,
+      code: 'SERVER_MISCONFIGURED',
+    });
+  }
+  const provided = request.headers[SECRET_HEADER];
+  if (typeof provided !== 'string' || !safeEqual(provided, secret)) {
+    throw new AuthError('Invalid or missing ingest secret');
+  }
+}
+
+/** Tolerant of formatted amounts from email parsers ("$1,277.00", "1 277,00 " → 1277). An
+ *  unparseable amount becomes undefined rather than a 400. Shared by every ingest body below. */
+const tolerantAmount = z.preprocess((v) => {
+  if (v === null || v === undefined || v === '') return undefined;
+  if (typeof v === 'number') return v;
+  const n = Number(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : undefined;
+}, z.number().optional());
+
+/**
+ * One inbound Stripe dispute (chargeback) from a Zapier email parser — the dispute twin of the
+ * payment webhook below. `disputeId` is the ONLY required id, with no fallback chain: a charge id
+ * substituted in its place would collide with a SECOND dispute on the same charge and silently
+ * overwrite the first return's amount/date/reason on redelivery (see
+ * `paymentReturnRepo.upsertDisputeUnlessMatched`'s docstring). `paymentIntentId` is optional — when
+ * the parsed email has it, the dispute auto-links to its Stripe charge (`payment_transactions` is
+ * keyed by `pi_…`) and may auto-reverse a CMP payment we created for it
+ * (`modules/billing/stripeDisputeMatch.ts`); when absent, the dispute lands unmatched for an agent
+ * to match manually in the Returns tab, exactly like an MX return with no automatic signal.
+ */
+const disputeBody = z.object({
+  disputeId: z.string().min(1).max(120),
+  paymentIntentId: z.string().max(160).optional(),
+  chargeId: z.string().max(160).optional(),
+  amount: tolerantAmount,
+  disputeDate: z.string().max(40).optional(),
+  reason: z.string().max(500).optional(),
+  cardLast4: z.string().max(8).optional(),
+  customerName: z.string().max(200).optional(),
+  // `payment_returns` has no lifecycle/status column and no reinstatement path (nothing re-applies
+  // a CMP payment once deleted) — so only a dispute-CREATED event is processed. A later "won" /
+  // "lost" / "closed" email must not collide with or re-reverse the same row; it no-ops (200, so
+  // Zapier doesn't retry a benign skip) but the raw payload is still logged for traceability.
+  stage: z.string().max(60).optional(),
+});
+
+const NON_CREATION_STAGE = /won|lost|clos|refund|resolv/i;
 
 /** One inbound payment from a Zapier email parser. Only `source` + `sourceRecordId` are required;
  *  everything else is best-effort. Unknown extra fields are preserved in `raw`. */
@@ -38,14 +96,7 @@ const ingestBody = z.object({
   source: z.enum(['zelle', 'stripe', 'chase']),
   // Stable rail id for idempotency: Stripe charge/payment-intent id, Zelle confirmation number.
   sourceRecordId: z.string().min(1).max(120),
-  // Tolerant of formatted amounts from email parsers ("$1,277.00", "1 277,00 " → 1277).
-  // An unparseable amount becomes undefined (row still saved, amount null) rather than a 400.
-  amount: z.preprocess((v) => {
-    if (v === null || v === undefined || v === '') return undefined;
-    if (typeof v === 'number') return v;
-    const n = Number(String(v).replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : undefined;
-  }, z.number().optional()),
+  amount: tolerantAmount,
   currency: z.string().max(8).optional(),
   occurredAt: z.string().max(40).optional(), // ISO or any Date-parseable string
   name: z.string().max(200).optional(),
@@ -82,18 +133,7 @@ const autoMapBody = z.object({
 
 export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> {
   app.post('/billing/ingest/payment', async (request: FastifyRequest, reply: FastifyReply) => {
-    // ── shared-secret auth (Zapier can't present a session/JWT) ──
-    const secret = env.BILLING_INGEST_SECRET;
-    if (!secret) {
-      throw new AppError('Payment ingest secret is not configured', {
-        statusCode: 503,
-        code: 'SERVER_MISCONFIGURED',
-      });
-    }
-    const provided = request.headers[SECRET_HEADER];
-    if (typeof provided !== 'string' || !safeEqual(provided, secret)) {
-      throw new AuthError('Invalid or missing ingest secret');
-    }
+    requireIngestSecret(request);
 
     const b = ingestBody.parse(request.body ?? {});
     const occurred = b.occurredAt ? new Date(b.occurredAt) : null;
@@ -161,17 +201,7 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
    * means someone/something else got there first, not an error.
    */
   app.post('/billing/transactions/auto-map', async (request: FastifyRequest, reply: FastifyReply) => {
-    const secret = env.BILLING_INGEST_SECRET;
-    if (!secret) {
-      throw new AppError('Payment ingest secret is not configured', {
-        statusCode: 503,
-        code: 'SERVER_MISCONFIGURED',
-      });
-    }
-    const provided = request.headers[SECRET_HEADER];
-    if (typeof provided !== 'string' || !safeEqual(provided, secret)) {
-      throw new AuthError('Invalid or missing ingest secret');
-    }
+    requireIngestSecret(request);
 
     const b = autoMapBody.parse(request.body ?? {});
     const row = await paymentTransactionRepo.applyAutoMap(b.transactionId, {
@@ -199,5 +229,204 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
       'billing auto-map: transaction stamped',
     );
     return reply.send({ status: 'success', transactionId: b.transactionId, applied });
+  });
+
+  /**
+   * Stripe dispute (chargeback) webhook — Zapier → `payment_returns`, auto-linking to the original
+   * Stripe charge and auto-reversing its CMP payment when (and only when) we hold a `cmp_ref` we
+   * created ourselves. See `modules/billing/stripeDisputeMatch.ts` for why that's the ONLY safe
+   * auto-reversal condition on this rail (unlike MX, `mappingType` does not reliably tell us whether
+   * CMP holds the money). Same shared-secret auth as the payment webhook above.
+   */
+  app.post('/billing/ingest/dispute', async (request: FastifyRequest, reply: FastifyReply) => {
+    requireIngestSecret(request);
+
+    const b = disputeBody.parse(request.body ?? {});
+
+    if (b.stage && NON_CREATION_STAGE.test(b.stage)) {
+      request.log.info(
+        { disputeId: b.disputeId, stage: b.stage },
+        'billing ingest: dispute lifecycle event ignored (not a creation event)',
+      );
+      return reply.send({ status: 'success', disputeId: b.disputeId, ignored: true });
+    }
+
+    const disputeDate = b.disputeDate ? new Date(b.disputeDate) : null;
+    const row: NewPaymentReturn = {
+      source: 'stripe-dispute',
+      sourceRecordId: b.disputeId,
+      returnType: 'Stripe-Dispute',
+      customerName: b.customerName ?? null,
+      referenceNumber: b.paymentIntentId ?? b.chargeId ?? null,
+      last4: b.cardLast4 ?? null,
+      amount: b.amount != null ? (paymentTransactionRepo.money(b.amount) ?? null) : null,
+      returnDate: disputeDate && !Number.isNaN(disputeDate.getTime()) ? disputeDate : null,
+      reason: b.reason ?? null,
+      // Full original payload (incl. any fields not modelled above) for traceability.
+      raw: (request.body ?? {}) as Record<string, unknown>,
+    };
+    const ret = await paymentReturnRepo.upsertDisputeUnlessMatched(row);
+
+    if (ret.matched) {
+      // Already matched — a retried/redelivered Zap, or an agent got there first in the UI. 200,
+      // not 409: Zapier retries on any non-2xx, and this is a benign no-op, not an error.
+      request.log.info({ disputeId: b.disputeId, returnId: ret.id }, 'billing ingest: dispute already matched');
+      return reply.send({ status: 'success', disputeId: b.disputeId, returnId: ret.id, matched: 'already' });
+    }
+
+    const resolution = await resolveStripeDisputeMatch({
+      paymentIntentId: b.paymentIntentId,
+      amount: b.amount ?? 0,
+    });
+
+    let transactionId: number | undefined;
+    let isReversed = false;
+    if (resolution.originalTransactionId != null) {
+      // Claim-then-act: flips matched=true BEFORE touching CMP, so a concurrent redelivery or a
+      // human working the same return sees matched=true and backs off rather than both reversing.
+      const claimed = await paymentReturnRepo.claimForMatch(ret.id, {
+        originalTransactionId: resolution.originalTransactionId,
+        matchedBy: 'zapier-ingest',
+      });
+      if (claimed) {
+        transactionId = resolution.originalTransactionId;
+        isReversed = resolution.isReversed;
+        await paymentReturnRepo.recordCmpReversal(ret.id, {
+          matchNote: resolution.matchNote ?? 'reconcile manually',
+          isReversed: resolution.isReversed,
+          resolvedBy: 'zapier-ingest',
+        });
+        await paymentTransactionRepo.setReturned(resolution.originalTransactionId, new Date());
+      }
+      // else: lost the claim race — someone/something else already owns this return; nothing left
+      // to do here (never attempt CMP after losing a claim).
+    }
+
+    // Financial write audit trail. Secret-authed webhook (no session ctx) → synthetic system actor.
+    await audit({
+      tenantId: DEFAULT_TENANT_ID,
+      action: 'billing.ingest.dispute',
+      status: 'ok',
+      audience: 'internal',
+      userName: 'zapier-ingest',
+      resourceType: 'payment_return',
+      resourceId: String(ret.id),
+      detail: { disputeId: b.disputeId, outcome: resolution.outcome, transactionId: transactionId ?? null, isReversed },
+      requestId: request.id,
+    });
+    if (isReversed && transactionId != null) {
+      // A distinct row for the case that matters most if something needs reconciling later: real
+      // money was deleted in CMP with no human in the loop.
+      await audit({
+        tenantId: DEFAULT_TENANT_ID,
+        action: 'billing.returns.stripe-auto-reversal',
+        status: 'ok',
+        audience: 'internal',
+        userName: 'zapier-ingest',
+        resourceType: 'payment_transaction',
+        resourceId: String(transactionId),
+        detail: { disputeId: b.disputeId, returnId: ret.id, ...resolution.detail },
+        requestId: request.id,
+      });
+    }
+    request.log.info(
+      { disputeId: b.disputeId, returnId: ret.id, outcome: resolution.outcome, isReversed },
+      'billing ingest: dispute processed',
+    );
+    return reply.send({
+      status: 'success',
+      disputeId: b.disputeId,
+      returnId: ret.id,
+      outcome: resolution.outcome,
+      isReversed,
+    });
+  });
+
+  /**
+   * Ingest-time MX return match — called by servercrm's `jobs/mxReturnsSync.js` right after it
+   * inserts a NEW `payment_returns` row (the row already exists; this call only attempts to match
+   * + reverse it), so an ACH return or card chargeback gets a shot at auto-resolution the moment it
+   * lands instead of waiting on the legacy Zoho `automation.processReturnUnmap` workflow. See
+   * `modules/billing/mxReturnMatch.ts` for the decision (exact-reference lookup, then the same two
+   * branches the manual match route runs) and its docblock for the Zoho-race analysis.
+   */
+  const mxReturnMatchBody = z.object({ returnId: z.coerce.number().int().positive() });
+
+  app.post('/billing/ingest/mx-return-match', async (request: FastifyRequest, reply: FastifyReply) => {
+    requireIngestSecret(request);
+
+    const b = mxReturnMatchBody.parse(request.body ?? {});
+    const ret = await paymentReturnRepo.getById(b.returnId);
+    if (!ret) throw new NotFoundError(`Return ${b.returnId} not found`);
+
+    if (ret.matched) {
+      // Zoho's workflow (or a human) already got there first — benign, not an error.
+      request.log.info({ returnId: b.returnId }, 'billing ingest: mx return already matched');
+      return reply.send({ status: 'success', returnId: b.returnId, matched: 'already' });
+    }
+
+    const resolution = await resolveMxReturnMatch({
+      referenceNumber: ret.referenceNumber,
+      amount: ret.amount != null ? Number(ret.amount) : 0,
+    });
+
+    let transactionId: number | undefined;
+    let isReversed = false;
+    if (resolution.originalTransactionId != null) {
+      const claimed = await paymentReturnRepo.claimForMatch(b.returnId, {
+        originalTransactionId: resolution.originalTransactionId,
+        matchedBy: 'mytrion-ops (ingest-time auto-match)',
+      });
+      if (claimed) {
+        transactionId = resolution.originalTransactionId;
+        isReversed = resolution.isReversed;
+        await paymentReturnRepo.recordCmpReversal(b.returnId, {
+          matchNote: resolution.matchNote ?? 'reconcile manually',
+          isReversed: resolution.isReversed,
+          resolvedBy: 'mytrion-ops (ingest-time auto-match)',
+        });
+        if (resolution.mappingPatch) {
+          await paymentTransactionRepo.applyMapping(resolution.originalTransactionId, {
+            ...resolution.mappingPatch,
+            isInvoiceMapped: true,
+            mappedBy: 'mytrion-ops (ingest-time auto-match)',
+            mappedAt: new Date(),
+          });
+        }
+        await paymentTransactionRepo.setReturned(resolution.originalTransactionId, new Date());
+      }
+      // else: lost the claim race (a human or Zoho's sync matched it between our read and the
+      // claim) — never attempt CMP after losing a claim.
+    }
+
+    await audit({
+      tenantId: DEFAULT_TENANT_ID,
+      action: 'billing.ingest.mx-return-match',
+      status: 'ok',
+      audience: 'internal',
+      userName: 'mytrion-ops (ingest-time auto-match)',
+      resourceType: 'payment_return',
+      resourceId: String(b.returnId),
+      detail: { outcome: resolution.outcome, transactionId: transactionId ?? null, isReversed },
+      requestId: request.id,
+    });
+    if (isReversed && transactionId != null) {
+      await audit({
+        tenantId: DEFAULT_TENANT_ID,
+        action: 'billing.returns.mx-auto-reversal',
+        status: 'ok',
+        audience: 'internal',
+        userName: 'mytrion-ops (ingest-time auto-match)',
+        resourceType: 'payment_transaction',
+        resourceId: String(transactionId),
+        detail: { returnId: b.returnId, ...resolution.detail },
+        requestId: request.id,
+      });
+    }
+    request.log.info(
+      { returnId: b.returnId, outcome: resolution.outcome, isReversed },
+      'billing ingest: mx return match attempted',
+    );
+    return reply.send({ status: 'success', returnId: b.returnId, outcome: resolution.outcome, isReversed });
   });
 }

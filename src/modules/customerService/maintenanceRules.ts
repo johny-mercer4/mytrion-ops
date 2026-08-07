@@ -44,9 +44,11 @@
  *   `name`, then try the DWH for a canonical name + carrier id. `companyZohoId` stays null on a
  *   Mytrion-created case by design — there is no Zoho Account to point at.
  */
+import { randomInt } from 'node:crypto';
 import type { NewMaintenanceCase } from '../../db/schema/maintenance_cases.js';
 import { searchCompanies } from '../../integrations/dwhCompanies.js';
 import { pg } from '../../db/client.js';
+import { AppError } from '../../lib/errors.js';
 
 /**
  * The three static values from the Zoho field-update actions, at NUMERIC(14,2) scale so they match
@@ -150,6 +152,11 @@ export async function withResolvedCompany<T extends Partial<NewMaintenanceCase>>
   return out;
 }
 
+/** 9-digit band, clear of the legacy Zoho range (1..400,826,792 — see the doc comment below). */
+const REFERENCE_NUMBER_MIN = 500_000_000;
+const REFERENCE_NUMBER_MAX = 1_000_000_000; // exclusive — randomInt's upper bound
+const REFERENCE_NUMBER_MAX_ATTEMPTS = 8;
+
 /**
  * Reference Number auto-generation on CREATE — NOT a Zoho port (no such automation exists on the
  * live module; `Reference_Number` is a plain integer field, and the 2,719 migrated values range
@@ -160,11 +167,32 @@ export async function withResolvedCompany<T extends Partial<NewMaintenanceCase>>
  *
  * CREATE-only, unlike compensation (which also refills on a clearing edit): clearing this field
  * on an edit is a deliberate correction, not something to silently regenerate.
+ *
+ * A Postgres SEQUENCE originally backed this (`maintenance_reference_number_seq`, migration 0100)
+ * — atomic, so accidentally collision-free, but a monotonic counter from a fixed start is the
+ * opposite of random: CS feedback 2026-08-07 caught it producing mostly-repeated-digit values like
+ * "500000005" (the sequence has barely advanced past its seed; every value is "500000000" plus a
+ * one-digit offset). Replaced with a real draw from `crypto.randomInt` — cryptographically strong,
+ * not `Math.random()` — over the same 9-digit band the sequence used, so a generated number still
+ * can never collide with a legacy manually-entered one. Checked against the table (migration 0106
+ * added the uniqueness the sequence only ever provided by accident) and retried on collision —
+ * astronomically unlikely at ~2,700 issued numbers across a 500-million-value band, but a silent
+ * duplicate is worse than a bounded retry.
  */
 export async function withGeneratedReferenceNumber<T extends Partial<NewMaintenanceCase>>(
   data: T,
 ): Promise<T & Pick<NewMaintenanceCase, 'referenceNumber'>> {
   if (!isEmpty(data.referenceNumber)) return data as T & Pick<NewMaintenanceCase, 'referenceNumber'>;
-  const rows = await pg<{ v: string }[]>`select nextval('maintenance_reference_number_seq')::text as v`;
-  return { ...data, referenceNumber: rows[0]?.v ?? null };
+  for (let attempt = 0; attempt < REFERENCE_NUMBER_MAX_ATTEMPTS; attempt++) {
+    const candidate = String(randomInt(REFERENCE_NUMBER_MIN, REFERENCE_NUMBER_MAX));
+    const rows = await pg<{ taken: boolean }[]>`
+      select exists(select 1 from maintenance_cases where reference_number = ${candidate}) as taken
+    `;
+    if (!rows[0]?.taken) return { ...data, referenceNumber: candidate };
+  }
+  throw new AppError('Could not generate a unique reference number — please try again', {
+    statusCode: 503,
+    code: 'REFERENCE_NUMBER_EXHAUSTED',
+    expose: true,
+  });
 }

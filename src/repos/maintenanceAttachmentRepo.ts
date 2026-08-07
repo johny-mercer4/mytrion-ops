@@ -8,7 +8,8 @@ import {
 import { firstOrUndefined } from './util.js';
 
 /** maintenance_case_attachments — files attached to a maintenance case. Metadata only; bytes live
- *  in R2 via `s3Storage`/`getStorage()` (`src/modules/files/storage`). */
+ *  in R2 or Dropbox via `storageFor()` (`src/modules/files/storage`) — the row's own
+ *  `storageProvider` says which. */
 export const maintenanceAttachmentRepo = {
   async insert(row: NewMaintenanceCaseAttachment): Promise<MaintenanceCaseAttachment | undefined> {
     return firstOrUndefined(await db.insert(maintenanceCaseAttachments).values(row).returning());

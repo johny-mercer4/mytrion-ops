@@ -113,6 +113,17 @@ describe('resolveReturnCmpReversal — tx.carrierId already known', () => {
     expect(res.mappingPatch).toEqual({ carrierId: '5801437', mappingType: AUTO_MAPPED_RETURN_TYPE });
     expect(res.detail.carrierVia).toBe('tx');
   });
+
+  // Regression pin: safe ONLY because this whole function already bails unless tx.source === 'mx'
+  // (see the top-of-function gate tested elsewhere in this file) — allowCmpLookup must stay true
+  // here specifically, never copy this pattern into a caller that hasn't gated the rail itself.
+  it('passes allowCmpLookup:true to reverseMapping (safe here — this function is MX-gated)', async () => {
+    reverseMappingMock.mockResolvedValue({ ok: true, kind: 'invoice', reversed: [{ invoiceId: 'I', paymentId: 'P' }] });
+
+    await resolveReturnCmpReversal(makeTx({ carrierId: '5801437' }));
+
+    expect(reverseMappingMock.mock.calls[0]?.[0]).toMatchObject({ allowCmpLookup: true });
+  });
 });
 
 describe('resolveReturnCmpReversal — already mapped (carrierId known) but no cmpRef yet', () => {

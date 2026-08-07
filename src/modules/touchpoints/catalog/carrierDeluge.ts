@@ -10,7 +10,14 @@ import { carrierId, cardNumber, idString, SALES, shortText } from './common.js';
 
 export const carrierDelugeTouchpoints: Touchpoint[] = [
   // Migrated off Zoho Deluge to a native Zoho-CRM call (kind: 'local'); carrierParam is retained so the
-  // dispatcher's assertCarrierOwned still gates non-admins. Byte-compatible with the old Deluge output.
+  // dispatcher's assertCarrierOwned still gates non-admins to their own DWH-owned book. Byte-compatible
+  // with the old Deluge output.
+  //
+  // Sales-only on purpose: CS reaches the SAME `fetchTruckingNumbers` via a separate key,
+  // `cs.carrier.trucking_number_request` (csDeluge.ts), with no `carrierParam` — CS agents look up
+  // any carrier a client calls about, not "their own book", so the ownership gate below must not
+  // apply to them. Widening THIS entry's departments to include customer-service was tried first
+  // (QA 2026-08-07) and still 403'd every CS lookup, because carrierParam is unconditional here.
   {
     kind: 'local',
     key: 'carrier.trucking_number_request',

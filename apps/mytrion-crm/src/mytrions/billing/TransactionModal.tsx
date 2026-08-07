@@ -700,8 +700,9 @@ export function TransactionModal({
               >
                 <Icon d="M3 10h10a5 5 0 015 5v1M3 10l4-4M3 10l4 4" size={14} w={2} />
                 <span>
-                  This payment was <strong>returned / charged back</strong> — the amount was reversed in CMP
-                  {tx.returnedAt ? ` on ${fmtShortDate(tx.returnedAt)}` : ''}. The mapping is kept for reference.
+                  This payment was <strong>returned / charged back</strong>
+                  {tx.returnedAt ? ` on ${fmtShortDate(tx.returnedAt)}` : ''} — CMP was reconciled where applicable.
+                  The mapping is kept for reference.
                 </span>
               </div>
             ) : null}

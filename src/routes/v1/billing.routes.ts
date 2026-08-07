@@ -23,7 +23,7 @@ import {
 } from '../../modules/billing/cmpWrites.js';
 import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
-import { assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
+import { amountsMatch, assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
 import { resolveReturnCmpReversal } from '../../modules/billing/returnsCmpReversal.js';
 import {
   getPrepayCompanies,
@@ -118,7 +118,18 @@ const candidatesQuery = z.object({
   amount: z.string().max(40).optional(),
   beforeDate: z.string().max(40).optional(),
   customerName: z.string().max(200).optional(),
+  // The return being matched — used ONLY to derive which transaction rail(s) are eligible
+  // candidates, server-side (never trust a client-supplied source/rail directly).
+  returnId: z.coerce.number().int().positive().optional(),
 });
+
+/** `payment_returns.source` → the `payment_transactions.source` values eligible as a match
+ *  candidate, plus how far back "window" mode should look. Unknown/absent return source (or no
+ *  `returnId` at all) defaults to MX — the original, and still most common, behavior. */
+function candidateRailFor(returnSource: string | undefined): { sources: string[]; windowDays: number } {
+  if (returnSource === 'stripe-dispute') return { sources: ['stripe'], windowDays: 180 };
+  return { sources: ['mx'], windowDays: 7 };
+}
 const fuzzyBody = z.object({
   senderName: z.string().max(200).optional(),
   description: z.string().max(400).optional(),
@@ -170,10 +181,12 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   /** Candidate original payments for manually matching a return. */
   app.get('/billing/returns/candidates', guard, async (request) => {
     requireBillingAccess(request);
-    const q = candidatesQuery.parse(request.query);
+    const { returnId, ...q } = candidatesQuery.parse(request.query);
+    const ret = returnId != null ? await paymentReturnRepo.getById(returnId) : undefined;
+    const { sources, windowDays } = candidateRailFor(ret?.source);
     // `mode` tells the picker which pass produced the list ('text' | 'suggest' | 'window') so its
     // hint line matches reality — it used to be hardcoded, leaving both hints unreachable.
-    const { rows, mode } = await paymentTransactionRepo.findReturnCandidates(q);
+    const { rows, mode } = await paymentTransactionRepo.findReturnCandidates({ ...q, sources, windowDays });
     return { status: 'success', records: rows.map(toCandidateWire), mode };
   });
 
@@ -443,7 +456,12 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     let matchNote = 'not mapped — no CMP payment to reverse';
     let isReversed = false;
     let cmpDetail: Record<string, unknown> | undefined;
-    if (tx.isInvoiceMapped) {
+    // A card dispute can be PARTIAL — a stored-ref reversal always deletes the WHOLE CMP payment, so
+    // a mismatched amount must never auto-reverse (see returnsMatch.ts's amountsMatch docstring).
+    // Still links the return below; only the CMP step is skipped.
+    if (tx.isInvoiceMapped && !amountsMatch(ret.amount, tx.amount)) {
+      matchNote = `return amount ${ret.amount ?? '?'} does not match transaction amount ${tx.amount ?? '?'} (possible partial dispute) — reconcile manually`;
+    } else if (tx.isInvoiceMapped) {
       const rev = await reverseMapping({
         cmpRef: tx.cmpRef,
         splitAllocations: tx.splitAllocations,
@@ -454,6 +472,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         // in CMP rather than reporting a silent success. A manual unmap deliberately does NOT.
         resolveMissingRef: true,
         mappingType: tx.mappingType,
+        // The CMP lookup-by-(carrier, amount, day) path only makes sense for MX, where the portal
+        // auto-applies charges independent of our own mapping. For any other rail it risks deleting
+        // a same-carrier/amount/day payment that belongs to a different transaction entirely.
+        allowCmpLookup: tx.source === 'mx',
       });
       if (rev.ok) {
         isReversed = rev.kind !== 'none';

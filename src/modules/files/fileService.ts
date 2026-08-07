@@ -10,7 +10,7 @@ import { fileRepo } from '../../repos/fileRepo.js';
 import type { FileAsset } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
-import { fileStorageProvider, storageFor, type StorageProvider } from './storage/index.js';
+import { fileStorageProvider, storageFor, type CommsStorageProvider } from './storage/index.js';
 
 export interface StoreFileInput {
   name: string;
@@ -25,7 +25,7 @@ export interface StoreFileInput {
    * Where to put the bytes. Defaults to `FILE_STORAGE_PROVIDER` (S3 unless configured otherwise). Comms
    * attachments pass `commsStorageProvider()` explicitly so chat files can follow their own setting.
    */
-  storageProvider?: StorageProvider | undefined;
+  storageProvider?: CommsStorageProvider | undefined;
 }
 
 export interface StoredFile {

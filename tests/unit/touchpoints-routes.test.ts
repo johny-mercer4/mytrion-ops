@@ -71,12 +71,14 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    // 101 = the current assembled catalog total (99 + the two ticketing Deluge touchpoints restored
-    // with the Zoho Desk create path: tickets.create_in_crm, tickets.create_escalation). The catalog
-    // test pins the important per-department groups; this route-level count catches an accidental
-    // unregistered catalog in buildApp. The assembler throws on duplicate keys, so a 200 here already
-    // proves uniqueness; this count pins the total so a silent add/drop is caught.
-    expect(touchpoints.length).toBe(101);
+    // 102 = the current assembled catalog total (101 + cs.carrier.trucking_number_request, added
+    // 2026-08-07 so CS's card-tracking lookup has its own non-ownership-gated key rather than
+    // sharing Sales' carrier.trucking_number_request, whose carrierParam 403's every non-owned
+    // carrier). The catalog test pins the important per-department groups; this route-level count
+    // catches an accidental unregistered catalog in buildApp. The assembler throws on duplicate
+    // keys, so a 200 here already proves uniqueness; this count pins the total so a silent
+    // add/drop is caught.
+    expect(touchpoints.length).toBe(102);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 

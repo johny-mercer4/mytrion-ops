@@ -3,14 +3,8 @@
  * deploy) must degrade to a readable message + a recovery action — never a white screen.
  */
 import { Component, type ReactNode } from 'react';
+import { isChunkLoadError } from '@/lib/chunkError';
 import styles from './ErrorBoundary.module.css';
-
-function isChunkLoadError(error: Error): boolean {
-  return (
-    error.name === 'ChunkLoadError' ||
-    /dynamically imported module|Loading chunk|Importing a module script failed/i.test(error.message)
-  );
-}
 
 interface Props {
   children: ReactNode;

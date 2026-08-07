@@ -77,6 +77,17 @@ export interface ReverseInput {
   /** mapping_type. A CRM-Sync mapping deliberately never created a CMP payment. */
   mappingType?: string | null;
   /**
+   * Permits the CMP lookup-by-(carrierId, amount, chargedDay) path (`resolveThenReverse`) to run at
+   * all. That lookup asks CMP "which payment sits behind this carrier+amount+day" and deletes
+   * whatever it finds — safe for MX, where the portal auto-applies charges independent of our own
+   * mapping (the original rationale this path was built for). NOT safe for any other rail: a
+   * same-carrier/amount/day CMP payment could belong to a completely different transaction (e.g. a
+   * Zelle transfer), and `isEntryClaimed` only catches that when the OTHER transaction already
+   * stores a `cmp_ref` — which is null on the overwhelming majority of mapped rows. Defaults to
+   * false; callers must opt in explicitly per rail (`tx.source === 'mx'`).
+   */
+  allowCmpLookup?: boolean;
+  /**
    * Called with each resolved entry before it's reversed (resolveMissingRef path only). Return true
    * if the payment is already attributed elsewhere (e.g. another transaction's own stored cmp_ref) —
    * this DB-agnostic module has no repo access, so the caller supplies the check. Any claimed entry
@@ -151,7 +162,7 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
   if (ref && kind === 'invoice') {
     const entry = toEntry(ref);
     // Auto-mapped MX portal payment with no stored paymentId → resolve it, then reverse.
-    if (!entry && input.carrierId && input.amount != null) {
+    if (!entry && input.carrierId && input.amount != null && input.allowCmpLookup) {
       return resolveThenReverse(input, str(ref.invoiceNumber) || undefined);
     }
     if (!entry) return { ok: false, kind: 'invoice', reversed: [], message: 'no CMP paymentId to reverse' };
@@ -197,6 +208,14 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
         kind: 'none',
         reversed: [],
         message: 'mapped but no CMP reference and no carrier/amount to look one up — reconcile manually',
+      };
+    }
+    if (!input.allowCmpLookup) {
+      return {
+        ok: false,
+        kind: 'none',
+        reversed: [],
+        message: 'mapped but no CMP reference stored — reconcile manually',
       };
     }
     return resolveThenReverse(input, input.invoiceNumber ?? undefined);

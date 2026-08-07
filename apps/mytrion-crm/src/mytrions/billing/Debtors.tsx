@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { billingTouchpoint } from '@/api/billing';
+import { chunkErrorMessage, isChunkLoadError } from '@/lib/chunkError';
 import { useLoad } from '../_shared/useLoad';
 import { type Debtor, dateFull, fmtCurrency, fmtCycle, type Invoice } from './data';
 import { exportDebtorsXlsx } from './debtorsExport';
@@ -159,7 +160,18 @@ export function Debtors() {
       .catch((e: unknown) => {
         // eslint-disable-next-line no-console
         console.error('Debtors Excel export failed:', e);
-        alert('Excel export failed: ' + (e instanceof Error ? e.message : String(e)));
+        // ExcelJS is loaded on demand (import('exceljs') in debtorsExport.ts) to keep it out of the
+        // main bundle — if the app was redeployed while this tab stayed open, the hashed chunk this
+        // page still references no longer exists on the server. Tell the user to reload rather than
+        // showing the raw fetch-failure string, matching the guidance ErrorBoundary already gives
+        // for the same failure at the route level.
+        if (isChunkLoadError(e)) {
+          if (window.confirm(chunkErrorMessage(e, 'Excel export') + '\n\nReload now?')) {
+            window.location.reload();
+            return;
+          }
+        }
+        alert(chunkErrorMessage(e, 'Excel export'));
       })
       .finally(() => setExporting(false));
   }

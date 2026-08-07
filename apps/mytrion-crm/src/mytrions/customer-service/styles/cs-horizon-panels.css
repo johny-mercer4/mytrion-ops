@@ -15,9 +15,7 @@
 .cs-root .cs-an-lb-section,
 .cs-root .cs-an-error-card,
 .cs-root .cs-citi-stat-card,
-.cs-root .cs-mt-stat-card,
 .cs-root .cs-mt-card,
-.cs-root .cs-mt-filters,
 .cs-root .cs-ret-quota-card,
 .cs-root .cs-ret-act-block,
 .cs-root .cs-ret-timeline-wrap,
@@ -62,7 +60,6 @@
 .cs-root .cs-home-qa-card:hover,
 .cs-root .cs-an-kpi-card:hover,
 .cs-root .cs-citi-stat-card:hover,
-.cs-root .cs-mt-stat-card:hover,
 .cs-root .cs-mt-card:hover,
 .cs-root .cs-summary-item:hover {
     background: var(--hz-pane-lift);

@@ -1,10 +1,10 @@
 /**
- * Maintenance cases panel — a searchable card grid over `maintenance_cases` (Postgres, not Zoho).
- *
- * Cards rather than a table because a case is read as a unit: company + carrier + unit + amount +
- * who owns it. Chrome is deliberately the module's existing vocabulary (cs-panel / cs-header-row /
- * cs-app-tabs / cs-app-pagination / cs-an-rc-field), so this reads as another CS tab and not a
- * second design.
+ * Maintenance cases panel — a searchable list over `maintenance_cases` (Postgres, not Zoho),
+ * rendered as Card, List, or Kanban (CS feedback 2026-08-07 asked for the latter two — the original
+ * card grid alone made a big page hard to scan). All three views render the same page of rows;
+ * `view` only changes the layout. Chrome is deliberately the module's existing vocabulary (cs-panel
+ * / cs-header-row / cs-app-tabs / cs-app-pagination / cs-an-rc-field), so this reads as another CS
+ * tab and not a second design.
  *
  * One shape note driven by the data: 2,701 of 2,714 migrated cases are `Completed` and only 13 are
  * live. So the default view is unfiltered-newest-first (a Completed-heavy list IS the archive an
@@ -13,14 +13,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MaintenanceCard } from './MaintenanceCard';
+import { MaintenanceKanbanView } from './MaintenanceKanbanView';
+import { MaintenanceListView } from './MaintenanceListView';
 import { MaintenanceModal } from './MaintenanceModal';
 import { SearchableSelect } from './SearchableSelect';
 import { Toast, type ToastState } from './Toast';
 import {
-  fmtUsd,
   loadMaintenance,
   loadMaintenanceMeta,
-  loadMaintenanceStats,
   localYmd,
   maintenanceTitle,
   useLoad,
@@ -44,12 +44,14 @@ const SORTS: { id: SortId; label: string }[] = [
   { id: 'carrier', label: 'Carrier ID' },
 ];
 
-/** Tile accents reuse the module's tone tokens so the header matches Citifuel's summary strip. */
-const TILE_COLOR: Record<string, string> = {
-  'In Process': 'var(--cs-warning)',
-  Completed: 'var(--cs-success)',
-  Cancelled: 'var(--text-muted)',
-};
+/** CS feedback 2026-08-07: "the list view we had before was much easier to scan than this card
+ *  grid" + "ideally Kanban too". All three read the same page of rows — just different layouts. */
+type ViewMode = 'card' | 'list' | 'kanban';
+const VIEWS: { id: ViewMode; label: string }[] = [
+  { id: 'card', label: 'Card' },
+  { id: 'list', label: 'List' },
+  { id: 'kanban', label: 'Kanban' },
+];
 
 export function Maintenance() {
   const [search, setSearch] = useState('');
@@ -64,6 +66,7 @@ export function Maintenance() {
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<ViewMode>('card');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRow, setModalRow] = useState<MaintenanceRecord | null>(null);
@@ -97,7 +100,6 @@ export function Maintenance() {
       }),
     [query, status, caseType, paymentStatus, owner, dateFrom, dateTo, sort, dir, page],
   );
-  const stats = useLoad(loadMaintenanceStats, []);
   const meta = useLoad(loadMaintenanceMeta, []);
 
   const rows = list.data?.rows ?? [];
@@ -131,26 +133,11 @@ export function Maintenance() {
     [meta.data],
   );
 
-  const summaryTiles = [
-    { label: 'All cases', value: stats.data ? stats.data.total.toLocaleString() : '…', color: 'var(--cs-accent)' },
-    ...(['In Process', 'Completed', 'Cancelled'] as const).map((s) => ({
-      label: s,
-      value: stats.data ? (stats.data.byStatus[s] ?? 0).toLocaleString() : '…',
-      color: TILE_COLOR[s] ?? 'var(--cs-accent)',
-    })),
-    {
-      label: 'Total billed',
-      value: stats.data ? fmtUsd(stats.data.totalAmount) : '…',
-      color: 'var(--accent-2)',
-    },
-  ];
-
   function notify(kind: ToastState['kind'], message: string) {
     setToast({ id: Date.now(), kind, message });
   }
   function refreshAll() {
     list.reload();
-    stats.reload();
     meta.reload();
   }
   function switchStatus(s: string) {
@@ -200,6 +187,18 @@ export function Maintenance() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div className="cs-mt-view-toggle" role="group" aria-label="View">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className={`cs-mt-view-btn${view === v.id ? ' active' : ''}`}
+                onClick={() => setView(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
           <button
             className={`cs-refresh-btn${filtersOpen ? ' cs-mt-filter-btn-on' : ''}`}
             onClick={() => setFiltersOpen((o) => !o)}
@@ -231,18 +230,6 @@ export function Maintenance() {
             Refresh
           </button>
         </div>
-      </div>
-
-      {/* ── Summary tiles ── */}
-      <div className="cs-mt-summary">
-        {summaryTiles.map((t) => (
-          <div className="cs-mt-stat-card" key={t.label}>
-            <div className="cs-mt-stat-value" style={{ color: t.color }}>
-              {t.value}
-            </div>
-            <div className="cs-mt-stat-label">{t.label}</div>
-          </div>
-        ))}
       </div>
 
       {/* ── Search + status tabs ── */}
@@ -432,6 +419,10 @@ export function Maintenance() {
               : 'Create the first case with New Case.'}
           </div>
         </div>
+      ) : view === 'list' ? (
+        <MaintenanceListView rows={rows} onOpen={openCase} />
+      ) : view === 'kanban' ? (
+        <MaintenanceKanbanView rows={rows} statusOptions={meta.data?.statusOptions ?? []} onOpen={openCase} />
       ) : (
         <div className="cs-mt-grid">
           {rows.map((row) => (

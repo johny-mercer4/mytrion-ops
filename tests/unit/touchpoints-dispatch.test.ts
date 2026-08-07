@@ -33,6 +33,7 @@ import {
   buildServerCrmCall,
   canInvokeTouchpoint,
   dispatchTouchpoint,
+  prepareTouchpointInvocation,
 } from '../../src/modules/touchpoints/dispatcher.js';
 import { getTouchpoint } from '../../src/modules/touchpoints/catalog/index.js';
 import type { ServerCrmTouchpoint } from '../../src/modules/touchpoints/types.js';
@@ -49,6 +50,15 @@ const salesCtx = () =>
     allDepartmentAccess: false,
   });
 const adminCtx = () => makeContext({ role: 'admin', audience: 'internal', userId: 'zoho:1', userName: 'Boss' });
+const csCtx = () =>
+  makeContext({
+    role: 'worker',
+    audience: 'internal',
+    userId: 'zoho:55',
+    userName: 'Dustin',
+    departments: ['customer-service'],
+    allDepartmentAccess: false,
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -140,6 +150,26 @@ describe('carrier ownership', () => {
     // the mock is still invoked — the real function returns early for admins; here we just
     // verify dispatch passed through the normalized id
     expect(assertOwnedMock).toHaveBeenCalledWith(expect.anything(), '123');
+  });
+
+  // QA 2026-08-07: CS's card-tracking lookup 403'd for every carrier because it shared Sales'
+  // `carrier.trucking_number_request` key, whose `carrierParam` routes every non-admin through
+  // assertCarrierOwned — the Sales "own book" DWH check. CS agents have no such book. Fixed by
+  // giving CS a separate key with no `carrierParam` (csDeluge.ts). prepareTouchpointInvocation
+  // (not dispatchTouchpoint) so this only exercises gating, never the real handler/network call.
+  it('gates Sales carrier lookups by ownership but not CS ones (separate keys, same handler)', async () => {
+    await prepareTouchpointInvocation(salesCtx(), 'carrier.trucking_number_request', { carrierId: '123' });
+    expect(assertOwnedMock).toHaveBeenCalledWith(expect.anything(), '123');
+
+    assertOwnedMock.mockClear();
+    await prepareTouchpointInvocation(csCtx(), 'cs.carrier.trucking_number_request', { carrierId: '123' });
+    expect(assertOwnedMock).not.toHaveBeenCalled();
+  });
+
+  it('a CS caller cannot reach the Sales-keyed, ownership-gated tracking lookup at all', async () => {
+    await expect(
+      prepareTouchpointInvocation(csCtx(), 'carrier.trucking_number_request', { carrierId: '123' }),
+    ).rejects.toBeInstanceOf(RBACError);
   });
 });
 

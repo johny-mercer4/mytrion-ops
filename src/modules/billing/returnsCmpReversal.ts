@@ -147,6 +147,8 @@ export async function resolveReturnCmpReversal(
       mappingType: null,
       invoiceNumber: invoiceNumber ?? null,
       dryRun: opts.dryRun,
+      // Safe here: this whole function already bails at the top unless tx.source === 'mx'.
+      allowCmpLookup: true,
       isEntryClaimed: (entry: CmpEntry) =>
         paymentTransactionRepo.isCmpPaymentClaimed(entry.invoiceId, entry.paymentId, tx.id),
     });

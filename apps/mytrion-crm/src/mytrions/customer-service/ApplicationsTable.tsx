@@ -2,7 +2,8 @@
  * Applications panel — table column definitions + cell renderers, a 1:1 port of the
  * widget's tableColumns computed + the per-cell <template> branches (applications-panel.js).
  * Columns whose CRM field the live view-model doesn't carry (Oldest_Open_Date,
- * Billing_Form_Y_N, Verification_Notes, Tracking_Number) render '—'.
+ * Billing_Form_Y_N, Verification_Notes) render '—'. Tracking # is bulk-fetched separately
+ * (Applications.tsx) and has its own loading-aware cell — see the 'tracking' ColKey.
  */
 import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
@@ -28,7 +29,8 @@ export type ColKey =
   | 'notes'
   | 'boolean'
   | 'check'
-  | 'verified';
+  | 'verified'
+  | 'tracking';
 
 export interface AppColumn {
   key: ColKey;
@@ -81,7 +83,10 @@ const CLIENT_COLUMNS: AppColumn[] = [
   { key: 'check', label: 'Chain Policy', field: 'Chain_policy', thStyle: { minWidth: 90, textAlign: CENTER } },
   { key: 'verified', label: 'VRF', thStyle: { minWidth: 50 } },
   { key: 'notes', label: 'Verif. Notes', field: 'Verification_Notes', thStyle: { minWidth: 180 } },
-  { key: 'generic', label: 'Tracking #', field: 'Tracking_Number', thStyle: { minWidth: 120 } },
+  // Bulk-fetched per page from the carrier's Deal (Fedex_Tracking) — see Applications.tsx's
+  // getCardTrackingBulk effect. `key: 'tracking'` (not 'generic') so the cell can tell "still
+  // fetching" apart from "fetched, genuinely none" — see the 'tracking' case in AppCell.
+  { key: 'tracking', label: 'Tracking #', field: 'Tracking_Number', thStyle: { minWidth: 120 } },
 ];
 
 const APPS_COLUMNS: AppColumn[] = [
@@ -108,8 +113,8 @@ const APPS_COLUMNS: AppColumn[] = [
   { key: 'notes', label: 'Verif. Notes', field: 'Verification_Notes', thStyle: { minWidth: 180 } },
   /* QA feedback (Dina Carter, 2026-07-28): 'Contact' dropped — unused, and the space is better
      spent on Address. The onboarding tick boxes (Email to TA / TA-EFS / Limits / Mobile App /
-     Chain Policy) and 'Tracking #' were dropped for the same reason; they remain on the CLIENTS
-     tab (CLIENT_COLUMNS), which is where onboarding is actually worked. */
+     Chain Policy) were dropped for the same reason; they remain on the CLIENTS tab
+     (CLIENT_COLUMNS), which is where onboarding is actually worked. */
 ];
 
 export function columnsFor(tab: SubTab): AppColumn[] {
@@ -145,7 +150,7 @@ const FIELD_GET: Record<string, (a: Application) => string | number | null> = {
   Oldest_Open_Date: () => null,
   Billing_Form_Y_N: () => null,
   Verification_Notes: () => null,
-  Tracking_Number: () => null,
+  Tracking_Number: (a) => a.trackingNumber ?? null,
 };
 
 function fieldValue(app: Application, field: string | undefined): string {
@@ -305,6 +310,25 @@ export function AppCell({
     /* Verified checkmark */
     case 'verified':
       return app.verified ? <span className="cs-app-dot cs-dot-verified">✓</span> : MUTED;
+
+    /* FedEx tracking # (bulk-fetched) — `undefined` is "still fetching", not "none" (QA
+       2026-08-07: agents read a bare '—' as "no tracking number exists" seconds before the real
+       value arrived). Only the Clients tab ever populates this. */
+    case 'tracking':
+      if (app.trackingNumber === undefined) {
+        return (
+          <span
+            className="cs-skeleton"
+            aria-label="Loading tracking number"
+            style={{ display: 'inline-block', width: '76px', height: '13px' }}
+          />
+        );
+      }
+      return app.trackingNumber ? (
+        <span className="cs-app-row-mono">{app.trackingNumber}</span>
+      ) : (
+        MUTED
+      );
 
     /* Generic text / number (boolean falls through to generic, widget parity) */
     default: {

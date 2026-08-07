@@ -17,7 +17,7 @@ import { enrichTicketOwners } from '../../modules/tools/deskOwners.js';
 import { RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
-  fetchDeskAgentRoster,
+  fetchCsEligibleRoster,
   isCsManager,
   resolveDeskAgentId,
 } from '../../modules/customerService/csAnalyticsScope.js';
@@ -236,13 +236,17 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
     return { count: await countMaintenanceCases(q.from.slice(0, 10), q.to.slice(0, 10)) };
   });
 
-  /** Desk agent roster (leaderboard + drill-in) — manager tier only. */
+  /**
+   * CS-eligible agent roster (leaderboard + drill-in) — manager tier only. Scoped by
+   * admin-granted Mytrion access (fetchCsEligibleRoster), NOT Desk department membership: a Desk
+   * department can carry cross-assigned overflow agents from other desks (QA 2026-08-07).
+   */
   app.get('/cs/analytics/roster', guard, async (request) => {
     const ctx = requireCsAccess(request);
     if (!isCsManager(ctx)) {
       throw new RBACError('The agent roster requires CS manager access');
     }
-    const agents = await fetchDeskAgentRoster();
+    const agents = await fetchCsEligibleRoster(ctx);
     return { agents };
   });
 
