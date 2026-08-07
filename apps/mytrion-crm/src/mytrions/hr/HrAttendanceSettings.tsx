@@ -13,6 +13,7 @@ import {
   type HrAttendanceShiftDto,
   type HrEmployeeDto,
 } from '../../api/hr';
+import { HrSelect, type HrSelectOption } from './HrSelect';
 import { useHrDirectory } from './hrData';
 import { HrBusy } from './HrBits';
 import { tashkentToday } from './attendanceTime';
@@ -179,6 +180,16 @@ export function HrAttendanceSettings() {
   const empLabel = (e: HrEmployeeDto): string =>
     `${e.firstName} ${e.lastName}`.trim() + (e.faceId ? ` · FaceID ${e.faceId}` : '');
 
+  /** Built once per render of the source data — the pickers below are all the same shape. */
+  const tzOptions: HrSelectOption[] = TZ_OPTIONS.map((tz) => ({ value: tz, label: tz }));
+  const employeeOptions: HrSelectOption[] = employees.map((e) => ({
+    value: e.id,
+    label: empLabel(e),
+  }));
+  const activeShiftOptions: HrSelectOption[] = shifts
+    .filter((shift) => shift.isActive)
+    .map((shift) => ({ value: shift.id, label: shift.name }));
+
   return (
     <>
       <section className="hr-settings-card">
@@ -222,21 +233,17 @@ export function HrAttendanceSettings() {
           </label>
           <label>
             Timezone
-            <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-              {TZ_OPTIONS.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz}
-                </option>
-              ))}
-            </select>
+            <HrSelect label="Timezone" value={timezone} onChange={setTimezone} options={tzOptions} />
           </label>
           <label>
             Start (HH:mm)
-            <input value={startLocal} onChange={(e) => setStartLocal(e.target.value)} placeholder="19:00" />
+            {/* `type="time"` so the browser validates the shape. It was free text checked only by the
+                server's `isValidHhMm`, which meant a typo travelled to the API to be rejected. */}
+            <input type="time" value={startLocal} onChange={(e) => setStartLocal(e.target.value)} />
           </label>
           <label>
             End (HH:mm)
-            <input value={endLocal} onChange={(e) => setEndLocal(e.target.value)} placeholder="03:00" />
+            <input type="time" value={endLocal} onChange={(e) => setEndLocal(e.target.value)} />
           </label>
         </div>
         <div className="hr-settings-actions">
@@ -253,27 +260,23 @@ export function HrAttendanceSettings() {
         <div className="hr-settings-form-grid">
           <label>
             Shift
-            <select value={assignShiftId} onChange={(e) => setAssignShiftId(e.target.value)}>
-              <option value="">—</option>
-              {shifts
-                .filter((s) => s.isActive)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-            </select>
+            <HrSelect
+              label="Shift to assign"
+              value={assignShiftId}
+              onChange={setAssignShiftId}
+              options={activeShiftOptions}
+              placeholder="Choose a shift…"
+            />
           </label>
           <label>
             Employee
-            <select value={assignEmpId} onChange={(e) => setAssignEmpId(e.target.value)}>
-              <option value="">—</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {empLabel(e)}
-                </option>
-              ))}
-            </select>
+            <HrSelect
+              label="Employee to assign"
+              value={assignEmpId}
+              onChange={setAssignEmpId}
+              options={employeeOptions}
+              placeholder="Choose an employee…"
+            />
           </label>
           <label>
             Effective from
@@ -299,14 +302,13 @@ export function HrAttendanceSettings() {
         <div className="hr-settings-form-grid">
           <label>
             Employee
-            <select value={exportEmpId} onChange={(e) => setExportEmpId(e.target.value)}>
-              <option value="">—</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {empLabel(e)}
-                </option>
-              ))}
-            </select>
+            <HrSelect
+              label="Employee to export"
+              value={exportEmpId}
+              onChange={setExportEmpId}
+              options={employeeOptions}
+              placeholder="Choose an employee…"
+            />
           </label>
           <label>
             From

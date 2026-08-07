@@ -6,9 +6,18 @@
  * so. Every case below is a shape the real table can hold — a manager in another department, a manager
  * who is terminated, a dangling parent id, a reporting loop from a bad import.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { HrOrgDepartmentDto, HrOrgEmployeeDto, HrOrgStructureDto } from '../../api/hr';
-import { buildOrgGraph, orgBranchIds } from './orgGraph';
+import {
+  buildOrgGraph,
+  DEPT_H,
+  DEPT_W,
+  EMP_H,
+  EMP_W,
+  NO_DEPARTMENT_ID,
+  orgBranchIds,
+} from './orgGraph';
 
 function dept(over: Partial<HrOrgDepartmentDto> & { id: string }): HrOrgDepartmentDto {
   return {
@@ -35,7 +44,7 @@ function emp(over: Partial<HrOrgEmployeeDto> & { id: string }): HrOrgEmployeeDto
     status: 'Active',
     departmentId: null,
     reportingToEmployeeId: null,
-    photoUrl: null,
+    photoFileId: null,
     canvasX: null,
     canvasY: null,
     ...over,
@@ -192,21 +201,47 @@ describe('buildOrgGraph — people', () => {
     ).toEqual(['d1', 'gone']);
   });
 
-  it('draws a person with NO department and NO manager as a root rather than dropping them', () => {
-    // These rows are exactly what HR needs to find and fix, so they must be visible.
+  /**
+   * Unassigned people are GROUPED, not scattered. They used to be drawn as bare roots beside the
+   * company — a row of person-cards with nothing saying what they had in common. One labelled bucket
+   * makes the gap countable and collapsible, which is what turns it into work HR can clear.
+   */
+  it('collects a person with NO department and NO manager under the No Department bucket', () => {
     const g = buildOrgGraph(payload([dept({ id: 'd1' })], [emp({ id: 'floating' })]), {
-      expanded: NONE,
+      expanded: new Set([NO_DEPARTMENT_ID]),
       includeTerminated: false,
     });
-    expect(g.nodes.map((n) => n.id).sort()).toEqual(['d1', 'floating']);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual([NO_DEPARTMENT_ID, 'd1', 'floating'].sort());
+    expect(g.edges).toContainEqual(
+      expect.objectContaining({ source: NO_DEPARTMENT_ID, target: 'floating' }),
+    );
+    const bucket = g.nodes.find((n) => n.id === NO_DEPARTMENT_ID)!;
+    expect(bucket.data).toMatchObject({ kind: 'department', synthetic: true, total: 1 });
   });
 
-  it('draws a person whose departmentId points at a department that no longer exists', () => {
+  it('collects a person whose departmentId points at a department that no longer exists', () => {
     const g = buildOrgGraph(payload([], [emp({ id: 'stray', departmentId: 'deleted' })]), {
-      expanded: NONE,
+      expanded: new Set([NO_DEPARTMENT_ID]),
       includeTerminated: false,
     });
-    expect(g.nodes.map((n) => n.id)).toEqual(['stray']);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual([NO_DEPARTMENT_ID, 'stray'].sort());
+  });
+
+  it('omits the bucket entirely when everyone has a department', () => {
+    const g = buildOrgGraph(
+      payload([dept({ id: 'd1' })], [emp({ id: 'e1', departmentId: 'd1' })]),
+      { expanded: new Set(['d1']), includeTerminated: false },
+    );
+    expect(g.nodes.map((n) => n.id)).not.toContain(NO_DEPARTMENT_ID);
+  });
+
+  it('hides unassigned people behind the bucket when it is collapsed, and counts them', () => {
+    const g = buildOrgGraph(
+      payload([], [emp({ id: 'a' }), emp({ id: 'b' })]),
+      { expanded: NONE, includeTerminated: false },
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual([NO_DEPARTMENT_ID]);
+    expect(g.hiddenCount).toBe(2);
   });
 });
 
@@ -262,8 +297,10 @@ describe('buildOrgGraph — hostile data', () => {
     const shown = employees.filter((e) => drawn.has(e.id)).length;
     expect(shown + collapsed.hiddenCount).toBe(employees.length);
 
+    // The unassigned bucket is a collapsible ancestor like any other, so "everything open" has to
+    // include it — `loose` and `strayDept` now hang off it rather than floating as roots.
     const open = buildOrgGraph(data, {
-      expanded: ALL(['d1', 'lead', 'r1', 'r2']),
+      expanded: ALL(['d1', 'lead', 'r1', 'r2', NO_DEPARTMENT_ID]),
       includeTerminated: false,
     });
     expect(open.hiddenCount).toBe(0);
@@ -350,5 +387,142 @@ describe('buildOrgGraph — layout', () => {
     expect(g.nodes).toEqual([]);
     expect(g.edges).toEqual([]);
     expect(g.hiddenCount).toBe(0);
+  });
+});
+
+describe('orgBranchIds — the unassigned bucket', () => {
+  /**
+   * Collapsing a node must also clear its descendants' expanded ids, or their people spring straight
+   * back the next time the graph rebuilds. The bucket is not in `data.departments`, so it needs its own
+   * branch — without it, collapsing "No Department" left every unassigned manager still open.
+   */
+  it('collects the unassigned people and their reports', () => {
+    const data = payload(
+      [dept({ id: 'd1' })],
+      [
+        emp({ id: 'assigned', departmentId: 'd1' }),
+        emp({ id: 'loose' }),
+        emp({ id: 'looseReport', reportingToEmployeeId: 'loose' }),
+        emp({ id: 'stray', departmentId: 'deleted' }),
+      ],
+    );
+
+    const ids = orgBranchIds(data, NO_DEPARTMENT_ID);
+
+    expect([...ids].sort()).toEqual(
+      [NO_DEPARTMENT_ID, 'loose', 'looseReport', 'stray'].sort(),
+    );
+    // Someone with a real department is not part of this branch.
+    expect(ids.has('assigned')).toBe(false);
+  });
+});
+
+/**
+ * The geometry constants and the stylesheet are two copies of the same four numbers, and nothing but a
+ * comment has been keeping them together. When they drift the failure is silent and awful: dagre lays
+ * out against one size while the browser paints another, so nodes overlap, and `onNodeDragStop`
+ * hit-tests a box that is not where the card is — drops land on the wrong parent.
+ */
+describe('node geometry', () => {
+  /**
+   * Read off disk, not imported: Vitest leaves CSS unprocessed (`css: false`), so both a plain import
+   * and `?raw` come back empty and every assertion below would vacuously pass. The path is relative to
+   * the Vitest root, which is this app.
+   */
+  const css = readFileSync('src/mytrions/hr/hr-workspace.css', 'utf8');
+
+  const ruleSize = (selector: string): { width: number; height: number } => {
+    const escaped = selector.replace(/\./g, '\\.');
+    const block = new RegExp(`\\.hr-root ${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+    if (!block?.[1]) throw new Error(`No CSS rule found for ${selector}`);
+    const width = /width:\s*(\d+)px/.exec(block[1]);
+    const height = /height:\s*(\d+)px/.exec(block[1]);
+    if (!width?.[1] || !height?.[1]) throw new Error(`${selector} is missing width/height`);
+    return { width: Number(width[1]), height: Number(height[1]) };
+  };
+
+  it('matches the department node rule in hr-workspace.css', () => {
+    expect(ruleSize('.hr-onode.is-dept')).toEqual({ width: DEPT_W, height: DEPT_H });
+  });
+
+  it('matches the employee node rule in hr-workspace.css', () => {
+    expect(ruleSize('.hr-onode.is-emp')).toEqual({ width: EMP_W, height: EMP_H });
+  });
+
+  it('leaves the card taller than the content it has to hold', () => {
+    // The portrait card, top to bottom: the face's overhang above the card, then the card's own
+    // padding-top (which clears the face's lower half), the name, the gap, the sub line, padding-bottom.
+    const FACE_OVERHANG = 17;
+    const CONTENT_H = FACE_OVERHANG + 20 + 16 + 2 + 13 + 9;
+    expect(DEPT_H).toBeGreaterThanOrEqual(CONTENT_H);
+    expect(EMP_H).toBeGreaterThanOrEqual(CONTENT_H);
+  });
+
+  it('keeps both node types the same height so ranks line up', () => {
+    expect(DEPT_H).toBe(EMP_H);
+  });
+});
+
+/**
+ * Branch colour. A person inherits the department they hang under, and their reports inherit it from
+ * them — that shared hue is what lets you see where Sales ends and Finance begins on a 200-node chart
+ * without reading a label.
+ */
+describe('buildOrgGraph — branch colour', () => {
+  const toneOf = (g: ReturnType<typeof buildOrgGraph>, id: string) => {
+    const node = g.nodes.find((n) => n.id === id);
+    return { tone: node?.data.tone ?? null, seed: node?.data.toneSeed ?? null };
+  };
+
+  it('hands a department’s colour to its staff and on down the reporting line', () => {
+    const g = buildOrgGraph(
+      payload(
+        [dept({ id: 'd1', iconColor: 'tone-sky' })],
+        [
+          emp({ id: 'lead', departmentId: 'd1' }),
+          emp({ id: 'report', departmentId: 'd1', reportingToEmployeeId: 'lead' }),
+        ],
+      ),
+      { expanded: ALL(['d1', 'lead']), includeTerminated: false },
+    );
+
+    expect(toneOf(g, 'lead')).toEqual({ tone: 'tone-sky', seed: 'd1' });
+    // Inherited, not re-derived from the report's own (absent) department.
+    expect(toneOf(g, 'report')).toEqual({ tone: 'tone-sky', seed: 'd1' });
+  });
+
+  it('passes the department id as the seed when no colour is stored', () => {
+    const g = buildOrgGraph(
+      payload([dept({ id: 'd1' })], [emp({ id: 'e1', departmentId: 'd1' })]),
+      { expanded: ALL(['d1']), includeTerminated: false },
+    );
+    // No token, but the seed is what makes the auto-colour match the department's own card.
+    expect(toneOf(g, 'e1')).toEqual({ tone: null, seed: 'd1' });
+  });
+
+  it('gives unassigned people the bucket’s own slate, so they match the group they sit in', () => {
+    const g = buildOrgGraph(payload([], [emp({ id: 'loose' })]), {
+      expanded: ALL([NO_DEPARTMENT_ID]),
+      includeTerminated: false,
+    });
+    expect(toneOf(g, 'loose')).toEqual({ tone: 'tone-slate', seed: NO_DEPARTMENT_ID });
+  });
+
+  /**
+   * The only genuinely branch-less case: a reporting ring belongs to no department and is reached by
+   * the final safety-net sweep, not by any department walk. It falls back to the module accent.
+   */
+  it('leaves a reporting ring on the neutral', () => {
+    const g = buildOrgGraph(
+      payload(
+        [dept({ id: 'd1' })],
+        [
+          emp({ id: 'a', departmentId: 'd1', reportingToEmployeeId: 'b' }),
+          emp({ id: 'b', departmentId: 'd1', reportingToEmployeeId: 'a' }),
+        ],
+      ),
+      { expanded: ALL(['d1', 'a', 'b']), includeTerminated: false },
+    );
+    expect(toneOf(g, 'a')).toEqual({ tone: null, seed: null });
   });
 });

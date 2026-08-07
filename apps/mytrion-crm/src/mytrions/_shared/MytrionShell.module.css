@@ -62,6 +62,9 @@
 .sidebar {
   width: 248px;
   flex: none;
+  /* Animating width (not transform) because the centre pane must actually reflow into the space —
+     a transform would slide the rail over the content instead of giving it back. */
+  transition: width var(--dur-slow, 220ms) var(--ease-standard);
   background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--bg-primary));
   border-right: 1px solid var(--border);
   display: flex;
@@ -119,6 +122,79 @@
 .navSearch input::placeholder {
   color: var(--text-muted);
 }
+.navHead {
+  display: flex;
+  justify-content: flex-end;
+  flex: none;
+}
+.navToggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.navToggle:hover {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+.navToggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* ── Collapsed rail ────────────────────────────────────────────────────────────
+   Desktop only. Under 768px the sidebar is already a horizontal strip (see the media query at the
+   bottom of this file), where "collapsed" means nothing — the shell forces it open there. */
+@media (min-width: 769px) {
+  .sidebar[data-collapsed='true'] {
+    width: 68px;
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+  .sidebar[data-collapsed='true'] .navHead {
+    justify-content: center;
+  }
+  /* Icon-only: the label collapses to nothing rather than being display:none'd, so the button keeps
+     its flex layout and the glyph lands dead-centre instead of jumping left. */
+  .sidebar[data-collapsed='true'] .navLabel,
+  .sidebar[data-collapsed='true'] .navSectionLabel,
+  .sidebar[data-collapsed='true'] .userMeta {
+    display: none;
+  }
+  .sidebar[data-collapsed='true'] .navBtn,
+  .sidebar[data-collapsed='true'] .userBtn {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+    gap: 0;
+  }
+  /* Section headings are gone, so the rule between groups is the only thing left separating them —
+     it needs to stay, but tighter, since the rail has less room to spend on breathing space.
+     (The active row still reads without its label: .navActive keeps the accent fill and left bar.) */
+  .sidebar[data-collapsed='true'] .navSection + .navSection {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+  }
+}
+
+/* Someone who has asked for less motion still gets the layout change — just not the sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+
 .navGroup {
   display: flex;
   flex-direction: column;

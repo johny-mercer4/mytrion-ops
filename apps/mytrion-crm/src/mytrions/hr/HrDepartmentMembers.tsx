@@ -81,7 +81,7 @@ export function HrDepartmentMembers({
             const name = displayName(e);
             return (
               <li key={e.id} className={busyId === e.id ? 'is-busy' : undefined}>
-                <HrAvatar name={name} photoUrl={e.photoUrl} size="sm" />
+                <HrAvatar name={name} employeeId={e.id} photoFileId={e.photoFileId} size="sm" />
                 {/* Both lines are clipped to one line with an ellipsis, so the full text has to be
                     reachable on hover — telling two similarly named colleagues apart before removing
                     one of them depends on it. `?? undefined` rather than `?? '—'`: an empty row must

@@ -2,18 +2,30 @@
  * HR → Attendance: My Data, Team (managers), and All (HR Manager / Admin).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarClock,
+  CalendarX,
+  ChevronLeft,
+  ChevronRight,
+  DoorOpen,
+  RefreshCw,
+  UserCheck,
+  UserMinus,
+  Users,
+} from 'lucide-react';
 import {
   getMyAttendance,
-  type AttendanceSummaryDto,
+  syncAttendanceFromDwh,
   type AttendanceTeamScope,
 } from '../../../api/hr';
 import { isAdmin } from '../../../access/resolveAccess';
 import { useUserContext } from '../../../context/UserContextProvider';
 import type { UserContext } from '../../../context/userContext';
-import { HrAttendanceTeam } from '../HrAttendanceTeam';
+import { HrAttendanceTeam, type TeamSummary } from '../HrAttendanceTeam';
 import { HrAttendanceWeek } from '../HrAttendanceWeek';
-import { HrEmpty, HrPageLoader, HrPageHead } from '../HrBits';
+import { HrEmpty, HrPageLoader, HrPageHead, HrSummaryTiles } from '../HrBits';
+import { invalidateSwrCache, useCachedLoad } from '../../_shared/swrCache';
 import { tashkentToday, weekRangeContaining } from '../attendanceTime';
 
 function addDays(iso: string, delta: number): string {
@@ -23,7 +35,25 @@ function addDays(iso: string, delta: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-type AttPane = 'me' | 'team' | 'all';
+/**
+ * Two views, not three.
+ *
+ * There used to be a separate `team` tab pinned to `scope: 'direct'` — literally the caller's own
+ * direct reports. For an Administrator that is almost always empty (admins are rarely anyone's
+ * manager), so it read as a broken tab; and for a manager it was a strictly smaller slice of what the
+ * roster already shows. One roster, always `scope: 'all'`, and the SERVER decides what "all" means for
+ * the caller: every Active employee for HR/Admin, reportees ∪ led departments for a manager. That is
+ * why removing the tab does not remove a manager's access to their team — it is the same query.
+ */
+type AttPane = 'me' | 'roster';
+
+/** The same wording the day rows and the roster use, so one state is not named three ways. */
+const PRESENCE_LABEL: Record<string, string> = {
+  in_office: 'In office',
+  out_of_office: 'Out of office',
+  needs_review: 'Needs review',
+  no_activity: 'No activity',
+};
 
 function canViewOrgAttendance(user: UserContext): boolean {
   return (
@@ -37,15 +67,30 @@ export function HrAttendance() {
   const user = useUserContext();
   const canViewOrganization = canViewOrgAttendance(user);
   const [today, setToday] = useState(() => tashkentToday());
-  const [pane, setPane] = useState<AttPane>(() => (canViewOrganization ? 'all' : 'me'));
+  const [pane, setPane] = useState<AttPane>(() => (canViewOrganization ? 'roster' : 'me'));
   const [weekOf, setWeekOf] = useState(today);
-  const [data, setData] = useState<AttendanceSummaryDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [teamKey, setTeamKey] = useState(0);
-  /** Guards against an earlier week's response landing after a newer one. */
-  const seqRef = useRef(0);
+  const [teamSummary, setTeamSummary] = useState<TeamSummary | null>(null);
+  /**
+   * The roster tile says WHICH roster, so "12 people" is never ambiguous.
+   *
+   * Keyed off the caller's reach rather than the pane, now that there is only one roster: the same tab
+   * is everyone's directory for HR/Admin and just your own team for a manager.
+   */
+  const orgWide = canViewOrganization;
+  const orgWideLabel = orgWide ? 'Everyone' : 'Your team';
 
+  /**
+   * Switching panes drops the counts on the way out.
+   *
+   * The roster component is keyed on `pane`, so it remounts and refetches — but the tab's copy of the
+   * numbers would survive that gap, showing All's totals under "Your team" until the new roster landed.
+   * Stale numbers with a confident new label are worse than no numbers.
+   */
+  const choosePane = useCallback((next: AttPane): void => {
+    setPane(next);
+    setTeamSummary(null);
+  }, []);
   /** The Tashkent date the view is synced to; a ref so the timer and Refresh share one baseline. */
   const knownDayRef = useRef(today);
 
@@ -70,61 +115,218 @@ export function HrAttendance() {
     };
   }, [syncToday]);
 
-  const teamScope: AttendanceTeamScope =
-    pane === 'all' || (!canViewOrganization && pane === 'team') ? 'all' : 'direct';
+  // Always 'all'. The server scopes it to the caller — see the `AttPane` note.
+  const teamScope: AttendanceTeamScope = 'all';
 
-  const loadMe = useCallback(async (): Promise<void> => {
-    // No AbortSignal on purpose: passing one opts this GET out of the transport's de-dup
-    // and its single controlled retry, which is what recovers the route's 503 DB flaps.
-    const seq = ++seqRef.current;
-    setLoading(true);
-    setError('');
-    try {
-      const summary = await getMyAttendance({ weekOf });
-      if (seq !== seqRef.current) return;
-      setData(summary);
-    } catch (err) {
-      if (seq !== seqRef.current) return;
-      setData(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (seq === seqRef.current) setLoading(false);
-    }
-  }, [weekOf]);
+  /**
+   * Punches come from the DWH, and this is what asks for them.
+   *
+   * Runs ALONGSIDE the read rather than before it, which is the whole design. Blocking the first paint
+   * on an analytics query would trade a page that loads for a page that waits, every visit, to be told
+   * nothing changed — the common case, since the server holds a completed sync for a minute. So: show
+   * what is stored immediately, and only re-read when the sync says it actually wrote something.
+   *
+   * A failure here is deliberately swallowed into a note. Attendance that is an hour stale is worth
+   * reading; an error page because a shared analytics database was busy is not.
+   */
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState('');
 
-  useEffect(() => {
-    if (pane !== 'me') return;
-    void loadMe();
-  }, [pane, loadMe]);
+  const runSync = useCallback(
+    async (range: { from: string; to: string }, force = false): Promise<boolean> => {
+      setSyncing(true);
+      setSyncNote('');
+      try {
+        const result = await syncAttendanceFromDwh({ from: range.from, to: range.to, force });
+        // A forced refresh re-reads even when nothing new arrived: the user pressed the button, and
+        // "I checked and it is unchanged" has to look different from "I ignored you".
+        return result.inserted > 0 || force;
+      } catch (err) {
+        setSyncNote(err instanceof Error ? err.message : String(err));
+        return false;
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * My Data, through the shared stale-while-revalidate store.
+   *
+   * Was a hand-rolled `useState` + fetch, which blanked the week to a loader on every visit and to an
+   * error on every hiccup — including the DWH refresh firing alongside it. The cache paints the last
+   * known week instantly and a refetch never clears what is on screen, so the pull from the warehouse
+   * happens behind data the user can already read.
+   *
+   * `enabled` keeps the roster pane from fetching this, but the hook still adopts a cached value, so
+   * switching back to My Data is instant.
+   */
+  const meLoad = useCachedLoad(
+    `hr:attendance:me:${weekOf}`,
+    // No AbortSignal on purpose: passing one opts this GET out of the transport's de-dup and its
+    // single controlled retry, which is what recovers the route's 503 DB flaps.
+    () => getMyAttendance({ weekOf }),
+    { enabled: pane === 'me' },
+  );
+  const data = meLoad.data;
+  const loading = meLoad.loading;
+  const error = meLoad.error ?? '';
 
   const weekRange = useMemo(() => weekRangeContaining(weekOf), [weekOf]);
   // Always the REQUESTED week, never the response's — otherwise the label lags a whole
   // round trip behind the arrows and, after a raced response, stays on the wrong week.
   const rangeLabel = `${weekRange.from} — ${weekRange.to}`;
 
+  /**
+   * The warehouse wrote something, so re-read — WITHOUT taking the current numbers off screen.
+   *
+   * One prefix invalidation covers both panes and every cached week, because the store notifies by
+   * key prefix: subscribers refetch while still rendering their last value. That is the whole reason
+   * the sync can run on page open at all. Bumping a remount key instead (which is what this did) threw
+   * the roster's open person, search text and scroll position away every time a punch arrived.
+   */
+  const revalidate = useCallback((): void => {
+    invalidateSwrCache('hr:attendance:');
+  }, []);
+
+  // Opening the tab, and every week change, asks the DWH for that week.
+  useEffect(() => {
+    let cancelled = false;
+    void runSync(weekRange).then((wrote) => {
+      if (!cancelled && wrote) revalidate();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [weekRange, runSync, revalidate]);
+
   return (
-    <div className="hr-page">
+    /* The Team pane is a roster + detail split — wide content that a reading measure only squeezes.
+       Same opt-out the org canvas and the directory lists use. */
+    <div className="hr-page hr-page-wide">
       <HrPageHead
         tab="attendance"
         actions={
           <button
             type="button"
             className="hr-btn"
-            disabled={pane === 'me' ? loading : false}
+            disabled={syncing || (pane === 'me' && loading)}
             onClick={() => {
               // Refresh has to re-derive the date too, not just refetch: the Team/All pane no
               // longer remounts, so a click is the user's way to correct a view that has sat
               // through a midnight and is showing the wrong day as "today".
               syncToday();
-              if (pane === 'me') void loadMe();
-              else setTeamKey((k) => k + 1);
+              // Pull first, then re-read — a manual Refresh is worth the wait that an automatic load
+              // deliberately avoids, because the user is watching and asked for current data.
+              void runSync(weekRange, true).then(() => {
+                revalidate();
+                // The roster's shift list is not in the cache, and Refresh is the only thing that
+                // reloads it after shifts are edited on HR → Settings with this pane still mounted.
+                setTeamKey((k) => k + 1);
+              });
             }}
           >
-            <RefreshCw size={14} className={pane === 'me' && loading ? 'hr-spin' : undefined} />
+            <RefreshCw
+              size={14}
+              className={syncing || (pane === 'me' && loading) ? 'hr-spin' : undefined}
+            />
             Refresh
           </button>
         }
       />
+
+      {/*
+        A failed refresh is a warning, not an error: everything below is real, just possibly missing the
+        last few punches. `role="status"` rather than `alert` for the same reason — it should not
+        interrupt a screen reader mid-sentence to report that a background job was unlucky.
+      */}
+      {syncNote ? (
+        <p className="hr-banner" role="status">
+          <AlertTriangle size={15} />
+          <span>
+            <strong>Showing stored attendance.</strong> Could not reach the data warehouse for the
+            latest punches — {syncNote}
+          </span>
+        </p>
+      ) : null}
+
+      {/*
+        The same KPI row every other HR tab opens with. Which numbers depend on the pane: My Data is a
+        week of one person, Team/All is a roster right now. Rendered only once there is something to
+        count — tiles reading 0 over a failed or pending load are a measurement, not a blank.
+      */}
+      {pane === 'me' && data ? (
+        <HrSummaryTiles
+          label="My attendance summary"
+          items={[
+            {
+              label: 'Right now',
+              value: PRESENCE_LABEL[data.currentState] ?? '—',
+              detail: 'Live from the Ganga readers',
+              icon: <DoorOpen size={19} />,
+              tone: data.currentState === 'in_office' ? 'var(--success)' : 'var(--tone-blue)',
+            },
+            {
+              label: 'Days present',
+              value: data.totals.present,
+              detail: 'Office visits this week',
+              icon: <UserCheck size={19} />,
+              tone: 'var(--success)',
+            },
+            {
+              label: 'Days absent',
+              value: data.totals.absent,
+              detail: 'Scheduled, no entry scan',
+              icon: <UserMinus size={19} />,
+              tone: data.totals.absent ? 'var(--warning)' : 'var(--text-muted)',
+            },
+            {
+              label: 'Unscheduled',
+              value: data.totals.unscheduled,
+              detail: 'Days with no shift assigned',
+              icon: <CalendarX size={19} />,
+              tone: data.totals.unscheduled ? 'var(--warning)' : 'var(--text-muted)',
+            },
+          ]}
+        />
+      ) : null}
+
+      {pane !== 'me' && teamSummary ? (
+        <HrSummaryTiles
+          label="Team attendance summary"
+          items={[
+            {
+              label: orgWideLabel,
+              value: teamSummary.people,
+              detail: 'Active people in this view',
+              icon: <Users size={19} />,
+              tone: 'var(--tone-blue)',
+            },
+            {
+              label: 'In office now',
+              value: teamSummary.inOffice,
+              detail: 'Checked in, not yet out',
+              icon: <DoorOpen size={19} />,
+              tone: 'var(--success)',
+            },
+            {
+              label: 'Needs review',
+              value: teamSummary.needsReview,
+              detail: 'A visit with no checkout',
+              icon: <AlertTriangle size={19} />,
+              tone: teamSummary.needsReview ? 'var(--warning)' : 'var(--text-muted)',
+            },
+            {
+              label: 'No shift',
+              value: teamSummary.noShift,
+              detail: 'Attendance cannot be scored',
+              icon: <CalendarX size={19} />,
+              tone: teamSummary.noShift ? 'var(--warning)' : 'var(--text-muted)',
+            },
+          ]}
+        />
+      ) : null}
 
       <div className="hr-att-chrome">
         <div className="hr-att-panes" role="tablist" aria-label="Attendance views">
@@ -133,34 +335,24 @@ export function HrAttendance() {
             role="tab"
             aria-selected={pane === 'me'}
             className={`hr-att-pane${pane === 'me' ? ' is-on' : ''}`}
-            onClick={() => setPane('me')}
+            onClick={() => choosePane('me')}
           >
             My Data
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={pane === 'team'}
-            className={`hr-att-pane${pane === 'team' ? ' is-on' : ''}`}
-            onClick={() => setPane('team')}
+            aria-selected={pane === 'roster'}
+            className={`hr-att-pane${pane === 'roster' ? ' is-on' : ''}`}
+            onClick={() => choosePane('roster')}
           >
-            Team
+            {orgWide ? 'All' : 'Team'}
           </button>
-          {canViewOrganization ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={pane === 'all'}
-              className={`hr-att-pane${pane === 'all' ? ' is-on' : ''}`}
-              onClick={() => setPane('all')}
-            >
-              All
-            </button>
-          ) : null}
         </div>
 
-        {/* The arrows stay live during a fetch: `seqRef` discards superseded responses, so hops can
-            be queued (four quick clicks back a month) instead of costing one round trip each. */}
+        {/* The arrows stay live during a fetch: the cache hook's run-id guard discards superseded
+            responses, and each week keeps its own entry — so four quick clicks back a month are three
+            instant paints and one fetch, not four round trips. */}
         <div className="hr-att-weeknav">
           <button
             type="button"
@@ -197,9 +389,17 @@ export function HrAttendance() {
             )}
           </div>
 
-          {error ? (
+          {/* Same rule as the roster: a failed refresh only takes the page when there is nothing
+              cached behind it. Otherwise the week below is real, just older. */}
+          {error && !data ? (
             <p className="hr-banner-error" role="alert">
               {error}
+            </p>
+          ) : error ? (
+            <p className="hr-banner" role="status">
+              <span>
+                <strong>Showing your last loaded week.</strong> Could not refresh it — {error}
+              </span>
             </p>
           ) : null}
 
@@ -238,8 +438,9 @@ export function HrAttendance() {
           scope={teamScope}
           today={today}
           weekOf={weekOf}
-          orgWide={pane === 'all'}
+          orgWide={orgWide}
           refreshToken={teamKey}
+          onSummary={setTeamSummary}
         />
       )}
     </div>

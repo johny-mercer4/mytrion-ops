@@ -44,6 +44,12 @@ export default defineConfig({
       FF_BROWSER_ENABLED: '0',
       FF_CUSTOMER_SCOPE_STRICT: '0',
       FF_WORKER_DEPT_STRICT: '0',
+      // Storage providers are pinned for the same reason as the flags above: a developer running the file
+      // pipeline on Dropbox locally would otherwise have every storeFile() in the suite default to Dropbox
+      // and attempt LIVE API calls with their real refresh token. The dropbox-storage suite sets
+      // FILE_STORAGE_PROVIDER itself (vi.hoisted, before env parses) where it needs the other value.
+      FILE_STORAGE_PROVIDER: 's3',
+      COMMS_STORAGE_PROVIDER: 's3',
     },
     coverage: {
       provider: 'v8',

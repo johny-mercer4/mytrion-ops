@@ -26,6 +26,30 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
+/**
+ * Listen on IPv6 *and* IPv4, rather than IPv4 only.
+ *
+ * `0.0.0.0` binds IPv4 exclusively, and that is enough to break local development in a way that looks
+ * like the backend is down. Vite serves on `[::1]:5173`, so the browser loads the page over IPv6 and
+ * then resolves `localhost:3001` to `::1` as well — where nothing is listening. Safari reports the
+ * refused connection as `Load failed`, which is indistinguishable from the server being off, even
+ * though `curl localhost:3001/health` answers 200 the whole time (curl silently falls back to IPv4).
+ *
+ * `::` binds dual-stack: IPv6 natively, IPv4 through v4-mapped addresses. The fallback is for hosts
+ * with IPv6 disabled at the kernel — some container runtimes — where binding `::` fails outright, and
+ * where IPv4-only was the correct answer all along.
+ */
+async function listenDualStack(app: Awaited<ReturnType<typeof buildApp>>): Promise<void> {
+  try {
+    await app.listen({ port: env.PORT, host: '::' });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== 'EAFNOSUPPORT' && code !== 'EADDRNOTAVAIL' && code !== 'EINVAL') throw err;
+    logger.warn({ code }, 'IPv6 unavailable — falling back to IPv4-only bind');
+    await app.listen({ port: env.PORT, host: '0.0.0.0' });
+  }
+}
+
 async function main(): Promise<void> {
   assertRuntimeSecrets();
   // Bring the schema forward before serving (no-op unless DB_MIGRATE_ON_BOOT=1).
@@ -37,7 +61,7 @@ async function main(): Promise<void> {
   if (env.FF_COMMS_PRESENCE) await sweepStalePresenceOnBoot();
   const app = await buildApp();
 
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
+  await listenDualStack(app);
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'octane-assistant API listening');
 
   // Background jobs: 'inline' runs workers in-process (single Render service);

@@ -1,12 +1,12 @@
-import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
 import { isAdmin, resolveAccessibleMytrions } from '../access/resolveAccess';
-import { logout } from '../api/auth';
-import { useTheme } from '../hooks/useTheme';
+import type { MytrionId } from '../access/mytrions.config';
+import { AccountMenu } from './AccountMenu';
 import { ActAsPicker } from './ActAsPicker';
 import { BrandMark } from './BrandMark';
-import { MoonIcon, SunIcon, SwitchIcon } from './icons';
-import { LogOut } from 'lucide-react';
+import { MytrionMenu } from './MytrionMenu';
+import { SwitchIcon } from './icons';
+import { ChevronDown } from 'lucide-react';
 import styles from './TopBar.module.css';
 
 function initials(name: string): string {
@@ -17,20 +17,28 @@ function initials(name: string): string {
 }
 
 /**
- * The 58px app header. Brand mark + optional context badge on the left; theme toggle + user avatar
- * on the right, with an optional "Switch Mytrion" link (to the picker) and an optional identity block.
+ * The 58px app header. Brand mark + optional context badge on the left; on the right, at most three
+ * controls, each of which is a menu.
+ *
+ * It used to carry five separate things — View as, a Switch Mytrion link, a theme button, an avatar and
+ * a Sign out button — strung across the corner. Theme and Sign out now live inside the account menu
+ * behind the avatar, and Switch Mytrion opens a workspace list instead of navigating out to the picker.
+ * View as stays its own control: it is already a searchable roster popover, and burying a search inside
+ * a menu makes it harder to reach, not tidier.
  */
 export function TopBar({
   contextBadge,
+  mytrion,
   showSwitch = false,
   showIdentity = false,
 }: {
   contextBadge?: string;
+  /** Which workspace is being viewed — marked as current in the switcher. */
+  mytrion?: MytrionId;
   showSwitch?: boolean;
   showIdentity?: boolean;
 }) {
   const user = useUserContext();
-  const { theme, toggle } = useTheme();
 
   // Admins can view-as anyone (ActAsPicker fetches the roster). A granted non-admin is handed their
   // scoped target list so the SAME picker only offers the users they're permitted to view as.
@@ -66,38 +74,36 @@ export function TopBar({
             />
           ))}
         {showSwitch && canSwitch && (
-          <Link to="/main" className={styles.switch}>
-            <SwitchIcon size={13} />
-            Switch Mytrion
-          </Link>
+          <MytrionMenu
+            {...(mytrion ? { current: mytrion } : {})}
+            triggerClassName={styles.switch}
+            trigger={
+              <>
+                <SwitchIcon size={13} />
+                Switch Mytrion
+                <ChevronDown size={13} />
+              </>
+            }
+          />
         )}
-        <button type="button" className={styles.iconBtn} onClick={toggle} aria-label="Toggle theme">
-          {theme === 'dark' ? <MoonIcon size={15} /> : <SunIcon size={15} />}
-        </button>
         {showIdentity && (
           <div className={styles.identity}>
             <div className={styles.name}>{user.userName}</div>
             <div className={styles.role}>{user.role || user.profile}</div>
           </div>
         )}
-        <span className={styles.avatar} title={user.userName}>
-          {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" className={styles.avatarImg} />
-          ) : (
-            initials(user.userName)
-          )}
-        </span>
-        {user.trusted && (
-          <button
-            type="button"
-            className={`${styles.switch} ${styles.signout}`}
-            onClick={logout}
-            title="Sign out"
-          >
-            <LogOut size={14} strokeWidth={2.5} />
-            Sign out
-          </button>
-        )}
+        <AccountMenu
+          triggerClassName={styles.avatarBtn}
+          trigger={
+            <span className={styles.avatar}>
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className={styles.avatarImg} />
+              ) : (
+                initials(user.userName)
+              )}
+            </span>
+          }
+        />
       </div>
     </header>
   );

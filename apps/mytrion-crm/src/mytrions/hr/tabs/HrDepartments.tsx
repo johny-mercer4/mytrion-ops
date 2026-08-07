@@ -5,6 +5,8 @@ import { deleteHrDepartment, type HrDepartmentDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
 import { formatCachedAt } from '../../_shared/swrCache';
 import { HrDepartmentCard } from '../HrDepartmentCard';
+import { HrDepartmentList } from '../HrDepartmentList';
+import { HrViewToggle, useHrViewMode } from '../HrViewToggle';
 import { HrDepartmentModal, type DepartmentModalMode } from '../HrDepartmentModal';
 import {
   invalidateHrDepartments,
@@ -38,6 +40,7 @@ export function HrDepartments() {
   const [modal, setModal] = useState<DepartmentModalMode | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [view, setView] = useHrViewMode('departments');
   /**
    * Which department `error` is ABOUT — the delete failure is now rendered inside the modal, and a modal
    * is one department's editor. Unscoped, "Department has sub-departments" from A's failed delete greeted
@@ -149,7 +152,8 @@ export function HrDepartments() {
   const bannerError = (modal ? '' : error) || departments.error;
 
   return (
-    <div className="hr-page">
+    /* Same as Employees: the table wants the width the reading measure exists to deny it. */
+    <div className={`hr-page${view === 'list' ? ' hr-page-wide' : ''}`}>
       <HrPageHead
         tab="departments"
         actions={
@@ -188,20 +192,6 @@ export function HrDepartments() {
       />
 
       {!firstLoad ? (
-        <div className="hr-toolbar">
-          <label className="hr-search">
-            <Search size={14} />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name, code, lead, description…"
-              aria-label="Search departments"
-            />
-          </label>
-        </div>
-      ) : null}
-
-      {!firstLoad ? (
         <HrSummaryTiles
           label="Department summary"
           items={[
@@ -234,6 +224,21 @@ export function HrDepartments() {
         />
       ) : null}
 
+      {!firstLoad ? (
+        <div className="hr-toolbar">
+          <label className="hr-search">
+            <Search size={14} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, code, lead, description…"
+              aria-label="Search departments"
+            />
+          </label>
+          <HrViewToggle mode={view} onChange={setView} label="Department view" />
+        </div>
+      ) : null}
+
       {bannerError ? (
         <p className="hr-banner-error" role="alert">
           {bannerError}
@@ -253,6 +258,13 @@ export function HrDepartments() {
                 ? 'Add a department, or run the Zoho People migrate sync.'
                 : 'No department records in the directory yet.'
           }
+        />
+      ) : view === 'list' ? (
+        <HrDepartmentList
+          departments={visible}
+          headcountFor={headcountFor}
+          busyId={deletingId}
+          onOpen={(dep) => openModal({ kind: 'edit', department: dep })}
         />
       ) : (
         <div className="hr-deptc-grid">

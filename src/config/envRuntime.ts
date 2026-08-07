@@ -55,9 +55,10 @@ export function assertRuntimeSecrets(): void {
     if (!env.S3_BUCKET) missing.push('S3_BUCKET');
   }
 
-  // Only when Dropbox is actually selected: the three credentials are optional otherwise, and warning
-  // about them on every S3 deploy would train people to ignore this list.
-  if (env.COMMS_STORAGE_PROVIDER === 'dropbox') {
+  // Only when Dropbox is actually selected by EITHER pipeline — comms attachments or the general
+  // upload/export path. The three credentials are optional otherwise, and warning about them on every
+  // pure-S3 deploy would train people to ignore this list.
+  if (env.COMMS_STORAGE_PROVIDER === 'dropbox' || env.FILE_STORAGE_PROVIDER === 'dropbox') {
     if (!env.DROPBOX_APP_KEY) missing.push('DROPBOX_APP_KEY');
     if (!env.DROPBOX_APP_SECRET) missing.push('DROPBOX_APP_SECRET');
     if (!env.DROPBOX_REFRESH_TOKEN) missing.push('DROPBOX_REFRESH_TOKEN');
