@@ -258,9 +258,10 @@ export const fmtDate = (v: unknown): string => {
   return Number.isNaN(d.getTime()) ? raw.slice(0, 10) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 export const titleStatus = (v: unknown): string => {
-  const x = str(v).toLowerCase();
+  const x = str(v).toLowerCase().replace(/[\s-]+/g, '_');
   if (!x) return '—';
-  if (x.includes('paid')) return 'Paid';
+  if (x === 'partially_paid' || x === 'partial') return 'Partially Paid';
+  if (x === 'paid') return 'Paid';
   if (x.includes('overdue') || x.includes('past')) return 'Overdue';
   return x.charAt(0).toUpperCase() + x.slice(1);
 };

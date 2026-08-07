@@ -142,8 +142,9 @@ export function AutoWexTasksPanel({
 }
 
 function cmpStatusBadge(status: string) {
-  const x = status.toLowerCase();
-  if (x.includes('paid')) return badge('Paid', 'var(--ok)');
+  const x = status.toLowerCase().replace(/[\s-]+/g, '_');
+  if (x === 'partially_paid' || x === 'partial') return badge('Partially Paid', 'var(--warn)');
+  if (x === 'paid') return badge('Paid', 'var(--ok)');
   if (x.includes('overdue') || x.includes('pending')) return badge(status, 'var(--warn)');
   return badge(status || '—', 'var(--muted)');
 }
