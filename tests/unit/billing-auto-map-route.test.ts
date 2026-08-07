@@ -195,6 +195,16 @@ describe('POST /v1/billing/ingest/dispute', () => {
     expect(claimForMatchMock).not.toHaveBeenCalled();
   });
 
+  it('converts the Stripe cents amount to dollars before storing/matching (1000 -> 10.00)', async () => {
+    upsertDisputeUnlessMatchedMock.mockResolvedValue(unmatchedReturn);
+    resolveStripeDisputeMatchMock.mockResolvedValue({ outcome: 'unlinked', isReversed: false, detail: {} });
+
+    await post('/v1/billing/ingest/dispute', { disputeId: 'du_1', amount: 1000 });
+
+    expect(upsertDisputeUnlessMatchedMock).toHaveBeenCalledWith(expect.objectContaining({ amount: '10.00' }));
+    expect(resolveStripeDisputeMatchMock).toHaveBeenCalledWith(expect.objectContaining({ amount: 10 }));
+  });
+
   it('no paymentIntentId parsed from the email: recorded unlinked, no claim, no CMP call', async () => {
     upsertDisputeUnlessMatchedMock.mockResolvedValue(unmatchedReturn);
     resolveStripeDisputeMatchMock.mockResolvedValue({ outcome: 'unlinked', isReversed: false, detail: {} });
