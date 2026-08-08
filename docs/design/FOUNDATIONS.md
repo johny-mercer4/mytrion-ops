@@ -326,32 +326,45 @@ Five families were evaluated against the repo's real 200-icon list. None scored 
 Material Symbols Sharp was chosen for **sharpness and the four axes**, which are capabilities a
 stroke set cannot offer:
 
-| Axis | Value | Why |
-| --- | --- | --- |
-| `wght` | **300** | optically matches Grotesk beside it. Not 400 — 400 is heavier than the text it labels |
-| `GRAD` | **−25** dark / **0** light | compensates icon halation on a dark ground. This axis exists for exactly this problem |
-| `opsz` | tracks size | real optical correction — the 20px cut is not the 24px cut scaled down |
-| `FILL` | 0 idle / 1 selected | the state axis. Replaces "two icons per nav row" with one glyph |
+| Axis | Ships? | Value | Why |
+| --- | --- | --- | --- |
+| `FILL` | **live** | 0 idle / 1 selected | the state axis. Replaces "two icons per nav row" with one glyph. Costs 4 KB |
+| `wght` | **live** | **290** dark / **300** light | matches Grotesk's stroke beside it (not 400 — 400 leads the eye), and carries the dark-ground compensation |
+| `GRAD` | pinned to 0 | — | only ever had two values, not a range; the job moved to `wght`. Cost 32 KB |
+| `opsz` | pinned to 20 | — | range is 20–48 and **both** our sizes hit the floor, so it expressed a value we can never leave. Cost 46 KB |
 
-> **Correction to a number I quoted during the decision.** I said 16.8 KB subsetted vs lucide's
-> 122.5 KB. **That comparison was wrong in both directions.** Measured here:
+> **Correction to a number quoted during the decision, and then a better outcome.**
 >
-> | | 200 icons |
-> | --- | ---: |
-> | Material Symbols Sharp, subsetted | **101.5 KB** woff2 (already brotli — no further gain) |
-> | lucide, tree-shaken | 112.3 KB raw → **11.5 KB gzipped** over the wire |
+> The decision was framed as "16.8 KB subsetted vs lucide's 122.5 KB". That was wrong in both
+> directions: lucide's 122.5 KB is the *entire un-tree-shaken barrel*, which nobody ships, and a
+> naive 4-axis subset of 175 glyphs is **114.8 KB**, not 16.8 KB. On those numbers Material Symbols
+> was ~10× larger over the wire than tree-shaken lucide.
 >
-> lucide's 122.5 KB is the *entire un-tree-shaken barrel*, which nobody ships. **Material Symbols is
-> ~9× larger over the wire, not 7× smaller.** The size argument points the other way.
+> **Pinning the two axes we never vary fixes most of that.** Measured on this exact glyph set:
 >
-> It does not flip the recommendation — the choice was made on sharpness and the axes, and 101.5 KB
-> as an immutably-cached font loaded once is acceptable for an authenticated tool people open daily
-> — but the decision should rest on the real number. Flagged rather than buried.
+> | Build | Size | |
+> | --- | ---: | --- |
+> | all four axes | 114.8 KB | the naive subset |
+> | pin `opsz` | 68.5 KB | −46.3 KB |
+> | **pin `opsz` + `GRAD`** | **34.0 KB** | **what ships** |
+> | + pin `wght` | 16.3 KB | loses the dark compensation |
+> | fully static | 12.1 KB | loses selected-state |
+>
+> `opsz`'s range is **20–48**, and both Horizon sizes resolve to the floor — a 16px icon already
+> renders the opsz-20 cut. That axis cost 46 KB to express a value we can never leave, so pinning
+> it loses **nothing**. `GRAD` only ever had two values (dark/light), never a range, and that job
+> moves onto the `wght` axis we keep anyway.
+>
+> **Shipped: 34.0 KB, 175 glyphs, `FILL` + `wght` live.** Against lucide's ~11.5 KB gzipped for the
+> same coverage that is still ~3× — the honest remaining cost — but it is a font, cached immutably
+> and loaded once, in exchange for a real selected-state axis lucide cannot offer at any price.
 
 ### 6.2 Tokens
 
-`--icon-size: 20px` · `--icon-size-sm: 16px` · `--icon-wght: 300` · `--icon-grad: -25` (0 light) ·
-`--icon-fill: 0` · `--icon-opsz: 20`
+`--icon-size: 20px` · `--icon-size-sm: 16px` · `--icon-fill: 0` · `--icon-wght: 290` (300 light)
+
+There is no `--icon-grad` or `--icon-opsz`: those axes are not in the shipped face, so naming them
+in `font-variation-settings` would be dead weight that reads as intent.
 
 ### 6.3 Build
 
@@ -360,7 +373,7 @@ names through ligatures; a `--text` subset keeps the *letters* that spell the na
 glyphs they resolve to. Measured: a 40-icon `--text` subset produced 25 glyphs and 1.8 KB of nothing.
 The failure is silent — the font loads and every icon renders as its own name in prose.
 
-Scaling is linear at ~0.5 KB/icon: 40 → 14.5 KB, 100 → 48.3 KB, 200 → 101.5 KB, full font 3.4 MB.
+Scaling is linear in glyph count; the axis set dominates. Full upstream font is 3.4 MB.
 
 ### 6.4 Deferred to Phase 3 — with the real work named
 

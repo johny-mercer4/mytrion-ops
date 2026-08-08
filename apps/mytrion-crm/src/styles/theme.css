@@ -217,23 +217,28 @@
   --layout-section-gap: var(--space-6);
 
   /* ── Icon ───────────────────────────────────────────────────────────────────
-     ONE family: Material Symbols Sharp. Two sizes, one weight, no exceptions.
-     The four axes are why this family was chosen over a stroke set, so they are tokens rather than
-     magic numbers at call sites:
+     ONE family: Material Symbols Sharp. Two sizes, no exceptions.
+
+     TWO live axes, and the shipped font contains only these two:
+       FILL  0/1  the state axis. 0 idle, 1 selected. Replaces the "ship two icons per nav row"
+                  pattern with one glyph. Costs 4 KB and is the capability a stroke set cannot
+                  offer at any price.
        wght  300  optically matches Grotesk's stroke beside it. NOT 400 — 400 is heavier than the
-                  text it labels and the icon starts leading the eye.
-       GRAD  -25  dark only. Icons optically bloom on a dark ground (halation); GRAD exists
-                  precisely to answer that without changing the glyph's mass. Light resets it to 0.
-       opsz      tracks the rendered size, which is what real optical correction means: the 20px
-                  cut is not the 24px cut scaled down.
-       FILL  0/1  the state axis. 0 idle, 1 selected. This replaces the "two icons per nav row"
-                  pattern entirely — one glyph, one axis. */
+                  text it labels, and the icon starts leading the eye.
+
+     opsz and GRAD were PINNED OUT of the font, which took it from 114.8 KB to 34.0 KB:
+       - opsz's range is 20..48, and BOTH our sizes resolve to the floor (a 16px icon already gets
+         the opsz-20 cut). The axis cost 46 KB to express a value we can never leave.
+       - GRAD only ever had two values (dark/light), never a range, and the dark-ground
+         compensation moves onto wght below. It cost 32 KB.
+     Do not reference 'GRAD' or 'opsz' in font-variation-settings — those axes no longer exist in
+     the shipped face. */
   --icon-size: 20px;
   --icon-size-sm: 16px;
-  --icon-wght: 300;
-  --icon-grad: -25;
   --icon-fill: 0;
-  --icon-opsz: 20;
+  /* Dark. Geometric glyphs optically bloom on a dark ground; ten units of weight answers that,
+     which is the job GRAD used to do for 32 KB. */
+  --icon-wght: 290;
 
   /* ── Z-index ────────────────────────────────────────────────────────────────
      A raw z-index is legal ONLY in the -1..3 band, for sibling ordering inside an already-isolated
@@ -591,8 +596,8 @@
   --fw-body: 400;
   --fw-body-strong: 500;
 
-  /* Icons do not bloom on a light ground, so the grade correction is off. */
-  --icon-grad: 0;
+  /* Icons do not bloom on a light ground, so they take the nominal weight. */
+  --icon-wght: 300;
 
   /* ══ The ONE alias that inverts ═══════════════════════════════════════════════
      In dark, containers step UP from the base plane, so a card is --container. In light they step
