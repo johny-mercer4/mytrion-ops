@@ -13,7 +13,7 @@ import {
   type WexTaskEntry,
 } from './autoLive';
 
-const mono = "font-family:'JetBrains Mono',monospace";
+const mono = "font-family:var(--font-mono)";
 
 function fmtWhen(raw: string): string {
   if (!raw) return '—';

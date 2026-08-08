@@ -46,7 +46,7 @@ function CategoryHeader({ category, count }: { category: AutoCategory; count: nu
         <Icon name={category.icon} size={18} strokeWidth={1.75} />
       </div>
       <div style={s('flex:1;min-width:0')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
+        <div style={s('font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
           {category.label}
         </div>
         <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>

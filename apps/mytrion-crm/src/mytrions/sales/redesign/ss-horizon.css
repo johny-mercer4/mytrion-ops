@@ -46,10 +46,7 @@
 
   /* Softer than the inherited global 6px. Sharp corners on a dense grid read as spreadsheet, which
      is precisely the thing this audience is being moved away from. */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  /* Radius fork deleted: the one scale in styles/theme.css now reaches this subtree. */
 
   /* Breathing room. Larger type in the same boxes is worse than the old type, so the rhythm goes up
      with it. */
@@ -484,7 +481,7 @@
 
 .ss-root .ss-soon-panel__title {
   margin: 0;
-  font-family: Rajdhani, sans-serif;
+  font-family: var(--font-head);
   font-weight: 700;
   font-size: 28px;
   letter-spacing: 0.04em;

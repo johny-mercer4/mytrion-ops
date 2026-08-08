@@ -11,64 +11,86 @@
  */
 
 :root {
-  /* ── The Horizon ramp — dark (over #05081a) ──────────────────────────────── */
-  --hz-1: #7dd3fc; /* sky-300     — first light */
-  --hz-2: #93c5fd; /* blue-300                  */
-  --hz-3: #bfdbfe; /* blue-200    — the horizon line */
-  --hz-4: #fdba74; /* orange-300                */
-  --hz-5: #fb923c; /* orange-400  — sunset      */
+  /* ══ Glass — ONE definition, replacing what used to be four forks ═════════
+     Every translucent surface in the app resolves here: header, rail, panel, menu, field, row.
+     A panel now looks identical in Sales and in HR because there is one place it can come from. */
+  --glass: rgba(31, 34, 44, 0.4);
+  --glass-hi: rgba(255, 255, 255, 0.07);
+  --glass-bd: rgba(255, 255, 255, 0.07);
+  --glass-bd-hi: rgba(255, 255, 255, 0.18);
+  --glare: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  --field: rgba(255, 255, 255, 0.04);
+  --row-line: rgba(255, 255, 255, 0.06);
+  --row-hover: rgba(255, 255, 255, 0.05);
+  /* A popover floats over the page, so it is opaque enough to read against any content beneath. */
+  --menu-bg: rgba(27, 31, 44, 0.92);
+  --menu-shadow: 0 24px 64px -18px rgba(0, 0, 0, 0.7);
+  --blur: 24px;
 
-  /* Anchors pulled out of the ramp for solid fills / icon strokes. */
-  --hz-sky: #38bdf8; /* sky-400   — the "cool" anchor */
-  --hz-sky-deep: #0ea5e9; /* sky-500 */
-  --hz-sun: #fb923c; /* orange-400 — the "warm" anchor */
-  --hz-sun-deep: #f97316; /* orange-500 */
-
-  /* The gradient itself. `-r` sweeps left→right (text, rails, progress);
-     `-d` runs 135° (fills, chips, avatars); `-soft` is the low-alpha wash for surfaces. */
-  --hz-gradient-r: linear-gradient(
-    90deg,
-    var(--hz-1) 0%,
-    var(--hz-2) 28%,
-    var(--hz-3) 52%,
-    var(--hz-4) 78%,
-    var(--hz-5) 100%
-  );
-  /* Two-stop version for small fills, where five stops read as mud. */
-  --hz-gradient-fill: linear-gradient(135deg, var(--hz-sky) 0%, var(--hz-sun) 100%);
-  --hz-gradient-soft: linear-gradient(
+  /* ══ The Horizon ramp — derived from the palette, so the light block only swaps colours ══
+     `--ramp` sweeps left→right (wordmark, hairlines, progress); `--ramp-d` runs 135° for small
+     fills, chips and avatars, where five stops read as mud; `--ramp-soft` is the low-alpha wash
+     that marks a selected row. */
+  --ramp: linear-gradient(90deg, var(--tint) 0%, var(--primary) 46%, var(--secondary) 100%);
+  --ramp-d: linear-gradient(135deg, var(--tint) 0%, var(--secondary) 100%);
+  --ramp-soft: linear-gradient(
     135deg,
-    rgba(56, 189, 248, 0.16) 0%,
-    rgba(191, 219, 254, 0.08) 52%,
-    rgba(251, 146, 60, 0.14) 100%
+    color-mix(in srgb, var(--tint) 16%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 7%, transparent) 52%,
+    color-mix(in srgb, var(--secondary) 14%, transparent) 100%
   );
-  /* Ink for text sitting on a Horizon-gradient fill. */
-  --hz-on-gradient: #04131c;
 
-  /* ── Glass shells — the WorkspaceCard math, as tokens ───────────────────── */
-  --hz-blur: 28px;
+  /* ══ --hz-* compatibility layer ═══════════════════════════════════════════
+     2,843 call sites across all 12 modules read these names — more than any other token family in
+     the app. They are aliases now, not definitions, so the whole app re-points by editing the
+     block above. Do not add new --hz-* names; use the short ones. */
+  --hz-1: var(--tint);
+  --hz-2: color-mix(in srgb, var(--tint) 50%, var(--primary));
+  --hz-3: var(--primary);
+  --hz-4: color-mix(in srgb, var(--primary) 50%, var(--secondary));
+  --hz-5: var(--secondary);
+  --hz-sky: var(--tint);
+  --hz-sky-deep: var(--primary-container);
+  --hz-sun: var(--secondary);
+  --hz-sun-deep: var(--secondary-container);
+  --hz-on-gradient: var(--on-primary);
+  --hz-gradient-r: var(--ramp);
+  --hz-gradient-fill: var(--ramp-d);
+  --hz-gradient-soft: var(--ramp-soft);
+  --hz-glow: color-mix(in srgb, var(--tint) 38%, transparent);
+  --hz-glow-soft: color-mix(in srgb, var(--tint) 20%, transparent);
+
+  --hz-glass: var(--glass);
+  --hz-glass-hover: var(--glass-hi);
+  --hz-glass-bd: var(--glass-bd);
+  --hz-glass-bd-hover: var(--glass-bd-hi);
+  --hz-glass-inset: var(--glare);
+  --hz-glass-inset-strong: var(--glare);
+  --hz-blur: var(--blur);
+  --hz-blur-md: var(--blur);
+  /* Deliberately NOT 24px. 122 of these sites are chips, rows and badges inside scrolling lists,
+     and every blurred element is its own composited layer — 24px on a 400-row table is the
+     compositing cliff this app has already fallen off. A chip reads as glass at 12px. */
   --hz-blur-sm: 12px;
-  --hz-blur-md: 20px;
-  --hz-glass: rgba(255, 255, 255, 0.042);
-  --hz-glass-hover: rgba(255, 255, 255, 0.09);
-  --hz-glass-bd: rgba(255, 255, 255, 0.07);
-  --hz-glass-bd-hover: rgba(255, 255, 255, 0.18);
-  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --hz-glass-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  --hz-shadow-rest: 0 2px 12px rgba(0, 0, 0, 0.22);
-  /* Two elevation steps, theme-aware. `lift` = a hovered surface, `pop` = a surface that floats
-     over the page (modal / drawer / dropdown). Both carry the module's accent glow so elevation is
-     branded rather than grey, and both are much shallower in light — a dark-theme drop shadow
-     transplanted onto a pale field is the single biggest cause of "sharp" light mode. */
+  --hz-blur-lg: var(--blur);
+  /* These four were CONSUMED BUT NEVER DECLARED, which makes the whole declaration
+     invalid-at-computed-value-time — the property silently inherits instead of erroring, so it
+     never got reported as a bug, only as "that label is the wrong colour". */
+  --hz-muted: var(--text-muted);
+  --hz-pane-solid: var(--menu-bg);
+  --hz-input-bg: var(--field);
+
+  /* Elevation. Depth comes from refraction, not from shadow: border + inset glare at rest, and a
+     drop shadow only on hover or when a surface floats over the page.
+     --hz-shadow-rest MUST stay a TRANSPARENT shadow rather than `none`: 60 of its 67 call sites
+     write `box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset)`, and `none` is not a valid
+     item in a shadow list — it would invalidate the whole declaration and take the glare with it,
+     flattening every panel in the app at once. */
+  --hz-shadow-rest: 0 0 0 0 rgba(0, 0, 0, 0);
   --hz-shadow-lift:
-    0 16px 40px -12px var(--accent-glow, var(--hz-glow)),
-    0 4px 14px -4px rgba(0, 0, 0, 0.18);
-  --hz-shadow-pop:
-    0 32px 80px -20px rgba(0, 0, 0, 0.55),
-    0 0 0 1px var(--hz-glow-soft);
-  /* Accent glow, restated as the Horizon sky so glass rings match the brand by default. */
-  --hz-glow: rgba(56, 189, 248, 0.38);
-  --hz-glow-soft: rgba(56, 189, 248, 0.2);
+    0 16px 40px -14px var(--accent-glow, var(--hz-glow)),
+    0 4px 14px -4px rgba(0, 0, 0, 0.28);
+  --hz-shadow-pop: var(--menu-shadow);
 
   /* 1px specular line along a card's top edge, revealed on hover. */
   --hz-shimmer: linear-gradient(
@@ -121,64 +143,44 @@
   /* One content measure for module panels, so every tab in a module lines up. */
   --hz-measure: 1280px;
 
-  /* ── Ambient background — the 4-lobe mesh, grid and vignette ────────────── */
-  --hz-page: #05081a;
+  /* ── Ambient background — the 3-lobe mesh, 64px grid and vignette ────────── */
+  --hz-page: var(--page);
   --hz-mesh:
-    radial-gradient(ellipse 75% 50% at 8% 0%, rgba(56, 189, 248, 0.17) 0%, transparent 58%),
-    radial-gradient(ellipse 50% 42% at 92% 8%, rgba(147, 197, 253, 0.13) 0%, transparent 52%),
-    radial-gradient(ellipse 60% 60% at 50% 108%, rgba(14, 165, 233, 0.12) 0%, transparent 58%),
-    radial-gradient(ellipse 38% 32% at 78% 86%, rgba(251, 146, 60, 0.1) 0%, transparent 48%);
+    radial-gradient(ellipse 70% 46% at 6% 0%, rgba(71, 214, 255, 0.11) 0%, transparent 58%),
+    radial-gradient(ellipse 46% 40% at 94% 6%, rgba(165, 231, 255, 0.07) 0%, transparent 52%),
+    radial-gradient(ellipse 40% 34% at 82% 92%, rgba(255, 174, 222, 0.07) 0%, transparent 50%);
   --hz-grid:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
   --hz-grid-size: 64px 64px;
   --hz-vignette: radial-gradient(
     ellipse 120% 120% at 50% 50%,
-    transparent 30%,
-    rgba(5, 8, 26, 0.7) 100%
+    transparent 32%,
+    rgba(5, 8, 20, 0.66) 100%
   );
 }
 
 [data-theme='light'] {
-  /* Same hue journey, deeper stops — sky-600 → blue-500 → blue-400 → orange-500 → orange-600.
-     The dark ramp's sky-300/orange-300 wash out to nothing against white. */
-  --hz-1: #0284c7;
-  --hz-2: #3b82f6;
-  --hz-3: #60a5fa;
-  --hz-4: #f97316;
-  --hz-5: #ea580c;
+  /* Only the glass set and the backdrop are restated. The ramp, every --hz-* alias and both
+     elevation steps re-derive from the palette in theme.css, which is why this block is a third of
+     the size it used to be — and why light can no longer silently drift away from dark. */
+  --glass: rgba(255, 255, 255, 0.44);
+  --glass-hi: rgba(255, 255, 255, 0.86);
+  --glass-bd: rgba(20, 30, 50, 0.07);
+  --glass-bd-hi: rgba(0, 67, 200, 0.3);
+  --glare: inset 0 1px 0 0 rgba(255, 255, 255, 1);
+  --field: rgba(255, 255, 255, 0.55);
+  --row-line: rgba(20, 30, 50, 0.07);
+  --row-hover: rgba(20, 30, 50, 0.035);
+  --menu-bg: rgba(255, 255, 255, 0.94);
+  --menu-shadow: 0 20px 52px -18px rgba(30, 41, 59, 0.28);
 
-  --hz-sky: #0284c7;
-  --hz-sky-deep: #0369a1;
-  --hz-sun: #ea580c;
-  --hz-sun-deep: #c2410c;
-
-  --hz-gradient-fill: linear-gradient(135deg, var(--hz-sky) 0%, var(--hz-sun) 100%);
-  --hz-gradient-soft: linear-gradient(
-    135deg,
-    rgba(2, 132, 199, 0.1) 0%,
-    rgba(96, 165, 250, 0.05) 52%,
-    rgba(234, 88, 12, 0.09) 100%
-  );
-  --hz-on-gradient: #ffffff;
-
-  --hz-glass: rgba(255, 255, 255, 0.66);
-  --hz-glass-hover: rgba(255, 255, 255, 0.86);
-  --hz-glass-bd: rgba(148, 163, 184, 0.22);
-  --hz-glass-bd-hover: rgba(2, 132, 199, 0.38);
-  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --hz-glass-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.95);
   /* Slate-tinted, never pure black: a neutral-black shadow on a cool light field reads as dirt.
-     Short, soft and low-alpha — the page is the quiet part, the panels sit gently on top. */
-  --hz-shadow-rest: 0 1px 3px rgba(30, 41, 59, 0.05);
+     Short, soft and low-alpha — the page is the quiet part, the panels sit gently on top. A
+     dark-theme drop shadow transplanted onto a pale field is what reads as "sharp". */
   --hz-shadow-lift:
-    0 14px 34px -12px var(--accent-glow, var(--hz-glow)),
+    0 14px 34px -14px var(--accent-glow, var(--hz-glow)),
     0 3px 10px -4px rgba(30, 41, 59, 0.09);
-  --hz-shadow-pop:
-    0 18px 48px -16px rgba(30, 41, 59, 0.16),
-    0 0 0 1px var(--hz-glow-soft);
-  --hz-glow: rgba(2, 132, 199, 0.28);
-  --hz-glow-soft: rgba(2, 132, 199, 0.14);
 
   /* 0.98 white was a hard specular line against near-white panels — barely a highlight, mostly a
      seam. Pulled back so it reads as sheen. */
@@ -189,25 +191,25 @@
     transparent 92%
   );
 
-  /* A touch deeper than the panels sitting on it. #f3f5ff left white cards floating on white with
-     nothing to separate them, which is what read as "too bright / too sharp": no ground. */
-  --hz-page: #e9edf6;
+  /* The 5-lobe hsla mesh from the Luminous Horizon launcher, over a page a touch deeper than the
+     panels sitting on it — white cards on white have no ground, which is what read as glare. */
   --hz-mesh:
-    radial-gradient(ellipse 75% 50% at 8% 0%, rgba(2, 132, 199, 0.07) 0%, transparent 58%),
-    radial-gradient(ellipse 50% 42% at 92% 8%, rgba(59, 130, 246, 0.055) 0%, transparent 52%),
-    radial-gradient(ellipse 60% 60% at 50% 108%, rgba(14, 165, 233, 0.045) 0%, transparent 58%),
-    radial-gradient(ellipse 38% 32% at 78% 86%, rgba(249, 115, 22, 0.05) 0%, transparent 48%);
+    radial-gradient(at 40% 20%, hsla(210, 100%, 95%, 1) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsla(189, 100%, 93%, 1) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, hsla(210, 100%, 95%, 1) 0px, transparent 50%),
+    radial-gradient(at 82% 54%, hsla(270, 100%, 96%, 1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(189, 100%, 94%, 1) 0px, transparent 50%);
   /* Neutral slate rather than saturated sky — cyan hairlines on a light field read as sharp ruling
      rather than texture. */
   --hz-grid:
-    linear-gradient(rgba(100, 116, 139, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(100, 116, 139, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(100, 116, 139, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.045) 1px, transparent 1px);
   /* Frames the content by settling the edges DOWN. The old light vignette faded toward a colour
      brighter than the page, so it lit the corners and added to the glare instead of containing it. */
   --hz-vignette: radial-gradient(
     ellipse 120% 120% at 50% 50%,
     transparent 40%,
-    rgba(191, 203, 226, 0.3) 100%
+    rgba(191, 203, 226, 0.28) 100%
   );
 }
 
@@ -217,7 +219,10 @@
    the bright 400-level, light the deep 600/700-level. Same families as the picker's workspace hues.
    Tint only the glyph — labels stay on the text scale, or the sidebar becomes a fruit salad. */
 :root {
-  --tone-sky: #38bdf8;
+  /* Re-spaced away from the ramp anchors. --tone-sky used to be #38bdf8, which sits ~3ΔE from the
+     new --tint (#47d6ff): a sky-toned glyph was indistinguishable from an accent-coloured one, so
+     the tone stopped encoding anything. It is now a true blue, leaving cyan to --tone-cyan. */
+  --tone-sky: #3b82f6;
   --tone-cyan: #22d3ee;
   --tone-teal: #2dd4bf;
   --tone-emerald: #34d399;
@@ -233,7 +238,8 @@
 }
 
 [data-theme='light'] {
-  --tone-sky: #0284c7;
+  /* Same re-spacing on the light side: --tint is #004ee7 there, so sky moves to a deep azure. */
+  --tone-sky: #0369a1;
   --tone-cyan: #0891b2;
   --tone-teal: #0d9488;
   --tone-emerald: #059669;
@@ -244,7 +250,7 @@
   --tone-pink: #db2777;
   --tone-rose: #e11d48;
   --tone-indigo: #4f46e5;
-  --tone-blue: #2563eb;
+  --tone-blue: #1d4ed8;
   --tone-slate: #64748b;
 }
 

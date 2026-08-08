@@ -116,7 +116,7 @@ function LeadCallWizard({
             </span>
             <div style={s('flex:1;min-width:0')}>
               <div style={s('font-size:16px;font-weight:700')}>Call ended — update {title}</div>
-              <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+              <div style={s("font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-top:2px")}>
                 {call.peer} · {fmtDuration(call.durationMs)}{call.result ? ` · ${call.result}` : ''}
               </div>
             </div>

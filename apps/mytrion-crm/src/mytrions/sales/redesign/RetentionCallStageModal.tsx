@@ -79,7 +79,7 @@ export function RetentionCallStageModal(props: {
               </div>
               <div
                 style={s(
-                  "font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px",
+                  "font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-top:2px",
                 )}
               >
                 {bits.join(' · ')}

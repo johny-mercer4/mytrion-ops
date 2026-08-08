@@ -97,7 +97,7 @@
 }
 
 .cs-root .cs-sc-ticket-id {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.6875rem;
     color: var(--text-muted);
     width: 72px;

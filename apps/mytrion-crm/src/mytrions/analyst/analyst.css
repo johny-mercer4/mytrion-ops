@@ -12,10 +12,10 @@
   --an-gap: 18px;
   --an-gap-lg: 26px;
   --an-pad: clamp(20px, 3vw, 34px);
-  --an-r-sm: 8px;
-  --an-r-md: 12px;
-  --an-r-lg: 16px;
-  --an-r-pill: 999px;
+  --an-r-sm: var(--radius-sm);
+  --an-r-md: var(--radius-md);
+  --an-r-lg: var(--radius-md);
+  --an-r-pill: var(--radius-full);
 
   /* ── Categorical series palette ────────────────────────────────────────────
      From the data-viz reference palette, VALIDATED against our own surfaces

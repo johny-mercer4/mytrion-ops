@@ -315,13 +315,13 @@ export function SalesRedesign() {
             {!navCollapsed && (
               <>
                 <div style={s('line-height:1.05;min-width:0;flex:1')}>
-                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
+                  <div style={s("font-family:var(--font-head);font-weight:700;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
                     MY<span style={s('color:var(--accent-text)')}>TRION</span>
                   </div>
                   <div
                     className="ss-brand-sub"
                     style={s(
-                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:13px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
+                      "margin-top:5px;font-family:var(--font-head);font-weight:700;font-size:13px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
                     )}
                   >
                     Sales
@@ -439,9 +439,9 @@ export function SalesRedesign() {
         {/* MAIN COLUMN */}
         <div className="ss-main-column" style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
           <div className="ss-main-topbar" style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <h1 style={s("margin:0;font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{activeLabel}</h1>
+            <h1 style={s("margin:0;font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{activeLabel}</h1>
             {admin && <ViewAsPicker />}
-            <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
+            <div style={s("font-family:var(--font-mono);font-size:13px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>
           <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every

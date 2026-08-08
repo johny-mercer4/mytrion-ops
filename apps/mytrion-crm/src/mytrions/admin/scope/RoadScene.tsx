@@ -189,7 +189,7 @@ export function RoadScene({ layout, onOpenStage }: { layout: RoadLayout; onOpenS
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, letterSpacing: '.18em', color: s.color, textTransform: 'uppercase' }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, letterSpacing: '.18em', color: s.color, textTransform: 'uppercase' }}>
                   STAGE {String(s.num).padStart(2, '0')}
                 </div>
                 <div style={{ display: 'flex', width: 34, height: 34, alignItems: 'center', justifyContent: 'center', border: `1px solid ${s.color}`, borderRadius: 3, color: s.color, background: tint }}>
@@ -198,7 +198,7 @@ export function RoadScene({ layout, onOpenStage }: { layout: RoadLayout; onOpenS
                   </svg>
                 </div>
               </div>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.05, marginTop: 8, color: 'var(--ink)', letterSpacing: '.01em' }}>
+              <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 25, lineHeight: 1.05, marginTop: 8, color: 'var(--ink)', letterSpacing: '.01em' }}>
                 {s.title}
               </div>
               <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--sub)', marginTop: 7, textWrap: 'pretty', minHeight: 36 }}>{s.desc}</div>
@@ -207,11 +207,11 @@ export function RoadScene({ layout, onOpenStage }: { layout: RoadLayout; onOpenS
                   {dots.map((color, di) => (
                     <span key={di} style={{ width: 9, height: 9, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                   ))}
-                  <span style={{ fontSize: 10.5, color: 'var(--sub)', marginLeft: 4, fontFamily: "'JetBrains Mono',monospace" }}>
+                  <span style={{ fontSize: 10.5, color: 'var(--sub)', marginLeft: 4, fontFamily: "var(--font-mono)" }}>
                     {s.departments.length ? `${s.departments.length} depts` : 'destination'}
                   </span>
                 </div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.12em', color: s.color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: '.12em', color: s.color, display: 'flex', alignItems: 'center', gap: 4 }}>
                   OPEN
                   <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 5l7 7-7 7" />

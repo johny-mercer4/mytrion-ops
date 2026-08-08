@@ -4,8 +4,8 @@
 
 /* HR uses Space Grotesk for UI body + headings (loaded in index.html). */
 [data-mytrion='hr'] {
-  --font-body: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --font-head: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-body);
+  --font-head: var(--font-body);
   --mytrion-nav-label-size: 14.5px;
   --mytrion-nav-sub-size: 13px;
   --mytrion-nav-search-size: 13.5px;

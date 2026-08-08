@@ -82,8 +82,8 @@ export function AutoCardLookupPanel({
           </div>
           {rows.map((row, index) => (
             <div key={`${row.cardId}-${row.cardNumber}-${index}`} className="ss-row-h" style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;border-top:1px solid var(--border2);font-size:13px;align-items:center')}>
-              <span style={s("font-family:'JetBrains Mono',monospace")}>{row.cardId || '—'}</span>
-              <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700")}>{row.cardNumber ? `•••• ${row.cardNumber.slice(-6)}` : '—'}</span>
+              <span style={s("font-family:var(--font-mono)")}>{row.cardId || '—'}</span>
+              <span style={s("font-family:var(--font-mono);font-weight:700")}>{row.cardNumber ? `•••• ${row.cardNumber.slice(-6)}` : '—'}</span>
               <span>{row.unit || '—'}</span>
               <span>{row.driverId || '—'}</span>
               <span>{row.driverName || '—'}</span>

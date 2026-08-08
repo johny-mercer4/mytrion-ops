@@ -4,7 +4,7 @@ import { cardStatusBadge } from './AutoPicklist';
 import { fmtDate, type CardLastUsedRow, type LimitUpdateResult } from './autoLive';
 import { badge } from './salesData';
 
-const mono = "font-family:'JetBrains Mono',monospace";
+const mono = "font-family:var(--font-mono)";
 
 function sourceLabel(row: CardLastUsedRow): { text: string; color: string } {
   if (row.source === 'efs') return { text: 'LIVE EFS', color: 'var(--ok)' };
@@ -30,7 +30,7 @@ export function AutoCardLastUsedPanel({ rows }: { rows: CardLastUsedRow[] }) {
     <div style={s('display:flex;flex-direction:column;gap:10px')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px')}>
         <div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.03em')}>Card activity</div>
+          <div style={s('font-family:var(--font-head);font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.03em')}>Card activity</div>
           <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Live EFS status with the best available last-use history.</div>
         </div>
         <Badge vm={badge(`${rows.length} CARD${rows.length === 1 ? '' : 'S'}`, 'var(--accent)')} />

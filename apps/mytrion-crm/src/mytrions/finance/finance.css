@@ -20,10 +20,10 @@
   --fi-gap: 18px;
   --fi-gap-lg: 26px;
   --fi-pad: clamp(20px, 3vw, 34px);
-  --fi-r-sm: 8px;
-  --fi-r-md: 12px;
-  --fi-r-lg: 16px;
-  --fi-r-pill: 999px;
+  --fi-r-sm: var(--radius-sm);
+  --fi-r-md: var(--radius-md);
+  --fi-r-lg: var(--radius-md);
+  --fi-r-pill: var(--radius-full);
   --fi-tone-fallback: var(--accent);
 
   /* Semantic money hues — one definition, used by rows, pills and figures alike. */

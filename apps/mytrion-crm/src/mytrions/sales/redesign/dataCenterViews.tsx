@@ -23,9 +23,9 @@ import {
 } from './dataCenterLive';
 
 const AV = (size = 34, fs = 13): string =>
-  `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
+  `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
 const COUNT_CHIP =
-  "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace";
+  "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-mono)";
 const SUB = 'font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 const FOOT = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:12px;color:var(--faint)';
 const LEAD_LIST_COLS =
@@ -49,7 +49,7 @@ function KanbanCol({ col, count, children }: { col: { label: string; col: string
     <div style={s('flex:0 0 264px;width:264px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:640px')}>
       <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
         <span style={s(`width:8px;height:8px;border-radius:50%;background:${col.col}`)} />
-        <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{col.label}</span>
+        <span style={s('font-family:var(--font-head);font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{col.label}</span>
         <span style={s(COUNT_CHIP)}>{count}</span>
       </div>
       <div className="ss-scroll" style={s('padding:11px;display:flex;flex-direction:column;gap:10px;overflow-y:auto')}>{children}</div>
@@ -173,7 +173,7 @@ export function LeadsView({
                     </button>
                   </div>
                 ) : (
-                  <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.phone || '—'}</span>
+                  <span style={s("color:var(--text2);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.phone || '—'}</span>
                 )}
               </div>
               <div
@@ -192,7 +192,7 @@ export function LeadsView({
                     </button>
                   </div>
                 ) : (
-                  <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.cell || '—'}</span>
+                  <span style={s("color:var(--text2);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.cell || '—'}</span>
                 )}
               </div>
               <span style={s('color:var(--muted);white-space:nowrap')}>{ld.created}</span>
@@ -220,7 +220,7 @@ export function LeadsView({
                   <div style={s('font-size:13px;color:var(--text2);font-weight:500;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</div>
                   <div style={s('font-size:12px;color:var(--muted);margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.email}</div>
                   <div style={s('margin-top:9px;display:flex;align-items:baseline;justify-content:space-between;gap:8px')}>
-                    <span style={s("font-size:13px;color:var(--text2);font-weight:600;font-family:'JetBrains Mono',monospace;white-space:nowrap")}>{ld.phone || '—'}</span>
+                    <span style={s("font-size:13px;color:var(--text2);font-weight:600;font-family:var(--font-mono);white-space:nowrap")}>{ld.phone || '—'}</span>
                     <span style={s('font-size:12px;color:var(--faint);white-space:nowrap')}>{ld.created}</span>
                   </div>
                 </div>
@@ -265,8 +265,8 @@ export function DealsView({
           <div key={dl.id} onClick={() => openDeal(dl)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:14px')}>
             <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{dl.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</span></div>
             <span style={s(`color:${dealStageColor(dl.stage)};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{dl.stage}</span>
-            <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace")}>{dl.carrierId || '—'}</span>
-            <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace")}>{dl.app || '—'}</span>
+            <span style={s("color:var(--text2);font-family:var(--font-mono)")}>{dl.carrierId || '—'}</span>
+            <span style={s("color:var(--text2);font-family:var(--font-mono)")}>{dl.app || '—'}</span>
             <span style={s('text-align:right;color:var(--muted)')}>{dl.created}</span>
           </div>
         ))}
@@ -349,10 +349,10 @@ export function RejectionsView({
               {r.company}
             </span>
           </div>
-          <span style={s("font-family:'JetBrains Mono',monospace;color:var(--text2)")}>#{r.number}</span>
+          <span style={s("font-family:var(--font-mono);color:var(--text2)")}>#{r.number}</span>
           <span style={s('min-width:0;display:flex;align-items:center;gap:8px')}>
             {r.errorCode ? (
-              <span style={s(`flex-shrink:0;padding:2px 7px;border-radius:var(--radius-xs,6px);font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;background:color-mix(in srgb,${r.isFraud ? 'var(--danger)' : 'var(--accent)'} 14%,transparent);color:${r.isFraud ? 'var(--danger)' : 'var(--accent)'}`)}>
+              <span style={s(`flex-shrink:0;padding:2px 7px;border-radius:var(--radius-xs,6px);font-family:var(--font-mono);font-size:11.5px;font-weight:700;background:color-mix(in srgb,${r.isFraud ? 'var(--danger)' : 'var(--accent)'} 14%,transparent);color:${r.isFraud ? 'var(--danger)' : 'var(--accent)'}`)}>
                 {r.errorCode}
               </span>
             ) : null}

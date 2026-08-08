@@ -1,6 +1,6 @@
 [data-mytrion='recruit'] {
-  --font-body: "Space Grotesk", system-ui, sans-serif;
-  --font-head: "Space Grotesk", system-ui, sans-serif;
+  /* The --font-body/--font-head override here was a no-op once the app moved to Space Grotesk for
+     both roles; removed so this module has one fewer reason to diverge. */
   --mytrion-nav-label-size: 15px;
   --mytrion-nav-search-size: 14px;
   --mytrion-nav-section-size: 12px;

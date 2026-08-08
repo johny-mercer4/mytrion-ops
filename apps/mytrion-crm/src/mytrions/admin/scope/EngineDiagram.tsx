@@ -14,12 +14,12 @@ export function EngineDiagram({ engine, color }: { engine: EngineDef; color: str
     <div style={{ display: 'flex', minHeight: '100%' }}>
       <div style={{ margin: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)' }}>AUTOMATED</span>
-          <span style={{ color, border: '1px solid var(--gb)', borderRadius: 3, padding: '2px 7px', fontSize: 9, fontFamily: "'JetBrains Mono',monospace", letterSpacing: '.04em' }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)' }}>AUTOMATED</span>
+          <span style={{ color, border: '1px solid var(--gb)', borderRadius: 3, padding: '2px 7px', fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: '.04em' }}>
             by {engine.by || 'R&D'}
           </span>
         </div>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', marginBottom: 6 }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', marginBottom: 6 }}>
           {pipeline.length > 1 ? 'INTAKE PIPELINE' : 'TRIGGER'}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 9, maxWidth: 680 }}>
@@ -68,12 +68,12 @@ export function EngineDiagram({ engine, color }: { engine: EngineDef; color: str
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d={ic('sliders')} />
               </svg>
             </div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--ink)', lineHeight: 1.05, marginTop: 4, maxWidth: 100 }}>
+            <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 14, color: 'var(--ink)', lineHeight: 1.05, marginTop: 4, maxWidth: 100 }}>
               {engine.engine}
             </div>
           </div>
         </div>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', margin: '12px 0 8px' }}>WEIGHS</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', margin: '12px 0 8px' }}>WEIGHS</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 440 }}>
           {engine.factors.map((f) => (
             <div
@@ -97,7 +97,7 @@ export function EngineDiagram({ engine, color }: { engine: EngineDef; color: str
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M12 5v14M6 13l6 6 6-6" />
           </svg>
         </div>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', margin: '2px 0 4px' }}>OUTPUT</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.14em', color: 'var(--sub)', margin: '2px 0 4px' }}>OUTPUT</div>
         <div
           style={{
             display: 'flex', alignItems: 'center', gap: 9, padding: '13px 18px',

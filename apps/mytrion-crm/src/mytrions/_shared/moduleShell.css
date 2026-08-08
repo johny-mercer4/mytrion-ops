@@ -24,10 +24,10 @@
   --ms-gap: 18px;
   --ms-gap-lg: 26px;
   --ms-pad: clamp(20px, 3vw, 34px);
-  --ms-r-sm: 8px;
-  --ms-r-md: 12px;
-  --ms-r-lg: 16px;
-  --ms-r-pill: 999px;
+  --ms-r-sm: var(--radius-sm);
+  --ms-r-md: var(--radius-md);
+  --ms-r-lg: var(--radius-md);
+  --ms-r-pill: var(--radius-full);
   --ms-tone-fallback: var(--accent);
 
   height: 100%;

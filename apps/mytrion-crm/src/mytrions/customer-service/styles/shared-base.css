@@ -5,7 +5,6 @@
    ===================================================== */
 
 /* === Font Imports — CSMYTRION: Rajdhani + Instrument Sans + JetBrains Mono === */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap');
 
 /* === Reset === */
 .cs-root *,
@@ -17,7 +16,7 @@
 }
 
 .cs-root {
-    font-family: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-body);
     margin: 0;
     padding: 0;
     background: var(--color-bg-primary);
@@ -36,7 +35,7 @@
 .cs-root h4,
 .cs-root h5,
 .cs-root h6 {
-    font-family: 'Rajdhani', 'Instrument Sans', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--color-text-primary);
@@ -155,7 +154,7 @@
 }
 
 .cs-root .cs-brand-word {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 22px;
     font-weight: 700;
     letter-spacing: 0.11em;
@@ -170,7 +169,7 @@
 
 .cs-root .cs-brand-sub {
     margin-top: 5px;
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.18em;
@@ -309,7 +308,7 @@
 }
 
 .cs-root .cs-nav-badge {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 600;
     min-width: 18px;
@@ -415,7 +414,7 @@
     background: var(--cs-accent-soft);
     color: var(--cs-accent-deep);
     border: 1px solid var(--cs-border-gold);
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 14px;
     display: flex;
@@ -476,7 +475,7 @@
 }
 
 .cs-root .cs-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 30px;
     font-weight: 700;
     letter-spacing: -0.01em;

@@ -24,7 +24,7 @@ import {
 import { downloadTxnReport } from './txnReportExport';
 import { AutoEmptyState } from './AutoActionResult';
 
-const mono = "font-family:'JetBrains Mono',monospace";
+const mono = "font-family:var(--font-mono)";
 const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const sectionLabel = 'font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:10px';

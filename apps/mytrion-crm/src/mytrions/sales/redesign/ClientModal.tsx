@@ -75,7 +75,7 @@ function BillingField({ label, value, soon }: { label: string; value?: string; s
           <span style={s('font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)')}>Coming soon</span>
         </div>
       ) : (
-        <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;margin-top:6px")}>{value ?? '—'}</div>
+        <div style={s("font-family:var(--font-mono);font-size:16px;font-weight:600;margin-top:6px")}>{value ?? '—'}</div>
       )}
     </div>
   );
@@ -230,10 +230,10 @@ export function ClientModal({
       .finally(() => setActLoadingMore(false));
   };
 
-  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 18%,var(--surface));color:${col};border:1px solid color-mix(in srgb,${col} 28%,transparent)`;
+  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 18%,var(--surface));color:${col};border:1px solid color-mix(in srgb,${col} 28%,transparent)`;
   const tile = 'padding:14px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
   const tLbl = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
-  const tVal = "font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;margin-top:5px";
+  const tVal = "font-family:var(--font-mono);font-size:21px;font-weight:600;margin-top:5px";
   return (
     <div
       role="presentation"
@@ -262,7 +262,7 @@ export function ClientModal({
           <div style={s(avStyle)}>{initials}</div>
           <div style={s('flex:1;min-width:0')}>
             <div style={s('font-size:18px;font-weight:700;letter-spacing:-.01em')}>{client.name}</div>
-            <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+            <div style={s("font-size:12px;color:var(--muted);font-family:var(--font-mono);margin-top:3px")}>
               {client.carrier} · MC {client.mc} · DOT {client.dot}
             </div>
           </div>
@@ -315,15 +315,15 @@ export function ClientModal({
               <div style={s(`grid-column:1 / -1;${tile}`)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Primary Contact</div>
                 <div style={s('font-size:15px;font-weight:700;margin-top:5px')}>{client.contact}</div>
-                <div style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.phone}</div>
+                <div style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono);margin-top:3px")}>{client.phone}</div>
               </div>
               <div style={s(tile)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Cards</div>
-                <div style={s("font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;margin-top:5px")}>{client.active}<span style={s('color:var(--muted);font-size:15px')}>/{client.cards}</span> active</div>
+                <div style={s("font-family:var(--font-mono);font-size:21px;font-weight:600;margin-top:5px")}>{client.active}<span style={s('color:var(--muted);font-size:15px')}>/{client.cards}</span> active</div>
               </div>
               <div style={s(tile)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Gallons · Cycle</div>
-                <div style={s("font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;margin-top:5px;color:var(--violet)")}>{client.gallons}</div>
+                <div style={s("font-family:var(--font-mono);font-size:21px;font-weight:600;margin-top:5px;color:var(--violet)")}>{client.gallons}</div>
               </div>
               <div style={s(tile)}>
                 <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>EFS Balance</div>
@@ -353,7 +353,7 @@ export function ClientModal({
                   <Icon name={tierBucketIcon(loyaltyBucket)} size={23} />
                 </div>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s(`font-family:Rajdhani,sans-serif;font-size:27px;font-weight:700;line-height:1;color:${loyaltyTone}`)}>{tierBucketLabel(loyaltyBucket)}</div>
+                  <div style={s(`font-family:var(--font-head);font-size:27px;font-weight:700;line-height:1;color:${loyaltyTone}`)}>{tierBucketLabel(loyaltyBucket)}</div>
                   <div style={s('font-size:12px;color:var(--muted);margin-top:5px')}>{trackCaption(tier)}</div>
                 </div>
               </div>
@@ -380,7 +380,7 @@ export function ClientModal({
                       <strong style={s('font-size:14px')}>{period.title}</strong>
                       <span style={s('font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em')}>{period.caption}</span>
                     </div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:25px;font-weight:700;margin-top:9px")}>{numFmt(period.gallons)}<span style={s('font-size:12px;color:var(--muted)')}> in-net gal</span></div>
+                    <div style={s("font-family:var(--font-mono);font-size:25px;font-weight:700;margin-top:9px")}>{numFmt(period.gallons)}<span style={s('font-size:12px;color:var(--muted)')}> in-net gal</span></div>
                     <div style={s('display:flex;justify-content:space-between;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border2);font-size:11.5px;color:var(--muted)')}>
                       <span>{period.cards} transacting cards</span>
                       <span>{numFmt(period.total)} total gal</span>
@@ -393,7 +393,7 @@ export function ClientModal({
                 <div style={s(tile)}>
                   <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
                     <span style={s('font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Next evaluation projection</span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text)")}>{numFmt(projectedTier.gallons)} ULSR + ULSD gal</span>
+                    <span style={s("font-family:var(--font-mono);font-size:14px;color:var(--text)")}>{numFmt(projectedTier.gallons)} ULSR + ULSD gal</span>
                   </div>
                   <div style={s('position:relative;height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
                     <div style={s(`position:absolute;inset:0 auto 0 0;width:${progressPct(projectedTier)}%;border-radius:99px;background:${tierColor(projectedTier.nextLevel)};transition:width .5s ease`)} />
@@ -420,7 +420,7 @@ export function ClientModal({
                       <div style={s(`font-size:14px;font-weight:600;color:${reward.active ? 'var(--text)' : 'var(--muted)'}`)}>{reward.title}</div>
                       <div style={s('font-size:11px;color:var(--muted);margin-top:1px')}>{reward.desc}</div>
                     </div>
-                    <span style={s(`font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;white-space:nowrap;color:${reward.active ? loyaltyTone : 'var(--muted)'}`)}>{reward.value}</span>
+                    <span style={s(`font-family:var(--font-mono);font-size:13px;font-weight:600;white-space:nowrap;color:${reward.active ? loyaltyTone : 'var(--muted)'}`)}>{reward.value}</span>
                   </div>
                 ))}
               </div>
@@ -436,7 +436,7 @@ export function ClientModal({
               {(cardsL.data ?? []).map((card, i) => (
                 <div key={`${card.num}-${i}`} style={s('display:flex;flex-direction:column;gap:8px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <div style={s('display:flex;align-items:center;gap:12px')}>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600")}>{card.num}</span>
+                    <span style={s("font-family:var(--font-mono);font-size:14px;font-weight:600")}>{card.num}</span>
                     {card.cardType && <span style={s('font-size:12px;color:var(--muted)')}>{card.cardType}</span>}
                     <span style={s(`margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
                   </div>

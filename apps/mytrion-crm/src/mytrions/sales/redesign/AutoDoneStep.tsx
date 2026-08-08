@@ -8,7 +8,7 @@ import { AutoInvoicesPanel, AutoTransactionsPanel } from './AutoResultPanels';
 import { AutoPaymentsPanel, AutoTrackingPanel, AutoWexTasksPanel } from './AutoRichResults';
 
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
-const mono = "font-family:'JetBrains Mono',monospace";
+const mono = "font-family:var(--font-mono)";
 const btnP = (extra: string): string =>
   `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 

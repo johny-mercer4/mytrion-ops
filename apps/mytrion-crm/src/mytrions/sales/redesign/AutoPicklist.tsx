@@ -12,7 +12,7 @@ import { AutoEmptyState } from './AutoActionResult';
 import { AutoFloatingDrop } from './AutoFloatingDrop';
 import type { Card, Deal } from './autoLive';
 
-const MONO = "font-family:'JetBrains Mono',monospace";
+const MONO = "font-family:var(--font-mono)";
 const INP =
   'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const LABEL =
@@ -83,7 +83,7 @@ export function AutoMacroLoader({ phase }: { phase: string }) {
       aria-label={phase || 'Waiting for result'}
       style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}
     >
-      <div style={s('font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
+      <div style={s('font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
         {phase || 'Working…'}
       </div>
       <div style={s('font-size:14px;color:var(--muted);max-width:280px;line-height:1.5')}>

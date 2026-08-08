@@ -75,7 +75,7 @@ export function WizardChrome(props: {
       ) : props.stepLabel ? (
         <div
           style={s(
-            "font-size:12px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace",
+            "font-size:12px;font-weight:700;color:var(--muted);font-family:var(--font-mono)",
           )}
         >
           {props.stepLabel}
@@ -125,7 +125,7 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
       {line ? (
         <div
           style={s(
-            "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
+            "margin-top:6px;font-family:var(--font-mono);font-size:15px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
           )}
         >
           {line}
@@ -200,7 +200,7 @@ export function CallFirstBlock(props: {
       ) : phone ? (
         <div
           style={s(
-            "font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+            "font-family:var(--font-mono);font-size:20px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
           )}
         >
           {phone}
@@ -270,7 +270,7 @@ export function AttemptStep(props: {
             {callPeerLine(pendingCall) ? (
               <div
                 style={s(
-                  "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--accent-text)",
+                  "margin-top:6px;font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--accent-text)",
                 )}
               >
                 {callPeerLine(pendingCall)}

@@ -226,12 +226,12 @@ export function MoneyCodesView({ search }: { search: string }) {
                     <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {row.company_name || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
+                    <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--muted)")}>
                       {row.carrier_id ?? '—'}
                     </span>
                     <span
                       style={s(
-                        "text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700",
+                        "text-align:right;font-family:var(--font-mono);font-size:13px;font-weight:700",
                       )}
                     >
                       {fmtUsd(amountOf(row))}
@@ -239,7 +239,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                     <span style={s('font-size:13px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {row.moneycode_reason || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
+                    <span style={s("font-family:var(--font-mono);font-size:13px")}>
                       {row.unit_number || '—'}
                     </span>
                     <span style={s('font-size:12px;color:var(--muted)')}>{fmtWhen(row.created_at)}</span>

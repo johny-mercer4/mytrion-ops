@@ -128,7 +128,7 @@ function StreakStat({
         ) : (
           <div
             style={s(
-              "font-family:'JetBrains Mono',monospace;font-weight:500;font-size:24px;line-height:1;color:var(--text)",
+              "font-family:var(--font-mono);font-weight:500;font-size:24px;line-height:1;color:var(--text)",
             )}
           >
             {value}
@@ -136,7 +136,7 @@ function StreakStat({
         )}
         <div style={s('font-size:12px;color:var(--muted);margin-top:5px')}>{label}</div>
         {sub && !loading && (
-          <div style={s("font-size:11px;color:var(--text2);margin-top:2px;font-family:'JetBrains Mono',monospace")}>{sub}</div>
+          <div style={s("font-size:11px;color:var(--text2);margin-top:2px;font-family:var(--font-mono)")}>{sub}</div>
         )}
       </div>
     </div>
@@ -390,7 +390,7 @@ export function HomeTab() {
         <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:32px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
+          <div style={s('font-family:var(--font-head);font-weight:700;font-size:32px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           {/* Daily goal bar — Deals.Application_Date (application filled), owner-scoped COQL. */}
           <div style={s('margin-top:18px')} aria-busy={appsLoading || undefined}>
             <div style={s('display:flex;justify-content:space-between;align-items:center;margin-bottom:8px')}>
@@ -400,7 +400,7 @@ export function HomeTab() {
               {appsLoading ? (
                 <div className="ss-skel" style={s('width:72px;height:12px;border-radius:6px')} />
               ) : (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)")}>
+                <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--text2)")}>
                   {appsDone} / {DAILY_APPS_GOAL} apps
                 </span>
               )}
@@ -421,7 +421,7 @@ export function HomeTab() {
             ) : (
               <div
                 style={s(
-                  `font-size:12px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`,
+                  `font-size:12px;margin-top:7px;font-weight:700;font-family:var(--font-mono);color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`,
                 )}
               >
                 {appStats.error
@@ -439,7 +439,7 @@ export function HomeTab() {
         <div style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
           <div style={s('display:flex;justify-content:space-between;align-items:baseline')}>
             <span style={s('font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
-            <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)")}>{timeFmt}</span>
+            <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--text2)")}>{timeFmt}</span>
           </div>
           <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);margin:18px 0 10px;overflow:visible')}>
             {/* Phase track ticks: morning · midday · afternoon · close */}
@@ -454,7 +454,7 @@ export function HomeTab() {
           </div>
           <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:600')}>
             <span>{workdayStartLabel}</span>
-            <span style={s(`color:${workday.accent};font-family:'JetBrains Mono',monospace;font-weight:700`)}>{workday.statusLabel}</span>
+            <span style={s(`color:${workday.accent};font-family:var(--font-mono);font-weight:700`)}>{workday.statusLabel}</span>
             <span>{workdayEndLabel}</span>
           </div>
         </div>
@@ -473,7 +473,7 @@ export function HomeTab() {
             <div aria-hidden="true" style={s('position:absolute;inset:0;border-radius:var(--radius-md);border:2px solid var(--accent);animation:ss-ring .9s ease-out both;pointer-events:none')}></div>
             <span style={s('font-size:36px')}>{celebration.emoji}</span>
             <div style={s('min-width:0')}>
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--ok-text)")}>{celebration.title}</div>
+              <div style={s("font-family:var(--font-head);font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--ok-text)")}>{celebration.title}</div>
               <div style={s('font-size:14px;color:var(--text2);margin-top:2px')}>{celebration.msg}</div>
             </div>
           </div>
@@ -483,7 +483,7 @@ export function HomeTab() {
       <>
           {/* announcements */}
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
-            <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
+            <div style={s('display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
             <span style={s('font-size:12px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
           </div>
           {ann.loading ? (
@@ -507,7 +507,7 @@ export function HomeTab() {
           {/* snapshot */}
           <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
+              <div style={s('font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
               <span style={s('font-size:12px;color:var(--muted)')}>
                 {snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}
               </span>
@@ -535,7 +535,7 @@ export function HomeTab() {
                             )}
                           >
                             <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
-                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:500;font-size:24px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
+                            <div style={s(`font-family:var(--font-mono);font-weight:500;font-size:24px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
                             <div style={s('font-size:13px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
                             <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
                           </div>
@@ -557,7 +557,7 @@ export function HomeTab() {
               minmax(0,…) lets the text ellipsise instead of dictating the column width. */}
           <div style={s('display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px')}>
             <div>
-              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
               <div style={s('display:flex;flex-direction:column;gap:12px')}>
                 {ctaCards.map((c) => (
                   <div key={c.name} {...clickable(goAuto)} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
@@ -575,7 +575,7 @@ export function HomeTab() {
               </div>
             </div>
             <div>
-              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
               {inbox.loading ? (
                 <InboxListSkeleton />
               ) : (

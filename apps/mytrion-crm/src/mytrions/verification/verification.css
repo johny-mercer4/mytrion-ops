@@ -3,12 +3,13 @@
    so nothing here can leak into Finance/Manager/Analytics/Collection/CS, which share `.ms-*` from
    `_shared/moduleShell.css`.
 
-   TWO things this file does that `.ms-*` alone doesn't:
-     1. Inter, everywhere in this module — overrides --font-head/--font-body (see styles/horizon.css /
-        theme.css for how every module already swaps --accent* the same way via [data-mytrion]; this is
-        the same mechanism, applied to typography instead of colour). Loaded in index.html.
-     2. A larger type scale than the other five `.ms-*` modules — every `.ms-*` px value this module
-        touches gets its own bigger override here; the shared file is UNCHANGED so nobody else moves.
+   What this file does that `.ms-*` alone doesn't: a larger type scale than the other five `.ms-*`
+   modules — every `.ms-*` px value this module touches gets its own bigger override here; the
+   shared file is UNCHANGED so nobody else moves.
+
+   It used to also swap --font-head/--font-body to Inter for the whole module. That override is
+   gone with Inter itself: the app ships two families, Space Grotesk and Space Mono, and a module
+   that picks its own typeface is the same drift as a module that picks its own accent.
 
    Horizon language (identical to HR/Finance/Manager):
      surface   frosted pane (--hz-pane) + 1px --hz-pane-bd + --hz-shadow-rest + inset sheen
@@ -19,11 +20,6 @@
    NOTE: --hz-pane is a GRADIENT. Multi-layer `background` must be COMMA-separated with the pane in an
    <image> slot; space-separating it as a <bg-color> invalidates the declaration.
    ===================================================== */
-
-[data-mytrion='verification'] {
-  --font-head: 'Inter', var(--font-body, system-ui), sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-}
 
 /* ── Bigger type, this module only — overrides moduleShell.css's fixed px values ─────────────── */
 [data-mytrion='verification'] .ms-root {

@@ -70,7 +70,7 @@ function DebtorRow({
               <span>{debtor.dealName}</span>
             ) : null}
             {debtor.carrierId ? (
-              <span style={s("font-family:'JetBrains Mono',monospace")}>ID #{debtor.carrierId}</span>
+              <span style={s("font-family:var(--font-mono)")}>ID #{debtor.carrierId}</span>
             ) : null}
             {debtor.stage ? <span>{debtor.stage}</span> : null}
           </div>
@@ -104,7 +104,7 @@ function DebtorRow({
         <div style={s('text-align:right;flex-shrink:0')}>
           <div
             style={s(
-              `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;color:${debtor.isHardDebtor ? 'var(--danger)' : 'var(--text)'}`,
+              `font-family:var(--font-mono);font-weight:700;font-size:24px;color:${debtor.isHardDebtor ? 'var(--danger)' : 'var(--text)'}`,
             )}
           >
             {dbtFormatMoney(debtor.totalRemaining)}
@@ -156,7 +156,7 @@ function DebtorRow({
               )}
             >
               <div style={s('display:flex;flex-direction:column;gap:2px;min-width:0')}>
-                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px")}>
+                <span style={s("font-family:var(--font-mono);font-weight:700;font-size:14px")}>
                   #{inv.invoiceId || '—'}
                 </span>
                 <span style={s('font-size:13px;color:var(--muted)')}>
@@ -170,7 +170,7 @@ function DebtorRow({
                 {inv.debtDays > 0 ? (
                   <span
                     style={s(
-                      `font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:${inv.debtDays >= HARD_DEBT_DAYS ? 'var(--danger)' : 'var(--orange)'}`,
+                      `font-family:var(--font-mono);font-size:12px;font-weight:800;color:${inv.debtDays >= HARD_DEBT_DAYS ? 'var(--danger)' : 'var(--orange)'}`,
                     )}
                   >
                     {inv.debtDays}d
@@ -183,7 +183,7 @@ function DebtorRow({
                 >
                   {dbtFormatStatus(inv.status)}
                 </span>
-                <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px")}>
+                <span style={s("font-family:var(--font-mono);font-weight:700;font-size:14px")}>
                   {dbtFormatMoney(inv.remaining)}
                 </span>
                 <span style={s('font-size:12px;color:var(--faint)')}>of {dbtFormatMoney(inv.total)}</span>
@@ -344,7 +344,7 @@ export function DebtorsDashPanel() {
                 )}
               >
                 {chip.label}
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.85")}>
+                <span style={s("font-family:var(--font-mono);font-size:11px;opacity:.85")}>
                   {count}
                 </span>
               </button>
@@ -414,7 +414,7 @@ export function DebtorsDashPanel() {
           )}
         >
           <div style={s('text-align:center')}>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:21px")}>
+            <div style={s("font-family:var(--font-mono);font-weight:700;font-size:21px")}>
               {visible.length}
               {visible.length !== baseList.length ? (
                 <span style={s('font-size:14px;color:var(--muted);font-weight:600')}> / {baseList.length}</span>
@@ -428,7 +428,7 @@ export function DebtorsDashPanel() {
           <div style={s('text-align:center')}>
             <div
               style={s(
-                `font-family:'JetBrains Mono',monospace;font-weight:700;font-size:21px;color:${summary.largestDebt > 0 ? 'var(--danger)' : 'var(--text)'}`,
+                `font-family:var(--font-mono);font-weight:700;font-size:21px;color:${summary.largestDebt > 0 ? 'var(--danger)' : 'var(--text)'}`,
               )}
             >
               {dbtFormatMoney(summary.largestDebt)}

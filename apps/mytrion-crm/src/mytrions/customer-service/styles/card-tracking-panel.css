@@ -133,7 +133,7 @@
 .cs-root .cs-ct-selected-cid {
     font-size: 0.75rem;
     color: var(--text-muted);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: var(--font-mono);
 }
 
 /* ── Initial tracking hero ───────────────────────────────────────────────── */
@@ -238,7 +238,7 @@
 
 .cs-root .cs-ct-mono,
 .cs-root .cs-ct-link {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     font-weight: 600;
 }

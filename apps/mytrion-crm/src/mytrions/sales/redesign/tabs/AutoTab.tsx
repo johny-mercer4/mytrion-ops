@@ -392,7 +392,7 @@ export function AutoTab() {
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
-                <div id="sales-auto-title" style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
+                <div id="sales-auto-title" style={s('font-family:var(--font-head);font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
                 <div style={s('font-size:14px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>

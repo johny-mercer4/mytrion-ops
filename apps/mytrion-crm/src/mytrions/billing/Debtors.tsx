@@ -440,7 +440,7 @@ function DebtorModal({ debtor, onClose }: { debtor: Debtor; onClose: () => void 
                 fontSize: '0.6875rem',
                 color: 'var(--text-muted)',
                 marginLeft: '0.5rem',
-                fontFamily: "'JetBrains Mono', monospace",
+                fontFamily: "var(--font-mono)",
               }}
             >
               #{debtor.carrierId}

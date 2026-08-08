@@ -1,53 +1,112 @@
 /*
- * Mytrion CRM design tokens — the durable source of truth (see DESIGN_SYSTEM.md).
- * Dark ("Soft Midnight") is the default on :root; light applies under [data-theme="light"]
- * (toggled by useTheme on <html>). Per-module accents live in global.css ([data-mytrion]).
- * Components read token names ONLY — no hardcoded hex, no arbitrary px.
+ * Mytrion Horizon — design tokens. THE ONLY FILE IN THE APP THAT MAY CONTAIN A HEX LITERAL.
+ * (src/styles/tokens.test.ts enforces that, and the other invariants noted below.)
+ *
+ * Two layers, one direction:
+ *   1. RAW PALETTE      — the Horizon Digital Cockpit (dark) / Luminous Horizon (light) values,
+ *                         verbatim from the design spec. Prefer these names in new code.
+ *   2. SEMANTIC ALIASES — the names ~40k lines of module CSS already read. They point AT layer 1
+ *                         and never carry a literal.
+ * Never point layer 1 at layer 2; that is a cycle, and a cycle is a blank page.
+ *
+ * Dark is the default on :root; light applies under [data-theme='light'] (set on <html> by
+ * useTheme). Because every alias is a var() of a raw token, the light block only has to restate
+ * the palette — which is what makes it structurally impossible for the two themes to drift apart
+ * on a semantic name.
+ *
+ * Glass, the brand ramp and the ambient backdrop live in horizon.css. No token may be declared in
+ * both files: their [data-theme='light'] blocks have equal specificity, so a duplicate would
+ * resolve by @import order.
  */
 :root {
   color-scheme: dark;
 
-  /* ── Color — Soft Midnight (dark, default) ───────────────────────────────── */
-  --bg-primary: #12161e;
-  --bg-secondary: #161b24;
-  --surface: #1b212c;
-  --surface-alt: #161a23;
-  --surface-raised: rgba(255, 255, 255, 0.045);
-  --sidebar-bg: #13171f;
-  --header-bg: #13171f;
-  --text-primary: #e7eaf0;
-  --text-secondary: #a9b0bd;
-  --text-muted: #6e7682;
-  --border: rgba(255, 255, 255, 0.09);
-  --border-light: rgba(255, 255, 255, 0.06);
-  --border-dark: rgba(255, 255, 255, 0.045);
-  --accent: #38bef0;
-  --accent-strong: #2cb6ec;
-  --on-accent: #04131c;
-  --accent-soft: rgba(56, 190, 240, 0.12);
-  --accent-glow: rgba(56, 190, 240, 0.26);
-  /* Far end of the accent ramp. Same as --accent unless a module declares a real gradient
-     (see [data-mytrion] in global.css); lets `accent → accent-2` be written unconditionally. */
-  --accent-2: var(--accent);
+  /* ══ 1. RAW PALETTE — Horizon Digital Cockpit (dark, default) ══════════════ */
+  --page: #0a0e1a;
+  --surface-base: #0f131f;
+  --container-low: #171b28;
+  --container: #1b1f2c;
+  --container-high: #262a37;
+  --container-highest: #313442;
+
+  --on-surface: #dfe2f3;
+  --on-surface-variant: #bbc9cf;
+  --outline: #859399;
+  --outline-variant: #3c494e;
+
+  --primary: #a5e7ff;
+  --primary-container: #00d2ff;
+  --tint: #47d6ff;
+  --secondary: #ffaede;
+  --secondary-container: #ff34cd;
+  --on-primary: #003543;
+  --error: #ffb4ab;
+
+  /* ══ 2. SEMANTIC ALIASES — what module CSS reads ═══════════════════════════ */
+
+  /* Ground and panes. --surface is the CARD level (M3 surface-container), not the base plane:
+     that is what 377 call sites already mean by it, and #1b1f2c lands within 1% of the old
+     #1b212c, so the swap is invisible on every card in the app. */
+  --bg-primary: var(--page);
+  --surface: var(--container);
+  --surface-alt: var(--container-low);
+  --surface-raised: var(--glass-hi);
+  --sidebar-bg: var(--glass);
+  --header-bg: var(--glass);
+
+  /* Ink */
+  --text-primary: var(--on-surface);
+  --text-secondary: var(--on-surface-variant);
+  --text-muted: var(--outline);
+
+  /* Edges. Alpha, not the opaque --outline-variant: a solid hairline over a 24px blur reads as a
+     drawn box rather than the edge of glass. --border-strong is for the rare rule that genuinely
+     sits on an opaque surface. */
+  --border: var(--glass-bd);
+  --border-light: var(--row-line);
+  --border-dark: color-mix(in srgb, var(--glass-bd) 60%, transparent);
+  --border-strong: var(--outline-variant);
+
+  /* Accent — ONE ramp app-wide. There is no per-module accent: workspace identity is the launcher
+     card and the header badge, and it travels as --badge-tone (see global.css).
+       --accent        text / icon / border / color-mix washes (781 sites)
+       --accent-2      far end of the brand ramp, for `accent → accent-2` gradients (103 sites)
+       --accent-strong the saturated FILL and hover step
+       --on-accent     ink on that fill */
+  --accent: var(--primary);
+  --accent-2: var(--secondary);
+  --accent-strong: var(--primary-container);
+  --on-accent: var(--on-primary);
+  --accent-soft: color-mix(in srgb, var(--tint) 14%, transparent);
+  --accent-glow: color-mix(in srgb, var(--tint) 30%, transparent);
+
+  /* Status. good/warn are unchanged from Soft Midnight; danger takes the palette's error tone. */
   --success: #34d399;
   --warning: #fbbf4d;
-  --danger: #f4716f;
-  --purple: #a78bfa;
-  --orange: #fb8a3c;
-  --black: #ffffff;
-  --blue: #3b82f6;
-  --red: #ef4444;
-  --green: #10b981;
-  /* CS Mytrion / loader accent — enterprise gold (softened) */
-  --yellow: #D4B84A;
-  --dark-purple: #7e22ce;
-  --light-blue: #0ea5e9;
-  --rocket: #f43f5e;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.58), 0 6px 16px rgba(0, 0, 0, 0.42);
+  --danger: var(--error);
 
-  /* ── Status tints — one scale (tracks the status color via color-mix in both themes) ── */
+  /* Categorical hues — NOT identity, NOT status. Consumed DYNAMICALLY as `var(--${hue})` from
+     MYTRIONS[id].hue, so grep reports zero call sites for most of them. Do not delete on that
+     evidence. Re-gamuted to sit beside the Horizon ramp rather than the old Soft Midnight set. */
+  --purple: #c9b6ff;
+  --orange: #ffb787;
+  --blue: #8fc6ff;
+  --red: var(--error);
+  --green: var(--success);
+  --yellow: var(--warning);
+  --black: var(--on-surface);
+  --dark-purple: #a58bff;
+  --light-blue: var(--tint);
+  --rocket: var(--secondary);
+
+  /* Elevation — border plus inset glare at rest; a drop shadow only on hover or above the page.
+     Mapping --shadow-sm to the glare implements that rule on all 60 of its call sites without
+     touching one of them. */
+  --shadow-sm: var(--glare);
+  --shadow-md: var(--hz-shadow-lift);
+  --shadow-lg: var(--menu-shadow);
+
+  /* ── Status tints — one scale, derived, so they track --success/--warning/--danger ────────── */
   --tint-good-bg: color-mix(in srgb, var(--success) 13%, transparent);
   --tint-good-bd: color-mix(in srgb, var(--success) 30%, transparent);
   --tint-warn-bg: color-mix(in srgb, var(--warning) 13%, transparent);
@@ -55,20 +114,20 @@
   --tint-bad-bg: color-mix(in srgb, var(--danger) 13%, transparent);
   --tint-bad-bd: color-mix(in srgb, var(--danger) 30%, transparent);
   --tint-info-bg: var(--accent-soft);
-  --tint-info-bd: color-mix(in srgb, var(--accent) 30%, transparent);
-  --tint-neutral-bg: var(--surface-alt);
+  --tint-info-bd: color-mix(in srgb, var(--tint) 30%, transparent);
+  --tint-neutral-bg: var(--field);
   --tint-neutral-bd: var(--border);
 
-  /* ── Radii ───────────────────────────────────────────────────────────────── */
-  /* One corner across the app: a button, an input, a card, a table and a modal all round at 6px.
-     The four steps are kept as names rather than collapsed into one token so call sites don't all
-     have to change, and so the ramp can be reintroduced by editing this block alone. */
-  --radius-xs: 6px;
-  --radius-sm: 6px;
-  --radius-md: 6px;
-  --radius-lg: 6px;
-  /* Not part of the flattening — this is what makes pills, avatars and status dots round rather
-     than 6px rectangles. */
+  /* ── Radii — 4px controls · 8px panels · 999px pills ──────────────────────────────────────
+     Five names, two real values, so no call site has to move. xs/sm are the CONTROL corner
+     (button, input, select, chip); md/lg are the PANEL corner (card, table, modal, drawer).
+     --radius-full is pills ONLY: avatars, status dots, counts.
+     Only this file may put a NUMBER on a radius — every module scale (--ms-r-*, --mg-r-*,
+     --an-r-*, --co-r-*, CS's --r-*) is a var() alias of these. */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
   --radius-full: 999px;
 
   /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
@@ -132,10 +191,15 @@
   --z-toast: 3000;
   --z-tooltip: 4000;
 
-  /* ── Fonts ─────────────────────────────────────────────────────────────────── */
-  --font-head: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Satoshi', system-ui, -apple-system, sans-serif;
+  /* ── Fonts — Space Grotesk carries UI and headings; Space Mono is reserved strictly for
+     figures, ids, codes and timestamps. Satoshi, Rajdhani, Inter, Instrument Sans and JetBrains
+     Mono are gone: five families from four CDNs was itself a standardization failure. ───────── */
+  --font-head: var(--font-head);
+  --font-body: var(--font-body);
   --font-mono: 'Space Mono', ui-monospace, monospace;
+  /* Every figure, id, code and timestamp. Paired with tabular-nums by the .num utility in
+     global.css. Not optional in Billing, Finance or Analytics, where columns must align. */
+  --font-num: var(--font-mono);
 
   /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */
   --gem: linear-gradient(135deg, #4285f4 0%, #9b72cb 52%, #d96570 100%);
@@ -144,42 +208,46 @@
 
 [data-theme='light'] {
   color-scheme: light;
-  --bg-primary: #f6f8fb;
-  --bg-secondary: #eef1f6;
-  --surface: #ffffff;
-  --surface-alt: #f3f5f9;
-  --surface-raised: rgba(16, 24, 40, 0.035);
-  --sidebar-bg: #ffffff;
-  --header-bg: #ffffff;
-  --text-primary: #18202e;
-  --text-secondary: #4d5666;
-  /* Was #8a92a1 — ~3.1:1 on --surface, under the 4.5:1 floor, which is what made light-mode stat
-     labels, table headers and hints read as "barely visible". #69707e is ~4.7:1 and still clearly
-     the quietest step in the scale. Dark's --text-muted is untouched. */
-  --text-muted: #69707e;
-  --border: rgba(20, 30, 50, 0.1);
-  --border-light: rgba(20, 30, 50, 0.07);
-  --border-dark: rgba(20, 30, 50, 0.05);
-  --accent: #0c8fc7;
-  --accent-strong: #0e9ad6;
-  --on-accent: #ffffff;
-  --accent-soft: rgba(12, 143, 199, 0.1);
-  --accent-glow: rgba(12, 143, 199, 0.2);
+
+  /* ══ RAW PALETTE — Luminous Horizon ════════════════════════════════════════ */
+  --page: #e9edf3;
+  --surface-base: #f8f9fa;
+  --container-low: #f3f4f5;
+  --container: #edeeef;
+  --container-high: #e7e8e9;
+  --container-highest: #e1e3e4;
+
+  --on-surface: #191c1d;
+  --on-surface-variant: #434656;
+  --outline: #737688;
+  --outline-variant: #c3c5d9;
+
+  --primary: #0043c8;
+  --primary-container: #0057ff;
+  --tint: #004ee7;
+  --secondary: #00677f;
+  --secondary-container: #00ccf9;
+  --on-primary: #ffffff;
+  --error: #ba1a1a;
+
+  /* ══ The ONE alias that inverts ════════════════════════════════════════════
+     In dark, containers step UP from the base plane, so a card is --container. In light they step
+     DOWN, so a card is --surface-base (#f8f9fa, matching today's white) and --container-low stays
+     the inset level. Mapping --surface to --container here would turn all 377 card surfaces grey
+     against an #e9edf3 page and collapse the figure/ground separation light mode depends on —
+     horizon.css records a previous version of exactly that bug ("white cards floating on white
+     with nothing to separate them… no ground"). Do not "simplify" this asymmetry away. */
+  --surface: var(--surface-base);
+
+  /* Status. good/warn unchanged from the old light block; danger takes the palette error tone. */
   --success: #1f9d62;
   --warning: #b9791a;
-  --danger: #d14545;
-  --purple: #6d52d6;
-  --orange: #d9641a;
-  --black: #09090b;
-  --blue: #2563eb;
-  --red: #dc2626;
-  --green: #059669;
-  /* CS Mytrion / loader accent — enterprise gold (softened, light) */
-  --yellow: #C9A227;
+  --danger: var(--error);
+
+  /* Categorical hues, stepped down for a pale field — the dark set is too light to read on white.
+     --red/--green/--yellow/--light-blue/--rocket/--black inherit through their :root indirection. */
+  --purple: #5b34c4;
+  --orange: #b4531a;
+  --blue: #1854c9;
   --dark-purple: #4c1d95;
-  --light-blue: #38bdf8;
-  --rocket: #c026d3;
-  --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
-  --shadow-md: 0 8px 22px rgba(20, 30, 50, 0.08), 0 2px 6px rgba(20, 30, 50, 0.05);
-  --shadow-lg: 0 20px 48px rgba(20, 30, 50, 0.14), 0 6px 16px rgba(20, 30, 50, 0.08);
 }

@@ -75,7 +75,7 @@ export function AfterHub({ worldH, onOpenCycle }: { worldH: number; onOpenCycle:
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={ic(center.icon)} />
           </svg>
         </div>
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: '.05em', color: 'var(--ink)' }}>{center.label}</div>
+        <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 18, letterSpacing: '.05em', color: 'var(--ink)' }}>{center.label}</div>
       </div>
 
       {/* cycle cards */}
@@ -137,23 +137,23 @@ export function AfterHub({ worldH, onOpenCycle }: { worldH: number; onOpenCycle:
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" d={ic(c.icon)} />
                   </svg>
                 </div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 15, lineHeight: 1.12, color: 'var(--ink)' }}>{c.label}</div>
+                <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 15, lineHeight: 1.12, color: 'var(--ink)' }}>{c.label}</div>
               </div>
               <div style={{ marginTop: 11, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 7 }}>
                 {afterLabel ? (
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, letterSpacing: '.06em', color: 'var(--sub)' }}>{afterLabel}</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: '.06em', color: 'var(--sub)' }}>{afterLabel}</span>
                 ) : (
                   <span />
                 )}
                 {hasDetail ? (
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.12em', color: c.color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.12em', color: c.color, display: 'flex', alignItems: 'center', gap: 4 }}>
                     OPEN
                     <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 5l7 7-7 7" />
                     </svg>
                   </span>
                 ) : (
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, letterSpacing: '.12em', color: 'var(--sub)', border: '1px solid var(--gb)', borderRadius: 3, padding: '2px 6px' }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: '.12em', color: 'var(--sub)', border: '1px solid var(--gb)', borderRadius: 3, padding: '2px 6px' }}>
                     SOON
                   </span>
                 )}

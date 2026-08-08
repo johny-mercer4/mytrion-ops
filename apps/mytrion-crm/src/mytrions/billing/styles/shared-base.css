@@ -3,7 +3,6 @@
    ===================================================== */
 
 /* === Font Imports === */
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* === Reset === */
 .bm-root *,
@@ -27,7 +26,7 @@
 }
 
 .bm-root h1, .bm-root h2, .bm-root h3, .bm-root h4, .bm-root h5, .bm-root h6 {
-    font-family: 'Rajdhani', 'Eurostile', 'Inter', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -85,7 +84,7 @@
 .bm-root.light-mode       .logo-dark  { display: none; }
 
 .bm-root .bm-header-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -142,7 +141,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 12px;
     font-weight: 700;
     color: var(--billing-accent);
@@ -184,7 +183,7 @@
     background: var(--accent-bg);
     color: var(--billing-accent);
     border-color: var(--billing-accent);
-    box-shadow: var(--accent-glow);
+    box-shadow: var(--accent-ring-glow);
 }
 
 /* =====================================================
@@ -358,7 +357,7 @@
 }
 
 .bm-root .bm-panel-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -422,7 +421,7 @@
 }
 
 .bm-root .bm-stat-value {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.625rem;
     font-weight: 700;
     color: var(--text-primary);
@@ -494,7 +493,7 @@
 }
 
 .bm-root .bm-summary-amount {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 1.625rem;
     font-weight: 600;
     color: var(--stat-color, var(--text-primary));
@@ -532,7 +531,7 @@
 }
 
 .bm-root .bm-section-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 0.8125rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -680,7 +679,7 @@
 
 .bm-root .bm-btn-primary:hover {
     background: var(--accent-hover);
-    box-shadow: var(--accent-glow);
+    box-shadow: var(--accent-ring-glow);
 }
 
 .bm-root .bm-btn-primary:disabled {
@@ -821,7 +820,7 @@
     height: 2px;
     background: var(--billing-accent);
     border-radius: 0 0 2px 2px;
-    box-shadow: var(--accent-glow);
+    box-shadow: var(--accent-ring-glow);
 }
 
 /* =====================================================
@@ -849,7 +848,7 @@
 }
 
 .bm-root .bm-loader-text {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -870,7 +869,7 @@
 }
 
 .bm-root .bm-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--color-brand-hover);

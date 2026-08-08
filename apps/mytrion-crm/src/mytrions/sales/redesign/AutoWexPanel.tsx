@@ -33,7 +33,7 @@ const WEX0: WexQ = {
 const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const dropErr = 'padding:14px;font-size:14px;color:var(--danger);text-align:center';
-const mono = "font-family:'JetBrains Mono',monospace";
+const mono = "font-family:var(--font-mono)";
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];

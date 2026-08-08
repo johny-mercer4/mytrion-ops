@@ -178,7 +178,7 @@ function TierDistribution({
               <Icon name="close" size={11} />Clear filter
             </button>
           )}
-          <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{total} client{total === 1 ? '' : 's'}</span>
+          <span style={s("font-size:12px;color:var(--muted);font-family:var(--font-mono)")}>{total} client{total === 1 ? '' : 's'}</span>
         </span>
       </div>
       <div style={s('display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--raised)')}>
@@ -211,7 +211,7 @@ function TierDistribution({
               style={s(`display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:99px;cursor:${empty ? 'default' : 'pointer'};font-family:inherit;transition:background .16s,border-color .16s;border:1px solid ${on ? tierBucketColor(b) : 'var(--border)'};background:${on ? `color-mix(in srgb,${tierBucketColor(b)} 18%,transparent)` : 'var(--alt)'};opacity:${empty ? 0.45 : 1}`)}
             >
               <Icon name={tierBucketIcon(b)} size={13} color={tierBucketColor(b)} />
-              <span style={s(`font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${tierBucketTextColor(b)}`)}>{counts[b]}</span>
+              <span style={s(`font-size:13px;font-weight:700;font-family:var(--font-mono);color:${tierBucketTextColor(b)}`)}>{counts[b]}</span>
               <span style={s(`font-size:12px;color:${on ? 'var(--text)' : 'var(--muted)'}`)}>{tierBucketLabel(b)}</span>
             </button>
           );
@@ -355,7 +355,7 @@ export function RecordsTab() {
         name: c.name,
         carrier: c.carrier,
         initials: c.name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join(''),
-        avStyle: `width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
+        avStyle: `width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:16px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
         statusBadge: badge(lbl, col),
         active: c.active,
         cards: c.cards,
@@ -518,7 +518,7 @@ export function RecordsTab() {
                   <div style={s(c.avStyle)}>{c.initials}</div>
                   <div style={s('min-width:0;flex:1')}>
                     <div style={s('font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.name}</div>
-                    <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{c.carrier}</div>
+                    <div style={s("font-size:12px;color:var(--muted);font-family:var(--font-mono);margin-top:2px")}>{c.carrier}</div>
                     {c.managerControlled ? <ManagerLoyaltyBadge /> : null}
                   </div>
                 </div>
