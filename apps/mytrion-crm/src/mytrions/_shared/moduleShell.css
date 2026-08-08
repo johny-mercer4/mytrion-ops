@@ -72,8 +72,7 @@
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
-.ms-root .ms-hero-title,
-.ms-root .ms-title {
+.ms-root .ms-hero-title {
   margin: 6px 0 0;
   font-family: var(--font-head);
   font-weight: 700;
@@ -83,9 +82,6 @@
 }
 .ms-root .ms-hero-title {
   font-size: clamp(26px, 3.4vw, 34px);
-}
-.ms-root .ms-title {
-  font-size: clamp(22px, 2.6vw, 27px);
 }
 /* The warm end of the ramp on the module name, matching the workspace picker's hero. */
 .ms-root .ms-hero-title span {
@@ -100,18 +96,6 @@
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--text-muted);
-}
-.ms-root .ms-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.ms-root .ms-head-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */

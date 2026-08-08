@@ -31,9 +31,8 @@
 [data-mytrion='verification'] .ms-hero-title {
   font-size: clamp(29px, 3.7vw, 38px);
 }
-[data-mytrion='verification'] .ms-title {
-  font-size: clamp(25px, 2.9vw, 30px);
-}
+/* The .ms-title override went with the private page head — page titles are the shared
+   32px PageHead in every workspace now. */
 [data-mytrion='verification'] .ms-sub {
   font-size: 15px;
 }
