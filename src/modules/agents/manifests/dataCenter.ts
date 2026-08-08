@@ -9,6 +9,7 @@ import {
   RAG_USAGE_RULE,
   STAY_IN_LANE,
   DBT_MCP_TOOLS,
+  SALES_MCP_TOOLS,
   WAREHOUSE_TOOLS,
 } from './shared.js';
 
@@ -58,7 +59,7 @@ export const dataCenterAgent: AgentManifest = {
     'agent.sales_snapshot',
     'agent.activity',
     'zoho_crm.query',
-    'zoho_mcp.*',
+    ...SALES_MCP_TOOLS,
     ...DBT_MCP_TOOLS,
     ...CLIENT_SERVICE_TOOLS,
     ...BLACKBOARD_TOOLS,

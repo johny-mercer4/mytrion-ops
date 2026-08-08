@@ -153,3 +153,106 @@ describe('golden per-agent policy', () => {
     expect(Object.keys(GOLDEN).sort()).toEqual([...AGENT_KEYS].sort());
   });
 });
+
+/**
+ * Bound-tool-surface budget.
+ *
+ * `zoho_mcp.*` on sales/data-center/manager expanded to all 83 discovered Zoho MCP read tools. Every
+ * schema is input tokens on every model call — measured at 71,130 input tokens per call, which spent
+ * the org's 200k-tokens-per-minute quota in ~1.4 questions and returned 429s the UI showed as
+ * "network error" — and tool choice degraded badly at that size (a how-to question picked
+ * `zoho_crm.query`). Nothing in CI noticed, because MCP tools only exist after live discovery.
+ *
+ * These tests fail on a re-introduced wildcard and on a manifest that quietly grows past budget.
+ */
+describe('bound tool surface stays affordable', () => {
+  /**
+   * Simulates a live discovery: every MCP tool a manifest actually names, plus enough unrelated ones
+   * to reach the 83 the real server registers. Including the named ones is what makes the budget
+   * figures below real rather than accidentally zero.
+   */
+  const NAMED_MCP_TOOLS = [
+    ...new Set(ALL_AGENT_MANIFESTS.flatMap((m) => m.tools.filter((t) => t.startsWith('zoho_mcp.')))),
+  ];
+  const FAKE_MCP_TOOLS = [
+    ...NAMED_MCP_TOOLS,
+    ...Array.from({ length: 83 - NAMED_MCP_TOOLS.length }, (_, i) => `zoho_mcp.ZohoCRM_other${i}`),
+  ];
+
+  it('no manifest wildcards the Zoho MCP namespace', () => {
+    const offenders = ALL_AGENT_MANIFESTS.filter((m) =>
+      m.tools.some((t) => t.startsWith('zoho_mcp.') && t.endsWith('*')),
+    ).map((m) => m.key);
+    expect(
+      offenders,
+      'A zoho_mcp.* wildcard binds every discovered MCP tool. Name the specific tools instead — ' +
+        'see SALES_MCP_TOOLS / MANAGER_MCP_TOOLS in manifests/shared.ts.',
+    ).toEqual([]);
+  });
+
+  it('an MCP wildcard would have matched the whole namespace (guards the matcher itself)', () => {
+    const matches = (patterns: readonly string[], name: string): boolean =>
+      patterns.some((p) => p === name || (p.endsWith('.*') && name.startsWith(p.slice(0, -1))));
+    expect(FAKE_MCP_TOOLS).toHaveLength(83);
+    expect(FAKE_MCP_TOOLS.filter((n) => matches(['zoho_mcp.*'], n))).toHaveLength(83);
+    // The curated form matches only what it names.
+    const one = NAMED_MCP_TOOLS[0] as string;
+    expect(FAKE_MCP_TOOLS.filter((n) => matches([one], n))).toEqual([one]);
+  });
+
+  it('keeps every agent under a 30-tool budget even with 83 MCP tools discovered', () => {
+    const matches = (patterns: readonly string[], name: string): boolean =>
+      patterns.some((p) => p === name || (p.endsWith('.*') && name.startsWith(p.slice(0, -1))));
+    const overBudget = ALL_AGENT_MANIFESTS.map((m) => {
+      const native = toolRegistry.all().filter((t) => matches(m.tools, t.name)).length;
+      const mcp = FAKE_MCP_TOOLS.filter((n) => matches(m.tools, n)).length;
+      return { key: m.key, bound: native + mcp };
+    }).filter((row) => row.bound > 30);
+    expect(overBudget, 'Tool count drives prompt size and wrecks tool selection.').toEqual([]);
+
+    // Sanity: the agents that DO name MCP tools really bind them, so the budget above is measuring
+    // something. Sales bound ~101 tools under the old wildcard.
+    const sales = ALL_AGENT_MANIFESTS.find((m) => m.key === 'sales');
+    expect(FAKE_MCP_TOOLS.filter((n) => matches(sales?.tools ?? [], n)).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Prompt coherence for how-to intent.
+ *
+ * The Sales persona carried the self-knowledge rule ("call knowledge_search first") AND
+ * "Use these directly to avoid searching the knowledge base for basic queries". Two instructions
+ * pulling opposite ways, which is why "how do I activate a card in Sales Mytrion" called
+ * zoho_crm.query twice. Prompts have no type system, so this is the only cheap guard.
+ */
+describe('Sales persona does not contradict itself on how-to intent', () => {
+  const sales = ALL_AGENT_MANIFESTS.find((m) => m.key === 'sales');
+  const persona = (): string => {
+    expect(sales, 'sales manifest must exist').toBeDefined();
+    return sales?.persona ?? '';
+  };
+
+  it('never tells the model to avoid the knowledge base', () => {
+    expect(persona()).not.toMatch(/avoid searching the knowledge base/i);
+  });
+
+  it('forbids live-data tools for a how-to answer', () => {
+    const text = persona();
+    expect(text).toMatch(/how-to answer comes from knowledge_search ALONE/i);
+    // The tools that actually got mis-called must be named, not implied.
+    for (const tool of ['zoho_crm.query', 'crm.*', 'warehouse.*', 'dbt_mcp.*']) {
+      expect(text, `${tool} should be named in the how-to prohibition`).toContain(tool);
+    }
+  });
+
+  it('discourages repeating the same retrieval', () => {
+    expect(persona()).toMatch(/do not repeat the same search/i);
+  });
+
+  it('still keeps the self-knowledge routing rule and the no-false-completion rule', () => {
+    const text = persona();
+    expect(text).toMatch(/SALES MYTRION SELF-KNOWLEDGE/);
+    expect(text).toMatch(/does NOT require escalation just because/i);
+    expect(text).toMatch(/never say you completed a change without an authorized tool result/i);
+  });
+});

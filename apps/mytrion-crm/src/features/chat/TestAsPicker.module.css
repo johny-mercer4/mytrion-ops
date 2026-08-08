@@ -1,0 +1,218 @@
+/* All colour from the token scale, so the control reads in light and dark and picks up the
+   Mytrion's accent. See .claude/skills/modern-web-guidance. */
+
+.wrap {
+  position: relative;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-1) var(--space-2_5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    color 0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.trigger:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+/* Active state: an impersonated chat must be unmistakable, so this is a filled warn tint rather
+   than a quiet label — you should never mistake a scoped answer for your own. */
+.active {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2_5);
+  background: var(--tint-warn-bg);
+  border: 1px solid var(--tint-warn-bd);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.activeLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1_5);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.who {
+  font-weight: var(--fw-semibold);
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: var(--text-2xs, var(--text-xs));
+}
+
+.exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px var(--space-1_5);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    color 0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.exit:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  max-width: min(300px, calc(100vw - var(--space-6)));
+  padding: var(--space-2);
+  /* OPAQUE on purpose. `--surface-raised` is a ~4% tint meant to sit ON a surface, not to be one —
+     using it here left the menu 95% transparent, so the transcript read straight through the user
+     rows. A listbox that overlaps content must be readable, so this is `--surface` plus elevation. */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, var(--shadow-md));
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1_5) var(--space-2);
+  margin-bottom: var(--space-1_5);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-family: inherit;
+}
+
+.search::placeholder {
+  color: var(--text-muted);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.option:hover {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
+}
+
+.optName {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.optMeta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state,
+.stateErr {
+  padding: var(--space-3) var(--space-2);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.state {
+  color: var(--text-muted);
+}
+
+.stateErr {
+  color: var(--danger);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  border-radius: var(--radius-sm);
+}
+
+.skelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-2);
+}
+
+.skelName,
+.skelMeta {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  animation: var(--animate-shimmer, none);
+}
+
+.skelMeta {
+  height: 7px;
+  opacity: 0.7;
+}

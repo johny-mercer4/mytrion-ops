@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { UserContext } from '../../context/userContext';
 import type { AgentKey } from '../../access/mytrions.config';
+import { isAdmin } from '../../access/resolveAccess';
 import { Sparkle, HistoryIcon, PlusIcon } from '../../components/icons';
+import { TestAsPicker } from './TestAsPicker';
+import { getChatTestAs, type ChatTestAs } from './testAs';
 import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
 import { MessageList } from './MessageList';
@@ -22,6 +25,7 @@ export function ChatPanel({
   agentKey = null,
   variant = 'dock',
   showTurnInspector = false,
+  enableTestAs = false,
 }: {
   context: UserContext;
   department?: string | string[] | null;
@@ -29,9 +33,14 @@ export function ChatPanel({
   variant?: 'dock' | 'full';
   /** Admin-only runtime diagnostic rail for the current turn. */
   showTurnInspector?: boolean;
+  /** Offer "Test as <Zoho user>" — RBAC probing. Still gated on the caller being an admin. */
+  enableTestAs?: boolean;
 }) {
   const chat = useChat(context, department ?? null, agentKey);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [testAs, setTestAs] = useState<ChatTestAs | null>(() => getChatTestAs());
+  // A non-admin target would be refused by the backend anyway; hiding it keeps the affordance honest.
+  const showTestAs = enableTestAs && isAdmin(context);
   const scope =
     department == null ? 'admin' : Array.isArray(department) ? department.join(', ') : department;
 
@@ -52,10 +61,25 @@ export function ChatPanel({
           <Sparkle size={26} />
           <div>
             <div className={styles.name}>Horizon AI</div>
-            <div className={styles.sub}>Knowledge-grounded · scope: {scope}</div>
+            <div className={styles.sub}>
+              Knowledge-grounded · scope: {scope}
+              {testAs ? ` · as ${testAs.name}` : ''}
+            </div>
           </div>
         </div>
         <div className={styles.headerActions}>
+          {/* Admin-only RBAC probe. The backend re-checks authority for the chosen target, so this
+              control cannot grant anything — it only decides whose authority the turn runs under. */}
+          {showTestAs && (
+            <TestAsPicker
+              onChange={(next) => {
+                setTestAs(next);
+                // Identity is part of a turn's context: continuing the same thread would mix answers
+                // scoped to two different users in one transcript.
+                chat.newConversation();
+              }}
+            />
+          )}
           <button
             type="button"
             className={styles.new}
@@ -78,7 +102,12 @@ export function ChatPanel({
       </div>
 
       <div className={styles.bodyWrap}>
-        <MessageList messages={chat.messages} onPick={chat.send} onRetry={chat.retry} />
+        <MessageList
+          messages={chat.messages}
+          onPick={chat.send}
+          onRetry={chat.retry}
+          hydrating={chat.hydrating}
+        />
         {historyOpen && (
           <ConversationList
             conversations={chat.conversations}

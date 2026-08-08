@@ -102,12 +102,35 @@ function assertGovernanceMetadata(input: IngestInput): void {
   }
 }
 
+export interface IngestOptions {
+  /**
+   * Re-chunk and re-embed even when the content checksum already matches a ready document.
+   *
+   * The default skip is keyed on the DOCUMENT, not on how it was split — correct for "the same file
+   * was uploaded twice", wrong after a change to the chunker or the embedding model. When the packing
+   * fix landed, every already-ingested document kept its old fragmentation (measured: a 1,778-char
+   * document held as 6 chunks of ~296 against a 1,000 budget, so facts under two different headings
+   * could never appear in one passage) and no amount of re-running the sync would touch it, because
+   * the text had not changed.
+   *
+   * Safe to re-run: chunks are replaced inside `commitIngestion`'s transaction, so a document is
+   * never left partially chunked, and an identical chunker produces identical chunks. The cost is
+   * real though — every chunk is re-embedded — so this is opt-in per call, not the default.
+   */
+  rechunk?: boolean;
+}
+
 /**
  * Ingest a document end to end: dedupe by checksum, chunk, embed, and atomically
  * replace chunks in pgvector. Idempotent — re-ingesting identical, already-ready
- * content is skipped. Tenant + audience come from ctx (isolation enforced in repo).
+ * content is skipped unless `options.rechunk` is set. Tenant + audience come from ctx
+ * (isolation enforced in repo).
  */
-export async function ingestDocument(ctx: TenantContext, input: IngestInput): Promise<IngestResult> {
+export async function ingestDocument(
+  ctx: TenantContext,
+  input: IngestInput,
+  options: IngestOptions = {},
+): Promise<IngestResult> {
   assertGovernanceMetadata(input);
   const normalizedContent = input.content.replace(/\r\n/g, '\n').trim();
   if (normalizedContent.length === 0) {
@@ -127,9 +150,18 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
   const department = normalizeDepartment(input.department);
   const existing = await knowledgeRepo.findDocByChecksum(ctx, checksum);
 
-  const readyDuplicate = await handleReadyDuplicate(ctx, existing, department);
-  if (readyDuplicate) return readyDuplicate;
-  if (existing && existing.status !== 'failed') {
+  // A rechunk deliberately falls through the checksum short-circuit, but still applies a department
+  // re-tag on the way past so the two paths cannot disagree about access.
+  if (options.rechunk) {
+    if (existing?.status === 'ready' && existing.departmentAccess !== department) {
+      await knowledgeRepo.setDepartment(ctx, existing.id, department);
+    }
+  } else {
+    const readyDuplicate = await handleReadyDuplicate(ctx, existing, department);
+    if (readyDuplicate) return readyDuplicate;
+  }
+  // 'processing' means another ingest holds this doc; 'ready' is re-chunkable, 'failed' is retryable.
+  if (existing && existing.status !== 'failed' && !(options.rechunk && existing.status === 'ready')) {
     throw new AppError('An identical knowledge document is already being ingested', {
       code: 'KNOWLEDGE_INGEST_IN_PROGRESS',
       statusCode: 409,
@@ -158,9 +190,11 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
     });
     doc = admitted.doc;
     if (!admitted.inserted) {
-      const racedReady = await handleReadyDuplicate(ctx, doc, department);
-      if (racedReady) return racedReady;
-      if (doc.status !== 'failed') {
+      if (!options.rechunk) {
+        const racedReady = await handleReadyDuplicate(ctx, doc, department);
+        if (racedReady) return racedReady;
+      }
+      if (doc.status !== 'failed' && !(options.rechunk && doc.status === 'ready')) {
         throw new AppError('An identical knowledge document is already being ingested', {
           code: 'KNOWLEDGE_INGEST_IN_PROGRESS',
           statusCode: 409,

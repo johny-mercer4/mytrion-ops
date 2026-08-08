@@ -243,7 +243,7 @@ export function MytrionShell({
          Modules opt in by writing a rule; none are affected until they do. */
       data-sidebar-collapsed={collapsed ? 'true' : undefined}
     >
-      <TopBar contextBadge={m.tag} mytrion={id} showSwitch />
+      <TopBar contextBadge={m.tag} showSwitch />
       {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
           modules that haven't opted into the skin (see horizonSkin.ts). */}
       <div className={styles.ambience} aria-hidden="true" />

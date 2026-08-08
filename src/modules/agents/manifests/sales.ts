@@ -9,6 +9,7 @@ import {
   RAG_USAGE_RULE,
   STAY_IN_LANE,
   DBT_MCP_TOOLS,
+  SALES_MCP_TOOLS,
   WAREHOUSE_TOOLS,
 } from './shared.js';
 
@@ -37,6 +38,11 @@ const SALES_CAPABILITIES =
   'My Tasks, Inbox, Call Hub, Tickets, or Verification availability, call knowledge_search first. ' +
   'Give the exact documented click path, required inputs, result, and cautions. A how-to question ' +
   'does NOT require escalation just because the documented UI action writes data. ' +
+  'A how-to answer comes from knowledge_search ALONE: do not call zoho_crm.query, zoho_mcp.*, ' +
+  'crm.*, warehouse.* or dbt_mcp.* to answer "how do I …", "where is …" or "what does <code> do". ' +
+  'Those tools read live records; they cannot tell you how a screen works, and reaching for them ' +
+  'is how a documented workflow turns into a slow wrong answer. One knowledge_search is normally ' +
+  'enough — do not repeat the same search hoping for a better result. ' +
   'What you CANNOT do yet: perform write or ticketing actions yourself — card activation/deactivation, ' +
   'limit changes, money codes, card replacement, fraud holds, overrides, account reactivation, or ' +
   'closing an application. If asked to perform one, explain the Sales Mytrion workflow and clearly ' +
@@ -64,8 +70,15 @@ export const salesAgent: AgentManifest = {
     'self-service servicing of the agent’s own clients. ' +
     SALES_CAPABILITIES +
     ' ' +
-    'CRM QUERY HINTS: The primary modules for zoho_crm.query and zoho_mcp.query are `Leads`, `Deals`, and `Contacts`. Standard fields include `Stage`, `Amount`, `Lead_Source`, and `Owner`. Use these directly to avoid searching the knowledge base for basic queries. ' +
-    'MCP HINTS: When using `dbt_mcp.*` or Postgres tools, assume standard SQL syntax and reference fields directly. Do not wait for table schemas if the query is straightforward. ' +
+    // Scoped to RECORD questions on purpose. This used to end "…to avoid searching the knowledge
+    // base for basic queries", which contradicted the self-knowledge rule above and is why
+    // "how do I activate a card" reached for zoho_crm.query instead of the documented workflow.
+    'CRM QUERY HINTS: When a question asks about actual Lead/Deal/Contact RECORDS, the primary ' +
+    'modules for zoho_crm.query are `Leads`, `Deals`, and `Contacts`; standard fields include ' +
+    '`Stage`, `Amount`, `Lead_Source`, and `Owner`, so you can query those directly without ' +
+    'looking up metadata first. This applies to record data only — never to how a screen works. ' +
+    'MCP HINTS: When a DATA question needs `dbt_mcp.*` or Postgres tools, assume standard SQL syntax ' +
+    'and reference fields directly; do not wait for table schemas if the query is straightforward. ' +
     OWNER_SCOPE_RULE +
     ' ' +
     CLIENT_SERVICE_RULE +
@@ -83,7 +96,7 @@ export const salesAgent: AgentManifest = {
     'agent.sales_snapshot',
     'agent.activity',
     'zoho_crm.query',
-    'zoho_mcp.*',
+    ...SALES_MCP_TOOLS,
     ...DBT_MCP_TOOLS,
     ...CLIENT_SERVICE_TOOLS,
     ...BLACKBOARD_TOOLS,
