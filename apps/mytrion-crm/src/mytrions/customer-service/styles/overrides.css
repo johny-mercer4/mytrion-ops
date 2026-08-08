@@ -32,9 +32,7 @@
 .cs-root .cs-modal-footer,
 .cs-root .cs-form-input,
 .cs-root .cs-user-card,
-.cs-root .cs-theme-toggle {
-    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-}
+
 @media (prefers-reduced-motion: reduce) {
     .cs-root .cs-boot { animation: none; }
     .cs-root .cs-boot-ring-spin,
@@ -44,24 +42,10 @@
 }
 
 /* ── Finance-style user card at the bottom of the sidebar ── */
-.cs-root .cs-user-card {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.55rem 0.625rem;
-    border-radius: var(--radius-md);
-    background: var(--surface);
-    border: 1px solid var(--border);
-}
+
 /* User card / theme toggle chrome live in shared-base (CSMYTRION gold). */
 .cs-root .cs-user-avatar {
     color: var(--cs-on-accent);
-}
-.cs-root .cs-sidebar-footer-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
 }
 
 /* ── Analytics polish ──────────────────────────────────────────────────────
