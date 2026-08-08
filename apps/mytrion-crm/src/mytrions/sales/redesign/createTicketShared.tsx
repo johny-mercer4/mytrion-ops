@@ -16,9 +16,9 @@ export const SELECT_BTN =
 export const DROP_PANEL =
   'position:absolute;z-index:9;top:calc(100% + 6px);left:0;right:0;max-height:260px;overflow-y:auto;padding:6px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow)';
 export const BTN_PRIMARY =
-  'height:46px;padding:0 28px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)';
+  'height:46px;padding:0 28px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)';
 export const BTN_PRIMARY_BUSY =
-  'height:46px;padding:0 28px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;gap:9px;opacity:.88;cursor:wait';
+  'height:46px;padding:0 28px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:14px;display:flex;align-items:center;gap:9px;opacity:.88;cursor:wait';
 export const BTN_DISABLED =
   'height:46px;padding:0 28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:14px;cursor:not-allowed';
 

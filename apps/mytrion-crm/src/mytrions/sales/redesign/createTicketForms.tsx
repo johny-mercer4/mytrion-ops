@@ -246,7 +246,7 @@ export function TicketWizard() {
   const circle = (n: number): string => {
     const done = cr.step > n;
     const curr = cr.step === n;
-    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;${done ? 'background:var(--accent);color:#fff;border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
+    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;${done ? 'background:var(--accent);color:var(--on-accent);border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
   };
   const stepLabel = (n: number): string => `font-size:13px;font-weight:${cr.step === n || cr.step > n ? '700' : '600'};color:${cr.step === n ? 'var(--text)' : cr.step > n ? 'var(--text2)' : 'var(--muted)'};white-space:nowrap`;
 
@@ -557,7 +557,7 @@ export function TicketWizard() {
                   if (id) openAutomation(id);
                 }}
                 className="ss-btn-p"
-                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
+                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
               >
                 Open {cr.autoPrompt.title.length > 28 ? 'action' : cr.autoPrompt.title} ↗
               </button>

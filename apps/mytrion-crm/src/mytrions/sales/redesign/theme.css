@@ -1001,7 +1001,7 @@ html,body{height:100%;margin:0}
 
 /* Shell responsiveness + RingCentral safe area. The sidebar already has an explicit collapse control;
    narrow screens keep the collapsed rail visible instead of allowing the content pane to clip. */
-.ss-root .ss-main-column{padding-right:0}
+
 @media (max-width:900px){
   .ss-root .ss-sidebar{max-width:68px!important;width:68px!important}
   .ss-root .ss-sidebar-brand,.ss-root .ss-sidebar-search{display:none!important}
