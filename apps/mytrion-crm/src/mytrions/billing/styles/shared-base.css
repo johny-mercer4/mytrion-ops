@@ -54,101 +54,12 @@
 /* =====================================================
    HEADER
    ===================================================== */
-.bm-root .bm-header {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 0 20px;
-    height: var(--header-height);
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    z-index: 100;
-}
-
-.bm-root .bm-header-logo {
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-}
-
-.bm-root .bm-header-logo img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
 
 /* Hide light logo in dark mode and vice-versa */
 .bm-root:not(.light-mode) .logo-light { display: none; }
 .bm-root.light-mode       .logo-dark  { display: none; }
 
-.bm-root .bm-header-title {
-    font-family: var(--font-head);
-    font-size: 1.25rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: none;
-    color: var(--color-brand-hover);
-}
-
-.bm-root .bm-header-title span {
-    color: var(--billing-accent);
-}
-
-.bm-root .bm-header-badge {
-    font-size: 0.625rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    padding: 3px 8px;
-    border-radius: 3px;
-    background: var(--accent-bg);
-    color: var(--billing-accent);
-    border: 1px solid var(--accent-border);
-}
-
 /* ── Topbar theme toggle + avatar (design) ── */
-.bm-root .bm-header-theme {
-    width: 32px;
-    height: 32px;
-    border-radius: 4px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 120ms;
-    flex-shrink: 0;
-    padding: 0;
-    outline: none;
-}
-
-.bm-root .bm-header-theme:hover {
-    background: var(--accent-bg);
-    color: var(--billing-accent);
-    border-color: var(--accent-border);
-}
-
-.bm-root .bm-header-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 4px;
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: var(--font-head);
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--billing-accent);
-    flex-shrink: 0;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
 
 /* ── View-only badge (verification agents) ── */
 .bm-root .bm-readonly-badge {
@@ -199,62 +110,11 @@
 /* =====================================================
    SIDEBAR NAV
    ===================================================== */
-.bm-root .bm-sidebar {
-    width: var(--sidebar-width);
-    background: var(--sidebar-bg);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    overflow: hidden;
-    z-index: 10;
-}
-
-.bm-root .bm-sidebar-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 14px 12px;
-    flex: 1;
-}
 
 /* Design nav item: title-case, 13px/500, 2px transparent left border; active =
    accent-bg + bright --text + 600 + accent left border (NOT blue text). */
-.bm-root .bm-nav-item {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 10px 12px;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    border: none;
-    border-left: 2px solid transparent;
-    transition: all 100ms ease;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    text-transform: none;
-    user-select: none;
-    position: relative;
-}
-
-.bm-root .bm-nav-item:hover {
-    background: var(--surface-raised);
-    color: var(--text-primary);
-}
-
-.bm-root .bm-nav-item.active {
-    background: var(--accent-bg);
-    color: var(--color-brand-hover);
-    font-weight: 600;
-    border-left-color: var(--billing-accent);
-}
 
 /* Active icon follows the item colour (bright --text), not accent-blue. */
-.bm-root .bm-nav-item.active .nav-icon {
-    color: inherit;
-}
 
 .bm-root .nav-icon {
     width: 17px;
@@ -271,49 +131,10 @@
 }
 
 /* ── Active accent bar — design nav pills have no left bar ── */
-.bm-root .bm-nav-item.active::before {
-    display: none;
-}
 
 /* ── Disabled / coming-soon nav item ── */
-.bm-root .bm-nav-disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
-    pointer-events: none;
-}
-
-.bm-root .bm-nav-disabled:hover {
-    background: transparent !important;
-}
-
-.bm-root .nav-soon {
-    margin-left: auto;
-    font-size: 0.45rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 0.1rem 0.3rem;
-    flex-shrink: 0;
-}
-
-.bm-root .bottom-nav-disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-    pointer-events: none;
-}
 
 /* ── Sidebar footer (design: version string only) ── */
-.bm-root .bm-sidebar-footer {
-    padding: 8px 12px;
-    font-size: 0.625rem;
-    color: var(--dim);
-    text-align: left;
-    letter-spacing: 0.04em;
-}
 
 /* =====================================================
    MAIN CONTENT
@@ -773,55 +594,6 @@
 }
 
 /* ── Bottom Nav (mobile) ── */
-.bm-root .bm-bottom-nav {
-    display: none;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: var(--bottom-nav-height);
-    background: var(--sidebar-bg);
-    border-top: 1px solid var(--border);
-    z-index: 200;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-.bm-root .bottom-nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.375rem 0.25rem;
-    color: var(--text-muted);
-    font-size: 0.5rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    transition: color 100ms;
-    position: relative;
-    outline: none;
-}
-
-.bm-root .bottom-nav-btn.active {
-    color: var(--billing-accent);
-}
-
-.bm-root .bottom-nav-btn.active::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 20%;
-    right: 20%;
-    height: 2px;
-    background: var(--billing-accent);
-    border-radius: 0 0 2px 2px;
-    box-shadow: var(--accent-ring-glow);
-}
 
 /* =====================================================
    SHARED LOADERS & HEADERS
