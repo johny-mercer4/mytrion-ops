@@ -5,7 +5,11 @@ import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.con
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { AccountMenu } from '../../components/AccountMenu';
-import { TopBar } from '../../components/TopBar';
+import { ActAsPicker } from '../../components/ActAsPicker';
+import { AppHeader } from '../../components/AppHeader';
+import headerStyles from '../../components/AppHeader.module.css';
+import { isAdmin } from '../../access/resolveAccess';
+import { initials } from '../../lib/initials';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
 import styles from './MytrionShell.module.css';
 
@@ -30,13 +34,6 @@ function writeCollapsed(value: boolean): void {
   } catch {
     // A preference that cannot be saved is still a preference that works for this session.
   }
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
 export interface NavItem {
@@ -187,7 +184,28 @@ export function MytrionShell({
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
+  // The header field is separate from the rail's tab filter on purpose — one says "the Horizon
+  // ecosystem", the other says "tabs". Nothing consumes this yet; see GlobalSearch.
+  const [globalQuery, setGlobalQuery] = useState('');
   const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  // Admins can view-as anyone (the picker fetches the roster); a granted non-admin is handed their
+  // scoped list so the SAME control only offers permitted targets. No targets at all -> no control.
+  const viewAsTargets = user.viewAsTargets ?? [];
+  const viewAs = isAdmin(user) ? (
+    <ActAsPicker triggerClassName={headerStyles.chip} />
+  ) : viewAsTargets.length > 0 ? (
+    <ActAsPicker
+      triggerClassName={headerStyles.chip}
+      targets={viewAsTargets.map((t) => ({
+        zohoUserId: t.zohoUserId,
+        name: t.name,
+        email: null,
+        profile: null,
+        role: null,
+      }))}
+    />
+  ) : null;
 
   const toggleSidebar = useCallback((): void => {
     setCollapsed((prev) => {
@@ -241,7 +259,18 @@ export function MytrionShell({
          Modules opt in by writing a rule; none are affected until they do. */
       data-sidebar-collapsed={collapsed ? 'true' : undefined}
     >
-      <TopBar contextBadge={m.tag} showSwitch />
+      {/* identity="none": the signed-in worker appears once, at the foot of the rail. Two avatars
+          on one screen is two answers to "where do I sign out". */}
+      <AppHeader
+        context={{ mytrion: id }}
+        search={{
+          placeholder: 'Search the Horizon ecosystem…',
+          value: globalQuery,
+          onChange: setGlobalQuery,
+        }}
+        actions={viewAs}
+        identity="none"
+      />
       {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame, in every
           workspace. This used to be inert unless the module was on the horizonSkin allowlist. */}
       <div className={styles.ambience} aria-hidden="true" />

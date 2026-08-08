@@ -14,10 +14,14 @@ const SKELETON_ROWS = 6;
 export function ActAsPicker({
   targets,
   placement = 'default',
+  triggerClassName,
 }: {
   targets?: AgentUser[];
   /** `sidebar` — full-width trigger; menu opens upward (CS / Billing footers). */
   placement?: 'default' | 'sidebar';
+  /** Lets the header hand down its one `.chip` treatment, so this control cannot drift into
+   *  looking like a different kind of thing from the ones beside it. */
+  triggerClassName?: string | undefined;
 }) {
   const { actingAs, setActingAs } = useImpersonation();
   const scoped = targets !== undefined; // non-admin: a fixed, granted target list
@@ -71,9 +75,14 @@ export function ActAsPicker({
 
   return (
     <div className={wrapClass}>
-      <button type="button" className={styles.trigger} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className={triggerClassName ?? styles.trigger}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
         <ViewAsIcon size={13} />
-        View as
+        <span className={styles.triggerLabel}>View as</span>
       </button>
       {open && (
         <div

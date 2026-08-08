@@ -23,6 +23,7 @@ export function DropdownMenu({
   label,
   trigger,
   triggerClassName,
+  menuClassName,
   align = 'end',
   placement = 'down',
   children,
@@ -34,6 +35,9 @@ export function DropdownMenu({
   /** `| undefined` throughout: CSS-module class names are typed `string | undefined`, and this repo
    *  runs `exactOptionalPropertyTypes`, which distinguishes "absent" from "present and undefined". */
   triggerClassName?: string | undefined;
+  /** Extra class on the panel, for a menu whose geometry differs from the default (the workspace
+   *  switcher is a fixed 318px with two-line rows). Appended, so the base rules still apply. */
+  menuClassName?: string | undefined;
   /** Which edge the panel lines up with. */
   align?: 'start' | 'end' | undefined;
   placement?: 'down' | 'up' | undefined;
@@ -72,8 +76,11 @@ export function DropdownMenu({
       // else, and yanking focus to the trigger would fight whatever the user just clicked.
       if (!rootRef.current?.contains(ev.target as Node)) close(false);
     };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
+    // Capture phase: a bubble-phase listener never fires if anything between the target and the
+    // document calls stopPropagation, which leaves the menu stuck open with no way to dismiss it
+    // by clicking away.
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [open, close, items]);
 
   const onTriggerKeyDown = (ev: React.KeyboardEvent): void => {
@@ -144,7 +151,7 @@ export function DropdownMenu({
           aria-label={label}
           className={`${styles.menu} ${align === 'start' ? styles.alignStart : styles.alignEnd} ${
             placement === 'up' ? styles.up : styles.down
-          }`}
+          }${menuClassName ? ` ${menuClassName}` : ''}`}
           onKeyDown={onMenuKeyDown}
         >
           {children(() => close())}

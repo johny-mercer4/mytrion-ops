@@ -16,7 +16,12 @@ vi.mock('../../context/UserContextProvider', () => ({
     allDepartmentAccess: true,
   }),
 }));
-vi.mock('../../components/TopBar', () => ({ TopBar: () => <div /> }));
+// Stubbed because the real header pulls in the workspace switcher (router), the view-as picker
+// (session/API) and the theme toggle. The rail is what is under test.
+// NOTE: vi.mock on a path nothing imports fails SILENTLY — it simply stops applying and the real
+// component mounts. If these eight cases start failing together after a rename, check this line
+// before anything else.
+vi.mock('../../components/AppHeader', () => ({ AppHeader: () => <div /> }));
 // The sidebar's user row is an AccountMenu, which reads the theme. No ThemeProvider in this harness —
 // the shell's own behaviour is what is under test, not the account menu's.
 vi.mock('../../hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
