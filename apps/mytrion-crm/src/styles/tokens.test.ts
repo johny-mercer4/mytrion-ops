@@ -112,9 +112,6 @@ describe('token contract', () => {
     // src/styles/* is where colour is allowed to be named; everywhere else reads a token, so a
     // palette change reaches the whole app by editing one block.
     const ALLOWED = new Set([
-      // Deleted by the launcher rebuild — 65 literals that become var(--badge-tone) derivations.
-      // Remove this entry with the file; it is a countdown, not an exemption.
-      'app/MytrionPicker.module.css',
       // Ink on the fixed --gem brand gradient, which is identical in both themes.
       'components/Gem.module.css',
     ]);

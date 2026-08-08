@@ -3,7 +3,7 @@ import { useUserContext } from '../context/UserContextProvider';
 import { resolveAccessibleMytrions } from '../access/resolveAccess';
 import { MYTRION_URL_SLUG } from '../access/mytrions.config';
 import { Forbidden } from './Forbidden';
-import { MytrionPicker } from './MytrionPicker';
+import { WorkspaceLauncher } from './launcher/WorkspaceLauncher';
 
 /**
  * Entry resolver: 0 accessible → 403; exactly one accessible → ALWAYS auto-enter (hard rule —
@@ -23,6 +23,6 @@ export function Landing() {
   if (homeMytrion && accessible.includes(homeMytrion)) {
     return <Navigate to={`/main/${MYTRION_URL_SLUG[homeMytrion]}`} replace />;
   }
-  // Provably ids.length >= 2 here — the picker never renders for a single-Mytrion user.
-  return <MytrionPicker ids={accessible} />;
+  // Provably ids.length >= 2 here — the launcher never renders for a single-Mytrion user.
+  return <WorkspaceLauncher ids={accessible} />;
 }
