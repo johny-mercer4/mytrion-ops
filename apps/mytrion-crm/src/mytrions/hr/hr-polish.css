@@ -2,10 +2,13 @@
    Kept separate from the legacy HR stylesheets so the shared typography, KPI tiles and loader have
    one small source of truth instead of adding more weight to files that are already at their cap. */
 
-/* HR uses Space Grotesk for UI body + headings (loaded in index.html). */
+/* HR inherits the app faces. The two lines that used to sit here —
+     --font-body: var(--font-body);  --font-head: var(--font-body);
+   were a SELF-REFERENCE, i.e. a cycle: per css-variables-1 both became invalid at computed-value
+   time, so `font-family: var(--font-body)` below was dropped and HR rendered in whatever the UA
+   left on <html>. Deleted rather than "fixed" — HR never needed a font override in the first
+   place; theme.css now owns the faces on raw names (--face-ui / --face-mono). */
 [data-mytrion='hr'] {
-  --font-body: var(--font-body);
-  --font-head: var(--font-body);
   --mytrion-nav-label-size: 14.5px;
   --mytrion-nav-sub-size: 13px;
   --mytrion-nav-search-size: 13.5px;

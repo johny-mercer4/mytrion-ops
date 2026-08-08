@@ -12,7 +12,11 @@
 }
 
 .bm-root {
-    font-family: 'Inter', 'Roboto', sans-serif;
+    /* Was `'Inter', 'Roboto', sans-serif` — the last module in the app still forcing a family the
+       token layer had already deleted, which meant Billing rendered in a different face from every
+       other workspace. It inherits --font-body now, like everything else. Verification's own
+       stylesheet records the same removal at its head. */
+    font-family: var(--font-body);
     margin: 0;
     padding: 0;
     background: var(--color-bg-primary);

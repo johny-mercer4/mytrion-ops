@@ -52,7 +52,10 @@ function matchAll(text: string, re: RegExp): string[] {
 }
 
 function declaredIn(file: string): Set<string> {
-  const text = readFileSync(file, 'utf8');
+  // Comment-stripped, same as every other assertion here. This used to read the raw file, so any
+  // PROSE naming a token followed by a colon — "not an alias of --tone-orange: those are consumed
+  // dynamically" — registered as a declaration and produced a phantom cross-file collision.
+  const text = code(file);
   return new Set([...matchAll(text, DECL), ...matchAll(text, DECL_COMPUTED)]);
 }
 
@@ -101,7 +104,7 @@ describe('token contract', () => {
     // Only the RAW palette must be paired. Semantic aliases (--surface, --accent, --border …) are
     // `var()` of a raw token, so they re-derive in light and must NOT be restated — restating one
     // is exactly how the two themes drift apart on a single name.
-    const RAW = /^--(page|surface-base|container|container-low|container-high|container-highest|on-surface|on-surface-variant|outline|outline-variant|primary|primary-container|tint|secondary|secondary-container|on-primary|error)$/;
+    const RAW = /^--(page|surface-base|container|container-low|container-high|container-highest|on-surface|on-surface-variant|outline|outline-variant|primary|primary-container|tint|secondary|secondary-container|on-primary|error|ember)$/;
     const raw = (block: string): string[] =>
       matchAll(block, DECL).filter((t) => RAW.test(t)).sort();
 
@@ -136,6 +139,83 @@ describe('token contract', () => {
     const blocks = code(GLOBAL).match(/\[data-mytrion[^{]*\{[^}]*\}/g) ?? [];
     const offenders = blocks.filter((b) => /--accent[a-z-]*\s*:/.test(b));
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The cycle guard. `--x: var(--x)` is a dependency cycle, which css-variables-1 makes invalid at
+   * computed-value time — the declaration is DROPPED and the property silently inherits. This bug
+   * shipped THREE times in this repo (theme.css's --font-head/--font-body, hr-polish.css's pair,
+   * and global.css's --font-mono inside @theme inline, which only ever resolved by cascade-layer
+   * accident). Every instance was invisible: green build, correct-looking source, and an entire app
+   * rendering in the wrong font.
+   */
+  it('never lets a custom property reference itself', () => {
+    const offenders: string[] = [];
+    for (const file of CSS_FILES) {
+      for (const m of code(file).matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) {
+        const [, name, value] = m;
+        if (value!.includes(`var(${name})`)) offenders.push(`${relative(SRC, file)}: ${name}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The faces must resolve to a real literal. The cycle test above proves no name eats itself; this
+   * proves the chain actually terminates in a font stack rather than in nothing.
+   */
+  it('resolves the type faces to literal family stacks', () => {
+    const css = code(THEME);
+    expect(css).toMatch(/--face-ui:\s*'Space Grotesk'/);
+    expect(css).toMatch(/--face-mono:\s*'Space Mono'/);
+    // The semantic names must point at the RAW names, never at each other.
+    expect(css).toMatch(/--font-body:\s*var\(--face-ui\)/);
+    expect(css).toMatch(/--font-head:\s*var\(--face-ui\)/);
+    expect(css).toMatch(/--font-mono:\s*var\(--face-mono\)/);
+  });
+
+  /**
+   * Glass is for CHROME. A blurred surface behind dense data is both an aesthetic decision (the
+   * data should be flat) and a performance one — every blurred element is its own composited layer,
+   * and this app has already shipped a scroll-jank defect from exactly that.
+   *
+   * A BUDGET, not a ban: 282 call sites exist today across 46 files and they come down per module,
+   * not in one flag day. The number may only ever decrease. If this fails because you ADDED a blur,
+   * the answer is almost always --surface-data.
+   */
+  it('does not grow the backdrop-filter surface area', () => {
+    const BUDGET = 282;
+    const count = CSS_FILES.reduce(
+      (n, f) => n + (code(f).match(/backdrop-filter\s*:/g)?.length ?? 0),
+      0,
+    );
+    expect(count).toBeLessThanOrEqual(BUDGET);
+  });
+
+  /**
+   * Hardcoded-value budgets. Each is seeded at the measured count on the day the three-tier layer
+   * landed, and each may only ratchet DOWN as modules migrate. This is the mechanism that closes
+   * the `/mytrions/` exemption gradually instead of demanding a 40,000-line rewrite.
+   */
+  it('does not grow the hardcoded font-size / radius / z-index counts', () => {
+    const BUDGETS = { fontSize: 1146, radius: 385, zIndex: 89 };
+    const all = CSS_FILES.map(code).join('\n');
+    const tsx = walk(SRC, ['.tsx'])
+      .filter((f) => !f.endsWith('.test.tsx'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+
+    const counts = {
+      fontSize: all.match(/font-size:\s*[0-9]/g)?.length ?? 0,
+      radius: all.match(/border-radius:\s*[0-9]/g)?.length ?? 0,
+      // z-index is legal raw in the -1..3 local band; anything else must be a var(--z-*).
+      zIndex: [...all.matchAll(/z-index:\s*(-?[0-9]+)/g), ...tsx.matchAll(/zIndex:\s*(-?[0-9]+)/g)]
+        .filter(([, v]) => Number(v) < -1 || Number(v) > 3).length,
+    };
+
+    expect(counts.fontSize).toBeLessThanOrEqual(BUDGETS.fontSize);
+    expect(counts.radius).toBeLessThanOrEqual(BUDGETS.radius);
+    expect(counts.zIndex).toBeLessThanOrEqual(BUDGETS.zIndex);
   });
 
   it('puts a number on a radius only in theme.css', () => {

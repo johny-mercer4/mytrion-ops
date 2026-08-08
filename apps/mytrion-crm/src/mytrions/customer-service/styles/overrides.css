@@ -392,7 +392,7 @@
     border-radius: 999px;
     background: var(--cs-accent-soft);
     color: var(--cs-accent-deep);
-    font-family: var(--font-mono, var(--font-mono));
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.02em;

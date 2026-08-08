@@ -1,36 +1,50 @@
 /*
- * Mytrion Horizon — the brand gradient + the glassmorphism primitives, ported from
- * `HorizonNew` (src/app/App.tsx + src/styles/theme.css) and promoted to app-wide tokens.
+ * Mytrion Horizon — the atmosphere, the glass primitives, elevation and motion aliases.
  *
- * THE design color, in both themes, is the Horizon gradient: sky → pale blue → sunset.
- * It is the same hue journey in light and dark — only the luminance of the stops changes so
- * the ramp stays legible on white. Everything accent-coloured should trace back to here.
+ * Imported by global.css AFTER theme.css, so these win over the base scale.
  *
- * Imported by global.css AFTER theme.css, so these win over the base scale and per-Mytrion
- * accents can still override --accent/--accent-2 downstream.
+ * THE HORIZON LINE, EXECUTED LITERALLY. A horizon is the band where two atmospheres meet, so the
+ * ambient field is a HORIZONTAL BAND: cool sky above, one narrow warm ember line, deep water below.
+ * It is not a mesh of radial lobes — the previous version was 3 lobes in dark and 5 in light plus
+ * an elliptical vignette, which is a blob field, and a blob field says nothing about a horizon.
+ *
+ * WHERE THE BAND IS ALLOWED: shells, empty states, auth screens, hero surfaces. That is the whole
+ * list. It never sits behind dense data — tables, forms and lists are flat and opaque
+ * (--surface-data in theme.css). Atmosphere behind a 400-row table is noise with a compositing
+ * cost, and this app has already paid that cost once.
+ *
+ * GLASS IS FOR CHROME. backdrop-filter belongs on things that FLOAT OVER content — the header, the
+ * rail, modals, drawers, popovers, docked panels — and nowhere else. Every blurred element is its
+ * own composited layer; 24px of blur on a scrolling list is the cliff, not the polish.
  */
 
 :root {
   /* ══ Glass — ONE definition, replacing what used to be four forks ═════════
-     Every translucent surface in the app resolves here: header, rail, panel, menu, field, row.
-     A panel now looks identical in Sales and in HR because there is one place it can come from. */
+     Every translucent CHROME surface in the app resolves here: header, rail, menu, modal, drawer.
+     A docked panel now looks identical in Sales and in HR because there is one place it can come
+     from. Data surfaces do not appear on that list and must not read these. */
   --glass: rgba(31, 34, 44, 0.4);
   --glass-hi: rgba(255, 255, 255, 0.07);
   --glass-bd: rgba(255, 255, 255, 0.07);
   --glass-bd-hi: rgba(255, 255, 255, 0.18);
-  --glare: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
   --field: rgba(255, 255, 255, 0.04);
   --row-line: rgba(255, 255, 255, 0.06);
   --row-hover: rgba(255, 255, 255, 0.05);
   /* A popover floats over the page, so it is opaque enough to read against any content beneath. */
   --menu-bg: rgba(27, 31, 44, 0.92);
-  --menu-shadow: 0 24px 64px -18px rgba(0, 0, 0, 0.7);
   --blur: 24px;
+  /* The chrome blur budget. Named so the allowlist test has something to point at, and so a call
+     site that wants glass asks for the token rather than inventing its own radius. */
+  --chrome-blur: var(--blur);
 
-  /* ══ The Horizon ramp — derived from the palette, so the light block only swaps colours ══
-     `--ramp` sweeps left→right (wordmark, hairlines, progress); `--ramp-d` runs 135° for small
+  /* ══ The brand ramp — derived from the palette, so the light block only swaps colours ══
+     `--ramp` sweeps left->right (wordmark, hairlines, progress); `--ramp-d` runs 135deg for small
      fills, chips and avatars, where five stops read as mud; `--ramp-soft` is the low-alpha wash
-     that marks a selected row. */
+     that marks a selected row.
+     NOTE this is the ACCENT ramp (cool: cyan -> pale blue -> magenta) and it is deliberately a
+     different hue family from the horizon band below (warm ember). Horizon is a two-hue system:
+     a cool accent reading ON a warm-horizon ground. They must not be unified — an accent that
+     matches the atmosphere stops being an accent. */
   --ramp: linear-gradient(90deg, var(--tint) 0%, var(--primary) 46%, var(--secondary) 100%);
   --ramp-d: linear-gradient(135deg, var(--tint) 0%, var(--secondary) 100%);
   --ramp-soft: linear-gradient(
@@ -40,10 +54,44 @@
     color-mix(in srgb, var(--secondary) 14%, transparent) 100%
   );
 
+  /* ══ Elevation — EXACTLY FOUR LEVELS ═══════════════════════════════════════
+     RULE, and it differs by mode on purpose: DARK elevates with LIGHT (a border plus an inset
+     glare; a drop shadow only when something hovers or genuinely floats). LIGHT elevates with
+     SHADOW, always slate-tinted, never neutral black — a neutral-black shadow on a cool pale field
+     reads as dirt.
+
+     INVARIANT: every --elev-* value must be a valid item in a comma-separated shadow list, and
+     therefore NEVER the keyword `none`. 68 call sites write
+       box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset)
+     and `none` is not a legal list item — it would invalidate the whole declaration and take the
+     glare with it, flattening every panel in the app at once. --elev-0 is a TRANSPARENT shadow for
+     exactly this reason. */
+  --elev-0: 0 0 0 0 rgb(0 0 0 / 0);
+  --elev-1: inset 0 1px 0 0 rgb(255 255 255 / 0.1);
+  --elev-2:
+    0 4px 14px -4px rgb(0 0 0 / 0.28),
+    0 16px 40px -14px var(--accent-glow, var(--hz-glow));
+  --elev-3:
+    0 2px 8px -2px rgb(0 0 0 / 0.5),
+    0 24px 64px -18px rgb(0 0 0 / 0.7);
+
+  /* The names the app already reads. Aliases, not definitions — 348 call sites, none edited. */
+  --hz-shadow-rest: var(--elev-0);
+  --glare: var(--elev-1);
+  --hz-shadow-lift: var(--elev-2);
+  --hz-shadow-pop: var(--elev-3);
+  --menu-shadow: var(--elev-3);
+
+  /* Hover displacement. Consume as `translate:`, NEVER as `transform:` — a permanent transform
+     promotes the element to its own composited layer and makes it a containing block for its
+     children, which stacked on a backdrop-filter is how a panel ends up un-repainted mid-scroll. */
+  --lift-1: 0 -1px;
+  --lift-2: 0 -2px;
+
   /* ══ --hz-* compatibility layer ═══════════════════════════════════════════
-     2,843 call sites across all 12 modules read these names — more than any other token family in
-     the app. They are aliases now, not definitions, so the whole app re-points by editing the
-     block above. Do not add new --hz-* names; use the short ones. */
+     2,796 call sites across all 12 modules read these names — more than any other token family in
+     the app. They are aliases, not definitions, so the whole app re-points by editing the blocks
+     above. Do not add new --hz-* names; use the short ones. */
   --hz-1: var(--tint);
   --hz-2: color-mix(in srgb, var(--tint) 50%, var(--primary));
   --hz-3: var(--primary);
@@ -66,45 +114,27 @@
   --hz-glass-bd-hover: var(--glass-bd-hi);
   --hz-glass-inset: var(--glare);
   --hz-glass-inset-strong: var(--glare);
-  --hz-blur: var(--blur);
-  --hz-blur-md: var(--blur);
+  --hz-blur: var(--chrome-blur);
+  --hz-blur-md: var(--chrome-blur);
   /* Deliberately NOT 24px. 122 of these sites are chips, rows and badges inside scrolling lists,
      and every blurred element is its own composited layer — 24px on a 400-row table is the
      compositing cliff this app has already fallen off. A chip reads as glass at 12px. */
   --hz-blur-sm: 12px;
-  --hz-blur-lg: var(--blur);
-  /* These four were CONSUMED BUT NEVER DECLARED, which makes the whole declaration
-     invalid-at-computed-value-time — the property silently inherits instead of erroring, so it
-     never got reported as a bug, only as "that label is the wrong colour". */
+  --hz-blur-lg: var(--chrome-blur);
   --hz-muted: var(--text-muted);
   --hz-pane-solid: var(--menu-bg);
   --hz-input-bg: var(--field);
-
-  /* Elevation. Depth comes from refraction, not from shadow: border + inset glare at rest, and a
-     drop shadow only on hover or when a surface floats over the page.
-     --hz-shadow-rest MUST stay a TRANSPARENT shadow rather than `none`: 60 of its 67 call sites
-     write `box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset)`, and `none` is not a valid
-     item in a shadow list — it would invalidate the whole declaration and take the glare with it,
-     flattening every panel in the app at once. */
-  --hz-shadow-rest: 0 0 0 0 rgba(0, 0, 0, 0);
-  --hz-shadow-lift:
-    0 16px 40px -14px var(--accent-glow, var(--hz-glow)),
-    0 4px 14px -4px rgba(0, 0, 0, 0.28);
-  --hz-shadow-pop: var(--menu-shadow);
+  /* Was declared only in Sales' ss-horizon.css while RingCentralPhone.tsx consumed it app-wide —
+     outside Sales it silently fell through to its fallback. */
+  --hz-modal-surface: var(--menu-bg);
 
   /* 1px specular line along a card's top edge, revealed on hover. */
-  --hz-shimmer: linear-gradient(
-    90deg,
-    transparent 8%,
-    rgba(255, 255, 255, 0.35) 50%,
-    transparent 92%
-  );
+  --hz-shimmer: linear-gradient(90deg, transparent 8%, rgba(255, 255, 255, 0.35) 50%, transparent 92%);
 
   /* ── Chromatic edge — the "glass has thickness" cue ───────────────────────────
      A 1px ring that runs sky at the top edge to sunset at the bottom, so an edge catches a
      different wavelength depending on which way it faces. Paint it with `.hzEdge` (below), NOT with
-     `border-image`: border-image ignores border-radius and would square off every corner in a design
-     built on 12–16px radii. */
+     `border-image`: border-image ignores border-radius and would square off every corner. */
   --hz-edge: linear-gradient(
     170deg,
     color-mix(in srgb, var(--hz-1) 60%, transparent) 0%,
@@ -113,12 +143,8 @@
     color-mix(in srgb, var(--hz-5) 55%, transparent) 100%
   );
 
-  /* Frosted panes for module content. Derived from --surface / --surface-alt rather than fixed
-     rgba, so they follow the theme automatically (color-mix resolves at the use site) and a panel
-     stays legible over the mesh instead of turning into a milky rectangle.
-     --hz-pane      a card, table or modal
-     --hz-pane-alt  a nested/inset surface (table header, form field, chip track)
-     --hz-pane-lift the same pane, brightened — the hover state */
+  /* Frosted panes for CHROME. --hz-pane is no longer used for cards and tables: those are
+     --surface-data, flat and opaque. What is left here is the floating-panel appearance. */
   --hz-pane: linear-gradient(
     150deg,
     color-mix(in srgb, var(--surface) 88%, transparent) 0%,
@@ -132,96 +158,156 @@
   --hz-pane-alt: color-mix(in srgb, var(--surface-alt) 72%, transparent);
   --hz-pane-bd: color-mix(in srgb, var(--border) 88%, transparent);
 
-  /* ── Motion — HorizonNew timings ────────────────────────────────────────── */
-  --hz-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --hz-dur-lift: 0.55s;
-  --hz-dur-tone: 0.45s;
-  --hz-dur-wash: 0.35s;
+  /* ── Motion — ALIASES now, not definitions. 900 call sites, none edited. ────
+     Three of these were above the 220ms ceiling and are re-pointed, which is the single most
+     visible change in this file: --hz-dur-wash was 350ms on 327 hover transitions. 350ms of hover
+     feedback is lag, not smoothness. */
+  --hz-ease: var(--ease-spring);
+  --hz-dur-wash: var(--dur-base);
+  --hz-dur-tone: var(--dur-slow);
+  --hz-dur-lift: var(--dur-base);
   --hz-hover-lift-sm: translateY(-2px);
 
   /* ── Layout ─────────────────────────────────────────────────────────────── */
-  /* One content measure for module panels, so every tab in a module lines up. */
-  --hz-measure: 1280px;
+  --hz-measure: var(--layout-measure);
 
-  /* ── Ambient background — the 3-lobe mesh, 64px grid and vignette ────────── */
+  /* ══ Ambient field — THE HORIZON BAND ══════════════════════════════════════
+     ONE hue transition, running vertically so the BANDS read horizontally. This replaces the
+     3-lobe radial mesh and the elliptical vignette outright: the vignette's containment job is now
+     done by --hz-band-deep at the bottom of the same band, so there is no second layer.
+
+     Stops are OPAQUE mixes of --page, not alpha washes. That is deliberate — this element IS the
+     field, so every stop is an exact colour a contrast checker can read, rather than "whatever it
+     happens to composite to". Contrast is verified at every stop in FOUNDATIONS.md.
+
+     Namespaced --hz-band-* because --hz-sky and --hz-sun already exist above and mean something
+     else entirely (they are accent-ramp anchors, not atmosphere). */
   --hz-page: var(--page);
-  --hz-mesh:
-    radial-gradient(ellipse 70% 46% at 6% 0%, rgba(71, 214, 255, 0.11) 0%, transparent 58%),
-    radial-gradient(ellipse 46% 40% at 94% 6%, rgba(165, 231, 255, 0.07) 0%, transparent 52%),
-    radial-gradient(ellipse 40% 34% at 82% 92%, rgba(255, 174, 222, 0.07) 0%, transparent 50%);
+  --hz-band-y: 63%;
+
+  --hz-band-zenith: color-mix(in srgb, var(--tint) 6%, var(--page));
+  --hz-band-sky: color-mix(in srgb, var(--tint) 3%, var(--page));
+  --hz-band-haze: var(--page);
+  --hz-band-halo: color-mix(in srgb, var(--ember) 5%, var(--page));
+  --hz-band-ember: color-mix(in srgb, var(--ember) 13%, var(--page));
+  /* Below the line. These two ARE the old vignette colour rgb(5,8,20), resolved to opaque hexes —
+     the vignette's colour is kept, only its geometry changes from ellipse to band. Neither is pure
+     black; the brief bans #000 as a surface and these are #060a16 / #080c18. */
+  --hz-band-sea: #080c18;
+  --hz-band-deep: #060a16;
+
+  /* Factored out so the sRGB fallback and the oklab version below cannot drift apart. The ember
+     core is ONE stop with tight halos either side: 59% -> 63% -> 67% is a ~36px warm line on a
+     900px viewport, which is a horizon, not a sunset. */
+  --hz-band-stops:
+    var(--hz-band-zenith) 0%,
+    var(--hz-band-sky) 30%,
+    var(--hz-band-haze) 52%,
+    var(--hz-band-halo) 59%,
+    var(--hz-band-ember) var(--hz-band-y),
+    var(--hz-band-halo) 67%,
+    var(--hz-band-sea) 78%,
+    var(--hz-band-deep) 100%;
+
+  --hz-field: linear-gradient(to bottom, var(--hz-band-stops));
+
+  /* ── Dither. NOT decoration. DO NOT DELETE. ───────────────────────────────────
+     An 8-bit gradient this long is guaranteed to band: the zenith->sky run has 7 distinguishable
+     levels across ~270px, i.e. one visible step every 38.6px, and the sea->deep run is 99px per
+     step. Extra colour stops do NOT help — they redistribute the same levels, they do not add any.
+     Only mean-zero noise of about 1 LSB breaks the contour.
+     Amplitude is calibrated: peak-to-peak = opacity * 0.5 * 255 LSB, so 0.014 -> 1.79 LSB. Above
+     ~0.025 this stops being a dither and becomes a grain texture. */
+  --hz-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  --hz-grain-opacity: 0.014;
+
+  /* The 64px survey grid. Kept — it is structure, not atmosphere, and it reads as a cockpit. */
   --hz-grid:
     linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
   --hz-grid-size: 64px 64px;
-  --hz-vignette: radial-gradient(
-    ellipse 120% 120% at 50% 50%,
-    transparent 32%,
-    rgba(5, 8, 20, 0.66) 100%
-  );
+
+  /* Back-compat: --hz-mesh is what the two existing consumers read. Alias, never re-declare. */
+  --hz-mesh: var(--hz-field);
 }
 
 [data-theme='light'] {
-  /* Only the glass set and the backdrop are restated. The ramp, every --hz-* alias and both
-     elevation steps re-derive from the palette in theme.css, which is why this block is a third of
-     the size it used to be — and why light can no longer silently drift away from dark. */
+  /* Only the glass set, the elevation shadows and the band are restated. The accent ramp, every
+     --hz-* alias and all four motion aliases re-derive from theme.css, which is why this block is a
+     third of the size it used to be — and why light can no longer silently drift from dark. */
   --glass: rgba(255, 255, 255, 0.44);
   --glass-hi: rgba(255, 255, 255, 0.86);
   --glass-bd: rgba(20, 30, 50, 0.07);
   --glass-bd-hi: rgba(0, 67, 200, 0.3);
-  --glare: inset 0 1px 0 0 rgba(255, 255, 255, 1);
   --field: rgba(255, 255, 255, 0.55);
   --row-line: rgba(20, 30, 50, 0.07);
   --row-hover: rgba(20, 30, 50, 0.035);
   --menu-bg: rgba(255, 255, 255, 0.94);
-  --menu-shadow: 0 20px 52px -18px rgba(30, 41, 59, 0.28);
 
-  /* Slate-tinted, never pure black: a neutral-black shadow on a cool light field reads as dirt.
-     Short, soft and low-alpha — the page is the quiet part, the panels sit gently on top. A
-     dark-theme drop shadow transplanted onto a pale field is what reads as "sharp". */
-  --hz-shadow-lift:
-    0 14px 34px -14px var(--accent-glow, var(--hz-glow)),
-    0 3px 10px -4px rgba(30, 41, 59, 0.09);
+  /* Light elevates with shadow. Every term is slate-tinted — a neutral-black shadow on a cool pale
+     field reads as dirt. The inset glare survives but is no longer load-bearing: on a light ground
+     it is the 1px slate hairline that separates an #f8f9fa card from an #e9edf3 page, which is why
+     --elev-1 gains a second item here. That is the one behavioural (not purely aliasing) change in
+     this block, and it reaches 245 sites through --hz-glass-inset. */
+  --elev-1:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+    0 1px 2px -1px rgb(30 41 59 / 0.08);
+  --elev-2:
+    0 3px 10px -4px rgb(30 41 59 / 0.09),
+    0 14px 34px -14px var(--accent-glow, var(--hz-glow));
+  --elev-3:
+    0 1px 3px -1px rgb(30 41 59 / 0.1),
+    0 20px 52px -18px rgb(30 41 59 / 0.28);
 
   /* 0.98 white was a hard specular line against near-white panels — barely a highlight, mostly a
      seam. Pulled back so it reads as sheen. */
-  --hz-shimmer: linear-gradient(
-    90deg,
-    transparent 8%,
-    rgba(255, 255, 255, 0.82) 50%,
-    transparent 92%
-  );
+  --hz-shimmer: linear-gradient(90deg, transparent 8%, rgba(255, 255, 255, 0.82) 50%, transparent 92%);
 
-  /* The 5-lobe hsla mesh from the Luminous Horizon launcher, over a page a touch deeper than the
-     panels sitting on it — white cards on white have no ground, which is what read as glare. */
-  --hz-mesh:
-    radial-gradient(at 40% 20%, hsla(210, 100%, 95%, 1) 0px, transparent 50%),
-    radial-gradient(at 80% 0%, hsla(189, 100%, 93%, 1) 0px, transparent 50%),
-    radial-gradient(at 0% 50%, hsla(210, 100%, 95%, 1) 0px, transparent 50%),
-    radial-gradient(at 82% 54%, hsla(270, 100%, 96%, 1) 0px, transparent 50%),
-    radial-gradient(at 0% 100%, hsla(189, 100%, 94%, 1) 0px, transparent 50%);
+  /* Dawn: pale cool sky above, warmer light gathering at the band. Same geometry, same single hue
+     transition, stops re-derived from the light palette. */
+  --hz-band-zenith: color-mix(in srgb, var(--tint) 9%, var(--page));
+  --hz-band-sky: color-mix(in srgb, var(--tint) 4%, var(--page));
+  --hz-band-haze: var(--page);
+  --hz-band-halo: color-mix(in srgb, var(--ember) 4%, var(--page));
+  --hz-band-ember: color-mix(in srgb, var(--ember) 11%, var(--page));
+  /* The old light vignette colour rgb(191,203,226), resolved opaque. Not pure white. */
+  --hz-band-sea: #e1e7f0;
+  --hz-band-deep: #dee4ef;
+
+  /* A light field needs more dither: the eye resolves steps better at high luminance, and the light
+     runs are ~22px per band. 0.02 -> 2.55 LSB peak-to-peak. */
+  --hz-grain-opacity: 0.02;
+
   /* Neutral slate rather than saturated sky — cyan hairlines on a light field read as sharp ruling
      rather than texture. */
   --hz-grid:
     linear-gradient(rgba(100, 116, 139, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(100, 116, 139, 0.045) 1px, transparent 1px);
-  /* Frames the content by settling the edges DOWN. The old light vignette faded toward a colour
-     brighter than the page, so it lit the corners and added to the glare instead of containing it. */
-  --hz-vignette: radial-gradient(
-    ellipse 120% 120% at 50% 50%,
-    transparent 40%,
-    rgba(191, 203, 226, 0.28) 100%
-  );
+}
+
+/* ── oklab interpolation, GUARDED. Do not remove the @supports. ────────────────────────────────
+   Firefox 113-126 supports color-mix() but NOT gradient colour-interpolation (that landed in 127).
+   A custom property accepts almost any token sequence at PARSE time, so `--hz-field: linear-
+   gradient(in oklab ...)` stores successfully there and then fails at `background: var(--hz-field)`
+   as invalid-at-computed-value-time — background computes to `initial` and THE ENTIRE FIELD
+   SILENTLY DISAPPEARS. A second custom-property declaration does NOT guard this, because both
+   declarations parse fine; only @supports, which tests the USE, does.
+   sRGB interpolation also muddies the cyan->magenta midpoint of the accent ramp by dOKLab 0.032,
+   so the ramps get the same treatment for free. */
+@supports (background: linear-gradient(in oklab, #000, #fff)) {
+  :root {
+    --hz-field: linear-gradient(in oklab to bottom, var(--hz-band-stops));
+    --ramp: linear-gradient(in oklab 90deg, var(--tint) 0%, var(--primary) 46%, var(--secondary) 100%);
+    --ramp-d: linear-gradient(in oklab 135deg, var(--tint) 0%, var(--secondary) 100%);
+  }
 }
 
 /* ── Wayfinding tones ──────────────────────────────────────────────────────────
    A hue per destination, for long categorised sidebars where a column of identical grey glyphs is
    slow to scan. Referenced as tokens (not raw hex) precisely so they can be theme-swapped: dark uses
-   the bright 400-level, light the deep 600/700-level. Same families as the picker's workspace hues.
-   Tint only the glyph — labels stay on the text scale, or the sidebar becomes a fruit salad. */
+   the bright 400-level, light the deep 600/700-level. Tint only the glyph — labels stay on the text
+   scale, or the sidebar becomes a fruit salad. */
 :root {
-  /* Re-spaced away from the ramp anchors. --tone-sky used to be #38bdf8, which sits ~3ΔE from the
-     new --tint (#47d6ff): a sky-toned glyph was indistinguishable from an accent-coloured one, so
-     the tone stopped encoding anything. It is now a true blue, leaving cyan to --tone-cyan. */
   --tone-sky: #3b82f6;
   --tone-cyan: #22d3ee;
   --tone-teal: #2dd4bf;
@@ -238,7 +324,6 @@
 }
 
 [data-theme='light'] {
-  /* Same re-spacing on the light side: --tint is #004ee7 there, so sky moves to a deep azure. */
   --tone-sky: #0369a1;
   --tone-cyan: #0891b2;
   --tone-teal: #0d9488;
@@ -256,10 +341,10 @@
 
 /* ── Reusable Horizon utilities ────────────────────────────────────────────── */
 
-/* A 1px chromatic ring that FOLLOWS the element's own border-radius. Painted as a masked pseudo-ring
-   (paint the gradient over the whole box, then knock the middle out) because that is the only
-   technique that both takes a gradient and respects a radius:
-     - `border-image` takes a gradient but ignores border-radius → square corners.
+/* A 1px chromatic ring that FOLLOWS the element's own border-radius. Painted as a masked
+   pseudo-ring (paint the gradient over the whole box, then knock the middle out) because that is
+   the only technique that both takes a gradient and respects a radius:
+     - `border-image` takes a gradient but ignores border-radius -> square corners.
      - `box-shadow` respects the radius but takes no gradient.
    Applies to an ::after, so it needs the host to be positioned. */
 .hzEdge {
@@ -269,7 +354,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: var(--z-raised);
   border-radius: inherit;
   padding: 1px;
   background: var(--hz-edge);
@@ -285,8 +370,11 @@
   mask-composite: exclude;
 }
 
-/* Gradient text. Kept as background-clip (never `filter`) — HorizonNew's GradText comment
-   records that a filtered version painted a solid rectangle in WebKit. */
+/* Gradient text. Kept as background-clip (never `filter`) — a filtered version painted a solid
+   rectangle in WebKit.
+   SCOPE: the wordmark and the assistant's own identity ONLY. The brief bans gradient text and it is
+   right for every other case; these are the two places where the gradient IS the mark. Do not
+   extend it to headings, KPI values or status text. */
 .hzGrad {
   background: var(--hz-gradient-r);
   -webkit-background-clip: text;
@@ -295,14 +383,16 @@
   color: transparent;
 }
 
-/* The ambient page backdrop: mesh + 64px grid + vignette, as three stacked layers on one
-   element. `position: fixed` so it doesn't scroll with content. */
+/* The ambient page field: horizon band + 64px survey grid + dither, three stacked layers on one
+   element. `position: fixed` so it does not scroll with content. */
 .hzMesh {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
-  background: var(--hz-mesh);
+  z-index: var(--z-base);
+  background: var(--hz-field);
+  /* Transitioning a background-image repaints the whole viewport. It is here ONLY for the theme
+     crossfade, which is a once-per-toggle event — never a hover. */
   transition: background var(--hz-dur-tone) var(--hz-ease);
 }
 .hzMesh::before,
@@ -315,13 +405,12 @@
   background-image: var(--hz-grid);
   background-size: var(--hz-grid-size);
 }
+/* Dither. background-size MUST equal the tile's intrinsic 160px — a resampled noise tile is blur,
+   and blur is not a dither. mix-blend-mode is deliberately NOT used: overlay and soft-light both
+   collapse toward black, so they deliver almost no perturbation in exactly the dark region that
+   needs it. Plain alpha costs a ~1.8/255 DC lift, which the band's ground stops already absorb. */
 .hzMesh::after {
-  background: var(--hz-vignette);
-  transition: background var(--hz-dur-tone) var(--hz-ease);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --hz-hover-lift-sm: none;
-  }
+  background-image: var(--hz-grain);
+  background-size: 160px 160px;
+  opacity: var(--hz-grain-opacity);
 }

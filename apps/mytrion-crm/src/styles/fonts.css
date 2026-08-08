@@ -1,0 +1,106 @@
+/*
+ * Mytrion Horizon — self-hosted webfaces. Two text families, one origin (ours).
+ *
+ * Replaces the Google Fonts CDN <link> plus two <link rel=preconnect> that index.html used to
+ * carry. That removes two cross-origin handshakes and one render-blocking third-party stylesheet
+ * from the critical path, and it means the app renders its own typography with no third party in
+ * the way.
+ *
+ * WHAT IS AND IS NOT VARIABLE — the brief assumed both families were variable. Half of that is
+ * wrong, verified four ways:
+ *   - Space Grotesk IS variable: fvar { wght 300..700, default 300 }. One file per subset.
+ *   - Space Mono is NOT. google/fonts/ofl/spacemono ships four STATIC ttf and no
+ *     SpaceMono[wght].ttf; @fontsource-variable/space-mono is a 404 on npm; and the Google CSS2
+ *     API rejects `Space+Mono:wght@400..700` with HTTP 400. So Mono ships as two static cuts.
+ *
+ * WHY OUR OWN @font-face RATHER THAN @import-ing the Fontsource CSS — Fontsource names the family
+ * `Space Grotesk Variable`. Two files already hardcode the real names: mytrions/recruit/recruit.css
+ * writes "Space Grotesk" and mytrions/sales/redesign/salesData.ts writes 'Space Mono'. Under the
+ * package CSS both would silently fall back to system-ui with no error anywhere.
+ *
+ * PATHS — url() here is resolved by the browser against THIS STYLESHEET's final URL, not against
+ * the document. That is what makes these immune to the `base: './'` deep-route trap that would
+ * break a public/fonts/ path on /main/salesmytrion. See vite.config.ts assetFileNames, which pins
+ * the emitted files to a stable, unhashed assets/fonts/ path so index.html can preload them.
+ */
+
+/* ── Space Grotesk — variable, one file per unicode subset ─────────────────────────────────────
+   `font-weight: 300 700` is NOT optional and NOT cosmetic. The fvar DEFAULT instance is 300, so a
+   @font-face that omits the range pins every weight to Light and the entire app renders thin —
+   including the 600/700 headings, which would silently synthesize instead. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Eastern-European carrier and driver names. Off the critical path — the browser downloads this
+   only when a codepoint in the range is actually painted. Do NOT delete it to save bytes: this app
+   renders arbitrary third-party company and driver names out of Zoho and the DWH, and dropping the
+   range makes those names swap face MID-STRING, which is far more visible than the 18.9 KB. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ── Space Mono — STATIC. Two cuts, latin only, because everything it sets (ids, codes, figures,
+   timestamps) is ASCII. The 700 cut is required, not optional: salesData.ts asks for weight 600 on
+   Space Mono, which matches the 700 face; without it the browser synthesizes a smeared fake bold
+   on every emphasised figure. ─────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/space-mono-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/space-mono-latin-700-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * ── Material Symbols Sharp — the icon family ──────────────────────────────────────────────────
+ * DELIBERATELY NOT DECLARED YET. The face lands in Phase 3, together with the lucide -> Material
+ * name map, because the subset cannot be generated before that map exists — a subsetted icon font
+ * is defined by exactly which codepoints it keeps.
+ *
+ * The pipeline is proven and committed: `scripts/build-icon-font.mjs` reads the map, resolves each
+ * name through the upstream .codepoints file, and runs fontTools with --unicodes-file. Measured on
+ * this machine: 40 icons -> 14.5 KB, 100 -> 48.3 KB, 200 -> 101.5 KB, all four axes retained
+ * (FILL 0..1, GRAD -50..200, opsz 20..48, wght 100..700).
+ *
+ * Subset by CODEPOINT, never by --text. Subsetting an icon font by its ligature names keeps the
+ * LETTERS and drops the glyphs those ligatures resolve to: a 40-icon --text subset produced 25
+ * glyphs and 1.8 KB of nothing useful. That mistake is silent — the font loads, and every icon
+ * renders as its own name in prose.
+ *
+ * When it lands, the block is:
+ *   @font-face {
+ *     font-family: 'Material Symbols Sharp';
+ *     font-style: normal;
+ *     font-weight: 100 700;
+ *     font-display: block;   <- NOT swap. See the FOUT note in FOUNDATIONS.md §6: with `swap`, a
+ *                               ligature-driven icon font paints the literal word "refresh" until
+ *                               the face arrives. `block` renders nothing for up to 3s instead,
+ *                               which is the correct trade for a glyph.
+ *     src: url('./fonts/material-symbols-sharp-subset.woff2') format('woff2');
+ *   }
+ */

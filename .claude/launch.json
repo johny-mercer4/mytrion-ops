@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mytrion-crm",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "-C", "apps/mytrion-crm", "dev"],
+      "port": 5173
+    }
+  ]
+}
