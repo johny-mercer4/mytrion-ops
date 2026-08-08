@@ -1,0 +1,22 @@
+{
+  // Declaration-only emit for the design system library build.
+  //
+  // The root tsconfig is `noEmit: true` (it is the IDE/typecheck config for an app that Vite
+  // compiles). A design tool and any consuming engineer both code against the .d.ts, so the library
+  // build has to actually emit them — a bundle with no types is a bundle nobody can use correctly.
+  //
+  // Scoped to src/ds only: everything else in this app is app code, not library surface.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": true,
+    "outDir": "dist/types",
+    "rootDir": "src/ds",
+    // The .ts extension import syntax the app config allows is not legal in emitted declarations.
+    "allowImportingTsExtensions": false
+  },
+  "include": ["src/ds"],
+  "exclude": ["src/ds/**/*.test.ts", "src/ds/**/*.test.tsx"]
+}

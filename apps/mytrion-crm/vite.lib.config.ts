@@ -24,6 +24,9 @@ import tailwindcss from '@tailwindcss/vite';
  */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The app's public/ holds a favicon and Zoho widget vendor scripts. None of that belongs in a
+  // component library — without this, `dist/` ships a favicon and jspdf to anyone importing a Button.
+  publicDir: false,
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
     dedupe: ['react', 'react-dom'],

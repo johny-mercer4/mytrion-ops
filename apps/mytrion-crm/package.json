@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:ds": "tsc --noEmit && vite build --config vite.lib.config.ts",
+    "build:ds": "tsc --noEmit && vite build --config vite.lib.config.ts && tsc -p tsconfig.ds.json",
     "build:icons": "node scripts/build-icon-font.mjs"
   },
   "dependencies": {
