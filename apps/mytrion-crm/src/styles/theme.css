@@ -432,6 +432,18 @@
   --tool-denied-fg: var(--intent-warning-fg);
   --tool-denied-bg: var(--intent-warning-bg);
   --tool-denied-bd: var(--intent-warning-bd);
+  /* INTERRUPTED — the call never resolved, because the user pressed stop or the connection dropped.
+     This is a sixth state and it is not decoration: 'failed' asserts that the backend ANSWERED and
+     said no. Interrupted asserts nothing. For a money-code write or a CMP mutation, the honest
+     statement is "we do not know whether this ran", and rendering that as a failure is a false
+     claim about a financial operation.
+     Deliberately NEUTRAL, not the danger triad: a user pressing stop is a normal action (see
+     --stopped-note-*, which takes the same position), and an unknown outcome is not an error.
+     Painting it red would tell the operator something the system does not know. The copy carries
+     the meaning — "Interrupted — no result" — which is also why this never relies on colour. */
+  --tool-interrupted-fg: var(--intent-neutral-fg);
+  --tool-interrupted-bg: var(--intent-neutral-bg);
+  --tool-interrupted-bd: var(--intent-neutral-bd);
   --tool-label-font: var(--font-mono);
 
   /* citations + sources */
