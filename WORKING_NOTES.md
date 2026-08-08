@@ -12980,3 +12980,73 @@ endpoint. Backend **2453** passed / 1 skipped, lint 0 errors.
 **Not changed:** `FF_JOBS_ENABLED` stays off. Fixing the stale "no-op w/o pilot carriers" comments and
 giving `runWeeklyStatements` a first-run guard would be the prerequisites for ever enabling it, and
 both are separate work with real customer-facing risk.
+
+## 2026-08-08 — pass@k, and the chunker defect it uncovered
+
+### Why retrieval-level, not answer-level
+
+`benchSalesChat.ts` measures whether the model *cited* the expected document, and that number is
+unstable — 8/10 and 9/10 on identical configurations. Cause: `citationCheck` narrows `citations` to the
+model's chosen subset when the answer writes `[Sn]` markers and widens it to everything retrieved when
+it does not. The answer-level denominator is chosen by the model, so no amount of k repairs it.
+
+`scripts/evalRetrievalPassK.ts` removes the orchestrator, the answer model and the citation filter and
+asks the only question a retrieval gate should: **did the right document come back in the top k?**
+
+Two guards make the number trustworthy:
+
+- **A preflight that hard-fails** when a selected expectation cannot be satisfied by the corpus at all.
+  An audit found 7 of the fixture's 21 evidence-bearing seeds are unsatisfiable (wrong department
+  scope, or a `requiredTerms` word present nowhere), so scoring them would report a permanent ~33%
+  failure floor that is a fixture bug. Default scope is therefore the 8 sales-mytrion seeds; the rest
+  is recorded debt.
+- **The satisfiability and scoring checks search `section_path` as well as `content`,** because the
+  chunker lifts markdown headings out of the body. Measured: "tool" appears in 29 chunk bodies and
+  **56 section paths**; "freshness" in 0 bodies and 1 section path. Checking `content` alone reports
+  false negatives on any heading-only term — and that is exactly why the fixture's
+  `platform-rbac` seed (`requiredTerms: ['tool']`) looked broken.
+
+### It reported 76% and the cause was not retrieval
+
+First run: document recall **97.9%**, evidence coverage **76.0%**. Splitting those two levels is what
+made the diagnosis possible — collapsing them would have read as a 24% retrieval problem and sent
+someone tuning similarity thresholds that were working correctly.
+
+Probing the worst case: "What does Automation C-16 do?" returned **Override the Card at rank 1**, but
+that chunk held neither "30" nor "fraud hold". Same shape for Limits — right document at ranks 1–4,
+"350" present, "ULSD" in none.
+
+**The chunker was fragmenting structured documents.** `chunkText` emitted at least one chunk per
+`structuralSections` entry regardless of size, so a **1,778-character document became 6 chunks
+averaging 296 characters against a 1,000-character budget** — one per `##` heading. "receives an
+approximately 30-minute active window" (under *Result*) and "does not lift the fraud hold" (under
+*Important*) could never share a passage.
+
+Fixed by packing consecutive small sections up to `chunkSize`. A single section stays byte-identical,
+so prose documents are unaffected; two or more get their leaf heading inlined, because the model only
+ever sees `content` in the grounding block and would otherwise read sections run together. A section
+larger than the budget still splits alone.
+
+### Result — same k, no extra tokens per turn
+
+| | before | after |
+| --- | --- | --- |
+| chunks per automation doc | 6 @ 296 chars | **1–2 @ 666–865** |
+| document recall pass@1 | 97.9% | **100.0%** |
+| evidence coverage pass@1 | **76.0%** | **100.0%** (96/96) |
+| flaky cases | 1 | **0** |
+
+Raising `k` to 10 had also lifted coverage to 87.5%, but that costs ~2–3k uncached tokens on every
+turn (the grounding block is a tool result, not part of the cached prefix). Fixing the chunker got more
+than that for free, and made the corpus cheaper to embed and store as a side effect.
+
+Six chunker tests added, including one that pins a pre-existing quirk rather than silently changing it:
+a document whose first heading is `##` gets a leading `" > "` in `section_path`, because
+`structuralSections` indexes headings by depth. Harmless, but every embedding would shift if altered.
+
+Backend **2459** passed / 1 skipped, lint 0 errors.
+
+**Operational note:** `ingestDocument` skips by *document* checksum, so a chunker change does not
+re-chunk anything by itself. The Sales corpus was re-ingested by deleting those rows and re-running the
+sync. Any future chunker change needs the same deliberate step — and prod needs it too, or prod keeps
+the fragmented chunks.
