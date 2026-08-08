@@ -1,5 +1,5 @@
 /* Shared chrome for the Admin Mytrion panels (Knowledge Base / Train / Knowledge Browser /
-   Octane-Scope). Token-driven per DESIGN_SYSTEM.md — no raw px, no hardcoded hex. */
+   Octane-Scope). Token-driven per design-handoff/DESIGN_TOKENS.md — no raw px, no hardcoded hex. */
 
 /* ── panel frame ────────────────────────────────────────────────────────────── */
 /* ONE content measure for every tab. There used to be four (1120 / 1240 / 1360 / full-bleed), which

@@ -1,5 +1,6 @@
 /* Global reset + base. Tokens live in theme.css; component styling lives in each
-   component's *.module.css or Tailwind utilities. One token-driven system (see DESIGN_SYSTEM.md). */
+   component's *.module.css or Tailwind utilities. One token-driven system
+   (see design-handoff/DESIGN_TOKENS.md). */
 @import 'tailwindcss';
 @import './theme.css';
 /* Horizon brand gradient + glass primitives. After theme.css so it wins over the base scale. */
@@ -131,7 +132,7 @@ button {
   font-feature-settings: 'tnum' 1;
 }
 
-/* Global keyboard focus ring — buttons, links, custom controls (DESIGN_SYSTEM.md §8). */
+/* Global keyboard focus ring — buttons, links, custom controls. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
