@@ -1003,20 +1003,10 @@ html,body{height:100%;margin:0}
    narrow screens keep the collapsed rail visible instead of allowing the content pane to clip. */
 
 @media (max-width:900px){
-  .ss-root .ss-sidebar{max-width:68px!important;width:68px!important}
-  .ss-root .ss-sidebar-brand,.ss-root .ss-sidebar-search{display:none!important}
-  .ss-root .ss-sidebar nav{padding-left:9px!important;padding-right:9px!important}
-  .ss-root .ss-sidebar nav button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
-  .ss-root .ss-sidebar nav button>span:not(.ss-tab-ico){display:none!important}
-  .ss-root .ss-sidebar-footer{padding-left:9px!important;padding-right:9px!important}
-  .ss-root .ss-sidebar-footer>a,.ss-root .ss-sidebar-footer>button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
-  .ss-root .ss-sidebar-footer>a>span,.ss-root .ss-sidebar-footer>button>span,.ss-root .ss-sidebar-footer>div>div:last-child{display:none!important}
-  .ss-root .ss-sidebar-footer>div{justify-content:center!important;padding-left:0!important;padding-right:0!important}
   .ss-root .ss-main-topbar{padding-left:16px!important;padding-right:16px!important}
   .ss-root .ss-panels{padding-left:16px!important;padding-right:16px!important}
 }
 @media (max-width:640px){
-  .ss-root .ss-sidebar{max-width:56px!important;width:56px!important}
   .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
   .ss-root .ss-main-topbar>div:last-child{display:none}
   .ss-root .ss-panels{padding:16px 12px 132px!important}

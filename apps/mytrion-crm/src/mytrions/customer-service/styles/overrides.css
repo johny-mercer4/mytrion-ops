@@ -14,9 +14,6 @@
    than snapping. Kept to color properties so it never fights layout/hover.
    ══════════════════════════════════════════════════════════════════════════ */
 .cs-root,
-.cs-root .cs-sidebar,
-.cs-root .cs-sidebar-brand,
-.cs-root .cs-sidebar-footer,
 .cs-root .cs-content,
 .cs-root .cs-panel,
 .cs-root .cs-header-row,

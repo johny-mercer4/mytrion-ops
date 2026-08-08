@@ -274,11 +274,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .bm-root .bm-nav-item:hover,
     .bm-root .bm-btn:hover,
     .bm-root .bm-refresh-btn:hover,
-    .bm-root .bm-summary-item:hover,
-    .bm-root .bm-header-theme:hover {
+    .bm-root .bm-summary-item:hover {
         transform: none;
     }
 }
