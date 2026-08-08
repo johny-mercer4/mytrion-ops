@@ -193,4 +193,33 @@ describe('MytrionShell — sidebar collapse', () => {
     // The toggle still works for this session; it just cannot be remembered for the next one.
     expect(toggle()).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('marks an unbuilt destination without pretending it is a queue', () => {
+    // Modules used to fake this by concatenating " · Soon" into the label, which also made the
+    // rail's own search match on the word "Soon".
+    render(
+      <MytrionShell
+        id="hr"
+        navSections={[
+          {
+            id: 'x',
+            label: 'Work',
+            items: [
+              { key: 'home', label: 'Home', icon: <i />, active: true },
+              { key: 'tickets', label: 'Tickets', icon: <i />, soon: true },
+              { key: 'inbox', label: 'Inbox', icon: <i />, trailing: 7 },
+            ],
+          },
+        ]}
+      >
+        <div />
+      </MytrionShell>,
+    );
+
+    const soon = screen.getByRole('button', { name: 'Tickets' });
+    expect(soon).toBeDisabled();
+    expect(soon).toHaveTextContent('Soon');
+    // The accessible name stays the destination, so a screen reader is not told "Tickets Soon".
+    expect(screen.getByRole('button', { name: 'Inbox' })).toHaveTextContent('7');
+  });
 });

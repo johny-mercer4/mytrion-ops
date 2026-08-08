@@ -51,8 +51,22 @@ export interface NavItem {
    * Optional per-item icon colour. A long categorised sidebar is much faster to scan when each
    * destination has its own hue than when fifteen identical grey glyphs sit in a column. Applied as
    * the `--nav-tone` custom property; the label stays on the text scale so only the glyph is tinted.
+   *
+   * REST STATE ONLY. The selected row overrides it, so one selected row looks the same in every
+   * workspace — a per-destination hue there would compete with the gradient rail beside it.
    */
   tone?: string;
+  /**
+   * Right-aligned count: open tickets, unclaimed carriers, items in a queue. Space Mono with
+   * tabular-nums, on the gradient fill. Hidden when the rail is collapsed.
+   */
+  trailing?: number | string;
+  /**
+   * The destination exists in the nav but is not built yet: an outlined "Soon" pill, and the row is
+   * not clickable. Modules used to fake this by concatenating " · Soon" into the label, which also
+   * made the rail's search match on the word "Soon".
+   */
+  soon?: boolean;
 }
 
 export interface NavSection {
@@ -101,8 +115,9 @@ function NavItemButton({
     <div>
       <button
         type="button"
-        title={item.label}
+        title={item.soon ? `${item.label} — coming soon` : item.label}
         aria-label={item.label}
+        disabled={item.soon ?? false}
         {...(hasChildren ? { 'aria-expanded': open } : {})}
         {...(selected ? { 'aria-current': 'page' as const } : {})}
         className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
@@ -113,6 +128,11 @@ function NavItemButton({
       >
         <span className={styles.navIcon}>{item.icon}</span>
         <span className={styles.navLabel}>{item.label}</span>
+        {item.soon ? (
+          <span className={styles.navSoon}>Soon</span>
+        ) : item.trailing !== undefined && item.trailing !== '' ? (
+          <span className={styles.navCount}>{item.trailing}</span>
+        ) : null}
       </button>
       {open ? (
         <div className={styles.navSub}>
@@ -162,6 +182,7 @@ export function MytrionShell({
   footerNav = [],
   enableNavSearch = false,
   enableDockChat = false,
+  contentScroll = 'shell',
 }: {
   id: MytrionId;
   children: ReactNode;
@@ -177,6 +198,17 @@ export function MytrionShell({
    * department Mytrion re-exposes that department's scoped agent in the sidebar.
    */
   enableDockChat?: boolean;
+  /**
+   * Who owns vertical scroll.
+   *   'shell'   — the centre pane scrolls. Correct for every module that renders plain panels.
+   *   'content' — the centre pane does not scroll and the child owns its own scroller.
+   *
+   * The second exists for surfaces that virtualise: Billing's ledger measures against a scroll ref,
+   * and a second scroll parent silently corrupts its range math, so it renders the wrong rows
+   * rather than failing visibly. This is the shell PROP the contract allows in place of a fourth
+   * shell — a workspace that needs different chrome does not get its own frame.
+   */
+  contentScroll?: 'shell' | 'content';
 }) {
   const user = useUserContext();
   const m = MYTRIONS[id];
@@ -379,7 +411,7 @@ export function MytrionShell({
           </div>
         </nav>
 
-        <div className={styles.center}>
+        <div className={styles.center} data-scroll={contentScroll}>
           {chatView ? (
             // A chat crash must never take down the working surface — remount on retry.
             <ErrorBoundary>
