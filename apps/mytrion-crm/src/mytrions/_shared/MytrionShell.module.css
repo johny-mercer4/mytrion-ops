@@ -1,10 +1,19 @@
+/* ── The frame ─────────────────────────────────────────────────────────────────
+   The glass chrome below used to be gated on [data-horizon='on'], an opt-in allowlist that had
+   reached three of twelve workspaces — so the glass language was a minority case rather than the
+   system, and the other nine rendered flat chrome from the base tokens. The gate is gone: this is
+   simply what the shell looks like. */
+
 .shell {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--bg-primary);
   color: var(--text-primary);
+  /* The page itself must be the Horizon field, or translucent panels have nothing to blur. */
+  position: relative; /* containing block for .ambience */
+  background: var(--hz-page);
+  isolation: isolate;
 }
 
 .body {
@@ -13,22 +22,9 @@
   min-height: 0;
 }
 
-/* ── Horizon skin ──────────────────────────────────────────────────────────────
-   Everything below is gated on [data-horizon='on'] (set per-module by horizonSkin.ts), so a module
-   that hasn't opted in renders exactly as it did before. The glass chrome needs the page itself to
-   be the dark/light Horizon field, otherwise translucent panels have nothing to blur. */
-
-.ambience {
-  display: none;
-}
-
-.shell[data-horizon='on'] {
-  position: relative; /* containing block for .ambience */
-  background: var(--hz-page);
-  isolation: isolate;
-}
-
-.shell[data-horizon='on'] .ambience {
+/* Absolute rather than the global .hzMesh utility, which is position: fixed and would therefore
+   paint behind portalled modals instead of staying under the frame. */
+.shell .ambience {
   display: block;
   position: absolute;
   inset: 0;
@@ -37,23 +33,23 @@
   background: var(--hz-mesh);
   transition: background var(--hz-dur-tone) var(--hz-ease);
 }
-.shell[data-horizon='on'] .ambience::before,
-.shell[data-horizon='on'] .ambience::after {
+.shell .ambience::before,
+.shell .ambience::after {
   content: '';
   position: absolute;
   inset: 0;
 }
-.shell[data-horizon='on'] .ambience::before {
+.shell .ambience::before {
   background-image: var(--hz-grid);
   background-size: var(--hz-grid-size);
 }
-.shell[data-horizon='on'] .ambience::after {
+.shell .ambience::after {
   background: var(--hz-vignette);
   transition: background var(--hz-dur-tone) var(--hz-ease);
 }
 
 /* The frame sits above the ambience; `position: relative` is what gives it a stacking context. */
-.shell[data-horizon='on'] .body {
+.shell .body {
   position: relative;
   z-index: 1;
 }
@@ -424,7 +420,7 @@
    The sidebar becomes a frosted pane over the ambience, and the selected tab is the one place in
    the frame that carries the full Horizon gradient. */
 
-.shell[data-horizon='on'] .sidebar {
+.shell .sidebar {
   background: var(--hz-glass);
   backdrop-filter: blur(var(--hz-blur));
   -webkit-backdrop-filter: blur(var(--hz-blur));
@@ -435,20 +431,20 @@
     border-color var(--hz-dur-tone) var(--hz-ease);
 }
 
-.shell[data-horizon='on'] .center {
+.shell .center {
   /* Transparent so the ambience shows through; the panels themselves supply the surfaces. */
   background: none;
 }
 
 /* Chat-as-view honours the same measure as the module's panels — it was the one tab that ran full
    bleed, and over-long chat lines are harder to read, not easier. */
-.shell[data-horizon='on'] .chatView {
+.shell .chatView {
   width: 100%;
   max-width: var(--hz-measure);
   margin: 0 auto;
 }
 
-.shell[data-horizon='on'] .navSearch {
+.shell .navSearch {
   background: var(--hz-glass);
   backdrop-filter: blur(var(--hz-blur-sm));
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
@@ -458,13 +454,13 @@
     box-shadow var(--dur-base) var(--hz-ease),
     background var(--dur-base) var(--hz-ease);
 }
-.shell[data-horizon='on'] .navSearch:focus-within {
+.shell .navSearch:focus-within {
   background: var(--hz-glass-hover);
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: none;
 }
 
-.shell[data-horizon='on'] .navBtn {
+.shell .navBtn {
   border: 1px solid transparent;
   transition:
     color var(--hz-dur-wash) var(--hz-ease),
@@ -473,7 +469,7 @@
     box-shadow var(--hz-dur-wash) var(--hz-ease),
     transform var(--hz-dur-wash) var(--hz-ease);
 }
-.shell[data-horizon='on'] .navBtn:hover {
+.shell .navBtn:hover {
   background: var(--hz-glass-hover);
   border-color: var(--hz-glass-bd-hover);
   box-shadow: var(--hz-glass-inset);
@@ -482,8 +478,8 @@
 
 /* Selected tab: the Horizon ramp as a 2px rail plus the soft brand wash behind the row. The rail is
    a ::after rather than an inset box-shadow because a gradient can't be a box-shadow colour. */
-.shell[data-horizon='on'] .navActive,
-.shell[data-horizon='on'] .navActive:hover {
+.shell .navActive,
+.shell .navActive:hover {
   background: var(--hz-gradient-soft);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--accent);
@@ -493,7 +489,7 @@
   transform: none;
   overflow: hidden;
 }
-.shell[data-horizon='on'] .navActive::after {
+.shell .navActive::after {
   content: '';
   position: absolute;
   left: 0;
@@ -504,25 +500,25 @@
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
 }
 /* The glyph in the selected row glows in the accent, matching the picker's lit icon chip. */
-.shell[data-horizon='on'] .navActive .navIcon {
+.shell .navActive .navIcon {
   /* Glow in the item's own tone when it has one, so the halo matches the glyph. */
   filter: drop-shadow(0 0 5px color-mix(in srgb, var(--nav-tone, var(--accent)) 55%, transparent));
 }
 
-.shell[data-horizon='on'] .navSub {
+.shell .navSub {
   border-left-color: var(--hz-glass-bd);
 }
-.shell[data-horizon='on'] .navSubActive,
-.shell[data-horizon='on'] .navSubActive:hover {
+.shell .navSubActive,
+.shell .navSubActive:hover {
   background: var(--hz-gradient-soft);
   color: var(--accent);
   transform: none;
 }
-.shell[data-horizon='on'] .navSubActive::before {
+.shell .navSubActive::before {
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
 }
 
-.shell[data-horizon='on'] .navSection + .navSection {
+.shell .navSection + .navSection {
   border-top-color: var(--hz-glass-bd);
 }
 
@@ -589,10 +585,10 @@
     box-shadow: inset 0 -2px 0 var(--accent);
   }
   /* Horizontal tab strip on narrow screens — the gradient rail moves to the bottom edge. */
-  .shell[data-horizon='on'] .navBtn:hover {
+  .shell .navBtn:hover {
     transform: translateY(-1px);
   }
-  .shell[data-horizon='on'] .navActive::after {
+  .shell .navActive::after {
     left: 0;
     right: 0;
     top: auto;

@@ -7,7 +7,6 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { AccountMenu } from '../../components/AccountMenu';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
-import { horizonSkin } from './horizonSkin';
 import styles from './MytrionShell.module.css';
 
 /**
@@ -237,15 +236,14 @@ export function MytrionShell({
     <div
       className={styles.shell}
       data-mytrion={id}
-      data-horizon={horizonSkin(id)}
       /* Published on the ROOT, not just the <nav>, so a module's own global stylesheet can respond —
          CSS-module class names are hashed and unreachable from hr.css, but a data attribute is not.
          Modules opt in by writing a rule; none are affected until they do. */
       data-sidebar-collapsed={collapsed ? 'true' : undefined}
     >
       <TopBar contextBadge={m.tag} showSwitch />
-      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
-          modules that haven't opted into the skin (see horizonSkin.ts). */}
+      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame, in every
+          workspace. This used to be inert unless the module was on the horizonSkin allowlist. */}
       <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
         <nav

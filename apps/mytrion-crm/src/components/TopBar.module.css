@@ -152,10 +152,10 @@
 }
 
 /* ── Horizon skin ──────────────────────────────────────────────────────────────
-   Scoped to [data-horizon='on'] on the shell root (see _shared/horizonSkin.ts), so the masthead
-   only goes glass inside the modules that have opted in. */
+   Formerly scoped to [data-horizon='on'] on the shell root, so the masthead only went glass in the
+   three modules that had opted in. Unconditional now. */
 
-:global([data-horizon='on']) .bar {
+:global() .bar {
   position: relative;
   background: color-mix(in srgb, var(--hz-page) 78%, transparent);
   backdrop-filter: blur(var(--hz-blur));
@@ -167,7 +167,7 @@
     border-color var(--hz-dur-tone) var(--hz-ease);
 }
 /* A hairline of the Horizon ramp under the masthead — the brand signature on every screen. */
-:global([data-horizon='on']) .bar::after {
+:global() .bar::after {
   content: '';
   position: absolute;
   left: 0;
@@ -179,14 +179,14 @@
   pointer-events: none;
 }
 
-:global([data-horizon='on']) .context {
+:global() .context {
   background: var(--hz-gradient-soft);
   border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   box-shadow: var(--hz-glass-inset);
 }
 
-:global([data-horizon='on']) .switch,
-:global([data-horizon='on']) .iconBtn {
+:global() .switch,
+:global() .iconBtn {
   background: var(--hz-glass);
   backdrop-filter: blur(var(--hz-blur-sm));
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
@@ -199,8 +199,8 @@
     box-shadow var(--hz-dur-wash) var(--hz-ease),
     transform var(--hz-dur-wash) var(--hz-ease);
 }
-:global([data-horizon='on']) .switch:hover,
-:global([data-horizon='on']) .iconBtn:hover {
+:global() .switch:hover,
+:global() .iconBtn:hover {
   background: var(--hz-glass-hover);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   box-shadow:
@@ -210,19 +210,19 @@
 }
 
 /* Sign out keeps its danger tone — it must not read as a brand action. */
-:global([data-horizon='on']) .signout {
+:global() .signout {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
 }
-:global([data-horizon='on']) .signout:hover {
+:global() .signout:hover {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   border-color: color-mix(in srgb, var(--danger) 24%, transparent);
   box-shadow: none;
 }
 
 /* The identity chip is the one solid piece of the gradient in the masthead. */
-:global([data-horizon='on']) .avatar {
+:global() .avatar {
   background: var(--hz-gradient-fill);
   color: var(--hz-on-gradient);
   border-color: transparent;
