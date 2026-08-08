@@ -98,7 +98,18 @@ export async function planQueries(question: string): Promise<string[]> {
           role: 'system',
           content:
             'Rewrite the user question into short knowledge-base search queries (different ' +
-            `angles/keywords). Return JSON: {"queries": string[]} with 1-${env.RAG_MULTIQUERY_MAX} entries.`,
+            `angles/keywords). Return JSON: {"queries": string[]} with 1-${env.RAG_MULTIQUERY_MAX} entries.\n` +
+            // The corpus is English. Measured on the retrieval goldens, a Russian question produced
+            // three Russian queries — so multi-query spent all its shots on the same cross-lingual
+            // handicap: the lexical leg (an english tsvector) could match only the literal product
+            // name, leaving weak cross-lingual embeddings to carry the whole retrieval. Russian
+            // document recall sat at 87.5% against 100% for English. Translating the QUERY costs
+            // nothing and needs no reviewer, unlike translating stored knowledge.
+            'The knowledge base is written in ENGLISH. If the question is not in English, make the ' +
+            'FIRST query an English translation using the terms the documentation would use, and ' +
+            'keep the product names, service codes, and identifiers (e.g. "Sales Mytrion", "C-1", ' +
+            'EFS, WEX) exactly as written. Use the remaining entries for other angles, in either ' +
+            'language.',
         },
         { role: 'user', content: question },
       ],

@@ -20,6 +20,21 @@ export interface StreamOutcome {
   toolCalls: Array<{ name: string; status: 'ok' | 'error'; args?: any }>;
   agentPath: string[];
   /**
+   * What each delegated specialist actually returned, in call order.
+   *
+   * The orchestrator rewrites a child's answer before the user sees it, and measured on the routed
+   * path it drops the child's inline [Sn] markers about two runs in three — even with an explicit
+   * prompt rule to keep them. The markers are the only link between a sentence and the passage
+   * backing it, so without them citation validation must fall back to listing EVERY retrieved
+   * passage: 4 documents shown as sources for an answer that actually rested on 1.
+   *
+   * Keeping the child text lets `validateCitations` recover the specialist's own marker set. It is
+   * used ONLY to narrow which sources are listed — never to alter the answer, because the
+   * orchestrator's tokens have already been streamed to the user and swapping the text afterwards
+   * would rewrite what they just watched arrive.
+   */
+  childTexts: string[];
+  /**
    * Set by orchestratorService from the run's ElicitationHolder when a tool asked the user to
    * choose (e.g. crm.pick_my_client / ui.request_choice) — the frontend renders a picker.
    */
@@ -65,6 +80,20 @@ function contentToText(content: unknown): string {
   return '';
 }
 
+/**
+ * Unwrap whatever the `task` tool handed back. deepagents may return the child's text directly, a
+ * ToolMessage-like `{ content }`, or a state update carrying the child's message list — so reach for
+ * the last message's content before giving up. Anything unrecognised yields '' and is simply ignored.
+ */
+function taskOutputContent(output: unknown): unknown {
+  if (typeof output === 'string' || Array.isArray(output)) return output;
+  if (typeof output !== 'object' || output === null) return '';
+  const obj = output as { content?: unknown; messages?: Array<{ content?: unknown }> };
+  if (obj.content !== undefined) return obj.content;
+  const last = Array.isArray(obj.messages) ? obj.messages.at(-1) : undefined;
+  return last?.content ?? '';
+}
+
 function isChildRun(event: StreamEvent): boolean {
   return typeof event.metadata?.['lc_agent_name'] === 'string';
 }
@@ -104,6 +133,7 @@ export async function consumeAgentStream(
   let lastRootMessage = '';
   const toolCalls: StreamOutcome['toolCalls'] = [];
   const agentPath: string[] = [];
+  const childTexts: string[] = [];
   const toolArgs = new Map<string, any>();
 
   for await (const event of events) {
@@ -138,6 +168,8 @@ export async function consumeAgentStream(
           if (key) {
             sink?.send('agent', { key, state: 'done', label: labelFor(key) } satisfies AgentEventPayload);
           }
+          const childText = contentToText(taskOutputContent(event.data?.output));
+          if (childText) childTexts.push(childText);
           break;
         }
         if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break;
@@ -170,5 +202,6 @@ export async function consumeAgentStream(
     finalText: (lastRootMessage || rootText).trim(),
     toolCalls,
     agentPath,
+    childTexts,
   };
 }

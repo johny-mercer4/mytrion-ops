@@ -6,6 +6,10 @@ services:
     # copied into the Dockerfile's runtime stage — adding it here alone is not enough. Keep the
     # Dockerfile authoritative for build/runtime; this block is effectively documentation.
     runtime: node
+    # NOTE: the live service runs on Standard (2 GB / 1 CPU) and is named `mytrion-ops`, so this whole
+    # block has drifted from reality and is documentation only — the Dockerfile is authoritative for
+    # build/runtime. Left at the original value rather than guessed: applying this blueprint would
+    # DOWNGRADE the service to 512 MB. Reconcile it against the dashboard before ever syncing from it.
     plan: starter
     # Plain tsc build (reliable). The widget UI (apps/mytrion-crm/app) is VENDORED in git and served
     # same-origin at /widget, so the deploy needs no web build step. Zoho Base URL:
@@ -42,8 +46,34 @@ services:
       # Long-term agent memory (distill + UNTRUSTED recall + nightly decay). Requires migration 0013.
       - key: FF_AGENT_MEMORY
         value: "1"
+      # --- Agentic RAG (2026-08-08). Without these three, deployed Admin runs single-shot kNN on
+      # gpt-4o-mini and cannot see the platform self-knowledge corpus at all. ---
+      # Unlocks the governed platform/Sales self-knowledge corpus. Default is '0', and with it off
+      # `agentic/loop.ts` hard-scopes retrieval to domain=operations, so every Sales Mytrion document
+      # is invisible no matter what else is enabled.
+      - key: FF_PLATFORM_KNOWLEDGE
+        value: "1"
+      # The gate `scopedRag` needs ALONGSIDE FF_AGENTIC_RAG before knowledge_search uses the
+      # CRAG/Self-RAG loop. With only FF_AGENTIC_RAG on it silently falls through to legacy kNN —
+      # no multi-query planning, no evidence grading, no corrective hop.
+      - key: FF_RAG_V2_RETRIEVAL
+        value: "1"
+      # Role-based models: nano for router/grader, gpt-5.4-mini for answers. Without it every role
+      # collapses onto models.default (gpt-4o-mini) — including tool selection, which is what chose
+      # zoho_crm.query for a how-to question.
+      - key: FF_RAG_MODEL_POLICY
+        value: "1"
       # NOT enabled here on purpose:
-      #   FF_JOBS_ENABLED       — excluded per request (pg-boss workers/crons stay off).
+      #   FF_JOBS_ENABLED       — excluded, and now for a measured reason as well as the original
+      #                           request: it is not granular. It would start 11 cron schedules at
+      #                           once, including notification.poll (every 2 min) and
+      #                           notification.statement-weekly, which send fuel + money-code
+      #                           documents over Telegram to every active mini-app registration.
+      #                           runWeeklyStatements has no first-run baseline guard and its dedupe
+      #                           key covers only the text, not the document sends. Use
+      #                           POST /v1/knowledge/platform-sync for the nightly catalog refresh.
+      #   FF_RAG_RERANK         — measured on the Sales bench: +21% wall, +55% retrieval time, no
+      #                           measurable accuracy gain. Deliberately off.
       #   FF_FILES_ENABLED      — would crash boot: assertRuntimeSecrets() requires S3_ENDPOINT /
       #                           S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY / S3_BUCKET (MinIO). Add
       #                           those to the env group first, then set FF_FILES_ENABLED=1.

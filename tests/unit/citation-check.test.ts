@@ -92,3 +92,55 @@ describe('validateCitations — grounded answer that omitted its markers', () =>
     expect(v.usedCitations).toEqual([]);
   });
 });
+
+/**
+ * The orchestrator rewrites a specialist's answer before the user sees it, and measured on the
+ * routed path it used to drop the child's [Sn] markers on every run — which forced the fallback
+ * above to list 4 retrieved passages for an answer that actually rested on 1. Prompting the
+ * orchestrator to carry markers through fixed the common case (4/4 runs), so these cover the
+ * remaining ones: the child's own answer is the authority on which passages were used.
+ */
+describe('validateCitations — inheriting markers from a specialist answer', () => {
+  const childAnswer = 'Search Automations for C-1, then pick the client and card [S1].';
+
+  it('narrows to the specialist-cited subset when the final answer carries no markers', () => {
+    const out = validateCitations('Open Automations and search for C-1.', marked, {
+      markerFallbackTexts: [childAnswer],
+    });
+    expect(out.usedCitations.map((c) => c.id)).toEqual(['doc_a']);
+    expect(out.strippedMarkers).toEqual([]);
+  });
+
+  it('prefers the final answer\'s own markers over the specialist\'s', () => {
+    const out = validateCitations('Late fees apply after 30 days [S2].', marked, {
+      markerFallbackTexts: [childAnswer],
+    });
+    expect(out.usedCitations.map((c) => c.id)).toEqual(['doc_b']);
+  });
+
+  it('uses the first specialist that cited anything, ignoring silent ones', () => {
+    const out = validateCitations('Combined answer with no markers.', marked, {
+      markerFallbackTexts: ['I could not find anything.', childAnswer],
+    });
+    expect(out.usedCitations.map((c) => c.id)).toEqual(['doc_a']);
+  });
+
+  it('keeps the all-passages fallback when no specialist cited anything either', () => {
+    const out = validateCitations('No markers anywhere.', marked, {
+      markerFallbackTexts: ['Nothing relevant found.'],
+    });
+    expect(out.usedCitations).toHaveLength(2); // doc_a + doc_b, deduped
+  });
+
+  it('ignores specialist markers that are not backed by a retrieved passage', () => {
+    const out = validateCitations('No markers here.', marked, {
+      markerFallbackTexts: ['Invented source [S9].'],
+    });
+    expect(out.usedCitations).toHaveLength(2); // falls back, does not invent S9
+  });
+
+  it('behaves exactly as before when no specialist ran', () => {
+    const out = validateCitations('No markers here.', marked, { markerFallbackTexts: [] });
+    expect(out.usedCitations).toHaveLength(2);
+  });
+});

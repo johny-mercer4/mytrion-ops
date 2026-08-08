@@ -13141,3 +13141,138 @@ That is the fourth time this session a reported failure turned out to be the mea
 rate, "Uzbek is the weak language", "rerank is less accurate", and now 4/7 answer facts.
 
 Backend **2459** passed / 1 skipped, lint 0 errors.
+
+---
+
+## 2026-08-08 — the four remaining items: flags, prod re-chunk, orchestrator, Russian retrieval
+
+### 1. The three flags are now declared in `render.yaml`, not left to the dashboard
+
+`FF_PLATFORM_KNOWLEDGE=1`, `FF_RAG_V2_RETRIEVAL=1`, `FF_RAG_MODEL_POLICY=1`. Each carries a comment
+saying what breaks without it, because each fails *silently*: `FF_PLATFORM_KNOWLEDGE=0` makes
+`agentic/loop.ts` hard-scope retrieval to `domain=operations`, so the entire Sales corpus is invisible;
+`FF_RAG_V2_RETRIEVAL=0` falls through to legacy kNN with no grading or corrective hop even when
+`FF_AGENTIC_RAG=1`; `FF_RAG_MODEL_POLICY=0` collapses every role onto `gpt-4o-mini`.
+
+Two flags are deliberately NOT added, and the reasons are recorded next to the existing exclusions:
+`FF_RAG_RERANK` (measured: +21% wall, +55% retrieval time, no accuracy gain) and `FF_JOBS_ENABLED`
+(starts 11 schedules at once, including Telegram document sends).
+
+Also annotated `plan: starter` in `render.yaml` rather than "fixing" it: the live service is Standard,
+so applying this blueprint would DOWNGRADE it to 512 MB. The block has drifted into documentation.
+
+**Local `.env` carries `FF_JOBS_ENABLED=1`** — noted because I had been describing it as off. Boot logs
+`pg-boss workers + schedules registered`. Harmless here only because the local DB has 0 active
+non-driver mini-app registrations, so `pilotCarriers()` is empty and nothing can be sent. That is also
+why local is not a valid rehearsal for the prod risk: prod has recipients.
+
+### 2. Prod re-chunk: `POST /v1/knowledge/platform-sync?rechunk=1`
+
+The chunk-packing fix could not reach existing content. Ingest dedupes on the DOCUMENT checksum, and
+the platform catalog is generated from TypeScript source, so its text is byte-identical every run —
+measured, a plain sync answers `{skipped: 46}` in **72ms** and rotates nothing, forever.
+
+`rechunk` bypasses the checksum short-circuit (still applying a department re-tag on the way past) and
+lets `commitIngestion` replace the chunks in its existing transaction. Measured on the local corpus:
+
+| | plain | `?rechunk=1` |
+| --- | --- | --- |
+| result | `{skipped: 46}` | `{ready: 46}` |
+| duration | 72ms | **11.7s** |
+| chunk rows | unchanged | all replaced (143 → 142) |
+
+Ran it twice: identical shape both times (142 chunks, avg 799 chars, max 1199), so it converges rather
+than drifting. Opt-in per call — it re-embeds every chunk, so it is not something to leave on.
+
+### 3. The orchestrator overhead was ~18s. It is now ~2.5s, and mostly not because of tonight.
+
+Re-measured before changing anything, which was the right call:
+
+| | earlier this session | measured today |
+| --- | --- | --- |
+| pinned `agent: 'sales'` | 6,180ms | 6,979ms |
+| routed through orchestrator | 24,716ms | 8,804 / 9,558ms (warm) |
+| the gap | **~18.5s** | **~2.5s** |
+
+The tool-allowlist and prompt-caching work closed it as a side effect. It is no longer the largest
+remaining latency item, so it did not deserve the structural change I had planned. Optimistic
+pre-routing was also rejected on inspection: `escalate` only means something with the orchestrator
+present, so a pinned child that cannot answer has no recovery path.
+
+**What the measurement did surface is a grounding bug, which matters more than the seconds.** The child
+emits `[S1]` markers correctly; the orchestrator then rewrote its answer and dropped every marker on
+**0/3** runs. Citations survived only via the `citationCheck` fallback — which lists *everything
+retrieved*, so Admin showed 4 sources for an answer that rested on 1.
+
+Two changes: a hard `ORCHESTRATOR_PROMPT` rule to carry markers through and relay a single
+specialist's complete answer instead of rewriting it, and — for the runs where it still paraphrases —
+`StreamOutcome.childTexts`, letting `validateCitations` inherit the specialist's own marker set
+instead of falling back to every passage.
+
+| | before | after |
+| --- | --- | --- |
+| `[Sn]` markers survive | 0/3 runs | **4/4 runs** |
+| sources listed | 4 | **1** |
+| routed wall (warm) | 10,747ms | ~9,181ms |
+| prompt cache hit | 57% | **89%** |
+
+The final text is never swapped — only which sources are listed. The orchestrator's tokens have already
+streamed to the user, and rewriting what they watched arrive is worse than a broad source list.
+
+**A measurement lesson, again.** The first round of "after" numbers showed no improvement, and I nearly
+reported that. The process on `:3011` was `pnpm tsx src/server.ts` with **no `--watch`**, started
+before the edits — I was benchmarking unchanged code. Restarting it produced the table above. Check
+what the server is actually running before trusting a delta.
+
+### 4. Russian retrieval: 87.5% → 98.6%, and it was the query planner
+
+Three ru variants of seed 21 were *never* retrieved. Cause, confirmed by probing `planQueries` rather
+than guessing: for a Russian question the planner returned three **Russian** queries.
+
+```
+Q: Как активировать карту в Sales Mytrion?
+   → активация карты Sales Mytrion как активировать
+   → Sales Mytrion карта активация инструкция первый запуск
+   → Mytrion Sales активация карты шаги и требования
+```
+
+The corpus is English. So the lexical leg (an `english` tsvector) could match only the literal product
+name, and multi-query spent all three shots on the same cross-lingual handicap.
+
+Fixed on the **query** side — the planner is now told the knowledge base is English and asked to make
+the first query an English translation, preserving product names and service codes. No document text
+was authored: translating stored knowledge needs a native reviewer, translating a search query needs
+nobody.
+
+| pass@k, 80 cases, 3 attempts, k=5 | before | after |
+| --- | --- | --- |
+| document recall pass@k | 77/80 | **80/80** |
+| evidence coverage pass@k | 77/80 | **80/80** |
+| never retrieved | 3 (all ru) | **0** |
+| en | 100% | 100% |
+| ru | 87.5% | **98.6%** |
+| uz | 95.8% | 91.7% |
+
+**Uzbek is now the weak language, and it moved the wrong way.** 4 of 5 remaining flaky cases are uz.
+Two of them (`rag-v1-21-09`, `rag-v1-26-09`) were already flaky before this change. I am not going to
+churn the planner prompt further on 3-attempt data — but this is the honest open item, and the likely
+fix (Uzbek aliases in the documents) is the one that needs a native reviewer.
+
+### The gate that was green in CI and red locally
+
+`pnpm test` failed 22 tests in `billing-auto-map-route.test.ts`, all with 503 — including the ones
+asserting 401. Confirmed pre-existing by stashing. `BILLING_INGEST_SECRET` defaults to `''`, and
+`requireIngestSecret` answers 503 `SERVER_MISCONFIGURED` when it is empty, before any auth check. It is
+absent from local `.env` but supplied as a dummy in the CI workflow — so **CI passed while a bare
+checkout failed**, which is the worst possible direction for a hard test gate to be wrong in.
+
+Pinned `API_KEY` and `BILLING_INGEST_SECRET` in the `vitest.config.ts` env baseline, whose documented
+job is exactly this. The suite now passes on a checkout with no `.env` at all.
+
+### Gates
+
+Backend **2474** passed / 1 skipped · frontend **556** passed · lint **0 errors** (23 pre-existing
+warnings) · typecheck clean. No frontend `src/` changes this round, so no bundle rebuild was required.
+
+Sales bench, all changes live: mean **5,066ms** (best recorded), 33 LLM calls, expected-doc coverage
+**14/14**, answer facts **7/7**, failures **0**, forbidden tool calls **0**, ~$0.0042/question.

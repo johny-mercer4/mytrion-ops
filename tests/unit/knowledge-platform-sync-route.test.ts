@@ -103,3 +103,55 @@ describe('POST /v1/knowledge/platform-sync', () => {
     expect(after.statusCode).toBe(200);
   });
 });
+
+/**
+ * `?rechunk=1` is the only way to roll a chunker or embedding-model change onto content that has not
+ * changed: the ordinary skip is keyed on the document checksum, so a plain sync on the generated
+ * catalog reports every document `skipped` and leaves the stored chunks exactly as they were. Verified
+ * against the local corpus — a plain sync returned `{skipped: 46}` in 72ms and rotated nothing, while
+ * `?rechunk=1` returned `{ready: 46}` in 11.7s and replaced every chunk row.
+ */
+describe('POST /v1/knowledge/platform-sync?rechunk=1', () => {
+  it('does not re-chunk unless asked', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: PATH,
+      headers: { 'x-api-key': process.env['API_KEY'] ?? KEY },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), {});
+    expect(res.json()).toMatchObject({ rechunk: false });
+  });
+
+  it('forwards rechunk for ?rechunk=1', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `${PATH}?rechunk=1`,
+      headers: { 'x-api-key': process.env['API_KEY'] ?? KEY },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), { rechunk: true });
+    expect(res.json()).toMatchObject({ rechunk: true });
+  });
+
+  it('accepts ?rechunk=true as well', async () => {
+    await app.inject({
+      method: 'POST',
+      url: `${PATH}?rechunk=true`,
+      headers: { 'x-api-key': process.env['API_KEY'] ?? KEY },
+    });
+    expect(syncMock).toHaveBeenCalledWith(expect.anything(), { rechunk: true });
+  });
+
+  it('treats any other value as off, so a typo cannot trigger a full re-embed', async () => {
+    for (const value of ['0', 'yes', 'RECHUNK', '']) {
+      syncMock.mockClear();
+      await app.inject({
+        method: 'POST',
+        url: `${PATH}?rechunk=${value}`,
+        headers: { 'x-api-key': process.env['API_KEY'] ?? KEY },
+      });
+      expect(syncMock, `rechunk=${value}`).toHaveBeenCalledWith(expect.anything(), {});
+    }
+  });
+});

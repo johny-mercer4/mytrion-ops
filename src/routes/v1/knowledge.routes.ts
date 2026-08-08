@@ -224,8 +224,17 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
    * `FF_PLATFORM_KNOWLEDGE`: you need to be able to populate the corpus *before* exposing it, which
    * is exactly what `pnpm knowledge:sync-platform` already does.
    */
-  app.post('/knowledge/platform-sync', adminGuard, async (request, reply) => {
+  /**
+   * Refresh the generated platform/self-knowledge catalog.
+   *
+   * `?rechunk=1` additionally re-splits and re-embeds documents whose text has not changed — the only
+   * way to roll a chunker or embedding-model change onto already-ingested content, since the ordinary
+   * skip is keyed on the document checksum. Admin-only and one-at-a-time; expect it to take minutes
+   * and to spend one embedding call per chunk in the catalog.
+   */
+  app.post<{ Querystring: { rechunk?: string } }>('/knowledge/platform-sync', adminGuard, async (request, reply) => {
     const ctx = requireContext(request);
+    const rechunk = request.query.rechunk === '1' || request.query.rechunk === 'true';
     if (platformSyncInFlight) {
       // Overlapping syncs would duplicate embedding spend for no benefit; the work is idempotent, so
       // the honest answer is "already running", not a queue.
@@ -236,8 +245,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const startedAt = Date.now();
     try {
       const { syncPlatformKnowledge } = await import('../../modules/knowledge/platformSync.js');
-      const result = await syncPlatformKnowledge(ctx);
-      return { ...result, durationMs: Date.now() - startedAt };
+      const result = await syncPlatformKnowledge(ctx, rechunk ? { rechunk: true } : {});
+      return { ...result, rechunk, durationMs: Date.now() - startedAt };
     } finally {
       platformSyncInFlight = false;
     }

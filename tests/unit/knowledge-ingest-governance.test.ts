@@ -120,3 +120,64 @@ describe('governed knowledge ingestion', () => {
     expect(repoMock.markVerified).toHaveBeenCalledWith(ctx, 'doc-1');
   });
 });
+
+/**
+ * The default dedupe is keyed on the DOCUMENT checksum, not on how it was split. That is right for
+ * "the same file was uploaded twice" and wrong after a chunker or embedding-model change: when the
+ * chunk-packing fix landed, every already-ingested document kept its old fragmentation and no number
+ * of sync re-runs could touch it, because the text had not changed.
+ */
+describe('ingestDocument — rechunk', () => {
+  const ready = { ...doc, status: 'ready', chunkCount: 6, departmentAccess: 'sales' };
+
+  it('skips a ready checksum match by default', async () => {
+    repoMock.findDocByChecksum.mockResolvedValue(ready);
+    const out = await ingestDocument(ctx, { title: 'SOP', content: 'Unchanged body.', department: 'sales' });
+    expect(out).toMatchObject({ status: 'skipped', chunkCount: 6 });
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(repoMock.commitIngestion).not.toHaveBeenCalled();
+  });
+
+  it('re-chunks and re-embeds the same content when asked', async () => {
+    repoMock.findDocByChecksum.mockResolvedValue(ready);
+    const out = await ingestDocument(
+      ctx,
+      { title: 'SOP', content: 'Unchanged body.', department: 'sales' },
+      { rechunk: true },
+    );
+    expect(out.status).toBe('ready');
+    expect(embedMock).toHaveBeenCalled();
+    expect(repoMock.commitIngestion).toHaveBeenCalled();
+  });
+
+  it('still applies a department re-tag on the way past the skip', async () => {
+    repoMock.findDocByChecksum.mockResolvedValue({ ...ready, departmentAccess: 'billing' });
+    await ingestDocument(
+      ctx,
+      { title: 'SOP', content: 'Unchanged body.', department: 'sales' },
+      { rechunk: true },
+    );
+    expect(repoMock.setDepartment).toHaveBeenCalledWith(ctx, ready.id, 'sales');
+    expect(repoMock.commitIngestion).toHaveBeenCalled();
+  });
+
+  it('refuses to re-chunk a document another ingest is still processing', async () => {
+    repoMock.findDocByChecksum.mockResolvedValue({ ...ready, status: 'processing' });
+    await expect(
+      ingestDocument(ctx, { title: 'SOP', content: 'Unchanged body.' }, { rechunk: true }),
+    ).rejects.toMatchObject({ code: 'KNOWLEDGE_INGEST_IN_PROGRESS' });
+    expect(repoMock.commitIngestion).not.toHaveBeenCalled();
+  });
+
+  it('re-chunks after losing the create race to an already-ready row', async () => {
+    repoMock.findDocByChecksum.mockResolvedValue(undefined);
+    repoMock.createDoc.mockResolvedValue({ doc: ready, inserted: false });
+    const out = await ingestDocument(
+      ctx,
+      { title: 'SOP', content: 'Unchanged body.', department: 'sales' },
+      { rechunk: true },
+    );
+    expect(out.status).toBe('ready');
+    expect(repoMock.commitIngestion).toHaveBeenCalled();
+  });
+});

@@ -36,7 +36,31 @@ function dedupeById(citations: WireCitation[]): WireCitation[] {
   return citations.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
 }
 
-export function validateCitations(text: string, citations: WireCitation[]): CitationValidation {
+export interface CitationValidationOptions {
+  /**
+   * Answers from delegated specialists, used ONLY to recover a marker set when the final answer has
+   * none. See `StreamOutcome.childTexts`: the orchestrator rewrites the child's answer and drops its
+   * [Sn] markers in most runs, which would otherwise force the all-passages fallback and list 4
+   * sources for an answer that rested on 1. The returned `text` is never taken from here.
+   */
+  markerFallbackTexts?: string[];
+}
+
+/** Marker numbers actually written in `text` that correspond to a real citation. */
+function usedMarkerNumbers(text: string, known: Set<number>): Set<number> {
+  const out = new Set<number>();
+  for (const m of text.matchAll(MARKER_RE)) {
+    const n = Number(m[1]);
+    if (known.has(n)) out.add(n);
+  }
+  return out;
+}
+
+export function validateCitations(
+  text: string,
+  citations: WireCitation[],
+  options: CitationValidationOptions = {},
+): CitationValidation {
   const markerNumbers = new Set(
     citations
       .map((c) => (c.marker ? Number(c.marker.replace(/^S/, '')) : NaN))
@@ -66,10 +90,25 @@ export function validateCitations(text: string, citations: WireCitation[]): Cita
    * grounded, and an answer that looks ungrounded costs more trust than a slightly broad source list.
    * So an unmarked answer falls back to the retrieved set, exactly like the classic path.
    */
-  const marked = citations.filter(
-    (c) => c.marker && usedNumbers.has(Number(c.marker.replace(/^S/, ''))),
-  );
-  const used = markerNumbers.size > 0 && marked.length > 0 ? marked : citations;
+  const byNumbers = (numbers: Set<number>): WireCitation[] =>
+    citations.filter((c) => c.marker && numbers.has(Number(c.marker.replace(/^S/, ''))));
+
+  const marked = byNumbers(usedNumbers);
+  /**
+   * Before falling back to "everything retrieved", ask the specialists. If the final answer carries
+   * no markers but a delegated child's answer did, those markers describe the same claims — the
+   * orchestrator paraphrased them away. Narrowing to that set is strictly more precise than listing
+   * every passage, and costs nothing when no child ran (the array is empty).
+   */
+  const inherited =
+    markerNumbers.size > 0 && marked.length === 0
+      ? (options.markerFallbackTexts ?? [])
+          .map((childText) => byNumbers(usedMarkerNumbers(childText, markerNumbers)))
+          .find((set) => set.length > 0)
+      : undefined;
+
+  const used =
+    markerNumbers.size === 0 ? citations : (marked.length > 0 ? marked : (inherited ?? citations));
 
   return {
     // Collapse doubled spaces left by removed markers, but keep newlines intact.
