@@ -50,6 +50,15 @@ export default defineConfig({
       // FILE_STORAGE_PROVIDER itself (vi.hoisted, before env parses) where it needs the other value.
       FILE_STORAGE_PROVIDER: 's3',
       COMMS_STORAGE_PROVIDER: 's3',
+      // Shared secrets that route guards REQUIRE, pinned for the same determinism reason as the flags
+      // above — but this direction of the hazard is the opposite one. `BILLING_INGEST_SECRET` defaults
+      // to '' and `requireIngestSecret` answers 503 SERVER_MISCONFIGURED when it is empty, before any
+      // auth check. So a developer without it in their .env saw all 22 payment-ingest route tests fail
+      // — including the ones asserting 401 — while CI passed, because CI supplies a dummy in the
+      // workflow env. Pinning it here makes the suite pass on a bare checkout with no .env at all,
+      // which is the only version of "green locally" worth trusting before opening a PR.
+      API_KEY: 'test-secret-key',
+      BILLING_INGEST_SECRET: 'test-ingest-secret',
     },
     coverage: {
       provider: 'v8',

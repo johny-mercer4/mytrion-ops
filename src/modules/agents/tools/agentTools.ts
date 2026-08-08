@@ -16,13 +16,44 @@ import { sanitizeToolResult } from '../../security/untrusted.js';
 import { toolRegistry } from '../../tools/index.js';
 import type { RegisteredTool } from '../../tools/types.js';
 import { BudgetExceededError } from '../budget.js';
-import { requireAgentContext } from '../context.js';
+import { getAgentContext, requireAgentContext } from '../context.js';
 import { coerceElicitation } from '../elicitation.js';
 import type { AgentManifest } from '../types.js';
 
 /** LangChain/OpenAI tool names must match [a-zA-Z0-9_-]; map dotted registry names to '__'. */
 function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '__');
+}
+
+/**
+ * The parameter schema OpenAI gets for one tool. Two things must hold, and BOTH were broken for
+ * MCP-backed tools:
+ *
+ *  - MCP tools declare `inputSchema: z.unknown()` because the MCP server validates arguments; their
+ *    real JSON Schema lives on `rawParameters`. Deriving from the zod schema therefore threw the
+ *    actual parameters away, so the model could never fill them in.
+ *  - `zodToJsonSchema(z.unknown())` is `{}` — no `type`. OpenAI requires a function's parameters to
+ *    be `type: "object"` and rejects the ENTIRE request otherwise, reporting the missing key as
+ *    `got 'type: "None"'`. One such tool in the bound set failed every agent turn with
+ *    "The AI service failed to complete this request", whatever the user asked.
+ *
+ * So: prefer the tool's own JSON Schema, and guarantee an object-typed root either way.
+ */
+export function openAiToolSchema(rt: RegisteredTool): Record<string, unknown> {
+  const raw = rt.rawParameters;
+  const derived: unknown = raw && Object.keys(raw).length > 0 ? raw : zodToJsonSchema(rt.inputSchema);
+  const base: Record<string, unknown> =
+    typeof derived === 'object' && derived !== null && !Array.isArray(derived)
+      ? (derived as Record<string, unknown>)
+      : {};
+  if (base['type'] === 'object') return base;
+  // A non-object root (or none at all) cannot describe named arguments — present it as an empty
+  // object schema rather than letting it invalidate the whole request.
+  const properties =
+    typeof base['properties'] === 'object' && base['properties'] !== null
+      ? base['properties']
+      : {};
+  return { ...base, type: 'object', properties };
 }
 
 function toLangChainTool(
@@ -74,7 +105,7 @@ function toLangChainTool(
       }
     },
     // Registry schemas are classic (v3) zod; convert to JSON Schema so LangChain v1 accepts them.
-    { name: safeName(rt.name), description: rt.description, schema: zodToJsonSchema(rt.inputSchema) },
+    { name: safeName(rt.name), description: rt.description, schema: openAiToolSchema(rt) },
   ) as unknown as StructuredTool; // JSON-schema tool() overload returns a compatible runtime tool
 }
 
@@ -83,10 +114,29 @@ function toLangChainTool(
  * knowledge_search is excluded here — the scoped RAG tool covers it per agent.
  */
 export function buildAgentTools(manifest: AgentManifest, narrowedCtx: TenantContext): StructuredTool[] {
-  return toolRegistry
+  const bound = toolRegistry
     .listForContext(narrowedCtx)
     .filter((rt) => manifest.tools.some((t) => t === rt.name || (t.endsWith('.*') && rt.name.startsWith(t.slice(0, -1)))))
     .filter((rt) => rt.name !== 'knowledge.search')
-    .filter((rt) => !manifest.readOnly || rt.riskClass === 'read')
-    .map((rt) => toLangChainTool(rt, manifest, narrowedCtx));
+    .filter((rt) => !manifest.readOnly || rt.riskClass === 'read');
+
+  /**
+   * Surface how many tools this agent is carrying. Every bound schema is input tokens on every model
+   * call in the turn, and a wildcard once put ~102 of them on Sales — 71k input tokens per call, which
+   * spent the org's whole per-minute quota in about 1.4 questions and returned 429s the UI showed as
+   * "network error". That took a night of measurement to find because nothing reported this number.
+   * Now the Turn Inspector shows it.
+   */
+  getAgentContext()?.inspect?.({
+    stage: 'agent',
+    status: 'complete',
+    label: `${manifest.label} bound ${bound.length} tools`,
+    agent: manifest.key,
+    details: {
+      toolsBound: bound.length,
+      writeTools: bound.filter((rt) => rt.riskClass !== 'read').length,
+    },
+  });
+
+  return bound.map((rt) => toLangChainTool(rt, manifest, narrowedCtx));
 }

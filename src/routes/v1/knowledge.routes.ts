@@ -77,6 +77,12 @@ function assertIngestEnabled(): void {
  * Knowledge endpoints powering the Agent Scope widget: ingest .md/text into pgvector,
  * list ingested docs, and inspect embedded chunks. Authenticated by the static API_KEY.
  */
+/**
+ * Single-flight guard for the platform sync. Process-local, which is the right scope: it exists to
+ * stop a scheduler's retry from overlapping its own previous call, not to coordinate a cluster.
+ */
+let platformSyncInFlight = false;
+
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   // Internal management surface: customer sessions (carrier-client logins) are denied outright —
   // several repo paths here are tenant-scoped only, and the KB is internal data regardless.
@@ -194,6 +200,56 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       knowledgeRepo.countChunks(ctx),
     ]);
     return { docs, chunks };
+  });
+
+  /**
+   * Re-sync the governed platform catalog (Horizon self-knowledge, incl. all Sales Mytrion docs).
+   *
+   * This exists because the nightly `maintenance.platform-knowledge-sync` cron **cannot be turned on
+   * in production**. Cron scheduling is not granular: `FF_JOBS_ENABLED` is the only switch, and
+   * flipping it registers 11 schedules at once — including `notification.poll` (every 2 minutes) and
+   * `notification.statement-weekly`, which send fuel-transaction and money-code documents over
+   * Telegram to every active mini-app registration. `runWeeklyStatements` has no first-run baseline
+   * guard and its dedupe key covers only the text notification, not the document sends, so the first
+   * Monday after such a flip would mail last week's bundle to real carrier customers. A nightly
+   * knowledge refresh is not worth that blast radius.
+   *
+   * A Render Cron Job running the existing one-shot script is also not an option: the runtime image
+   * carries only `scripts/docker/start-prod.sh`, and `tsx` is a devDependency under
+   * `pnpm install --prod`.
+   *
+   * So: an authenticated endpoint any scheduler can hit. Cheap to call repeatedly — `ingestDocument`
+   * resolves the checksum before it embeds, so an unchanged document costs one query and no OpenAI
+   * call (a warm re-run reports every document as `skipped`). Deliberately independent of
+   * `FF_PLATFORM_KNOWLEDGE`: you need to be able to populate the corpus *before* exposing it, which
+   * is exactly what `pnpm knowledge:sync-platform` already does.
+   */
+  /**
+   * Refresh the generated platform/self-knowledge catalog.
+   *
+   * `?rechunk=1` additionally re-splits and re-embeds documents whose text has not changed — the only
+   * way to roll a chunker or embedding-model change onto already-ingested content, since the ordinary
+   * skip is keyed on the document checksum. Admin-only and one-at-a-time; expect it to take minutes
+   * and to spend one embedding call per chunk in the catalog.
+   */
+  app.post<{ Querystring: { rechunk?: string } }>('/knowledge/platform-sync', adminGuard, async (request, reply) => {
+    const ctx = requireContext(request);
+    const rechunk = request.query.rechunk === '1' || request.query.rechunk === 'true';
+    if (platformSyncInFlight) {
+      // Overlapping syncs would duplicate embedding spend for no benefit; the work is idempotent, so
+      // the honest answer is "already running", not a queue.
+      reply.code(409);
+      return { error: { code: 'SYNC_IN_FLIGHT', message: 'A platform knowledge sync is already running.' } };
+    }
+    platformSyncInFlight = true;
+    const startedAt = Date.now();
+    try {
+      const { syncPlatformKnowledge } = await import('../../modules/knowledge/platformSync.js');
+      const result = await syncPlatformKnowledge(ctx, rechunk ? { rechunk: true } : {});
+      return { ...result, rechunk, durationMs: Date.now() - startedAt };
+    } finally {
+      platformSyncInFlight = false;
+    }
   });
 
   // --- Inspect: a single doc ---

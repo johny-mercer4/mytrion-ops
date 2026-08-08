@@ -217,3 +217,15 @@
   .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .summaryItem { min-height: 58px; }
 }
+
+/* Per-step duration, sat beside the elapsed stamp. Distinct from elapsed-since-turn-start: this is
+   how long the step itself took, which is what identifies a slow stage. */
+.took {
+  margin-left: var(--space-1_5);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}

@@ -4,6 +4,7 @@ import {
   BLACKBOARD_TOOLS, FILE_TOOLS,
   READ_ONLY_RULE,
   DBT_MCP_TOOLS,
+  MANAGER_MCP_TOOLS,
   WAREHOUSE_TOOLS,
   METRICS_ROUTING_RULE,
 } from './shared.js';
@@ -30,7 +31,7 @@ export const managerAgent: AgentManifest = {
     'zoho_desk.search_tickets',
     'zoho_people.search_employees',
     ...BLACKBOARD_TOOLS, ...FILE_TOOLS, ...DBT_MCP_TOOLS, ...WAREHOUSE_TOOLS,
-    'zoho_mcp.*',
+    ...MANAGER_MCP_TOOLS,
   ],
   composioToolkits: [],
   ragScope: { departments: [], allowAllDepartments: true },

@@ -262,7 +262,7 @@ async function executeTurn(
   let status: 'ok' | 'error' = 'ok';
   let errorMsg: string | undefined;
   if (fastReply) {
-    outcome = { finalText: fastReply.message, toolCalls: [], agentPath: [] };
+    outcome = { finalText: fastReply.message, toolCalls: [], agentPath: [], childTexts: [] };
     inspect?.({
       stage: 'model', status: 'complete', label: 'Answered without an LLM call',
       agent: agentKey, model: modelId, modelRole: 'deterministic', provider: 'local',
@@ -378,7 +378,7 @@ async function executeTurn(
     errorMsg = wallHit ? 'the run hit its wall-clock time limit' : errorMessage(err);
     const budgetHit = hasBudgetCause(err) || wallHit;
     const friendly = presentAgentError(errorMsg, budgetHit);
-    outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
+    outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath, childTexts: [] };
     inspect?.({ stage: 'error', status: 'error', label: friendly });
     logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
   } finally {
@@ -402,6 +402,9 @@ async function executeTurn(
   const validated = validateCitations(
     outcome.finalText || 'The agent produced no answer.',
     collect.citations ?? [],
+    // Recover the specialists' own markers when the orchestrator paraphrased them away, so the
+    // sources list stays as narrow as what actually backed the answer.
+    { markerFallbackTexts: outcome.childTexts },
   );
   if (validated.strippedMarkers.length > 0) {
     logger.warn(

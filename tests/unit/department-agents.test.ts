@@ -30,12 +30,18 @@ describe('departmentsForTool', () => {
     // Wildcard manifests: dbt_mcp.* expands onto concrete MCP tool names
     expect(departmentsForTool('dbt_mcp.query')).toContain('sales');
     expect(departmentsForTool('dbt_mcp.recall_similar_queries')).toContain('billing');
-    // zoho_mcp.* wildcard on sales/manager/data-center expands onto concrete MCP tool names
-    expect(departmentsForTool('zoho_mcp.ZohoCRM_getRecords').sort()).toEqual([
+    // MCP tools are NAMED per manifest now, not wildcarded — see SALES_MCP_TOOLS /
+    // MANAGER_MCP_TOOLS. So each tool is visible only to the departments that actually asked for it,
+    // and anything un-allowlisted stays admin-only. The wildcard bound all 83 discovered tools to
+    // sales, which cost 71k input tokens per model call and blew the org's per-minute quota.
+    expect(departmentsForTool('zoho_mcp.ZohoCRM_getRecords').sort()).toEqual(['c-level', 'management']);
+    expect(departmentsForTool('zoho_mcp.ZohoCRM_getLeadsRecords')).toEqual(['sales']);
+    expect(departmentsForTool('zoho_mcp.ZohoDesk_getTicketsMetrics').sort()).toEqual([
       'c-level',
       'management',
-      'sales',
     ]);
+    // A discovered-but-un-allowlisted MCP tool reaches no department.
+    expect(departmentsForTool('zoho_mcp.ZohoCRM_getRecordCount')).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
     // not in any agent → admin-only sentinel
     expect(departmentsForTool('telegram.send_message')).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
     // analytics.snapshot unbound from agents → admin-only if still registered
@@ -49,13 +55,17 @@ describe('applyDepartmentPolicy', () => {
       { name: 'knowledge.search' },
       { name: 'agent.debtors' },
       { name: 'zoho_mcp.X' },
+      { name: 'zoho_mcp.ZohoCRM_getLeadsRecords' },
     ] as RegisteredTool[];
     applyDepartmentPolicy(tools);
     expect(tools[0]!.allowedDepartments).toEqual([]);
     expect(tools[1]!.allowedDepartments!.sort()).toEqual(
       ['billing', 'c-level', 'collection', 'finance', 'management'],
     );
-    expect(tools[2]!.allowedDepartments!.sort()).toEqual(['c-level', 'management', 'sales']);
+    // An arbitrary MCP tool matches no manifest now that the wildcard is gone → admin-only.
+    expect(tools[2]!.allowedDepartments).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
+    // An allowlisted one reaches exactly the department that named it.
+    expect(tools[3]!.allowedDepartments).toEqual(['sales']);
   });
 });
 

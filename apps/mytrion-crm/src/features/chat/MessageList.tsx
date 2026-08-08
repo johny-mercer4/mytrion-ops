@@ -13,10 +13,13 @@ export function MessageList({
   messages,
   onPick,
   onRetry,
+  hydrating = false,
 }: {
   messages: UiMessage[];
   onPick?: (value: string) => void;
   onRetry?: (assistantId: string) => void;
+  /** Restoring the previous conversation — show its shape instead of the welcome copy. */
+  hydrating?: boolean;
 }) {
   const { containerRef, onScroll, followIfSticky, scrollToBottom, atBottom } = useStickToBottom();
   const lastUserIdRef = useRef<string | null>(null);
@@ -33,6 +36,34 @@ export function MessageList({
     }
     followIfSticky();
   }, [messages, followIfSticky, scrollToBottom]);
+
+  // One affordance for this region: skeleton turns that mirror the transcript, never a spinner on
+  // top of them and never the welcome copy we are about to replace.
+  if (hydrating && messages.length === 0) {
+    return (
+      <div className={styles.list} role="status" aria-label="Restoring your conversation">
+        <div className={styles.skeleton} aria-hidden="true">
+          {[
+            { role: 'user', widths: ['62%'] },
+            { role: 'assistant', widths: ['94%', '88%', '71%'] },
+            { role: 'user', widths: ['48%'] },
+            { role: 'assistant', widths: ['92%', '64%'] },
+          ].map((turn, i) => (
+            <div
+              key={i}
+              className={turn.role === 'user' ? styles.skelTurnUser : styles.skelTurnAssistant}
+            >
+              <div className={turn.role === 'user' ? styles.skelUserBubble : styles.skelAssistant}>
+                {turn.widths.map((w, j) => (
+                  <span key={j} className={styles.skelLine} style={{ width: w }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (messages.length === 0) {
     return (

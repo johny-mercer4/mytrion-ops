@@ -282,7 +282,7 @@ export default function AdminMytrion() {
     <MytrionShell id="admin" navSections={navSections} enableNavSearch>
       {tab === 'horizon' && (
         <div className={shellStyles.chatView}>
-          <ChatPanel context={user} variant="full" showTurnInspector />
+          <ChatPanel context={user} variant="full" showTurnInspector enableTestAs />
         </div>
       )}
       {tab === 'kb' && <KnowledgeBase key={kbRefreshKey} onAddSource={() => setTab('train')} />}
