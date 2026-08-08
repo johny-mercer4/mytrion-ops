@@ -24,10 +24,12 @@ function usageFromGenerations(output: LLMResult): {
   prompt: number;
   completion: number;
   cached: number;
+  reasoning: number;
 } {
   let prompt = 0;
   let completion = 0;
   let cached = 0;
+  let reasoning = 0;
   for (const generations of output.generations) {
     for (const gen of generations) {
       const meta = (
@@ -37,6 +39,7 @@ function usageFromGenerations(output: LLMResult): {
               input_tokens?: number;
               output_tokens?: number;
               input_token_details?: { cache_read?: number };
+              output_token_details?: { reasoning?: number };
             };
           };
         }
@@ -45,9 +48,10 @@ function usageFromGenerations(output: LLMResult): {
       prompt += meta.input_tokens ?? 0;
       completion += meta.output_tokens ?? 0;
       cached += meta.input_token_details?.cache_read ?? 0;
+      reasoning += meta.output_token_details?.reasoning ?? 0;
     }
   }
-  return { prompt, completion, cached };
+  return { prompt, completion, cached, reasoning };
 }
 
 export class RunTracker extends BaseCallbackHandler {
@@ -153,6 +157,13 @@ export class RunTracker extends BaseCallbackHandler {
       cached = totals.cached;
     }
     /**
+     * Reasoning tokens, like cache reads, live only on `usage_metadata`. Worth recording because it
+     * answers whether an explicit scratchpad would be redundant: a model already spending hidden
+     * reasoning tokens is doing the work anyway. Measured 0 for gpt-5.4-mini on these turns, so it is
+     * not.
+     */
+    const reasoning = usageFromGenerations(output).reasoning;
+    /**
      * Cache hits live ONLY on `usage_metadata` for ChatOpenAI. `llmOutput.tokenUsage` carries exactly
      * `promptTokens` / `completionTokens` / `totalTokens` and no cache fields — verified against a
      * live run — so the branch above always resolved `cached` to 0 and every turn recorded a 0% hit
@@ -213,6 +224,7 @@ export class RunTracker extends BaseCallbackHandler {
         inputTokens: prompt,
         cachedInputTokens: cached,
         outputTokens: completion,
+        reasoningTokens: reasoning,
       });
     }
     this.llmStarts.delete(runId);

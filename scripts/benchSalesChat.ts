@@ -39,6 +39,14 @@ interface BenchCase {
   expectDocs: string[];
   /** Tools that must NOT be called: a documented how-to needs no live data. */
   forbidTools: string[];
+  /**
+   * Substrings the ANSWER must contain. Used only by the computational cases, where citing the right
+   * document is not the question — getting the arithmetic right is. Every expectation here is
+   * derivable from the retention document alone; questions whose answer the document does not fully
+   * determine (worst-case totals chained across three agents, for instance) were discarded rather
+   * than scored on a guess.
+   */
+  expectPhrases?: string[];
 }
 
 const NO_LIVE_DATA = ['zoho_crm.query', 'zoho_crm.search', 'warehouse.my_gallons'];
@@ -93,6 +101,43 @@ const CASES: readonly BenchCase[] = [
     expectDocs: ['Money Code', 'Data Center'],
     forbidTools: NO_LIVE_DATA,
   },
+  // --- computational: arithmetic and chaining over the retention timers ---
+  {
+    // 1-business-day SLA per attempt; five failed attempts may go to Open Pool. 5 - 3 = 2.
+    id: 'calc-out-of-reach-attempts',
+    question:
+      "An Out of Reach retention case already has 3 failed contact attempts. How many more attempts before it can be sent to Open Pool, and what is the SLA per attempt?",
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['2', '1 business day'],
+  },
+  {
+    // Available 3 business days; unclaimed -> Retention for a 10-business-day wait.
+    id: 'calc-pool-then-retention',
+    question:
+      'If an Open Pool item goes unclaimed, how many business days is it available, and how long does it then wait in Retention?',
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['3 business day', '10 business day'],
+  },
+  {
+    // Maximum 2 approved claims per agent per UTC day.
+    id: 'calc-claim-cap',
+    question:
+      'I have already claimed 2 cases from the Open Pool today. Can I claim another one right now?',
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['2'],
+  },
+  {
+    // 14-calendar-day countdown, then a 2-business-day follow-up.
+    id: 'calc-vacation-sequence',
+    question:
+      'A retention case was marked Vacation. What is the countdown before follow-up, and how long is the follow-up window?',
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['14', '2 business day'],
+  },
 ] as const;
 
 interface AgentResponse {
@@ -104,6 +149,14 @@ interface AgentResponse {
   usage?: { promptTokens?: number; completionTokens?: number; totalCost?: number };
   error?: { message?: string; retryable?: boolean };
 }
+
+/**
+ * Normalise for phrase matching. The retention document writes "1-business-day SLA" and
+ * "10-business-day wait", and the model reproduces that hyphenation faithfully — so a space-separated
+ * assertion scored a correct answer as a miss. Three "failures" this session turned out to be the
+ * measurement rather than the system; this one is the same class.
+ */
+const loosely = (text: string): string => text.toLowerCase().replace(/[-\u2011\u2013\u2014]/g, ' ').replace(/\s+/g, ' ');
 
 const API = process.env['BENCH_API'] ?? 'http://localhost:3011';
 const AS_JSON = process.argv.includes('--json');
@@ -150,6 +203,8 @@ interface Row {
   failed: boolean;
   expected: number;
   matched: number;
+  phrasesExpected: number;
+  phrasesMatched: number;
   citations: string[];
   toolCalls: string[];
   forbiddenCalled: string[];
@@ -181,6 +236,9 @@ async function main(): Promise<void> {
       failed: Boolean(res.error),
       expected: bench.expectDocs.length,
       matched: bench.expectDocs.filter((want) => citations.some((t) => t.includes(want))).length,
+      phrasesExpected: bench.expectPhrases?.length ?? 0,
+      phrasesMatched:
+        bench.expectPhrases?.filter((want) => loosely(res.message ?? '').includes(loosely(want))).length ?? 0,
       citations: [...new Set(citations)],
       toolCalls,
       forbiddenCalled: toolCalls.filter((name) => bench.forbidTools.includes(name)),
@@ -202,7 +260,7 @@ async function main(): Promise<void> {
 
   const pad = (s: string, n: number): string => s.padEnd(n);
   process.stdout.write(
-    `\n${pad('case', 22)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('docs', 8)}bad\n`,
+    `\n${pad('case', 22)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('docs', 8)}${pad('answer', 8)}bad\n`,
   );
   process.stdout.write(`${'-'.repeat(96)}\n`);
   for (const r of rows) {
@@ -216,6 +274,7 @@ async function main(): Promise<void> {
         pad(String(r.hops), 6) +
         pad(String(r.toolCalls.length), 7) +
         pad(r.failed ? 'FAILED' : `${r.matched}/${r.expected}`, 8) +
+        pad(r.phrasesExpected > 0 ? `${r.phrasesMatched}/${r.phrasesExpected}` : '-', 8) +
         (r.forbiddenCalled.length > 0 ? r.forbiddenCalled.join(',') : '-') +
         '\n',
     );
@@ -226,6 +285,7 @@ async function main(): Promise<void> {
     `\ntotal wall ${total}ms  ·  mean ${Math.round(total / rows.length)}ms  ·  ` +
       `llm calls ${rows.reduce((s, r) => s + r.llmCalls, 0)}  ·  cost $${cost.toFixed(4)}\n` +
       `expected-doc coverage ${rows.reduce((s2, r) => s2 + r.matched, 0)}/${rows.reduce((s2, r) => s2 + r.expected, 0)}  ·  ` +
+      `answer facts ${rows.reduce((s2, r) => s2 + r.phrasesMatched, 0)}/${rows.reduce((s2, r) => s2 + r.phrasesExpected, 0)}  ·  ` +
       `failures ${rows.filter((r) => r.failed).length}  ·  ` +
       `forbidden tool calls ${rows.reduce((s, r) => s + r.forbiddenCalled.length, 0)}\n\n`,
   );

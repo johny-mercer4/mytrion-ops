@@ -13096,3 +13096,48 @@ should be driven by this measurement rather than by an assumption, and Russian c
 is the concrete first case. I have deliberately not authored the RU/UZ text — governed knowledge that
 Sales agents rely on should not carry translations I invented without a native reviewer, and the team
 speaks both languages.
+
+## 2026-08-08 — Scratchpad: measured, and not needed
+
+The plan's condition for a scratchpad was to first add a question class that could show its value —
+retention-timer arithmetic — rather than measure it on documentation lookups where it could only look
+useless. Done: four computational cases in `benchSalesChat.ts`, plus an `expectPhrases` check that
+scores the ANSWER rather than the citations, because getting the arithmetic right is the question.
+
+Two of agent D's six proposed questions were **discarded**, not scored: the document does not pin down
+whether the Reached window counts the same day, and worst-case totals chained across three agents are
+not determined by it either. Scoring those would have measured my guess.
+
+Also instrumented `reasoning_tokens` (only on `usage_metadata`, same as cache reads). It reads **0 over
+75 calls** for `gpt-5.4-mini`, so the "the model already reasons internally, an explicit scratchpad
+would be redundant" argument does **not** apply here — that had to be checked rather than assumed.
+
+**First measurement said answer facts 4/7. That was my metric, not the model.** The answers were
+correct:
+
+> "…so with 3 already logged, 2 more attempts are needed. Each attempt has a 1-business-day SLA. [S1]"
+> "An Open Pool item is available for 3 business days; if unclaimed, it moves to Retention for a
+> 10-business-day wait. [S1]"
+
+The retention document writes "1-business-day" and "10-business-day" hyphenated and the model
+reproduces that faithfully; my assertions used spaces. Made the match hyphen-insensitive:
+
+| | before fix | after |
+| --- | --- | --- |
+| answer facts | 4/7 | **7/7** |
+| expected-doc coverage | 13/14 | **14/14** |
+
+**Conclusion: no scratchpad.** `gpt-5.4-mini` performs 5 − 3 = 2 and the 3-business-days → 10-business-day
+chain correctly, cites `[S1]` while doing it, and costs nothing extra. Adding a scratchpad would spend
+output tokens and latency on every turn to reproduce an answer that is already right. The four
+computational cases stay in the bench as the regression guard, so if a model or prompt change breaks
+this reasoning it shows up as `answer facts` dropping rather than as a vague complaint.
+
+**Trigger to revisit:** `answer facts` falling below 7/7, or a genuinely harder class — anything needing
+a calendar (business days across a specific weekend), which the document deliberately does not specify
+and which no amount of prompting can invent.
+
+That is the fourth time this session a reported failure turned out to be the measurement: the 0% cache
+rate, "Uzbek is the weak language", "rerank is less accurate", and now 4/7 answer facts.
+
+Backend **2459** passed / 1 skipped, lint 0 errors.
