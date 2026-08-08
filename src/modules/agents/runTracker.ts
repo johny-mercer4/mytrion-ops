@@ -162,6 +162,9 @@ export class RunTracker extends BaseCallbackHandler {
      */
     if (cached === 0) cached = usageFromGenerations(output).cached;
     const started = this.llmStarts.get(runId);
+    const firstToken = this.firstTokenAt.get(runId);
+    /** Time to first token — what a cached prefix actually improves. */
+    const ttftMs = started && firstToken ? firstToken - started.at : undefined;
     const model = started?.model ?? this.modelId;
     const provider: Provider = model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai';
     this.telemetry?.inspect?.({
@@ -176,6 +179,7 @@ export class RunTracker extends BaseCallbackHandler {
         inputTokens: prompt,
         outputTokens: completion,
         cachedInputTokens: cached,
+        ...(ttftMs !== undefined ? { ttftMs } : {}),
       },
     });
     if (prompt === 0 && completion === 0) {
@@ -185,8 +189,7 @@ export class RunTracker extends BaseCallbackHandler {
     this.promptTokens += prompt;
     this.completionTokens += completion;
     this.cachedPromptTokens += cached;
-    const firstToken = this.firstTokenAt.get(runId);
-    const ttftMs = started && firstToken ? firstToken - started.at : undefined;
+
     if (this.budget) {
       const cost = computeCost({
         model,

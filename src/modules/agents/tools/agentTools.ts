@@ -16,7 +16,7 @@ import { sanitizeToolResult } from '../../security/untrusted.js';
 import { toolRegistry } from '../../tools/index.js';
 import type { RegisteredTool } from '../../tools/types.js';
 import { BudgetExceededError } from '../budget.js';
-import { requireAgentContext } from '../context.js';
+import { getAgentContext, requireAgentContext } from '../context.js';
 import { coerceElicitation } from '../elicitation.js';
 import type { AgentManifest } from '../types.js';
 
@@ -114,10 +114,29 @@ function toLangChainTool(
  * knowledge_search is excluded here — the scoped RAG tool covers it per agent.
  */
 export function buildAgentTools(manifest: AgentManifest, narrowedCtx: TenantContext): StructuredTool[] {
-  return toolRegistry
+  const bound = toolRegistry
     .listForContext(narrowedCtx)
     .filter((rt) => manifest.tools.some((t) => t === rt.name || (t.endsWith('.*') && rt.name.startsWith(t.slice(0, -1)))))
     .filter((rt) => rt.name !== 'knowledge.search')
-    .filter((rt) => !manifest.readOnly || rt.riskClass === 'read')
-    .map((rt) => toLangChainTool(rt, manifest, narrowedCtx));
+    .filter((rt) => !manifest.readOnly || rt.riskClass === 'read');
+
+  /**
+   * Surface how many tools this agent is carrying. Every bound schema is input tokens on every model
+   * call in the turn, and a wildcard once put ~102 of them on Sales — 71k input tokens per call, which
+   * spent the org's whole per-minute quota in about 1.4 questions and returned 429s the UI showed as
+   * "network error". That took a night of measurement to find because nothing reported this number.
+   * Now the Turn Inspector shows it.
+   */
+  getAgentContext()?.inspect?.({
+    stage: 'agent',
+    status: 'complete',
+    label: `${manifest.label} bound ${bound.length} tools`,
+    agent: manifest.key,
+    details: {
+      toolsBound: bound.length,
+      writeTools: bound.filter((rt) => rt.riskClass !== 'read').length,
+    },
+  });
+
+  return bound.map((rt) => toLangChainTool(rt, manifest, narrowedCtx));
 }

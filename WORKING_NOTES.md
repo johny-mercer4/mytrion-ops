@@ -13050,3 +13050,49 @@ Backend **2459** passed / 1 skipped, lint 0 errors.
 re-chunk anything by itself. The Sales corpus was re-ingested by deleting those rows and re-running the
 sync. Any future chunker change needs the same deliberate step — and prod needs it too, or prod keeps
 the fragmented chunks.
+
+## 2026-08-08 — Turn Inspector: the three numbers that were recorded but invisible
+
+The scorecard rated RAG observability "Partial". Reading the component first showed that was pessimistic
+in one way and right in another: `step.details` is already rendered generically as key/value pairs, so
+`cachedInputTokens` and `hops` were **already** on screen per step. The genuine gaps were narrower.
+
+Added:
+
+- **Tools bound** (`buildAgentTools` → `inspect`), with a write-tool count. Nothing had ever emitted
+  this, which is precisely why a `zoho_mcp.*` wildcard binding ~102 tools to Sales took a night of
+  measurement to find. Live turn now reports `toolsBound: 22` for Sales (18 native + 4 named MCP).
+- **TTFT into the trace.** `runTracker` computed it for `llm_calls` but never passed it to `inspect`, so
+  it reached the database and not the UI. Live: `ttftMs` 1856 and 793 across the turn's two calls.
+- **Per-step duration.** `durationMs` was on the event and simply not rendered; the timeline only
+  showed elapsed-since-turn-start, which cannot tell you *which* stage is slow.
+- **Two summary tiles** — Tools bound and Prompt cache (with TTFT) — derived from the steps rather than
+  new wire fields, since `details` already carries everything. Unmeasured shows an em dash, not `0%`:
+  "unknown" and "no cache hits" are different states and conflating them is how the 0%-cache bug hid.
+
+Verified end-to-end on a streamed turn: `toolsBound: 22`, `writeTools: 0`, `ttftMs`, and
+`cachedInputTokens: 10880` all arrive at the client. Four inspector tests, bundle rebuilt
+(`Tools bound` / `Prompt cache` present in the hashed output). Backend 2459, frontend **556**, lint 0.
+
+### Correction: Russian retrieves worse than Uzbek
+
+I have said several times — including in the published scorecard — that **Uzbek** is the weak language,
+based on one ad-hoc probe showing ~0.25 similarity. Measured properly with pass@k over all 80
+sales-mytrion cases at k=5:
+
+| language | evidence coverage pass@1 |
+| --- | --- |
+| en | **100.0%** (64/64) |
+| ru | **87.5%** (42/48) |
+| uz | 95.8% (46/48) |
+
+**Russian is the weakest, not Uzbek.** All three genuine retrieval misses are one seed —
+"Как активировать карту в Sales Mytrion?" — whose document is not retrieved at all for 3 of its 4
+Russian variants, while the identical English question is perfect. The earlier probe was run against
+the *fragmented* chunks and generalised from a single question.
+
+The recommendation shifts accordingly: the fix is still cross-lingual anchors in the documents, but it
+should be driven by this measurement rather than by an assumption, and Russian card-activation phrasing
+is the concrete first case. I have deliberately not authored the RU/UZ text — governed knowledge that
+Sales agents rely on should not carry translations I invented without a native reviewer, and the team
+speaks both languages.
