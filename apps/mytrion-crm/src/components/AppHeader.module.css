@@ -37,6 +37,10 @@
 }
 
 .wordmark {
+  /* A link, but never underlined — background-clip:text means an underline would paint in the
+     element's (transparent) text colour and vanish, so it reads as a bug rather than an affordance. */
+  text-decoration: none;
+  cursor: pointer;
   font-size: 17px;
   font-weight: var(--fw-bold);
   letter-spacing: 0.18em;
@@ -187,4 +191,15 @@
   .wordmark {
     display: none;
   }
+}
+
+/* Focus and hover on the wordmark-as-link. The gradient is background-clip:text, so opacity is the
+   only property that can shift without breaking the clip. */
+a.wordmark:hover {
+  opacity: 0.85;
+}
+a.wordmark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-xs);
 }

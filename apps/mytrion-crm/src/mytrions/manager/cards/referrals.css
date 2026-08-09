@@ -302,6 +302,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  /* One text line, pinned. A flex container takes its height from its CHILDREN, not from its own
+     line box, so the loading placeholder — a 12px bar where the real row has a 13/18 line — sat 6px
+     shorter and the grid below it moved when the count arrived. No-op for the real content, which
+     is already exactly --lh-sm tall. Do not replace with a literal: it must track the type scale. */
+  min-height: var(--lh-sm);
   margin-bottom: -16px;
   color: var(--text-muted);
   font-size: var(--text-sm);

@@ -12,14 +12,38 @@
      motion    --hz-ease with --hz-dur-wash / --hz-dur-tone / --hz-dur-lift
      focus     3px accent glow ring, no hard outline
 
-   `--ms-tone` is set per surface and falls back to --accent, which each module supplies through
-   [data-mytrion='<id>'] in styles/global.css — so this file carries no module-specific colour.
+   ── THE SCALE ──────────────────────────────────────────────────────────────────────────────────
+   Nothing below may declare a raw px font-size, radius, or duration. Three ramps, and the VALUES
+   here are the ones `manager.css` (`.mg-*`) already migrated to, so the shared chrome and its
+   biggest consumer cannot drift apart:
+
+     type     the app scale in styles/theme.css — --text-2xs … --text-3xl, each with its --lh-*.
+              This file used to carry six sizes (8.5 / 11 / 12.5 / 13.5 / 15.5px + the hero clamp),
+              four of them half-pixel and off the ladder entirely.
+     radius   --ms-r-sm/md/lg/pill, all `var(--radius-*)` aliases. Only theme.css may put a NUMBER
+              on a radius (styles/tokens.test.ts enforces it) — the glyph's stray 12px is gone.
+     motion   --hz-dur-wash / -tone / -lift with --hz-ease. The shimmer's raw 0.32s was above the
+              220ms ceiling those aliases exist to hold.
+
+   Letter-spacing, the hero's size and padding clamps, and the layout rhythm (--ms-gap*, --ms-pad,
+   the 19px card pad, the 44px glyph) stay literal ON PURPOSE — see the notes at each site. They are
+   byte-identical to `.mg-*`, and snapping them to the nearest --space-* step would desync the two
+   files for 1-2px.
+
+   `--ms-tone` is set per surface (ModuleShell passes each tab's wayfinding hue inline) and falls
+   back to --accent — the ONE app-wide ramp. There is no per-module accent any more: workspace
+   identity travels as --badge-tone, which only the launcher card and the header badge may read, and
+   tokens.test.ts fails if a [data-mytrion] block declares an --accent*. So this file carries no
+   module-specific colour, and it does not need to.
 
    NOTE: --hz-pane is a GRADIENT. Multi-layer `background` must be COMMA-separated with the pane in
    an <image> slot; space-separating it as a <bg-color> invalidates the declaration.
    ===================================================== */
 
 .ms-root {
+  /* ── Layout rhythm. OFF the 4px --space-* ladder and deliberately so: these three are the shared
+     module rhythm and are byte-identical to `.mg-root` in manager.css. The nearest ladder steps are
+     16/24/32, i.e. a 2px move on each for no gain and a guaranteed drift between the two files. */
   --ms-measure: var(--hz-measure);
   --ms-gap: 18px;
   --ms-gap-lg: 26px;
@@ -57,13 +81,20 @@
 }
 
 /* ── Typography ───────────────────────────────────────────────────────────── */
+/* The HERO kicker. Note this is a different treatment from the page-head kicker in page.module.css
+   (12px / --fw-medium / --text-muted / 0.08em, no gradient) that ModuleShell renders on every
+   non-Main tab. That split is app-wide and intentional — hero chrome vs. page head — not a
+   Trailhead defect; unifying it is a design call, not a token propagation. */
 .ms-root .ms-kicker {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-family: var(--font-head);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  /* Caps tracking stays literal, as in .mg-kicker. --tr-caps-micro (0.08em) is half this and would
+     visibly retighten the wordmark-adjacent kicker in five modules at once. */
   letter-spacing: 0.16em;
   text-transform: uppercase;
   background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%);
@@ -73,27 +104,41 @@
   color: transparent;
 }
 .ms-root .ms-hero-title {
-  margin: 6px 0 0;
+  margin: var(--space-1_5) 0 0;
   font-family: var(--font-head);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   letter-spacing: -0.018em;
+  /* Unitless, and it must stay unitless: a fixed --lh-* px would not track the clamp below. */
   line-height: 1.15;
   color: var(--text-primary);
 }
 .ms-root .ms-hero-title {
+  /* A deliberate display clamp, the same one .mg-hero-title keeps, and literal for the same reason:
+     a clamp is a fluid RANGE, not a scale step, and --text-2xl/--text-3xl are 26/32 — tokenising the
+     endpoints would pin the ceiling 2px lower while still not putting the rendered size on scale. */
   font-size: clamp(26px, 3.4vw, 34px);
 }
-/* The warm end of the ramp on the module name, matching the workspace picker's hero. */
+/* The brand ramp on the module name, matching the workspace picker's hero — which paints `.name`
+   with var(--ramp) (app/launcher/WorkspaceLauncher.module.css).
+
+   This used to be a hand-rolled `--hz-5 -> --hz-sun-deep -> --hz-4`, and its middle stop was a
+   LIGHT-THEME defect: --hz-sun-deep is --secondary-container, which theme.css defines as the
+   saturated FILL/hover tone, not ink. In light that resolves to #00ccf9 — bright cyan sitting at
+   the 55% stop, i.e. the dead centre of the accent word, at roughly 1.8:1 on a --surface hero pane.
+   Dark hid it completely. --ramp is the canonical gradient-text ramp, derives from the palette, and
+   so clears both themes by construction (light: #004ee7 -> #0043c8 -> #00677f). */
 .ms-root .ms-hero-title span {
-  background: linear-gradient(90deg, var(--hz-5) 0%, var(--hz-sun-deep) 55%, var(--hz-4) 100%);
+  background: var(--ramp);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .ms-root .ms-sub {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   max-width: 68ch;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
+  /* Prose leading, deliberately looser than --lh-sm's 18/13 — this is the one paragraph on the
+     page, not a UI label. Same value as .mg-hero-sub. */
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -133,13 +178,16 @@
 .ms-root .ms-section-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .ms-root .ms-section-title {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  /* Literal, as in .mg-section-title — the rule eyebrow is tracked wider than the hero kicker on
+     purpose, and there is no token for a two-step caps ramp. */
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -163,7 +211,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
+  /* Card box, not spacing steps: 156px is the min row height that keeps a 2-line desc off the
+     bottom edge, and 19px is the shared card pad (identical to .mg-card). */
   min-height: 156px;
   padding: 19px;
   text-align: left;
@@ -198,7 +248,9 @@
   pointer-events: none;
   background: var(--hz-shimmer);
   opacity: 0;
-  transition: opacity 0.32s var(--hz-ease);
+  /* Was a raw 0.32s — 100ms over the 220ms state-transition ceiling the --hz-dur-* aliases exist to
+     hold, and the only motion literal in the file. Matches .mg-card-shimmer. */
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
 }
 .ms-root .ms-jump:hover .ms-jump-shimmer {
   opacity: 1;
@@ -217,7 +269,9 @@
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: 12px;
+  /* The file's only literal radius. 12px was a third corner language on top of the 4/8 the scale
+     actually has; --ms-r-md is the panel corner, same as .mg-card-glyph. */
+  border-radius: var(--ms-r-md);
   background: color-mix(in srgb, var(--ms-tone, var(--ms-tone-fallback)) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--ms-tone, var(--ms-tone-fallback)) 30%, transparent);
   color: var(--ms-tone, var(--ms-tone-fallback));
@@ -234,7 +288,7 @@
 }
 .ms-root .ms-jump-arrow {
   flex: none;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--text-muted);
   opacity: 0.35;
   transition:
@@ -247,25 +301,34 @@
 }
 .ms-root .ms-jump-title {
   font-family: var(--font-head);
-  font-size: 15.5px;
-  font-weight: 700;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 .ms-root .ms-jump-desc {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
+  /* Prose leading again — a 2-3 line card description, not a row label. Matches .mg-card-desc. */
   line-height: 1.55;
   color: var(--text-muted);
 }
 
-/* "Soon" chip on a launcher title. */
+/* "Soon" chip on a launcher title.
+
+   Was 8.5px — the smallest type in the app and 2.5px below the scale's own floor. That floor is
+   deliberate (theme.css killed the old 10.5px step: "two steps 0.5px apart are not a scale"), so
+   there is nothing to round to but --text-2xs. The chip grows ~2px; it stays inside the title's
+   line box because --lh-2xs (14) + 4px pad + 2px border is 20px against --lh-md's 22px, so no card
+   reflows. Matches the .mg-dept-soon chip. */
 .ms-root .ms-soon {
-  margin-left: 8px;
-  padding: 2px 8px;
+  margin-left: var(--space-2);
+  padding: var(--space-0_5) var(--space-2);
   border-radius: var(--ms-r-pill);
   font-family: var(--font-head);
-  font-size: 8.5px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   vertical-align: middle;
@@ -281,7 +344,7 @@
   justify-content: center;
   gap: 7px;
   height: 34px;
-  padding: 0 14px;
+  padding: 0 var(--space-3_5);
   border-radius: var(--ms-r-sm);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
@@ -289,8 +352,9 @@
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   box-shadow: var(--hz-glass-inset);
   transition:

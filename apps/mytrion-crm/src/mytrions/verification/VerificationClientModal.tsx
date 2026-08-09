@@ -19,6 +19,14 @@ function money(n: number | null): string {
 const dash = (v: string | number | null | undefined): string =>
   v === '' || v == null ? '—' : String(v);
 
+/**
+ * How many <Field> rows the loaded "Contact & identity" grid renders — keep in step with the <dl>
+ * below. The skeleton reserved 6 against 11, so the modal's own scroll height grew by two grid rows
+ * the moment the detail fetch landed, under the reader's cursor. Height per row is the shared
+ * --vf-field-h, so the two branches now agree on both count and geometry.
+ */
+const DETAIL_FIELD_COUNT = 11;
+
 /** One tile in the 3-column Payment & Verification grid. */
 function Stat({
   label,
@@ -109,7 +117,7 @@ export function VerificationClientModal({
           <h3 className="vf-section-title">Contact &amp; identity</h3>
           {detail.loading ? (
             <div className="vf-detail-grid" aria-busy="true" aria-label="Loading contact detail">
-              {Array.from({ length: 6 }, (_, i) => (
+              {Array.from({ length: DETAIL_FIELD_COUNT }, (_, i) => (
                 <div key={i} className="vf-sk vf-sk-field" />
               ))}
             </div>

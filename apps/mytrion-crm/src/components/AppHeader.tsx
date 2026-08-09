@@ -16,6 +16,7 @@
  *     with no trigger anywhere on /main.
  */
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { type MytrionId } from '../access/mytrions.config';
 import { useUserContext } from '../context/UserContextProvider';
 import { initials } from '../lib/initials';
@@ -54,7 +55,16 @@ export function AppHeader({ context, search, actions, identity }: AppHeaderProps
       <span className={styles.hairline} aria-hidden />
 
       <div className={styles.left}>
-        <span className={styles.wordmark}>MYTRION HORIZON</span>
+        {/* Inside a workspace the wordmark is the way back to the launcher — the shortest path to
+            "somewhere else". On the launcher itself there is nowhere to go, so it stays plain text
+            rather than a link that reloads the page you are already on. */}
+        {context ? (
+          <Link to="/main" className={styles.wordmark} aria-label="Mytrion Horizon — all workspaces">
+            MYTRION HORIZON
+          </Link>
+        ) : (
+          <span className={styles.wordmark}>MYTRION HORIZON</span>
+        )}
         {context ? (
           <>
             <span className={styles.divider} aria-hidden />

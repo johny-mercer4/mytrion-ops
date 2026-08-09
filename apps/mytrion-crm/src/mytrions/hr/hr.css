@@ -32,6 +32,15 @@
 
   height: 100%;
   overflow: auto;
+  /* RESERVE THE SCROLLBAR GUTTER. `useModalFocus` freezes the page behind a dialog by setting
+     `overflow: hidden` on this element (it is the first scrolling ancestor of every HR modal), and
+     it does that in a `useEffect` — i.e. AFTER the modal has already painted. On a platform with
+     classic scrollbars that removed ~15px of gutter one frame after the dialog appeared, so the
+     centred panel and everything behind the translucent scrim jumped sideways on open and jumped
+     back on close. Reserving the gutter makes hiding the scrollbar a no-op for layout.
+     Inert where the OS uses overlay scrollbars (macOS default), which is why the shift only ever
+     reproduced for some people. */
+  scrollbar-gutter: stable;
   color: var(--text-primary);
 }
 
@@ -63,14 +72,33 @@
   max-width: none;
 }
 
+/**
+ * The module's one entrance: fade up by 6px.
+ *
+ * `translate`, NOT `transform`. Its initial value is `none`, so it promotes nothing once the
+ * animation is off, whereas a `transform` keyframe makes every element it runs on — and every
+ * element BELOW it — a containing block for the duration. `.hr-page` is an ancestor of `.hr-hero`,
+ * which carries a `backdrop-filter`, and a transform above a blurred element is the composited-layer
+ * trap this app has already shipped once (DESIGN_TOKENS.md §7).
+ */
 @keyframes hrIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    translate: 0 6px;
   }
   to {
     opacity: 1;
-    transform: none;
+    translate: none;
+  }
+}
+
+/* The scrim's half: opacity only. Never displacement — see the modal-entrance note further down. */
+@keyframes hrFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -80,7 +108,7 @@
   align-items: center;
   gap: 7px;
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -116,7 +144,7 @@
 .hr-root .hr-sub {
   margin: 8px 0 0;
   max-width: 68ch;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -175,7 +203,7 @@
 .hr-root .hr-section-title {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -198,7 +226,7 @@
   border: 1px dashed color-mix(in srgb, var(--warning) 42%, transparent);
   background: var(--tint-warn-bg);
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
 }
 .hr-root .hr-banner svg {
@@ -238,7 +266,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -249,7 +277,7 @@
 }
 .hr-root .hr-stat-n {
   font-family: var(--font-head);
-  font-size: 27px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -257,7 +285,7 @@
 }
 .hr-root .hr-stat-s {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -327,7 +355,7 @@
   width: 44px;
   height: 44px;
   flex: none;
-  border-radius: 12px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--hr-tone, var(--hr-tone-fallback)) 30%, transparent);
   color: var(--hr-tone, var(--hr-tone-fallback));
@@ -357,13 +385,13 @@
 }
 .hr-root .hr-jump-title {
   font-family: var(--font-head);
-  font-size: 15.5px;
+  font-size: var(--text-md);
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 .hr-root .hr-jump-desc {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -384,7 +412,7 @@
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 .hr-root .hr-summary {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 .hr-root .hr-summary strong {
@@ -421,7 +449,7 @@
   background: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .hr-root .hr-chips {
@@ -437,7 +465,7 @@
   background: var(--hz-pane-alt);
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -470,7 +498,7 @@
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--hz-glass-inset);
@@ -521,7 +549,7 @@
   background: none;
   color: var(--text-primary);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   max-width: min(42vw, 220px);
 }
 .hr-root .hr-sr {
@@ -545,7 +573,7 @@
   border: 1px solid var(--tint-danger-bd, color-mix(in srgb, var(--danger) 40%, transparent));
   background: var(--tint-danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-emp-inline {
   display: flex;
@@ -620,7 +648,6 @@
   background: var(--scrim);
   backdrop-filter: blur(var(--scrim-blur));
   -webkit-backdrop-filter: blur(var(--scrim-blur));
-  animation: hrIn var(--hz-dur-wash) var(--hz-ease);
   /* `.hr-root` is the module's scroll container and the backdrop is one of its descendants, so scrolling
      past the end of the dialog used to chain up and scroll the directory away behind it. */
   overscroll-behavior: contain;
@@ -642,7 +669,7 @@
   overscroll-behavior: contain;
   /* Softer on the container than on anything inside it — a uniform radius everywhere reads as a
      template. Inner surfaces use --hr-r-sm. */
-  border-radius: 18px;
+  border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-lift, var(--hz-pane));
   /* Tinted, not black: a neutral drop shadow on a coloured field looks like a sticker. --dc is the
@@ -652,6 +679,33 @@
     var(--hz-shadow-rest),
     var(--hz-glass-inset);
   padding: 0 20px 18px;
+}
+
+/**
+ * MODAL ENTRANCE — the scrim FADES, the panel RISES. Two animations on two elements, on purpose.
+ *
+ * This was one `animation: hrIn` on `.hr-modal-backdrop`, and `hrIn` displaces by 6px. That put a
+ * displacement AND an opacity ramp on a `position: fixed`, full-viewport, `backdrop-filter`ed
+ * element, and all three symptoms of that are visible:
+ *   - the whole scrim slid up 6px, leaving the bottom 6px of the viewport un-scrimmed and un-blurred
+ *     for the length of the animation before it snapped shut;
+ *   - the panel is a flex child of the scrim, so it rode along and settled 6px after appearing; and
+ *   - the blur re-rasterises as the layer is promoted for the opacity ramp and de-promoted the
+ *     moment it reaches 1, which is the "changes instantly, looks like a flicker" the Employees →
+ *     Edit dialog was reported for.
+ * The panel carries no blur of its own, so it is the correct element to displace.
+ *
+ * Inside `prefers-reduced-motion: no-preference` rather than relying on global.css zeroing the
+ * duration: an entrance belongs behind the query per the house rule, and under `reduce` both
+ * elements then simply start at their settled state.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .hr-root .hr-modal-backdrop {
+    animation: hrFade var(--hz-dur-wash) var(--hz-ease);
+  }
+  .hr-root .hr-modal {
+    animation: hrIn var(--hz-dur-wash) var(--hz-ease);
+  }
 }
 
 /**
@@ -696,7 +750,7 @@
 .hr-root .hr-modal-head h2 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 17px;
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -709,7 +763,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -724,7 +778,7 @@
   background: var(--hz-pane-alt);
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -752,9 +806,9 @@
   width: 42px;
   height: 42px;
   flex: none;
-  border-radius: 11px;
+  border-radius: var(--hr-r-md);
   font-family: var(--font-head);
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 700;
   letter-spacing: 0.02em;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -765,8 +819,8 @@
 .hr-root .hr-avatar-sm {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
-  font-size: 11px;
+  border-radius: var(--hr-r-md);
+  font-size: var(--text-2xs);
   object-fit: cover;
 }
 
@@ -779,7 +833,7 @@
   margin-left: auto;
   padding: 3px 10px;
   border-radius: var(--hr-r-pill);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -806,14 +860,14 @@
 .hr-root table.hr-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   min-width: 640px;
 }
 .hr-root .hr-table th {
   text-align: left;
   padding: 11px 14px;
   font-family: var(--font-head);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -879,12 +933,12 @@
 }
 .hr-root .hr-req-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 .hr-root .hr-req-sub {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -907,19 +961,19 @@
 .hr-root .hr-profile-head .hr-avatar {
   width: 66px;
   height: 66px;
-  border-radius: 18px;
-  font-size: 21px;
+  border-radius: var(--hr-r-lg);
+  font-size: var(--text-xl);
 }
 .hr-root .hr-profile-name {
   font-family: var(--font-head);
-  font-size: 21px;
+  font-size: var(--text-xl);
   font-weight: 700;
   letter-spacing: -0.012em;
   color: var(--text-primary);
 }
 .hr-root .hr-profile-role {
   margin-top: 3px;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 .hr-root .hr-dl {
@@ -934,7 +988,7 @@
   box-shadow: var(--hz-glass-inset);
 }
 .hr-root .hr-dl dt {
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -942,7 +996,7 @@
 }
 .hr-root .hr-dl dd {
   margin: 3px 0 0;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   word-break: break-word;
 }
@@ -956,7 +1010,7 @@
   gap: 9px;
   padding: 52px 24px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   border-radius: var(--hr-r-md);
   border: 1px dashed var(--hz-pane-bd);
@@ -969,7 +1023,7 @@
 }
 .hr-root .hr-empty-title {
   font-family: var(--font-head);
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -1052,7 +1106,7 @@
   padding: 2px 8px;
   border-radius: var(--hr-r-pill);
   font-family: var(--font-head);
-  font-size: 8.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1164,13 +1218,13 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
 .hr-root .hr-empc-name {
   font-family: var(--font-head);
-  font-size: 15.5px;
+  font-size: var(--text-md);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
@@ -1178,7 +1232,7 @@
   overflow-wrap: anywhere;
 }
 .hr-root .hr-empc-role {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--dc, var(--accent));
   font-weight: 600;
 }
@@ -1190,20 +1244,20 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--hz-pane-bd);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   min-width: 0;
 }
 .hr-root .hr-empc-dept {
   align-self: flex-start;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--hr-r-pill);
   /* `--dc` is the department tone (set on the card / detail from `iconColor`). */
   background: color-mix(in srgb, var(--dc, var(--accent)) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--dc, var(--accent)) 22%, transparent);
   color: var(--dc, var(--accent));
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 .hr-root .hr-empc-faceid,
 .hr-root .hr-empc-mail,
@@ -1212,7 +1266,7 @@
   align-items: center;
   gap: 5px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   /* Emails and handles are the one place truncation is right — identifiers, not prose. */
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1262,7 +1316,7 @@
 .hr-root .hr-avatar-lg {
   width: 46px;
   height: 46px;
-  font-size: 15px;
+  font-size: var(--text-md);
 }
 
 /* ONE loader for all of HR: a skeleton shaped like the real card so the grid does not jump when data
@@ -1297,7 +1351,7 @@
 .hr-root .hr-empd-ident h2 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 21px;
+  font-size: var(--text-xl);
   font-weight: 700;
   /* Tighter tracking as the size goes up — large text set at default spacing reads loose. */
   letter-spacing: -0.02em;
@@ -1307,7 +1361,7 @@
 }
 .hr-root .hr-empd-ident p {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--accent);
 }
@@ -1357,7 +1411,10 @@
 .hr-root .hr-empd-photo-btn:focus-visible {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  /* --on-accent, not #fff. The fill is --accent, and in DARK that is #a5e7ff — a pale cyan, so a
+     white glyph on it was very nearly invisible. --on-accent is the ink the ramp is built to carry
+     (#003543 dark, #ffffff light), so light keeps exactly what it had and dark stops failing. */
+  color: var(--on-accent);
   transform: scale(1.06);
 }
 .hr-root .hr-empd-photo-btn:disabled {
@@ -1385,7 +1442,7 @@
   border: 0;
   background: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--accent);
   cursor: pointer;
@@ -1430,7 +1487,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1443,7 +1500,7 @@
 }
 .hr-root .hr-empd-field dd {
   margin: 4px 0 0;
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 550;
   color: var(--text-primary);
   /* IDs, phone numbers and dates line up column-to-column instead of shimmying. */
@@ -1465,7 +1522,7 @@
   display: flex;
   align-items: center;
   gap: 0;
-  border-radius: var(--hr-r-sm, 8px);
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt, var(--hz-pane));
   overflow: hidden;
@@ -1478,7 +1535,7 @@
 .hr-root .hr-prefixed > span {
   padding: 0 2px 0 11px;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   user-select: none;
 }
@@ -1506,7 +1563,7 @@
   margin-bottom: 16px;
 }
 .hr-root .hr-person-bar-note {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -1515,7 +1572,7 @@
   align-items: flex-start;
   gap: 16px;
   padding: 18px 20px;
-  border-radius: var(--hr-r-lg, 14px);
+  border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   /* The department tone bleeds in from the left so the person reads as belonging somewhere, without
      tinting the whole card the way a full background would. */
@@ -1531,14 +1588,14 @@
 .hr-root .hr-person-ident h1 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: 700;
   letter-spacing: -0.014em;
   overflow-wrap: anywhere;
 }
 .hr-root .hr-person-ident p {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -1555,9 +1612,9 @@
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--hr-r-pill);
   border: 1px solid var(--hz-pane-bd);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-secondary);
 }
@@ -1579,7 +1636,7 @@
 }
 .hr-root .hr-person-card {
   border: 1px solid var(--hz-pane-bd);
-  border-radius: var(--hr-r-lg, 14px);
+  border-radius: var(--hr-r-lg);
   background: var(--hz-pane);
   padding: 16px 18px;
   min-width: 0;
@@ -1594,25 +1651,25 @@
 .hr-root .hr-person-card > header h2 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 700;
   letter-spacing: -0.008em;
   color: var(--text-primary);
 }
 .hr-root .hr-person-count {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-muted);
 }
 .hr-root .hr-person-lede {
   margin: 0 0 10px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .hr-root .hr-person-none {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 .hr-root .hr-person-locked {
@@ -1628,7 +1685,7 @@
   margin: 0;
 }
 .hr-root .hr-person-facts dt {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1636,7 +1693,7 @@
 }
 .hr-root .hr-person-facts dd {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -1657,7 +1714,7 @@
   align-items: center;
   gap: 10px;
   padding: 7px 9px;
-  border-radius: var(--hr-r-sm, 8px);
+  border-radius: var(--hr-r-sm);
   background: var(--hz-pane-alt, transparent);
   min-width: 0;
 }
@@ -1668,18 +1725,18 @@
   flex: 1;
 }
 .hr-root .hr-person-team-ident strong {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   overflow-wrap: anywhere;
 }
 .hr-root .hr-person-team-ident span {
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 .hr-root .hr-person-relation {
   flex-shrink: 0;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   color: var(--text-muted);
 }
@@ -1698,23 +1755,23 @@
   flex-direction: column;
   gap: 2px;
   padding: 11px 13px;
-  border-radius: var(--hr-r-sm, 8px);
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt, transparent);
 }
 .hr-root .hr-person-balance span {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   color: var(--text-muted);
 }
 .hr-root .hr-person-balance strong {
   font-family: var(--font-head);
-  font-size: 21px;
+  font-size: var(--text-xl);
   font-weight: 700;
   line-height: 1.1;
 }
 .hr-root .hr-person-balance small {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -1732,16 +1789,16 @@
   gap: 10px;
   flex-wrap: wrap;
   padding: 8px 11px;
-  border-radius: var(--hr-r-sm, 8px);
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-person-request-type {
   font-weight: 650;
 }
 .hr-root .hr-person-request-dates {
   font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 .hr-root .hr-person-request-days {
@@ -1755,7 +1812,7 @@
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: var(--hr-r-sm, 8px);
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt, transparent);
   flex: none;
@@ -1767,7 +1824,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--hr-r-sm);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -1799,7 +1856,7 @@
 .hr-root .hr-list {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-list thead th {
   position: sticky;
@@ -1808,7 +1865,7 @@
   padding: 9px 12px;
   text-align: left;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1855,7 +1912,7 @@
   width: 26px;
   height: 26px;
   flex: none;
-  border-radius: 7px;
+  border-radius: var(--hr-r-sm);
   background: color-mix(in srgb, var(--dc, var(--accent)) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--dc, var(--accent)) 30%, transparent);
   color: var(--dc, var(--accent));
@@ -1884,7 +1941,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .hr-root .hr-list-tg {
@@ -1946,7 +2003,7 @@
   box-shadow: var(--hz-glass-inset);
   color: var(--text-primary);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   cursor: pointer;
   transition:
     border-color var(--hz-dur-tone) var(--hz-ease),
@@ -2011,7 +2068,7 @@
   gap: 10px;
   padding: 7px 9px;
   border-radius: var(--hr-r-sm);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   cursor: pointer;
 }

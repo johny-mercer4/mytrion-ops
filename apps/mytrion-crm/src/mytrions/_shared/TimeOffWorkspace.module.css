@@ -1,42 +1,84 @@
+/*
+ * Time-off workspace.
+ *
+ * This module used to carry its own private design system — a #ee5f91 accent, a 9→30px type ramp
+ * with no step on the app scale, and a 10/11/13/14/15/17px radius ladder — which is why the page
+ * read as a different product from the rest of the CRM. Everything below now resolves through
+ * theme.css / horizon.css:
+ *
+ *   type      --text-* / --lh-* / --fw-* / --tr-*   (no literal px, nothing under the 11px floor)
+ *   shape     --radius-sm (controls) / --radius-md / --radius-lg (panels) / --radius-full (pills)
+ *   colour    semantic + --intent-* + the --tone-* wayfinding set. No hex, no rgba.
+ *   space     --space-* on the 4px rhythm
+ *   depth     border + --shadow-sm at rest; the drop shadow only where something floats
+ *
+ * The four locals below stay: they are the module's own names for four app tokens, so a re-skin is
+ * one block rather than 90 call sites. They are `var()` aliases and never literals.
+ */
 .workspace {
-  --to-card: color-mix(in srgb, var(--surface, #fff) 92%, transparent);
-  --to-line: color-mix(in srgb, var(--border, #d9dfeb) 82%, transparent);
-  --to-muted: var(--text-muted, #687386);
-  --to-accent: #ee5f91;
-  color: var(--text-primary, #182033);
+  /* Data surfaces are FLAT and OPAQUE — glass is for chrome that floats over content. This was a
+     92%-of-surface mix, i.e. a translucent card, which is the thing the glass decision rules out. */
+  --to-card: var(--surface-data);
+  --to-line: var(--border);
+  --to-muted: var(--text-muted);
+  /* One accent ramp app-wide: a hover, a focus ring and a primary button must look the same in
+     every workspace. HR identity travels as --badge-tone (launcher card + header badge), never as
+     a per-module accent — which is what the old #ee5f91 was, and it was only ever tuned for dark. */
+  --to-accent: var(--accent);
+  /* Off the space ladder, and single-sourced on purpose: the holiday row and the placeholder line
+     that stands in for it while a new year loads must occupy the SAME height, or the section jumps
+     when the data lands. One name means they cannot drift apart. */
+  --to-row-h: 52px;
+  color: var(--text-primary);
   min-height: 0;
-  padding: 26px;
+  padding: var(--space-6);
   overflow: auto;
 }
 
-.embedded { min-height: calc(100vh - 92px); padding: 34px 42px 72px; }
+/* 92px is the shell header + tab strip this panel is embedded under — a measured offset, not a
+   spacing step. */
+.embedded {
+  min-height: calc(100vh - 92px);
+  padding: var(--space-8) var(--space-10) var(--space-16);
+}
 
 .header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .header h2 {
-  margin: 4px 0 3px;
+  margin: var(--space-1) 0;
   font-family: var(--font-head);
-  font-size: clamp(28px, 3vw, 39px);
+  /* Deliberately fluid, but both ends now land on the ladder (--text-2xl → --text-3xl) instead of
+     the off-scale 28→39px. line-height stays a ratio: the --lh-* tokens are absolute px and cannot
+     pair with a clamp()ed size. */
+  font-size: clamp(var(--text-2xl), 3vw, var(--text-3xl));
   line-height: 1.05;
-  letter-spacing: -.035em;
+  letter-spacing: var(--tr-3xl);
 }
 
-.header p { margin: 0; color: var(--to-muted); font-size: 13px; }
+.header p {
+  margin: 0;
+  color: var(--to-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
 
+/* The app's eyebrow role: --text-2xs uppercase on --tr-caps-micro. The old .16em was double the
+   caps tracking the design system defines, and it is most of why these labels read as foreign. */
 .eyebrow,
 .panelTitle > div > span,
 .sectionTitle span,
 .listHead span {
   color: var(--to-accent);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .16em;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-extra);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
 }
 
@@ -45,7 +87,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--space-2_5);
 }
 
 .primaryBtn,
@@ -53,59 +95,69 @@
 .dangerBtn,
 .iconBtn {
   border: 1px solid var(--to-line);
-  border-radius: 11px;
-  min-height: 40px;
-  padding: 0 15px;
+  border-radius: var(--radius-sm);
+  min-height: var(--space-10);
+  padding: 0 var(--space-4);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: inherit;
   background: var(--to-card);
   font: inherit;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-bold);
   cursor: pointer;
-  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  /* `translate`, not `transform` — an independent translate promotes nothing at rest, which
+     matters because these buttons sit inside .formActions' backdrop-filter. */
+  transition:
+    translate var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
 }
 
 .primaryBtn {
-  color: white;
+  color: var(--on-accent);
   border-color: transparent;
-  background: linear-gradient(135deg, #ef5f91, #bf4fed);
-  box-shadow: 0 9px 22px rgba(223, 82, 152, .22);
+  background: var(--ramp-d);
+  box-shadow: 0 9px 22px -8px var(--accent-glow);
 }
 
 .dangerBtn {
-  color: #df546a;
-  border-color: color-mix(in srgb, #df546a 35%, var(--to-line));
+  color: var(--intent-danger-fg);
+  border-color: var(--intent-danger-bd);
 }
 
 .primaryBtn:hover,
 .secondaryBtn:hover,
 .dangerBtn:hover,
 .iconBtn:hover {
-  transform: translateY(-1px);
+  translate: var(--lift-1);
 }
 
 .primaryBtn:disabled,
 .secondaryBtn:disabled,
 .dangerBtn:disabled {
   cursor: wait;
-  opacity: .58;
-  transform: none;
+  opacity: var(--disabled-opacity);
+  translate: none;
 }
 
-.iconBtn { width: 38px; min-height: 38px; padding: 0; }
+.iconBtn {
+  width: var(--space-10);
+  min-height: var(--space-10);
+  padding: 0;
+}
 
 .yearPicker {
-  min-height: 40px;
+  min-height: var(--space-10);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 11px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   border: 1px solid var(--to-line);
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
   background: var(--to-card);
 }
 
@@ -115,70 +167,84 @@
   color: inherit;
   background: transparent;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-bold);
 }
 
 .tabs {
   display: flex;
-  gap: 5px;
-  margin-bottom: 22px;
-  padding: 5px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-1);
   border: 1px solid var(--to-line);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--to-card) 64%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
   overflow-x: auto;
 }
 
 .tabs button {
-  min-height: 37px;
+  min-height: var(--space-10);
   border: 0;
-  border-radius: 10px;
-  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3_5);
   color: var(--to-muted);
   background: transparent;
   font: inherit;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-bold);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .tabs button span {
-  margin-left: 5px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  margin-left: var(--space-1);
+  padding: var(--space-0_5) var(--space-1_5);
+  border-radius: var(--radius-full);
   background: color-mix(in srgb, currentColor 10%, transparent);
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 
 .tabs .tabActive {
-  color: var(--text-primary, #182033);
+  color: var(--text-primary);
   background: var(--to-card);
-  box-shadow: 0 4px 14px rgba(8, 16, 38, .08);
+  box-shadow: var(--shadow-sm);
 }
 
-.summary { display: grid; gap: 18px; }
+.summary {
+  display: grid;
+  gap: var(--space-5);
+}
 
 .balanceGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-3_5);
 }
 
 .balanceCard {
   position: relative;
+  /* Off the space ladder on purpose: this is the fixed card height the stale-year placeholder
+     reuses through this same class, so the loading and loaded branches occupy identical geometry
+     and nothing shifts when the new year's balances land. */
   min-height: 206px;
-  padding: 18px;
+  padding: var(--ui-panel-pad);
   border: 1px solid var(--to-line);
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
   background:
     radial-gradient(circle at 100% 0, color-mix(in srgb, var(--leave-tone) 20%, transparent), transparent 48%),
     var(--to-card);
   overflow: hidden;
 }
 
-.tone_sick { --leave-tone: #ed668a; } .tone_annual_paid { --leave-tone: #55b6ff; } .tone_unpaid { --leave-tone: #a779f4; }
+/* Leave-type wayfinding — categorical encoding within one screen, not status and not identity.
+   Kept, but sourced from the --tone-* set so each hue gets a legible step in BOTH themes (dark
+   takes the 400-level, light the 600/700-level); the old literals were tuned for dark only. */
+.tone_sick { --leave-tone: var(--tone-rose); }
+.tone_annual_paid { --leave-tone: var(--tone-sky); }
+.tone_unpaid { --leave-tone: var(--tone-violet); }
 
 .balanceTop {
   display: flex;
@@ -197,46 +263,58 @@
 }
 
 .balanceIcon {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-md);
 }
 
 .paidPill {
-  padding: 4px 8px;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
   color: var(--to-muted);
   background: color-mix(in srgb, var(--to-muted) 9%, transparent);
-  font-size: 9px;
-  font-weight: 800;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-extra);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
 }
 
-.balanceCard h3 { margin: 14px 0 8px; font-size: 13px; }
+.balanceCard h3 {
+  margin: var(--space-3_5) 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
 
 .balanceValue {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
+/* The KPI figure. Grotesk with tabular-nums rather than Space Mono — at this size Mono's very wide
+   fit reads as a licence plate — which is exactly what the --ui-kpi-value-* trio encodes. */
 .balanceValue strong {
-  font-size: 30px;
+  font-family: var(--ui-kpi-value-font);
+  font-size: var(--ui-kpi-value-size);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
   line-height: 1;
-  letter-spacing: -.04em;
+  letter-spacing: var(--ui-kpi-value-tr);
 }
 
 .balanceValue span,
 .balanceMeta,
 .muted {
   color: var(--to-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 
 .balanceTrack {
-  height: 5px;
-  margin: 16px 0 9px;
-  border-radius: 999px;
+  height: var(--space-1_5);
+  margin: var(--space-4) 0 var(--space-2_5);
+  border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--to-muted) 12%, transparent);
   overflow: hidden;
 }
@@ -251,7 +329,7 @@
 .balanceMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: var(--space-1_5) var(--space-3);
 }
 
 .holidays,
@@ -259,13 +337,16 @@
 .formPanel,
 .detailPanel {
   border: 1px solid var(--to-line);
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
   background: var(--to-card);
-  box-shadow: 0 20px 45px rgba(5, 12, 31, .08);
+  /* Depth is refraction, not shadow: border + glare at rest. --shadow-sm is theme-aware (an inset
+     highlight in dark, a slate hairline-shadow in light), where the old dark-ink rgba was
+     invisible on the dark ground and only ever did anything in light. */
+  box-shadow: var(--shadow-sm);
 }
 
 .holidays {
-  padding: 18px;
+  padding: var(--ui-panel-pad);
 }
 
 .sectionTitle,
@@ -274,49 +355,74 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--space-3_5);
 }
 
 .sectionTitle h3,
 .listHead h3,
 .panelTitle h3 {
-  margin: 3px 0 0;
-  font-size: 17px;
-  letter-spacing: -.02em;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  letter-spacing: var(--tr-lg);
 }
 
 .sectionTitle > svg {
-  color: #e5a52f;
+  color: var(--tone-amber);
 }
 
 .holidayList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* The stale-year and empty lines share this grid with the loaded rows, so give them a loaded row's
+   footprint. A bare one-line <p> (with a browser-default 1em margin) under a 52px row grid is a
+   visible jump the moment the holidays land. */
+.holidayList > .muted {
+  grid-column: 1 / -1;
+  min-height: var(--to-row-h);
+  margin: 0;
+  display: flex;
+  align-items: center;
 }
 
 .holidayRow {
-  min-height: 52px;
-  padding: 9px 11px;
+  min-height: var(--to-row-h);
+  padding: var(--space-2_5) var(--space-3);
   display: grid;
   grid-template-columns: 55px 1fr auto;
   align-items: center;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--to-line) 70%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--to-card) 74%, transparent);
+  gap: var(--space-2_5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
 }
 
-.holidayDate { color: #e5a52f; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+/* A date is a figure: Space Mono + tabular, per the .num contract in global.css. */
+.holidayDate {
+  color: var(--tone-amber);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+}
 
 .holidayRow strong {
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
 }
 
 .holidayRow > span:last-child {
   color: var(--to-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 
 .requestList {
@@ -325,20 +431,21 @@
 
 .listHead,
 .panelTitle {
-  padding: 17px 18px;
+  padding: var(--space-4);
   border-bottom: 1px solid var(--to-line);
 }
 
 .requestRow {
   width: 100%;
   min-height: 72px;
-  padding: 10px 17px;
+  padding: var(--space-2_5) var(--space-4);
   display: grid;
-  grid-template-columns: 40px minmax(170px, 1fr) 52px 125px 18px;
+  /* Track 1 is the icon tile and must stay equal to .requestIcon's box. */
+  grid-template-columns: var(--space-10) minmax(170px, 1fr) 52px 125px 18px;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--to-line) 75%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
   color: inherit;
   background: transparent;
   text-align: left;
@@ -346,24 +453,25 @@
 }
 
 .requestRow:hover {
-  background: color-mix(in srgb, var(--to-accent) 5%, transparent);
+  background: var(--row-hover);
 }
 
 .requestIcon {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-md);
 }
 
 .requestMain {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .requestMain strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -374,24 +482,39 @@
 .detailStatus span,
 .timelineItem small {
   color: var(--to-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 
 .requestDays {
-  font-weight: 800;
+  font-weight: var(--fw-extra);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* A timestamp is a figure. Space Mono here rather than on .requestDays, whose --fw-extra has no
+   real master in Mono and would be synthesized. */
+.timelineItem small {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: var(--tr-fig);
 }
 
 .status {
   width: fit-content;
-  padding: 5px 8px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 800;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-extra);
 }
 
-.statusPending { color: #c48219; background: rgba(226, 161, 48, .12); }
-.statusApproved { color: #1d9a73; background: rgba(49, 182, 136, .12); }
-.statusClosed { color: #b26675; background: rgba(194, 92, 112, .11); }
+.statusPending { color: var(--intent-warning-fg); background: var(--intent-warning-bg); }
+.statusApproved { color: var(--intent-success-fg); background: var(--intent-success-bg); }
+/* rejected + cancelled both land here — terminal-negative, so the app's danger tint rather than a
+   bespoke muted rose that existed in neither the status nor the wayfinding scale. */
+.statusClosed { color: var(--intent-danger-fg); background: var(--intent-danger-bg); }
 .chevron { color: var(--to-muted); opacity: .65; }
 
 .empty,
@@ -404,19 +527,35 @@
 }
 
 .empty > span {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 12px;
+  width: var(--space-12);
+  height: var(--space-12);
+  margin-bottom: var(--space-3);
   display: grid;
   place-items: center;
-  border-radius: 15px;
+  border-radius: var(--radius-md);
   color: var(--to-accent);
-  background: color-mix(in srgb, var(--to-accent) 10%, transparent);
+  background: var(--accent-soft);
 }
 
-.empty strong { font-size: 13px; }
-.empty p { max-width: 340px; margin: 6px 0; color: var(--to-muted); font-size: 11px; }
-.loading { gap: 10px; color: var(--to-muted); font-size: 12px; }
+.empty strong {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.empty p {
+  max-width: 340px;
+  margin: var(--space-1_5) 0;
+  color: var(--to-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+
+.loading {
+  gap: var(--space-2_5);
+  color: var(--to-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
 
 .formPanel,
 .detailPanel {
@@ -429,172 +568,210 @@
 .formGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  padding: 18px;
+  gap: var(--space-3_5);
+  padding: var(--ui-panel-pad);
 }
 
 .field {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1_5);
 }
 
 .field > span,
 .reason > span {
   color: var(--to-muted);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
 }
 
 .fieldWide { grid-column: 1 / -1; }
 
+/* The one input appearance, through the --ui-field-* component tokens. */
 .field input,
 .field select,
 .field textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--to-line);
-  border-radius: 10px;
+  border: 1px solid var(--ui-field-bd);
+  border-radius: var(--ui-field-radius);
   outline: 0;
-  padding: 10px 11px;
-  color: inherit;
-  background: color-mix(in srgb, var(--to-card) 80%, transparent);
+  padding: var(--space-2_5) var(--space-3);
+  color: var(--ui-field-fg);
+  background: var(--ui-field-bg);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--ui-field-placeholder);
 }
 
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  border-color: color-mix(in srgb, var(--to-accent) 72%, var(--to-line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--to-accent) 10%, transparent);
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-halo);
 }
 
 .workflowHint,
 .detailStatus {
-  margin: 0 18px 16px;
-  padding: 12px;
+  margin: 0 var(--ui-panel-pad) var(--space-4);
+  padding: var(--space-3);
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, #8c6df0 28%, var(--to-line));
-  border-radius: 11px;
-  color: #8c6df0;
-  background: color-mix(in srgb, #8c6df0 7%, transparent);
-  font-size: 11px;
-  font-weight: 650;
+  gap: var(--space-2_5);
+  border: 1px solid var(--intent-info-bd);
+  border-radius: var(--radius-md);
+  color: var(--intent-info-fg);
+  background: var(--intent-info-bg);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-semibold);
 }
 
 .formActions {
   position: sticky;
   bottom: 0;
+  /* Raw 2 is legal: sibling ordering inside this already-isolated panel, in the -1..3 band. */
   z-index: 2;
-  padding: 14px 18px 18px;
+  padding: var(--space-3_5) var(--space-4) var(--space-4);
   border-top: 1px solid var(--to-line);
   background: color-mix(in srgb, var(--to-card) 96%, transparent);
-  backdrop-filter: blur(10px);
+  /* Chrome, not data: a docked action bar floats over the scrolling panel. --hz-blur-sm is the
+     in-list blur budget. */
+  backdrop-filter: blur(var(--hz-blur-sm));
 }
 
 .error {
-  margin: 12px 18px;
-  padding: 10px 12px;
-  border: 1px solid rgba(220, 80, 105, .25);
-  border-radius: 10px;
-  color: #d65069;
-  background: rgba(220, 80, 105, .08);
-  font-size: 11px;
+  margin: var(--space-3) var(--space-4);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--intent-danger-bd);
+  border-radius: var(--radius-md);
+  color: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
 }
 
 .detailHero {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 18px;
+  gap: var(--space-2_5);
+  padding: var(--ui-panel-pad);
 }
 
 .detailHero > div {
-  padding: 13px;
+  padding: var(--space-3);
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   border: 1px solid var(--to-line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
 }
 
 .detailHero span {
   color: var(--to-muted);
-  font-size: 9px;
-  font-weight: 800;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-extra);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
 }
 
-.detailHero strong { font-size: 13px; }
-.detailStatus > div { display: grid; gap: 2px; color: inherit; }
-.detailStatus strong { font-size: 11px; }
+.detailHero strong {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.detailStatus > div { display: grid; gap: var(--space-0_5); color: inherit; }
+
+.detailStatus strong {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
 
 .reason {
-  margin: 0 18px 16px;
-  padding: 12px;
+  margin: 0 var(--ui-panel-pad) var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--to-line);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
 }
 
 .reason p {
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: var(--space-1_5) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
 }
 
 .timeline {
-  margin: 0 18px 18px;
-  padding: 2px 0;
+  margin: 0 var(--ui-panel-pad) var(--space-4);
+  padding: var(--space-0_5) 0;
 }
 
 .timelineItem {
   position: relative;
-  min-height: 45px;
-  padding-left: 25px;
+  min-height: var(--space-10);
+  padding-left: var(--space-6);
   display: grid;
 }
 
 .timelineItem:not(:last-child)::before {
   content: "";
   position: absolute;
-  top: 14px;
-  bottom: -4px;
-  left: 6px;
+  top: var(--space-3_5);
+  bottom: calc(var(--space-1) * -1);
+  left: var(--space-1_5);
   width: 1px;
   background: var(--to-line);
 }
 
 .timelineDot {
   position: absolute;
-  top: 5px;
+  top: var(--space-1);
+  /* 1px, not a step: it centres the 10px dot on the 1px rail at left: 6px. */
   left: 1px;
-  width: 10px;
-  height: 10px;
+  width: var(--space-2_5);
+  height: var(--space-2_5);
   border: 2px solid var(--to-card);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--to-accent);
 }
 
-.timelineItem > div { display: grid; gap: 2px; }
-.timelineItem strong { font-size: 11px; text-transform: capitalize; }
-.timelineItem p { margin: 3px 0; color: var(--to-muted); font-size: 11px; }
-.detailPanel > .field { margin: 0 18px 16px; }
+.timelineItem > div { display: grid; gap: var(--space-0_5); }
 
-.spin { animation: spin .8s linear infinite; }
+.timelineItem strong {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  text-transform: capitalize;
+}
+
+.timelineItem p {
+  margin: var(--space-1) 0;
+  color: var(--to-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+
+.detailPanel > .field { margin: 0 var(--ui-panel-pad) var(--space-4); }
+
+/* An indefinite ambient loop, so it sits outside the 220ms transition ceiling and is floored at
+   >=1s — below that it reads as a stalled transition rather than as ambience. */
+.spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 900px) {
-  .embedded { padding: 24px; }
+  .embedded { padding: var(--space-6); }
   .balanceGrid { grid-template-columns: 1fr; }
   .holidayList { grid-template-columns: 1fr; }
 }
 @media (max-width: 650px) {
-  .workspace { padding: 18px; }
+  .workspace { padding: var(--space-4); }
   .header { align-items: stretch; flex-direction: column; }
   .headerActions { justify-content: space-between; }
   .formGrid, .detailHero { grid-template-columns: 1fr; }
   .fieldWide { grid-column: auto; }
-  .requestRow { grid-template-columns: 38px 1fr auto; }
+  .requestRow { grid-template-columns: var(--space-10) 1fr auto; }
   .requestDays, .status { display: none; }
 }
