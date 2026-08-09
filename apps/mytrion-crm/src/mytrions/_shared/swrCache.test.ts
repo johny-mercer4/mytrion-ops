@@ -217,4 +217,59 @@ describe('useCachedLoad', () => {
     await waitFor(() => expect(second.result.current.data).toBe('value'));
     expect(second.result.current.loading).toBe(false);
   });
+  it('two concurrent mounts of one cold key issue a single request', async () => {
+    const k = uniq();
+    let release = (): void => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const fn = vi.fn(async () => {
+      await gate;
+      return 'value';
+    });
+
+    // Both mount while nothing is cached and nothing has resolved — the exact window in which the
+    // finished-read cache cannot help. Without in-flight dedupe this fired twice.
+    const a = renderHook(() => useCachedLoad(k, fn));
+    const b = renderHook(() => useCachedLoad(k, fn));
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => expect(a.result.current.data).toBe('value'));
+    await waitFor(() => expect(b.result.current.data).toBe('value'));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a forced reload does NOT join a read that is already in flight', async () => {
+    const k = uniq();
+    let release = (): void => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let n = 0;
+    const fn = vi.fn(async () => {
+      n += 1;
+      if (n === 1) await gate;
+      return `v${n}`;
+    });
+
+    const { result } = renderHook(() => useCachedLoad(k, fn));
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // An invalidation means the in-flight answer is known-stale: it departed before the write that
+    // triggered the reload, so joining it would return exactly the row the caller wants replaced.
+    await act(async () => {
+      result.current.reload();
+    });
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => expect(result.current.data).toBe('v2'));
+  });
 });

@@ -84,6 +84,12 @@
   color: var(--text-muted);
   transform: rotate(90deg);
 }
+/* Holds its own footprint before the calculation is live. `visibility` and not `display:none`, and
+   not opacity alone: the element must still occupy space in the flex row, or the row's item count
+   changes between states and the whole action cluster re-wraps when data lands. */
+.mg-root .mg-rf-live-badge[data-pending] {
+  visibility: hidden;
+}
 .mg-root .mg-rf-live-badge {
   display: inline-flex;
   align-items: center;

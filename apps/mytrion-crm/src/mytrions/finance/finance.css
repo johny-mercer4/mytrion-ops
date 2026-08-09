@@ -76,7 +76,7 @@
   align-items: center;
   gap: 7px;
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -98,7 +98,7 @@
 .fi-sub {
   margin: 8px 0 0;
   max-width: 68ch;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -116,7 +116,7 @@
 }
 .fi-cachedat {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -136,7 +136,7 @@
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--hz-glass-inset);
@@ -226,7 +226,7 @@
   padding: 5px 13px;
   border-radius: var(--fi-r-pill);
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -236,7 +236,7 @@
 }
 .fi-captured {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -268,7 +268,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -279,7 +279,7 @@
 }
 .fi-stat-n {
   font-family: var(--font-head);
-  font-size: 25px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
@@ -287,7 +287,7 @@
 }
 .fi-stat-s {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -307,7 +307,7 @@
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 .fi-summary {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 .fi-summary strong {
@@ -344,7 +344,7 @@
   background: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .fi-filters {
   display: flex;
@@ -360,7 +360,7 @@
 }
 .fi-filter-label {
   font-family: var(--font-head);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -378,7 +378,7 @@
   background: var(--hz-pane-alt);
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -438,7 +438,7 @@
 }
 .fi-row-name {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -447,12 +447,12 @@
 .fi-row-sub {
   margin-top: 2px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .fi-cell-l {
   font-family: var(--font-head);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -461,7 +461,7 @@
 .fi-cell-v {
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
@@ -492,7 +492,7 @@
   flex: none;
   padding: 3px 9px;
   border-radius: var(--fi-r-pill);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -576,9 +576,9 @@
   width: 46px;
   height: 46px;
   flex: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-family: var(--font-head);
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 700;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
@@ -586,7 +586,7 @@
 }
 .fi-modal-title {
   font-family: var(--font-head);
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 700;
   letter-spacing: -0.012em;
   color: var(--text-primary);
@@ -598,7 +598,7 @@
   flex-wrap: wrap;
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -632,7 +632,7 @@
   background: none;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
@@ -656,7 +656,7 @@
 .fi-modal-tab .fi-soon {
   padding: 1px 6px;
   border-radius: var(--fi-r-pill);
-  font-size: 8.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -682,7 +682,7 @@
    for "what are this carrier's terms?" meant reading all 17 tiles. Sections + right-aligned values
    let the eye run down a column instead. */
 .fi-sect {
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
   box-shadow: var(--hz-glass-inset);
@@ -696,7 +696,7 @@
   border-bottom: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);
   font-family: var(--font-head);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -725,7 +725,7 @@
 }
 .fi-dt-l {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
@@ -733,7 +733,7 @@
 .fi-dt-v {
   min-width: 0;
   text-align: right;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
@@ -758,7 +758,7 @@
 
 /* ── Tables inside the modal ───────────────────────────────────────────────── */
 .fi-tablewrap {
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
   box-shadow: var(--hz-glass-inset);
@@ -770,7 +770,7 @@
 table.fi-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   min-width: 720px;
 }
 .fi-table th {
@@ -779,7 +779,7 @@ table.fi-table {
   text-align: left;
   padding: 10px 13px;
   font-family: var(--font-head);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -822,7 +822,7 @@ table.fi-table {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1px;
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   overflow: hidden;
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-bd);
@@ -833,7 +833,7 @@ table.fi-table {
 }
 .fi-rollup-l {
   font-family: var(--font-head);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -842,7 +842,7 @@ table.fi-table {
 .fi-rollup-v {
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--text-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -858,9 +858,9 @@ table.fi-table {
   gap: 9px;
   padding: 46px 24px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px dashed var(--hz-pane-bd);
   background: var(--hz-pane);
 }
@@ -869,26 +869,25 @@ table.fi-table {
 }
 .fi-empty-title {
   font-family: var(--font-head);
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--text-primary);
 }
 .fi-error,
 .fi-error {
   padding: 14px 16px;
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   color: var(--danger);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
   word-break: break-word;
 }
 
 /* One skeleton recipe. Comma-separated layers — --hz-pane is a gradient. */
-.fi-sk,
 .fi-sk {
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid var(--hz-pane-bd);
   background:
     linear-gradient(100deg, transparent 20%, var(--hz-glass-hover) 45%, transparent 70%),
@@ -903,9 +902,37 @@ table.fi-table {
 .fi-sk-tile {
   height: 88px;
 }
-.fi-sk-block {
-  height: 200px;
+/* Parts of the shaped panel skeleton — see PanelSkeleton in panelBits.tsx. These sit INSIDE the
+   real .fi-rollup / .fi-tablewrap containers, so only the missing text and row heights are
+   declared here; the frames come from the containers themselves and cannot drift from them. */
+.fi-sk-txt {
+  border: none;
+  border-radius: var(--radius-sm);
 }
+.fi-sk-lbl {
+  width: 52%;
+  height: 9px;
+}
+.fi-sk-val {
+  width: 68%;
+  height: 15px;
+  margin-top: 6px;
+}
+.fi-rollup-cell:nth-child(2) .fi-sk-val { width: 46%; }
+.fi-rollup-cell:nth-child(3) .fi-sk-val { width: 60%; }
+.fi-rollup-cell:nth-child(4) .fi-sk-val { width: 38%; }
+/* Heights mirror .fi-cachebar, .fi-table th and .fi-table td (10px padding + a ~18px line). */
+.fi-sk-bar { height: 34px; }
+.fi-sk-thead {
+  height: 34px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+}
+.fi-sk-trow {
+  height: 39px;
+  border-bottom: 1px solid var(--hz-pane-bd);
+}
+.fi-sk-trow:last-child { border-bottom: none; }
 @keyframes fiSheen {
   from {
     background-position:
@@ -937,7 +964,6 @@ table.fi-table {
   .fi-modal-scrim {
     animation: none;
   }
-  .fi-sk,
   .fi-sk {
     animation: none;
   }
@@ -982,7 +1008,7 @@ table.fi-table {
 }
 .fi-subbar-l {
   font-family: var(--font-head);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -996,7 +1022,7 @@ table.fi-table {
   gap: 6px;
   padding: 3px 9px 3px 7px;
   border-radius: var(--fi-r-pill, 999px);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1058,7 +1084,7 @@ table.fi-table {
 .fi-lede {
   margin: 0;
   max-width: 78ch;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.65;
   color: var(--text-muted);
 }
@@ -1112,7 +1138,7 @@ table.fi-table {
 /* The applied dates, shown inside the chip in mono so they read as data rather than as a label. */
 .fi-chip-dates {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 500;
 }
 /* The custom row only exists while Custom is open, so it reads as a drawer off the chip row. */
@@ -1122,7 +1148,7 @@ table.fi-table {
   gap: 12px;
   flex-wrap: wrap;
   padding: 12px 14px;
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);
 }
@@ -1133,7 +1159,7 @@ table.fi-table {
 }
 .fi-daterange-f > span {
   font-family: var(--font-head);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -1147,7 +1173,7 @@ table.fi-table {
   background: var(--hz-pane);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   /* Without this the native picker renders its own light chrome inside a dark panel. */
   color-scheme: dark;
 }
@@ -1163,7 +1189,7 @@ table.fi-table {
 .fi-daterange-n,
 .fi-daterange-err {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   padding-bottom: 9px;
 }
 .fi-daterange-n {
@@ -1184,7 +1210,7 @@ table.fi-table {
 }
 .fi-cachebar-t {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -1198,7 +1224,7 @@ table.fi-table {
   background: var(--hz-pane-alt);
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -1225,7 +1251,7 @@ table.fi-table {
   flex-direction: column;
   gap: 14px;
   padding: 17px 18px;
-  border-radius: var(--fi-r-md, 12px);
+  border-radius: var(--fi-r-md, var(--radius-md));
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
   backdrop-filter: blur(var(--hz-blur-sm));
@@ -1239,7 +1265,7 @@ table.fi-table {
 }
 .fi-bigstat-l {
   font-family: var(--font-head);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1258,7 +1284,7 @@ table.fi-table {
 }
 .fi-bigstat-s {
   margin-top: 4px;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -1291,7 +1317,7 @@ table.fi-table {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 .fi-flowkey span {
@@ -1336,7 +1362,7 @@ table.fi-table {
   background: var(--hz-pane-alt);
   border-top: 1px solid var(--hz-pane-bd);
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1366,13 +1392,13 @@ table.fi-table {
   color: var(--text-muted);
 }
 .fi-ref {
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 /* Secondary line inside a cell: "$40 left", a code's reason, etc. */
 .fi-subnote {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   line-height: 1.4;
   color: var(--text-muted);
   font-weight: 400;
@@ -1393,7 +1419,7 @@ table.fi-table {
   padding: 8px 0 0;
   border-top: 1px solid var(--hz-pane-bd);
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.55;
 }
 .fi-note svg {
@@ -1441,20 +1467,21 @@ table.fi-table {
 .fi-uses-empty {
   padding: 12px 26px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 /* Caption on the expanded block: answers "how much of this code is gone" before the rows are read. */
 .fi-uses-head {
   padding: 11px 26px 3px;
   font-family: var(--font-head);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-/* Skeleton sized to a single expanded row — a .fi-sk-block here would push the table around by
-   200px and then snap back, which is exactly the jump the sticky-data loader avoids elsewhere. */
+/* Skeleton sized to a single expanded row. A full-panel skeleton here would push the table around
+   and then snap back, which is exactly the jump the sticky-data loader avoids elsewhere — the same
+   reason PanelSkeleton is built to the shape of its panel rather than to a fixed height. */
 .fi-sk-line {
   height: 46px;
   margin: 10px 26px;

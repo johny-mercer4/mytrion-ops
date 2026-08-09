@@ -38,6 +38,37 @@ function pruneStore(): void {
   }
 }
 
+/**
+ * In-flight reads, keyed exactly like the store.
+ *
+ * The cache dedupes reads that are *finished*; nothing deduped reads that were still in the air, so
+ * every concurrent consumer of one key fired its own request. Two ways that happened in practice:
+ * React StrictMode mounts→unmounts→remounts each component in development, and the load effect ran
+ * on both mounts while the first response was still pending; and two panels reading the same key at
+ * once (a list and a card over the same summary) each fetched independently. Joining the promise in
+ * flight collapses those to one request and one write.
+ *
+ * Forced runs — `reload()` and the refetch after `invalidateSwrCache` — deliberately do NOT join.
+ * An invalidation means "what you have is wrong", and a request that departed before the save that
+ * triggered it would answer with exactly the stale row the caller is trying to get rid of.
+ */
+const inflight = new Map<string, Promise<unknown>>();
+
+function fetchDeduped<T>(key: string, fn: () => Promise<T>, force: boolean): Promise<T> {
+  if (!force) {
+    const running = inflight.get(key) as Promise<T> | undefined;
+    if (running) return running;
+  }
+  const p = fn();
+  inflight.set(key, p);
+  // Settled either way, drop it — but only if a newer forced run has not already replaced it.
+  const clear = (): void => {
+    if (inflight.get(key) === p) inflight.delete(key);
+  };
+  void p.then(clear, clear);
+  return p;
+}
+
 function notify(key: string, kind: NotifyKind): void {
   const set = listeners.get(key);
   if (set) for (const fn of [...set]) fn(kind);
@@ -201,7 +232,7 @@ export function useCachedLoad<T>(
       else setLoading(true);
       setError(null);
       try {
-        const d = await fnRef.current();
+        const d = await fetchDeduped(key, fnRef.current, force);
         // The cache is written even for a superseded run — the data is valid for ITS key, and a later
         // reader of that key should get it rather than refetching.
         const ts = writeSwrCache(key, d);
