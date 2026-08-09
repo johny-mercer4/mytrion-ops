@@ -429,6 +429,31 @@
   line-height: 1.35;
 }
 
+/*
+ * `.cs-ret-due` is a LIST-ROW chip: `inline-flex` + `nowrap` so it can sit beside the meta text
+ * inside `.cs-ret-row-meta`. The detail list reuses the class on a <dd> purely for its urgency
+ * colour ramp — and inline-flex came along with it, which made the value inline-level. It then
+ * flowed straight after the (also inline-flex) <dt> instead of onto its own line, rendering as
+ * "DEADLINEAug 6 · 2 BD to act → Retention" with no break and no gap.
+ *
+ * In the <dl> the value is its own row, so restore block-level flow. `nowrap` goes too: this is
+ * the longest value in the grid and it has half the width of the row it was written for.
+ */
+.cs-root .cs-ret-dl dd.cs-ret-due {
+  display: flex;
+  flex-shrink: 1;
+  white-space: normal;
+  font-size: var(--text-base);
+}
+
+/* The timeline pager sits under the list, right-aligned like the block it closes. */
+.cs-root .cs-ret-timeline-pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .cs-root .cs-ret-actions {
   display: flex;
   gap: 10px;

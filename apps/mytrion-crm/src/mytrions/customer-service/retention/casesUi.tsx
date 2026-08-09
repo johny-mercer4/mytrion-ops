@@ -1,7 +1,7 @@
 /**
  * CS Retention Cases — badge tones, icons, skeletons, due urgency helpers.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Briefcase,
@@ -22,7 +22,8 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import type { RetentionCaseRow } from '@/api/touchpointTypes';
+import type { RetentionCaseEventRow, RetentionCaseRow } from '@/api/touchpointTypes';
+import { Pagination } from '@/ds';
 
 export type BadgeTone =
   | 'sales'
@@ -285,6 +286,76 @@ export function Field({
         {label}
       </dt>
       <dd className={valueClassName}>{children}</dd>
+    </div>
+  );
+}
+
+const TIMELINE_PAGE_SIZE = 8;
+
+const fmtWhen = (iso: string): string =>
+  new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+/**
+ * The case timeline, paged.
+ *
+ * It rendered every event, so it was the one block in the detail pane with no bound on its height:
+ * a case that has been worked for months pushed the pane to whatever length its history happened to
+ * be, and the actions above it scrolled away.
+ *
+ * Page state lives HERE rather than in CasesPanel because this renders inside the
+ * `key={selected.id}` subtree — selecting another case remounts it and the page resets to 1 for
+ * free. Held in the parent it would survive the switch, so moving from a long history to a short
+ * one would land on a page past the end and show an empty timeline. `safePage` covers the same
+ * hazard within one case, for when an event is added while a later page is open.
+ */
+export function CaseTimeline({ events }: { events: RetentionCaseEventRow[] }) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(events.length / TIMELINE_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * TIMELINE_PAGE_SIZE;
+  const shown = events.slice(start, start + TIMELINE_PAGE_SIZE);
+
+  return (
+    <div className="cs-ret-timeline-wrap">
+      <h4>Timeline</h4>
+      {events.length ? (
+        <>
+          <ul className="cs-ret-timeline">
+            {shown.map((ev, i) => (
+              <li key={ev.id} style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+                <div className="cs-ret-timeline-title">
+                  {ev.eventType}
+                  {ev.toStatus ? ` \u2192 ${statusLabel(ev.toStatus)}` : ''}
+                </div>
+                <div className="cs-muted">{fmtWhen(ev.occurredAt)}</div>
+                {ev.notes ? <div className="cs-ret-timeline-notes">{ev.notes}</div> : null}
+              </li>
+            ))}
+          </ul>
+          {pageCount > 1 ? (
+            <Pagination
+              className="cs-ret-timeline-pager"
+              size="sm"
+              page={safePage}
+              pageCount={pageCount}
+              pageSize={TIMELINE_PAGE_SIZE}
+              total={events.length}
+              itemLabel="events"
+              onPageChange={setPage}
+              aria-label="Timeline pagination"
+            />
+          ) : null}
+        </>
+      ) : (
+        <div className="cs-muted" style={{ fontSize: 'var(--text-xs)' }}>
+          No events yet
+        </div>
+      )}
     </div>
   );
 }
