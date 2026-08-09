@@ -4,10 +4,10 @@
  */
 import { s } from './dc';
 import type { AutoPriority } from './autoRunners';
+import { AUTO_INPUT } from './autoControls';
 
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const locked = `${inp42};padding-right:36px;cursor:default;color:var(--text2)`;
+const locked = `${AUTO_INPUT};padding-right:36px;cursor:default;color:var(--text2)`;
 
 function Lbl({ t, opt }: { t: string; opt?: boolean }) {
   return (
@@ -65,7 +65,7 @@ export function AutoBocaCloseForm({
           value={priority}
           onChange={(e) => onPriority(e.target.value as AutoPriority)}
           className="ss-in"
-          style={s(inp42)}
+          style={s(AUTO_INPUT)}
         >
           <option value="">-- None --</option>
           <option value="High">High</option>
@@ -81,7 +81,7 @@ export function AutoBocaCloseForm({
           min={minDue}
           onChange={(e) => onDue(e.target.value)}
           className="ss-in"
-          style={s(inp42)}
+          style={s(AUTO_INPUT)}
         />
       </div>
       <div style={s('grid-column:1 / -1')}>

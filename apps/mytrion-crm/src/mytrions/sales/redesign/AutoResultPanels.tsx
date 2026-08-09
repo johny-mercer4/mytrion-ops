@@ -23,9 +23,9 @@ import {
 } from './txnReport';
 import { downloadTxnReport } from './txnReportExport';
 import { AutoEmptyState } from './AutoActionResult';
+import { AUTO_INPUT } from './autoControls';
 
 const mono = "font-family:var(--font-mono)";
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const sectionLabel = 'font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:10px';
 const chipOn = 'padding:5px 10px;border-radius:999px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer';
@@ -319,7 +319,7 @@ export function AutoTransactionsPanel({
         <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
           <div>
             <div style={s(labelCss)}>Group by</div>
-            <select value={opts.groupBy} onChange={(e) => set('groupBy', e.target.value as TxnGroupBy)} className="ss-in" style={s(inp42)}>
+            <select value={opts.groupBy} onChange={(e) => set('groupBy', e.target.value as TxnGroupBy)} className="ss-in" style={s(AUTO_INPUT)}>
               {TXN_GROUP_BY_OPTIONS.map((g) => (
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
@@ -327,7 +327,7 @@ export function AutoTransactionsPanel({
           </div>
           <div>
             <div style={s(labelCss)}>Sort by</div>
-            <select value={opts.sortBy} onChange={(e) => set('sortBy', e.target.value as TxnSortBy)} className="ss-in" style={s(inp42)}>
+            <select value={opts.sortBy} onChange={(e) => set('sortBy', e.target.value as TxnSortBy)} className="ss-in" style={s(AUTO_INPUT)}>
               {TXN_SORT_BY_OPTIONS.map((g) => (
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
@@ -335,7 +335,7 @@ export function AutoTransactionsPanel({
           </div>
           <div>
             <div style={s(labelCss)}>View format</div>
-            <select value={opts.format} onChange={(e) => set('format', e.target.value as TxnFormat)} className="ss-in" style={s(inp42)}>
+            <select value={opts.format} onChange={(e) => set('format', e.target.value as TxnFormat)} className="ss-in" style={s(AUTO_INPUT)}>
               {TXN_FORMAT_OPTIONS.map((g) => (
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
@@ -367,13 +367,13 @@ export function AutoTransactionsPanel({
                 onChange={(e) => setMatch(key, e.target.value)}
                 placeholder={ph}
                 className="ss-in"
-                style={s(inp42)}
+                style={s(AUTO_INPUT)}
               />
             </div>
           ))}
           <div>
             <div style={s(labelCss)}>State / Province</div>
-            <select value={opts.stateProvince} onChange={(e) => set('stateProvince', e.target.value)} className="ss-in" style={s(inp42)}>
+            <select value={opts.stateProvince} onChange={(e) => set('stateProvince', e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>
               <option value="">All</option>
               {stateOptions.map((st) => (
                 <option key={st} value={st}>{st}</option>
@@ -382,7 +382,7 @@ export function AutoTransactionsPanel({
           </div>
           <div>
             <div style={s(labelCss)}>Item</div>
-            <select value={opts.product} onChange={(e) => set('product', e.target.value)} className="ss-in" style={s(inp42)}>
+            <select value={opts.product} onChange={(e) => set('product', e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>
               <option value="">All products</option>
               {productOptions.map((p) => (
                 <option key={p} value={p}>{p}</option>

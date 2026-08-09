@@ -14,6 +14,7 @@ import { s, Badge } from './dc';
 import { badge } from './salesData';
 import { mapWex, mapWexSearchRow, type WexResult } from './autoLive';
 import { AutoEmptyState } from './AutoActionResult';
+import { AUTO_CONTROL_H, AUTO_INPUT } from './autoControls';
 
 interface WexQ {
   appId: string;
@@ -30,12 +31,15 @@ const WEX0: WexQ = {
   appId: '', firstName: '', lastName: '', company: '', email: '', phone: '', mc: '', dot: '',
 };
 
-const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const dropErr = 'padding:14px;font-size:14px;color:var(--danger);text-align:center';
 const mono = "font-family:var(--font-mono)";
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
-const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
+/* --on-accent, never #fff: --accent is a PALE cyan in dark (#a5e7ff) and --accent-2 a pale
+   pink, so white ink on this fill is ~1.35:1 — an invisible label on every primary button in
+   the automation modals. The rest of the Sales module already used the token; these three
+   inline constants were the holdouts. */
+const btnP = (extra: string): string => `border:none;background:${grad};color:var(--on-accent);font-weight:700;cursor:pointer;${extra}`;
 const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
 
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
@@ -113,16 +117,16 @@ export function AutoWexPanel() {
         Search WEX applications by any combination of applicant fields.
       </div>
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-        <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="First Name" /><input value={wexQ.firstName} onChange={(e) => setWexField('firstName', e.target.value)} placeholder="e.g. Richard" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="Last Name" /><input value={wexQ.lastName} onChange={(e) => setWexField('lastName', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="Company" /><input value={wexQ.company} onChange={(e) => setWexField('company', e.target.value)} placeholder="e.g. RICS Logistics" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="Email" /><input type="email" value={wexQ.email} onChange={(e) => setWexField('email', e.target.value)} placeholder="e.g. name@company.com" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="Phone" /><input value={wexQ.phone} onChange={(e) => setWexField('phone', e.target.value)} placeholder="e.g. 610-645-2231" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
-        <div><Lbl t="DOT Number" /><input value={wexQ.dot} onChange={(e) => setWexField('dot', e.target.value)} placeholder="e.g. 602070" className="ss-in" style={s(inp40)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="First Name" /><input value={wexQ.firstName} onChange={(e) => setWexField('firstName', e.target.value)} placeholder="e.g. Richard" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="Last Name" /><input value={wexQ.lastName} onChange={(e) => setWexField('lastName', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="Company" /><input value={wexQ.company} onChange={(e) => setWexField('company', e.target.value)} placeholder="e.g. RICS Logistics" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="Email" /><input type="email" value={wexQ.email} onChange={(e) => setWexField('email', e.target.value)} placeholder="e.g. name@company.com" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="Phone" /><input value={wexQ.phone} onChange={(e) => setWexField('phone', e.target.value)} placeholder="e.g. 610-645-2231" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
+        <div><Lbl t="DOT Number" /><input value={wexQ.dot} onChange={(e) => setWexField('dot', e.target.value)} placeholder="e.g. 602070" className="ss-in" style={s(AUTO_INPUT)} onKeyDown={(e) => { if (e.key === 'Enter') runWex(); }} /></div>
         <div style={s('grid-column:1 / -1;display:flex;justify-content:flex-end')}>
-          <button onClick={runWex} disabled={wexSearching} className="ss-btn-p" style={s(btnP('height:40px;padding:0 22px;border-radius:var(--radius-md);font-size:14px'))}>
+          <button onClick={runWex} disabled={wexSearching} className="ss-btn-p" style={s(btnP(`height:${AUTO_CONTROL_H}px;padding:0 22px;border-radius:var(--radius-md);font-size:14px`))}>
             Search
           </button>
         </div>

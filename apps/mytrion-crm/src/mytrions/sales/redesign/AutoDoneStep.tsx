@@ -9,8 +9,12 @@ import { AutoPaymentsPanel, AutoTrackingPanel, AutoWexTasksPanel } from './AutoR
 
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const mono = "font-family:var(--font-mono)";
+/* --on-accent, never #fff: --accent is a PALE cyan in dark (#a5e7ff) and --accent-2 a pale
+   pink, so white ink on this fill is ~1.35:1 — an invisible label on every primary button in
+   the automation modals. The rest of the Sales module already used the token; these three
+   inline constants were the holdouts. */
 const btnP = (extra: string): string =>
-  `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
+  `border:none;background:${grad};color:var(--on-accent);font-weight:700;cursor:pointer;${extra}`;
 
 export function hasWideAutoResult(
   result: DonePayload | null,

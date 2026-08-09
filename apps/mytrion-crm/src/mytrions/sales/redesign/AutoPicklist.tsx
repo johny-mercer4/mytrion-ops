@@ -11,10 +11,11 @@ import { badge, type BadgeVM } from './salesData';
 import { AutoEmptyState } from './AutoActionResult';
 import { AutoFloatingDrop } from './AutoFloatingDrop';
 import type { Card, Deal } from './autoLive';
+import { AUTO_INPUT } from './autoControls';
 
 const MONO = "font-family:var(--font-mono)";
 const INP =
-  'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
+  AUTO_INPUT;
 const LABEL =
   'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 

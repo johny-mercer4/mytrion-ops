@@ -27,12 +27,12 @@ import { AutoCardCredentialsPanel, useCardCredentials } from '../AutoCardCredent
 import { AutoReportFilters } from '../AutoReportFilters';
 import type { TxnReportState } from '../txnReport';
 import { useAccessibleDialog } from '../useAccessibleDialog';
+import { AUTO_INPUT } from '../autoControls';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
 const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:14px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:14px;color:var(--danger);line-height:1.5';
@@ -42,7 +42,11 @@ const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
   `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;transition:all .14s`;
-const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
+/* --on-accent, never #fff: --accent is a PALE cyan in dark (#a5e7ff) and --accent-2 a pale
+   pink, so white ink on this fill is ~1.35:1 — an invisible label on every primary button in
+   the automation modals. The rest of the Sales module already used the token; these three
+   inline constants were the holdouts. */
+const btnP = (extra: string): string => `border:none;background:${grad};color:var(--on-accent);font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
   <Icon name="close" size={16} strokeWidth={2.4} />
@@ -481,17 +485,17 @@ export function AutoTab() {
 
                   {showUnitDriver && (
                     <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
-                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
-                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(inp42)} /></div>
-                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(inp42)} /></div>
+                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(AUTO_INPUT)} /></div>
                     </div>
                   )}
 
                   {isLimits && (
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(inp42)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-                        <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(inp42)} /></div>
+                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                        <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(AUTO_INPUT)} /></div>
                       </div>
                       <div style={s(`font-size:12px;color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
                       <div>
@@ -527,9 +531,9 @@ export function AutoTab() {
                       )}
                       {mcPreview?.eligible && (
                         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
-                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} aria-label="Why is this money code needed?" className="ss-in" style={s(inp42)}>
+                          <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} aria-label="Why is this money code needed?" className="ss-in" style={s(AUTO_INPUT)}>
                             {/* Server list wins — servercrm validates against its own set, so the
                                 fallback constant is only for a preview that has not landed yet. */}
                             <option value="" disabled>Why is this money code needed?</option>
@@ -563,11 +567,11 @@ export function AutoTab() {
                     <div>
                       <div style={s('font-size:14px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
-                        <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(inp42)} /></div>
-                        <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(inp42)} /></div>
+                        <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                        <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(AUTO_INPUT)} /></div>
                         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="State" /><input value={autoAddr.state} onChange={(e) => setAddr('state', e.target.value)} placeholder="ST" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Zip" /><input value={autoAddr.zip} onChange={(e) => setAddr('zip', e.target.value)} placeholder="00000" className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="State" /><input value={autoAddr.state} onChange={(e) => setAddr('state', e.target.value)} placeholder="ST" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div><Lbl t="Zip" /><input value={autoAddr.zip} onChange={(e) => setAddr('zip', e.target.value)} placeholder="00000" className="ss-in" style={s(AUTO_INPUT)} /></div>
                         </div>
                       </div>
                     </div>
