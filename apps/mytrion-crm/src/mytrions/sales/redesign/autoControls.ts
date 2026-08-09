@@ -29,3 +29,18 @@ export const AUTO_INPUT =
 export const AUTO_BTN_PRIMARY =
   'border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));' +
   'color:var(--on-accent);font-weight:700;cursor:pointer';
+
+/**
+ * The pending pill — the ONE "a read is in flight" affordance in the automation modals.
+ *
+ * AutoWexEligibility and AutoCardCredentials each hand-rolled this, identical except that one used
+ * 13px of vertical padding and the other 14px. Two loaders that are nearly-but-not-quite the same
+ * read as sloppier than two that are obviously different, because the eye registers the mismatch
+ * without being able to name it.
+ *
+ * The spinner beside the text needs `.ss-spin`, which is defined in redesign/theme.css — it was
+ * missing for a long time, and the glyph rendered motionless for the whole request.
+ */
+export const AUTO_PENDING_PILL =
+  'display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:var(--radius-md);' +
+  'border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px';

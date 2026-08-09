@@ -5,6 +5,7 @@ import { Icon } from './icons';
 import { useLoad } from './live';
 import { badge } from './salesData';
 import { str } from './autoLive';
+import { AUTO_PENDING_PILL } from './autoControls';
 
 const GUARDED_ACTIONS = new Set(['boca-boe-link', 'close-app', 'wex-tasks']);
 
@@ -87,7 +88,7 @@ export function AutoWexEligibilityNotice({
 }) {
   if (loading) {
     return (
-      <div role="status" aria-busy="true" style={s('display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px')}>
+      <div role="status" aria-busy="true" style={s(AUTO_PENDING_PILL)}>
         <Icon name="spinner" size={16} className="ss-spin" />
         Checking current WEX status…
       </div>

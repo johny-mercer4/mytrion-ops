@@ -4,6 +4,7 @@ import { Badge, s } from './dc';
 import { Icon, type IconName } from './icons';
 import { useLoad } from './live';
 import { cardStatusBadge } from './AutoPicklist';
+import { AUTO_PENDING_PILL } from './autoControls';
 
 const CREDENTIAL_ACTIONS = new Set(['card-activation', 'card-deactivation', 'unit-driver']);
 
@@ -81,7 +82,7 @@ export function AutoCardCredentialsPanel({
 }) {
   if (loading) {
     return (
-      <div role="status" aria-busy="true" style={s('display:flex;align-items:center;gap:10px;padding:14px 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px')}>
+      <div role="status" aria-busy="true" style={s(AUTO_PENDING_PILL)}>
         <Icon name="spinner" size={16} className="ss-spin" />
         Reading current card credentials directly from EFS…
       </div>
