@@ -24,6 +24,7 @@ import {
   Badge,
   CacheBar,
   financeKeys,
+  PanelSkeleton,
   PanelState,
   Rollup,
   Row,
@@ -57,7 +58,7 @@ export function DetailsPanel({
   loading: boolean;
   error: string | null;
 }) {
-  if (loading) return <div className="fi-sk fi-sk-block" />;
+  if (loading) return <PanelSkeleton />;
   if (error) return <div className="fi-error">{error}</div>;
   if (!detail) return null;
 

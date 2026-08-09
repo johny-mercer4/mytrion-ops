@@ -1,0 +1,20 @@
+/*
+ * The design system's PORTABLE stylesheet.
+ *
+ * This is the file an external consumer needs — a design tool, a second app, an engineer importing
+ * the library. `horizon-ui.css` (the component CSS Vite emits from the .module.css files) is not
+ * enough on its own: every rule in it is `var(--token)`, so without the token layer a Button renders
+ * with no colour, no radius and no type. This file is what makes the bundle self-sufficient.
+ *
+ * Deliberately does NOT import 'tailwindcss'. The app's global.css does, because the app uses
+ * Tailwind utilities; the LIBRARY does not, and shipping a utility framework inside a component
+ * library would be an unpleasant surprise for whoever consumes it.
+ *
+ * Order matters and mirrors global.css:
+ *   fonts   @font-face must register before anything paints text
+ *   theme   the three token tiers
+ *   horizon the atmosphere, glass, elevation and motion aliases, which reference theme's palette
+ */
+@import '../styles/fonts.css';
+@import '../styles/theme.css';
+@import '../styles/horizon.css';

@@ -379,7 +379,7 @@
 }
 
 .cs-root .cs-citi-report-value {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.5rem;
     font-weight: 700;
     line-height: 1;

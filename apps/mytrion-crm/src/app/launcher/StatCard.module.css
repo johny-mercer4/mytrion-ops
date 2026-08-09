@@ -1,0 +1,97 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+  color: inherit;
+  text-decoration: none;
+  text-align: center;
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+
+/* Only a card that goes somewhere lifts. A hover response on a static readout is a promise the
+   card cannot keep. */
+.linked:hover,
+.linked:focus-visible {
+  border-color: color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow:
+    0 15px 35px -10px color-mix(in srgb, var(--tone) 20%, transparent),
+    var(--glare);
+}
+
+.chip {
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  color: var(--tone);
+  background: var(--field);
+  border: 1px solid var(--glass-bd);
+  transition: scale var(--hz-dur-wash) var(--hz-ease);
+}
+
+.linked:hover .chip,
+.linked:focus-visible .chip {
+  scale: 1.1;
+}
+
+.value {
+  font-family: var(--font-head);
+  font-size: var(--text-3xl);
+  line-height: 1.2;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  /* Figures are tabular so a two-digit count does not shift the card's centre. */
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The tone per stat. Names, never literals — the same rule the workspace cards follow. */
+.access {
+  --tone: var(--tone-sky);
+}
+
+.role {
+  --tone: var(--tone-slate);
+}
+
+/* The featured card in the design: a warmer border and a gradient wash, because it is the only one
+   of the three that is actionable. */
+.last {
+  --tone: var(--secondary);
+  border-color: color-mix(in srgb, var(--secondary) 30%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--secondary) 10%, transparent), transparent 60%),
+    var(--glass);
+}
+
+.last .value {
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  color: var(--secondary);
+}

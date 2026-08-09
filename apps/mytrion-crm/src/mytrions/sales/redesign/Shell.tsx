@@ -9,24 +9,20 @@
  *  - the Suspense fallback is the SAME skeleton shape the tab shows while its data loads, so a cold
  *    open plays one loading state instead of spinner → skeleton → content.
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
+import { MytrionShell, type NavSection } from '../../_shared/MytrionShell';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, TICKETS_ENABLED, timeParts } from './salesData';
-import { useSessionUser } from './sessionUser';
+import { NAV, NAV_GROUPS, TICKETS_ENABLED } from './salesData';
 import { useSidebarBadges } from './sidebarBadges';
-import { MytrionSwitchLink } from '@/components/MytrionSwitchLink';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
 import { DealCallWizardHost } from './DealCallWizard';
 import { getSession } from '@/api/session';
-import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { isAdmin } from '@/access/resolveAccess';
-import { ViewAsPicker } from './ViewAsPicker';
 import { LeadModal, DealModal } from './dataCenterModals';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
 import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
@@ -43,7 +39,6 @@ import './sales-page.css';
 
 import { HomeTab } from './tabs/HomeTab';
 import { ComingSoonPanel } from './tabs/ComingSoonPanel';
-import { soonHue } from './soonTabs';
 import { emitKpiActivity, useKpiPresence } from './kpiTelemetry';
 import { useAccessibleDialog } from './useAccessibleDialog';
 import { SalesTabSkeleton, type SalesSkeletonVariant } from './SalesTabSkeleton';
@@ -119,37 +114,15 @@ const FULL_BLEED = new Set(['tickets']);
 
 export function SalesRedesign() {
   useKpiPresence();
-  const user = useSessionUser();
-  const userCtx = useUserContext();
-  const admin = isAdmin(userCtx);
   const { actingAs } = useImpersonation();
   const actAsKey = actingAs?.zohoUserId ?? 'self';
   // The effective CRM user (acted-as agent for an admin, else the signed-in worker).
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
   // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
-  const [navCollapsed, setNavCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('ss.nav.collapsed') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const toggleNav = useCallback(() => {
-    setNavCollapsed((c) => {
-      const next = !c;
-      try {
-        localStorage.setItem('ss.nav.collapsed', next ? '1' : '0');
-      } catch {
-        /* storage disabled — state still toggles for this tab */
-      }
-      return next;
-    });
-  }, []);
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
   const parkedSection = NAV.some((n) => n.id === section && n.comingSoon === true);
   const fullBleed = FULL_BLEED.has(section) && !parkedSection;
-  const [, tick] = useState(0);
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
   const [client, setClient] = useState<ClientRecord | null>(null);
@@ -161,14 +134,9 @@ export function SalesRedesign() {
   const [focusDashSub, setFocusDashSub] = useState<'sales' | 'company' | 'debtors' | 'powerbi' | null>(
     null,
   );
-  const [navQuery, setNavQuery] = useState('');
   const closeDetail = useCallback(() => setDetail(null), []);
   const detailDialogRef = useAccessibleDialog(detail !== null, closeDetail);
 
-  useEffect(() => {
-    const clock = setInterval(() => tick((n) => n + 1), 30_000);
-    return () => clearInterval(clock);
-  }, []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushToast = useCallback((title: string, msg: string) => {
@@ -285,164 +253,51 @@ export function SalesRedesign() {
     ],
   );
 
-  const T = timeParts();
-  const displayName = user.name;
-  const initials = user.initials;
 
-  const navFiltered = useMemo(() => {
-    const q = navQuery.trim().toLowerCase();
-    if (!q) return NAV_GROUPS;
-    return NAV_GROUPS.map((g) => ({
-      ...g,
-      items: g.items.filter((n) => n.label.toLowerCase().includes(q)),
-    })).filter((g) => g.items.length > 0);
-  }, [navQuery]);
+  const GROUP_LABEL: Record<string, string> = {
+    daily: 'Daily',
+    sell: 'Sell',
+    measure: 'Measure',
+    // Renamed from 'soon': the group holds two LIVE tabs (My Tasks, Call Hub), so the old name was
+    // a lie the moment either was unparked.
+    soon: 'More',
+  };
+
+  /**
+   * NAV_GROUPS is already grouped and maps 1:1 onto the shell's sections. badgeCounts lands on
+   * `trailing` — which is exactly why that field belongs on NavItem rather than staying a
+   * Sales-local rendering hack — and NAV_TONE's values are already `var(--tone-*)`.
+   */
+  const navSections: NavSection[] = NAV_GROUPS.map((g) => ({
+    id: g.id,
+    label: GROUP_LABEL[g.id] ?? g.id,
+    items: g.items.map((n) => {
+      const soon = n.comingSoon === true;
+      const count = badgeCounts[n.id];
+      return {
+        key: n.id,
+        label: n.label,
+        icon: <Icon name={n.icon} size={19} />,
+        active: section === n.id,
+        soon,
+        ...(count ? { trailing: count } : {}),
+        ...(NAV_TONE[n.id] ? { tone: NAV_TONE[n.id]! } : {}),
+        ...(soon ? {} : { onClick: () => go(n.id) }),
+      };
+    }),
+  }));
 
   return (
     <SalesContext.Provider value={ctx}>
-      <div
-        className={`ss-root ${theme === 'light' ? 'light' : ''}`}
-        style={s('height:100vh;display:flex;flex-direction:row;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:15px;overflow:hidden;position:relative')}
+      <MytrionShell
+        id="sales"
+        navSections={navSections}
+        enableNavSearch
+        /* Sales keeps its own scroller: `.ss-scroll` and the full-bleed Tickets console both
+           manage their own height, and a second scroll parent would fight them. */
+        contentScroll="content"
       >
-        {/* Ambient Horizon backdrop — the shared mesh + 64px grid + vignette, replacing the two
-            bespoke radial gradients that used to live on the root's inline background. z-index:-1
-            (with `isolation:isolate` on .ss-root) keeps it above the root's own background and below
-            all in-flow content, so it can never cover a panel. */}
-        <div className="ss-ambience" aria-hidden="true" style={{ zIndex: -1 }} />
-        {/* SIDEBAR */}
-        <aside className="ss-sidebar" style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
-          <div className="ss-sidebar-brand" style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
-            {!navCollapsed && (
-              <>
-                <div style={s('line-height:1.05;min-width:0;flex:1')}>
-                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
-                    MY<span style={s('color:var(--accent-text)')}>TRION</span>
-                  </div>
-                  <div
-                    className="ss-brand-sub"
-                    style={s(
-                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:13px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
-                    )}
-                  >
-                    Sales
-                  </div>
-                </div>
-                <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                  <Icon name="panel" size={15} />
-                </button>
-              </>
-            )}
-          </div>
-          {navCollapsed && (
-            <div className="ss-sidebar-expand" style={s('display:flex;justify-content:center;padding:0 0 8px')}>
-              <button onClick={toggleNav} aria-label="Expand sidebar" title="Expand sidebar" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                <Icon name="panel" size={15} />
-              </button>
-            </div>
-          )}
-          {!navCollapsed && (
-            <div className="ss-sidebar-search" style={s('padding:0 12px 8px')}>
-              <div style={s('display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
-                <Icon name="search" size={14} color="var(--muted)" />
-                <input
-                  value={navQuery}
-                  onChange={(e) => setNavQuery(e.target.value)}
-                  placeholder="Search tabs…"
-                  aria-label="Search tabs"
-                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:14px;font-weight:600')}
-                />
-                {navQuery ? (
-                  <button
-                    type="button"
-                    onClick={() => setNavQuery('')}
-                    aria-label="Clear search"
-                    className="ss-ico-btn"
-                    style={s('width:22px;height:22px;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0')}
-                  >
-                    <Icon name="close" size={12} strokeWidth={2.4} />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          )}
-          <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:2px')}>
-            {navFiltered.length === 0 && !navCollapsed && (
-              <div style={s('padding:10px 12px;font-size:13px;color:var(--muted)')}>No tabs match.</div>
-            )}
-            {navFiltered.map((group, gi) => (
-              <div key={group.id} style={s('display:flex;flex-direction:column;gap:2px')}>
-                {gi > 0 && (
-                  <div style={s(`height:1px;margin:${navCollapsed ? '6px 10px' : '8px 12px'};background:var(--border)`)} aria-hidden="true" />
-                )}
-                {group.items.map((n) => {
-                  const active = section === n.id;
-                  const soon = n.comingSoon === true;
-                  const chipHue = soonHue(n.id);
-                  // Active background / colour / rail now live in ss-horizon.css (.ss-tab-x.is-active)
-                  // so the rail can be a gradient — an inline inset box-shadow cannot be.
-                  const style = `display:flex;align-items:center;gap:11px;padding:11px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};width:100%;background:transparent;color:var(--muted);font-size:14px;font-weight:${active ? 700 : 600};cursor:pointer;opacity:${soon && !active ? '.72' : '1'};border-radius:var(--radius-md);overflow:hidden`;
-                  return (
-                    <button
-                      key={n.id}
-                      onClick={() => go(n.id)}
-                      aria-current={active ? 'page' : undefined}
-                      title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
-                      className={`ss-tab-x${active ? ' is-active' : ''}`}
-                      style={{ ...s(style), ['--ss-tone' as string]: NAV_TONE[n.id] ?? 'var(--accent)' }}
-                    >
-                      <span className="ss-tab-ico" style={s('position:relative;flex-shrink:0;display:inline-flex')}>
-                        <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
-                        {navCollapsed && soon ? (
-                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${chipHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${chipHue} 40%, transparent)`)} />
-                        ) : null}
-                        {navCollapsed && !soon && badgeCounts[n.id] ? (
-                          <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
-                        ) : null}
-                      </span>
-                      {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
-                      {!navCollapsed && soon ? (
-                        <span className="ss-soon-chip" style={{ ['--ss-soon-hue' as string]: chipHue }}>SOON</span>
-                      ) : !navCollapsed && badgeCounts[n.id] ? (
-                        <span style={s('background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </nav>
-          <div className="ss-sidebar-footer" style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            {/* Route back to the Mytrion picker. Sales agents now hold more than one Mytrion, and the
-                sidebar was a dead end — the only exit was the top bar, which the full-bleed tabs cover.
-                Hidden automatically for anyone with a single Mytrion (see MytrionSwitchLink). */}
-            <MytrionSwitchLink
-              className="ss-ico-btn"
-              label={navCollapsed ? '' : 'Switch Mytrion'}
-              style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}
-            />
-            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
-              <Icon name={theme === 'light' ? 'moon' : 'sun'} size={16} style={{ flexShrink: 0 }} />
-              {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
-            </button>
-            <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)`)}>
-              <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0')}>{initials}</div>
-              {!navCollapsed && (
-                <div style={s('line-height:1.2;min-width:0')}>
-                  <div style={s('font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
-                  <div style={s('font-size:11px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </aside>
-
-        {/* MAIN COLUMN */}
-        <div className="ss-main-column" style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
-          <div className="ss-main-topbar" style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <h1 style={s("margin:0;font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{activeLabel}</h1>
-            {admin && <ViewAsPicker />}
-            <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
-          </div>
+        <div className={`ss-root ${theme === 'light' ? 'light' : ''}`}>
           <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
@@ -483,11 +338,10 @@ export function SalesRedesign() {
               )}
             </div>
           </main>
-        </div>
 
         {/* DETAIL MODAL */}
         {detail && (
-          <div onClick={closeDetail} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+          <div onClick={closeDetail} style={s('position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)')}>
             <div
               ref={detailDialogRef}
               role="dialog"
@@ -495,9 +349,13 @@ export function SalesRedesign() {
               aria-labelledby="sales-detail-title"
               tabIndex={-1}
               onClick={(e) => e.stopPropagation()}
-              style={s('width:100%;max-width:520px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+              /* Three rows, and only the middle one moves. `max-height:100%` respects the overlay's
+                 own --space-6 gutter (a vh cap does not, which is how a long detail body used to push
+                 the panel's top edge off-screen); `flex:none` stops the panel being shrunk below that
+                 cap and handing the overflow back to the page. The 3px accent border-top stays. */
+              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
             >
-              <div style={s('display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
+              <div style={s('flex:none;display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>
                 <div style={s('flex:1;min-width:0')}>
                   <div id="sales-detail-title" style={s('font-size:17px;font-weight:700;line-height:1.3')}>{detail.title}</div>
@@ -509,13 +367,15 @@ export function SalesRedesign() {
                   <Icon name="close" size={15} strokeWidth={2.4} />
                 </button>
               </div>
-              <div style={s('padding:20px 22px;max-height:52vh;overflow-y:auto')}>
+              {/* The one scrolling row. `min-height:0` is required — without it the row floors at
+                  min-content and refuses to scroll, pushing the panel past its cap instead. */}
+              <div style={s('flex:1;min-height:0;padding:20px 22px;overflow-y:auto')}>
                 <p style={s('font-size:14px;line-height:1.7;color:var(--text2);white-space:pre-wrap;margin:0')}>{detail.body}</p>
                 <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)')}>
                   <strong style={s('color:var(--text2)')}>{detail.metaLabel}</strong> {detail.meta}
                 </div>
               </div>
-              <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
+              <div style={s('flex:none;padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
                 <button onClick={closeDetail} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
               </div>
             </div>
@@ -566,14 +426,16 @@ export function SalesRedesign() {
         {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
         <DealCallWizardHost pushToast={pushToast} />
 
-        {/* TOAST — portaled under .ss-root, above force modals (z 160). */}
+        {/* TOAST — portaled under .ss-root. --z-toast (3000) sits above --z-modal/--z-popover by
+            construction, which is what the old magic 200 was reaching for back when the force modals
+            were at 150/160; at 200 it would now be buried under any open modal. */}
         {toast &&
           typeof document !== 'undefined' &&
           createPortal(
             <div
               role="status"
               style={s(
-                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
+                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:var(--z-toast);display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
               )}
             >
               <span
@@ -594,7 +456,8 @@ export function SalesRedesign() {
             </div>,
             document.querySelector('.ss-root') ?? document.body,
           )}
-      </div>
+        </div>
+      </MytrionShell>
     </SalesContext.Provider>
   );
 }

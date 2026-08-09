@@ -11,12 +11,13 @@ import { badge, type BadgeVM } from './salesData';
 import { AutoEmptyState } from './AutoActionResult';
 import { AutoFloatingDrop } from './AutoFloatingDrop';
 import type { Card, Deal } from './autoLive';
+import { AUTO_INPUT } from './autoControls';
 
-const MONO = "font-family:'JetBrains Mono',monospace";
+const MONO = "font-family:var(--font-mono)";
 const INP =
-  'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
+  AUTO_INPUT;
 const LABEL =
-  'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
+  'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 
 /** Contact · phone only — App / Carrier render as badges. */
 export function dealMetaLine(d: Deal): string {
@@ -83,15 +84,15 @@ export function AutoMacroLoader({ phase }: { phase: string }) {
       aria-label={phase || 'Waiting for result'}
       style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}
     >
-      <div style={s('font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
+      <div style={s('font-family:var(--font-head);font-size:var(--ss-text-lg);font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
         {phase || 'Working…'}
       </div>
-      <div style={s('font-size:14px;color:var(--muted);max-width:280px;line-height:1.5')}>
+      <div style={s('font-size:var(--ss-text-sm);color:var(--muted);max-width:280px;line-height:1.5')}>
         Keep this window open. Closing now loses task status.
       </div>
       <div
         className="ss-sweep"
-        style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}
+        style={s('width:100%;max-width:320px;height:6px;border-radius:var(--radius-full);background:var(--raised);overflow:hidden;margin-top:24px')}
       />
     </div>
   );
@@ -101,7 +102,7 @@ function DropMsg({ children, danger }: { children: ReactNode; danger?: boolean }
   return (
     <div
       style={s(
-        `padding:16px 15px;font-size:14px;text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
+        `padding:16px 15px;font-size:var(--ss-text-sm);text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
       )}
     >
       {children}
@@ -136,12 +137,12 @@ export function DealPickOption({ deal, onSelect }: { deal: Deal; onSelect: (d: D
       }}
       className="ss-pick-row"
     >
-      <div style={s('font-size:14px;font-weight:700;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+      <div style={s('font-size:var(--ss-text-sm);font-weight:700;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
         {deal.name}
       </div>
       <DealIdBadges deal={deal} />
       {meta ? (
-        <div style={s(`font-size:12px;color:var(--muted);margin-top:5px;${MONO};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>
+        <div style={s(`font-size:var(--ss-text-2xs);color:var(--muted);margin-top:5px;${MONO};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>
           {meta}
         </div>
       ) : null}
@@ -160,10 +161,10 @@ export function DealSelectedChip({
   return (
     <div className="ss-deal-chip">
       <div className="ss-deal-chip-body">
-        <div style={s('font-size:14px;font-weight:700;line-height:1.3')}>{deal.name}</div>
+        <div style={s('font-size:var(--ss-text-sm);font-weight:700;line-height:1.3')}>{deal.name}</div>
         <DealIdBadges deal={deal} />
         {meta ? (
-          <div style={s(`font-size:13px;color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
+          <div style={s(`font-size:var(--ss-text-xs);color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
         ) : null}
       </div>
       <button
@@ -260,9 +261,9 @@ export function CardPickOption({
       className="ss-pick-row"
       style={s('display:flex;align-items:center;gap:10px')}
     >
-      <span style={s(`${MONO};font-size:14px;font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
+      <span style={s(`${MONO};font-size:var(--ss-text-sm);font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
       <Badge vm={cardStatusBadge(card.status)} />
-      <span style={s('font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+      <span style={s('font-size:var(--ss-text-2xs);color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
         {`${card.driver || 'No driver'} · ID ${card.driverId || '—'} · Unit ${card.unit || '—'}`}
       </span>
     </div>
@@ -307,7 +308,7 @@ export function AutoCardPicklist({
       {card ? (
         <div className="ss-deal-chip ss-deal-chip--card">
           <div className="ss-deal-chip-body" style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
-            <span style={s(`${MONO};font-size:15px;font-weight:600;letter-spacing:.06em`)}>{displayNumber}</span>
+            <span style={s(`${MONO};font-size:var(--ss-text-base);font-weight:600;letter-spacing:.06em`)}>{displayNumber}</span>
             <Badge vm={statusBadge} />
           </div>
           <button
@@ -329,8 +330,15 @@ export function AutoCardPicklist({
             placeholder="Search card number…"
             className="ss-in"
             style={s(INP)}
+            /* Present on the deal picker but lost when this one was copied from it. Without
+               aria-expanded the listbox opening is never announced, so the same control reads as a
+               combobox in one modal and a plain text field in the next. */
+            aria-autocomplete="list"
+            aria-expanded={showDrop}
           />
-          <AutoFloatingDrop open={showDrop} anchorRef={inputRef} maxHeight={260} onClose={onCloseDrop}>
+          {/* 280, matching the deal picker. The two panels sit in the same modal at the same size;
+              a 20px difference is noise a reader cannot attribute to anything. */}
+          <AutoFloatingDrop open={showDrop} anchorRef={inputRef} maxHeight={280} onClose={onCloseDrop}>
             {loading && <PicklistMicroLoader rows={3} label="Loading cards" />}
             {!loading && error && <DropMsg danger>{error}</DropMsg>}
             {!loading && !error && cards.map((c) => (

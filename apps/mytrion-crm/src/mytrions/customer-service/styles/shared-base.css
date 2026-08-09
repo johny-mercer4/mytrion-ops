@@ -5,7 +5,6 @@
    ===================================================== */
 
 /* === Font Imports — CSMYTRION: Rajdhani + Instrument Sans + JetBrains Mono === */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap');
 
 /* === Reset === */
 .cs-root *,
@@ -17,7 +16,7 @@
 }
 
 .cs-root {
-    font-family: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-body);
     margin: 0;
     padding: 0;
     background: var(--color-bg-primary);
@@ -36,7 +35,7 @@
 .cs-root h4,
 .cs-root h5,
 .cs-root h6 {
-    font-family: 'Rajdhani', 'Instrument Sans', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--color-text-primary);
@@ -89,36 +88,8 @@
 /* =====================================================
    SIDEBAR
    ===================================================== */
-.cs-root .cs-sidebar {
-    width: var(--sidebar-width);
-    flex-shrink: 0;
-    background: var(--sidebar-bg);
-    border-right: 1px solid var(--border-light);
-    display: flex;
-    flex-direction: column;
-    /* visible so View-as menu can open upward from the footer */
-    overflow: visible;
-    transition: width 180ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.cs-root.cs-nav-collapsed .cs-sidebar {
-    width: var(--sidebar-collapsed);
-}
 
 /* ── Brand block (top of sidebar) — wordmark + collapse control ── */
-.cs-root .cs-sidebar-brand {
-    padding: 24px 18px 18px;
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    user-select: none;
-}
-
-.cs-root.cs-nav-collapsed .cs-sidebar-brand {
-    padding: 16px 0 10px;
-    justify-content: center;
-    align-items: center;
-}
 
 .cs-root .cs-nav-collapse-btn {
     margin-left: auto;
@@ -143,173 +114,14 @@
     background: var(--surface);
 }
 
-.cs-root.cs-nav-collapsed .cs-nav-collapse-btn {
-    margin-left: 0;
-    width: 30px;
-    height: 30px;
-}
-
-.cs-root .cs-brand-text {
-    min-width: 0;
-    flex: 1;
-}
-
-.cs-root .cs-brand-word {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    color: var(--text-primary);
-    line-height: 1;
-}
-
-.cs-root .cs-brand-word span {
-    color: var(--cs-accent-deep);
-}
-
-.cs-root .cs-brand-sub {
-    margin-top: 5px;
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    line-height: 1.15;
-    /* Light: deep readable ambers */
-    background: linear-gradient(105deg, #92400E 0%, #A8841A 50%, #854D0E 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-}
-
-.cs-root.dark-mode .cs-brand-sub {
-    background: linear-gradient(
-        105deg,
-        var(--cs-accent-deep) 0%,
-        var(--cs-accent) 55%,
-        var(--cs-accent-hover) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-}
-
-.cs-root.dark-mode .cs-brand-word span {
-    color: var(--cs-accent);
-}
-.cs-root .cs-sidebar-nav {
-    flex: 1;
-    padding: 6px 0;
-    overflow-y: auto;
-}
-
-.cs-root .cs-nav-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    margin: 0 8px;
-    border-radius: var(--r-md);
-    cursor: pointer;
-    border-left: none;
-    transition: background 150ms, color 150ms, padding 150ms;
-    color: var(--text-secondary);
-    font-size: 13.5px;
-    font-weight: 500;
-    user-select: none;
-}
-
-.cs-root.cs-nav-collapsed .cs-nav-item {
-    justify-content: center;
-    padding: 10px 0;
-    margin: 0 6px;
-    gap: 0;
-}
-
-.cs-root .cs-nav-icon-wrap {
-    position: relative;
-    display: inline-flex;
-    flex-shrink: 0;
-}
-
-.cs-root .cs-nav-item svg {
-    width: 17px;
-    height: 17px;
-    flex-shrink: 0;
-}
-
-.cs-root .cs-nav-item:hover {
-    color: var(--text-primary);
-    background: var(--surface-2);
-}
-
-.cs-root .cs-nav-item.active {
-    background: var(--cs-accent-softer);
-    color: var(--cs-accent-deep);
-    font-weight: 600;
-    box-shadow: inset 3px 0 0 0 var(--cs-accent);
-}
-
-.cs-root.dark-mode .cs-nav-item.active {
-    color: var(--cs-accent);
-}
-
 /* CITI Folder — red folder accent in sidebar */
-.cs-root .cs-nav-item.is-citi-folder {
-    color: var(--cs-danger);
-}
-.cs-root .cs-nav-item.is-citi-folder svg {
-    color: var(--cs-danger);
-}
-.cs-root .cs-nav-item.is-citi-folder:hover {
-    background: color-mix(in srgb, var(--cs-danger-soft) 65%, var(--surface-2));
-    color: var(--cs-danger);
-}
-.cs-root .cs-nav-item.is-citi-folder.active {
-    background: var(--cs-danger-soft);
-    color: var(--cs-danger);
-    box-shadow: inset 3px 0 0 0 var(--cs-danger);
-}
-.cs-root.dark-mode .cs-nav-item.is-citi-folder.active {
-    color: var(--cs-danger);
-}
-
-.cs-root .cs-nav-item.cs-nav-disabled {
-    cursor: not-allowed;
-    color: var(--text-muted);
-    opacity: 0.75;
-}
-
-.cs-root .cs-nav-item.cs-nav-disabled:hover {
-    background: none;
-    color: var(--text-muted);
-}
-
-.cs-root .cs-nav-item .nav-label {
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 
 .cs-root.cs-nav-collapsed .cs-nav-item .nav-label,
 .cs-root.cs-nav-collapsed .cs-nav-item .nav-soon,
 .cs-root.cs-nav-collapsed .cs-theme-toggle span,
-.cs-root.cs-nav-collapsed .cs-user-meta {
-    display: none;
-}
-
-.cs-root .cs-nav-item .nav-soon {
-    font-size: 8.5px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    opacity: 0.7;
-}
 
 .cs-root .cs-nav-badge {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 600;
     min-width: 18px;
@@ -335,40 +147,8 @@
     border: 1.5px solid var(--sidebar-bg);
 }
 
-.cs-root .cs-nav-soon-dot {
-    position: absolute;
-    top: -4px;
-    right: -5px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    border: 1.5px solid var(--sidebar-bg);
-    opacity: 0.85;
-}
-
 .cs-root.dark-mode .cs-nav-badge {
     color: var(--cs-accent);
-}
-
-.cs-root.cs-nav-collapsed .cs-theme-toggle {
-    padding: 9px 0;
-}
-
-.cs-root.cs-nav-collapsed .cs-user-card {
-    justify-content: center;
-    padding: 4px 0 2px;
-}
-
-.cs-root .cs-sidebar-footer {
-    padding: 12px;
-    border-top: 1px solid var(--border-2);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    overflow: visible;
-    position: relative;
-    z-index: 20;
 }
 
 .cs-root .cs-view-as {
@@ -378,35 +158,6 @@
 }
 
 /* ── Theme toggle (sidebar footer) ── */
-.cs-root .cs-theme-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    justify-content: center;
-    padding: 9px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-2);
-    border-radius: var(--r-md);
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    transition: color 150ms, border-color 150ms, background 150ms;
-    width: 100%;
-}
-
-.cs-root .cs-theme-toggle:hover {
-    color: var(--text-primary);
-    border-color: var(--border);
-}
-
-.cs-root .cs-user-card {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 4px 2px;
-}
 
 .cs-root .cs-user-avatar {
     width: 34px;
@@ -415,7 +166,7 @@
     background: var(--cs-accent-soft);
     color: var(--cs-accent-deep);
     border: 1px solid var(--cs-border-gold);
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 14px;
     display: flex;
@@ -476,7 +227,7 @@
 }
 
 .cs-root .cs-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 30px;
     font-weight: 700;
     letter-spacing: -0.01em;
@@ -695,43 +446,4 @@
 /* =====================================================
    MOBILE BOTTOM NAV
    ===================================================== */
-.cs-root .cs-bottom-nav {
-    display: none;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: var(--bottom-nav-height);
-    background: var(--sidebar-bg);
-    border-top: 1px solid var(--border-light);
-    z-index: 200;
-}
 
-.cs-root .bottom-nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.2rem;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-family: inherit;
-    font-size: 0.5625rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 120ms;
-    padding: 0;
-}
-
-.cs-root .bottom-nav-btn.active {
-    color: var(--cs-accent);
-}
-
-.cs-root .bottom-nav-btn.bottom-nav-disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}

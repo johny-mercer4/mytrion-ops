@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { flushSync } from 'react-dom';
+import { applyFavicon } from '../lib/favicon';
 
 export type Theme = 'dark' | 'light';
 const KEY = 'mytrion-theme';
@@ -21,6 +22,9 @@ function initial(): Theme {
 function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
   window.localStorage.setItem(KEY, theme);
+  // The tab icon follows the APP's theme, not the OS's — see lib/favicon.ts for why an SVG
+  // prefers-color-scheme favicon would have been the wrong signal here.
+  applyFavicon(theme);
 }
 
 /**

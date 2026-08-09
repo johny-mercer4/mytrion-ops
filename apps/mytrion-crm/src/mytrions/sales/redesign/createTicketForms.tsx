@@ -246,14 +246,14 @@ export function TicketWizard() {
   const circle = (n: number): string => {
     const done = cr.step > n;
     const curr = cr.step === n;
-    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;${done ? 'background:var(--accent);color:#fff;border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
+    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;${done ? 'background:var(--accent);color:var(--on-accent);border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
   };
   const stepLabel = (n: number): string => `font-size:13px;font-weight:${cr.step === n || cr.step > n ? '700' : '600'};color:${cr.step === n ? 'var(--text)' : cr.step > n ? 'var(--text2)' : 'var(--muted)'};white-space:nowrap`;
 
   return (
     <>
       <div style={s('margin-bottom:20px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Create a Ticket</div>
+        <div style={s('font-family:var(--font-head);font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Create a Ticket</div>
         <div style={s('font-size:14px;color:var(--muted);margin-top:3px')}>{subhead}</div>
       </div>
 
@@ -358,9 +358,9 @@ export function TicketWizard() {
                 const chip = dealIdChip(d);
                 const chipCss =
                   chip.tone === 'carrier'
-                    ? "font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md);border:1px solid rgba(var(--accent-rgb),.28)"
+                    ? "font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md);border:1px solid rgba(var(--accent-rgb),.28)"
                     : chip.tone === 'app'
-                      ? "font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 30%,transparent)"
+                      ? "font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 30%,transparent)"
                       : "font-size:12px;font-weight:600;color:var(--muted);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)";
                 const hasPhone = Boolean(d.phone && d.phone !== '—');
                 return (
@@ -385,7 +385,7 @@ export function TicketWizard() {
                     <div style={s('display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0')}>
                       <span style={s(chipCss)}>{chip.text}</span>
                       {hasPhone ? (
-                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
+                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:14px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
                           <Icon name="calls" size={12} strokeWidth={2.2} />
                           {displayPhone(d.phone)}
                         </span>
@@ -416,12 +416,12 @@ export function TicketWizard() {
               <span style={s('color:var(--faint)')}>·</span>
               <div style={s('font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0')}>{cr.company}</div>
               {cr.carrierId ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md)")}>CR-{cr.carrierId}</span>
+                <span style={s("font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md)")}>CR-{cr.carrierId}</span>
               ) : cr.app ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md)")}>App {cr.app}</span>
+                <span style={s("font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md)")}>App {cr.app}</span>
               ) : null}
               {cr.phone ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{displayPhone(cr.phone)}</span>
+                <span style={s("font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{displayPhone(cr.phone)}</span>
               ) : null}
             </div>
             <div style={s('display:flex;gap:7px;flex-shrink:0')}><button onClick={() => patch({ step: 1 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Dept</button><button onClick={() => patch({ step: 2 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Deal</button></div>
@@ -504,7 +504,7 @@ export function TicketWizard() {
                               className={`ss-menu-i${on ? ' is-on' : ''}`}
                               style={s('display:flex;flex-direction:column;align-items:flex-start;gap:2px')}
                             >
-                              <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{c.num}</span>
+                              <span style={s("font-family:var(--font-mono);font-size:13px;font-weight:600")}>{c.num}</span>
                               <span style={s('font-size:12px;color:var(--muted);font-weight:500')}>{c.status}</span>
                             </button>
                           );
@@ -539,12 +539,12 @@ export function TicketWizard() {
         <div className="ss-scrim" onClick={() => patch({ autoPrompt: null })}>
           <div
             onClick={(e) => e.stopPropagation()}
-            style={s('width:100%;max-width:440px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--orange);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}
+            style={s('width:100%;max-width:440px;max-height:100%;flex:none;overflow-y:auto;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--orange);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}
           >
             <div style={s('width:52px;height:52px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 16%,var(--surface));color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 28%,transparent)')}>
               <Icon name={ICO.bolt} size={24} />
             </div>
-            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
+            <div style={s('font-family:var(--font-head);font-weight:700;font-size:20px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
             <div style={s('font-size:14px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>
             {cr.autoPrompt.desc && <div style={s('font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px')}>{cr.autoPrompt.desc}</div>}
             <div style={s('display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px')}>
@@ -557,7 +557,7 @@ export function TicketWizard() {
                   if (id) openAutomation(id);
                 }}
                 className="ss-btn-p"
-                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
+                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
               >
                 Open {cr.autoPrompt.title.length > 28 ? 'action' : cr.autoPrompt.title} ↗
               </button>

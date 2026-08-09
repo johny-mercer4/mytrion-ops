@@ -1,9 +1,9 @@
 import { s } from './dc';
 import { nyToday } from './salesData';
 import { TXN_RANGE_PRESETS } from './txnReport';
+import { AUTO_INPUT } from './autoControls';
 
-const inputCss = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
-const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const labelCss = 'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const invoiceRanges = ['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'Custom Range'];
 const invoiceStatuses = [
   { value: 'all', label: 'All Statuses' },
@@ -44,21 +44,21 @@ export function AutoReportFilters({ kind, invoice, transactions }: AutoReportFil
         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
           <div>
             <Label>Quick Date Range</Label>
-            <select value={invoice.range} onChange={(e) => invoice.onRange(e.target.value)} className="ss-in" style={s(inputCss)}>
+            <select value={invoice.range} onChange={(e) => invoice.onRange(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>
               {invoiceRanges.map((range) => <option key={range}>{range}</option>)}
             </select>
           </div>
           <div>
             <Label>Status</Label>
-            <select value={invoice.status} onChange={(e) => invoice.onStatus(e.target.value)} className="ss-in" style={s(inputCss)}>
+            <select value={invoice.status} onChange={(e) => invoice.onStatus(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>
               {invoiceStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </div>
         </div>
         {invoice.range === 'Custom Range' && (
           <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-            <div><Label>Start Date</Label><input type="date" value={invoice.from} onChange={(e) => invoice.onFrom(e.target.value)} className="ss-in" style={s(inputCss)} /></div>
-            <div><Label>End Date</Label><input type="date" value={invoice.to} min={invoice.from} max={nyToday()} onChange={(e) => invoice.onTo(e.target.value)} className="ss-in" style={s(inputCss)} /></div>
+            <div><Label>Start Date</Label><input type="date" value={invoice.from} onChange={(e) => invoice.onFrom(e.target.value)} className="ss-in" style={s(AUTO_INPUT)} /></div>
+            <div><Label>End Date</Label><input type="date" value={invoice.to} min={invoice.from} max={nyToday()} onChange={(e) => invoice.onTo(e.target.value)} className="ss-in" style={s(AUTO_INPUT)} /></div>
           </div>
         )}
       </div>
@@ -70,14 +70,14 @@ export function AutoReportFilters({ kind, invoice, transactions }: AutoReportFil
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       <div>
         <Label>Date Range</Label>
-        <select value={transactions.range} onChange={(e) => transactions.onRange(e.target.value)} className="ss-in" style={s(inputCss)}>
+        <select value={transactions.range} onChange={(e) => transactions.onRange(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>
           {TXN_RANGE_PRESETS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </div>
       {transactions.range === 'custom' && (
         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-          <div><Label>Start Date</Label><input type="date" value={transactions.from} max={nyToday()} onChange={(e) => transactions.onFrom(e.target.value)} className="ss-in" style={s(inputCss)} /></div>
-          <div><Label>End Date</Label><input type="date" value={transactions.to} min={transactions.from} max={nyToday()} onChange={(e) => transactions.onTo(e.target.value)} className="ss-in" style={s(inputCss)} /></div>
+          <div><Label>Start Date</Label><input type="date" value={transactions.from} max={nyToday()} onChange={(e) => transactions.onFrom(e.target.value)} className="ss-in" style={s(AUTO_INPUT)} /></div>
+          <div><Label>End Date</Label><input type="date" value={transactions.to} min={transactions.from} max={nyToday()} onChange={(e) => transactions.onTo(e.target.value)} className="ss-in" style={s(AUTO_INPUT)} /></div>
         </div>
       )}
     </div>

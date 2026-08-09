@@ -11,16 +11,16 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .hr-root .hr-settings-form-grid input,
 .hr-root .hr-settings-form-grid select {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--bg-primary, transparent);
   outline: none;
@@ -48,15 +48,15 @@
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 .hr-root .hr-settings-shift-list strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-settings-shift-list span {
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .hr-root .hr-settings-shift-actions {
@@ -81,17 +81,17 @@
 }
 .hr-root .hr-att-weeklabel {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   min-width: 200px;
   text-align: center;
 }
 .hr-root .hr-att-shiftchip {
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--hr-r-pill);
   background: color-mix(in srgb, var(--tone-emerald, var(--accent)) 14%, transparent);
   color: var(--tone-emerald, var(--accent));
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 650;
 }
 .hr-root .hr-att-shiftchip.is-muted {
@@ -100,7 +100,7 @@
 }
 .hr-root .hr-att-last {
   margin: 0 0 12px;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 .hr-root .hr-att-days {
@@ -117,7 +117,7 @@
   align-items: start;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--hr-r-md);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--hz-pane, var(--surface));
 }
@@ -126,7 +126,7 @@
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .hr-root .hr-att-daylabel {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   padding-top: 7px;
 }
@@ -136,7 +136,7 @@
 .hr-root .hr-att-bar {
   position: relative;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--hr-r-pill);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -156,12 +156,12 @@
   background: color-mix(in srgb, var(--text-muted) 13%, transparent);
 }
 .hr-root .hr-att-badge {
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--text-primary);
 }
 .hr-root .hr-att-state {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 750;
   letter-spacing: 0.02em;
 }
@@ -175,7 +175,7 @@
   display: flex;
   justify-content: space-between;
   margin-top: 4px;
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
 }
@@ -184,7 +184,7 @@
   flex-direction: column;
   gap: 2px;
   padding-top: 4px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   text-align: right;
   color: var(--text-muted);
@@ -192,7 +192,7 @@
 }
 .hr-root .hr-att-hours strong {
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 750;
 }
 .hr-root .hr-att-session-list {
@@ -208,10 +208,10 @@
   gap: 6px;
   padding: 6px 9px;
   border: 1px solid color-mix(in srgb, var(--tone-emerald, var(--accent)) 18%, transparent);
-  border-radius: 9px;
+  border-radius: var(--hr-r-sm);
   background: color-mix(in srgb, var(--tone-emerald, var(--accent)) 6%, transparent);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
 }
 .hr-root .hr-att-session.is-open {
   border-color: color-mix(in srgb, var(--tone-amber, var(--warning)) 35%, transparent);
@@ -232,12 +232,12 @@
 }
 .hr-root .hr-att-unmatched {
   color: var(--tone-amber, var(--warning));
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
 }
 .hr-root .hr-att-totals {
   margin-top: 18px;
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--hz-pane, var(--surface));
   display: flex;
@@ -251,16 +251,16 @@
   gap: 2px;
 }
 .hr-root .hr-att-totals strong {
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 750;
 }
 .hr-root .hr-att-totals span {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .hr-root .hr-att-totals-shift {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--tone-emerald, var(--accent));
 }
@@ -298,16 +298,16 @@
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--text-muted) 10%, transparent);
 }
 .hr-root .hr-att-pane {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   padding: 7px 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--hr-r-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -315,7 +315,10 @@
 .hr-root .hr-att-pane.is-on {
   background: var(--hz-pane, var(--surface));
   color: var(--text-primary);
-  box-shadow: 0 1px 2px color-mix(in srgb, #000 12%, transparent);
+  /* The selected tab lifting off its track. --hz-glass-inset carries exactly that and nothing else:
+     the inset glare in dark, glare + a 1px slate hairline shadow in light. The literal it replaces
+     (`0 1px 2px #000/12%`) was invisible in dark and grubby in light. */
+  box-shadow: var(--hz-glass-inset);
 }
 .hr-root .hr-att-toolbar-me {
   justify-content: flex-start;
@@ -325,10 +328,10 @@
   margin: 0 0 14px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--tone-amber, var(--warning)) 34%, transparent);
-  border-radius: 11px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--tone-amber, var(--warning)) 8%, transparent);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
 }
 .hr-root .hr-att-mapping-alert strong {
@@ -339,7 +342,7 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--hr-r-sm);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--bg-primary, transparent);
   color: var(--text-muted);
@@ -356,7 +359,7 @@
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   outline: none;
   box-shadow: none;
@@ -367,7 +370,7 @@
   box-shadow: none;
 }
 .hr-root .hr-att-count {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin-left: auto;
 }
@@ -396,7 +399,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 14px;
+  border-radius: var(--hr-r-lg);
   /*
    * Flat surface, NOT the `--hz-pane` gradient the panels elsewhere use. That token is a 150deg
    * linear-gradient, which is right for a card you see all of at once and wrong for a scroller holding
@@ -471,21 +474,21 @@
   white-space: nowrap;
 }
 .hr-root .hr-att-row-name {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   letter-spacing: -0.005em;
 }
 .hr-root .hr-att-row-meta {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .hr-root .hr-att-row-flag {
   margin-left: 6px;
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--hr-r-sm);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -494,7 +497,7 @@
 
 .hr-root .hr-att-row-state {
   flex: none;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   color: var(--text-muted);
 }
@@ -513,11 +516,11 @@
   gap: 10px;
   min-height: 280px;
   padding: 24px;
-  border-radius: 14px;
+  border-radius: var(--hr-r-lg);
   border: 1px dashed var(--hz-pane-bd, var(--border));
   color: var(--text-muted);
   text-align: center;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-att-detail-placeholder p {
   margin: 0;
@@ -526,7 +529,7 @@
 }
 .hr-root .hr-att-detail {
   padding: 14px 16px 16px;
-  border-radius: 14px;
+  border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd, var(--border));
   background: var(--hz-pane, var(--surface));
   min-height: 280px;
@@ -540,12 +543,12 @@
 }
 .hr-root .hr-att-detail-head h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--text-md);
   font-weight: 750;
 }
 .hr-root .hr-att-detail-head p {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 /* Copy on top, the three controls on their own row. As one 5-track row this needed ~730px, but the card
@@ -563,7 +566,7 @@
   margin: 0 0 14px;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--hz-pane-bd, var(--border)));
-  border-radius: 12px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--accent) 5%, var(--hz-pane-alt, transparent));
 }
 .hr-root .hr-att-assign-icon {
@@ -573,7 +576,7 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
 }
@@ -585,12 +588,12 @@
   gap: 2px;
 }
 .hr-root .hr-att-assign-copy strong {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .hr-root .hr-att-assign-copy span,
 .hr-root .hr-att-assign label > span {
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
 }
 .hr-root .hr-att-assign label {
   display: flex;
@@ -608,16 +611,16 @@
   min-height: 34px;
   padding: 6px 9px;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 9px;
+  border-radius: var(--hr-r-sm);
   background: var(--hz-pane, var(--surface));
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .hr-root .hr-att-assign-ok {
   margin: -4px 0 12px;
   color: var(--tone-emerald, var(--success));
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 650;
 }
 @media (max-width: 960px) {

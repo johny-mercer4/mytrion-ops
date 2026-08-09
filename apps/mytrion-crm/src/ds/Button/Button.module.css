@@ -1,0 +1,205 @@
+/*
+ * Button — the reference implementation for src/ds. Read CONVENTIONS.md alongside this.
+ *
+ * Variants and states are DATA ATTRIBUTES, not extra classes: one selector surface, and the DOM
+ * tells you the state when you inspect it.
+ */
+
+.root {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1_5);
+  /* Never shrink a control below its content in a flex row — a button that ellipsises its own
+     label is a button nobody can read. */
+  flex: none;
+
+  /* Type. Buttons are 13px: they sit next to table text far more often than next to headings. */
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+
+  /* Box */
+  block-size: var(--btn-h);
+  padding-inline: var(--btn-px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+
+  /* Named properties only — `transition: all` re-runs the machinery for every changed property and
+     silently overrides narrower transitions set elsewhere. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    translate var(--dur-fast) var(--ease-standard);
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --btn-h: 32px;
+  --btn-px: var(--space-3);
+}
+.root[data-size='sm'] {
+  --btn-h: 26px;
+  --btn-px: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* Icon-only: a square box, so a row of icon buttons is a grid rather than a ragged edge. */
+.root[data-icon-only='true'] {
+  inline-size: var(--btn-h);
+  padding-inline: 0;
+}
+
+/* ── Variants ────────────────────────────────────────────────────────────────
+   Five, and every one has real use sites in this codebase (the audit counted 60+ bespoke .btn
+   classes collapsing into exactly these): primary, secondary, ghost, danger, link. No sixth. */
+
+/* PRIMARY — the one affirmative action on a surface. If a screen has two, one of them is secondary. */
+.root[data-variant='primary'] {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.root[data-variant='primary']:hover:not(:disabled):not([data-loading='true']) {
+  background: color-mix(in oklab, var(--accent-strong) 88%, var(--text-primary));
+  translate: var(--lift-1);
+}
+.root[data-variant='primary']:active:not(:disabled) {
+  translate: none;
+  background: color-mix(in oklab, var(--accent-strong) 78%, var(--text-primary));
+}
+
+/* SECONDARY — the default. A bordered surface control; the plain `.btn` of every module. */
+.root[data-variant='secondary'] {
+  background: var(--field);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.root[data-variant='secondary']:hover:not(:disabled):not([data-loading='true']) {
+  background: var(--surface-alt);
+  border-color: var(--border-strong);
+}
+.root[data-variant='secondary']:active:not(:disabled) {
+  background: var(--surface-raised);
+}
+
+/* GHOST — chrome. Toolbar and table-row actions, where a border per control would be a cage. */
+.root[data-variant='ghost'] {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.root[data-variant='ghost']:hover:not(:disabled):not([data-loading='true']) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.root[data-variant='ghost']:active:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+/* DANGER — destructive and irreversible only. Not "important". */
+.root[data-variant='danger'] {
+  background: var(--intent-danger-bg);
+  color: var(--intent-danger-fg);
+  border-color: var(--intent-danger-bd);
+}
+.root[data-variant='danger']:hover:not(:disabled):not([data-loading='true']) {
+  background: color-mix(in oklab, var(--danger) 22%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 48%, transparent);
+}
+.root[data-variant='danger']:active:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 30%, transparent);
+}
+
+/* LINK — an inline action inside prose or a cell. Underlined, because colour alone must never be
+   the only signal that something is actionable. */
+.root[data-variant='link'] {
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+  padding-inline: 0;
+  block-size: auto;
+  inline-size: auto;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.root[data-variant='link']:hover:not(:disabled) {
+  text-decoration-color: currentColor;
+}
+
+/* ── Full width ──────────────────────────────────────────────────────────────
+   For a form footer or a mobile sheet, where the control spans its container. */
+.root[data-full='true'] {
+  inline-size: 100%;
+}
+
+/* ── Loading ────────────────────────────────────────────────────────────────
+   The label stays in the DOM and keeps its box, so the button does not resize when it starts
+   working — a control that shrinks under the cursor is a control people mis-click. The spinner is
+   overlaid, the label is hidden from paint but still measured. */
+.root[data-loading='true'] {
+  cursor: progress;
+  position: relative;
+}
+.root[data-loading='true'] .content {
+  visibility: hidden;
+}
+.spinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.spinnerGlyph {
+  inline-size: 1em;
+  block-size: 1em;
+  border-radius: var(--radius-pill);
+  border: 2px solid currentColor;
+  /* One transparent quadrant is what makes the rotation legible; a full ring reads as static. */
+  border-top-color: transparent;
+  /* An INDEFINITE ambient loop — deliberately outside the 220ms transition ceiling and floored at
+     >=1s so it reads as "working", not as a transition that has stalled. */
+  animation: btnSpin 1s linear infinite;
+}
+@keyframes btnSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, not an opacity multiply, so the label keeps a KNOWN contrast ratio instead of an
+   unknowable composite against whatever is behind it. No pointer-events: none — see CONVENTIONS §5. */
+.root:disabled,
+.root[aria-disabled='true'] {
+  cursor: var(--disabled-cursor);
+  color: var(--disabled-fg);
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  translate: none;
+  box-shadow: var(--elev-0);
+}
+.root[data-variant='link']:disabled,
+.root[data-variant='link'][aria-disabled='true'] {
+  background: transparent;
+  text-decoration-color: transparent;
+}
+
+/* Content wrapper — exists so `visibility: hidden` during loading hides the label and any icons
+   together without touching the button's own box. */
+.content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+}

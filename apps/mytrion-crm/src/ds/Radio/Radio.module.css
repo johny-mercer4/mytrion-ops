@@ -1,0 +1,183 @@
+/*
+ * Radio — same anatomy as Checkbox (real input, inert sibling paint), different SHAPE.
+ *
+ * The shape carries meaning that colour cannot: a circle with a dot reads "one of these", a square
+ * with a tick reads "any of these". That distinction survives greyscale and colour blindness, which
+ * is why the two controls do not share a box style even though they share a layout.
+ *
+ * Everything selects off the native pseudo-classes so an uncontrolled radio paints correctly
+ * without React ever learning its value. Data attributes carry only what CSS cannot know.
+ */
+
+.root {
+  display: inline-grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  cursor: pointer;
+  font-family: var(--font-body);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Size — the hit square matches Button md/sm, so a radio row and a button row align ────────── */
+.root[data-size='md'] {
+  --choice-hit: 32px;
+  --choice-box: 18px;
+  --choice-dot: 8px;
+  --choice-line: var(--lh-sm);
+}
+.root[data-size='sm'] {
+  --choice-hit: 26px;
+  --choice-box: 16px;
+  --choice-dot: 7px;
+  --choice-line: var(--lh-xs);
+}
+
+.control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--choice-hit);
+  block-size: var(--choice-hit);
+  flex: none;
+}
+
+/*
+ * The real input, stretched over the hit square. NOT `display: none` and NOT `visibility: hidden`:
+ * either would remove it from the accessibility tree and the tab order, and with it the native
+ * arrow-key roving that makes this a radio GROUP rather than a row of unrelated dots.
+ */
+.input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.box {
+  display: grid;
+  place-items: center;
+  inline-size: var(--choice-box);
+  block-size: var(--choice-box);
+  border: 1px solid var(--border-strong);
+  /* --radius-pill, not a 50% literal: the pill token IS how this system spells "fully round". */
+  border-radius: var(--radius-pill);
+  background: var(--field);
+  color: var(--on-accent);
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard);
+}
+
+.dot {
+  inline-size: var(--choice-dot);
+  block-size: var(--choice-dot);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  opacity: 0;
+  /* The dot fades rather than scales: a scale would need a permanent transform on a checked
+     option, and a checked radio is a resting state, not an animating one. */
+  transition: opacity var(--dur-instant) var(--ease-standard);
+}
+
+/* ── Hover — gated on data-disabled, not :not(:disabled), so an aria-disabled option cannot
+   out-specify its own disabled recolour. ──────────────────────────────────────────────────────── */
+.root:not([data-disabled='true']):hover .box {
+  border-color: var(--accent);
+}
+.root:not([data-disabled='true']):hover .input:checked ~ .box {
+  background: color-mix(in oklab, var(--accent-strong) 86%, var(--text-primary));
+}
+
+/* ── Checked ────────────────────────────────────────────────────────────────── */
+.input:checked ~ .box {
+  background: var(--accent-strong);
+  border-color: transparent;
+}
+.input:checked ~ .box .dot {
+  opacity: 1;
+}
+
+/* ── Active ─────────────────────────────────────────────────────────────────── */
+.root:not([data-disabled='true']):active .box {
+  background: var(--surface-alt);
+}
+.root:not([data-disabled='true']):active .input:checked ~ .box {
+  background: color-mix(in oklab, var(--accent-strong) 74%, var(--text-primary));
+}
+
+/*
+ * ── Focus — the GLOBAL ring, relocated to the element the user can see.
+ * global.css sets `input:focus-visible { outline: none }` app-wide, and this input is a
+ * transparent overlay in any case, so a ring on it would frame nothing. Same three tokens, same
+ * appearance: this is not a per-component focus style.
+ */
+.input:focus-visible ~ .box {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── Invalid ────────────────────────────────────────────────────────────────── */
+.root[data-invalid='true'] .box {
+  border-color: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.root[data-invalid='true'] .input:checked ~ .box {
+  background: var(--intent-danger-fg);
+  border-color: transparent;
+  color: var(--surface);
+}
+
+/* ── Disabled — RECOLOUR, never an opacity multiply, and never pointer-events: none ──────────── */
+.root[data-disabled='true'] {
+  cursor: var(--disabled-cursor);
+}
+.root[data-disabled='true'] .box {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  color: var(--disabled-fg);
+}
+/* Written out rather than relying on the rule above, because `.root[data-invalid] .input:checked ~
+   .box` out-specifies it — a disabled AND invalid option would otherwise keep the danger fill. */
+.root[data-disabled='true'] .input:checked ~ .box {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  color: var(--disabled-fg);
+}
+.root[data-disabled='true'] .label,
+.root[data-disabled='true'] .description {
+  color: var(--disabled-fg);
+}
+
+/* ── Text column — the FIRST line centres on the box; a description flows below it. ───────────── */
+.text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  padding-block: calc((var(--choice-hit) - var(--choice-line)) / 2);
+}
+
+.label {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+}
+.root[data-size='sm'] .label {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.description {
+  margin-block-start: var(--space-0_5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}

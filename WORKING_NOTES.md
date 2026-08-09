@@ -13276,3 +13276,56 @@ warnings) · typecheck clean. No frontend `src/` changes this round, so no bundl
 
 Sales bench, all changes live: mean **5,066ms** (best recorded), 33 LLM calls, expected-doc coverage
 **14/14**, answer facts **7/7**, failures **0**, forbidden tool calls **0**, ~$0.0042/question.
+
+---
+
+## 2026-08-09 — Horizon standardization (feature/Redesigner)
+
+Collapsed twelve workspaces onto one shell and one token system, per the approved Claude Design
+project (`Mytrion Horizon Shell` + `Horizon Standardization Spec` + the dual-launcher mocks).
+Eleven commits, `cdc3f40c`..`c2d29efa`.
+
+### Decisions worth not re-litigating
+
+- **Hybrid accent.** The spec says "one Horizon ramp, no module hue"; the launcher mock still paints
+  per-workspace card hues. Both are right about different things. `--accent` is the Horizon ramp in
+  all twelve workspaces, and identity travels as `--badge-tone`, which exactly two things may read:
+  the launcher card and the header badge. `tokens.test.ts` fails if a `[data-mytrion]` block
+  declares an `--accent*`.
+- **"Departments" stat removed** from the launcher. `COMING_SOON_PICKER_TILES` derives from an empty
+  array, so it rendered the identical number to "Active Workspaces" on every load. Replaced with
+  "Workspaces you can reach"; the third card became "Last active" as a link.
+- **Tokens repointed, not renamed.** >5,000 `var()` sites, and `tsc` never reads a `.css` file, so a
+  rename is 100% visual risk with no compiler net. `--hz-*` (2,843 sites) stayed as an alias layer.
+- **`.bm-root` / `.cs-root` / `.ss-root` kept** on content divs. They are token scopes, not style
+  scopes — ~20,000 lines of panel CSS read properties declared on them.
+- **Mobile bottom navs deleted, not migrated** (Billing, CS). The shared rail is already a horizontal
+  strip under 768px; two nav bars on one phone screen is worse than either.
+- **`ss.nav.collapsed` / `cs.nav.collapsed` not migrated.** One workspace-wide rail preference is the
+  point. Affected agents get an expanded rail once, after deploy.
+- **CITI Folder's different active-row colour is gone** (CS). A per-destination hue on the row is
+  what the contract bans; the glyph tint is its replacement.
+
+### Defects found and fixed on the way — all silently invalid before
+
+- `--hz-muted`, `--hz-pane-solid`, `--hz-input-bg`, `--hz-blur-lg`: consumed, never declared. 18
+  declarations were invalid-at-computed-value-time (15 in comms alone).
+- `ui/button.tsx` read `var(--secondary)`/`var(--foreground)`; the theme names them `--color-*`.
+- `datacenter-panel.css` read an undeclared `--surface-card`, so that input had no background.
+- Billing and CS declared `--accent-glow` as a box-shadow while the global is a colour consumed
+  inside `--hz-shadow-lift`, voiding lift in both scopes. Renamed to `--accent-ring-glow`.
+- Six Sales controls paired `background: var(--accent)` with a hardcoded `#fff` — ~1.35:1 against
+  the new accent, i.e. an invisible label on every primary CTA in the ticket wizard.
+- Reduced motion never zeroed `animation-delay`, so a staggered grid stayed blank for the whole
+  stagger and then snapped in.
+- Two radius scales the audit missed (`--fi-r-*`, `--hr-r-*`) — caught by `tokens.test.ts`.
+
+### The one automated guard
+
+`src/styles/tokens.test.ts`. There is no stylelint on this app (`.eslintrc.cjs` ignores it), no
+visual-regression harness, and jsdom computes nothing from CSS Modules — so every visual claim here
+was verified by build + hand, and this test is the only thing that will catch a regression.
+
+**Still to do:** a browser pass over all twelve workspaces in both themes. `pnpm typecheck`,
+`pnpm test` (88 files / 570 tests) and a production build are green, but none of them can see a
+colour.

@@ -20,7 +20,7 @@
   height: 40px;
   display: grid;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--hr-r-md);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd, var(--border)));
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -30,7 +30,7 @@
 .hr-holiday-settings-title span,
 .hr-leave-escalation > span {
   color: var(--accent);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -39,7 +39,7 @@
 .hr-leave-settings-head h3 {
   margin: 2px 0 2px;
   font-family: var(--font-head);
-  font-size: 17px;
+  font-size: var(--text-lg);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -48,7 +48,7 @@
 .hr-holiday-settings-title p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.4;
 }
 
@@ -59,7 +59,7 @@
   align-items: center;
   gap: 6px;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 9px;
+  border-radius: var(--hr-r-sm);
   background: var(--hz-pane-alt, var(--surface-alt));
   color: var(--text-muted);
 }
@@ -77,7 +77,7 @@
   background: transparent;
   font: inherit;
   font-weight: 650;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .hr-leave-policy-grid {
@@ -91,7 +91,7 @@
 .hr-leave-escalation,
 .hr-holiday-settings {
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 12px;
+  border-radius: var(--hr-r-lg);
   background: var(--hz-pane-alt, color-mix(in srgb, var(--surface) 88%, transparent));
 }
 
@@ -109,7 +109,7 @@
 
 .hr-leave-setting-field > span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 
@@ -120,14 +120,14 @@
   min-height: 36px;
   box-sizing: border-box;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 9px;
+  border-radius: var(--hr-r-sm);
   outline: none;
   box-shadow: none;
   padding: 0 10px;
   color: var(--text-primary);
   background: var(--bg-primary, var(--surface));
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .hr-leave-setting-field select:focus,
@@ -146,7 +146,7 @@
 .hr-leave-setting-field small,
 .hr-leave-default small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .hr-leave-defaults {
@@ -160,13 +160,13 @@
   display: grid;
   gap: 6px;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: var(--bg-primary, var(--surface));
 }
 
 .hr-leave-default > span {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 750;
   line-height: 1.25;
 }
@@ -180,14 +180,14 @@
 .hr-leave-default input {
   width: 72px;
   min-height: 34px;
-  font-size: 16px;
+  font-size: var(--text-input-mobile);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .hr-leave-default strong {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
 }
 
@@ -218,10 +218,10 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 8px;
+  border-radius: var(--hr-r-sm);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .hr-leave-escalation p {
@@ -231,13 +231,13 @@
 }
 
 .hr-leave-escalation b {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 
 .hr-leave-escalation small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .hr-leave-escalation > i {
@@ -254,11 +254,11 @@
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  border-radius: 9px;
+  border-radius: var(--hr-r-sm);
   border: 1px solid color-mix(in srgb, var(--tone-emerald, var(--success)) 28%, transparent);
   color: var(--text-muted);
   background: color-mix(in srgb, var(--tone-emerald, var(--success)) 8%, transparent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   line-height: 1.4;
 }
 
@@ -281,7 +281,7 @@
 .hr-holiday-settings-title h4 {
   margin: 2px 0 0;
   font-family: var(--font-head);
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 700;
 }
 
@@ -293,7 +293,7 @@
   align-items: center;
   gap: 8px;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: var(--bg-primary, var(--surface));
 }
 
@@ -307,7 +307,7 @@
   align-items: center;
   gap: 5px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -321,7 +321,7 @@
   margin-top: 10px;
   overflow: hidden;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   max-height: min(36vh, 320px);
   overflow-y: auto;
 }
@@ -342,20 +342,20 @@
 
 .hr-holiday-setting-row > span {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
 
 .hr-holiday-setting-row strong {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
 }
 
 .hr-holiday-setting-row small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .hr-holiday-setting-row button {
@@ -364,7 +364,7 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hr-r-sm);
   color: var(--danger, #e11d48);
   background: transparent;
   cursor: pointer;
@@ -379,7 +379,7 @@
   padding: 20px;
   color: var(--text-muted);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .hr-leave-settings > .hr-settings-ok,

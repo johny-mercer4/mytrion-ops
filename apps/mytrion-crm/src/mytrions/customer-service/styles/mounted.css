@@ -1,0 +1,31 @@
+/*
+ * Customer Service was written as its own page root and is now a content div inside MytrionShell's
+ * centre pane. These undo the assumptions that leaves behind. Loaded last (see styles/index.css).
+ */
+
+.cs-root {
+  /* 100vh inside a pane that is already viewport-height doubles the page height and gives it two
+     scrollbars. */
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+  /* The shell's ambience shows through; an opaque root would make CS the one workspace sitting on
+     a flat field. */
+  background: none;
+}
+
+/* CS does not virtualise, so unlike Billing it hands scrolling back to the shell — one scroller per
+   screen, and the rail's position stays independent of the content. */
+.cs-root .cs-content {
+  flex: none;
+  overflow: visible;
+}
+
+/* The mobile bottom nav is gone; the shared rail is a horizontal strip under 768px. Without this
+   every panel keeps ~62px of padding reserved for a bar that no longer exists. */
+@media (max-width: 768px) {
+  .cs-root,
+  .cs-root .cs-content {
+    padding-bottom: 0;
+  }
+}

@@ -109,8 +109,8 @@
  * `.cs-mt-filters` needs its OWN stacking context for that z-index to have any effect at all, since
  * without one the dropdown's 300 is compared against the card grid — a LATER SIBLING — which wins on
  * DOM order regardless of z-index. `position: relative` here creates that context; 20 clears the
- * grid while staying far below the modal layer. (Same trap as the RingCentral card versus
- * `.cs-root { isolation: isolate }`.)
+ * grid while staying far below the modal layer. (Same class of trap the RingCentral card hits
+ * against `.shell { isolation: isolate }`.)
  */
 .cs-root .cs-mt-filters {
     position: relative;
@@ -222,7 +222,7 @@
 }
 
 .cs-root .cs-mt-card-company {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.08rem;
     font-weight: 700;
     line-height: 1.2;
@@ -292,7 +292,7 @@
     border-radius: 7px;
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--text-muted) 6%, transparent);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
     color: var(--text-secondary, var(--text-muted));
 }
@@ -360,7 +360,7 @@
 }
 
 .cs-root .cs-mt-amount {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.15rem;
     font-weight: 700;
     letter-spacing: 0.01em;
@@ -400,7 +400,7 @@
 }
 
 .cs-root .cs-mt-empty-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.15rem;
     font-weight: 700;
     color: var(--text-primary);
@@ -457,7 +457,7 @@
 
 .cs-root .cs-ss-item-hint {
     flex-shrink: 0;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--text-muted);
 }
@@ -480,7 +480,7 @@
 .cs-root .cs-mt-derived {
     background: color-mix(in srgb, var(--text-muted) 8%, transparent);
     color: var(--text-secondary, var(--text-muted));
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     cursor: default;
 }
 .cs-root .cs-mt-derived:focus,
@@ -506,7 +506,7 @@
 }
 .cs-root .cs-mt-company-cid {
     flex-shrink: 0;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--cs-accent);
 }
@@ -562,7 +562,7 @@
     white-space: nowrap;
 }
 .cs-root .cs-mt-list-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--text-secondary, var(--text-muted));
     white-space: nowrap;
@@ -579,7 +579,7 @@
 }
 .cs-root .cs-mt-list-amount {
     text-align: right;
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     white-space: nowrap;
 }
@@ -615,7 +615,7 @@
 }
 
 .cs-root .cs-mt-kanban-col-count {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-muted);
 }
@@ -657,7 +657,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-muted);
 }

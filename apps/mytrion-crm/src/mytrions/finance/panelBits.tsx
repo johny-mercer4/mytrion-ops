@@ -365,6 +365,40 @@ export function Rollup({ cells }: { cells: { label: string; value: string; varia
   );
 }
 
+/**
+ * Loading shape for the modal's data panels.
+ *
+ * Every PanelState body is the same three-part stack — cache bar, rollup of stat cells, then the
+ * table — so the skeleton is built from those same containers (`.fi-rollup`, `.fi-tablewrap`) and
+ * inherits their real geometry for free.
+ *
+ * It replaces a flat `.fi-sk-block`, which was 200px for every panel while the content that landed
+ * measured ~380px. So each load pushed the modal body down by most of its own height at the moment
+ * the data arrived — the "flicker" is a skeleton that never had the shape of the thing it stood in
+ * for. Matching the geometry is what makes the swap invisible.
+ */
+export function PanelSkeleton() {
+  return (
+    <div className="fi-stack" aria-hidden>
+      <div className="fi-sk fi-sk-bar" />
+      <div className="fi-rollup">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="fi-rollup-cell">
+            <div className="fi-sk fi-sk-txt fi-sk-lbl" />
+            <div className="fi-sk fi-sk-txt fi-sk-val" />
+          </div>
+        ))}
+      </div>
+      <div className="fi-tablewrap">
+        <div className="fi-sk-thead" />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="fi-sk-trow" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PanelState({
   loading,
   error,
@@ -380,7 +414,7 @@ export function PanelState({
   emptyMsg: string;
   children: ReactNode;
 }) {
-  if (loading) return <div className="fi-sk fi-sk-block" />;
+  if (loading) return <PanelSkeleton />;
   if (error) return <div className="fi-error">{error}</div>;
   if (empty) {
     return (

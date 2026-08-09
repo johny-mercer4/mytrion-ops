@@ -1,213 +1,138 @@
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: color-mix(in srgb, #0b1220 55%, transparent);
-  backdrop-filter: blur(8px);
-}
+/*
+ * Profile modal body only.
+ *
+ * The backdrop, panel, header, close button and footer all belong to `ds/Dialog` now — this file
+ * used to reimplement every one of them (.backdrop, .modal, .head, .iconBtn), which is why the
+ * modal drifted from the rest of the app: it was a second modal system with one consumer.
+ *
+ * What is left is genuinely local: the identity hero and the read-only field list.
+ */
 
-.modal {
-  width: min(520px, 100%);
-  max-height: min(88vh, 760px);
-  overflow: auto;
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  background: var(--surface, var(--bg-primary));
-  color: var(--text-primary);
-  box-shadow: 0 28px 80px -28px rgba(0, 0, 0, 0.55);
-}
-
-.head {
+.body {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px 8px;
+  flex-direction: column;
+  gap: var(--space-5);
 }
 
-.head h2 {
-  margin: 0;
-  font-family: var(--font-head, inherit);
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.iconBtn {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.iconBtn:hover {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
+/* ── Identity hero ─────────────────────────────────────────────────────────── */
 
 .hero {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 18px 18px;
-}
-
-.avatarWrap {
-  position: relative;
-  flex: none;
-}
-
-.avatarImg,
-.avatarFallback {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  object-fit: cover;
-}
-
-.avatarFallback {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 20px;
-}
-
-.cameraBtn {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--surface, var(--bg-primary));
-  background: var(--accent);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-.cameraBtn:disabled {
-  opacity: 0.6;
-  cursor: wait;
+  gap: var(--space-4);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--row-line);
 }
 
 .heroText {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-0_5);
 }
 
 .name {
-  font-family: var(--font-head, inherit);
-  font-size: 17px;
-  font-weight: 700;
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.meta {
-  font-size: 12.5px;
+.email {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .photoActions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.textBtn,
-.textBtnDanger {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  color: var(--accent);
-  display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-.textBtnDanger {
-  color: var(--danger, #e11d48);
-}
-.textBtn:disabled,
-.textBtnDanger:disabled {
-  opacity: 0.5;
-  cursor: wait;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.section {
-  padding: 4px 18px 16px;
-  border-top: 1px solid var(--border);
+/* ── Read-only fields ──────────────────────────────────────────────────────── */
+
+/*
+ * Two columns, so nine employee fields read as a short block rather than a nine-row scroll. The
+ * label sits ABOVE its value rather than beside it: a side-by-side dl with a fixed label column
+ * either truncates the long labels ("Designation", "Reports to") or wastes a third of the width on
+ * the short ones.
+ */
+.grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
 }
 
-.section h3 {
-  margin: 14px 0 10px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+.field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.grid {
+.value,
+.mono {
   margin: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 14px;
-}
-
-.field dt {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 2px;
-}
-.field dd {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
+
+/* Ids, emails, phone numbers and dates — the things you compare character by character. */
 .mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-weight: 500;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
 }
 
 .hint {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.loading {
-  padding: 8px 18px 18px;
-  font-size: 13px;
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
   color: var(--text-muted);
 }
 
 .error {
-  margin: 0 18px 16px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--danger, #e11d48) 12%, transparent);
-  color: var(--danger, #e11d48);
-  font-size: 13px;
+  margin: 0;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--radius-xs);
+  background: var(--tint-bad-bg);
+  border: 1px solid var(--tint-bad-bd);
+  color: var(--danger);
+  font-size: var(--text-sm);
 }
 
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

@@ -1,0 +1,183 @@
+/*
+ * Drawer — an edge-anchored modal surface on the native <dialog> element.
+ *
+ * Shares Dialog's machinery (useModalDialog) and Dialog's chrome (ModalChrome.module.css). What is
+ * here is only what genuinely differs: where the panel is anchored, and how it arrives.
+ */
+
+/* ── The element ─────────────────────────────────────────────────────────────
+   Full-viewport and transparent, so it is the backdrop click catcher and "did this land outside
+   the panel?" stays a `target === currentTarget` check. Same reasoning as Dialog. */
+.dialog {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+
+  margin: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+
+  /* No gutter, unlike Dialog: a drawer is flush to the viewport edge — that flushness is the whole
+     visual claim that it is attached to the side of the app rather than floating over it. */
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* Without these the UA's `dialog:not([open]) { display: none }` loses to our class selector and a
+   CLOSED drawer paints as a transparent full-viewport sheet eating every click on the page. */
+.dialog[open] {
+  /* Anchor: stretch to full height, pack to the inline end.
+     Flex and not grid for the same correctness reason as Dialog — the panel is sized
+     `min(<width>, 100%)`, and a percentage against an AUTO grid track is circular. A flex
+     container's content box is definite, so the percentage resolves against the viewport. */
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+.dialog:not([open]) {
+  display: none;
+}
+
+/* Scrim, and the app's only blurred layer while a drawer is open. It sits on ::backdrop rather
+   than on the panel because ::backdrop never moves — `backdrop-filter` on the translating panel is
+   the composited-layer combination behind this app's un-repainted-panel defect. */
+.dialog::backdrop {
+  z-index: var(--z-overlay);
+  background: color-mix(in srgb, var(--page) 78%, transparent);
+  backdrop-filter: blur(var(--hz-blur-sm));
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────────
+   Scroll ownership is identical to Dialog's and for the same reason: header and footer are
+   content-sized rows that hold still, the body is `minmax(0, 1fr)` so it scrolls inside the panel
+   instead of growing it. */
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+
+  /* The default `flex-shrink: 1` would let the panel be squeezed narrower than its size on a small
+     viewport instead of capping at 100%. */
+  flex: none;
+  inline-size: min(var(--drw-w), 100%);
+  block-size: 100%;
+
+  background: var(--hz-modal-surface);
+  /* One edge only. The other three are the viewport, and drawing a border against the screen edge
+     reads as a rendering artefact. */
+  border-inline-start: 1px solid var(--border-default);
+  box-shadow: var(--menu-shadow);
+  overflow: hidden;
+}
+
+/* ── Size ────────────────────────────────────────────────────────────────────
+   Narrower than Dialog's ladder at every step: a drawer is full-height, so the same width holds
+   far more, and past ~600px it stops reading as a panel beside the page and starts reading as a
+   second page badly cropped. */
+.dialog[data-size='sm'] {
+  --drw-w: 360px;
+}
+.dialog[data-size='md'] {
+  --drw-w: 440px;
+}
+.dialog[data-size='lg'] {
+  --drw-w: 600px;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────
+   In on --dur-slow with --ease-decelerate: the panel travels a long way, and arriving under
+   deceleration is what makes that distance read as the panel settling rather than as lag.
+   Out on --ease-accelerate and shorter — a surface that is leaving should be gone, not savoured.
+
+   `translate:` and never `transform:`. The resting panel carries NO translate (entrance runs with
+   the default `fill-mode: none`), which matters more here than anywhere: a permanently translated
+   full-height panel is a permanent composited layer, and it is a scroll container.
+
+   RTL: `translate: 100%` is physical, so an RTL locale would slide the panel in from the wrong
+   side. There is no logical equivalent of `translate`, and this app is LTR-only; a locale flip
+   would need a `[dir='rtl']` block here and nowhere else. */
+.dialog[data-state='open'] .panel {
+  animation: drawerIn var(--dur-slow) var(--ease-decelerate);
+}
+.dialog[data-state='open']::backdrop {
+  animation: scrimIn var(--dur-base) var(--ease-decelerate);
+}
+
+/* `forwards` so the finished frame holds for the frame or two between `animationend` and the
+   element actually leaving the top layer — otherwise it flashes back into view on the way out. */
+.dialog[data-state='closing'] .panel {
+  animation: drawerOut var(--dur-fast) var(--ease-accelerate) forwards;
+}
+.dialog[data-state='closing']::backdrop {
+  animation: scrimOut var(--dur-fast) var(--ease-accelerate) forwards;
+}
+
+@keyframes drawerIn {
+  from {
+    translate: 100% 0;
+  }
+}
+@keyframes drawerOut {
+  to {
+    translate: 100% 0;
+  }
+}
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes scrimOut {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── Narrow viewport: a block-end sheet ──────────────────────────────────────
+   560px is the app's small breakpoint (FOUNDATIONS.md). Below it a 440px panel would be the whole
+   screen anyway, so it stops pretending to be a side panel and becomes a bottom sheet: reachable
+   by thumb, and honest about covering the page.
+   Breakpoints cannot be tokens — a custom property is not valid in an @media condition. */
+@media (max-width: 560px) {
+  .dialog[open] {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+  }
+
+  .panel {
+    inline-size: 100%;
+    block-size: auto;
+    /* Leaves a strip of backdrop above the sheet: it is the only visible affordance saying the
+       page is still there, and the only place left to tap to dismiss. */
+    max-block-size: 88%;
+
+    border-inline-start-width: 0;
+    border-block-start: 1px solid var(--border-default);
+    /* Only the leading corners round — the trailing pair are against the viewport edge. */
+    border-start-start-radius: var(--radius-panel);
+    border-start-end-radius: var(--radius-panel);
+  }
+
+  .dialog[data-state='open'] .panel {
+    animation: sheetIn var(--dur-slow) var(--ease-decelerate);
+  }
+  .dialog[data-state='closing'] .panel {
+    animation: sheetOut var(--dur-fast) var(--ease-accelerate) forwards;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    translate: 0 100%;
+  }
+}
+@keyframes sheetOut {
+  to {
+    translate: 0 100%;
+  }
+}

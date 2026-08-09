@@ -1,0 +1,83 @@
+/*
+ * StreamingText — text that is arriving.
+ *
+ * There is exactly one animation in this file, and it is on the caret. Nothing here ever animates a
+ * character: already-painted glyphs are never touched again. See the docblock in StreamingText.tsx
+ * for why a typewriter effect is the wrong instinct.
+ */
+
+.root {
+  /* Prose, not UI chrome: 13px on 22px leading. The 13/18 pairing on the type ladder is tuned for
+     table rows and control labels, and it is too tight for a multi-line answer. */
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-md);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+  color: var(--stream-text);
+}
+
+/* The string as it arrives. `pre-wrap` keeps the model's own newlines, so a paragraph break needs
+   no pre-processing at the call site. `break-word` is deliberately not `anywhere`: a long id or URL
+   should break rather than force a scrollbar, but ordinary words must not be chopped mid-token
+   while the line is still growing. */
+.body {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Line breaking, and why it is a state and not a constant.
+   `text-wrap: pretty` / `balance` re-run over the whole block and can re-flow lines that were
+   already settled — during a stream that means text the eye has landed on jumping to another line
+   mid-read. So: plain `wrap` while tokens arrive, and the nicer ragging only once the text has
+   stopped changing. */
+.root[data-state='streaming'] .body {
+  text-wrap: wrap;
+}
+.root[data-state='done'] .body,
+.root[data-state='partial'] .body {
+  text-wrap: pretty;
+}
+
+/* ── Caret ───────────────────────────────────────────────────────────────────
+   Present ONLY while streaming (the element is not rendered otherwise). Sharp-edged and unrounded
+   to match the icon family; a rounded caret reads as a pill-shaped badge at this size. No radius
+   token is applied for that reason, rather than by omission. */
+.caret {
+  display: inline-block;
+  inline-size: var(--stream-cursor-w);
+  /* Tied to the line's own font size so the caret matches the text it trails, at any scale. */
+  block-size: 1em;
+  margin-inline-start: var(--space-0_5);
+  vertical-align: text-bottom;
+  background: var(--stream-caret);
+  box-shadow: 0 0 var(--space-2) var(--stream-caret-glow);
+
+  /* An INDEFINITE ambient loop: outside the 220ms transition ceiling by the same exemption as
+     Button's spinner, and floored well above 1s so it reads as a resting heartbeat rather than as a
+     transition that has stalled. Opacity only — no transform, so the caret never promotes itself to
+     its own composited layer inside a scrolling transcript. */
+  animation: streamCaret 1.1s var(--ease-standard) infinite;
+}
+
+@keyframes streamCaret {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  60%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+/* The caret STOPS, it does not vanish. It is the only mark that output is still coming, and a
+   reduced-motion user must not be the one person who cannot tell. The global reduced-motion rule
+   zeroes the duration tokens; an indefinite loop declared with its own literal duration is not
+   covered by that, so it is switched off explicitly here. */
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+    opacity: 1;
+  }
+}

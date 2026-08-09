@@ -162,7 +162,7 @@ export function CallDetailModal({ call, onClose }: { call: CallHubItem; onClose:
               {friendly(call.linked.type)}
               {call.linked.label ? ` · ${call.linked.label}` : ''}
             </div>
-            <div style={s("margin-top:4px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>
+            <div style={s("margin-top:4px;font-family:var(--font-mono);font-size:12px;color:var(--muted)")}>
               {call.linked.id}
             </div>
           </div>

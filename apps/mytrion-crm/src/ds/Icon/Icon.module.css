@@ -1,0 +1,58 @@
+/*
+ * Material Symbols Sharp, driven entirely by tokens.
+ *
+ * The glyph is a FONT, not an SVG, which is the whole reason this family was chosen: the four
+ * variable axes are live at render time, so one glyph covers idle/selected and both sizes without
+ * shipping a second drawing.
+ */
+.icon {
+  font-family: 'Material Symbols Sharp';
+  /* `font-weight` stays normal — the weight the user sees comes from the `wght` AXIS below. Setting
+     font-weight here as well would fight the axis and, on a fallback face, synthesize a fake bold. */
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 1em box at the glyph's own size: an icon must not stretch or shrink in a flex row, and it must
+     occupy a predictable square so a 16px icon and a 20px icon align on the same baseline grid. */
+  inline-size: 1em;
+  block-size: 1em;
+  flex: none;
+  font-size: var(--icon-size);
+
+  /* The two axes the shipped face actually has. GRAD and opsz were pinned out of the font (see
+     theme.css) — naming them here would be dead weight that reads as intent.
+     --icon-wght is 290 in dark and 300 in light: geometric glyphs bloom on a dark ground, and ten
+     units of weight answers that. */
+  font-variation-settings:
+    'FILL' var(--icon-fill),
+    'wght' var(--icon-wght);
+
+  /* An icon is never text to select — a double-click near one should select the label beside it. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 16px. There is no opsz change here and there cannot be one: the axis floor is 20, so a 16px icon
+   renders the opsz-20 cut whether the axis ships or not. That is precisely why pinning it was free. */
+.sm {
+  font-size: var(--icon-size-sm);
+}
+
+/* The state axis. This replaces the "ship two icons per nav row" pattern entirely. */
+.filled {
+  --icon-fill: 1;
+}
+
+/* Selection and fill are separate concerns from colour: an icon inherits currentColor so it takes
+   the tone of whatever it sits inside — a rail row, a status chip, a danger button. */

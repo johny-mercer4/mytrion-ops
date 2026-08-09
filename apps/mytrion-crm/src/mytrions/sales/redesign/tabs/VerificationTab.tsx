@@ -109,7 +109,7 @@ function PendingPipeline() {
               </div>
               <div style={s('flex:1;min-width:0;padding-bottom:14px')}>
                 <div style={s('display:flex;align-items:center;gap:8px;flex-wrap:wrap')}>
-                  <span style={s('font-size:12px;color:var(--muted);font-family:JetBrains Mono,monospace')}>{index + 1}</span>
+                  <span style={s('font-size:12px;color:var(--muted);font-family:var(--font-mono)')}>{index + 1}</span>
                   <span style={s('font-size:14px;font-weight:700')}>{label}</span>
                   <span style={s(badge(vis.label, vis.color).style)}>{vis.label}</span>
                 </div>
@@ -149,7 +149,7 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap')}>
         <div>
           <div style={s('font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800')}>Live verification</div>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2);margin-top:4px")}>Request {pipe.data.requestId}</div>
+          <div style={s("font-family:var(--font-mono);font-size:13px;color:var(--text2);margin-top:4px")}>Request {pipe.data.requestId}</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:8px')}>
           {openRequirements ? (
@@ -190,7 +190,7 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
             {/* body */}
             <div style={s('flex:1;min-width:0;padding-bottom:14px')}>
               <div style={s('display:flex;align-items:center;gap:8px')}>
-                <span style={s('font-size:12px;color:var(--muted);font-family:JetBrains Mono,monospace')}>{st.order}</span>
+                <span style={s('font-size:12px;color:var(--muted);font-family:var(--font-mono)')}>{st.order}</span>
                 <span style={s('font-size:14px;font-weight:700')}>{st.label}</span>
                 <span style={s(badge(vis.label, vis.color).style)}>{vis.label}</span>
               </div>

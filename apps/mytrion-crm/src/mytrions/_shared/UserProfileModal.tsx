@@ -1,26 +1,28 @@
 /**
- * Signed-in worker profile — opened from the sidebar username.
+ * Signed-in worker profile — opened from Profile in the account menu.
  *
- * Details are always read-only (name, email, Zoho profile/role, plus the linked HR employee row when
- * present). The only write is the profile picture.
+ * Details are always read-only (name, email, Zoho profile/role, plus the linked HR employee row
+ * when present). The only write is the profile picture.
+ *
+ * Rebuilt on `ds/Dialog`. The hand-rolled version was a bare div with its own backdrop and its own
+ * Escape listener and NO focus trap, so Tab walked straight out of the modal into the page behind
+ * it. It also stacked thirteen read-only fields in one scrolling column — the hero, four account
+ * fields and nine employee fields — which is what made it read as a wall rather than a profile.
+ *
+ * The fields are split across tabs instead: identity stays visible in the header, and each tab is
+ * one short list you can take in at a glance. That is the "pagination" this screen needed — the
+ * content is small, it was the presentation that was flat.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Trash2, X } from 'lucide-react';
+import { Avatar, Button, Dialog, Tabs } from '../../ds';
 import { setMyAvatar } from '../../api/auth';
 import { getHrMe, type HrEmployeeDto } from '../../api/hr';
-import {
-  useReloadUserContext,
-  useUserContext,
-} from '../../context/UserContextProvider';
+import { useReloadUserContext, useUserContext } from '../../context/UserContextProvider';
+import { initials } from '../../lib/initials';
 import { resizeImageToDataUrl } from './resizeImageDataUrl';
 import styles from './UserProfileModal.module.css';
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-}
+type TabValue = 'account' | 'employee';
 
 export function UserProfileModal({ onClose }: { onClose: () => void }) {
   const user = useUserContext();
@@ -29,14 +31,7 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
   const [employee, setEmployee] = useState<HrEmployeeDto | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent): void => {
-      if (ev.key === 'Escape' && !busy) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, busy]);
+  const [tab, setTab] = useState<TabValue>('account');
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +40,7 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
         if (!cancelled) setEmployee(row);
       })
       .catch(() => {
-        // Not linked / no HR grant — session fields alone are enough.
+        // Not linked / no HR grant — the session fields alone are enough.
         if (!cancelled) setEmployee(null);
       });
     return () => {
@@ -58,8 +53,7 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError('');
     try {
-      const dataUrl = await resizeImageToDataUrl(file);
-      await setMyAvatar(dataUrl);
+      await setMyAvatar(await resizeImageToDataUrl(file));
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -83,50 +77,65 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // The employee tab is only offered once we know there IS a record. Showing a tab that resolves to
+  // "not linked" teaches the user the tab is broken.
+  const hasEmployee = Boolean(employee);
+  const items = [
+    { value: 'account', label: 'Account', ...(hasEmployee ? {} : { title: 'Your Zoho sign-in' }) },
+    ...(hasEmployee
+      ? [{ value: 'employee' as const, label: 'Employee record', count: 9 }]
+      : []),
+  ];
+
   return (
-    <div
-      className={styles.backdrop}
-      role="presentation"
-      onClick={() => {
+    <Dialog
+      open
+      // `busy` blocks dismissal while an avatar upload is in flight — closing mid-request would
+      // leave the reload firing against an unmounted tree.
+      onClose={() => {
         if (!busy) onClose();
       }}
+      title="Profile"
+      subtitle={[user.profile, user.role].filter(Boolean).join(' · ') || undefined}
+      size="md"
+      footer={
+        <Button variant="secondary" onClick={onClose} disabled={busy}>
+          Close
+        </Button>
+      }
     >
-      <div
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="user-profile-title"
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <header className={styles.head}>
-          <h2 id="user-profile-title">Profile</h2>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            aria-label="Close"
-            disabled={busy}
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-        </header>
-
+      <div className={styles.body}>
         <div className={styles.hero}>
-          <div className={styles.avatarWrap}>
-            {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className={styles.avatarImg} />
-            ) : (
-              <span className={styles.avatarFallback}>{initials(user.userName)}</span>
-            )}
-            <button
-              type="button"
-              className={styles.cameraBtn}
-              aria-label="Upload profile picture"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              <Camera size={14} />
-            </button>
+          <Avatar
+            size="lg"
+            initials={initials(user.userName)}
+            {...(user.avatarUrl ? { src: user.avatarUrl } : {})}
+          />
+          <div className={styles.heroText}>
+            <p className={styles.name}>{user.userName || '—'}</p>
+            <p className={styles.email}>{user.email || '—'}</p>
+            <div className={styles.photoActions}>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="photo_camera"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                {user.avatarUrl ? 'Change photo' : 'Upload photo'}
+              </Button>
+              {user.avatarUrl ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="delete"
+                  disabled={busy}
+                  onClick={() => void onClear()}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </div>
           </div>
           <input
             ref={fileRef}
@@ -135,69 +144,47 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
             hidden
             onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
           />
-          <div className={styles.heroText}>
-            <div className={styles.name}>{user.userName || '—'}</div>
-            <div className={styles.meta}>
-              {[user.profile, user.role].filter(Boolean).join(' · ') || '—'}
-            </div>
-            <div className={styles.photoActions}>
-              <button
-                type="button"
-                className={styles.textBtn}
-                disabled={busy}
-                onClick={() => fileRef.current?.click()}
-              >
-                {user.avatarUrl ? 'Change photo' : 'Upload photo'}
-              </button>
-              {user.avatarUrl ? (
-                <button
-                  type="button"
-                  className={styles.textBtnDanger}
-                  disabled={busy}
-                  onClick={() => void onClear()}
-                >
-                  <Trash2 size={12} />
-                  Remove
-                </button>
-              ) : null}
-            </div>
-          </div>
         </div>
 
-        <section className={styles.section}>
-          <h3>Account</h3>
-          <dl className={styles.grid}>
-            <Field label="Name" value={user.userName || null} />
-            <Field label="Email" value={user.email ?? null} mono />
-            <Field label="Zoho profile" value={user.profile || null} />
-            <Field label="Zoho role" value={user.role || null} />
-          </dl>
-          <p className={styles.hint}>
-            These details come from your Zoho sign-in and cannot be edited here.
-          </p>
-        </section>
+        <Tabs
+          items={items}
+          value={tab}
+          onValueChange={(v) => setTab(v as TabValue)}
+          size="sm"
+        >
+          {tab === 'account' ? (
+            <>
+              <dl className={styles.grid}>
+                <Field label="Name" value={user.userName} />
+                <Field label="Email" value={user.email} mono />
+                <Field label="Zoho profile" value={user.profile} />
+                <Field label="Zoho role" value={user.role} />
+              </dl>
+              <p className={styles.hint}>
+                These come from your Zoho sign-in and cannot be edited here.
+              </p>
+            </>
+          ) : employee ? (
+            <>
+              <dl className={styles.grid}>
+                <Field label="Employee ID" value={employee.employeeId} mono />
+                <Field label="Department" value={employee.department} />
+                <Field label="Designation" value={employee.designation} />
+                <Field label="Status" value={employee.status} />
+                <Field label="Location" value={employee.location} />
+                <Field label="Mobile" value={employee.mobile} mono />
+                <Field label="Face ID" value={employee.faceId} mono />
+                <Field label="Reports to" value={employee.reportingTo} />
+                <Field label="Joined" value={employee.dateOfJoining} mono />
+              </dl>
+              <p className={styles.hint}>
+                Directory fields are managed by HR admins — view only from your profile.
+              </p>
+            </>
+          ) : null}
+        </Tabs>
 
-        {employee === undefined ? (
-          <p className={styles.loading}>Loading employee record…</p>
-        ) : employee ? (
-          <section className={styles.section}>
-            <h3>Employee record</h3>
-            <dl className={styles.grid}>
-              <Field label="Employee ID" value={employee.employeeId} mono />
-              <Field label="Department" value={employee.department} />
-              <Field label="Designation" value={employee.designation} />
-              <Field label="Status" value={employee.status} />
-              <Field label="Location" value={employee.location} />
-              <Field label="Mobile" value={employee.mobile} mono />
-              <Field label="Face ID" value={employee.faceId} mono />
-              <Field label="Reports to" value={employee.reportingTo} />
-              <Field label="Joined" value={employee.dateOfJoining} mono />
-            </dl>
-            <p className={styles.hint}>
-              Directory fields are managed by HR admins — view only from your profile.
-            </p>
-          </section>
-        ) : null}
+        {employee === undefined ? <p className={styles.hint}>Loading employee record…</p> : null}
 
         {error ? (
           <p className={styles.error} role="alert">
@@ -205,24 +192,21 @@ export function UserProfileModal({ onClose }: { onClose: () => void }) {
           </p>
         ) : null}
       </div>
-    </div>
+    </Dialog>
   );
 }
 
-function Field({
-  label,
-  value,
-  mono,
-}: {
+function Field({ label, value, mono }: {
   label: string;
-  value?: string | null;
-  mono?: boolean;
+  value?: string | null | undefined;
+  mono?: boolean | undefined;
 }) {
   const text = (value ?? '').trim();
   return (
     <div className={styles.field}>
-      <dt>{label}</dt>
-      <dd className={mono ? styles.mono : undefined}>{text || '—'}</dd>
+      <dt className={styles.label}>{label}</dt>
+      {/* An empty value still renders an em dash, so the two columns never fall out of step. */}
+      <dd className={mono ? styles.mono : styles.value}>{text || '—'}</dd>
     </div>
   );
 }

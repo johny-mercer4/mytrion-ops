@@ -1,0 +1,96 @@
+/*
+ * AgentBadge — attribution. Who produced this answer, and who handed it to them.
+ *
+ * The quietest thing in the AI layer by design: it repeats on every assistant message, so anything
+ * with real colour weight would read as a stripe of badges down the transcript.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 100%;
+
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-weight: var(--fw-medium);
+
+  color: var(--agent-badge-fg);
+  background: var(--agent-badge-bg);
+  border: 1px solid var(--agent-badge-bd);
+  /* Pill, because it is a label rather than a control — nothing here is pressable, and the control
+     radius would suggest it is. */
+  border-radius: var(--radius-pill);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-0_5);
+}
+
+/* A trail is several names and arrows in one pill, so it needs a little more air than a single name
+   does or the arrows fuse with the words on either side. */
+.root[data-handoff='true'] {
+  gap: var(--space-1_5);
+}
+
+.root[data-size='md'] {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  padding-inline: var(--space-2_5);
+  padding-block: var(--space-1);
+}
+
+/* Both glyph slots wrap an `Icon` rather than styling it — `Icon` takes no styling props by
+   contract, and colour reaches it through `currentColor`. */
+.icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--agent-badge-fg);
+}
+
+/* One hop of the trail: a preceding agent plus its arrow. */
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+/* The agents that came BEFORE. Route, not author — so they are toned down relative to the name,
+   which is the thing the reader is looking for. */
+.from {
+  color: var(--agent-handoff-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Decorative in the accessibility tree — the visually-hidden "handed off to" beside it carries the
+   meaning, so the direction of the trail survives with no glyph and no colour. */
+.arrow {
+  display: inline-flex;
+  flex: none;
+  color: var(--agent-handoff-fg);
+}
+
+/* WHO ANSWERED. Never truncates and never dims: it is the whole point of the badge, and the trail
+   in front of it gives way first. */
+.name {
+  flex: none;
+  color: var(--agent-badge-fg);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

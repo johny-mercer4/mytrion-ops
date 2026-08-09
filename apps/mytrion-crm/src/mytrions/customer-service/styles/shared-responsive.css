@@ -8,25 +8,14 @@
    ═══════════════════════════════════════════════ */
 
 @media (max-width: 768px) {
-    .cs-root .cs-sidebar {
-        display: none;
-    }
-
-    .cs-root .cs-bottom-nav {
-        display: flex;
-        align-items: stretch;
-    }
 
     .cs-root .cs-content {
-        padding-bottom: var(--bottom-nav-height);
     }
 
     .cs-root .cs-panel {
-        padding-bottom: calc(var(--bottom-nav-height) + 1.25rem);
     }
 
     .cs-root .cs-ai-panel {
-        padding-bottom: var(--bottom-nav-height);
     }
 }
 
@@ -63,9 +52,6 @@
    ═══════════════════════════════════════════════ */
 
 @media (max-width: 380px) {
-    .cs-root .bottom-nav-btn span {
-        display: none;
-    }
 
     .cs-root {
         --bottom-nav-height: 52px;

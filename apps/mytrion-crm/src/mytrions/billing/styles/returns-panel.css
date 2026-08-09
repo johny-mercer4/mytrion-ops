@@ -88,7 +88,7 @@
 
 /* Count chip inside a segment button */
 .bm-root .bm-returns-panel .rt-seg-count {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.62rem;
     opacity: 0.75;
     margin-left: 0.3rem;

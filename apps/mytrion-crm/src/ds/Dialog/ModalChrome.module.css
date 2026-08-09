@@ -1,0 +1,83 @@
+/*
+ * ModalChrome — the header / body / footer slots inside Dialog and Drawer.
+ *
+ * These three elements are direct children of the panel, which is a
+ * `grid-template-rows: auto minmax(0, 1fr) auto`. That row template plus `overflow: auto` on the
+ * body HERE is the whole of scroll ownership: the header and the footer are sized by content and
+ * stay put, and only the middle row moves. A modal that scrolls as one block scrolls its own
+ * confirm button off the bottom of the screen, which is how a user ends up unable to finish the
+ * thing they opened the modal to do.
+ */
+
+/* ── Header ──────────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  /* A rule rather than a shadow: the header does not float over the body, it abuts it. */
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.titleGroup {
+  display: grid;
+  gap: var(--space-0_5);
+  /* Without this a long unbroken title (an id, a filename) pushes the close button off the panel
+     instead of wrapping — grid and flex items default to min-content, not zero. */
+  min-inline-size: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  letter-spacing: var(--tr-lg);
+  font-weight: var(--fw-lg);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  color: var(--text-secondary);
+}
+
+/* `margin-inline-start: auto` rather than `justify-content: space-between` on the header, so the
+   button stays pinned to the end edge when there is no subtitle and the title is short. */
+.dismiss {
+  margin-inline-start: auto;
+}
+
+/* ── Body — the ONLY scrolling region ────────────────────────────────────────── */
+.body {
+  /* Grid children floor at min-content, so a long body would stretch the panel past its
+     max-block-size and scroll the whole surface instead of just this row. */
+  min-block-size: 0;
+  overflow: auto;
+  /* Stops a flick at the end of this list from chaining into the page behind the backdrop. */
+  overscroll-behavior: contain;
+  padding: var(--space-5);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  letter-spacing: var(--tr-base);
+  color: var(--text-secondary);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  /* Wraps rather than overflowing: three actions plus a long destructive label do not fit the sm
+     size at a 320px viewport, and a clipped confirm button is worse than a two-line footer. */
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5);
+  border-block-start: 1px solid var(--border-subtle);
+}

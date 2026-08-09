@@ -44,7 +44,7 @@
 }
 
 .bm-root .bm-ai-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 0.9375rem;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -150,7 +150,7 @@
 }
 
 .bm-root .bm-ai-welcome-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.0625rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -354,7 +354,7 @@
 
 .bm-root .bm-ai-send-btn:hover {
     background: var(--accent-hover);
-    box-shadow: var(--accent-glow);
+    box-shadow: var(--accent-ring-glow);
 }
 
 .bm-root .bm-ai-send-btn:disabled {

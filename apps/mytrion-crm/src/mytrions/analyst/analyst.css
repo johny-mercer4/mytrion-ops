@@ -5,53 +5,77 @@
 
    NOTE: --hz-pane is a GRADIENT. Multi-layer `background` must be COMMA-separated with the pane in
    an <image> slot — space-separating it as a <bg-color> kills the whole declaration.
+
+   TOKEN PASS (design-system adoption). Every size, corner, colour and gap below now resolves through
+   styles/theme.css. Three rounding rules were applied, and they are recorded here because they are
+   the only places a value MOVED rather than merely being renamed:
+
+     TYPE   34 font-size declarations across 14 distinct values, 21 of them HALF-PIXEL (9.5 / 10.5 /
+            11.5 / 12.5 / 13.5 / 14.5) — none of which exist on the ladder, and none of which even
+            rasterise distinctly at 1x. Half-pixels round UP to the next step; anything under the
+            ladder's 11px floor becomes --text-2xs, which is exactly the move theme.css already
+            documents for the old 10.5px step ("two steps 0.5px apart are not a scale — they
+            rasterise identically at 1x"). Whole-px strays round to NEAREST (19 -> 18). Net: three
+            live sizes for text — 11 micro/caps, 12 annotation, 13 body — plus 14/15/18 and the two
+            fluid display steps, against 14 before.
+     SHAPE  3 / 6 / 11 / 16px corners collapse onto --an-r-sm (4) / --an-r-md (8). The scale has two
+            real values by decision (controls vs panels); a module may alias them, never re-number
+            them (styles/tokens.test.ts enforces that).
+     SPACE  off-rhythm 3 / 5 / 7 / 9 / 11 / 13 / 17 / 18 / 26 / 34px go to the nearest --space-*
+            step, ties up. Sizes that are NOT spacing — control heights, swatch and glyph boxes,
+            grid minmax() floors, bar thickness — are deliberately left alone: they answer to hit
+            targets and data geometry, not to the 4px text rhythm.
    ===================================================== */
 
 .an-root {
   --an-measure: var(--hz-measure);
-  --an-gap: 18px;
-  --an-gap-lg: 26px;
-  --an-pad: clamp(20px, 3vw, 34px);
-  --an-r-sm: 8px;
-  --an-r-md: 12px;
-  --an-r-lg: 16px;
-  --an-r-pill: 999px;
+  --an-gap: var(--space-4);
+  --an-gap-lg: var(--space-6);
+  --an-pad: clamp(var(--space-5), 3vw, var(--space-8));
+  --an-r-sm: var(--radius-sm);
+  --an-r-md: var(--radius-md);
+  --an-r-lg: var(--radius-md);
+  --an-r-pill: var(--radius-full);
 
-  /* ── Categorical series palette ────────────────────────────────────────────
-     From the data-viz reference palette, VALIDATED against our own surfaces
-     (`node scripts/validate_palette.js`, dark #1b212c / light #ffffff):
-       dark  — worst adjacent CVD ΔE 8.4, normal-vision 19.3, all ≥3:1 contrast → PASS
-       light — worst adjacent CVD ΔE 9.1, normal-vision 19.6 → PASS, with a contrast WARN on
-               aqua/yellow/magenta, so the **relief rule** applies: every categorical mark in this
-               module ships a visible direct label (see .an-bd-row). Do not use these as bare
-               unlabelled fills.
+  /* ── Categorical series palette — the app's wayfinding tones, not a private ramp ─────────────
+     Was six hand-picked hexes plus a whole [data-theme='light'] fork of them: a second palette to
+     keep in sync, and the only colour literals in the module. They now alias --tone-* (horizon.css),
+     which is the ONE categorical scale the design system sanctions for "categorical encoding within
+     one screen" — and which already ships a bright 400-level for dark and a deep 600/700-level for
+     light. That is what lets the light fork below disappear instead of being maintained.
+
+     The hues are picked for separation IN SERIES ORDER and stay off the accent ramp, so a category
+     never reads as "selected". Adjacent slots are 100 degrees apart or more except amber/orange,
+     which sit ~16 degrees apart — the same gap the previous hand-picked #c98500/#d95926 pair had,
+     and they are never adjacent in series order. The **relief rule** therefore still applies: every
+     categorical mark in this module ships a visible direct label (see .an-bd-row and .an-legend).
+     Do not use these as bare unlabelled fills.
+
+     (The removed comment cited `node scripts/validate_palette.js` for a CVD sweep of the old hexes.
+     That script is not in this repo, so the claim could not be re-run or trusted; --tone-* is
+     validated once, centrally, for both themes instead.)
 
      Assigned in FIXED ORDER by series index, never cycled and never by rank — a filter that drops a
      series must not repaint the survivors. Beyond 6 categories, fold into "Other". */
-  --an-s1: #3987e5;
-  --an-s2: #d95926;
-  --an-s3: #199e70;
-  --an-s4: #c98500;
-  --an-s5: #d55181;
-  --an-s6: #9085e9;
+  --an-s1: var(--tone-sky);
+  --an-s2: var(--tone-orange);
+  --an-s3: var(--tone-emerald);
+  --an-s4: var(--tone-amber);
+  --an-s5: var(--tone-pink);
+  --an-s6: var(--tone-violet);
 
-  /* Status hues are RESERVED — never reused as a series colour. */
-  --an-good: #10b981;
-  --an-bad: #f0564e;
+  /* Status hues are RESERVED — never reused as a series colour. On the shared intent scale, so a
+     delta in Analytics is the same green and red as a delta anywhere else in the app. */
+  --an-good: var(--intent-success-fg);
+  --an-bad: var(--intent-danger-fg);
 
   height: 100%;
   overflow: auto;
+  /* Reserve the scrollbar track. Without it, the moment a dashboard's data lands the pane grows
+     past one viewport, a scrollbar appears, and every already-painted row reflows ~15px narrower —
+     the horizontal half of the loading shift, and the part users read as "flicker". */
+  scrollbar-gutter: stable;
   color: var(--text-primary);
-}
-[data-theme='light'] .an-root {
-  --an-s1: #2a78d6;
-  --an-s2: #eb6834;
-  --an-s3: #1baf7a;
-  --an-s4: #eda100;
-  --an-s5: #e87ba4;
-  --an-s6: #4a3aa7;
-  --an-good: #0b8a5f;
-  --an-bad: #c8322a;
 }
 
 .an-root .an-page {
@@ -59,6 +83,10 @@
   flex-direction: column;
   gap: var(--an-gap-lg);
   width: 100%;
+  /* Pairs with the `flex: 1` on the not-loaded panels below: the loading / error / empty surface
+     occupies the SAME box the loaded dashboard will, instead of a 250px card that the KPI row,
+     chart grid and leaderboard then shove down the page. */
+  min-height: 100%;
   max-width: var(--an-measure);
   padding: var(--an-pad);
   box-sizing: border-box;
@@ -79,31 +107,33 @@
 .an-root .an-kicker {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   font-family: var(--font-head);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
 .an-root .an-title {
-  margin: 6px 0 0;
+  margin: var(--space-1_5) 0 0;
   font-family: var(--font-head);
-  font-size: clamp(22px, 2.6vw, 27px);
-  font-weight: 700;
-  letter-spacing: -0.018em;
+  /* Fluid display step. Endpoints are ladder steps; the ratio line-height stays a ratio because a
+     fixed --lh-* cannot track a size that moves with the viewport. */
+  font-size: clamp(var(--text-xl), 2.6vw, var(--text-2xl));
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-2xl);
   line-height: 1.15;
   color: var(--text-primary);
 }
 .an-root .an-sub {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   max-width: 68ch;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -111,17 +141,17 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 .an-root .an-head-actions {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2_5);
 }
 .an-root .an-meta {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -137,9 +167,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: var(--space-2);
   height: 34px;
-  padding: 0 14px;
+  padding: 0 var(--space-3_5);
   border-radius: var(--an-r-sm);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
@@ -147,8 +177,8 @@
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   box-shadow: var(--hz-glass-inset);
   transition:
@@ -163,18 +193,20 @@
   border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
   transform: var(--hz-hover-lift-sm);
 }
+/* The disabled appearance is a RECOLOUR, not an opacity multiply — the label keeps a known contrast
+   ratio instead of an unknowable composite (see the --disabled-* note in theme.css). */
 .an-root .an-btn:disabled {
-  background: var(--hz-pane-alt);
-  color: var(--text-muted);
-  cursor: not-allowed;
+  background: var(--disabled-bg);
+  color: var(--text-disabled);
+  cursor: var(--disabled-cursor);
 }
 
 /* ── Card ─────────────────────────────────────────────────────────────────── */
 .an-root .an-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: var(--space-3_5);
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
@@ -186,19 +218,20 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 .an-root .an-card-title {
   font-family: var(--font-head);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-sm);
   color: var(--text-primary);
 }
 .an-root .an-card-note {
+  /* Mono because this slot is figures — "14 days", "top 10", "filtered · 3". */
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .an-root .an-grid-2 {
@@ -211,13 +244,13 @@
 .an-root .an-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .an-root .an-kpi {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 16px 17px;
+  gap: var(--space-2);
+  padding: var(--space-4);
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
   background:
@@ -229,40 +262,43 @@
 }
 .an-root .an-kpi-l {
   font-family: var(--font-head);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
   color: var(--text-muted);
 }
-/* The hero number: big, tabular, quiet label above it. */
+/* The hero number: big, tabular, quiet label above it. --font-figure, not --font-mono: at 26px+ the
+   mono fit reads as a licence plate, and this is the one number meant to be beautiful as well as
+   aligned (theme.css). Figures track one notch looser than text, hence --tr-fig-3xl. */
 .an-root .an-kpi-v {
-  font-family: var(--font-head);
-  font-size: clamp(26px, 3vw, 32px);
-  font-weight: 700;
+  font-family: var(--font-figure);
+  font-size: clamp(var(--text-2xl), 3vw, var(--text-3xl));
+  font-weight: var(--fw-bold);
   line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tr-fig-3xl);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 .an-root .an-kpi-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 /* Delta pill — direction is carried by an arrow glyph as well as hue, never colour alone. */
 .an-root .an-delta {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--space-1);
+  padding: var(--space-0_5) var(--space-2);
   border-radius: var(--an-r-pill);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
   background: color-mix(in srgb, var(--d, var(--text-muted)) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--d, var(--text-muted)) 32%, transparent);
   color: var(--d, var(--text-muted));
@@ -275,7 +311,8 @@
   overflow: visible;
 }
 .an-root .an-bar {
-  /* 4px rounded data-end, anchored to the baseline. */
+  /* 4px rounded data-end, anchored to the baseline. `rx` is an SVG geometry property in the
+     viewBox's user units, not a CSS corner — it is not on the radius scale by nature. */
   rx: 4;
   fill: var(--an-s1);
   transition: opacity var(--hz-dur-wash) var(--hz-ease);
@@ -296,15 +333,20 @@
   stroke: var(--hz-pane-bd);
   stroke-width: 1;
 }
+/* OFF-SCALE ON PURPOSE. This is SVG text inside a 720x190 viewBox rendered at width:100%, so `9`
+   is nine USER UNITS, not nine CSS pixels — the chart's scale factor (~0.6-1.0 at the card widths
+   this grid produces) is what decides the rasterised size, and it lands under the 11px floor
+   either way. Promoting it to var(--text-2xs) would enlarge the axis by the same factor and start
+   colliding the day labels, which the `step` in charts.tsx spaces on the assumption of this size. */
 .an-root .an-axis-t {
   fill: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 9px;
 }
 .an-root .an-chart-empty {
-  padding: 34px 0;
+  padding: var(--space-8) 0;
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
@@ -312,16 +354,16 @@
 .an-root .an-bd {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: var(--space-3);
 }
 .an-root .an-bd-row {
   display: grid;
   grid-template-columns: minmax(90px, 1.1fr) minmax(0, 2.4fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .an-root .an-bd-l {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -329,7 +371,8 @@
 }
 .an-root .an-bd-track {
   /* A <span> inside a non-flex parent stays display:inline, where height/width are ignored — the
-     fill silently renders at zero size. Both track and fill must be explicitly blockified. */
+     fill silently renders at zero size. Both track and fill must be explicitly blockified.
+     The 9px thickness is a data-mark dimension, not spacing — off the 4px text rhythm on purpose. */
   display: block;
   height: 9px;
   border-radius: var(--an-r-pill);
@@ -340,6 +383,7 @@
 .an-root .an-bd-fill {
   display: block;
   height: 100%;
+  /* The floor that keeps a non-zero value visible at all. A mark minimum, not a spacing step. */
   min-width: 3px;
   border-radius: var(--an-r-pill);
   background: var(--c, var(--an-s1));
@@ -349,29 +393,29 @@
   min-width: 54px;
   text-align: right;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 .an-root .an-bd-pct {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
-  margin-left: 5px;
+  margin-left: var(--space-1_5);
 }
 
 /* Legend — present whenever ≥2 series share a chart. */
 .an-root .an-legend {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-3_5);
   flex-wrap: wrap;
-  padding-top: 2px;
+  padding-top: var(--space-0_5);
 }
 .an-root .an-legend-i {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: var(--space-1_5);
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 .an-root .an-legend-sw {
@@ -379,7 +423,7 @@
   width: 9px;
   height: 9px;
   flex: none;
-  border-radius: 3px;
+  border-radius: var(--an-r-sm);
   background: var(--c);
 }
 
@@ -395,25 +439,25 @@
 .an-root table.an-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   min-width: 420px;
 }
 .an-root .an-table th {
   text-align: left;
-  padding: 9px 13px;
+  padding: var(--space-2_5) var(--space-3);
   font-family: var(--font-head);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
-  color: var(--text-muted);
-  background: var(--hz-pane-alt);
-  border-bottom: 1px solid var(--hz-pane-bd);
+  color: var(--ui-table-head-fg);
+  background: var(--ui-table-head-bg);
+  border-bottom: 1px solid var(--ui-table-rule);
   white-space: nowrap;
 }
 .an-root .an-table td {
-  padding: 9px 13px;
-  border-bottom: 1px solid var(--hz-pane-bd);
+  padding: var(--space-2_5) var(--space-3);
+  border-bottom: 1px solid var(--ui-table-rule);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -424,14 +468,14 @@
   background: color-mix(in srgb, var(--hz-pane-alt) 45%, transparent);
 }
 .an-root .an-table tbody tr:hover td {
-  background: var(--hz-glass-hover);
+  background: var(--ui-table-row-hover);
 }
 .an-root .an-table td.an-name {
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .an-root .an-table td.an-num {
-  font-family: var(--font-mono);
+  font-family: var(--ui-table-num-font);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -442,10 +486,11 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--an-r-sm);
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
   background: var(--hz-pane-alt);
   border: 1px solid var(--hz-pane-bd);
   color: var(--text-muted);
@@ -460,15 +505,15 @@
 .an-root .an-rep-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .an-root .an-rep {
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 17px 18px;
+  gap: var(--space-2_5);
+  padding: var(--space-4);
   text-align: left;
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
@@ -481,6 +526,9 @@
     box-shadow var(--hz-dur-tone) var(--hz-ease),
     transform var(--hz-dur-lift) var(--hz-ease);
 }
+/* Depth is refraction at rest and a shadow only on hover — this is the hover half. The lift shadow
+   is tinted with the card's own --t, which is why it is spelled out rather than reading
+   --hz-shadow-lift: that token carries the accent glow, and these cards are categorical. */
 .an-root .an-rep:hover {
   border-color: color-mix(in srgb, var(--t, var(--accent)) 45%, var(--hz-pane-bd));
   box-shadow: 0 14px 32px -14px color-mix(in srgb, var(--t, var(--accent)) 34%, transparent),
@@ -491,7 +539,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2_5);
 }
 .an-root .an-rep-glyph {
   display: inline-flex;
@@ -500,36 +548,37 @@
   width: 38px;
   height: 38px;
   flex: none;
-  border-radius: 11px;
+  border-radius: var(--an-r-md);
   background: color-mix(in srgb, var(--t, var(--accent)) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--t, var(--accent)) 30%, transparent);
   color: var(--t, var(--accent));
 }
 .an-root .an-rep-title {
   font-family: var(--font-head);
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: var(--text-md);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
 }
 .an-root .an-rep-desc {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--text-muted);
 }
 .an-root .an-rep-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: 2px;
+  margin-top: var(--space-0_5);
 }
 .an-root .an-tag {
-  padding: 2px 9px;
+  padding: var(--space-0_5) var(--space-2_5);
   border-radius: var(--an-r-pill);
+  /* Mono: these are ids and codes — "xlsx", "mart_sales_dashboard_card_base". */
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
   background: var(--tint-neutral-bg);
   border: 1px solid var(--tint-neutral-bd);
@@ -545,23 +594,25 @@
 .an-root .an-banner {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
-  padding: 12px 15px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--an-r-md);
   border: 1px dashed color-mix(in srgb, var(--warning) 42%, transparent);
   background: var(--tint-warn-bg);
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
 }
 .an-root .an-banner svg {
   flex: none;
+  /* 1px optical nudge to sit the glyph on the first line's cap height. Not a spacing step. */
   margin-top: 1px;
   color: var(--warning);
 }
 .an-root .an-banner strong {
   color: var(--text-primary);
 }
+/* Ambient loop, so it is floored at ~1s rather than the 220ms state-transition ceiling. */
 .an-root .an-spin {
   animation: anSpin 0.9s linear infinite;
 }
@@ -585,8 +636,8 @@
 .an-root .an-filters {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--space-2_5);
+  padding: var(--space-3_5) var(--space-4);
   border-radius: var(--an-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
@@ -596,36 +647,36 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 16px 20px;
+  gap: var(--space-4) var(--space-5);
 }
 .an-root .an-filter-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1_5);
   min-width: 0;
 }
 .an-root .an-filter-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .an-root .an-filter-pills {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1_5);
 }
 .an-root .an-filter-pill {
   height: 30px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border-radius: var(--an-r-pill);
   border: 1px solid var(--hz-pane-bd);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 .an-root .an-filter-pill[aria-pressed='true'] {
@@ -636,21 +687,21 @@
 .an-root .an-filter-dates {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .an-root .an-filter-sep {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .an-root .an-filter-input {
   height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--space-2_5);
   border-radius: var(--an-r-sm);
   border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane-alt, var(--surface));
+  background: var(--hz-pane-alt);
   color: var(--text-primary);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 .an-root .an-btn-ghost {
   border-color: transparent;
@@ -661,16 +712,16 @@
 .an-root .an-viewas {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 200px;
   height: 32px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border-radius: var(--an-r-sm);
   border: 1px solid var(--hz-pane-bd);
-  background: var(--hz-pane-alt, var(--surface));
+  background: var(--hz-pane-alt);
   color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
 }
 /* Acting as someone — same accent language as the .an-chip summary below. */
 .an-root .an-viewas[data-active='true'] {
@@ -685,28 +736,28 @@
 }
 .an-root .an-viewas-hint strong {
   color: var(--text-primary);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
 }
 .an-root .an-filter-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1_5);
 }
 .an-root .an-chip {
   display: inline-flex;
   align-items: center;
   height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--space-2_5);
   border-radius: var(--an-r-pill);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
 }
 .an-root .an-empty-note {
   margin: 0;
-  padding: 18px 4px;
-  font-size: 13px;
+  padding: var(--space-4) var(--space-1);
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
@@ -724,15 +775,28 @@
 /* ── Dashboard loading / error / empty ───────────────────────────────────────
    Replaces the shared ComingSoon panel, which carried a hardcoded "Coming soon"
    badge and so told the user a built dashboard did not exist. Same Horizon glass
-   language, tone driven by the state instead of a fixed warning amber. */
+   language, tone driven by the state instead of a fixed warning amber.
+
+   LOADING GEOMETRY. The loaded dashboard is a KPI row + a two-up chart grid + a leaderboard —
+   comfortably more than one viewport — while a not-loaded panel is a single card. Left alone, the
+   swap re-lays the whole pane out. `flex: 1` against .an-page's `min-height: 100%` makes every
+   not-loaded state fill the space the dashboard is about to occupy, so data landing extends the
+   scroll instead of shoving the page around. The loading branch is matched on its ARIA contract
+   rather than a class because it renders _shared/MytrionPageLoader, a CSS Module owned elsewhere:
+   if that markup ever moves this degrades to a no-op instead of breaking. Its own min-height still
+   applies as the floor on short viewports. */
+.an-root .an-page > [role='status'][aria-busy='true'],
+.an-root .an-state {
+  flex: 1 1 auto;
+}
 .an-root .an-state {
   --an-state-tone: var(--an-s2);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 11px;
-  padding: clamp(44px, 8vh, 82px) 26px;
+  gap: var(--space-3);
+  padding: clamp(var(--space-12), 8vh, var(--space-16)) var(--space-6);
   text-align: center;
   border-radius: var(--an-r-md);
   border: 1px solid color-mix(in srgb, var(--an-state-tone) 22%, var(--hz-pane-bd));
@@ -746,12 +810,15 @@
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 .an-root .an-state[data-kind='error'] {
-  --an-state-tone: var(--danger, #ef4444);
+  --an-state-tone: var(--danger);
 }
 .an-root .an-state[data-kind='empty'] {
   --an-state-tone: var(--text-muted);
   border-style: dashed;
 }
+/* The glyph carries a resting glow rather than a resting drop shadow — it is a halo in the state's
+   own tone, the thing that makes an error panel read as an error before the text does, not an
+   elevation cue. Kept off the elevation ladder deliberately. */
 .an-root .an-state-glyph {
   display: inline-flex;
   align-items: center;
@@ -759,7 +826,7 @@
   width: 58px;
   height: 58px;
   flex: none;
-  border-radius: 16px;
+  border-radius: var(--an-r-md);
   background: color-mix(in srgb, var(--an-state-tone) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--an-state-tone) 30%, transparent);
   color: var(--an-state-tone);
@@ -768,17 +835,17 @@
     var(--hz-glass-inset);
 }
 .an-root .an-state-title {
-  margin: 2px 0 0;
+  margin: var(--space-0_5) 0 0;
   font-family: var(--font-head);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.012em;
+  font-size: var(--text-lg);
+  letter-spacing: var(--tr-lg);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
 }
 .an-root .an-state-body {
   margin: 0;
   max-width: 54ch;
-  font-size: 13px;
+  font-size: var(--text-sm);
   line-height: 1.65;
   color: var(--text-muted);
 }
@@ -787,10 +854,10 @@
 .an-root .an-rep-note {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
+  gap: var(--space-1_5);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .an-root .an-rep-note.is-err {
-  color: var(--danger, #ef4444);
+  color: var(--intent-danger-fg);
 }

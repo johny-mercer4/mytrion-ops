@@ -389,7 +389,21 @@ export function Analytics() {
               </div>
             </div>
           ) : (
-            <div className="cs-an-nodata">{loading ? 'Loading…' : 'No data for this period'}</div>
+            /* A skeleton of the sparkline's own geometry, not the words "Loading…". The KPI row
+               above already used .cs-skeleton, so a text fallback here made one panel load in a
+               different language from the panel beside it — and the text does not reserve the
+               chart's height, so the card grew when data landed. */
+            loading ? (
+              <div className="cs-an-skel-chart" aria-busy="true" aria-label="Loading daily trend">
+                <div className="cs-skeleton" style={{ height: 118, borderRadius: 8 }} />
+                <div className="cs-an-skel-row">
+                  <div className="cs-skeleton" style={{ height: 10, width: 56, borderRadius: 4 }} />
+                  <div className="cs-skeleton" style={{ height: 10, width: 56, borderRadius: 4 }} />
+                </div>
+              </div>
+            ) : (
+              <div className="cs-an-nodata">No data for this period</div>
+            )
           )}
         </div>
 
@@ -415,7 +429,21 @@ export function Analytics() {
               </div>
             </div>
           ) : (
-            <div className="cs-an-nodata">{loading ? 'Loading…' : 'No data'}</div>
+            loading ? (
+              <div className="cs-an-skel-chart" aria-busy="true" aria-label="Loading breakdown">
+                <div
+                  className="cs-skeleton"
+                  style={{ height: 118, width: 118, borderRadius: '50%', margin: '0 auto' }}
+                />
+                <div className="cs-an-skel-legend">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="cs-skeleton" style={{ height: 12, borderRadius: 4 }} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="cs-an-nodata">No data</div>
+            )
           )}
         </div>
       </div>
@@ -443,11 +471,25 @@ export function Analytics() {
               </thead>
               <tbody>
                 {block.leaderboard.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="cs-empty">
-                      {loading ? 'Loading…' : 'No agent activity in this range.'}
-                    </td>
-                  </tr>
+                  loading ? (
+                    /* Five skeleton ROWS, so the table keeps its height and the rows do not appear
+                       from nothing and push the page down when the fetch resolves. */
+                    Array.from({ length: 5 }, (_, i) => (
+                      <tr key={`skel-${i}`} aria-hidden="true">
+                        {[0, 1, 2, 3, 4].map((c) => (
+                          <td key={c}>
+                            <div className="cs-skeleton" style={{ height: 12, borderRadius: 4 }} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="cs-empty">
+                        No agent activity in this range.
+                      </td>
+                    </tr>
+                  )
                 ) : (
                   block.leaderboard.map((a, idx) => (
                     <tr key={`${a.agent}-${idx}`} className="cs-an-lb-row">

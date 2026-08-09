@@ -282,7 +282,7 @@ export function RetentionCaseCard({
           </div>
           <RetentionFreqBadge f={row.transactionFrequency} />
         </div>
-        <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
+        <div style={s("font-family:var(--font-mono);font-size:12px;color:var(--text2)")}>
           {row.carrierId}
         </div>
         <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{salesLockBadge(row)}</div>

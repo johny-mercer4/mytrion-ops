@@ -1,0 +1,436 @@
+/*
+ * TimePicker — the segmented time field and its increment listbox. Read CONVENTIONS.md and
+ * Button.module.css alongside this.
+ *
+ * States are DATA ATTRIBUTES on two surfaces: the shell carries the control's state
+ * ([data-invalid], [data-disabled], [data-readonly]) and each segment carries its own
+ * ([data-kind], [data-empty]). Inspecting the DOM tells you which unit the keyboard is on without
+ * opening React DevTools.
+ *
+ * THERE IS NO REST-STATE FOCUS RULE FOR THE SHELL IN THIS FILE, AND THAT IS DELIBERATE — global.css
+ * owns `[data-focus-shell]:focus-within`. The one focus rule below is on the SEGMENT, which opts out
+ * of the global outline via `data-focus-ring="none"`; see the FOCUS note in TimePicker.tsx for why a
+ * ring cannot land there.
+ */
+
+.root {
+  /* The popup is absolutely positioned against this box. `position: relative` and NOT a transform:
+     a transform here would promote a composited layer for every TimePicker on the page. */
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+  min-inline-size: 0;
+}
+
+/* ── Size ────────────────────────────────────────────────────────────────────
+   The same two steps as Button and Input, so a time field, a select and a button in one toolbar
+   share a baseline. */
+.root[data-size='md'] {
+  --tp-h: 32px;
+  --tp-px: var(--space-2_5);
+  --tp-gap: var(--space-1_5);
+  /* 22px + the global focus ring (2px wide at 2px offset) = exactly the shell's 30px inner box, so
+     a focused affordance never draws over the shell's own border. Same arithmetic at `sm`. */
+  --tp-affordance: 22px;
+  --tp-text: var(--text-sm);
+  --tp-lh: var(--lh-sm);
+  --tp-tr: var(--tr-sm);
+}
+.root[data-size='sm'] {
+  --tp-h: 26px;
+  --tp-px: var(--space-2);
+  --tp-gap: var(--space-1);
+  --tp-affordance: 16px;
+  --tp-text: var(--text-xs);
+  --tp-lh: var(--lh-xs);
+  --tp-tr: var(--tr-xs);
+}
+
+.root[data-full='true'] {
+  display: flex;
+  inline-size: 100%;
+}
+
+/* ── Label ─────────────────────────────────────────────────────────────────── */
+.label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+/* Hidden from PAINT, not from the accessibility tree. `display: none` would take the name with it,
+   leaving a group of spin buttons that announces as nothing at all. */
+.label[data-hidden='true'] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────────
+   The box the user sees. It owns the border, the ground and the focus chrome; the segments inside
+   are bare, so exactly one element paints the field. */
+.shell {
+  display: flex;
+  align-items: center;
+  gap: var(--tp-gap);
+  padding-inline: var(--tp-px);
+  /* min-block-size, NOT block-size — the mobile type step at the foot of this file grows the type,
+     and a fixed 26px `sm` box would clip its own descenders. */
+  min-block-size: var(--tp-h);
+
+  background: var(--ui-field-bg);
+  border: 1px solid var(--tp-bd);
+  border-radius: var(--ui-field-radius);
+  color: var(--ui-field-fg);
+
+  /*
+   * EDGE. --ui-field-bd resolves to --glass-bd, a 7% white hairline, which measures 1.73:1 dark and
+   * 1.62:1 light against the card it sits on — correct for DECORATING a panel, and nowhere near the
+   * 3:1 CONVENTIONS §6 requires of the boundary of an interactive control. Derived from
+   * --text-secondary instead: 55% over the card measures 3.89:1 dark / 3.90:1 light, re-derived per
+   * theme rather than pinned. Same value as Input, on purpose — two fields in one row must not
+   * disagree about where their edges are.
+   */
+  --tp-bd: color-mix(in oklab, var(--text-secondary) 55%, transparent);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* [data-invalid] is excluded rather than merely out-specified below: a bare `.shell:hover` sets
+   `border-color` DIRECTLY, which wins over the `--tp-bd` the invalid rule sets, so hovering an
+   invalid field would quietly repaint its border neutral. */
+.shell:hover:not([data-disabled='true']):not([data-readonly='true']):not([data-invalid='true']) {
+  border-color: color-mix(in oklab, var(--text-secondary) 75%, transparent);
+  background: var(--surface-alt);
+}
+
+/* Open is a state the field must show before the list is read — the border is what ties the two
+   boxes together as one control. */
+.root[data-state='open'] .shell {
+  border-color: var(--focus-ring-color);
+}
+
+/* ── Invalid ─────────────────────────────────────────────────────────────────
+   Border + wash + (in the markup) aria-invalid + the error glyph in the message. Four signals, of
+   which exactly one is colour. */
+.shell[data-invalid='true'] {
+  --tp-bd: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.shell[data-invalid='true']:hover:not([data-disabled='true']) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+/*
+ * The one shell focus rule in this file, and it exists to WIN a specificity tie, not to restyle
+ * focus. `[data-focus-shell]:focus-within` in global.css is (0,2,0); so is
+ * `.shell[data-invalid='true']`. A tie resolves by stylesheet order — i.e. by whichever bundler
+ * chunk happened to land last, which is not a decision anyone made. (0,3,0) here makes the outcome
+ * deterministic: a focused invalid field keeps its danger border, so focus never launders an error
+ * into looking fine.
+ */
+.shell[data-invalid='true']:focus-within {
+  border-color: var(--intent-danger-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 24%, transparent);
+}
+
+/* ── Read-only ───────────────────────────────────────────────────────────────
+   Still focusable, still walkable by keyboard — that is the whole point of read-only and the reason
+   it is not `disabled`. It reads as an inert surface rather than as a broken control. */
+.shell[data-readonly='true'] {
+  background: var(--surface-alt);
+  --tp-bd: var(--border-strong);
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, never an opacity multiply, so the value keeps a KNOWN contrast ratio. No
+   `pointer-events: none` — see CONVENTIONS §5: it kills the tooltip that explains why. */
+.shell[data-disabled='true'] {
+  background: var(--disabled-bg);
+  --tp-bd: var(--disabled-bd);
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  box-shadow: var(--elev-0);
+}
+
+/* ── Leading glyph ───────────────────────────────────────────────────────────
+   Present ONLY when the increment list is unavailable — otherwise the trigger carries the clock and
+   two of them in one field is a question about which one does something. */
+.leading {
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.shell:focus-within .leading {
+  color: var(--text-secondary);
+}
+.shell[data-disabled='true'] .leading {
+  color: var(--disabled-fg);
+}
+
+/* ── The segment row ─────────────────────────────────────────────────────────
+   `flex: 1 1 auto` with `min-inline-size: 0` so the trailing affordances keep their box when the
+   field is squeezed; the segments are fixed-width and have nothing to give anyway. */
+.segments {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  white-space: nowrap;
+
+  /* --font-num (Space Mono) is the token for "ids, codes, TIMESTAMPS, table columns", which is
+     exactly what this is. It is also the only way `2ch` below is an honest measurement: in a
+     proportional face a segment showing 11 is narrower than one showing 08, so every keystroke
+     would nudge the segments after it sideways. */
+  font-family: var(--font-num);
+  font-size: var(--tp-text);
+  line-height: var(--tp-lh);
+  letter-spacing: var(--tp-tr);
+  font-variant-numeric: tabular-nums;
+}
+
+.segment {
+  /* Two monospace characters, so an empty `hh` and a filled `09` occupy the identical box and the
+     field never reflows while it is being typed into. */
+  min-inline-size: 2ch;
+  padding-inline: var(--space-0_5);
+  padding-block: 0;
+  border-radius: var(--radius-control);
+  text-align: center;
+  color: var(--text-primary);
+  cursor: text;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+}
+
+/* The day period is a word, not two digits — it sizes to whatever the locale calls it. */
+.segment[data-kind='dayPeriod'] {
+  min-inline-size: auto;
+  padding-inline: var(--space-1);
+}
+
+/* An unfilled segment is a PROMPT, not a value. Same tone as a placeholder, so `hh:mm` reads as an
+   invitation rather than as a time that happens to be spelled with letters. */
+.segment[data-empty='true'] {
+  color: var(--ui-field-placeholder);
+}
+
+/*
+ * WHICH SEGMENT — the caret analogue.
+ *
+ * `:focus`, not `:focus-visible`: a pointer user who clicked the minutes has to see that the arrow
+ * keys will now move the minutes, and the whole point of :focus-visible is to hide exactly that.
+ * TWO channels, not one — a wash AND an inset underline — so the highlighted segment is identifiable
+ * without perceiving its background colour. The field-level "this control has focus" signal is the
+ * shell's global ring; this only ever says WHICH unit.
+ */
+.segment:focus {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+
+.shell[data-disabled='true'] .segment,
+.shell[data-disabled='true'] .literal {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.shell[data-readonly='true'] .segment {
+  cursor: default;
+}
+
+/* The locale's own separator — ":", "時", the space before AM. aria-hidden in the markup: a screen
+   reader walking four spin buttons does not need to hear the punctuation between them. */
+.literal {
+  flex: none;
+  color: var(--text-muted);
+  padding-inline: var(--space-0_5);
+}
+
+/* ── Affordances: clear, open list ───────────────────────────────────────────
+   Real `<button type="button">`s, in the tab order, with accessible names set in the TSX. They take
+   the GLOBAL :focus-visible ring — correct here, and not the defect the focus-shell contract exists
+   to prevent, which was about the ring landing on the BARE FIELD. The sizes above are chosen so the
+   ring (2px at 2px offset) still fits inside the shell's inner box. */
+.affordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  inline-size: var(--tp-affordance);
+  block-size: var(--tp-affordance);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.affordance:hover:not(:disabled) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.affordance:active:not(:disabled) {
+  background: var(--surface-alt);
+}
+.affordance[aria-expanded='true'] {
+  color: var(--accent);
+}
+.affordance:disabled,
+.affordance[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  background: transparent;
+  cursor: var(--disabled-cursor);
+}
+
+/* ── Message row ─────────────────────────────────────────────────────────────
+   A hint when the field is fine, the error when it is not. NOT a live region: it is wired through
+   aria-describedby on the segment group, so it is announced when the field takes focus rather than
+   on every keystroke. */
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  color: var(--text-secondary);
+}
+.message[data-invalid='true'] {
+  color: var(--intent-danger-fg);
+}
+.messageIcon {
+  flex: none;
+}
+
+/* ── The increment popup ─────────────────────────────────────────────────────
+   Positioning is deliberately naive and has no library — absolutely positioned against the root,
+   flipped above when the space below is short. The cost is stated rather than hidden: an ancestor
+   with `overflow: hidden` clips it. Same trade Select makes, and the same one to revisit together. */
+.popup {
+  position: absolute;
+  inset-inline: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--tp-popup-h);
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: tpPopIn var(--dur-slow) var(--ease-decelerate);
+}
+.popup[data-placement='bottom'] {
+  inset-block-start: calc(100% + var(--space-1));
+}
+.popup[data-placement='top'] {
+  inset-block-end: calc(100% + var(--space-1));
+  animation-name: tpPopInUp;
+}
+
+/* `translate:`, not `transform:` — and only for the duration of the entrance, so nothing is left
+   holding a composited layer once the panel is at rest. */
+@keyframes tpPopIn {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-0_5);
+  }
+}
+@keyframes tpPopInUp {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--space-0_5) * -1);
+  }
+}
+
+.list {
+  overflow-y: auto;
+  /* A wheel that reaches the end of this list must not then scroll the page out from under it. */
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+  outline: none;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--tp-h);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-family: var(--font-num);
+  font-size: var(--tp-text);
+  line-height: var(--tp-lh);
+  letter-spacing: var(--tp-tr);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+}
+
+/* TWO INDEPENDENT SIGNALS, because both can be true at once — `data-selected` is a wash plus a check
+   glyph, `data-active` is an inset marker on a different edge entirely, so the highlighted row that
+   is also the chosen one still reads as both. */
+.option[data-selected='true'] {
+  background: var(--accent-soft);
+}
+.option[data-active='true'] {
+  background: var(--row-hover);
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+.option[data-active='true'][data-selected='true'] {
+  background: var(--accent-glow);
+}
+
+.optionLabel {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.optionTick {
+  flex: none;
+  color: var(--accent);
+}
+
+/* ── Mobile type step ────────────────────────────────────────────────────────
+ * NOT a design preference. Below 16px, iOS Safari zooms the whole page when a field takes focus and
+ * does not zoom back out. These segments are not `<input>`s, so Safari's own rule does not fire on
+ * them — but a time field that renders two points smaller than the text field beside it is its own
+ * defect, and the shell's min-block-size (not block-size) absorbs the growth so `sm` grows instead
+ * of clipping.
+ * 767px, i.e. below the 768px breakpoint in FOUNDATIONS.md. A media query, not a token: a custom
+ * property cannot be used in a media condition.
+ */
+@media (max-width: 767px) {
+  .root[data-size='md'],
+  .root[data-size='sm'] {
+    --tp-text: var(--text-input-mobile);
+    --tp-lh: var(--lh-base);
+    --tp-tr: var(--tr-base);
+  }
+}

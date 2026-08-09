@@ -5,8 +5,13 @@ import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } 
 import { createPortal } from 'react-dom';
 import { s } from './dc';
 
+// --z-popover, not a magic 200: this listbox is portaled OUT of the Automations modal, so it is a
+// sibling of that modal's overlay rather than a descendant. Now the overlay sits at --z-modal (2100)
+// the old 200 would have buried the deal/card picker behind the scrim. --z-popover (2200) is the
+// layer the token scale defines for exactly this case — a dropdown belonging to an open modal.
+// Geometry is untouched: this is an anchored popover, not a centred modal, and it owns no scrim.
 const panelBase =
-  'position:fixed;z-index:200;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
+  'position:fixed;z-index:var(--z-popover);border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
 
 export function AutoFloatingDrop({
   open,

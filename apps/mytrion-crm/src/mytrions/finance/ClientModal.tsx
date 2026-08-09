@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useCachedLoad } from '../_shared/swrCache';
@@ -56,10 +56,23 @@ export function ClientModal({ client, onClose }: { client: FinanceClient; onClos
     { staleMs: STALE.CLIENT },
   );
 
-  // Escape closes, and the page behind must not scroll while the scrim is up.
+  /*
+   * Escape closes, and the page behind must not scroll while the scrim is up.
+   *
+   * Mount/unmount ONLY — the dep list is deliberately empty and `onClose` is read through a ref.
+   *
+   * It used to depend on [onClose], and the call site passes `onClose={() => setOpenCarrier(null)}`
+   * — a fresh function identity on every parent render. So this effect tore down and re-ran
+   * constantly, and each cycle set `document.body.style.overflow` back to '' and then to 'hidden'
+   * again. Un-hiding the body for even one frame brings the scrollbar back, which changes the page
+   * width by ~15px and shifts everything under the scrim. That is the flicker: not a re-fetch, a
+   * scroll-lock being released and re-taken on every render.
+   */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
@@ -68,7 +81,7 @@ export function ClientModal({ client, onClose }: { client: FinanceClient; onClos
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, []);
 
   /**
    * The portal mounts on <body>, OUTSIDE `.fi-root` — so the wrapper must re-establish both the

@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowRight } from 'lucide-react';
 import { MytrionShell, type NavSection } from './MytrionShell';
+import { PageHead } from './page';
 import { useUserContext } from '../../context/UserContextProvider';
 import type { UserContext } from '../../context/userContext';
 import type { MytrionId } from '../../access/mytrions.config';
@@ -60,19 +61,6 @@ export interface ModuleShellProps {
   tabs: ModuleTab[];
 }
 
-/** Kicker → title → sub, shared by every non-Main tab. */
-function PageHead({ kicker, tab }: { kicker: string; tab: ModuleTab }) {
-  return (
-    <header className="ms-head">
-      <div>
-        <div className="ms-kicker">{kicker}</div>
-        <h1 className="ms-title">{tab.label}</h1>
-        <p className="ms-sub">{tab.description}</p>
-      </div>
-    </header>
-  );
-}
-
 export function ModuleShell({
   id,
   kicker,
@@ -101,7 +89,9 @@ export function ModuleShell({
       label: navLabel,
       items: visible.map((tab) => ({
         key: tab.id,
-        label: tab.soon ? `${tab.label} · Soon` : tab.label,
+        label: tab.label,
+        // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
+        soon: Boolean(tab.soon),
         icon: <tab.icon size={19} />,
         tone: tab.tone,
         active: view === tab.id,
@@ -164,7 +154,11 @@ export function ModuleShell({
                 </>
               ) : (
                 <>
-                  <PageHead kicker={kicker} tab={active} />
+                  <PageHead
+                    kicker={kicker}
+                    title={active.label}
+                    description={active.description}
+                  />
                   {active.soon ? (
                     <ComingSoon
                       icon={<active.icon size={26} />}

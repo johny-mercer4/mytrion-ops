@@ -4,6 +4,7 @@ import { Badge, s } from './dc';
 import { Icon, type IconName } from './icons';
 import { useLoad } from './live';
 import { cardStatusBadge } from './AutoPicklist';
+import { AUTO_PENDING_PILL } from './autoControls';
 
 const CREDENTIAL_ACTIONS = new Set(['card-activation', 'card-deactivation', 'unit-driver']);
 
@@ -59,11 +60,11 @@ function Credential({
 }) {
   return (
     <div style={s('min-width:0;padding:10px 11px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border2)')}>
-      <div style={s('display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em')}>
+      <div style={s('display:flex;align-items:center;gap:6px;color:var(--muted);font-size:var(--ss-text-badge);font-weight:800;text-transform:uppercase;letter-spacing:.06em')}>
         <Icon name={icon} size={13} />
         {label}
       </div>
-      <div title={value || 'Not set'} style={s('margin-top:5px;color:var(--text);font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+      <div title={value || 'Not set'} style={s('margin-top:5px;color:var(--text);font-size:var(--ss-text-xs);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
         {value || 'Not set'}
       </div>
     </div>
@@ -81,7 +82,7 @@ export function AutoCardCredentialsPanel({
 }) {
   if (loading) {
     return (
-      <div role="status" aria-busy="true" style={s('display:flex;align-items:center;gap:10px;padding:14px 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px')}>
+      <div role="status" aria-busy="true" style={s(AUTO_PENDING_PILL)}>
         <Icon name="spinner" size={16} className="ss-spin" />
         Reading current card credentials directly from EFS…
       </div>
@@ -89,7 +90,7 @@ export function AutoCardCredentialsPanel({
   }
   if (error || !credentials) {
     return (
-      <div role="alert" style={s('display:flex;align-items:flex-start;gap:9px;padding:14px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);color:var(--danger);font-size:13px;line-height:1.45')}>
+      <div role="alert" style={s('display:flex;align-items:flex-start;gap:9px;padding:14px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);color:var(--danger);font-size:var(--ss-text-xs);line-height:1.45')}>
         <Icon name="alert" size={17} />
         <span>{error || 'Current EFS card credentials are unavailable. The action is disabled.'}</span>
       </div>
@@ -100,7 +101,7 @@ export function AutoCardCredentialsPanel({
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px')}>
         <div style={s('display:flex;align-items:center;gap:8px')}>
           <Icon name="card" size={17} color="var(--accent)" />
-          <strong style={s('font-size:13px;color:var(--text)')}>Current EFS credentials</strong>
+          <strong style={s('font-size:var(--ss-text-xs);color:var(--text)')}>Current EFS credentials</strong>
         </div>
         <Badge vm={cardStatusBadge(credentials.status)} />
       </div>
