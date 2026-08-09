@@ -288,8 +288,12 @@ html,body{height:100%;margin:0}
     background:rgba(15,23,42,.48);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   }
   .ss-root.light .ss-scrim{background:rgba(15,23,42,.42)}
-  a{color:var(--accent);text-decoration:none}
-  a:hover{color:var(--accent);text-decoration:underline}
+  /* SCOPED. These were bare `a` / `a:hover`, so once Sales' CSS chunk loaded they applied to every
+     anchor in the document — and CSS chunks are never unloaded. Visiting Sales once made every link
+     in the app underline on hover for the rest of the session, most visibly on the launcher, where
+     each workspace card is an <a> and the underline propagated to its title, blurb and tag. */
+  .ss-root a{color:var(--accent);text-decoration:none}
+  .ss-root a:hover{color:var(--accent);text-decoration:underline}
 
   /* ── Retention case modal ─────────────────────────────────────────────────── */
   .ss-ret-modal{
