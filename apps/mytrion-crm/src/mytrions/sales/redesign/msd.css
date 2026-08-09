@@ -822,3 +822,80 @@
 .ss-root.light .msd-hero-kpi--blue .msd-hero-kpi-value { color: #0284c7; }
 .ss-root.light .msd-hero-kpi--gold .msd-hero-kpi-icon { color: #d97706; }
 .ss-root.light .msd-hero-kpi--blue .msd-hero-kpi-icon { color: #0284c7; }
+
+/* ── Card Activity hover card ──────────────────────────────────────────────────
+   Anchored to the hovered column and translated back by half its own width, so it stays centred on
+   the dot without needing a measured position. `pointer-events: none` is load-bearing: the card
+   tracks the column under the cursor, so if it could take the pointer it would replace its own
+   hover target and flicker between two days at the boundary. */
+.ss-root .msd-activity-card {
+  position: absolute;
+  bottom: calc(100% - 78px);
+  transform: translateX(-50%);
+  z-index: 4;
+  min-width: 168px;
+  padding: var(--space-3) var(--space-3_5);
+  border-radius: var(--radius-md);
+  background: var(--hz-modal-surface);
+  border: 1px solid var(--glass-bd-hi);
+  box-shadow: var(--hz-shadow-pop);
+  pointer-events: none;
+}
+
+.ss-root .msd-activity-card__day {
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--row-line);
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ss-root .msd-activity-card__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  margin: 0;
+}
+
+.ss-root .msd-activity-card__rows > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.ss-root .msd-activity-card__rows dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The legend dot, in the same hue the series uses on the chart itself. */
+.ss-root .msd-activity-card__rows dt i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  flex: none;
+}
+.ss-root .msd-activity-card__rows dt i[data-k='tx'] { background: #f43f5e; }
+.ss-root .msd-activity-card__rows dt i[data-k='active'] { background: #16a34a; }
+.ss-root .msd-activity-card__rows dt i[data-k='new'] { background: #0284c7; }
+.ss-root .msd-activity-card__rows dt i[data-k='gal'] { background: var(--accent); }
+
+/* Figures are monospaced and tabular so the four rows line up as a column. */
+.ss-root .msd-activity-card__rows dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.ss-root .msd-activity-card__rows dd[data-accent] {
+  color: var(--accent);
+}

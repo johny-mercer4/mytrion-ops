@@ -318,6 +318,43 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                 style={{ width: chartW, minWidth: '100%' }}
                 onMouseLeave={() => p.setHoverIdx(null)}
               >
+                {/*
+                  Hover card. The three value rows below already reveal exact figures on hover, but
+                  they are spread across the full chart width and `volume` was never surfaced at all
+                  — so reading one day meant scanning three rows and still not finding gallons.
+                  This gathers the whole day into one place, anchored to the hovered column.
+
+                  Pointer-events off: the card tracks the same column the cursor is over, so it must
+                  never become the hover target itself and swap the value out from under the reader.
+                */}
+                {p.hoverIdx != null && p.actPoints[p.hoverIdx] ? (
+                  <div
+                    className="msd-activity-card"
+                    style={{ left: msdColLeftPct(p.hoverIdx, len, chartW) }}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="msd-activity-card__day">{p.actPoints[p.hoverIdx]!.label}</div>
+                    <dl className="msd-activity-card__rows">
+                      <div>
+                        <dt><i data-k="tx" />Transactions</dt>
+                        <dd>{p.actPoints[p.hoverIdx]!.transactions.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt><i data-k="active" />Active Cards</dt>
+                        <dd>{p.actPoints[p.hoverIdx]!.activeCards.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt><i data-k="new" />New Cards</dt>
+                        <dd>{p.actPoints[p.hoverIdx]!.newCards.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt><i data-k="gal" />Gallons</dt>
+                        <dd data-accent>{msdFmtK(p.actPoints[p.hoverIdx]!.volume)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : null}
                 <svg
                   viewBox={`0 0 ${chartW} 90`}
                   className="msd-activity-svg"

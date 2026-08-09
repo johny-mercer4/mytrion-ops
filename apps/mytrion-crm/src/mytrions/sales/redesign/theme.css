@@ -64,6 +64,21 @@ html,body{height:100%;margin:0}
   .ss-root ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   .ss-root *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
   @keyframes ss-spin{to{transform:rotate(360deg)}}
+  /*
+   * `.ss-spin` — the class two automation panels have always asked for and never had.
+   *
+   * AutoWexEligibility and AutoCardCredentials both render
+   * `<Icon name="spinner" className="ss-spin" />` while a WEX round trip is in flight, but no rule
+   * for this class existed anywhere in the app: the keyframes above were only ever consumed by
+   * `.ss-tab-spin` and one rule in tickets.css. So the glyph rendered COMPLETELY MOTIONLESS for the
+   * whole ~20s request, which is indistinguishable from a hang — this is the "stuck loader with
+   * animation" reported in the WEX Tasks modal.
+   *
+   * Reduced motion stops the rotation but keeps the glyph, so the label beside it still reads as a
+   * pending state rather than the element vanishing.
+   */
+  .ss-spin{animation:ss-spin .75s linear infinite;transform-origin:50% 50%}
+  @media (prefers-reduced-motion: reduce){ .ss-spin{animation:none} }
   @keyframes ss-pulse{0%,100%{opacity:.4}50%{opacity:1}}
   @keyframes ss-shimmer{0%{background-position:-460px 0}100%{background-position:460px 0}}
   @keyframes ss-sweep{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
