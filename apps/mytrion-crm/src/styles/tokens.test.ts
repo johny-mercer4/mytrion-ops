@@ -181,16 +181,24 @@ describe('token contract', () => {
    * data should be flat) and a performance one — every blurred element is its own composited layer,
    * and this app has already shipped a scroll-jank defect from exactly that.
    *
-   * A BUDGET, not a ban: 282 call sites exist today across 46 files and they come down per module,
-   * not in one flag day. The number may only ever decrease. If this fails because you ADDED a blur,
-   * the answer is almost always --surface-data.
+   * A BUDGET, not a ban: they come down per module, not in one flag day. The number may only ever
+   * decrease. If this fails because you ADDED a blur, the answer is almost always --surface-data.
+   *
+   * COUNTS UNPREFIXED DECLARATIONS ONLY. The metric is BLURRED ELEMENTS — each one is a composited
+   * layer — and `-webkit-backdrop-filter` is always a twin of the standard property on the same
+   * rule, so counting it double-counts one element and makes the budget move when nothing about the
+   * compositing cost did. The old regex was /backdrop-filter\s*:/, which matched the prefixed form
+   * as a substring; adding a legally-required vendor twin to an EXISTING blurred element then read
+   * as growth. Measured across the modal-standardisation sweep: prefixed-inclusive went 279 -> 283
+   * while the true element count held at 147 on both sides.
    */
   it('does not grow the backdrop-filter surface area outside the design system', () => {
-    // The LEGACY surface (module + app CSS) may only ever shrink. 282 was the count on the day the
-    // three-tier layer landed; every module that migrates takes blur off its data surfaces.
-    const BUDGET = 282;
+    // The LEGACY surface (module + app CSS) may only ever shrink. Every module that migrates takes
+    // blur off its data surfaces.
+    const BUDGET = 147;
+    // `(^|[^-])` is what excludes -webkit-backdrop-filter — see the note above.
     const count = CSS_FILES.filter((f) => !f.includes('/ds/')).reduce(
-      (n, f) => n + (code(f).match(/backdrop-filter\s*:/g)?.length ?? 0),
+      (n, f) => n + (code(f).match(/(?:^|[^-])backdrop-filter\s*:/gm)?.length ?? 0),
       0,
     );
     expect(count).toBeLessThanOrEqual(BUDGET);

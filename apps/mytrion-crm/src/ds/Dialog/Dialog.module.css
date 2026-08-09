@@ -61,8 +61,8 @@
    ink would invert wrongly in one theme, because no token is dark in both. */
 .dialog::backdrop {
   z-index: var(--z-overlay);
-  background: color-mix(in srgb, var(--page) 78%, transparent);
-  backdrop-filter: blur(var(--hz-blur-sm));
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
 }
 
 /* ── Panel ───────────────────────────────────────────────────────────────────

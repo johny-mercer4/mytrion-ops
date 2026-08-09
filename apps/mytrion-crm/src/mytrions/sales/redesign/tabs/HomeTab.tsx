@@ -467,8 +467,11 @@ export function HomeTab() {
         <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" loading={appsLoading} />
       </div>
 
+      {/* Celebration overlay — NOT a modal: no scrim, aria-hidden, pointer-events:none. It is a
+          TOAST-class surface, fired in the same breath as the pushToast beside it, so it takes
+          --z-toast and stays co-planar with that toast now the magic 200s are gone. */}
       {celebration && (
-        <div aria-hidden="true" style={s('position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;pointer-events:none')}>
+        <div aria-hidden="true" style={s('position:fixed;inset:0;z-index:var(--z-toast);display:flex;align-items:center;justify-content:center;pointer-events:none')}>
           <div style={s('position:relative;padding:20px 28px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),rgba(var(--violet-rgb),.12)),var(--surface);border:1px solid rgba(var(--accent-rgb),.45);box-shadow:var(--shadow);display:flex;align-items:center;gap:16px;animation:ss-pop .3s cubic-bezier(.2,0,0,1) both')}>
             <div aria-hidden="true" style={s('position:absolute;inset:0;border-radius:var(--radius-md);border:2px solid var(--accent);animation:ss-ring .9s ease-out both;pointer-events:none')}></div>
             <span style={s('font-size:36px')}>{celebration.emoji}</span>

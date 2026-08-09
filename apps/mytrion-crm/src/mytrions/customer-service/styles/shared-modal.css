@@ -23,12 +23,20 @@
 .cs-root .cs-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9990;
+    /* --z-modal, never a magic number. The old 9990 happened to clear the app header
+       (--z-sticky: 100), but only by accident of being large; the token is the contract. */
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--modal-backdrop-bg);
-    padding: 1rem;
+    /* The one scrim. Derived from --page, so it dims in dark and frosts in light by
+       construction — no per-theme fork and no hardcoded near-black rgba. */
+    background: var(--scrim);
+    backdrop-filter: blur(var(--scrim-blur));
+    -webkit-backdrop-filter: blur(var(--scrim-blur));
+    /* The GUTTER that keeps the sheet off the viewport edge. It is padding on the backdrop and
+       not a margin on the box, so clicking the gutter still reads as a backdrop click. */
+    padding: var(--space-6);
     animation: csBackdropIn 200ms ease;
     /* The backdrop itself must not scroll or pass wheel/touch through to the
        page behind it. */
@@ -50,7 +58,15 @@
     box-shadow: var(--shadow-lg);
     width: 100%;
     max-width: 640px;
-    max-height: 92vh;
+    /* 100%, NOT 92vh. A vh cap measures the viewport and so ignores the backdrop's own
+       --space-6 gutter: the sheet grows past the padding box and its top edge is clipped
+       off-screen. 100% is 100% of the padded content box, which is the whole point of
+       putting the gutter on the backdrop. */
+    max-height: 100%;
+    /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+    flex: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -128,6 +144,10 @@
 /* ─── Body ────────────────────────────────────────────────── */
 .cs-root .cs-modal-body {
     flex: 1;
+    /* Required, not optional: without it this row floors at min-content, so a long form pushes
+       the sheet past its max-height instead of scrolling inside it. The header and footer are
+       flex-shrink: 0, which makes this the ONE scrolling row. */
+    min-height: 0;
     overflow-y: auto;
     padding: 1.5rem;
     /* Keep the modal's scroll from chaining into the page behind it once it
@@ -232,9 +252,11 @@
 /* ─── Confirm dialog ──────────────────────────────────────────
    Destructive-action confirm (ConfirmDialog.tsx), replacing window.confirm(). Reuses the backdrop
    and sheet above; the raised z-index lets it stack OVER a host modal that opened it (the Citifuel
-   client modal opens this for Delete), since both share .cs-modal-backdrop's 9990. */
+   client modal opens this for Delete), since both otherwise share .cs-modal-backdrop's --z-modal.
+   --z-popover is the token minted for exactly this layer (theme.css: "a confirm dialog over an open
+   modal … previously escalated to 9995"), so it replaces the old 9995 rather than restating it. */
 .cs-root .cs-confirm-backdrop {
-    z-index: 9995;
+    z-index: var(--z-popover);
 }
 
 .cs-root .cs-confirm-box {

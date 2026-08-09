@@ -371,12 +371,14 @@ export function AutoTab() {
         )}
       </SalesPage>
 
-      {/* Scrim matches dataCenterSheet (.78 / blur 6) — .62 / blur 3 left the catalog legible through
-          the dialog. The panel takes the shared `ss-modal-box` recipe (accent rail +
-          --hz-modal-surface + blur) instead of an inline --surface, which at 0.66 alpha was the main
-          reason the modal read as translucent in dark mode. */}
+      {/* Scrim is the shared --scrim token, not a hardcoded near-black: the old rgba(3,7,14,.78) was
+          only correct in dark and painted ink over the pale page in light. --scrim is mixed from
+          --page, so it inverts by construction. The gutter (--space-6) lives on the OVERLAY, not as a
+          margin on the panel, so clicking it still reads as a backdrop click. The panel takes the
+          shared `ss-modal-box` recipe (accent rail + --hz-modal-surface + blur) instead of an inline
+          --surface, which at 0.66 alpha was the main reason the modal read as translucent in dark. */}
       {b && (
-        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)')}>
           <div
             ref={autoDialogRef}
             className="ss-modal-box"
@@ -385,7 +387,11 @@ export function AutoTab() {
             aria-labelledby="sales-auto-title"
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}
+            /* `max-height:100%` (not 88vh): a vh cap ignores the overlay's own --space-6 gutter, so a
+               tall run panel overflowed it and clipped its own header off-screen. `flex:none` is inert here
+               (the overlay is a flex ROW, so it governs width) and is kept only so the panel stays
+               un-squeezable if that ever becomes a column. The body row below is the ONLY scroller. */
+            style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}
           >
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(autoIconColor(b), 48))}>

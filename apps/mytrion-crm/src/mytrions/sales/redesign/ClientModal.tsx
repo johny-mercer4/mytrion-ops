@@ -239,7 +239,7 @@ export function ClientModal({
       role="presentation"
       onClick={onClose}
       style={s(
-        'position:fixed;inset:0;z-index:118;background:rgba(3,7,14,.8);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:20px',
+        'position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)',
       )}
     >
       <div
@@ -251,7 +251,7 @@ export function ClientModal({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={s(
-          'width:100%;max-width:820px;max-height:90vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
+          'width:100%;max-width:820px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
         )}
       >
         <div
@@ -309,7 +309,7 @@ export function ClientModal({
             );
           })}
         </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:20px')}>
+        <div className="ss-scroll" style={s('flex:1;min-height:0;overflow-y:auto;padding:20px')}>
           {clientTab === 'overview' && (
             <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
               <div style={s(`grid-column:1 / -1;${tile}`)}>

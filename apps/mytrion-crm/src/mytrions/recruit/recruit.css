@@ -328,19 +328,40 @@
 
 .recruit-modal-backdrop {
   position: fixed;
-  z-index: 2100;
   inset: 0;
-  display: grid;
-  place-items: center;
-  overflow-y: auto;
-  background: rgb(2 6 23 / .72);
-  backdrop-filter: blur(12px);
-  padding: 34px;
+  /* The literal was already 2100 — the same number --z-modal holds. On the token it stays correct when
+     the scale moves, and it reads as "modal layer" rather than as a number someone picked. */
+  z-index: var(--z-modal);
+  /* Flex and not grid: the panel is sized `min(760px, 100%)`, and a percentage against an AUTO grid
+     track is circular — the track is sized by the item and the item by the track. A flex container's
+     content box is definite, so the percentage has something real to measure against. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter. Padding on THIS element and not a margin on the panel, so clicking the gutter still
+     reads as a backdrop click. No `overflow-y` here: the panel is capped to this box and owns the one
+     scrolling row, so a second scroll container on the backdrop only fights the centring. */
+  padding: var(--space-6);
+  /* --scrim mixes from --page and so inverts by construction. The hardcoded near-black was only ever
+     right in dark; in light it painted ink over a pale page. */
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
 }
+/* Scroll ownership: a header that pins and a body that moves, and nothing else. `max-height: 100%`
+   resolves against the backdrop's content box, so the 24px gutter is already subtracted — the old vh
+   cap did not know about the padding and let the panel's top edge ride off-screen. */
 .recruit-modal {
+  display: flex;
+  flex-direction: column;
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
   width: min(760px, 100%);
-  max-height: calc(100vh - 68px);
-  overflow-y: auto;
+  max-height: 100%;
+  /* Clips the header rule and the body's scrollbar to the rounded corners. */
+  overflow: hidden;
   border: 1px solid var(--hz-glass-bd-hover);
   border-radius: 24px;
   background: var(--hz-pane-lift);
@@ -348,7 +369,11 @@
   backdrop-filter: blur(var(--hz-blur));
   -webkit-backdrop-filter: blur(var(--hz-blur));
 }
-.recruit-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); padding: 24px 26px; }
+.recruit-modal > header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); padding: 24px 26px; }
+/* The one scrolling row — everything the modal is handed below the pinned header. `min-height: 0` is
+   the load-bearing half: without it a flex row floors at min-content and refuses to scroll, handing the
+   overflow back to the panel, which now clips it. */
+.recruit-modal > :not(header) { flex: 1; min-height: 0; overflow-y: auto; }
 .recruit-modal h2 { margin: 0; font-size: 25px; }
 .recruit-modal header p { margin: 6px 0 0; color: var(--text-secondary); font-size: 14px; }
 .recruit-form { padding: 24px 26px 26px; }
@@ -406,10 +431,6 @@
 .recruit-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-size: 14px; }
 
 @keyframes recruit-spin { to { transform: rotate(360deg); } }
-
-[data-theme='light'] .recruit-modal-backdrop {
-  background: rgb(30 41 59 / .38);
-}
 
 @media (max-width: 1100px) {
   .recruit-metrics { grid-template-columns: 1fr 1fr; }

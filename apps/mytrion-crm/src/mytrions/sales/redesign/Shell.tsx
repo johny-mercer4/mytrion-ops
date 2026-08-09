@@ -341,7 +341,7 @@ export function SalesRedesign() {
 
         {/* DETAIL MODAL */}
         {detail && (
-          <div onClick={closeDetail} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+          <div onClick={closeDetail} style={s('position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)')}>
             <div
               ref={detailDialogRef}
               role="dialog"
@@ -349,9 +349,13 @@ export function SalesRedesign() {
               aria-labelledby="sales-detail-title"
               tabIndex={-1}
               onClick={(e) => e.stopPropagation()}
-              style={s('width:100%;max-width:520px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+              /* Three rows, and only the middle one moves. `max-height:100%` respects the overlay's
+                 own --space-6 gutter (a vh cap does not, which is how a long detail body used to push
+                 the panel's top edge off-screen); `flex:none` stops the panel being shrunk below that
+                 cap and handing the overflow back to the page. The 3px accent border-top stays. */
+              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
             >
-              <div style={s('display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
+              <div style={s('flex:none;display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>
                 <div style={s('flex:1;min-width:0')}>
                   <div id="sales-detail-title" style={s('font-size:17px;font-weight:700;line-height:1.3')}>{detail.title}</div>
@@ -363,13 +367,15 @@ export function SalesRedesign() {
                   <Icon name="close" size={15} strokeWidth={2.4} />
                 </button>
               </div>
-              <div style={s('padding:20px 22px;max-height:52vh;overflow-y:auto')}>
+              {/* The one scrolling row. `min-height:0` is required — without it the row floors at
+                  min-content and refuses to scroll, pushing the panel past its cap instead. */}
+              <div style={s('flex:1;min-height:0;padding:20px 22px;overflow-y:auto')}>
                 <p style={s('font-size:14px;line-height:1.7;color:var(--text2);white-space:pre-wrap;margin:0')}>{detail.body}</p>
                 <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)')}>
                   <strong style={s('color:var(--text2)')}>{detail.metaLabel}</strong> {detail.meta}
                 </div>
               </div>
-              <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
+              <div style={s('flex:none;padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
                 <button onClick={closeDetail} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
               </div>
             </div>
@@ -420,14 +426,16 @@ export function SalesRedesign() {
         {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
         <DealCallWizardHost pushToast={pushToast} />
 
-        {/* TOAST — portaled under .ss-root, above force modals (z 160). */}
+        {/* TOAST — portaled under .ss-root. --z-toast (3000) sits above --z-modal/--z-popover by
+            construction, which is what the old magic 200 was reaching for back when the force modals
+            were at 150/160; at 200 it would now be buried under any open modal. */}
         {toast &&
           typeof document !== 'undefined' &&
           createPortal(
             <div
               role="status"
               style={s(
-                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
+                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:var(--z-toast);display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
               )}
             >
               <span

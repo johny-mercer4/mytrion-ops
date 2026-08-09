@@ -507,14 +507,20 @@
 .fi-modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  /* --z-modal, never a literal: 90 sat UNDER --z-sticky (100), so the app header painted over the
+     top of this modal. */
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(12px, 3vh, 40px) clamp(12px, 3vw, 48px);
-  background: rgba(4, 7, 12, 0.62);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* The gutter lives on the overlay, not as a margin on the panel, so clicking it still reads as a
+     backdrop click — and `max-height: 100%` on the panel measures against the box inside it. */
+  padding: var(--space-6);
+  /* --scrim inverts by construction (mixed from --page). The previous near-black rgba was only
+     correct in dark; in light it painted ink over a pale page. */
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
   animation: fiFade 0.18s var(--hz-ease);
 }
 @keyframes fiFade {
@@ -528,6 +534,10 @@
 .fi-modal {
   display: flex;
   flex-direction: column;
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
   width: min(1320px, 100%);
   max-height: 100%;
   overflow: hidden;
@@ -654,10 +664,13 @@
   border: 1px solid var(--tint-warn-bd);
   color: var(--warning);
 }
+/* The one scrolling row. `min-height: 0` is required — a flex row floors at its content size and
+   would push the panel past `max-height: 100%` instead of scrolling inside it. (This replaces a
+   260px floor — the one the tab strip above was being crushed against.) */
 .fi-modal-body {
   flex: 1;
-  min-height: 260px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: 18px 20px 22px;
   display: flex;
   flex-direction: column;

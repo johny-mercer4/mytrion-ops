@@ -310,7 +310,7 @@ export function MoneyCodesView({ search }: { search: string }) {
             if (!voidBusy) setVoidTarget(null);
           }}
           style={s(
-            'position:fixed;inset:0;z-index:150;background:rgba(3,7,14,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px',
+            'position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)',
           )}
         >
           <div
@@ -319,17 +319,17 @@ export function MoneyCodesView({ search }: { search: string }) {
             aria-label="Void money code"
             onClick={(e) => e.stopPropagation()}
             style={s(
-              'width:100%;max-width:420px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--danger);box-shadow:var(--shadow);overflow:hidden',
+              'width:100%;max-width:420px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--danger);box-shadow:var(--shadow);overflow:hidden',
             )}
           >
-            <div style={s('padding:16px 18px;border-bottom:1px solid var(--border)')}>
+            <div style={s('flex:none;padding:16px 18px;border-bottom:1px solid var(--border)')}>
               <div style={s('font-size:16px;font-weight:700')}>Void money code</div>
               <div style={s('font-size:13px;color:var(--muted);margin-top:4px;line-height:1.45')}>
                 {voidTarget.company_name || 'Carrier'} · {fmtUsd(amountOf(voidTarget))} · frees the
                 limit if not already redeemed
               </div>
             </div>
-            <div style={s('padding:16px 18px')}>
+            <div style={s('flex:1;min-height:0;overflow-y:auto;padding:16px 18px')}>
               <input
                 value={voidReason}
                 onChange={(e) => setVoidReason(e.target.value)}
@@ -340,7 +340,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                 )}
               />
             </div>
-            <div style={s('padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px')}>
+            <div style={s('flex:none;padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px')}>
               <button
                 type="button"
                 disabled={voidBusy}

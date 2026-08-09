@@ -1578,10 +1578,16 @@
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 50);
-  background: color-mix(in srgb, var(--hz-page) 62%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* No numeric fallback: `var(--z-modal, 50)` reads as a licence to render at 50, which is UNDER
+     --z-sticky (100) and would put the app header on top of the dialog. --z-modal is declared on
+     :root in styles/theme.css, so the fallback could only ever fire in a broken build. */
+  z-index: var(--z-modal);
+  /* Was an inline `color-mix(--hz-page 62%, transparent)` — the same construction as --scrim, at a
+     different opacity, maintained separately. --scrim is that mix at 78% and inverts by definition,
+     so the shared token replaces the local copy. */
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
   display: flex;
   /* LAYOUT CONTRACT for every dialog in this module — three rules that depend on each other:
      1. The backdrop is `position: fixed` and NEVER scrolls; `.modal` is the scrollport. The two must
@@ -1615,6 +1621,10 @@
      breathing room, and the `100%` — of the backdrop's padded content box — is what keeps a sheet
      reachable on a viewport too short for 84vh plus that padding, since the backdrop cannot scroll. */
   max-height: min(84vh, 100%);
+  /* `flex: none` — the backdrop is a flex ROW, so the default flex-shrink:1 acts on the sheet's
+     WIDTH: a wide table body could squeeze `min(760px, 100%)` down below its measure instead of
+     scrolling inside it. */
+  flex: none;
   overflow-y: auto;
   /* The page behind is locked by JS while a dialog is open, but a wheel gesture that runs out of sheet
      must not chain out to it on the dialogs that don't lock either. */

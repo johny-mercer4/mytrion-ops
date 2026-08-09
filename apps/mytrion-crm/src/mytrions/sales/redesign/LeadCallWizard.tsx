@@ -99,14 +99,14 @@ function LeadCallWizard({
       onClick={() => {
         if (!busy) onDone();
       }}
-      style={s('position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)')}
+      style={s('position:fixed;inset:0;z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur))')}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Log the call outcome"
         onClick={(e) => e.stopPropagation()}
-        style={s('width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+        style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
       >
         {/* Header: the call that just ended */}
         <div style={s('flex-shrink:0;padding:18px 22px;border-bottom:1px solid var(--border)')}>

@@ -404,7 +404,9 @@
     max-width: 540px;
 }
 
-/* ── Accent header ── */
+/* ── Accent header ──
+   This modal has no `.bm-modal-header`; this row IS its header, so it takes the same
+   `flex-shrink: 0` — the pinned header must not be squeezed to make room for the scrolling body. */
 .bm-root .tx-modal-accent-hdr {
     display: flex;
     align-items: flex-start;
@@ -412,6 +414,7 @@
     gap: 0.75rem;
     padding: 1.125rem 1.25rem;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .bm-root .tx-modal-accent-zelle {

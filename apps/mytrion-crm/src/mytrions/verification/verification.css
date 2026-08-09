@@ -455,13 +455,24 @@
 [data-mytrion='verification'] .vf-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--bg-primary, #0b0d12) 55%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* --z-modal, never a literal: 80 sat UNDER --z-sticky (100), so the app header painted over the
+     top of this modal. */
+  z-index: var(--z-modal);
+  /* Flex, not grid, and that is correctness rather than preference: the panel is sized
+     `min(100%, 720px)`, and a percentage against an AUTO grid track is circular — the track is
+     sized by the item and the item by the track, which resolves to max-content. A flex container's
+     content box is definite, so the percentage has something real to measure against. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter lives on the overlay, not as a margin on the panel, so clicking it still reads as a
+     backdrop click — and `max-height: 100%` on the panel measures against the box inside it. */
+  padding: var(--space-6);
+  /* --scrim inverts by construction (mixed from --page). Mixing toward --bg-primary hardcoded a
+     dark wash that painted ink over a pale page in light. */
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
   animation: vfIn var(--hz-dur-wash) var(--hz-ease);
 }
 @keyframes vfIn {
@@ -475,8 +486,16 @@
   }
 }
 [data-mytrion='verification'] .vf-modal {
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
   width: min(100%, 720px);
-  max-height: min(90vh, 780px);
+  /* `100%`, not `90vh`: a vh cap ignores the overlay's own gutter, so the panel overflowed the
+     padding and its top edge was clipped off-screen. The 780px cap is the original design ceiling
+     and is kept. This element is the single scrolling box — the markup has no separate body row to
+     move the scroll onto, so the header and the actions footer scroll with the content. */
+  max-height: min(100%, 780px);
   overflow: auto;
   border-radius: 16px;
   border: 1px solid var(--hz-pane-bd);

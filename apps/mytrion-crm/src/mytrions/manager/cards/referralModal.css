@@ -3,11 +3,22 @@
   position: fixed;
   z-index: var(--z-modal);
   inset: 0;
-  display: grid;
-  place-items: center;
+  /* Flex, not grid, and that is a correctness point rather than a preference (same reasoning as
+     ds/Dialog): the panel is capped `max-height: min(880px, 100%)`, and a percentage against an
+     AUTO grid track is circular — the track is sized by the item and the item is sized by the
+     track, which browsers resolve by falling back to max-content, so the cap never binds. A flex
+     container's content box is definite, so the percentage has something real to measure against.
+     Centring is unchanged: place-items:center and align/justify-content:center put a
+     content-sized single child in exactly the same place. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter. It is padding on THIS element and not a margin on the panel, so clicking it still
+     reads as a backdrop click. */
   padding: 20px;
   background: var(--mg-scrim);
   backdrop-filter: blur(14px) saturate(0.72);
+  -webkit-backdrop-filter: blur(14px) saturate(0.72);
 }
 /*
  * The dialog surface. It used to be a near-black `rgba(0,0,0,.72)` drop shadow plus a 76px tone
@@ -18,8 +29,16 @@
 .mg-root .mg-rf-modal {
   position: relative;
   isolation: isolate;
-  width: min(1160px, 96vw);
-  max-height: min(880px, 92vh);
+  /* 100%, not 96vw/92vh. A viewport unit measures the WHOLE viewport and so ignores the scrim's own
+     20px gutter — the panel overflowed the gutter and its top edge was clipped off-screen. `100%`
+     is the scrim's padded content box, which is the box the panel is actually allowed to fill; the
+     design maxima survive inside the min(). */
+  width: min(1160px, 100%);
+  max-height: min(880px, 100%);
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -34,6 +53,9 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  /* Pinned: the body row is the only thing allowed to scroll, so the header must not be shrunk
+     away by the default flex-shrink:1 when the record is long. (The tabs row already has it.) */
+  flex: none;
   padding: 19px 20px;
   border-bottom: 1px solid var(--hz-pane-bd);
   background: linear-gradient(

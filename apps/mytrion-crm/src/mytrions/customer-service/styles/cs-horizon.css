@@ -408,9 +408,11 @@
 }
 
 /* ── Modals ──────────────────────────────────────────────────────────────── */
+/* The scrim blur is the token, not a bespoke radius — one blurred layer, the same one every
+   Mytrion's modal uses. The scrim colour itself is set in shared-modal.css (var(--scrim)). */
 .cs-root .cs-modal-backdrop {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(var(--scrim-blur));
+    -webkit-backdrop-filter: blur(var(--scrim-blur));
 }
 .cs-root .cs-modal-box {
     /* Ramp along the top edge, painted as a background layer so it survives internal scrolling. */

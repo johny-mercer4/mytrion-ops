@@ -743,12 +743,15 @@
 .ss-root .ss-tk-empty-sub { font-size: 13px; }
 
 /* ── Details drawer ────────────────────────────────────────────── */
+/* z-index is the modal token, not 131. The raw number was picked to sit one step above the old
+   `.ss-scrim` 130; now that the scrim is on --z-modal, the drawer reads from the same token and
+   paint order between the two falls out of DOM order instead of a pair of hand-tuned integers. */
 .ss-root .ss-tk-drawer {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 131;
+  z-index: var(--z-modal);
   width: 340px;
   max-width: 92vw;
   background: var(--surface);

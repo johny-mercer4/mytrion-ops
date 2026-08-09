@@ -168,15 +168,17 @@
    §5  MODAL  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
+/* Bottom sheet. The 16vh strip above the sheet is now the OVERLAY's padding rather than a `84vh`
+   cap on the panel: same height, but the gutter and the panel's `max-height: 100%` are one
+   measurement instead of two that can disagree, and the strip stays a backdrop-click target. */
 @media (max-width: 640px) {
     .bm-root .bm-modal-backdrop {
         align-items: flex-end;
-        padding: 0;
+        padding: 16vh 0 0;
     }
 
     .bm-root .bm-modal-box {
         max-width: 100%;
         border-radius: var(--radius-md) var(--radius-md) 0 0;
-        max-height: 84vh;
     }
 }

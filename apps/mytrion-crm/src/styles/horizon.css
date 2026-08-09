@@ -33,6 +33,16 @@
   --row-hover: rgba(255, 255, 255, 0.05);
   /* A popover floats over the page, so it is opaque enough to read against any content beneath. */
   --menu-bg: rgba(27, 31, 44, 0.92);
+  /*
+   * The modal scrim. ONE definition, derived from --page so it inverts correctly by construction.
+   *
+   * Twelve modals hardcoded a near-black rgba(3,7,14,.55….8) — five different opacities of a colour
+   * that is only correct in dark. In light those paint ink over a pale page, which is why the
+   * bespoke modals read as heavier than the design-system ones. Mixing toward --page instead means
+   * dark dims and light frosts, and neither theme needs its own value.
+   */
+  --scrim: color-mix(in srgb, var(--page) 78%, transparent);
+  --scrim-blur: var(--hz-blur-sm);
   --blur: 24px;
   /* The chrome blur budget. Named so the allowlist test has something to point at, and so a call
      site that wants glass asks for the token rather than inventing its own radius. */

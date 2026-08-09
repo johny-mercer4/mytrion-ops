@@ -2,27 +2,45 @@
    Billing Mytrion — Shared Modal Primitives
    ===================================================== */
 
+/* The overlay. Scrim + gutter live HERE, on the fixed layer, not on the panel:
+   - `--z-modal` (2100), never a magic number. The old 9990 outranked everything by accident; what
+     actually matters is clearing the app header (`--z-sticky: 100`), and one shared token means the
+     modal cannot drift under a chrome layer that someone raises later.
+   - `--scrim`, not the `--modal-backdrop-bg` fork. Both derived from the page colour
+     (`--hz-page` is `var(--page)`), so this is the same construction with one definition instead
+     of two — dark dims, light frosts, and no per-module opacity to keep in sync.
+   - `padding` is the gutter that keeps the panel off the viewport edge. Padding on the overlay and
+     not margin on the panel, so clicking the gutter still reads as a backdrop click. */
 .bm-root .bm-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9990;
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--modal-backdrop-bg);
-    backdrop-filter: blur(4px);
-    padding: 1rem;
+    background: var(--scrim);
+    backdrop-filter: blur(var(--scrim-blur));
+    -webkit-backdrop-filter: blur(var(--scrim-blur));
+    padding: var(--space-6);
 }
 
+/* The panel.
+   `max-height: 100%` and NOT a vh cap: 92vh measured the viewport and ignored the overlay's own
+   gutter, so a tall modal (Prepay ledger, Bulk import, Statement) grew past the padding and had its
+   top edge clipped off-screen. `100%` measures the overlay's content box, which is the gutter's
+   inside — the cap and the gutter can no longer disagree.
+   `flex: none` — the default `flex-shrink: 1` lets a tall panel be squeezed below its own cap and
+   hand the overflow back to the page. */
 .bm-root .bm-modal-box {
     background: var(--modal-box-bg);
     border: 1px solid var(--border);
     border-top: 2px solid var(--billing-accent);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
+    flex: none;
     width: 100%;
     max-width: 640px;
-    max-height: 92vh;
+    max-height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -69,8 +87,13 @@
     color: var(--text-primary);
 }
 
+/* The ONE scrolling row. `min-height: 0` is what makes `overflow-y: auto` mean anything here: a
+   column flex item defaults to `min-height: auto`, which floors it at min-content, so a long body
+   refused to scroll and instead pushed past the panel's cap where `overflow: hidden` clipped it.
+   The header and footer above/below keep `flex-shrink: 0` and stay pinned. */
 .bm-root .bm-modal-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 1.25rem;
 }

@@ -601,13 +601,25 @@
 .hr-root .hr-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--bg, #0b0d12) 55%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* --z-modal, never a literal. At 80 the backdrop sat BELOW --z-sticky (100), so the app header
+     painted over the top of the dialog and clipped it. */
+  z-index: var(--z-modal);
+  /* Flex and not grid, and that is a correctness point rather than a preference: the panel is sized
+     `min(100%, 560px)`, and a percentage against an AUTO grid track is circular — the track is sized by
+     the item and the item by the track. A flex container's content box is definite, so the percentage
+     has something real to measure against. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter that keeps the panel off the viewport edge. It is padding on THIS element and not a
+     margin on the panel, so clicking the gutter still reads as a backdrop click. */
+  padding: var(--space-6);
+  /* --scrim is mixed from --page, so it inverts by construction. The old mix was anchored to a
+     near-black fallback (--bg is not defined in this module's scope), which is only correct in dark —
+     in light it painted ink over a pale page. */
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
   animation: hrIn var(--hz-dur-wash) var(--hz-ease);
   /* `.hr-root` is the module's scroll container and the backdrop is one of its descendants, so scrolling
      past the end of the dialog used to chain up and scroll the directory away behind it. */
@@ -615,10 +627,17 @@
 }
 .hr-root .hr-modal {
   width: min(100%, 560px);
-  /* The backdrop adds 24px of padding top and bottom, so 90vh could exceed the box it sits in — and the
-     backdrop CENTRES its child, which splits any overflow across both ends and puts the top of the
-     dialog somewhere no scroll can reach. Subtracting the padding makes that impossible at any height. */
-  max-height: min(720px, calc(100vh - 48px));
+  /* `100%` resolves against the backdrop's CONTENT box, so the 24px gutter is already subtracted. A vh
+     cap does not know about that padding, so it could exceed the box it sits in — and the backdrop
+     CENTRES its child, which splits any overflow across both ends and puts the top of the dialog
+     somewhere no scroll can reach. 720px stays as the design cap. */
+  max-height: min(720px, 100%);
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
+  /* The panel is the scroll container ON PURPOSE: the header and the actions row below pin with
+     `position: sticky`, which resolves against this box. See the note under this rule. */
   overflow: auto;
   overscroll-behavior: contain;
   /* Softer on the container than on anything inside it — a uniform radius everywhere reads as a

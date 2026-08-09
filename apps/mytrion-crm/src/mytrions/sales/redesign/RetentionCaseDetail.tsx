@@ -501,7 +501,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
       role="presentation"
       onClick={requestClose}
       style={s(
-        'position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.58);backdrop-filter:blur(3px)',
+        'position:fixed;inset:0;z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur))',
       )}
     >
       <div
@@ -510,6 +510,8 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         aria-label="Retention case detail"
         aria-busy={initialLoad || busy}
         onClick={(e) => e.stopPropagation()}
+        // The cap and flex behaviour live on `.ss-ret-modal` in redesign/theme.css. An inline copy
+        // here would silently outrank the stylesheet and give the panel two sources of truth.
         className="ss-ret-modal"
       >
         <RetentionCaseHeader

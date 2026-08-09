@@ -11,10 +11,9 @@
 /* =====================================================
    MODALS + DETAIL LEVEL
    ===================================================== */
-.bm-root .bm-modal-backdrop {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-}
+/* No `.bm-modal-backdrop` rule here any more. It existed only to raise the scrim blur from the base
+   sheet's hardcoded 4px to 10px; shared-modal.css now blurs by `--scrim-blur` (the shared chrome
+   radius), so this override was a second hardcoded value that could only drift from it. */
 
 .bm-root .bm-modal-box {
     /* Required by the chromatic-edge ::after at the bottom of this file: without it the absolutely

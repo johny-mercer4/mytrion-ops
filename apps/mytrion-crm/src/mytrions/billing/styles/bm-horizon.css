@@ -29,7 +29,7 @@
 
    `.bm-body` deliberately has NO z-index. It keeps `position: relative` (panels position against it),
    but a z-index would make it a STACKING CONTEXT — and every modal renders inside it, so their
-   `z-index: 9990` would be scoped to that context and lose to the header's 100. The result was the app
+   `z-index: var(--z-modal)` would be scoped to that context and lose to the header's 100. The result was the app
    header painting across the top of every billing modal: the Prepay ledger, the transaction modal, the
    ledger statement. A descendant can never escape an ancestor's stacking context, so the fix has to be
    here rather than in the modals.

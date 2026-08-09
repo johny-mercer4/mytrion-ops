@@ -539,7 +539,7 @@ export function TicketWizard() {
         <div className="ss-scrim" onClick={() => patch({ autoPrompt: null })}>
           <div
             onClick={(e) => e.stopPropagation()}
-            style={s('width:100%;max-width:440px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--orange);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}
+            style={s('width:100%;max-width:440px;max-height:100%;flex:none;overflow-y:auto;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--orange);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}
           >
             <div style={s('width:52px;height:52px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 16%,var(--surface));color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 28%,transparent)')}>
               <Icon name={ICO.bolt} size={24} />

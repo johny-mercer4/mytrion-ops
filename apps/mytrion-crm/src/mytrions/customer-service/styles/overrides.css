@@ -365,7 +365,10 @@
       viewports so the tall sectioned forms fit without scrolling; the modal box
       uses the available height and only its BODY scrolls as a safety net. ── */
 .cs-root .cs-modal-box.cs-modal-wide {
-    max-height: min(88vh, 780px);
+    /* 100%, not 88vh — consistency with the base .cs-modal-box rule, which is where the real
+       overflow fix lives. Honest scope: at this gutter (1rem) the two only diverge below a ~267px
+       viewport, so this line alone fixed nothing visible. The 780px design cap is unchanged. */
+    max-height: min(100%, 780px);
 }
 @media (min-width: 780px) {
     .cs-root .cs-modal-wide .cs-form-grid {
