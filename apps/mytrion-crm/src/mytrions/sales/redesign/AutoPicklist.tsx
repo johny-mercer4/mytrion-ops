@@ -330,8 +330,15 @@ export function AutoCardPicklist({
             placeholder="Search card number…"
             className="ss-in"
             style={s(INP)}
+            /* Present on the deal picker but lost when this one was copied from it. Without
+               aria-expanded the listbox opening is never announced, so the same control reads as a
+               combobox in one modal and a plain text field in the next. */
+            aria-autocomplete="list"
+            aria-expanded={showDrop}
           />
-          <AutoFloatingDrop open={showDrop} anchorRef={inputRef} maxHeight={260} onClose={onCloseDrop}>
+          {/* 280, matching the deal picker. The two panels sit in the same modal at the same size;
+              a 20px difference is noise a reader cannot attribute to anything. */}
+          <AutoFloatingDrop open={showDrop} anchorRef={inputRef} maxHeight={280} onClose={onCloseDrop}>
             {loading && <PicklistMicroLoader rows={3} label="Loading cards" />}
             {!loading && error && <DropMsg danger>{error}</DropMsg>}
             {!loading && !error && cards.map((c) => (
