@@ -292,12 +292,12 @@ export function TasksTab() {
                           }
                         >
                           <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
-                            <div style={s('font-weight:750;font-size:13.5px;line-height:1.35;text-align:left')}>
+                            <div style={s('font-weight:750;font-size:var(--ss-text-sm);line-height:1.35;text-align:left')}>
                               {task.subject}
                             </div>
                             <span
                               style={s(
-                                `flex-shrink:0;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${priorityTone(task.priority)} 14%,transparent);color:${priorityTone(task.priority)}`,
+                                `flex-shrink:0;padding:2px 7px;border-radius:var(--radius-full);font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${priorityTone(task.priority)} 14%,transparent);color:${priorityTone(task.priority)}`,
                               )}
                             >
                               {task.priority}
@@ -309,7 +309,7 @@ export function TasksTab() {
                           </div>
                           <div
                             style={s(
-                              `display:flex;align-items:center;gap:5px;margin-top:2px;font-size:11.5px;font-weight:650;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`,
+                              `display:flex;align-items:center;gap:5px;margin-top:2px;font-size:var(--ss-text-2xs);font-weight:650;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`,
                             )}
                           >
                             <Icon name="clock" size={12} />
