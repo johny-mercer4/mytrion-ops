@@ -265,4 +265,29 @@ describe('token contract', () => {
     }
     expect(offenders).toEqual([]);
   });
+  /**
+   * A selector list must continue with another selector. If its declaration block is deleted and
+   * the trailing comma is left behind, the parser reads the NEXT at-rule as part of the selector
+   * and swallows that whole block as the invalid rule's body.
+   *
+   * This is silent in every way that matters: the file stays brace-balanced, each file minifies
+   * cleanly on its own, and the loss only shows up as one `Unexpected "@media"` line buried in a
+   * `vite build` log. It cost CS its reduced-motion guard — the boot ring, sweep and dots kept
+   * animating for users who had asked for no motion — for as long as it took to notice.
+   */
+  it('never leaves a selector list dangling on a trailing comma', () => {
+    const offenders: string[] = [];
+    for (const file of CSS_FILES) {
+      const lines = code(file).split('\n');
+      lines.forEach((line, i) => {
+        if (!line.trimEnd().endsWith(',')) return;
+        const next = lines.slice(i + 1).find((l) => l.trim()) ?? '';
+        const s = next.trim();
+        if (s.startsWith('@') || s.startsWith('}')) {
+          offenders.push(`${relative(SRC, file)}:${i + 1}: ${line.trim()} → ${s.slice(0, 40)}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
 });

@@ -8,28 +8,19 @@
     position: relative;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Smooth theme cross-fade (Finance feel): surfaces + text + borders transition
-   when .dark-mode flips, so the whole UI animates between light and dark rather
-   than snapping. Kept to color properties so it never fights layout/hover.
-   ══════════════════════════════════════════════════════════════════════════ */
-.cs-root,
-.cs-root .cs-content,
-.cs-root .cs-panel,
-.cs-root .cs-header-row,
-.cs-root .cs-home-stat-card,
-.cs-root .cs-citi-stat-card,
-.cs-root .cs-an-kpi-card,
-.cs-root .cs-an-chart-card,
-.cs-root .cs-table,
-.cs-root .cs-table th,
-.cs-root .cs-table td,
-.cs-root .cs-modal-box,
-.cs-root .cs-modal-header,
-.cs-root .cs-modal-footer,
-.cs-root .cs-form-input,
-.cs-root .cs-user-card,
-
+/*
+ * A 16-selector list for a CS-local "smooth theme cross-fade" used to sit here. Its declaration
+ * block was removed when the app moved to the View Transitions API — `html.theme-vt::view-
+ * transition-old/new(root)` in global.css crossfades the whole document, which is strictly better
+ * than transitioning colours on `.cs-table td` and fifteen other selectors. But the SELECTOR LIST
+ * was left behind, ending in a trailing comma with no block.
+ *
+ * That is not an inert leftover. The parser continued the selector list across the `@media` below,
+ * read `..., @media (prefers-reduced-motion: reduce)` as one selector, and then consumed this
+ * entire block as that invalid rule's body — so the reduced-motion guard never applied and the
+ * boot ring, sweep and dots kept animating for users who asked for no motion. `vite build`
+ * reported it as one `Unexpected "@media"` minify warning.
+ */
 @media (prefers-reduced-motion: reduce) {
     .cs-root .cs-boot { animation: none; }
     .cs-root .cs-boot-ring-spin,
