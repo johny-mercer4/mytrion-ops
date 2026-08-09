@@ -18,7 +18,10 @@
 .bm-root {
     position: relative;
     background: var(--hz-page);
-    isolation: isolate;
+    /* NO `isolation: isolate`. It existed to contain `.bm-ambience` at z-index:-1, and that element
+       is no longer rendered — the shell owns the ambience now. Its only remaining effect was to
+       create a stacking context that trapped Billing's modals, so a dialog at --z-modal still
+       painted behind the app header. */
 }
 
 .bm-root .bm-ambience::before,

@@ -109,8 +109,8 @@
  * `.cs-mt-filters` needs its OWN stacking context for that z-index to have any effect at all, since
  * without one the dropdown's 300 is compared against the card grid — a LATER SIBLING — which wins on
  * DOM order regardless of z-index. `position: relative` here creates that context; 20 clears the
- * grid while staying far below the modal layer. (Same trap as the RingCentral card versus
- * `.cs-root { isolation: isolate }`.)
+ * grid while staying far below the modal layer. (Same class of trap the RingCentral card hits
+ * against `.shell { isolation: isolate }`.)
  */
 .cs-root .cs-mt-filters {
     position: relative;

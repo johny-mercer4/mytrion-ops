@@ -73,7 +73,10 @@
 .ss-root {
   position: relative;
   background: var(--hz-page);
-  isolation: isolate;
+  /* NO `isolation: isolate`. It existed to contain `.ss-ambience` at z-index:-1, and that
+     element is no longer rendered — the shell owns the ambience now. Its only remaining
+     effect was to create a stacking context that trapped this workspace's modals, so a
+     dialog at --z-modal still painted behind the app header. */
 }
 
 .ss-root .ss-ambience::before,

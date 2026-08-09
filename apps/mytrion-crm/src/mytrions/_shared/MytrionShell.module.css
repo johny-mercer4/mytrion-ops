@@ -48,10 +48,20 @@
   transition: background var(--hz-dur-tone) var(--hz-ease);
 }
 
-/* The frame sits above the ambience; `position: relative` is what gives it a stacking context. */
+/*
+ * The frame sits above the ambience. `position: relative` is enough for that: .ambience is
+ * z-index: 0 and comes first in the DOM, so an equally-levelled positioned sibling paints over it
+ * by tree order.
+ *
+ * NO z-index HERE, and that is load-bearing. `z-index: 1` made this a STACKING CONTEXT, which
+ * trapped every descendant inside it at level 1 — including `position: fixed` modals at
+ * --z-modal (2100). Against the header's --z-sticky (100) their z-index was inert, so every modal
+ * in the app painted BEHIND the header and tall ones lost their title row off the top. That is
+ * what the old magic numbers (8, 80, 90, 115, 118, 120, 140, 150, 160, 9990) were failing to
+ * solve: no value can win from inside a context that is itself below the header.
+ */
 .shell .body {
   position: relative;
-  z-index: 1;
 }
 
 /* left labeled sidebar: module items on top, Chat pinned to the bottom */
