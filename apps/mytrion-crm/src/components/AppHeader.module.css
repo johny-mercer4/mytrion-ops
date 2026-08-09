@@ -193,11 +193,19 @@
   }
 }
 
-/* Focus and hover on the wordmark-as-link. The gradient is background-clip:text, so opacity is the
-   only property that can shift without breaking the clip. */
-a.wordmark:hover {
-  opacity: 0.85;
-}
+/*
+ * The wordmark-as-link has NO hover state on purpose. The pointer cursor is the whole affordance.
+ *
+ * It used to fade to `opacity: .85` on hover, which flickered. The text is painted with
+ * `background-clip: text` + a transparent fill, so the glyphs are a mask over a gradient rather
+ * than coloured text. Changing opacity makes that node its own compositing layer, and the
+ * gradient-through-a-text-mask has to be re-rasterized on the way in and again on the way out —
+ * which is visible as a flash across the letters. There is no value of the fade worth that, and
+ * no other property can shift here without breaking the clip.
+ *
+ * Focus-visible stays: it is a keyboard affordance, not a hover effect, and it draws an outline
+ * OUTSIDE the element rather than touching the clipped fill.
+ */
 a.wordmark:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
