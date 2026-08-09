@@ -1,0 +1,212 @@
+/*
+ * ElicitationPicker — an agent asking the user to choose.
+ *
+ * Restraint is the brief: this appears INSIDE a conversation in a dense ops tool, so it is a quiet
+ * bordered surface with option rows, not a card gallery. The only saturated colour in the whole
+ * component is the selected row, because that is the only thing the user has to find.
+ *
+ * States are data attributes: [data-select], [data-on], [data-disabled], [data-answered],
+ * [data-static], [data-shape].
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: var(--space-3);
+  background: var(--elicit-surface);
+  border: 1px solid var(--elicit-bd);
+  border-radius: var(--radius-panel);
+}
+
+.prompt {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.hint {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--elicit-hint-fg);
+}
+
+/* ── Options ─────────────────────────────────────────────────────────────────
+   A column, not a grid. Options are read against each other and a two-column layout makes the eye
+   travel in two directions to compare four things. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2_5);
+  inline-size: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-2_5);
+  background: var(--elicit-opt-bg);
+  border: 1px solid var(--elicit-opt-bd);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.option:hover:not([data-disabled='true']):not([data-static='true']) {
+  border-color: var(--elicit-opt-hover-bd);
+}
+
+.option[data-on='true'] {
+  background: var(--elicit-opt-on-bg);
+  border-color: var(--elicit-opt-on-bd);
+}
+
+/* Disabled RECOLOURS and keeps pointer events, so the tooltip/hint explaining why is still
+   reachable — see CONVENTIONS §5. */
+.option[data-disabled='true'] {
+  cursor: var(--disabled-cursor);
+  color: var(--disabled-fg);
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+}
+
+/* The answered record: same rows, no affordances. */
+.option[data-static='true'] {
+  cursor: default;
+}
+
+/* ── Selection mark ──────────────────────────────────────────────────────────
+   SHAPE carries the mode — a circle is one-of-N, a square is many-of-N — and the check glyph
+   carries the state. Neither depends on colour, so the control survives greyscale, forced colours
+   and a red-green viewer. */
+.mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  margin-block-start: var(--space-0_5);
+  border: 1px solid var(--border-strong);
+  color: var(--accent);
+  background: var(--field);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.mark[data-shape='dot'] {
+  border-radius: var(--radius-pill);
+}
+.mark[data-shape='box'] {
+  border-radius: var(--radius-control);
+}
+.option[data-on='true'] .mark {
+  border-color: var(--elicit-opt-on-bd);
+}
+.option[data-disabled='true'] .mark {
+  border-color: var(--disabled-bd);
+  background: var(--disabled-bg);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-inline-size: 0;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  color: var(--text-primary);
+}
+.option[data-disabled='true'] .label {
+  color: var(--disabled-fg);
+}
+
+.optHint {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--elicit-hint-fg);
+}
+
+/* The chosen row says "Chosen" in the record view. Colour is the fast signal; the word is the one
+   that works when colour is not available. */
+.chosenTag {
+  margin-inline-start: auto;
+  flex: none;
+  align-self: center;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  font-weight: var(--fw-medium);
+  color: var(--agent-badge-fg);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Answered ────────────────────────────────────────────────────────────────
+   The lock is the point: this is history now. */
+.answeredNote {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--elicit-hint-fg);
+}
+
+/* The whole surface recedes once it is a record, so a scrolled-back transcript reads as history
+   rather than as a pile of unanswered questions. */
+.root[data-answered='true'] {
+  background: var(--surface-alt);
+  border-color: var(--border-subtle);
+}
+.root[data-answered='true'] .option {
+  background: none;
+  border-color: var(--border-subtle);
+}
+.root[data-answered='true'] .option[data-on='true'] {
+  background: var(--elicit-opt-on-bg);
+  border-color: var(--elicit-opt-on-bd);
+}
+.root[data-answered='true'] .option:not([data-on='true']) .label {
+  color: var(--text-muted);
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

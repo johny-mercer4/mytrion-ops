@@ -1,0 +1,145 @@
+/*
+ * DatePicker / DateRangePicker — the trigger affordance and the floating panel the calendar sits in.
+ *
+ * The FIELD chrome is not here. Both pickers wear DateField.module.css's shell, so "the box a date
+ * field lives in" has exactly one author and a single picker cannot drift half a pixel from a range
+ * picker sitting beside it in the same filter bar. Only what is genuinely different lives below.
+ *
+ * `--overlay-gap` is read back off `.popover` by useAnchoredLayer — the distance from the trigger
+ * stays a token even though the arithmetic happens in JS.
+ */
+
+/* ── The trigger ─────────────────────────────────────────────────────────────
+   Geometry copied from Input's `.affordance` on purpose: the calendar button and a search field's
+   clear button are the same object — a small square control living inside a field's border — and
+   they must not be two sizes. 22px + the global focus ring (2px at 2px offset) is exactly the
+   shell's 30px inner box, so a focused trigger never draws over the field's own border. */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  inline-size: var(--fld-affordance);
+  block-size: var(--fld-affordance);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.trigger:hover:not([aria-disabled='true']) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.trigger:active:not([aria-disabled='true']) {
+  background: var(--surface-alt);
+}
+/* The open half of the disclosure, made visible. `aria-expanded` is the fact; a toggle whose only
+   "on" signal is announced to screen readers is invisible to everyone else. */
+.trigger[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* Recolour, never an opacity multiply. No `pointer-events: none` — CONVENTIONS §5: it would remove
+   the control from the tab order and kill the tooltip explaining why it is unavailable. */
+.trigger[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  background: transparent;
+  cursor: var(--disabled-cursor);
+}
+
+/* ── The panel ───────────────────────────────────────────────────────────────
+   Shares its surface, shadow and blur with DropdownMenu and Tooltip: one floating layer for the
+   whole app, so a calendar and a menu read as the same plane rather than two designers' guesses. */
+.popover {
+  --overlay-gap: var(--space-1);
+
+  z-index: var(--z-dropdown);
+  inline-size: max-content;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  /* Chrome floating over content — the one place horizon.css allows a blur. The panel is small and
+     scrolls nothing, so this is a single contained composited layer, not a blur under a table. */
+  backdrop-filter: blur(var(--chrome-blur));
+  -webkit-backdrop-filter: blur(var(--chrome-blur));
+
+  font-family: var(--font-body);
+
+  /* Entrance only, emerging from the trigger's side. No `forwards` fill, so `translate` returns to
+     unset the moment it finishes: a panel holding a permanent transform would be a composited layer
+     AND a containing block for its children, stacked on a backdrop-filter — the un-repainted-panel
+     defect this app has already shipped. */
+  animation: calendarIn var(--dur-fast) var(--ease-decelerate);
+}
+
+/* `data-side` is written AFTER collision flipping, so a panel that flipped upward animates downward
+   from the trigger rather than from wherever it was originally asked to sit. */
+.popover[data-side='bottom'] {
+  --popover-from: 0 calc(var(--space-1) * -1);
+}
+.popover[data-side='top'] {
+  --popover-from: 0 var(--space-1);
+}
+.popover[data-side='left'] {
+  --popover-from: var(--space-1) 0;
+}
+.popover[data-side='right'] {
+  --popover-from: calc(var(--space-1) * -1) 0;
+}
+
+@keyframes calendarIn {
+  from {
+    opacity: 0;
+    translate: var(--popover-from, 0 0);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* ── Range field ─────────────────────────────────────────────────────────── */
+
+/* Two dates and a trigger. The floor is wider than a single field's for the obvious reason, and it
+   is a floor rather than a width — a caller still sets a real one or passes fullWidth. */
+.rangeRoot {
+  min-inline-size: 260px;
+  position: relative;
+}
+
+/* The separator between the two halves. Muted and non-selectable: it is punctuation, not a control,
+   and it is `aria-hidden` in the markup because both halves are already named. */
+.rangeDash {
+  flex: none;
+  padding-inline: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Visually hidden, still announced. `clip-path` rather than `display: none`, which would take the
+   live region out of the accessibility tree entirely and announce nothing at all. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

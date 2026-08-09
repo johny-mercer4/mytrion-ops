@@ -1,0 +1,244 @@
+/*
+ * DateField — the segmented date control, and the segment engine it shares with DateRangePicker.
+ *
+ * The shell chrome deliberately RESTATES Input's rather than importing it. `_field/fieldParts`
+ * records the same decision for Textarea: a fixed-height inline row and a growing block share a
+ * border and nothing else, and `composes:` across module boundaries ties two files' cascade order
+ * together to buy that one border back. What is genuinely shared — the message row, the describedby
+ * wiring — comes from `_field`, in code.
+ *
+ * THERE IS NO REST-STATE FOCUS RULE HERE, and that is deliberate. `global.css` owns
+ * `[data-focus-shell]:focus-within`. It is doubly load-bearing for this control: a per-segment ring
+ * would flash three times as the user arrows across one date.
+ */
+
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Wide enough for `dd/mm/yyyy` plus a trigger at `md`; a caller sets a real width or passes
+     fullWidth. Much narrower than Input's 200px floor, because a date has a known length. */
+  min-inline-size: 150px;
+
+  /* One place per size. The shell, the segments and the affordance all move together from here. */
+  --fld-h: 32px;
+  --fld-px: var(--space-2_5);
+  --fld-gap: var(--space-2);
+  --fld-affordance: 22px;
+  --fld-text: var(--text-sm);
+  --fld-lh: var(--lh-sm);
+  --fld-tr: var(--tr-sm);
+  --seg-pad: var(--space-0_5);
+}
+
+.root[data-size='sm'] {
+  --fld-h: 26px;
+  --fld-px: var(--space-2);
+  --fld-gap: var(--space-1_5);
+  --fld-affordance: 16px;
+  --fld-text: var(--text-xs);
+  --fld-lh: var(--lh-xs);
+  --fld-tr: var(--tr-xs);
+}
+
+.root[data-full='true'] {
+  display: flex;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────────
+   The box the user sees. Identical geometry to Input's, so a date field and a text field in the
+   same filter bar sit on one line without either being nudged. */
+.shell {
+  display: flex;
+  align-items: center;
+  gap: var(--fld-gap);
+  padding-inline: var(--fld-px);
+  min-block-size: var(--fld-h);
+
+  background: var(--ui-field-bg);
+  border: 1px solid var(--fld-bd);
+  border-radius: var(--ui-field-radius);
+  color: var(--ui-field-fg);
+
+  /* Same derivation as Input's, and for the same measured reason: --ui-field-bd resolves to a 7%
+     white hairline, which is 1.73:1 against the card in dark and 1.62:1 in light — below the 3:1
+     CONVENTIONS §6 requires of the boundary of an interactive control. 55% of --text-secondary
+     measures 3.89:1 dark / 3.90:1 light and re-derives per theme instead of pinning a literal. */
+  --fld-bd: color-mix(in oklab, var(--text-secondary) 55%, transparent);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* [data-invalid] is excluded rather than out-specified: a bare hover sets `border-color` DIRECTLY,
+   which beats the `--fld-bd` the invalid rule sets, so hovering an invalid field would quietly
+   repaint its border neutral. */
+.shell:hover:not([data-disabled='true']):not([data-readonly='true']):not([data-invalid='true']) {
+  border-color: color-mix(in oklab, var(--text-secondary) 75%, transparent);
+  background: var(--surface-alt);
+}
+
+/* ── Invalid ─────────────────────────────────────────────────────────────────
+   Border + wash + aria-invalid on every segment + the error glyph in the message. Four signals, of
+   which exactly one is colour. */
+.shell[data-invalid='true'] {
+  --fld-bd: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.shell[data-invalid='true']:hover:not([data-disabled='true']) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/* Wins a specificity TIE, rather than restyling focus. `[data-focus-shell]:focus-within` in
+   global.css is (0,2,0) and so is `.shell[data-invalid='true']`; a tie resolves by stylesheet order,
+   i.e. by whichever chunk landed last. (0,3,0) makes it deterministic, so focusing an invalid field
+   never launders the error into looking fine. */
+.shell[data-invalid='true']:focus-within {
+  border-color: var(--intent-danger-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 24%, transparent);
+}
+
+.shell[data-readonly='true'] {
+  background: var(--surface-alt);
+  --fld-bd: var(--border-strong);
+}
+
+/* Disabled RECOLOURS. No opacity multiply, so the value keeps a known contrast ratio, and no
+   `pointer-events: none` — CONVENTIONS §5: it would kill the tooltip that explains why. */
+.shell[data-disabled='true'] {
+  background: var(--disabled-bg);
+  --fld-bd: var(--disabled-bd);
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  box-shadow: var(--elev-0);
+}
+
+/* ── The segment row ─────────────────────────────────────────────────────────
+   `flex: none` and `width: max-content`: the date is a fixed-width thing, and letting it stretch
+   would push the trailing trigger to the far edge of a full-width field, miles from the value it
+   opens. */
+.segments {
+  display: flex;
+  align-items: center;
+  flex: none;
+  inline-size: max-content;
+
+  font-family: var(--font-num);
+  font-size: var(--fld-text);
+  line-height: var(--fld-lh);
+  letter-spacing: var(--fld-tr);
+  font-weight: var(--fw-body);
+
+  /* A date field is not a paragraph. Dragging across it should not produce a text selection that
+     the user then tries — and fails — to type over. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * A segment. Space Mono (--font-num) with tabular figures, so `01` and `11` occupy exactly the same
+ * box: without it the whole field re-flows a pixel or two on every keystroke, and the separators
+ * dance while you type.
+ */
+.segment {
+  padding-inline: var(--seg-pad);
+  border-radius: var(--radius-control);
+  color: var(--ui-field-fg);
+  font-variant-numeric: tabular-nums;
+  /* Reserves the descender box so a field of digits sits on the same baseline as an Input beside
+     it, rather than riding a couple of pixels high. */
+  min-inline-size: 1ch;
+  text-align: center;
+  cursor: default;
+
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard);
+}
+
+/* An unfilled segment reads as a PROMPT, not as a value. Same tone as a placeholder, which is the
+   thing it is. */
+.segment[data-placeholder='true'] {
+  color: var(--ui-field-placeholder);
+}
+
+/*
+ * The focused segment is washed, and this is the one place the appearance is authored rather than
+ * inherited: the global :focus-visible ring is suppressed inside a focus shell (that is the whole
+ * contract), so without a wash there would be NOTHING saying which of three segments the arrow keys
+ * are about to change. The shell's own ring says "this field"; this says "this unit".
+ */
+.segment:focus,
+.segment:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.shell[data-disabled='true'] .segment,
+.shell[data-disabled='true'] .segment[data-placeholder='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.shell[data-disabled='true'] .segment:focus {
+  /* Still visibly focused — a disabled control a keyboard user can reach but not locate is worse
+     than one they cannot reach at all. Neutral rather than accent, because nothing will change. */
+  background: var(--row-hover);
+  color: var(--disabled-fg);
+}
+
+/* Separators. Muted, non-selectable, and `aria-hidden` in the markup: each segment already
+   announces which unit it is, so hearing "slash" between them is noise. */
+.literal {
+  color: var(--text-muted);
+  padding-inline: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.shell[data-disabled='true'] .literal {
+  color: var(--disabled-fg);
+}
+
+/* ── Leading icon and the trailing affordance slot ───────────────────────── */
+.leading {
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.shell:focus-within .leading {
+  color: var(--text-secondary);
+}
+.shell[data-disabled='true'] .leading {
+  color: var(--disabled-fg);
+}
+
+/* Pushed to the trailing edge and given the leftover space, so the trigger sits at the end of a
+   full-width field while the segments stay left. `margin-inline-start: auto` rather than
+   `justify-content: space-between`, which would also spread the icon away from the value. */
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* ── Mobile type step ────────────────────────────────────────────────────────
+ * Mirrors Input. Not a preference: below 16px iOS Safari zooms the page when a control takes focus
+ * and does not zoom back out. These segments are divs rather than inputs, so Safari's own trigger
+ * does not fire — but a date field that is 13px next to a 16px text field in the same form is the
+ * kind of drift the token system exists to prevent, and `min-block-size` absorbs the growth.
+ * 767px, i.e. below the 768px breakpoint in FOUNDATIONS.md. A media query, not a token: a custom
+ * property cannot be used in a media condition.
+ */
+@media (max-width: 767px) {
+  .root,
+  .root[data-size='sm'] {
+    --fld-text: var(--text-input-mobile);
+    --fld-lh: var(--lh-base);
+    --fld-tr: var(--tr-base);
+  }
+}

@@ -44,6 +44,19 @@ const router = createBrowserRouter(
         { path: '/m/:mytrion', element: <LegacyMytrionRedirect /> },
       ],
     },
+    /*
+     * The design-system kitchen sink. Deliberately OUTSIDE <WorkerLayout>, so it needs no session,
+     * no Zoho identity and no workspace access check — a design system nobody can open is a design
+     * system nobody reviews. It is also lazy, so its ~40 components never enter the app's initial
+     * chunk for the people who are here to do their jobs.
+     */
+    {
+      path: '/kitchen',
+      lazy: async () => {
+        const { default: KitchenSink } = await import('./kitchen/KitchenSink');
+        return { element: <KitchenSink /> };
+      },
+    },
     { path: '/client', element: <NotFound /> },
     { path: '*', element: <NotFound /> },
   ],

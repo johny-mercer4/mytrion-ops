@@ -14,25 +14,25 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
    * `danger` — destructive and irreversible only. Not "important".
    * `link` — an inline action inside prose or a cell.
    */
-  variant?: ButtonVariant;
+  variant?: ButtonVariant | undefined;
   /** `md` (32px) is the default. `sm` (26px) is for table rows and dense toolbars. */
-  size?: ButtonSize;
+  size?: ButtonSize | undefined;
   /** Leading icon. Pass a name — the icon family is not the caller's choice. */
-  icon?: IconName;
+  icon?: IconName | undefined;
   /** Trailing icon. Use for disclosure (`expand_more`) or direction (`arrow_forward`), not decoration. */
-  iconEnd?: IconName;
+  iconEnd?: IconName | undefined;
   /**
    * Shows a spinner and blocks activation. The label stays measured, so the button does not resize
    * when it starts working.
    */
-  loading?: boolean;
+  loading?: boolean | undefined;
   /** Spans its container — form footers, mobile sheets. */
-  fullWidth?: boolean;
+  fullWidth?: boolean | undefined;
   /**
    * Omit for an icon-only button and pass `aria-label` instead. Required otherwise: a button with
    * no accessible name is unusable by keyboard and screen-reader users alike.
    */
-  children?: ReactNode;
+  children?: ReactNode | undefined;
 }
 
 /**

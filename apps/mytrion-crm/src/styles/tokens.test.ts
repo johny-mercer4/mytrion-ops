@@ -96,7 +96,9 @@ describe('token contract', () => {
 
   it('gives the light theme the same raw-palette keys as the dark default', () => {
     const css = code(THEME);
-    const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    // The dark block is `:root, [data-theme='dark'] { … }` — dark is both the default AND an
+    // addressable selector, so a nested `<div data-theme="dark">` works inside a light document.
+    const root = /:root,\s*\[data-theme='dark'\]\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
     const light = /\[data-theme='light'\]\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
     expect(root).not.toBe('');
     expect(light).not.toBe('');
@@ -183,13 +185,36 @@ describe('token contract', () => {
    * not in one flag day. The number may only ever decrease. If this fails because you ADDED a blur,
    * the answer is almost always --surface-data.
    */
-  it('does not grow the backdrop-filter surface area', () => {
+  it('does not grow the backdrop-filter surface area outside the design system', () => {
+    // The LEGACY surface (module + app CSS) may only ever shrink. 282 was the count on the day the
+    // three-tier layer landed; every module that migrates takes blur off its data surfaces.
     const BUDGET = 282;
-    const count = CSS_FILES.reduce(
+    const count = CSS_FILES.filter((f) => !f.includes('/ds/')).reduce(
       (n, f) => n + (code(f).match(/backdrop-filter\s*:/g)?.length ?? 0),
       0,
     );
     expect(count).toBeLessThanOrEqual(BUDGET);
+  });
+
+  it('lets only floating chrome blur inside the design system', () => {
+    /*
+     * A flat count is the wrong test for src/ds: it cannot tell "a new popover shipped" from "glass
+     * crept onto a table", and those are opposite outcomes. The rule the glass decision actually
+     * states is about WHAT blurs, so assert that instead.
+     *
+     * Glass is for things that FLOAT OVER content. Everything else — and every data surface without
+     * exception — is flat and opaque (--surface-data).
+     */
+    // Everything on this list FLOATS OVER content. DatePicker and TimePicker are here because their
+    // calendar / increment popovers are popovers — the same category as a menu, not a data surface.
+    const CHROME = [
+      'Dialog', 'Drawer', 'DropdownMenu', 'Tooltip', 'Select', 'Toast', 'DatePicker', 'TimePicker',
+    ];
+    const offenders = CSS_FILES.filter((f) => f.includes('/ds/'))
+      .filter((f) => /backdrop-filter\s*:/.test(code(f)))
+      .map((f) => relative(SRC, f))
+      .filter((f) => !CHROME.some((c) => f.startsWith(`ds/${c}/`)));
+    expect(offenders).toEqual([]);
   });
 
   /**

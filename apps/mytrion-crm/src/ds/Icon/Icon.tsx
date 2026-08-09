@@ -11,22 +11,29 @@ export interface IconProps {
    * which is the point: a name outside the subset would render nothing at all.
    */
   name: IconName;
+  /*
+   * NOTE on the `| undefined` on every optional prop below — this is not noise.
+   * tsconfig sets `exactOptionalPropertyTypes: true`, under which `size?: 'md' | 'sm'` means "may
+   * be ABSENT" but NOT "may be explicitly undefined". A caller writing the ordinary
+   * `size={cond ? 'sm' : undefined}` would then fail to typecheck. Every optional prop in src/ds
+   * spells `| undefined` so components compose without callers contorting their JSX.
+   */
   /** 20px (default) or 16px. There is no third size; a third size is how icon scales drift. */
-  size?: 'md' | 'sm';
+  size?: 'md' | 'sm' | undefined;
   /**
    * The FILL axis. `false` is the idle outline, `true` the solid. Use it for SELECTED state —
    * an active rail row, a toggled control — not for emphasis.
    */
-  filled?: boolean;
+  filled?: boolean | undefined;
   /**
    * Accessible name. Provide it when the icon IS the control's meaning (an icon-only button, a
    * status glyph carrying information). OMIT it when the icon merely decorates adjacent text —
    * the icon is then hidden from assistive tech, so a screen reader hears the label once rather
    * than twice.
    */
-  label?: string;
-  className?: string;
-  style?: CSSProperties;
+  label?: string | undefined;
+  className?: string | undefined;
+  style?: CSSProperties | undefined;
 }
 
 /**

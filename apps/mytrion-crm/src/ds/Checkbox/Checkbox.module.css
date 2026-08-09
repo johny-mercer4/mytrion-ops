@@ -1,0 +1,229 @@
+/*
+ * Checkbox — the visual is an INERT SIBLING of a real input.
+ *
+ * Everything below selects off the native pseudo-classes (`:checked`, `:indeterminate`,
+ * `:disabled`, `:focus-visible`) rather than off React state. That is deliberate: an uncontrolled
+ * checkbox never tells React its value, so a data-attribute-driven paint would be permanently
+ * unticked. Data attributes carry the rest — size, validity, and the disabled/explained pair, which
+ * no pseudo-class can express together. (`data-indeterminate` on the root is styled by nothing on
+ * purpose: `:indeterminate` already does that job, and the attribute is there so the DOM tells you
+ * the state when you inspect it.)
+ *
+ * Sizing note: the CONTROL is a 32px (md) / 26px square — the same heights as Button md/sm — and
+ * the 18px/16px box is centred inside it. The surround IS the hit target, and it is also what
+ * spaces the label, which is why there is no `gap` on the root.
+ */
+
+.root {
+  display: inline-grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  cursor: pointer;
+  font-family: var(--font-body);
+  /* A double-click near the label should not select the words — it should toggle twice. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --choice-hit: 32px;
+  --choice-box: 18px;
+  --choice-line: var(--lh-sm);
+  --choice-dash: 10px;
+}
+.root[data-size='sm'] {
+  --choice-hit: 26px;
+  --choice-box: 16px;
+  --choice-line: var(--lh-xs);
+  --choice-dash: 8px;
+}
+
+/* ── The hit square ─────────────────────────────────────────────────────────── */
+.control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--choice-hit);
+  block-size: var(--choice-hit);
+  /* A control must never be squeezed by a long label in a narrow column. */
+  flex: none;
+}
+
+/*
+ * The real input, stretched over the whole hit square.
+ *
+ * NOT `display: none`, NOT `visibility: hidden`, NOT `appearance: none` alone — the first two
+ * delete the control from the accessibility tree AND the tab order, which is the single most
+ * common defect in hand-rolled checkboxes. `opacity: 0` keeps it focusable, keeps Space working,
+ * and keeps the native label/click plumbing, so nothing here has to re-implement activation.
+ * Covering the square also means the pointer hits the INPUT, not a proxy.
+ */
+.input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+/* ── The box ────────────────────────────────────────────────────────────────── */
+.box {
+  display: grid;
+  inline-size: var(--choice-box);
+  block-size: var(--choice-box);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  color: var(--on-accent);
+  /* --border alone is below 3:1 against its own card (CONVENTIONS §6), so an unchecked box uses
+     --border-strong: the edge IS the only thing identifying this control when it is empty. */
+  /* Named properties only. `transition: all` re-runs the machinery for every changed property and
+     silently overrides narrower transitions set elsewhere. */
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard);
+}
+
+/* Both marks occupy the same grid cell, so switching between them cannot resize the box. */
+.tick,
+.dash {
+  grid-area: 1 / 1;
+  place-self: center;
+  opacity: 0;
+  transition: opacity var(--dur-instant) var(--ease-standard);
+}
+
+.dash {
+  inline-size: var(--choice-dash);
+  block-size: 2px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* ── Hover — from the ROOT, because the label is part of the control ──────────
+   Gated on `:not([data-disabled])` rather than on `:not(:disabled)`: an aria-disabled control is
+   NOT `:disabled`, and gating on the pseudo-class alone would let hover out-specify the disabled
+   recolour and repaint a control the user cannot operate. */
+.root:not([data-disabled='true']):hover .box {
+  border-color: var(--accent);
+}
+.root:not([data-disabled='true']):hover .input:checked ~ .box,
+.root:not([data-disabled='true']):hover .input:indeterminate ~ .box {
+  background: color-mix(in oklab, var(--accent-strong) 86%, var(--text-primary));
+}
+
+/* ── Checked ────────────────────────────────────────────────────────────────── */
+.input:checked ~ .box,
+.input:indeterminate ~ .box {
+  background: var(--accent-strong);
+  border-color: transparent;
+}
+.input:checked ~ .box .tick {
+  opacity: 1;
+}
+
+/*
+ * Indeterminate outranks checked — per HTML an input can be BOTH, and the browser reports "mixed".
+ * A select-all header in that state must show the dash, so this block sits after the checked rules
+ * and explicitly puts the tick back down.
+ */
+.input:indeterminate ~ .box .tick {
+  opacity: 0;
+}
+.input:indeterminate ~ .box .dash {
+  opacity: 1;
+}
+
+/* ── Active ─────────────────────────────────────────────────────────────────── */
+.root:not([data-disabled='true']):active .box {
+  background: var(--surface-alt);
+}
+.root:not([data-disabled='true']):active .input:checked ~ .box,
+.root:not([data-disabled='true']):active .input:indeterminate ~ .box {
+  background: color-mix(in oklab, var(--accent-strong) 74%, var(--text-primary));
+}
+
+/*
+ * ── Focus ───────────────────────────────────────────────────────────────────
+ * The GLOBAL ring, on the element the user can actually see. global.css sets
+ * `input:focus-visible { outline: none }` app-wide — a hard ring inside a field is the "internal
+ * accent ring" defect that rule exists to kill — and this input is a transparent overlay anyway,
+ * so a ring drawn on it would frame nothing. Same three tokens, same appearance, relocated: this
+ * is not a per-component focus style.
+ */
+.input:focus-visible ~ .box {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── Invalid ────────────────────────────────────────────────────────────────── */
+.root[data-invalid='true'] .box {
+  border-color: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.root[data-invalid='true'] .input:checked ~ .box,
+.root[data-invalid='true'] .input:indeterminate ~ .box {
+  background: var(--intent-danger-fg);
+  border-color: transparent;
+  color: var(--surface);
+}
+
+/* ── Disabled ───────────────────────────────────────────────────────────────
+   RECOLOUR, not an opacity multiply, so the label keeps a KNOWN contrast ratio. No
+   `pointer-events: none` — it would kill the tooltip that explains why. */
+.root[data-disabled='true'] {
+  cursor: var(--disabled-cursor);
+}
+.root[data-disabled='true'] .box {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  color: var(--disabled-fg);
+}
+/* Written out rather than relying on the rule above, because `.root[data-invalid] .input:checked ~
+   .box` out-specifies it — a disabled AND invalid checkbox would otherwise keep the danger fill. */
+.root[data-disabled='true'] .input:checked ~ .box,
+.root[data-disabled='true'] .input:indeterminate ~ .box {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  color: var(--disabled-fg);
+}
+.root[data-disabled='true'] .label,
+.root[data-disabled='true'] .description {
+  color: var(--disabled-fg);
+}
+
+/* ── Text column ────────────────────────────────────────────────────────────
+   Padded by half the difference between the hit square and one line of label, so the FIRST line
+   centres on the box and a description flows below it. Centring the whole block instead would
+   push the box off the label as soon as a description wraps. */
+.text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  padding-block: calc((var(--choice-hit) - var(--choice-line)) / 2);
+}
+
+.label {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+}
+.root[data-size='sm'] .label {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.description {
+  margin-block-start: var(--space-0_5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}

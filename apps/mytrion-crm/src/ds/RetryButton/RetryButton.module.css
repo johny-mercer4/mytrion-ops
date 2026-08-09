@@ -1,0 +1,141 @@
+/*
+ * RetryButton — run the same turn again.
+ *
+ * Geometry is Button's ladder verbatim (32 / 26, --radius-control, --space-3 / --space-2) so the two
+ * align pixel-for-pixel in a shared row. What differs is the token pair (--retry-fg / --retry-bd)
+ * and the TONE axis, which is the whole reason this is not a Button variant.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1_5);
+  flex: none;
+
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+
+  block-size: var(--retry-h);
+  padding-inline: var(--retry-px);
+  /* Bordered, always. --border alone is below 3:1 against its own card (CONVENTIONS §6), so the
+     border is drawn in an intent token that clears it — this control must be identifiable as a
+     control without relying on the label's colour. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  cursor: pointer;
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --retry-h: 32px;
+  --retry-px: var(--space-3);
+}
+.root[data-size='sm'] {
+  --retry-h: 26px;
+  --retry-px: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* ── Tone: error ─────────────────────────────────────────────────────────────
+   The turn failed. Danger-tinted so it belongs to the TurnError it sits inside, but outlined rather
+   than filled — retrying is recoverable, and a solid red button reads as destructive. */
+.root[data-tone='error'] {
+  color: var(--retry-fg);
+  border-color: var(--retry-bd);
+}
+.root[data-tone='error']:hover:not(:disabled) {
+  background: var(--intent-danger-bg);
+  border-color: color-mix(in oklab, var(--retry-fg) 48%, transparent);
+}
+.root[data-tone='error']:active:not(:disabled) {
+  background: color-mix(in oklab, var(--retry-fg) 22%, transparent);
+}
+
+/* ── Tone: neutral ───────────────────────────────────────────────────────────
+   The turn did NOT fail — the user stopped it, or wants a second answer. Inside a StoppedNote this
+   is the only correct tone; the error tone would re-frame a deliberate stop as a fault. */
+.root[data-tone='neutral'] {
+  color: var(--stopped-note-fg);
+  border-color: var(--border-strong);
+}
+.root[data-tone='neutral']:hover:not(:disabled) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.root[data-tone='neutral']:active:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+/* The attempt counter — a monospace figure so 2, 3 and 4 occupy the same width and the button does
+   not resize as attempts climb. Hidden from assistive tech: it is already in the accessible name. */
+.attempt {
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: currentColor;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+/* ── Retrying ────────────────────────────────────────────────────────────────
+   The label keeps its box and the spinner overlays it, so the control's width is identical before
+   and during. Same mechanism as Button. */
+.root[data-retrying='true'] {
+  cursor: progress;
+  position: relative;
+}
+.root[data-retrying='true'] .content {
+  visibility: hidden;
+}
+.content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+}
+.spinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.spinnerGlyph {
+  inline-size: 1em;
+  block-size: 1em;
+  border-radius: var(--radius-pill);
+  border: 2px solid currentColor;
+  /* One transparent quadrant is what makes the rotation legible; a full ring reads as static. */
+  border-top-color: transparent;
+  /* INDEFINITE ambient loop — outside the 220ms ceiling by design, floored at 1s so it reads as
+     "working" rather than as a stalled transition. */
+  animation: retrySpin 1s linear infinite;
+}
+@keyframes retrySpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, never an opacity multiply, so the label keeps a known contrast ratio. No
+   pointer-events: none — CONVENTIONS §5. */
+.root:disabled,
+.root[aria-disabled='true'] {
+  cursor: var(--disabled-cursor);
+  color: var(--disabled-fg);
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+}

@@ -1,0 +1,226 @@
+/*
+ * Toast — the transient notification surface, and the two live regions that carry it.
+ *
+ * States are DATA ATTRIBUTES: [data-intent] on the toast, [data-state] for enter/exit,
+ * [data-paused] and [data-empty] on the viewport. Inspecting the DOM tells you whether the clocks
+ * are running, which is the one thing that is impossible to see from a screenshot.
+ */
+
+/* ── Viewport ────────────────────────────────────────────────────────────────
+   One fixed box holding BOTH live regions, so the two never fight over the same corner. Anchored
+   bottom-end: the top of the screen belongs to the header and to the thing the user is reading,
+   and a notification that covers the toolbar it is reporting on is a notification in the way.
+
+   `pointer-events: none` here, `auto` on the toasts themselves — an empty viewport is 380px of
+   invisible click-blocker over the bottom corner of every page otherwise. The hover/focus pause
+   still works: React's enter/leave events fire on this element when the pointer crosses into a
+   child that does take pointer events. */
+.viewport {
+  --toast-w: 380px;
+
+  position: fixed;
+  inset-block-end: var(--space-4);
+  inset-inline-end: var(--space-4);
+  z-index: var(--z-toast);
+
+  display: flex;
+  flex-direction: column;
+  inline-size: min(var(--toast-w), calc(100vw - var(--space-8)));
+  pointer-events: none;
+
+  font-family: var(--font-body);
+}
+
+/* Phone: the corner is too small to hold a 380px card, so the stack spans the gutters. */
+@media (max-width: 560px) {
+  .viewport {
+    inset-inline: var(--space-3);
+    inset-block-end: var(--space-3);
+    inline-size: auto;
+  }
+}
+
+/* ── The two live regions ────────────────────────────────────────────────────
+   Real elements, always mounted, never `display: contents` and never `:empty { display: none }`.
+   Both of those remove the element from the accessibility tree, and a live region the assistive
+   technology was not already watching does not announce — which is the failure mode that makes a
+   hand-rolled toaster look fine in testing and say nothing in use.
+
+   The gap between toasts is therefore a MARGIN on each toast rather than `gap` on these, so an
+   empty region contributes exactly zero height without needing to be hidden. */
+.region {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── The toast ───────────────────────────────────────────────────────────────
+   Three columns: glyph, body, dismiss. `minmax(0, 1fr)` on the body — a bare `1fr` floors at
+   min-content, so one long unbroken id in the description would widen the card past the viewport
+   instead of wrapping inside it.
+
+   OPAQUE, not glass. See the note in Toast.tsx: this element translates on entry and exit, and
+   backdrop-filter on a moving element is the composited-layer trap CONVENTIONS §3 names. It also
+   means the copy sits on a known colour rather than on a composite of whatever it happens to
+   cover, which is the only way to make an AA claim about a floating surface. */
+.toast {
+  --toast-accent: var(--intent-neutral-fg);
+
+  pointer-events: auto;
+  margin-block-start: var(--space-2);
+
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2_5);
+
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text-primary);
+  /* The inset offset paints a 2px bar down the leading edge, clipped by the radius. It is the
+     third signal for intent, after the glyph and the copy — never the first. */
+  box-shadow:
+    inset var(--space-0_5) 0 0 0 var(--toast-accent),
+    var(--elev-3);
+}
+
+/* ── Intent ─────────────────────────────────────────────────────────────────
+   Four, matching the intent token scale exactly. The fill stays neutral in all four: a red card
+   with red text is a card nobody can read, and the message is the part that matters. */
+.toast[data-intent='success'] {
+  --toast-accent: var(--intent-success-fg);
+  border-color: var(--intent-success-bd);
+}
+.toast[data-intent='warning'] {
+  --toast-accent: var(--intent-warning-fg);
+  border-color: var(--intent-warning-bd);
+}
+.toast[data-intent='error'] {
+  --toast-accent: var(--intent-danger-fg);
+  border-color: var(--intent-danger-bd);
+}
+.toast[data-intent='info'] {
+  --toast-accent: var(--intent-info-fg);
+  border-color: var(--intent-info-bd);
+}
+
+/* Centred against the TITLE's line box rather than against the top of the card, so the glyph reads
+   as belonging to the first line instead of floating above it. */
+.glyph {
+  display: flex;
+  align-items: center;
+  block-size: var(--lh-sm);
+  color: var(--toast-accent);
+}
+
+.body {
+  min-inline-size: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  /* Long single tokens — a money code, a request id — break rather than widen the card. */
+  overflow-wrap: anywhere;
+}
+
+.description {
+  margin-block: var(--space-0_5) 0;
+  margin-inline: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+/* Pinned to the top of the card rather than centred on it: a two-line toast would otherwise put the
+   close button beside the description, which is not the thing it closes. No negative margin — the
+   26px control and the 18px title line are close enough that nudging costs more than it buys. */
+.dismiss {
+  align-self: start;
+}
+
+/* ── Overflow row ────────────────────────────────────────────────────────────
+   Chrome for the collapsed remainder. Interactive, so it opts back into pointer events; outside
+   both live regions, so its count does not announce. */
+.overflow {
+  pointer-events: auto;
+  margin-block-start: var(--space-2);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3) var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+  box-shadow: var(--elev-2);
+}
+
+.overflowCount {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────
+   Enter 170ms decelerating, exit 220ms accelerating — the ceiling, and only because an exit that
+   is faster than the eye reads as the toast having been dismissed by someone else.
+
+   `translate:` and never `transform:`, and only for the duration of the animation: a permanent
+   transform promotes the card to its own composited layer and makes it a containing block for the
+   buttons inside it.
+
+   Motion is NOT load-bearing here. Nothing about the toast's meaning is carried by the movement —
+   under reduced motion (where the duration tokens are zeroed globally) it simply appears and
+   disappears, and the live region announcement is unchanged either way. */
+.toast[data-state='enter'] {
+  animation: toastIn var(--dur-base) var(--ease-decelerate);
+}
+
+.toast[data-state='exit'] {
+  /* `forwards`, so the card holds its faded end state for the remaining milliseconds before the
+     provider unmounts it, instead of snapping back to full opacity in between. */
+  animation: toastOut var(--dur-slow) var(--ease-accelerate) forwards;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-2);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    translate: none;
+  }
+  to {
+    opacity: 0;
+    translate: var(--space-3) 0;
+  }
+}

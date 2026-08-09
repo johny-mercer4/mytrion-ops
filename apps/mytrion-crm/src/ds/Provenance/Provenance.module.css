@@ -1,0 +1,86 @@
+/*
+ * Provenance — the one-line grounding footnote under an answer.
+ *
+ * It is deliberately quiet: xs type, muted colour, a hairline above it. The only element allowed to
+ * take an intent colour is the glyph, and even that is paired with a distinct SHAPE per state so
+ * the row survives greyscale.
+ */
+
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  inline-size: 100%;
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  color: var(--ground-fg);
+}
+
+.root[data-rule='true'] {
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--ground-rule);
+}
+
+.icon {
+  flex: none;
+  color: var(--ground-fg);
+}
+
+.label {
+  font-weight: var(--fw-medium);
+  color: var(--ground-fg);
+  white-space: nowrap;
+}
+
+.sep {
+  color: var(--ground-rule);
+}
+
+.detail {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Trailing slot — a ConfidenceMeter, usually. `auto` margin rather than `justify-content: space-
+   between`, so the label group stays tight together when the row is wide. */
+.trailing {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ── States ─────────────────────────────────────────────────────────────────
+   VERIFIED is the only one that earns a positive colour. PARTIAL stays neutral on purpose — an
+   amber flag here would read as "something went wrong", and nothing did; the answer is simply part
+   composition. UNGROUNDED is muted, not red: answering from the model's own weights is honest
+   behaviour, and painting honesty as an error teaches people to distrust the label instead of the
+   answer. */
+
+.root[data-state='verified'] .icon,
+.root[data-state='verified'] .label {
+  color: var(--ground-verified-fg);
+}
+
+/* --ground-fg and --ground-none-fg resolve to the same muted value today, so PARTIAL is mixed
+   half-way toward verified rather than left identical to ungrounded. Derived from the two grounding
+   tokens, not a new colour — if the palette moves, this moves with it. */
+.root[data-state='partial'] .icon,
+.root[data-state='partial'] .label {
+  color: color-mix(in oklab, var(--ground-verified-fg) 45%, var(--ground-fg));
+}
+
+.root[data-state='ungrounded'] .icon,
+.root[data-state='ungrounded'] .label {
+  color: var(--ground-none-fg);
+}
+
+/* Ungrounded gets one extra non-colour signal: a dashed rule, so the footnote reads as "unbacked"
+   from across the room and to anyone reading in greyscale. */
+.root[data-state='ungrounded'][data-rule='true'] {
+  border-block-start-style: dashed;
+}

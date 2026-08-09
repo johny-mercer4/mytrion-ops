@@ -32,7 +32,17 @@
  * would resolve by @import order, i.e. by accident.
  */
 
-:root {
+/*
+ * Dark is BOTH the :root default and an explicitly addressable selector.
+ *
+ * `:root` alone was not enough: it makes dark the default but leaves no way to re-assert it inside
+ * a subtree of a light document. That matters for any nested-theme surface — the kitchen sink's
+ * side-by-side panes, a dark preview embedded in a light settings page, a themed email preview.
+ * Listing `[data-theme='dark']` here costs one selector and zero duplicated values, and it is what
+ * makes `<div data-theme="dark">` work anywhere.
+ */
+:root,
+[data-theme='dark'] {
   color-scheme: dark;
 
   /* ═══════════════════════════════════════════════════════════════════════════════════════════

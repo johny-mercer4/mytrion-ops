@@ -1,0 +1,241 @@
+/*
+ * Calendar — the month grid behind DatePicker's trigger.
+ *
+ * States are DATA ATTRIBUTES on the cell ([data-in-span], [data-span-start]) and on the day button
+ * ([data-selected], [data-today], [data-unavailable], [data-focused]). One selector surface, and
+ * the DOM tells you the state when you inspect it.
+ *
+ * NOTHING HERE ENCODES MEANING IN COLOUR ALONE. Today carries a dot, an unavailable day carries a
+ * strike, the selected day carries a filled ground AND a heavier weight, and every one of them is
+ * also stated in ARIA (aria-current, aria-disabled, aria-selected). Dark, light, greyscale and a
+ * dimmed laptop panel all still read.
+ */
+
+.calendar {
+  /* One cell size drives the header, the weekday row and the grid, so the whole panel scales from
+     a single value. 30px keeps a six-row month inside 210px of height at this density. */
+  --cal-cell: 30px;
+  --cal-gap: var(--space-0_5);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  color: var(--text-primary);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.title {
+  flex: 1 1 auto;
+  margin: 0;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-semibold);
+  /* The month name changes length between months; a fixed centre stops the two nav buttons from
+     sliding sideways as the user pages through the year. */
+  white-space: nowrap;
+}
+
+.nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: var(--cal-cell);
+  block-size: var(--cal-cell);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-body);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.nav:hover:not([aria-disabled='true']) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.nav:active:not([aria-disabled='true']) {
+  background: var(--surface-alt);
+}
+/* Recolour, never an opacity multiply, and never `pointer-events: none` — the button stays
+   focusable and stays announced so a keyboard user learns the bound is there. */
+.nav[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+
+/* ── Grid ────────────────────────────────────────────────────────────────── */
+.grid {
+  border-collapse: separate;
+  /* Separate, not collapse, with zero spacing: collapsed borders merge adjacent cells' backgrounds
+     into one another and the range highlight loses its ends. */
+  border-spacing: 0;
+  table-layout: fixed;
+  inline-size: calc(var(--cal-cell) * 7);
+}
+
+.weekday {
+  inline-size: var(--cal-cell);
+  padding-block-end: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  /* Grotesk fits caps on lowercase sidebearings, so untracked caps read tighter than the text
+     around them — theme.css, --tr-caps-micro. */
+  text-transform: uppercase;
+  letter-spacing: var(--tr-caps-micro);
+  text-align: center;
+}
+
+.cell {
+  padding: 0;
+  inline-size: var(--cal-cell);
+  block-size: var(--cal-cell);
+  text-align: center;
+  /* The span wash lives on the CELL so it runs edge to edge across the week with no gaps between
+     days; the button inside keeps its own rounded hit area on top. */
+  background: transparent;
+}
+
+/* ── The range span ──────────────────────────────────────────────────────────
+   A continuous band, capped at both ends. The ends are also the two SELECTED days, so the band is
+   never the only thing saying where the range starts. */
+.cell[data-in-span='true'] {
+  background: var(--accent-soft);
+}
+.cell[data-span-start='true'] {
+  border-start-start-radius: var(--radius-control);
+  border-end-start-radius: var(--radius-control);
+}
+.cell[data-span-end='true'] {
+  border-start-end-radius: var(--radius-control);
+  border-end-end-radius: var(--radius-control);
+}
+/* The provisional half, while the second endpoint is still being chosen. Fainter, so "what you
+   would get" never looks like "what you have". */
+.cell[data-preview='true'] {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* ── Day ─────────────────────────────────────────────────────────────────────
+   A real <button>, which is where Enter/Space activation comes from. */
+.day {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  block-size: var(--cal-cell);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+
+  font-family: var(--font-num);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  /* Tabular figures: `1` and `11` occupy the same box, so the columns line up as columns rather
+     than as seven ragged stacks. */
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-body);
+
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard);
+}
+
+.day:hover:not([data-selected='true']):not([data-unavailable='true']) {
+  background: var(--row-hover);
+}
+.day:active:not([data-unavailable='true']) {
+  background: var(--surface-alt);
+}
+
+/* Adjacent months. Present and selectable — clicking 1 August from the July grid is a legitimate
+   thing to want — but recessive, so the month you are IN is the one you read. */
+.day[data-outside='true'],
+.cell[data-outside='true'] .day {
+  color: var(--text-muted);
+}
+
+/*
+ * TODAY. The dot is the signal; the colour reinforces it. `aria-current="date"` carries the same
+ * fact to assistive tech, so no user is relying on a 3px mark they may not be able to see.
+ */
+.day[data-today='true']::after {
+  content: '';
+  position: absolute;
+  inset-block-end: var(--space-0_5);
+  inline-size: var(--space-1);
+  block-size: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.day[data-today='true'] {
+  color: var(--accent);
+  font-weight: var(--fw-body-strong);
+}
+
+/* SELECTED. Filled ground + inverted ink + a heavier weight — three channels, one of which is
+   colour. `aria-selected` on the cell states it outright. */
+.day[data-selected='true'] {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  font-weight: var(--fw-semibold);
+}
+.day[data-selected='true']:hover {
+  background: color-mix(in oklab, var(--accent-strong) 88%, var(--text-primary));
+}
+/* The today dot on a selected day has to invert with it, or it disappears into the fill. */
+.day[data-selected='true'][data-today='true']::after {
+  background: var(--on-accent);
+}
+
+/*
+ * UNAVAILABLE. Struck through AND recoloured, because a greyed-out number in a grid of numbers is
+ * not a distinguishable state — the strike is the shape that survives greyscale and low contrast.
+ * `aria-disabled` rather than the native attribute, so the day is still reachable and still
+ * announced: knowing WHICH days are closed is the information.
+ */
+.day[data-unavailable='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.day[data-unavailable='true'][data-today='true']::after {
+  background: var(--disabled-fg);
+}
+
+/* ── Visually hidden ─────────────────────────────────────────────────────────
+   `clip-path`, not `display: none`, which would take the live region out of the accessibility tree
+   entirely and announce nothing at all. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

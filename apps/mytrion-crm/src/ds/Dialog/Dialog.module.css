@@ -1,0 +1,154 @@
+/*
+ * Dialog — a centred modal surface on the native <dialog> element.
+ *
+ * States are DATA ATTRIBUTES on the element itself: [data-size], [data-state]. Inspecting the DOM
+ * tells you which phase the surface is in without reading the component.
+ */
+
+/* ── The element ─────────────────────────────────────────────────────────────
+   The <dialog> is deliberately stretched to the full viewport and made transparent, so it is the
+   BACKDROP CLICK CATCHER rather than the panel. Its own default box (shrink-to-wrap, centred by
+   margin:auto) would make "did this click land outside the panel?" a getBoundingClientRect
+   comparison; as a full-viewport grid container, the answer is just `target === currentTarget`.
+   The scrim itself stays on ::backdrop, one layer down. */
+.dialog {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+
+  /* The UA sheet caps a dialog at calc(100% - 6px - 2em) and centres it with auto margins. All
+     three have to go before the element can act as a full-viewport layer. */
+  margin: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+
+  /* The gutter that keeps the panel off the viewport edge. It is padding on THIS element and not a
+     margin on the panel, so clicking the gutter still reads as a backdrop click. */
+  padding: var(--space-6);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* Restoring the UA rule we just outranked. `.dialog { display: flex }` is a class selector, so it
+   beats `dialog:not([open]) { display: none }` in the UA sheet — without these two lines a CLOSED
+   dialog paints as a full-viewport transparent sheet swallowing every click on the page.
+
+   Flex and not grid, and that is a correctness point rather than a preference: the panel is sized
+   `min(<width>, 100%)`, and a percentage against an AUTO grid track is circular — the track is
+   sized by the item and the item is sized by the track, which browsers resolve by falling back to
+   max-content. A flex container's content box is definite, so the percentage has something real to
+   measure against. */
+.dialog[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog:not([open]) {
+  display: none;
+}
+
+/* ── Scrim ───────────────────────────────────────────────────────────────────
+   The blur lives HERE and not on the panel, on purpose. ::backdrop never animates its geometry,
+   whereas the panel translates on entry — and `backdrop-filter` on a translating element is
+   precisely the composited-layer combination that shipped the un-repainted-panel defect in this
+   app. One blurred layer, and it is the one that holds still.
+   In dark the scrim reads as a dim; in light --page is pale, so separation comes from the blur
+   plus the panel's shadow rather than from darkening. Both are legitimate; a scrim mixed toward
+   ink would invert wrongly in one theme, because no token is dark in both. */
+.dialog::backdrop {
+  z-index: var(--z-overlay);
+  background: color-mix(in srgb, var(--page) 78%, transparent);
+  backdrop-filter: blur(var(--hz-blur-sm));
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────────
+   Scroll ownership: three rows, and only the middle one is allowed to move. `minmax(0, 1fr)` and
+   not `1fr` — a bare 1fr floors at min-content, so a long body would push the panel past its
+   max-block-size instead of scrolling inside it. */
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+
+  /* `flex: none` — the default `flex-shrink: 1` would let a tall panel be squeezed below its
+     max-block-size and hand the overflow back to the page. */
+  flex: none;
+  inline-size: min(var(--dlg-w), 100%);
+  max-block-size: 100%;
+
+  background: var(--hz-modal-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--menu-shadow);
+  /* Clips the header rule and the footer rule to the rounded corners. Also contains the body's
+     scrollbar, which would otherwise paint over the panel's own edge. */
+  overflow: hidden;
+}
+
+/* ── Size ────────────────────────────────────────────────────────────────────
+   Three, and each has real use sites in the 23 modals being replaced: a single decision, a short
+   form, a table or diff. Anything wider than `lg` is a page, not a dialog. */
+.dialog[data-size='sm'] {
+  --dlg-w: 420px;
+}
+.dialog[data-size='md'] {
+  --dlg-w: 560px;
+}
+.dialog[data-size='lg'] {
+  --dlg-w: 800px;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────
+   Entrance decelerates (arrives and settles), exit accelerates (leaves and is gone) — the standard
+   asymmetry, and the reason the two are separate keyframes rather than one played backwards.
+
+   `translate:`, never `transform:`. Both animate identically here, but `transform` on the resting
+   state would promote the panel to its own composited layer permanently and make it a containing
+   block for everything inside it. Entrance runs with the default `fill-mode: none`, so the resting
+   panel carries no translate at all.
+
+   Under prefers-reduced-motion the global reset collapses these to 0.01ms. They still fire
+   `animationend`, which is what ends the closing phase — so nothing here is load-bearing for
+   comprehension, and nothing hangs when motion is off. */
+.dialog[data-state='open'] .panel {
+  animation: dialogIn var(--dur-slow) var(--ease-decelerate);
+}
+.dialog[data-state='open']::backdrop {
+  animation: scrimIn var(--dur-base) var(--ease-decelerate);
+}
+
+/* `forwards` on the exit only: the surface must hold its finished (invisible) frame for the frame
+   or two between `animationend` and the element actually leaving the top layer, or it flashes back
+   to full opacity on the way out. */
+.dialog[data-state='closing'] .panel {
+  animation: dialogOut var(--dur-fast) var(--ease-accelerate) forwards;
+}
+.dialog[data-state='closing']::backdrop {
+  animation: scrimOut var(--dur-fast) var(--ease-accelerate) forwards;
+}
+
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-2);
+  }
+}
+@keyframes dialogOut {
+  to {
+    opacity: 0;
+    translate: 0 var(--space-1);
+  }
+}
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes scrimOut {
+  to {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,75 @@
+/*
+ * RadioGroup — a <fieldset> reset to a plain block, plus the legend / description / error scaffold.
+ *
+ * A fieldset arrives with a browser border, a 2px inline padding and an em-based block padding that
+ * belong to 1996; all three are cleared here. `min-inline-size: 0` is the non-obvious one: a
+ * fieldset's default `min-width: min-content` is baked into the UA stylesheet and cannot be reached
+ * any other way, so without it a group with one long option refuses to shrink and blows out the
+ * grid it sits in.
+ */
+
+.root {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+  font-family: var(--font-body);
+}
+
+/* A legend is laid out in the fieldset's border gap, not in flow. With the border removed it
+   behaves as a normal block, and `display: block` makes that explicit rather than incidental. */
+.legend {
+  display: block;
+  padding: 0;
+  margin-block-end: var(--space-1_5);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body-strong);
+}
+
+/* The asterisk is decoration for sighted users; `required` on every option is what assistive tech
+   actually reads, which is why this span is aria-hidden in the TSX. */
+.required {
+  margin-inline-start: var(--space-0_5);
+  color: var(--intent-danger-fg);
+}
+
+.description {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* ── Options ────────────────────────────────────────────────────────────────
+   Vertical is the default because it is the only orientation that survives a long label, a
+   description slot and a narrow column. Horizontal wraps rather than overflows. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+}
+.root[data-orientation='horizontal'] .options {
+  flex-direction: row;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+  row-gap: var(--space-0_5);
+}
+
+/* ── Error ──────────────────────────────────────────────────────────────────
+   Icon + text, never colour alone. The icon is 16px and sits on the text baseline block, so a
+   wrapped message indents under itself rather than under the glyph. */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1_5);
+  margin: var(--space-2) 0 0;
+  color: var(--intent-danger-fg);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}

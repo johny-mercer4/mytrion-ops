@@ -1,0 +1,81 @@
+/*
+ * Tooltip — a short hint floating over the page.
+ *
+ * `--overlay-gap` is read back out of this element by useAnchoredLayer, which is what keeps the
+ * distance from the anchor a TOKEN even though the arithmetic has to happen in JS.
+ *
+ * Deliberately no arrow. An arrow has to be re-anchored on every flip and clamp, and at 11-13px the
+ * tooltip is small enough that its own edge already reads as "attached to the thing under it".
+ */
+
+.layer {
+  --overlay-gap: var(--space-2);
+  /* Roughly 40 characters at --text-xs: past that it is a paragraph, and a paragraph is not a
+     tooltip. The cap is what forces that editorial decision at the call site. */
+  --tooltip-measure: 264px;
+
+  z-index: var(--z-tooltip);
+  max-inline-size: var(--tooltip-measure);
+  inline-size: max-content;
+
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+
+  /* Opaque enough to read over ANY content beneath, which a tooltip must be — it lands on tables,
+     charts and photographs alike. This is the same surface the menu uses; one floating-panel
+     appearance, not two. */
+  background: var(--menu-bg);
+  color: var(--text-primary);
+  box-shadow: var(--menu-shadow);
+  /* Chrome floating over content is the ONE place glass belongs (horizon.css). A tooltip is at most
+     a couple of lines, so the blur costs one small composited layer and no scrolling surface. */
+  backdrop-filter: blur(var(--chrome-blur));
+  -webkit-backdrop-filter: blur(var(--chrome-blur));
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-body);
+  text-align: start;
+  /* Hints wrap. `white-space: nowrap` here is how a tooltip ends up wider than the viewport. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+
+  /* Entrance only. It starts next to the anchor and moves OUT to its resting place, so the motion
+     itself says which control the hint belongs to — useful when three dense toolbar buttons sit
+     four pixels apart. `translate:` never `transform:` — and with no `forwards` fill, so the property
+     returns to its unset value the moment the animation ends. A tooltip left holding a permanent
+     transform would be a composited layer sitting on top of the page for as long as it is open,
+     which is precisely the un-repainted-panel defect this app has already shipped once. */
+  animation: tooltipIn var(--dur-fast) var(--ease-decelerate);
+}
+
+/* Which way the entrance comes from, per resolved side. `data-side` is written by the positioner
+   AFTER collision flipping, so a tooltip that flipped from top to bottom animates from the top —
+   from the anchor — rather than from where it was originally asked to sit. */
+.layer[data-side='top'] {
+  --tooltip-from: 0 var(--space-1);
+}
+.layer[data-side='bottom'] {
+  --tooltip-from: 0 calc(var(--space-1) * -1);
+}
+.layer[data-side='left'] {
+  --tooltip-from: var(--space-1) 0;
+}
+.layer[data-side='right'] {
+  --tooltip-from: calc(var(--space-1) * -1) 0;
+}
+
+@keyframes tooltipIn {
+  from {
+    opacity: 0;
+    translate: var(--tooltip-from, 0 0);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}

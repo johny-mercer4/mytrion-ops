@@ -18,7 +18,8 @@
  * own composited layer; 24px of blur on a scrolling list is the cliff, not the polish.
  */
 
-:root {
+:root,
+[data-theme='dark'] {
   /* ══ Glass — ONE definition, replacing what used to be four forks ═════════
      Every translucent CHROME surface in the app resolves here: header, rail, menu, modal, drawer.
      A docked panel now looks identical in Sales and in HR because there is one place it can come
@@ -307,7 +308,8 @@
    slow to scan. Referenced as tokens (not raw hex) precisely so they can be theme-swapped: dark uses
    the bright 400-level, light the deep 600/700-level. Tint only the glyph — labels stay on the text
    scale, or the sidebar becomes a fruit salad. */
-:root {
+:root,
+[data-theme='dark'] {
   --tone-sky: #3b82f6;
   --tone-cyan: #22d3ee;
   --tone-teal: #2dd4bf;
