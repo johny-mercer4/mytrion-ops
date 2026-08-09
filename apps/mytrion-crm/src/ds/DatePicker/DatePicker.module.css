@@ -111,9 +111,17 @@
 
 /* ── Range field ─────────────────────────────────────────────────────────── */
 
-/* Two dates and a trigger. The floor is wider than a single field's for the obvious reason, and it
-   is a floor rather than a width — a caller still sets a real one or passes fullWidth. */
-.rangeRoot {
+/*
+ * Two dates and a trigger. The floor is wider than a single field's for the obvious reason, and it
+ * is a floor rather than a width — a caller still sets a real one or passes fullWidth.
+ *
+ * QUALIFIED WITH `[data-size]` DELIBERATELY. This element also carries DateField's `.root`, which
+ * declares its own `min-inline-size`; two (0,1,0) selectors in two different stylesheets resolve by
+ * @import order, i.e. by whichever bundler chunk happened to land last, which is not a decision
+ * anyone made. The attribute is always present on this element, so (0,2,0) makes the outcome
+ * deterministic without inventing a second class name.
+ */
+.rangeRoot[data-size] {
   min-inline-size: 260px;
   position: relative;
 }

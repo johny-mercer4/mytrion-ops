@@ -127,7 +127,9 @@
   border-end-end-radius: var(--radius-control);
 }
 /* The provisional half, while the second endpoint is still being chosen. Fainter, so "what you
-   would get" never looks like "what you have". */
+   would get" never looks like "what you have". It ties on specificity with the committed span above
+   and wins by source order — which is safe ONLY because both rules live in this one file, where the
+   order is authored rather than decided by whichever bundler chunk landed last. */
 .cell[data-preview='true'] {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
@@ -170,8 +172,8 @@
 }
 
 /* Adjacent months. Present and selectable — clicking 1 August from the July grid is a legitimate
-   thing to want — but recessive, so the month you are IN is the one you read. */
-.day[data-outside='true'],
+   thing to want — but recessive, so the month you are IN is the one you read. The attribute is on
+   the CELL, because "belongs to another month" is a fact about the position, not about the button. */
 .cell[data-outside='true'] .day {
   color: var(--text-muted);
 }

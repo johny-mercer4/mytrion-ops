@@ -92,6 +92,7 @@ export interface DateRangePickerProps {
   /** Emits two hidden inputs, `${name}-start` and `${name}-end`, so the field submits with a form. */
   name?: string | undefined;
   placement?: OverlayPlacement | undefined;
+  /** `calendar_month` by default. `date_range` reads as a span; `schedule` when the span is a deadline. */
   triggerIcon?: IconName | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
   labels?: DateRangeMessages | undefined;
@@ -165,7 +166,7 @@ export function DateRangePicker({
   fullWidth = false,
   name,
   placement = 'bottom-end',
-  triggerIcon = 'date_range',
+  triggerIcon = 'calendar_month',
   onOpenChange,
   labels,
   'aria-label': ariaLabel,
