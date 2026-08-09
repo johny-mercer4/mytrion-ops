@@ -82,3 +82,27 @@ if (!urls.length || bad.length) {
 
 writeFileSync(out, css);
 console.log(`  portable stylesheet -> dist/horizon-tokens.css (${(css.length / 1024).toFixed(1)} KB)`);
+
+/*
+ * ── One file that needs no instructions ───────────────────────────────────────────────────────
+ * horizon-tokens.css + horizon-ui.css concatenated, in that order.
+ *
+ * The two-file split is correct for an app that already has the tokens (it avoids inlining the
+ * whole theme into every consumer), but it is a trap for anyone else: load them in the wrong order,
+ * or load only one, and every rule resolves against `var()`s that do not exist — components render
+ * with no colour, no radius, no type, and nothing errors. A design tool binding a single stylesheet
+ * hits exactly that.
+ *
+ * So the library also ships the self-sufficient version. Font url()s are already `./fonts/…`
+ * relative to dist/, and both files sit in dist/, so concatenation does not move them.
+ */
+const ui = join(APP, 'dist/horizon-ui.css');
+if (existsSync(ui)) {
+  const all = join(APP, 'dist/horizon-all.css');
+  const merged = `${css}\n${readFileSync(ui, 'utf8')}`;
+  writeFileSync(all, merged);
+  console.log(`  self-sufficient stylesheet -> dist/horizon-all.css (${(merged.length / 1024).toFixed(1)} KB)`);
+} else {
+  console.error('build-ds-styles: dist/horizon-ui.css missing — run the library build first');
+  process.exit(1);
+}

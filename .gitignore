@@ -50,3 +50,8 @@ apps/design_handoff_octane_mini_app/
 _to_delete/
 
 .agents/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

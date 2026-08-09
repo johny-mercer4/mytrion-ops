@@ -4,6 +4,17 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Mytrion external app (React + TS). Department 'Mytrions' routed by /m/:mytrion; user identity arrives as URL values from a thin Zoho CRM shim (no SDK). Same-origin with the Mytrion Ops backend.",
+  "types": "./dist/types/index.d.ts",
+  "module": "./dist/horizon-ui.es.js",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/horizon-ui.es.js",
+      "require": "./dist/horizon-ui.umd.js"
+    },
+    "./styles.css": "./dist/horizon-ui.css",
+    "./tokens.css": "./dist/horizon-tokens.css"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && NODE_ENV=production vite build --mode production",
