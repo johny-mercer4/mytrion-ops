@@ -33,15 +33,15 @@ type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
-const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:14px;color:var(--text2);line-height:1.5';
-const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:14px;color:var(--danger);line-height:1.5';
+const labelCss = 'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:var(--ss-text-sm);color:var(--danger);line-height:1.5';
 // Date defaults/bounds follow the NY calendar (the sales floor's day), not the viewer's/UTC —
 // toISOString() here used to show "tomorrow" for late-evening ET users.
 const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;transition:all .14s`;
+  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:var(--ss-text-sm);font-weight:700;cursor:pointer;transition:all .14s`;
 /* --on-accent, never #fff: --accent is a PALE cyan in dark (#a5e7ff) and --accent-2 a pale
    pink, so white ink on this fill is ~1.35:1 — an invisible label on every primary button in
    the automation modals. The rest of the Sales module already used the token; these three
@@ -402,9 +402,9 @@ export function AutoTab() {
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
-                <div id="sales-auto-title" style={s('font-family:var(--font-head);font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
+                <div id="sales-auto-title" style={s('font-family:var(--font-head);font-weight:700;font-size:var(--ss-text-lg);letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
-                <div style={s('font-size:14px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
+                <div style={s('font-size:var(--ss-text-sm);color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
               <button
                 type="button"
@@ -428,7 +428,7 @@ export function AutoTab() {
                   {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
                   )}
 
                   {needsDeal && (
@@ -497,7 +497,7 @@ export function AutoTab() {
                         <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                         <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(AUTO_INPUT)} /></div>
                       </div>
-                      <div style={s(`font-size:12px;color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
+                      <div style={s(`font-size:var(--ss-text-2xs);color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
                       <div>
                         <Lbl t="Direction" />
                         <div style={s('display:flex;gap:9px')}>
@@ -523,7 +523,7 @@ export function AutoTab() {
                       )}
                       {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
                       {mcPreview && (
-                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:14px;color:var(--text2);line-height:1.5`)}>
+                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5`)}>
                           {mcPreview.eligible
                             ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
                             : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
@@ -558,14 +558,14 @@ export function AutoTab() {
                   )}
 
                   {b.id === 'reactivation' && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}>
                       Submits a reactivation email request for <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong>. You will receive the answer by email.
                     </div>
                   )}
 
                   {b.id === 'card-replacement' && hasDeal && (
                     <div>
-                      <div style={s('font-size:14px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
+                      <div style={s('font-size:var(--ss-text-sm);color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
                         <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(AUTO_INPUT)} /></div>
                         <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(AUTO_INPUT)} /></div>
@@ -578,7 +578,7 @@ export function AutoTab() {
                   )}
 
                   {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -586,8 +586,8 @@ export function AutoTab() {
                       {unavailable && <div style={s(noteWarn)}>This action isn&apos;t available for self-service yet — file a ticket and the team will handle it.</div>}
                       <div style={s('display:flex;justify-content:flex-end')}>
                         {canRun
-                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:14px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
-                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:14px;cursor:not-allowed')}>{runVerb}</button>}
+                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:var(--ss-text-sm);box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
+                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:var(--ss-text-sm);cursor:not-allowed')}>{runVerb}</button>}
                       </div>
                     </div>
                   )}

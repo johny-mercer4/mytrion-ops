@@ -103,7 +103,7 @@ export function AutoWexEligibilityNotice({
   return (
     <div
       role={blocked ? 'alert' : 'status'}
-      style={s(`padding:13px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,${color} 10%,transparent);border:1px solid color-mix(in srgb,${color} 30%,transparent);color:var(--text2);font-size:13px;line-height:1.45`)}
+      style={s(`padding:13px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,${color} 10%,transparent);border:1px solid color-mix(in srgb,${color} 30%,transparent);color:var(--text2);font-size:var(--ss-text-xs);line-height:1.45`)}
     >
       <div style={s('display:flex;align-items:center;gap:9px')}>
         <Icon name={blocked ? 'ban' : 'checkCircle'} size={17} color={color} />

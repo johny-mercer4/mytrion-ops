@@ -170,12 +170,12 @@ export function AutoDoneStep({
       {limit && <AutoLimitUpdatePanel result={limit.result} />}
       {table && (
         <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
-          <div style={s('padding:11px 15px;background:var(--alt);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{table.title}</div>
-          <div style={s(`display:grid;grid-template-columns:repeat(${table.columns.length},1fr);gap:8px;padding:10px 15px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
+          <div style={s('padding:11px 15px;background:var(--alt);font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{table.title}</div>
+          <div style={s(`display:grid;grid-template-columns:repeat(${table.columns.length},1fr);gap:8px;padding:10px 15px;font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
             {table.columns.map((column) => <span key={column}>{column}</span>)}
           </div>
           {table.rows.map((row, rowIndex) => (
-            <div key={rowIndex} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${table.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:14px`)}>
+            <div key={rowIndex} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${table.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:var(--ss-text-sm)`)}>
               {row.map((cell, cellIndex) => (
                 <span key={cellIndex} style={s(cellIndex === 0 ? mono : 'color:var(--text2)')}>{cell}</span>
               ))}
@@ -184,8 +184,8 @@ export function AutoDoneStep({
         </div>
       )}
       <div style={s(`display:flex;justify-content:flex-end;gap:10px;${splitTransactions ? 'flex-shrink:0;padding-top:4px' : 'margin-top:4px'}`)}>
-        <button onClick={onReset} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:14px')}>Run another</button>
-        <button onClick={onDone} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:14px'))}>Done</button>
+        <button onClick={onReset} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:var(--ss-text-sm)')}>Run another</button>
+        <button onClick={onDone} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:var(--ss-text-sm)'))}>Done</button>
       </div>
     </div>
   );

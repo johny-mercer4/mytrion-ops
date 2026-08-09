@@ -276,7 +276,7 @@
   overflow: hidden;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 .userAvatar img {
@@ -291,14 +291,14 @@
   gap: 1px;
 }
 .userName {
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .userRole {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;

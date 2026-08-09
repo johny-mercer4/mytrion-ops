@@ -46,10 +46,10 @@ function CategoryHeader({ category, count }: { category: AutoCategory; count: nu
         <Icon name={category.icon} size={18} strokeWidth={1.75} />
       </div>
       <div style={s('flex:1;min-width:0')}>
-        <div style={s('font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
+        <div style={s('font-family:var(--font-head);font-weight:700;font-size:var(--ss-text-md);letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
           {category.label}
         </div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
+        <div style={s('font-size:var(--ss-text-xs);color:var(--muted);margin-top:2px')}>
           {count} action{count === 1 ? '' : 's'}
         </div>
       </div>
@@ -110,7 +110,7 @@ export function AutoCatalog({
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:22px')}>
-      <div style={s('font-size:13px;color:var(--muted)')}>
+      <div style={s('font-size:var(--ss-text-xs);color:var(--muted)')}>
         Drag blocks to set your preferred order — saved on this device.
       </div>
       {sections.map(({ category, items: sectionItems }) => (
@@ -141,7 +141,7 @@ export function AutoCatalog({
                     </div>
                     <div style={s('display:flex;align-items:center;gap:6px')}>
                       {a.soon && (
-                        <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted)')}>
+                        <span style={s('font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:var(--radius-full);background:var(--raised);color:var(--muted)')}>
                           SOON
                         </span>
                       )}
@@ -149,7 +149,7 @@ export function AutoCatalog({
                         <span
                           aria-hidden
                           title="Drag to reorder"
-                          style={s('font-size:15px;color:var(--muted);line-height:1;cursor:grab;user-select:none')}
+                          style={s('font-size:var(--ss-text-base);color:var(--muted);line-height:1;cursor:grab;user-select:none')}
                         >
                           ⋮⋮
                         </span>
@@ -157,13 +157,13 @@ export function AutoCatalog({
                     </div>
                   </div>
                   <div>
-                    <div style={s('font-size:15px;font-weight:700')}>{a.title}</div>
+                    <div style={s('font-size:var(--ss-text-base);font-weight:700')}>{a.title}</div>
                     <div style={s('display:flex;gap:5px;margin-top:6px;flex-wrap:wrap')}>
                       {a.codes.map((c) => (
                         <span key={c} style={s(deptStyle(c, autoIconColor(a)))}>{c}</span>
                       ))}
                     </div>
-                    <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
+                    <div style={s('font-size:var(--ss-text-xs);color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
                   </div>
                 </button>
               );

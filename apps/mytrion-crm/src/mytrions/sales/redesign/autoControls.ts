@@ -44,3 +44,16 @@ export const AUTO_BTN_PRIMARY =
 export const AUTO_PENDING_PILL =
   'display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:var(--radius-md);' +
   'border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px';
+
+/**
+ * The busy label for a button whose action produces a file.
+ *
+ * Three conventions existed for one state: a bare '…' on the bulk downloads, 'Preparing…' in the
+ * card lookup and 'Generating…' on the report. Same meaning, three words — so the same wait read as
+ * three different operations depending on which panel you were in.
+ *
+ * NOT used on the per-row format buttons in AutoResultPanels: their resting label is a single token
+ * ("PDF", "CSV"), so a word would resize the button mid-click. Those keep a bare ellipsis, which is
+ * a deliberate exception rather than the drift this replaces.
+ */
+export const AUTO_BUSY_LABEL = 'Preparing…';

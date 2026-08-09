@@ -92,12 +92,18 @@ html,body{height:100%;margin:0}
   .ss-fu{animation:ss-up .4s cubic-bezier(.2,0,0,1) both}
   .ss-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.06) 37%,var(--raised) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear;border-radius:var(--radius-md)}
   .ss-root.light .ss-skel{background:linear-gradient(90deg,rgba(15,23,42,.06) 25%,rgba(15,23,42,.12) 37%,rgba(15,23,42,.06) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear}
-  /* Picklist micro-loader bars — accent shimmer (visible in light + dark). */
-  @keyframes ss-pick-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  /* The PERCENTAGE sweep, for bars sized `background-size: 200% 100%`. `ss-shimmer` above is the
+     PIXEL sweep (-460px -> 460px) and pairs with `900px 100%`; mixing the two makes the gradient
+     travel far past the element and the bar reads as flat with an occasional pass. */
+  @keyframes ss-shimmer-pct{0%{background-position:200% 0}100%{background-position:-200% 0}}
   .ss-pick-skel{
     height:12px;border-radius:4px;
     background:linear-gradient(90deg,rgba(226,232,240,.08) 0%,rgba(var(--accent-rgb),.22) 50%,rgba(226,232,240,.08) 100%);
-    background-size:200% 100%;animation:ss-pick-shimmer 1.35s ease-in-out infinite;
+    background-size:200% 100%;animation:ss-shimmer-pct 1.4s linear infinite;
+    /* 1.4s LINEAR, matching .ss-skel. The sweep technique stays percentage-based (it suits a
+       12px bar better than .ss-skel's 900px pixel sweep), but the TIMING must match: two
+       skeletons pulsing at 1.35s ease-in-out and 1.4s linear in the same modal drift in and
+       out of phase, which reads as one of them stuttering. */
   }
   .ss-root.light .ss-pick-skel{
     background:linear-gradient(90deg,rgba(15,23,42,.06) 0%,rgba(var(--accent-rgb),.18) 50%,rgba(15,23,42,.06) 100%);
@@ -839,7 +845,10 @@ html,body{height:100%;margin:0}
   .ss-pool-row.is-skel span{
     display:block;height:12px;border-radius:6px;
     background:linear-gradient(90deg,var(--alt),var(--raised),var(--alt));
-    background-size:200% 100%;animation:ss-shimmer 1.2s ease infinite;
+    background-size:200% 100%;animation:ss-shimmer-pct 1.4s linear infinite;
+    /* Was `ss-shimmer 1.2s ease` — the PIXEL keyframe against a percentage background-size, so
+       the sweep overshot the bar, plus a third timing in an app with two. Now the matching
+       keyframe at the shared 1.4s linear. */
   }
   .ss-pool-check{display:flex;align-items:center;justify-content:center}
   .ss-pool-check input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}

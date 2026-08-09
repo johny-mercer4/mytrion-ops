@@ -3,7 +3,7 @@ import { nyToday } from './salesData';
 import { TXN_RANGE_PRESETS } from './txnReport';
 import { AUTO_INPUT } from './autoControls';
 
-const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const labelCss = 'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const invoiceRanges = ['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'Custom Range'];
 const invoiceStatuses = [
   { value: 'all', label: 'All Statuses' },

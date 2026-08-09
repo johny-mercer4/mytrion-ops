@@ -6,7 +6,7 @@ import { s } from './dc';
 import type { AutoPriority } from './autoRunners';
 import { AUTO_INPUT } from './autoControls';
 
-const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const labelCss = 'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const locked = `${AUTO_INPUT};padding-right:36px;cursor:default;color:var(--text2)`;
 
 function Lbl({ t, opt }: { t: string; opt?: boolean }) {

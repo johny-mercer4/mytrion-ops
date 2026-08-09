@@ -180,7 +180,7 @@ export function AutoPaymentsPanel({
       ) : (
         <AutoEmptyState title="No payment summary" message="DWH payment info wasn't available for this carrier." icon="card" compact />
       )}
-      <div className="ss-auto-rich-title" style={s('font-size:14px;margin-top:4px')}>CMP Invoices</div>
+      <div className="ss-auto-rich-title" style={s('font-size:var(--ss-text-sm);margin-top:4px')}>CMP Invoices</div>
       {cmpError ? (
         <AutoEmptyState title="CMP invoice check failed" message={cmpError} icon="alert" compact />
       ) : cmpInvoices.length === 0 ? (
