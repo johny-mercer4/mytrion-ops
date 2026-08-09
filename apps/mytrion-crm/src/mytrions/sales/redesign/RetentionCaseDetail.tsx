@@ -12,6 +12,7 @@ import {
   subscribeRingCentral,
 } from '@/components/ringcentral/ringcentralEvents';
 import type { RetentionCaseEventRow } from '@/api/touchpointTypes';
+import { createPortal } from 'react-dom';
 import { useLoad } from '../../_shared/useLoad';
 import { useSales } from './ctx';
 import { s } from './dc';
@@ -496,7 +497,22 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     );
   }
 
-  return (
+  /*
+   * PORTALLED to document.body, matching dataCenterSheet in this same module.
+   *
+   * `position: fixed` resolves against the viewport ONLY while no ancestor carries a transform,
+   * filter, backdrop-filter, will-change or contain — any one of those makes that ancestor the
+   * containing block, and the overlay then lands wherever that element sits inside the scroller
+   * rather than over the window. This modal renders deep inside `.ss-page` (which runs a
+   * transform-based entrance animation) and the Sales scroll pane, so it was one hover state or
+   * animation frame away from being positioned against the page. That is the "I have to scroll
+   * down to see the modal" report.
+   *
+   * The portal removes the dependency on ancestry entirely instead of fixing one ancestor and
+   * waiting for the next. `.ss-root` (plus `light`) is re-applied on the portal root because every
+   * rule in this module is scoped under it, and document.body is outside that subtree.
+   */
+  return createPortal(
     <div
       role="presentation"
       onClick={requestClose}
@@ -613,6 +629,16 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    // The SAME host as RetentionCallStageModal and AutoFloatingDrop: `.ss-root` is above
+    // `.ss-page` (whose entrance animation is transform-based) but still inside the module's token
+    // scope, so the overlay escapes the animated ancestor without losing `.ss-*` styling.
+    retentionModalHost(),
   );
+}
+
+/** `.ss-root` when it exists, else the body. Mirrors the host lookup the sibling modals use. */
+function retentionModalHost(): HTMLElement {
+  if (typeof document === 'undefined') return null as unknown as HTMLElement;
+  return (document.querySelector('.ss-root') as HTMLElement | null) ?? document.body;
 }
