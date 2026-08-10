@@ -1070,5 +1070,5 @@ html,body{height:100%;margin:0}
 @media (max-width:640px){
   .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
   .ss-root .ss-main-topbar>div:last-child{display:none}
-  .ss-root .ss-panels{padding:16px 12px 132px!important}
+  .ss-root .ss-panels{padding:16px 12px!important}
 }

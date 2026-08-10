@@ -13329,3 +13329,126 @@ was verified by build + hand, and this test is the only thing that will catch a 
 **Still to do:** a browser pass over all twelve workspaces in both themes. `pnpm typecheck`,
 `pnpm test` (88 files / 570 tests) and a production build are green, but none of them can see a
 colour.
+
+---
+
+## 2026-08-10 — Mobile responsiveness, Phase 0 (foundation)
+
+Branch `hotfix/Responsiveness`. Goal: make `apps/mytrion-crm` usable on a phone. Phase 0 is
+foundation only — **nothing a user sees changes**; desktop output is unchanged except for the
+document-level additions below.
+
+### On Capacitor (the framing question)
+
+Capacitor was proposed as an alternative to "rewriting the code". It is not one. Capacitor is a
+native WebView wrapper: it ships the identical DOM and CSS inside an app icon, so a 1180px-wide
+layout with 430px of fixed grid track renders exactly as badly at 390px inside Capacitor as it does
+in mobile Safari. The layout work is unavoidable either way. Capacitor is scoped as a later,
+separate phase; its three real blockers are recorded in the plan (`resolveApiConfig()` returns a
+same-origin base for any PROD build, the WS URL falls back to `window.location.host`, and
+`portalUrlWithParams` cannot emit a custom-scheme OAuth deep link). The good news found while
+checking: there are **zero cookies in the stack** — auth is a Bearer token in `localStorage` — so
+the entire SameSite/third-party-cookie class of native-auth failure does not apply here.
+
+### The ladder — 480 / 640 / 900 / 1200, range syntax
+
+Measured starting point: **127 width-based `@media` rules across 32 distinct breakpoint values**,
+against a ladder FOUNDATIONS.md has documented (560/768/1024) since Phase 2 and which ~8% of rules
+honour. The two biggest clusters (720px ×16, 900px ×15) were undocumented.
+
+Two lines, not one:
+- **640 = STRUCTURE.** Rail → tab bar, modal → sheet, table → cards. The page changes shape.
+- **900 = DENSITY.** Rail forced to its (already shipped) collapsed 68px form, compact gutters,
+  16px inputs. Nothing moves.
+
+A single switch is wrong in both directions: at 900 it forces the phone shell onto every iPad in
+portrait (810–834px) and every split-screen laptop; at 768 it leaves tablets behind a 248px rail
+with 572px of content and leaves the 15 existing 900px rules as permanent strays.
+
+**Range syntax (`(width < 640px)`), never `max-width`.** Verified in the built bundle that esbuild
+downlevels it to `@media not all and (min-width:640px)` — CSS2-era syntax, exclusive boundary
+preserved exactly — so there is no browser-support cost. This also kills a live bug by
+construction: `ds/*` guarded inputs at `max-width: 767px` while the shell switched at 768/769, so a
+viewport of exactly 768px got the mobile shell *and* 13px fields, which iOS answers by zooming the
+whole page.
+
+### Enforcement is a test, because it has to be
+
+`apps/mytrion-crm` is in `.eslintrc.cjs` `ignorePatterns` with the comment "It lints itself" — it
+does not; there is no lint script and no eslint dependency. **Vitest is the only mechanism this app
+has.** So `src/styles/breakpoints.test.ts` (sibling to `tokens.test.ts`) holds the line with
+budgets seeded at today's measured values, which only ever ratchet down:
+
+| Budget | Seeded |
+| --- | ---: |
+| off-ladder breakpoint values | 92 |
+| legacy `max-width`/`min-width` conditions | 124 |
+| CSS `min-width: Npx` | 75 |
+| inline `minWidth: N` in TSX | 64 |
+| px track in `grid-template-columns` | 89 |
+| bare `vh` / `vw` | 27 / 37 |
+| reveal-on-hover rules | 149 |
+| `font-size` on an input outside `styles/` and `ds/` | 43 |
+
+Plus two positive assertions: the hook's `BREAKPOINT` and FOUNDATIONS.md must state the same four
+numbers *and* agree on which is structure and which is density; and `.body` in
+`MytrionShell.module.css` must declare no `z-index`/`transform`/`filter`/`contain`/`isolation` —
+the stacking-context trap that file's own comment documents, now enforceable. Verified non-vacuous
+by injecting an off-ladder rule and watching it fail.
+
+### Test harness (landed alone, first — it unblocks everything)
+
+jsdom implements no CSSOM view module: **no `matchMedia`, no `visualViewport`**. `MytrionShell.test.tsx`
+had grown a local `vi.fn()` returning a constant `matches`, which is enough while one component asks
+one question and stops being enough the moment the shell, a table and a field each ask a *different*
+question of the same render. `src/test/viewport.ts` parses the query and evaluates it against a
+settable width; `setViewport(375)` now means one thing to every consumer. Defaults to desktop so all
+94 pre-existing suites keep their rendering. Note it deliberately does **not** clear its subscriber
+set between tests — `useMediaQuery` caches its `MediaQueryList` at module scope, so a dropped list
+would freeze `matches` for the rest of the file.
+
+### Also landed
+
+- `useMediaQuery` / `useBelow` / `useIsPhone` / `useIsCompact` / `useHasHover`, on
+  `useSyncExternalStore` rather than `useState`+`useEffect` — the effect shape renders once with a
+  guess and again with the truth, which is a visible flash of the desktop layout on a phone.
+- `useViewportInset` publishes `--kb-inset` by **writing a CSS custom property, never `setState`** —
+  `visualViewport` `resize` fires every frame of the keyboard animation, and routing that through
+  React re-renders a 400-row table ~20× per keypress.
+- `index.html`: `viewport-fit=cover` (without it every `env(safe-area-inset-*)` in the app silently
+  resolves to 0) + a pre-paint theme script. Deliberately **not** `user-scalable=no` — apps/mini-app
+  uses it, but Safari has ignored it since iOS 10 and it is a WCAG 1.4.4 failure; 16px fields are
+  the real fix and `--text-input-mobile` already ships them.
+- `theme.css`: `--layout-bottombar-h` / `--layout-safe-b` / `--layout-bottom-inset` on `:root`
+  (not on `.shell` — `RingCentralPhone` mounts in `WorkerLayout`, outside it).
+- `global.css`: the two media blocks, `.hscroll` (its `overscroll-behavior-x: contain` is what stops
+  a swipe past the last chip back-navigating out of the app), scoped `touch-action: manipulation`,
+  and a `(hover: none)` reset keyed on `[data-hover-reveal]`.
+
+**Why not wrap all 581 `:hover` rules in `@media (hover: hover)`:** many pair `:hover` with a
+non-hover selector in the same list (`.navActive, .navActive:hover`), so a mechanical wrap takes the
+*active* state down with it on touch. Only reveal-on-hover (opacity/visibility/display/
+pointer-events/transform) actually breaks a finger — 149 rules, now counted.
+
+### Dead code removed (executes MIGRATION.md §13)
+
+`--bottom-nav-height` ×3 and `--header-height` ×4, all declared, none read · three empty rule bodies
+in `billing/styles/shared-responsive.css` · `.bm-table-desktop-only`/`.bm-list-mobile-only`, styled
+but never written by any `.tsx` · `_shared/table.module.css`, a fourth table implementation with
+zero importers · and Sales' orphan `padding: 16px 12px 132px !important`, which reserved clearance
+for a bottom nav that never shipped.
+
+That 132px is the argument for the Phase 1 design: a `position: fixed` bar makes every workspace
+responsible for a number it cannot see, and exactly one workspace ever remembered. The mobile tab
+bar will be a **`flex: none` sibling of `.body`**, which also makes it structurally incapable of
+creating the stacking context that would trap every legacy `position: fixed` modal behind the
+header. MIGRATION.md §13's entry was amended rather than deleted: the three orphan tokens still go,
+but the reason changed (a bottom bar *is* being built), and the single replacement is
+`--layout-bottombar-h` on `:root`.
+
+### Verification
+
+`pnpm typecheck` clean · `pnpm vitest run` **96 files / 647 tests green** (was 94/627) ·
+`pnpm build:widget` succeeds and `apps/mytrion-crm/app/` is rebuilt and committed. Confirmed in the
+hashed bundle: `100dvh`, `--layout-bottombar-h:56px`, `overscroll-behavior-x:contain`,
+`touch-action:manipulation`, and `viewport-fit=cover` + the theme script in `app/index.html`.

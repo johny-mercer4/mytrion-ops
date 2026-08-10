@@ -5,6 +5,7 @@
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setViewport } from '../../test/viewport';
 
 vi.mock('../../context/UserContextProvider', () => ({
   useUserContext: () => ({
@@ -75,13 +76,8 @@ function installStorage(impl?: Partial<Storage>): Map<string, string> {
 
 beforeEach(() => {
   installStorage();
-  // jsdom has no matchMedia; the shell asks it whether the viewport is a narrow strip.
-  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  })) as never;
+  // The viewport itself comes from src/test/setup.ts, which installs a query-evaluating matchMedia
+  // and resets it to a desktop width after every test. A narrow case says setViewport(375).
 });
 
 describe('MytrionShell — sidebar collapse', () => {
@@ -163,12 +159,7 @@ describe('MytrionShell — sidebar collapse', () => {
 
   it('forces itself open on a narrow viewport, whatever the stored preference says', () => {
     installStorage().set(KEY, '1');
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: true, // (max-width: 768px)
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })) as never;
+    setViewport(375);
 
     renderShell();
     // Under 768px the sidebar is a horizontal strip; a rail of unlabelled icons is not a thing there.

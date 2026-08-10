@@ -174,7 +174,7 @@ Mostly done already (`88017761`, `ea8a8567`, `5e239026` folded Billing, CS and S
 | `components/ui/*` (@base-ui set) | 4 importers total across 5 components |
 | `components/mytrion/{stat-card,status-badge,detail-dialog}` | 0 importers each |
 | `_shared/MytrionScaffold.tsx` | 0 importers |
-| `--bottom-nav-height` ×3 | describes a component that does not exist — the mobile layout is a top strip |
+| `--bottom-nav-height` ×3 | still delete, but the *reason* has changed: a bottom bar **is** being built (the ≤640px tab bar replaced the top strip). These three per-module copies had zero consumers and would now drift against the real one. The single replacement is **`--layout-bottombar-h` / `--layout-bottom-inset` on `:root` in `theme.css`** — do not re-declare either inside a workspace stylesheet |
 | 11 dead layout declarations (CS + Billing) | `--header-height` / `--sidebar-width` with zero consumers |
 
 ### 14. Ambient field forks · ⬤

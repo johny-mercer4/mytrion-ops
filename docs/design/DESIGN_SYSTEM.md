@@ -175,8 +175,11 @@ as a licence plate.
 `--layout-rail-w-collapsed` 68px · `--layout-measure` 1280px · `--layout-measure-prose` 62ch ·
 `--layout-gutter` 24px (16px ≤768px).
 
-**Breakpoints: 560 / 768 / 1024.** Not tokens — a custom property cannot be used in an `@media`
-condition.
+**Breakpoints: 480 / 640 / 900 / 1200**, in range syntax (`(width < 640px)`), never `max-width`.
+Not tokens — a custom property cannot be used in an `@media` condition. **640 is the structure
+line** (rail → tab bar, modal → sheet, table → cards); **900 is the density line** (rail forced
+collapsed, compact gutters, 16px inputs). Enforced by `src/styles/breakpoints.test.ts`; the full
+rationale is in FOUNDATIONS §5.
 
 **Z-index:** `--z-base` 0 · `--z-raised` 10 · `--z-sticky` 100 · `--z-dropdown` 1000 ·
 `--z-overlay` 2000 · `--z-modal` 2100 · `--z-popover` 2200 · `--z-toast` 3000 · `--z-tooltip` 4000.

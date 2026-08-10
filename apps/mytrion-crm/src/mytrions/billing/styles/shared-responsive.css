@@ -7,37 +7,6 @@
    §1  SIDEBAR — collapse to mobile bottom nav (≤ 768px)
    ═══════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
-
-    /* Shrink content bottom-padding so it doesn't overlap the bottom nav */
-    .bm-root .bm-content {
-    }
-
-    .bm-root .bm-panel {
-    }
-
-    .bm-root .bm-ai-panel {
-    }
-}
-
-/* ═══════════════════════════════════════════════
-   §2  HEADER  (≤ 640px)
-   ═══════════════════════════════════════════════ */
-
-@media (max-width: 640px) {
-    .bm-root {
-        --header-height: 48px;
-    }
-
-}
-
-@media (max-width: 480px) {
-    .bm-root {
-        --header-height: 44px;
-    }
-
-}
-
 /* ═══════════════════════════════════════════════
    §3  PANEL CONTENT  (≤ 640px)
    ═══════════════════════════════════════════════ */
@@ -101,17 +70,6 @@
     .bm-root .bm-stat-card {
         padding: 0.75rem;
     }
-
-    /* Hide table on very small screens, show list fallback */
-    .bm-root .bm-table-desktop-only {
-        display: none;
-    }
-
-    .bm-root .bm-list-mobile-only {
-        display: flex;
-    }
-
-    /* Bottom nav labels — shrink */
 }
 
 @media (max-width: 380px) {
