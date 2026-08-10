@@ -190,16 +190,17 @@ export function HrAttendance() {
     invalidateSwrCache('hr:attendance:');
   }, []);
 
-  // Opening the tab, and every week change, asks the DWH for that week.
-  useEffect(() => {
-    let cancelled = false;
-    void runSync(weekRange).then((wrote) => {
-      if (!cancelled && wrote) revalidate();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [weekRange, runSync, revalidate]);
+  /**
+   * NOTHING is pulled from the warehouse on page load any more.
+   *
+   * It used to sync the whole week for everyone here, which is ~4.4k rows and was slow enough to hit
+   * the request timeout — a warning banner on every visit for work the visit did not need. Opening one
+   * person pulls only that person (tens of rows), which is where the data is actually looked at, and
+   * Refresh still pulls the whole window when the tiles are what you came for.
+   *
+   * The roster and My Data render from what is already stored, so the page is as fast as one database
+   * read and never waits on the DWH.
+   */
 
   return (
     /* The Team pane is a roster + detail split — wide content that a reading measure only squeezes.
@@ -217,8 +218,8 @@ export function HrAttendance() {
               // longer remounts, so a click is the user's way to correct a view that has sat
               // through a midnight and is showing the wrong day as "today".
               syncToday();
-              // Pull first, then re-read — a manual Refresh is worth the wait that an automatic load
-              // deliberately avoids, because the user is watching and asked for current data.
+              // The whole window, on purpose: this is the one place that refreshes the roster's
+              // presence and the tiles above it, and the user asked for it and is watching.
               void runSync(weekRange, true).then(() => {
                 revalidate();
                 // The roster's shift list is not in the cache, and Refresh is the only thing that

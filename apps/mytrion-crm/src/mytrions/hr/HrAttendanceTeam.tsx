@@ -4,12 +4,13 @@
  * Admins / HR Manager: Team = direct reports; All = every Active employee.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CalendarClock, Search, Users, X } from 'lucide-react';
+import { CalendarClock, ChevronLeft, Search, Users } from 'lucide-react';
 import {
   assignAttendanceShift,
   getAttendanceSummary,
   getAttendanceTeam,
   listAttendanceShifts,
+  syncAttendanceFromDwh,
   type AttendanceSummaryDto,
   type HrAttendanceShiftDto,
   type AttendanceTeamListDto,
@@ -19,7 +20,25 @@ import {
 import { formatCachedAt, useCachedLoad } from '../_shared/swrCache';
 import { HrBusy, HrEmpty, HrPageLoader } from './HrBits';
 import { HrSelect, type HrSelectOption } from './HrSelect';
+import { HrAttendanceRoster } from './HrAttendanceRoster';
 import { HrAttendanceWeek } from './HrAttendanceWeek';
+
+/**
+ * The filters, in the order the tiles above them read.
+ *
+ * `no_shift` is not a presence state — it is "cannot be scored at all" — but it is the one the tiles
+ * make actionable (24 people), so it belongs beside them rather than in a separate control.
+ */
+const PRESENCE_FILTERS = [
+  ['all', 'All'],
+  ['in_office', 'In office'],
+  ['out_of_office', 'Out of office'],
+  ['needs_review', 'Needs review'],
+  ['no_activity', 'No activity'],
+  ['no_shift', 'No shift'],
+] as const;
+
+type PresenceFilter = (typeof PRESENCE_FILTERS)[number][0];
 
 export interface TeamSummary {
   people: number;
@@ -27,14 +46,6 @@ export interface TeamSummary {
   needsReview: number;
   noShift: number;
 }
-
-/** The same wording the tab's tiles and the day rows use, so one state is never named two ways. */
-const PRESENCE_TEXT: Record<string, string> = {
-  in_office: 'In office',
-  out_of_office: 'Out',
-  needs_review: 'Needs review',
-  no_activity: 'No activity',
-};
 
 export function HrAttendanceTeam({
   scope,
@@ -71,6 +82,16 @@ export function HrAttendanceTeam({
 }) {
   const [q, setQ] = useState('');
   const [qDebounced, setQDebounced] = useState('');
+  /**
+   * Presence filter, applied CLIENT-side.
+   *
+   * The whole roster is already in memory, and presence is derived from the last punch — so a round
+   * trip to ask the server for a subset of rows it just sent would add latency and a second source of
+   * truth for numbers the tiles above already show. Filtering here is instant and cannot disagree.
+   *
+   * Deliberately not in the cache key either: it is a view of one fetched roster, not a different one.
+   */
+  const [presence, setPresence] = useState<PresenceFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** The row as it was picked, so a search that filters the person out still names them. */
   const [selectedEmp, setSelectedEmp] = useState<AttendanceTeamListItem | null>(null);
@@ -125,6 +146,13 @@ export function HrAttendanceTeam({
   );
   const data = roster.data;
   const loading = roster.loading;
+  const visibleItems = (data?.items ?? []).filter((item) =>
+    presence === 'all'
+      ? true
+      : presence === 'no_shift'
+        ? !item.shift
+        : item.currentState === presence,
+  );
   /**
    * Kept apart from `roster.error`, which the cache hook owns.
    *
@@ -134,6 +162,14 @@ export function HrAttendanceTeam({
    * assignment had failed.
    */
   const [actionError, setActionError] = useState('');
+  /**
+   * The person has no Face ID, so the door readers cannot produce anything for them.
+   *
+   * Only 94 of 222 employees are enrolled, so an empty week is the NORMAL case for most of the
+   * directory — and an empty week that looks like a week of absences is a payroll conversation nobody
+   * should have to start. Say which it is.
+   */
+  const [notEnrolled, setNotEnrolled] = useState(false);
 
   // Refresh is a force: same key, but the user asked for a round trip rather than the cached copy.
   const firstToken = useRef(refreshToken);
@@ -175,11 +211,31 @@ export function HrAttendanceTeam({
     }
     let cancelled = false;
     setDetailLoading(true);
-    void getAttendanceSummary({
-      from: data.from,
-      to: data.to,
-      employeeId: selectedId,
-    })
+    setNotEnrolled(false);
+    /**
+     * Pull THIS person's week from the warehouse, then read it back.
+     *
+     * Sequential on purpose — the read has to see what the pull wrote, and for one employee the pull is
+     * tens of rows rather than the ~4.4k a whole-window sync moves. This is the click that replaced
+     * syncing everybody on page load.
+     *
+     * A failed pull does not stop the read: whatever is already stored is still worth showing, and the
+     * banner explains that it may be missing the newest punches.
+     */
+    void syncAttendanceFromDwh({ from: data.from, to: data.to, employeeId: selectedId })
+      .then((result) => {
+        if (!cancelled && result.noFaceId) setNotEnrolled(true);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setActionError(err instanceof Error ? err.message : String(err));
+      })
+      .then(() =>
+        getAttendanceSummary({
+          from: data.from,
+          to: data.to,
+          employeeId: selectedId,
+        }),
+      )
       .then((summary) => {
         if (!cancelled) setDetail(summary);
       })
@@ -268,9 +324,26 @@ export function HrAttendanceTeam({
             placeholder={orgWide ? 'Search everyone…' : 'Search team…'}
           />
         </label>
+        <div className="hr-chips" role="group" aria-label="Presence filter">
+          {PRESENCE_FILTERS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className="hr-chip"
+              aria-pressed={presence === value}
+              onClick={() => setPresence(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {data ? (
           <span className="hr-att-count">
-            {data.items.length} people
+            {presence === 'all'
+              ? `${data.items.length} people`
+              : /* Both numbers, because "12 people" under an active filter reads as a shrunken
+                   directory rather than a slice of one. */
+                `${visibleItems.length} of ${data.items.length} people`}
             {orgWide ? ' · org-wide' : scope === 'direct' ? ' · direct reports' : ' · managed team'}
             {/* Showing a cached roster without saying so is how someone reads yesterday's numbers as
                 today's. `revalidating` is the honest label while a refetch is in flight. */}
@@ -311,48 +384,33 @@ export function HrAttendanceTeam({
       ) : !data || data.items.length === 0 ? (
         <HrEmpty icon={<Users size={26} />} title="No people found" body={emptyBody} />
       ) : (
-        <div className={`hr-att-split${selectedId ? ' has-detail' : ''}`}>
-          <ul className="hr-att-roster" aria-label="Employees">
-            {data.items.map((item) => {
-              const on = item.employeeId === selectedId;
-              return (
-                <li key={item.employeeId}>
-                  <button
-                    type="button"
-                    className={`hr-att-row${on ? ' is-on' : ''}`}
-                    aria-current={on ? 'true' : undefined}
-                    onClick={() => {
-                      setSelectedId(item.employeeId);
-                      setSelectedEmp(item);
-                    }}
-                  >
-                    {/* Presence as a dot, not a pill: at 145 rows the colour is what you scan, and a
-                        pill per row is 145 competing badges. The word is still on the right for
-                        anyone who cannot use the colour. */}
-                    <span
-                      className="hr-att-row-dot"
-                      data-state={item.currentState}
-                      aria-hidden="true"
-                    />
-                    <span className="hr-att-row-main">
-                      <span className="hr-att-row-name">
-                        {item.firstName} {item.lastName}
-                      </span>
-                      <span className="hr-att-row-meta">
-                        {[item.designation, item.department].filter(Boolean).join(' · ') || '—'}
-                        {/* Deliberately NOT the shift name. Nearly everyone is on the same shift, so
-                            printing it 145 times says nothing; its ABSENCE is the fact worth seeing. */}
-                        {item.shift ? null : <em className="hr-att-row-flag">No shift</em>}
-                      </span>
-                    </span>
-                    <span className="hr-att-row-state" data-state={item.currentState}>
-                      {PRESENCE_TEXT[item.currentState] ?? 'No activity'}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+        <div className="hr-att-stack">
+          {/*
+            A drill-down, not a split. The table is full width, so there is no room beside it for the
+            week — and a week of times squeezed into a 320px pane was the reason the columns had nowhere
+            to go in the first place. Opening someone REPLACES the list and offers a way back, which is
+            the same master→detail move the directory makes when it opens an employee.
+          */}
+          {/* A filter matching nobody is not an empty directory, and saying "no people found" while
+              145 sit one click away sends the user hunting for a data problem. */}
+          {selectedId ? null : visibleItems.length === 0 ? (
+            <HrEmpty
+              icon={<Users size={26} />}
+              title="Nobody in this state"
+              body={`None of the ${data.items.length} people here match "${
+                PRESENCE_FILTERS.find(([v]) => v === presence)?.[1] ?? presence
+              }" right now.`}
+            />
+          ) : (
+            <HrAttendanceRoster
+              items={visibleItems}
+              selectedId={selectedId}
+              onOpen={(item) => {
+                setSelectedId(item.employeeId);
+                setSelectedEmp(item);
+              }}
+            />
+          )}
 
           {selectedId ? (
             <div className="hr-att-detail" role="region" aria-label="Employee attendance week">
@@ -368,18 +426,35 @@ export function HrAttendanceTeam({
                     <p>No shift assigned</p>
                   )}
                 </div>
+                {/* A labelled Back, not an X: this returns to the roster rather than dismissing a
+                    panel, and an unlabelled X on a full-width view reads as "discard". */}
                 <button
                   type="button"
-                  className="hr-icon-btn"
-                  aria-label="Close"
+                  className="hr-btn"
                   onClick={() => {
                     setSelectedId(null);
                     setSelectedEmp(null);
                   }}
                 >
-                  <X size={16} />
+                  <ChevronLeft size={14} />
+                  All employees
                 </button>
               </header>
+
+              {/*
+                Most of the directory is not enrolled on the door readers (94 of 222 have a Face ID),
+                so a blank week is the normal case rather than a fault — and a blank week that reads as
+                absences is a payroll conversation nobody should have to start over a missing setting.
+              */}
+              {notEnrolled ? (
+                <p className="hr-banner" role="status">
+                  <span>
+                    <strong>Not enrolled on the door readers.</strong> This employee has no Face ID, so
+                    the badge system has nothing to report — the empty week below is missing data, not
+                    absence.
+                  </span>
+                </p>
+              ) : null}
               <div className="hr-att-assign">
                 <span className="hr-att-assign-icon">
                   <CalendarClock size={17} aria-hidden="true" />
@@ -424,12 +499,7 @@ export function HrAttendanceTeam({
                 <HrAttendanceWeek data={detail} today={today} />
               ) : null}
             </div>
-          ) : (
-            <div className="hr-att-detail-placeholder">
-              <Users size={22} aria-hidden="true" />
-              <p>Select a person to see their week and assign a shift.</p>
-            </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

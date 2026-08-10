@@ -467,22 +467,50 @@
   min-width: 0;
 }
 /* Truncate, never wrap: a uniform row height is what makes a long list scannable. */
-.hr-root .hr-att-row-name,
-.hr-root .hr-att-row-meta {
+.hr-root .hr-att-row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.hr-root .hr-att-row-name {
   font-size: var(--text-sm);
   font-weight: 650;
   letter-spacing: -0.005em;
 }
+/*
+ * A flex row, so the prose truncates and the chip beside it does not.
+ *
+ * When this whole line was one truncating block, a long role plus a "No shift" chip pushed the chip
+ * past the ellipsis and it rendered as "N…" — a status label shortened into nonsense. Splitting it
+ * means only `.hr-att-row-text` gives way.
+ */
 .hr-root .hr-att-row-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
+/*
+ * `min-width: 0` is the load-bearing part. A flex item refuses to shrink below its content width by
+ * default, so without it the text keeps its full length, the line overflows, and the row grows a
+ * second line — which is how the uniform 59px row height gets lost.
+ */
+.hr-root .hr-att-row-meta > .hr-att-row-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/*
+ * `flex: none` + `inline-block` because the chip was being CLIPPED to "N…".
+ *
+ * It lives inside `.hr-att-row-meta`, which truncates with `text-overflow: ellipsis` — so a long
+ * role and department consumed the line and the ellipsis ate the chip down to one letter. The chip
+ * is a status, not prose: it must never be the thing that gets shortened.
+ */
 .hr-root .hr-att-row-flag {
+  display: inline-block;
+  flex: none;
+  white-space: nowrap;
   margin-left: 6px;
   padding: 1px 5px;
   border-radius: var(--hr-r-sm);
@@ -661,4 +689,69 @@
   .hr-root .hr-att-assign-icon {
     display: none;
   }
+}
+
+/* ── Roster as a table (matches the people directory) ───────────────────────── */
+
+/*
+ * A drill-down stack, replacing the old two-column split. The table is full width, and opening a
+ * person swaps it for their week — so neither view has to fit beside the other.
+ */
+.hr-root .hr-att-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 320px;
+}
+
+/* Attendance has no admin action column, so the last cell is data and must not be width-clamped. */
+.hr-root .hr-att-list tbody tr {
+  cursor: pointer;
+}
+.hr-root .hr-att-list tbody tr.is-on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/*
+ * Presence in a table cell: dot plus word.
+ *
+ * Not the `Pill` the directory uses for Status — a pill reads as a badge you could act on, and this is
+ * a live reading that changes on its own. The dot carries it at a glance; the word is there because
+ * colour alone is not an accessible signal.
+ */
+.hr-root .hr-att-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+}
+.hr-root .hr-att-state-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+.hr-root .hr-att-state[data-state='in_office'] {
+  color: var(--tone-emerald, var(--success));
+}
+.hr-root .hr-att-state[data-state='in_office'] .hr-att-state-dot {
+  background: var(--tone-emerald, var(--success));
+  /* A quiet halo so "who is here right now" survives a fast scroll down 145 rows. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone-emerald, var(--success)) 18%, transparent);
+}
+.hr-root .hr-att-state[data-state='needs_review'] {
+  color: var(--warning);
+}
+.hr-root .hr-att-state[data-state='needs_review'] .hr-att-state-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+/* Full width now that it is not sharing a row with the roster. */
+.hr-root .hr-att-stack > .hr-att-detail {
+  width: 100%;
 }

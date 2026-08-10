@@ -1,3 +1,4 @@
+import { HrSelect } from './HrSelect';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays,
@@ -326,15 +327,16 @@ export function HrLeaveSettings() {
         </div>
         <label className="hr-leave-year">
           <CalendarDays size={15} />
-          <select
-            value={year}
+          <HrSelect
+            label="Year"
+            value={String(year)}
             disabled={Boolean(busy)}
-            onChange={(event) => changeYear(Number(event.target.value))}
-          >
-            {yearOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
+            onChange={(next) => changeYear(Number(next))}
+            options={yearOptions.map((option) => ({
+              value: String(option),
+              label: String(option),
+            }))}
+          />
         </label>
       </header>
 
@@ -348,21 +350,24 @@ export function HrLeaveSettings() {
             <div className="hr-leave-policy-main">
               <label className="hr-leave-setting-field">
                 <span>Final HR approver</span>
-                <select value={approverId} onChange={(event) => setApproverId(event.target.value)}>
-                  <option value="">Choose an employee…</option>
-                  {sortedEmployees.map((employee) => {
-                    // Ineligible names stay visible but unselectable: dropping colleagues from the
-                    // list altogether reads as "their record is missing", not "they cannot approve".
-                    const eligible = eligibleApprover(employee);
-                    return (
-                      <option key={employee.id} value={employee.id} disabled={!eligible}>
-                        {employee.firstName} {employee.lastName}
-                        {employee.designation ? ` · ${employee.designation}` : ''}
-                        {eligible ? '' : ' · no login linked'}
-                      </option>
-                    );
-                  })}
-                </select>
+                <HrSelect
+                  label="Approver"
+                  value={approverId}
+                  onChange={setApproverId}
+                  placeholder="Choose an employee…"
+                  options={[
+                    { value: '', label: 'Choose an employee…' },
+                    // Ineligible names stay VISIBLE but unselectable: dropping colleagues from the list
+                    // altogether reads as "their record is missing", not "they cannot approve".
+                    ...sortedEmployees.map((employee) => ({
+                      value: employee.id,
+                      label: `${employee.firstName} ${employee.lastName}${
+                        employee.designation ? ` · ${employee.designation}` : ''
+                      }`,
+                      disabled: !eligibleApprover(employee),
+                    })),
+                  ]}
+                />
                 <small>Department lead approval is first. This employee makes the final decision.</small>
               </label>
               <div className="hr-leave-defaults">
@@ -428,7 +433,15 @@ export function HrLeaveSettings() {
               <input type="date" min={`${year}-01-01`} max={`${year}-12-31`} value={holidayDate} onChange={(event) => setHolidayDate(event.target.value)} />
               <input type="text" value={holidayName} onChange={(event) => setHolidayName(event.target.value)} placeholder="Holiday name" maxLength={160} />
               <label><input type="checkbox" checked={halfDay} onChange={(event) => setHalfDay(event.target.checked)} />Half day</label>
-              {halfDay ? <select value={halfSession} onChange={(event) => setHalfSession(event.target.value as 'morning' | 'afternoon')}><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select> : null}
+              {halfDay ? <HrSelect
+                  label="Half day session"
+                  value={halfSession}
+                  onChange={(next) => setHalfSession(next as 'morning' | 'afternoon')}
+                  options={[
+                    { value: 'morning', label: 'Morning' },
+                    { value: 'afternoon', label: 'Afternoon' },
+                  ]}
+                /> : null}
               <button type="button" className="hr-btn hr-btn-primary" disabled={Boolean(busy)} onClick={() => void addHoliday()}><Plus size={14} />Add</button>
             </div>
             <div className="hr-holiday-table">

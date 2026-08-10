@@ -59,6 +59,8 @@ export interface HrPersonTeamMember {
   department: string | null;
   status: string;
   photoFileId: string | null;
+  /** Their Zoho sign-in, when linked — null means their record cannot be opened from here. */
+  zohoUserId: string | null;
   relation: 'direct_report' | 'department_member';
 }
 

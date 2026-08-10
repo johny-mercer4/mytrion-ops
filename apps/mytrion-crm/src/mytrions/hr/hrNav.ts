@@ -20,7 +20,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react';
-import { isAdmin } from '../../access/resolveAccess';
+import { isAdmin, isHrAttendanceOnly } from '../../access/resolveAccess';
 import type { UserContext } from '../../context/userContext';
 
 export type HrTabId =
@@ -61,7 +61,7 @@ export const HR_TABS: HrTab[] = [
     icon: Home,
     tone: 'var(--tone-rose)',
     keywords: ['overview', 'dashboard', 'hub'],
-    access: () => true,
+    access: (user) => !isHrAttendanceOnly(user),
   },
   {
     id: 'employees',
@@ -70,7 +70,7 @@ export const HR_TABS: HrTab[] = [
     icon: Users,
     tone: 'var(--tone-sky)',
     keywords: ['directory', 'people', 'staff', 'headcount', 'roster'],
-    access: () => true,
+    access: (user) => !isHrAttendanceOnly(user),
   },
   {
     id: 'departments',
@@ -79,7 +79,7 @@ export const HR_TABS: HrTab[] = [
     icon: Building2,
     tone: 'var(--tone-indigo)',
     keywords: ['org', 'teams', 'units', 'structure', 'dept'],
-    access: () => true,
+    access: (user) => !isHrAttendanceOnly(user),
   },
   {
     id: 'org',
@@ -88,7 +88,7 @@ export const HR_TABS: HrTab[] = [
     icon: Network,
     tone: 'var(--tone-teal)',
     keywords: ['hierarchy', 'tree', 'org chart', 'structure'],
-    access: () => true,
+    access: (user) => !isHrAttendanceOnly(user),
   },
   {
     id: 'attendance',
@@ -106,7 +106,7 @@ export const HR_TABS: HrTab[] = [
     icon: Inbox,
     tone: 'var(--tone-amber)',
     keywords: ['leave', 'time off', 'approvals', 'vacation', 'sick', 'holidays', 'balance'],
-    access: () => true,
+    access: (user) => !isHrAttendanceOnly(user),
   },
   {
     id: 'settings',

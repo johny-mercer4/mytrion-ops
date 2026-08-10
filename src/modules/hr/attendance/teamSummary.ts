@@ -20,6 +20,8 @@ export interface AttendanceTeamListItem {
   designation: string | null;
   department: string | null;
   departmentId: string | null;
+  /** So the roster can show the same face the employee directory shows. */
+  photoFileId: string | null;
   relation: AttendanceTeamRelation;
   shift: {
     id: string;
@@ -118,6 +120,7 @@ export async function buildAttendanceTeamList(
       designation: e.designation,
       department: e.department,
       departmentId: e.departmentId,
+      photoFileId: e.photoFileId,
       relation: member.relation,
       shift: summary.shift,
       totals: withTotals
