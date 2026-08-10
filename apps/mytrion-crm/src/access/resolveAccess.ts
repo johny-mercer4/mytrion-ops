@@ -60,10 +60,34 @@ export interface AccessResult {
  * The Mytrions this user may enter, in display order. Verified sessions use the server-resolved
  * list (DB-authoritative, kept in display order); the static table is the dev-mock/legacy fallback.
  */
+/**
+ * A team lead reaches HR for ONE reason: their team's attendance.
+ *
+ * They have no `hr` grant, so the server never lists HR among their Mytrions — but attendance is the
+ * one HR surface whose routes admit them (scoped to their own reportees). Rather than invent a second
+ * kind of Mytrion access, HR is added to their list and every HR tab except Attendance is hidden.
+ *
+ * The hiding is a COURTESY, not the boundary: `hrAttendance.routes.ts` re-derives the team from
+ * reporting lines per request, and the employee-directory / departments / org routes still require real
+ * `hr` access, so they 403 a team lead whatever the client renders.
+ */
+export function hasFullHrAccess(ctx: UserContext): boolean {
+  if (isAdmin(ctx)) return true;
+  const granted = ctx.accessibleMytrions;
+  return granted ? granted.includes('hr') : false;
+}
+
+/** True when HR is open to this person for attendance and nothing else. */
+export function isHrAttendanceOnly(ctx: UserContext): boolean {
+  return ctx.leadsTeam === true && !hasFullHrAccess(ctx);
+}
+
 export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
   const admin = isAdmin(ctx);
   if (ctx.accessibleMytrions) {
     const granted = new Set(ctx.accessibleMytrions);
+    // Team leads get the HR door for Attendance. See `isHrAttendanceOnly`.
+    if (ctx.leadsTeam === true) granted.add('hr');
     const accessible = MYTRION_ORDER.filter((id) => granted.has(id) && isEnterable(id));
     const home =
       ctx.homeMytrion && accessible.includes(ctx.homeMytrion) ? ctx.homeMytrion : null;

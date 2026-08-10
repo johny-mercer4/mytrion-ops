@@ -12,6 +12,7 @@
 import { dwhQuery } from '../../../integrations/dwh.js';
 import { logger } from '../../../lib/logger.js';
 import { hrAttendancePunchRepo, type InsertPunchInput } from '../../../repos/hrAttendancePunchRepo.js';
+import { hrEmployeeRepo } from '../../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import {
   doorKind,
@@ -90,6 +91,14 @@ export interface DwhSyncResult {
   skipped: number;
   /** True when a recent identical sync stood in for this one. */
   cached: boolean;
+  /**
+   * Set when the sync was for one person who has no Face ID on their employee record.
+   *
+   * Not an error and not silence: 94 of 222 employees have a Face ID, so most of the directory simply
+   * cannot produce attendance. The caller needs to be able to say "this person is not enrolled on the
+   * door readers" instead of showing an empty week that looks like an absence.
+   */
+  noFaceId?: boolean;
 }
 
 interface AcsEventRow {
@@ -157,7 +166,16 @@ function toPunch(row: AcsEventRow): InsertPunchInput | null {
   };
 }
 
-async function fetchWindow(from: string, to: string): Promise<AcsEventRow[]> {
+async function fetchWindow(from: string, to: string, faceId?: string): Promise<AcsEventRow[]> {
+  /**
+   * One person, or the whole window.
+   *
+   * Verified against both sides: `hr_employees.face_id` and `acs_event.emp_code` are the same
+   * zero-padded string (`00000055`), so this is an equality match and not a normalisation problem.
+   */
+  const personClause = faceId ? 'and emp_code = $4' : '';
+  const params: unknown[] = [DWH_ATTENDANCE_DOORS, from, to];
+  if (faceId) params.push(faceId);
   return dwhQuery<AcsEventRow>(
     `select emp_code,
             to_char(event_date_time, 'YYYY-MM-DD HH24:MI:SS') as wall_clock,
@@ -168,11 +186,13 @@ async function fetchWindow(from: string, to: string): Promise<AcsEventRow[]> {
         and event_date_time >= $2::date
         and event_date_time < ($3::date + 2)
         and ${NIGHT_BAND_SQL}
+        ${personClause}
       order by event_date_time
       limit ${ROW_LIMIT}`,
-    // `+ 2` above, not `+ 1`: a night shift that starts on `to` clocks out after midnight, and that
-    // punch belongs to `to`. Stopping at the end of `to` would store every closing night as unfinished.
-    [DWH_ATTENDANCE_DOORS, from, to],
+    // `+ 2` in the window above, not `+ 1`: a night shift that starts on `to` clocks out after
+    // midnight, and that punch belongs to `to`. Stopping at the end of `to` would store every
+    // closing night as unfinished.
+    params,
   );
 }
 
@@ -181,8 +201,19 @@ async function runSync(
   from: string,
   to: string,
   key: string,
+  employeeId?: string,
 ): Promise<DwhSyncResult> {
-  const rows = await fetchWindow(from, to);
+  let faceId: string | undefined;
+  if (employeeId) {
+    const employee = await hrEmployeeRepo.getById(ctx, employeeId);
+    faceId = employee?.faceId?.trim() || undefined;
+    if (!faceId) {
+      // Nothing to ask the warehouse. Recorded rather than swallowed — see `noFaceId`.
+      lastSyncedAt.set(key, Date.now());
+      return { from, to, fetched: 0, inserted: 0, linked: 0, skipped: 0, cached: false, noFaceId: true };
+    }
+  }
+  const rows = await fetchWindow(from, to, faceId);
 
   const punches: InsertPunchInput[] = [];
   let skipped = 0;
@@ -193,14 +224,21 @@ async function runSync(
   }
 
   const inserted = await hrAttendancePunchRepo.insertMany(ctx, punches);
-  // Only worth the write amplification when something actually arrived; on a warm window this is the
-  // common case and both statements are skipped entirely.
+  /**
+   * Only worth the write amplification when something actually arrived; on a warm window this is the
+   * common case and both statements are skipped entirely.
+   *
+   * The scope carries `employeeId` for a one-person sync, so opening a colleague does not sweep the
+   * whole tenant's punches — but it is deliberately NOT passed to `reconcileUnmapped`, which matches
+   * punches to employees and therefore must be free to consider every unmapped row in the window.
+   */
+  const scope = { from, to, ...(employeeId ? { employeeId } : {}) };
   const linked = inserted > 0 ? await hrAttendancePunchRepo.reconcileUnmapped(ctx, { from, to }) : 0;
-  if (inserted > 0) await hrAttendancePunchRepo.rebucketWorkDates(ctx, { from, to });
+  if (inserted > 0) await hrAttendancePunchRepo.rebucketWorkDates(ctx, scope);
 
   lastSyncedAt.set(key, Date.now());
   logger.info(
-    { from, to, fetched: rows.length, inserted, linked, skipped },
+    { from, to, employeeId, fetched: rows.length, inserted, linked, skipped },
     'hr attendance synced from DWH',
   );
   return { from, to, fetched: rows.length, inserted, linked, skipped, cached: false };
@@ -217,7 +255,7 @@ export async function syncAttendanceFromDwh(
   ctx: TenantContext,
   from: string,
   to: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; employeeId?: string } = {},
 ): Promise<DwhSyncResult> {
   if (from > to) throw new Error('from must be on or before to');
   const span = daysBetween(from, to);
@@ -225,7 +263,9 @@ export async function syncAttendanceFromDwh(
     throw new Error(`Sync window is ${span} days; the maximum is ${MAX_SYNC_DAYS}`);
   }
 
-  const key = windowKey(ctx, from, to);
+  // The employee is part of the key: a one-person pull must not satisfy the cooldown for the whole
+  // window, and vice versa — they fetch different sets of rows.
+  const key = `${windowKey(ctx, from, to)}|${options.employeeId ?? '*'}`;
 
   // Share a run already in progress rather than starting a second one. Two panes of the Attendance page
   // mount together and ask for the same week at the same instant; without this they both pull it.
@@ -239,7 +279,7 @@ export async function syncAttendanceFromDwh(
     }
   }
 
-  const promise = runSync(ctx, from, to, key).finally(() => {
+  const promise = runSync(ctx, from, to, key, options.employeeId).finally(() => {
     inFlight.delete(key);
   });
   inFlight.set(key, promise);

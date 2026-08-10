@@ -33,6 +33,13 @@ export interface PersonTeamMember {
   status: string;
   photoFileId: string | null;
   /**
+   * Their Zoho sign-in, when HR has linked one.
+   *
+   * Present so a team member can be OPENED from here — their own record is where their attendance is.
+   * Null for the unlinked, and the UI must leave those inert rather than offer a row that leads nowhere.
+   */
+  zohoUserId: string | null;
+  /**
    * How they are connected to the subject. A person can be both a direct report and a member of a
    * department the subject leads; `direct_report` wins, because that is the stronger relationship.
    */
@@ -143,6 +150,7 @@ export async function buildHrPersonOverview(
       department: row.department,
       status: row.status,
       photoFileId: row.photoFileId,
+      zohoUserId: row.zohoUserId ?? null,
       relation,
     });
   };

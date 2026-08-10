@@ -214,7 +214,15 @@ export function HrEmployees() {
   return (
     /* A seven-column table is not prose: it opts out of the reading measure so the row actions are
        not squeezed against the panel edge while the page sits in a pool of empty space. */
-    <div className={`hr-page${view === 'list' ? ' hr-page-wide' : ''}`}>
+    /*
+      Full width in BOTH views, not just list.
+      `--hr-measure` is a READING width, and a directory of cards is not prose — the grids are
+      `repeat(auto-fill, minmax(Npx, 1fr))`, so extra width becomes extra columns rather than
+      absurdly wide cards. Capping only the card view also shrank the summary tiles and the search
+      bar with it, which is what read as broken. The cap was already inconsistent: collapsing the
+      sidebar removed it via `[data-sidebar-collapsed='true']`.
+    */
+    <div className="hr-page hr-page-wide">
       <HrPageHead
         tab="employees"
         actions={

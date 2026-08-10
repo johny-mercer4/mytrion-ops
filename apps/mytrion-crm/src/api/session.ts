@@ -29,6 +29,15 @@ export interface SessionWorker {
   viewAsUserIds?: string[];
   /** Resolved identities for the view-as targets, for the picker (non-admins get a scoped list). */
   viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
+  /**
+   * This worker leads a team — has direct reports, or leads a department. DB-resolved from reporting
+   * lines, not from a profile name.
+   *
+   * Drives the HR → Attendance entry for team leads. A HINT, never a grant: the attendance routes
+   * re-derive the same fact per request, so a stale or forged value changes what is on screen and
+   * nothing about what the server returns.
+   */
+  leadsTeam?: boolean;
 }
 
 export interface StoredSession {
