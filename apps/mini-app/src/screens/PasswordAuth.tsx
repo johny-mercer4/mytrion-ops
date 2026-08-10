@@ -11,6 +11,7 @@ import {
   type LoginHints,
   type RegistrationView,
 } from '../lib/api';
+import { EyeToggle } from '../components/icons';
 import { LogoLockup } from '../components/logo';
 import { useI18n } from '../lib/i18n';
 import { haptic } from '../lib/telegram';
@@ -189,25 +190,23 @@ export function PasswordAuthScreen({
         {mode === 'update' && (
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <FieldLabel text={t('auth.currentPassword')} />
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="current-password"
               placeholder={t('auth.currentPassword')}
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={setCurrentPassword}
               disabled={busy}
-              style={field}
+              fieldStyle={field}
             />
             <FieldLabel text={t('auth.newPassword')} />
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               placeholder={t('auth.newPassword')}
               value={nextPassword}
-              onChange={(e) => setNextPassword(e.target.value)}
+              onChange={setNextPassword}
               disabled={busy}
               minLength={MIN_PASSWORD_LEN}
-              style={field}
+              fieldStyle={field}
             />
           </div>
         )}
@@ -215,18 +214,17 @@ export function PasswordAuthScreen({
         {(mode === 'set' || mode === 'login') && (
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <FieldLabel text={t('auth.passwordLabel')} />
-            <input
-              type="password"
+            <PasswordInput
               autoComplete={mode === 'set' ? 'new-password' : 'current-password'}
               placeholder={t('auth.passwordPlaceholder')}
               value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
+              onChange={(v) => {
+                setPassword(v);
                 if (error) setError('');
               }}
               disabled={busy}
               minLength={MIN_PASSWORD_LEN}
-              style={field}
+              fieldStyle={field}
             />
             {password.length > 0 && password.length < MIN_PASSWORD_LEN && (
               <div style={{ fontSize: 12, color: 'var(--muted-fg)' }}>
@@ -368,6 +366,73 @@ export function PasswordAuthScreen({
 function FieldLabel({ text }: { text: string }) {
   return (
     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-fg)', letterSpacing: '.02em' }}>{text}</div>
+  );
+}
+
+function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+  autoComplete,
+  disabled,
+  minLength,
+  fieldStyle,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  autoComplete: string;
+  disabled?: boolean;
+  minLength?: number;
+  fieldStyle: CSSProperties;
+}) {
+  const { t } = useI18n();
+  const [revealed, setRevealed] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <input
+        type={revealed ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        minLength={minLength}
+        style={{ ...fieldStyle, paddingRight: 46 }}
+      />
+      <button
+        type="button"
+        className="press"
+        tabIndex={-1}
+        disabled={disabled}
+        aria-label={revealed ? t('auth.hidePassword') : t('auth.showPassword')}
+        aria-pressed={revealed}
+        onClick={() => {
+          haptic('tap');
+          setRevealed((v) => !v);
+        }}
+        style={{
+          position: 'absolute',
+          right: 6,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: 36,
+          height: 36,
+          border: 'none',
+          borderRadius: 10,
+          background: 'transparent',
+          color: 'var(--muted-fg)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: disabled ? 'default' : 'pointer',
+          padding: 0,
+        }}
+      >
+        <EyeToggle revealed={revealed} size={18} />
+      </button>
+    </div>
   );
 }
 

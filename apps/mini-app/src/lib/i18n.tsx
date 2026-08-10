@@ -44,6 +44,8 @@ const STRINGS: Record<Lang, Dict> = {
     'auth.password': 'Password (min 4 characters)',
     'auth.passwordLabel': 'Password',
     'auth.passwordPlaceholder': 'Min. 4 characters',
+    'auth.showPassword': 'Show password',
+    'auth.hidePassword': 'Hide password',
     'auth.currentPassword': 'Current password',
     'auth.newPassword': 'New password (min 4 characters)',
     'auth.passwordTooShort': 'Password must be at least 4 characters.',
