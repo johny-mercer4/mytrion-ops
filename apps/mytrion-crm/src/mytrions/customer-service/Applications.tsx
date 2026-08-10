@@ -7,6 +7,17 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { getCardTrackingBulk, toggleOnboarding, type OnboardingField } from '@/api/cs';
+import {
+  activeFilterCount,
+  distinctValues,
+  emptyFilters,
+  filterApplications,
+  sortApplications,
+  SORT_OPTIONS,
+  type AppFilters,
+  type SortDir,
+  type SortKey,
+} from './applicationsFilters';
 import { ApplicationModal } from './ApplicationModal';
 import { CardTracking } from './CardTracking';
 import { copyWithToast } from './copyToast';
@@ -14,6 +25,7 @@ import {
   AppRow,
   CHECK_PROP,
   columnsFor,
+  copyableValue,
   isOnboardingField,
   type AppColumn,
   type SubTab,
@@ -58,6 +70,13 @@ export function Applications() {
   // Bulk-fetched FedEx tracking numbers, keyed by row id — see the effect below. Kept separate
   // from `overrides` (that one is specifically the tick-box optimistic-update mechanism).
   const [trackingById, setTrackingById] = useState<Record<string, string>>({});
+  // Sort + filter (QA feedback 2026-08-10) — client-side over the loaded page; see
+  // applicationsFilters.ts for why there's no server-side equivalent. Persists across apps/clients
+  // tab switches, same as `search` already does.
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<AppFilters>(emptyFilters);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -97,7 +116,7 @@ export function Applications() {
     };
   }, [subTab, pageData.data]);
 
-  const rows = useMemo(() => {
+  const merged = useMemo(() => {
     const base = pageData.data?.rows ?? [];
     return base.map((a) => {
       const o = overrides[a.id];
@@ -109,6 +128,19 @@ export function Applications() {
       };
     });
   }, [pageData.data, overrides, trackingById]);
+
+  const rows = useMemo(
+    () => sortApplications(filterApplications(merged, filters), sortKey, sortDir),
+    [merged, filters, sortKey, sortDir],
+  );
+
+  // Filter dropdown option lists — distinct values actually present on the loaded page, not a
+  // hardcoded picklist (those drift; see ApplicationModal's Stage options for how stale one gets).
+  const stageOptions = useMemo(() => distinctValues(merged, (a) => a.stage), [merged]);
+  const bizOptions = useMemo(() => distinctValues(merged, (a) => a.biz), [merged]);
+  const agentOptions = useMemo(() => distinctValues(merged, (a) => a.agent), [merged]);
+  const wexOptions = useMemo(() => distinctValues(merged, (a) => a.wex), [merged]);
+  const filterCount = activeFilterCount(filters);
 
   const hasMore = pageData.data?.moreRecords === true;
   // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
@@ -174,17 +206,10 @@ export function Applications() {
         }
         return;
       }
-      if (col.key === 'app_id' || (col.key === 'id' && subTab !== 'clients')) {
-        if (app.appId) {
-          copyWithToast(app.appId, ev);
-          return;
-        }
-      }
-      if (col.key === 'id' && subTab === 'clients') {
-        if (app.carrierId) {
-          copyWithToast(app.carrierId, ev);
-          return;
-        }
+      const copyText = copyableValue(col, app, subTab);
+      if (copyText) {
+        copyWithToast(copyText, ev);
+        return;
       }
       setOpenApp(app);
     },
@@ -249,6 +274,51 @@ export function Applications() {
                 </button>
               ) : null}
             </div>
+            <div className="cs-app-sort">
+              <label className="cs-app-sort-label" htmlFor="cs-app-sort-select">
+                Sort
+              </label>
+              <select
+                id="cs-app-sort-select"
+                className="cs-form-input"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="cs-app-sort-dir"
+                title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  style={{ transform: sortDir === 'desc' ? 'rotate(180deg)' : undefined }}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19V5m-6 6l6-6 6 6" />
+                </svg>
+              </button>
+            </div>
+            <button
+              type="button"
+              className={`cs-btn cs-btn-ghost cs-app-filters-toggle${filtersOpen ? ' active' : ''}`}
+              onClick={() => setFiltersOpen((v) => !v)}
+            >
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M7 12h10M10 18h4" />
+              </svg>
+              Filters
+              {filterCount > 0 ? <span className="cs-app-filters-badge">{filterCount}</span> : null}
+            </button>
             <button className="cs-refresh-btn" onClick={pageData.refresh} disabled={loading}>
               <svg
                 width="13"
@@ -282,6 +352,124 @@ export function Applications() {
         </div>
       </div>
 
+      {/* ── Filter panel (collapsible) — company/date/stage/business type/agent + WEX status chips ── */}
+      {activeTab !== 'tracking' && filtersOpen ? (
+        <div className="cs-app-filter-panel">
+          <div className="cs-app-filter-row">
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Company Name</label>
+              <input
+                type="text"
+                className="cs-form-input"
+                value={filters.company}
+                placeholder="Contains…"
+                onChange={(e) => setFilters((f) => ({ ...f, company: e.target.value }))}
+              />
+            </div>
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Date Filled From</label>
+              <input
+                type="date"
+                className="cs-form-input"
+                value={filters.dateFrom}
+                onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+              />
+            </div>
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Date Filled To</label>
+              <input
+                type="date"
+                className="cs-form-input"
+                value={filters.dateTo}
+                onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+              />
+            </div>
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Stage</label>
+              <select
+                className="cs-form-input"
+                value={filters.stage}
+                onChange={(e) => setFilters((f) => ({ ...f, stage: e.target.value }))}
+              >
+                <option value="">All</option>
+                {stageOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Business Type</label>
+              <select
+                className="cs-form-input"
+                value={filters.biz}
+                onChange={(e) => setFilters((f) => ({ ...f, biz: e.target.value }))}
+              >
+                <option value="">All</option>
+                {bizOptions.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="cs-app-filter-field">
+              <label className="cs-app-filter-label">Agent (Deal)</label>
+              <select
+                className="cs-form-input"
+                value={filters.agent}
+                onChange={(e) => setFilters((f) => ({ ...f, agent: e.target.value }))}
+              >
+                <option value="">All</option>
+                {agentOptions.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {filterCount > 0 ? (
+              <button
+                type="button"
+                className="cs-btn cs-btn-ghost cs-app-filter-clear"
+                onClick={() => setFilters(emptyFilters())}
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+          {wexOptions.length > 0 ? (
+            <div className="cs-app-filter-wex-row">
+              <span className="cs-app-filter-label">WEX Status</span>
+              <div className="cs-app-filter-chips">
+                {wexOptions.map((w) => {
+                  const active = filters.wex.has(w);
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      className={`cs-chip is-neutral${active ? ' active' : ''}`}
+                      aria-pressed={active}
+                      onClick={() =>
+                        setFilters((f) => {
+                          const next = new Set(f.wex);
+                          if (next.has(w)) next.delete(w);
+                          else next.add(w);
+                          return { ...f, wex: next };
+                        })
+                      }
+                    >
+                      {w}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {activeTab === 'tracking' ? (
         <CardTracking />
       ) : loading ? (
@@ -312,7 +500,7 @@ export function Applications() {
             No applications found
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Try adjusting your search or switch tabs
+            Try adjusting your search, filters, or switch tabs
           </div>
         </div>
       ) : (

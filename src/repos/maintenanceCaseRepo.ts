@@ -2,9 +2,26 @@ import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } fr
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../db/client.js';
 import { withDbRetry } from '../db/retry.js';
+import { ConflictError } from '../lib/errors.js';
 import { maintenanceCases, type MaintenanceCase, type NewMaintenanceCase } from '../db/schema/index.js';
 import { PREPAY_PAYMENT_METHOD } from '../modules/customerService/maintenanceFields.js';
-import { firstOrUndefined } from './util.js';
+import { firstOrUndefined, isUniqueViolation } from './util.js';
+
+/**
+ * A raw SQLSTATE 23505 is not an AppError, so errorHandler swaps its message for "Internal server
+ * error" — same trap as hrEmployeeRepo's employeeWriteConflict. Only reachable for an agent-TYPED
+ * reference number: `withGeneratedReferenceNumber` already checks-and-retries before insert for the
+ * auto-generated path, so this is the backstop for the one case that skips that check on purpose.
+ */
+export function referenceNumberConflict(err: unknown): unknown {
+  if (!isUniqueViolation(err)) return err;
+  const constraint = (err as { constraint?: unknown }).constraint;
+  if (constraint !== 'maintenance_cases_reference_number_uk') return err;
+  return new ConflictError('That reference number is already in use on another case', {
+    code: 'REFERENCE_NUMBER_TAKEN',
+    cause: err,
+  });
+}
 
 /**
  * maintenanceCaseRepo — the maintenance case queue. Postgres is the source of truth (Zoho was read
@@ -320,7 +337,11 @@ export const maintenanceCaseRepo = {
   },
 
   async insert(row: NewMaintenanceCase): Promise<MaintenanceCase | undefined> {
-    return firstOrUndefined(await db.insert(maintenanceCases).values(row).returning());
+    try {
+      return firstOrUndefined(await db.insert(maintenanceCases).values(row).returning());
+    } catch (err) {
+      throw referenceNumberConflict(err);
+    }
   },
 
   async update(id: string, patch: Partial<NewMaintenanceCase>): Promise<MaintenanceCase | undefined> {

@@ -28,6 +28,8 @@ export interface Application {
   trucks: number;
   cards: number;
   date: string;
+  /** Raw `Date_Filled` value, for sorting/filtering — `date` is display-formatted, not sortable. */
+  dateFilledRaw: string;
   agent: string;
   notes: string;
   cycle: string;

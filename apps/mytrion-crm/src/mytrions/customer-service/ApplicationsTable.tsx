@@ -134,6 +134,38 @@ function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
+/** Full address on file as one string — shared by the cell's title tooltip and click-to-copy. */
+export function fullAddress(app: Application): string {
+  const locality = [[app.city, app.state].filter(Boolean).join(', '), app.zip].filter(Boolean).join(' ');
+  return [app.street, locality].filter(Boolean).join(', ');
+}
+
+/** 'generic'-keyed columns cover several fields (MC/DOT/Email/Credit Score/Trucks/...) — only these
+ *  three are copyable (QA feedback 2026-08-10). */
+const COPYABLE_GENERIC_FIELDS = new Set(['Email', 'DOT', 'emc']);
+
+/** The text a cell copies on click, or null if this column isn't copyable. Single source of truth
+ *  for both AppRow's copyable styling and Applications.tsx's click handler. */
+export function copyableValue(col: AppColumn, app: Application, subTab: SubTab): string | null {
+  switch (col.key) {
+    case 'app_id':
+      return app.appId || null;
+    case 'id':
+      return (subTab === 'clients' ? app.carrierId : app.appId) || null;
+    case 'phone':
+      return app.phone ? formatPhone(app.phone) : null;
+    case 'address':
+      return fullAddress(app) || null;
+    case 'generic':
+      if (col.field && COPYABLE_GENERIC_FIELDS.has(col.field)) {
+        return fieldValue(app, col.field) || null;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
 /** Widget field name → live view-model accessor. Unknown/uncarried fields → ''. */
 const FIELD_GET: Record<string, (a: Application) => string | number | null> = {
   Type_of_Business: (a) => a.biz,
@@ -230,9 +262,13 @@ export function AppCell({
       return name ? <span className="cs-app-row-text">{name}</span> : MUTED;
     }
 
-    /* Phone */
+    /* Phone (copyable) */
     case 'phone':
-      return <span className="cs-app-row-mono">{formatPhone(app.phone) || '—'}</span>;
+      return (
+        <span className="cs-app-row-mono" title={app.phone ? 'Click to copy Phone' : ''}>
+          {formatPhone(app.phone) || '—'}
+        </span>
+      );
 
     /* Date */
     case 'date':
@@ -247,7 +283,7 @@ export function AppCell({
       return <span className="cs-app-row-owner">{app.agent}</span>;
     }
 
-    /* Address summary */
+    /* Address summary (copyable) */
     case 'address': {
       /* Full address on file, not just the locality (QA feedback 2026-07-28). Street on top,
          "City, ST ZIP" beneath — one line would be too wide for a nowrap column. Records with no
@@ -256,9 +292,9 @@ export function AppCell({
         .filter(Boolean)
         .join(' ');
       if (!app.street && !locality) return MUTED;
-      const full = [app.street, locality].filter(Boolean).join(', ');
+      const full = fullAddress(app);
       return (
-        <div className="cs-app-address" title={full}>
+        <div className="cs-app-address" title={full ? `${full} — click to copy` : undefined}>
           {app.street ? <div className="cs-app-address-street">{app.street}</div> : null}
           {locality ? (
             <div className={app.street ? 'cs-app-address-locality' : 'cs-app-row-text'}>{locality}</div>
@@ -330,10 +366,17 @@ export function AppCell({
         MUTED
       );
 
-    /* Generic text / number (boolean falls through to generic, widget parity) */
+    /* Generic text / number (boolean falls through to generic, widget parity). Email/DOT/MC
+       (copyable) get a click hint; the rest of the 'generic' fields (Credit Score, Trucks, ...)
+       and every 'boolean' cell don't. */
     default: {
       const v = fieldValue(app, col.field);
-      return <span className="cs-app-row-text">{v || '—'}</span>;
+      const copyable = col.key === 'generic' && v && col.field && COPYABLE_GENERIC_FIELDS.has(col.field);
+      return (
+        <span className="cs-app-row-text" title={copyable ? `Click to copy ${col.label}` : undefined}>
+          {v || '—'}
+        </span>
+      );
     }
   }
 }
@@ -376,7 +419,7 @@ export const AppRow = memo(function AppRow({
       {columns.map((col, i) => (
         <td
           key={i}
-          className={col.key === 'id' || col.key === 'app_id' ? 'cs-app-cell-copyable' : undefined}
+          className={copyableValue(col, app, subTab) ? 'cs-app-cell-copyable' : undefined}
           onClick={(e) => {
             e.stopPropagation();
             onCellClick(col, app, e);
