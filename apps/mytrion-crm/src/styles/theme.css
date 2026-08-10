@@ -181,6 +181,11 @@
   --radius-control: 4px;
   --radius-panel: 8px;
   --radius-pill: 999px;
+  /* Square, named. A full-bleed surface — a bottom sheet's trailing corners, a fullscreen dialog —
+     genuinely has no corner, and that is part of the corner language rather than an exception to
+     it. Named so ds/purity.test.ts's "no number on a radius" rule stays absolute: declining a
+     radius should not have to look like inventing one. */
+  --radius-none: 0;
 
   --radius-xs: var(--radius-control);
   --radius-sm: var(--radius-control);

@@ -217,14 +217,44 @@
    The layering is three-deep and has to be: body cells scroll UNDER the pinned column (--z-raised),
    the whole pinned column scrolls UNDER the header (--z-sticky), and the corner cell — sticky on
    both axes at once — has to sit above the header it is part of. */
-.table[data-sticky-col='true'] > * > tr > *:first-child {
+.table[data-sticky-col='true'] > * > tr > *:first-child,
+.table[data-sticky-col='true'] > * > tr > [data-pin] {
   position: sticky;
   inset-inline-start: 0;
   z-index: var(--z-raised);
   border-inline-end: 1px solid var(--ui-table-rule);
 }
-.table[data-sticky-col='true'][data-sticky-header='true'] > thead > tr > *:first-child {
+.table[data-sticky-col='true'][data-sticky-header='true'] > thead > tr > *:first-child,
+.table[data-sticky-col='true'][data-sticky-header='true'] > thead > tr > [data-pin] {
   z-index: calc(var(--z-sticky) + 1);
+}
+
+/* ── Responsive columns ──────────────────────────────────────────────────────
+   `priority` drops columns as the viewport narrows, so a nine-column table degrades to the three
+   that answer "which row is this and what is it worth" instead of forcing a two-finger sideways
+   read. Purely visual — the cells stay in the DOM, so find-in-page and a screen reader's table mode
+   still reach them, and nothing has to re-render when the viewport changes.
+
+   The identity column must never carry a priority above 1. `:first-child` above is positional, and
+   `display: none` does not change which element is first — a hidden identity column would leave the
+   pin on an invisible cell. `data-pin` is the fix; DataTable enforces the rest. */
+@media (width < 1200px) {
+  .table [data-priority='3'] {
+    display: none;
+  }
+}
+@media (width < 900px) {
+  .table [data-priority='2'] {
+    display: none;
+  }
+}
+
+/* ── Scroll ownership ────────────────────────────────────────────────────────
+   `scroller="none"` hands overflow back to an ancestor. The one real use is a windowed table whose
+   virtualiser measures a scroll ref further up: a second scroll parent between that ref and the
+   rows corrupts its range math silently, so it renders the wrong rows rather than failing. */
+.scroller[data-scroller='none'] {
+  overflow: visible;
 }
 
 /* ── Row states ──────────────────────────────────────────────────────────────

@@ -152,3 +152,63 @@
     opacity: 0;
   }
 }
+
+/* ── Below the structure line ────────────────────────────────────────────────
+   640px is the STRUCTURE line (FOUNDATIONS §5) — where the page changes shape rather than merely
+   getting tighter. A centred `md` panel is 560px; on a 390px screen it is already the whole
+   viewport, so the only question is whether it admits it.
+
+   `block-size: 100%`, NEVER `100vh`. `.dialog` is `position: fixed; inset: 0`, so 100% resolves
+   against the VISUAL viewport and iOS Safari's collapsing URL bar cannot push the footer off the
+   bottom — which is exactly what 100vh does, since 100vh is the height with the bar hidden. */
+@media (width < 640px) {
+  .dialog[data-mobile='sheet'],
+  .dialog[data-mobile='fullscreen'] {
+    /* The gutter is what made this a "centred box"; a sheet meets the viewport edges. */
+    padding: 0;
+  }
+
+  .dialog[data-mobile='sheet'][open] {
+    align-items: flex-end;
+  }
+
+  .dialog[data-mobile='sheet'] .panel {
+    inline-size: 100%;
+    /* Leaves a strip of backdrop above the sheet: the only visible affordance saying the page is
+       still there, and the only place left to tap to dismiss. Same 88% as ds/Drawer, deliberately —
+       two sheet mechanics that differ by 4% is two mechanics. */
+    max-block-size: 88%;
+    border-inline-width: 0;
+    border-block-end-width: 0;
+    /* Only the leading corners round; the trailing pair meet the viewport edge, where a rounded
+       corner would show two crescents of scrim at the very bottom of the screen. */
+    border-end-start-radius: var(--radius-none);
+    border-end-end-radius: var(--radius-none);
+  }
+
+  .dialog[data-mobile='fullscreen'] .panel {
+    inline-size: 100%;
+    block-size: 100%;
+    max-block-size: 100%;
+    border: 0;
+    border-radius: var(--radius-none);
+  }
+
+  .dialog[data-mobile='sheet'][data-state='open'] .panel {
+    animation: sheetIn var(--dur-slow) var(--ease-decelerate);
+  }
+  .dialog[data-mobile='sheet'][data-state='closing'] .panel {
+    animation: sheetOut var(--dur-fast) var(--ease-accelerate) forwards;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    translate: 0 100%;
+  }
+}
+@keyframes sheetOut {
+  to {
+    translate: 0 100%;
+  }
+}

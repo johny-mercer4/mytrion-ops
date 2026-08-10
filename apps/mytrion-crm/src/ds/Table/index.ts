@@ -25,6 +25,8 @@ export type {
   TableRowProps,
   TableHeaderCellProps,
   TableCellProps,
+  TableColumnPriority,
+  TableScroller,
   TableSelectCellProps,
   TableMessageRowProps,
   TableDensity,

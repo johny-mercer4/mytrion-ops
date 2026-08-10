@@ -162,9 +162,12 @@
 
     border-inline-start-width: 0;
     border-block-start: 1px solid var(--border-default);
-    /* Only the leading corners round — the trailing pair are against the viewport edge. */
+    /* Only the leading corners round — the trailing pair meet the viewport edge, where a rounded
+       corner would show two crescents of scrim at the very bottom of the screen. */
     border-start-start-radius: var(--radius-panel);
     border-start-end-radius: var(--radius-panel);
+    border-end-start-radius: var(--radius-none);
+    border-end-end-radius: var(--radius-none);
 
     /* The home indicator sits over the last ~34px of the screen, and --kb-inset is however much of
        the viewport the software keyboard is currently covering (see hooks/useViewportInset.ts).
