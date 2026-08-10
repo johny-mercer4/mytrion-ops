@@ -7,8 +7,11 @@ import { audit, auditFromContext } from '../../modules/audit/auditLogger.js';
 import { authService, toPublicUser } from '../../modules/auth/authService.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
+import { systemContext } from '../../modules/auth/authService.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
+import { managesAnyone } from '../../modules/hr/attendance/teamScope.js';
+import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import { workerProfileRepo } from '../../repos/workerProfileRepo.js';
 import { requireContext } from './helpers.js';
 
@@ -81,6 +84,25 @@ function requireZohoOauth(): void {
       statusCode: 503,
       code: 'FEATURE_DISABLED',
     });
+  }
+}
+
+/**
+ * Whether this worker leads a team, for the session payload.
+ *
+ * Fail-OPEN-as-false and never throws: `/auth/me` is on the critical path for every page load, so a
+ * hiccup resolving an optional UI hint must not take the whole session down. Worst case a team lead
+ * does not see the Attendance entry until the next load — the route itself re-derives this anyway.
+ */
+async function leadsTeamFor(zohoUserId: string): Promise<boolean> {
+  try {
+    // Its own context: one call site is the LOGIN response, which runs before a caller context exists.
+    const ctx = systemContext('auth.leads-team');
+    const employee = await hrEmployeeRepo.findByZohoUserId(ctx, zohoUserId);
+    if (!employee) return false;
+    return await managesAnyone(ctx, employee.id);
+  } catch {
+    return false;
   }
 }
 
@@ -202,6 +224,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           mytrionAccessModes: access.mytrionAccessModes,
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
+          /**
+           * Does this worker lead a team? Drives the HR → Attendance entry for team leads.
+           *
+           * Sent as a FACT, not as a grant: the client uses it to show one tab, while
+           * `hrAttendance.routes.ts` re-derives the same thing from the same reporting lines on every
+           * request. Nothing here decides access — hiding a tab is a courtesy, and the route is the
+           * boundary.
+           */
+          leadsTeam: await leadsTeamFor(session.worker.zohoUserId),
         },
       };
     } catch (err) {
@@ -248,6 +279,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           mytrionAccessModes: access.mytrionAccessModes,
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
+          leadsTeam: await leadsTeamFor(zohoUserId),
         },
       };
     }

@@ -16,6 +16,9 @@ export interface CmpInvoiceOption {
   remainingAmount: number;
   period: string;
   createdDate: string;
+  /** YYYY-MM-DD, or null if unresolved/not requested. Only present on PAID/PARTIALLY_PAID rows,
+   *  and only when the caller passed `withPaymentDates` (Data Center detail modal). */
+  paymentDate?: string | null;
 }
 
 export interface CmpInvoiceSearch {
@@ -26,10 +29,16 @@ export interface CmpInvoiceSearch {
   dateRange: string;
 }
 
-/** Last-365-day invoices for a carrier (the mapping picker) — via servercrm CMP. */
-export async function searchCarrierInvoices(carrierId: string): Promise<CmpInvoiceSearch> {
+/** Last-365-day invoices for a carrier (the mapping picker) — via servercrm CMP.
+ *  `withPaymentDates` additionally resolves each PAID/PARTIALLY_PAID invoice's payment date (one
+ *  extra CMP call per qualifying invoice on servercrm's side) — leave off for the mapping picker. */
+export async function searchCarrierInvoices(
+  carrierId: string,
+  opts?: { withPaymentDates?: boolean },
+): Promise<CmpInvoiceSearch> {
+  const qs = opts?.withPaymentDates ? '&withPaymentDates=1' : '';
   const r = await serverCrm.get<Partial<CmpInvoiceSearch>>(
-    `/api/billing/cmp/carrier-invoices?carrierId=${encodeURIComponent(carrierId)}`,
+    `/api/billing/cmp/carrier-invoices?carrierId=${encodeURIComponent(carrierId)}${qs}`,
   );
   return {
     status: 'success',

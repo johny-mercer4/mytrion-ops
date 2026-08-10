@@ -52,7 +52,7 @@ function makeBuilder(): Record<string, unknown> {
 
 vi.mock('../../src/db/client.js', () => ({ db: makeBuilder() }));
 
-import { maintenanceCaseRepo } from '../../src/repos/maintenanceCaseRepo.js';
+import { maintenanceCaseRepo, referenceNumberConflict } from '../../src/repos/maintenanceCaseRepo.js';
 
 const dialect = new PgDialect();
 
@@ -241,5 +241,28 @@ describe('update', () => {
     void maintenanceCaseRepo.update('mtc_abc', { status: 'Completed' });
     const set = calls.find((c) => c.method === 'set')?.args[0] as Record<string, unknown>;
     expect(set.updatedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('referenceNumberConflict', () => {
+  // The auto-generate path already checks-and-retries before insert (maintenanceRules.ts). This is
+  // the backstop for an agent who TYPES a reference number that's already on another case — insert()
+  // is the one place both paths funnel through, so it's the one place that has to catch it.
+  it('turns the reference-number unique-violation into a clear 409, not the raw SQLSTATE', () => {
+    const pgErr = { code: '23505', constraint: 'maintenance_cases_reference_number_uk' };
+    const mapped = referenceNumberConflict(pgErr) as { statusCode: number; code: string; message: string };
+    expect(mapped.statusCode).toBe(409);
+    expect(mapped.code).toBe('REFERENCE_NUMBER_TAKEN');
+    expect(mapped.message).toMatch(/already in use/i);
+  });
+
+  it('leaves a unique-violation on a DIFFERENT constraint untouched', () => {
+    const pgErr = { code: '23505', constraint: 'maintenance_cases_zoho_record_id_uk' };
+    expect(referenceNumberConflict(pgErr)).toBe(pgErr);
+  });
+
+  it('leaves a non-unique-violation error untouched', () => {
+    const err = new Error('column "nope" does not exist');
+    expect(referenceNumberConflict(err)).toBe(err);
   });
 });

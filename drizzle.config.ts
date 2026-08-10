@@ -12,6 +12,7 @@ export default defineConfig({
     './src/db/schema/carrier_users.ts',
     './src/db/schema/carrier_invitations.ts',
     './src/db/schema/registered_mini_app_companies.ts',
+    './src/db/schema/mini_app_password_resets.ts',
     './src/db/schema/mini_app_notifications.ts',
     './src/db/schema/client_news.ts',
     './src/db/schema/support_bot_chats.ts',

@@ -7,7 +7,9 @@
  * `MaintenanceModal` a desktop row-click does, so the columns that drop off the card are still one
  * tap away — they are in the case record, which is the detail view here.
  */
+import type { MouseEvent } from 'react';
 import { DataTable, type DataColumn } from '@/ds';
+import { copyWithToast } from './copyToast';
 import { fmtMoneyStr, fmtYmd, maintenanceTitle, type MaintenanceRecord } from './live';
 
 /** Same tone maps the card uses (MaintenanceCard.tsx) — a status reads the same color everywhere. */
@@ -27,6 +29,38 @@ const PAY_BADGE: Record<string, string> = {
 const dash = (v: string | null | undefined): string => (v && v.trim() ? v : '—');
 
 /**
+ * A cell you can click to copy — QA feedback 2026-08-11: clicking Company / Carrier ID / Unit # /
+ * Amount opened the record modal instead of copying, because those cells had no handler at all.
+ *
+ * `stopPropagation` is what makes it work: the row itself is the activate target, so without it a
+ * copy click would also open the modal. Nothing to copy means no handler and no pointer cursor,
+ * rather than a control that looks live and does nothing.
+ *
+ * DESKTOP ONLY, deliberately. Below the structure line the row becomes a card that IS a button, and
+ * a second click target nested inside it is ambiguous under a thumb — so the copy columns give
+ * `mobileCell` plain text. The values are all in the record the card opens.
+ */
+function copyable(
+  baseClass: string,
+  text: string,
+  label: string,
+): {
+  className: string;
+  title?: string;
+  onClick?: (event: MouseEvent<HTMLSpanElement>) => void;
+} {
+  if (!text) return { className: baseClass };
+  return {
+    className: `${baseClass} cs-mt-cell-copyable`,
+    title: `Click to copy ${label}`,
+    onClick: (event) => {
+      event.stopPropagation();
+      copyWithToast(text, event);
+    },
+  };
+}
+
+/**
  * Module scope, not inline: `DataTable` memoises its rows on `columns` identity, and an array
  * rebuilt every render would silently undo that.
  *
@@ -41,23 +75,32 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Company',
     rowHeader: true,
     mobile: 'primary',
-    cell: (row) => (
-      <span className="cs-mt-list-company" title={maintenanceTitle(row)}>
-        {maintenanceTitle(row)}
-      </span>
-    ),
+    cell: (row) => <span {...copyable('cs-mt-list-company', maintenanceTitle(row), 'Company')}>
+      {maintenanceTitle(row)}
+    </span>,
+    mobileCell: (row) => maintenanceTitle(row),
   },
   {
     id: 'carrierId',
     header: 'Carrier ID',
     mobile: 'secondary',
-    cell: (row) => <span className="cs-mt-list-mono">{dash(row.carrierId)}</span>,
+    cell: (row) => (
+      <span {...copyable('cs-mt-list-mono', row.carrierId ?? '', 'Carrier ID')}>
+        {dash(row.carrierId)}
+      </span>
+    ),
+    mobileCell: (row) => dash(row.carrierId),
   },
   {
     id: 'unit',
     header: 'Unit #',
     mobile: 'secondary',
-    cell: (row) => <span className="cs-mt-list-mono">{dash(row.unitNumber)}</span>,
+    cell: (row) => (
+      <span {...copyable('cs-mt-list-mono', row.unitNumber ?? '', 'Unit #')}>
+        {dash(row.unitNumber)}
+      </span>
+    ),
+    mobileCell: (row) => dash(row.unitNumber),
   },
   {
     id: 'status',
@@ -123,7 +166,18 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Amount',
     numeric: true,
     align: 'end',
-    cell: (row) => <span className="cs-mt-list-amount">{fmtMoneyStr(row.totalAmount)}</span>,
+    cell: (row) => (
+      <span
+        {...copyable(
+          'cs-mt-list-amount',
+          row.totalAmount ? fmtMoneyStr(row.totalAmount) : '',
+          'Amount',
+        )}
+      >
+        {fmtMoneyStr(row.totalAmount)}
+      </span>
+    ),
+    mobileCell: (row) => fmtMoneyStr(row.totalAmount),
   },
 ];
 

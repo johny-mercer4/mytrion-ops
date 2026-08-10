@@ -18,12 +18,66 @@ import { Check, ChevronDown } from 'lucide-react';
 export interface HrSelectOption {
   value: string;
   label: string;
+  /**
+   * Shown, and shown as the current value, but not choosable.
+   *
+   * The native `<select>` gave this for free and one field depends on it: a department whose lead is not
+   * linked to an employee row must still NAME that person, so you can see who you are about to keep or
+   * replace. Without a displayable-but-inert entry the field falls back to its placeholder and silently
+   * loses the name.
+   */
+  disabled?: boolean;
 }
 
 /** How long a type-ahead buffer survives between keystrokes, matching native select behaviour. */
 const TYPEAHEAD_RESET_MS = 700;
 /** Never taller than this; the department list is 23 rows and a full-height popup is unusable. */
 const MAX_POPUP_H = 288;
+/** One option row, for estimating the popup's height before it exists. */
+const ROW_H = 32;
+
+/**
+ * The box that will actually clip the popup: the nearest scrollable ancestor, or the viewport.
+ *
+ * This exists because the first version measured against `window.innerHeight`, which is only the
+ * clipping box when nothing between here and the viewport scrolls. `.hr-modal` has
+ * `max-height: min(720px, 100%)` and `overflow: auto`, so inside a dialog the real bottom edge is the
+ * dialog's — and a field near the bottom of a 720px modal centred in a tall window still has hundreds
+ * of pixels of VIEWPORT below it. Measuring the viewport therefore said "plenty of room", the popup
+ * opened downward, and the modal clipped it.
+ */
+function clippingBox(el: HTMLElement | null): { top: number; bottom: number } {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'hidden') {
+      const rect = node.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom };
+    }
+    node = node.parentElement;
+  }
+  return { top: 0, bottom: window.innerHeight };
+}
+
+/**
+ * Which way the popup opens. Pure, so the geometry is testable — jsdom has no layout, so a rendered
+ * component cannot exercise this at all.
+ *
+ * Opens UP only when there is genuinely less room below AND more room above; a cramped popup pointing
+ * the wrong way is worse than a slightly short one pointing the right way.
+ */
+export function shouldDropUp(input: {
+  buttonTop: number;
+  buttonBottom: number;
+  clipTop: number;
+  clipBottom: number;
+  optionCount: number;
+}): boolean {
+  const wanted = Math.min(MAX_POPUP_H, input.optionCount * ROW_H + 12);
+  const below = input.clipBottom - input.buttonBottom;
+  const above = input.buttonTop - input.clipTop;
+  return below < wanted && above > below;
+}
 
 export function HrSelect({
   value,
@@ -31,6 +85,7 @@ export function HrSelect({
   onChange,
   label,
   placeholder = 'Select…',
+  disabled = false,
 }: {
   value: string;
   options: readonly HrSelectOption[];
@@ -38,6 +93,8 @@ export function HrSelect({
   /** Accessible name. Rendered visually hidden, so the control needs no visible label beside it. */
   label: string;
   placeholder?: string;
+  /** The whole control is inert — mid-save, or while its options are still loading. */
+  disabled?: boolean;
 }) {
   const id = useId();
   const listId = `${id}-list`;
@@ -62,21 +119,36 @@ export function HrSelect({
 
   /** Open with the current selection active, so arrows continue from where the value already is. */
   const openList = useCallback((): void => {
-    if (options.length === 0) return;
-    // Decide the direction BEFORE painting: `.hr-root` is a scroll container, so a popup that runs past
-    // its bottom edge is clipped, not scrolled to.
-    const box = buttonRef.current?.getBoundingClientRect();
+    if (disabled || options.length === 0) return;
+    // Decide the direction BEFORE painting: the popup is absolutely positioned, so a scroll container
+    // above it clips anything past its edge rather than scrolling to it.
+    const button = buttonRef.current;
+    const box = button?.getBoundingClientRect();
     if (box) {
-      const below = window.innerHeight - box.bottom;
-      setDropUp(below < Math.min(MAX_POPUP_H, options.length * 32 + 12) && box.top > below);
+      const clip = clippingBox(button);
+      setDropUp(
+        shouldDropUp({
+          buttonTop: box.top,
+          buttonBottom: box.bottom,
+          clipTop: clip.top,
+          clipBottom: clip.bottom,
+          optionCount: options.length,
+        }),
+      );
     }
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    // Landing on the current value is right unless the current value is the inert one — then start at
+    // the first entry that can actually be chosen.
+    const start = selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : 0;
+    setActiveIndex(options[start]?.disabled ? options.findIndex((o) => !o.disabled) : start);
     setOpen(true);
-  }, [options.length, selectedIndex]);
+  }, [disabled, options, selectedIndex]);
 
   const commit = useCallback(
     (index: number): void => {
       const option = options[index];
+      // A disabled entry exists to be READ. Selecting it would write a sentinel value as if it were a
+      // real choice — which for the unlinked lead would mean saving "(not linked)" as the lead id.
+      if (option?.disabled) return;
       if (option) onChange(option.value);
       close();
       buttonRef.current?.focus();
@@ -104,9 +176,17 @@ export function HrSelect({
   const move = (delta: number): void => {
     setActiveIndex((prev) => {
       const from = prev < 0 ? selectedIndex : prev;
-      const next = from + delta;
       // Clamp rather than wrap: a wrapping list makes "am I at the end?" unanswerable without counting.
-      return Math.max(0, Math.min(options.length - 1, next < 0 ? 0 : next));
+      // Then keep stepping the SAME direction over anything unchoosable, so arrowing never parks on an
+      // entry that Enter would silently ignore.
+      let next = Math.max(0, Math.min(options.length - 1, from + delta < 0 ? 0 : from + delta));
+      const step = delta >= 0 ? 1 : -1;
+      while (options[next]?.disabled) {
+        const after = next + step;
+        if (after < 0 || after > options.length - 1) return prev;
+        next = after;
+      }
+      return next;
     });
   };
 
@@ -156,7 +236,9 @@ export function HrSelect({
         ? ev.key.toLowerCase()
         : typeahead.current.buffer + ev.key.toLowerCase();
     typeahead.current = { buffer, at: now };
-    const hit = options.findIndex((option) => option.label.toLowerCase().startsWith(buffer));
+    const hit = options.findIndex(
+      (option) => !option.disabled && option.label.toLowerCase().startsWith(buffer),
+    );
     if (hit < 0) return;
     ev.preventDefault();
     if (open) setActiveIndex(hit);
@@ -178,6 +260,7 @@ export function HrSelect({
         aria-labelledby={`${id}-label`}
         {...(open && activeIndex >= 0 ? { 'aria-activedescendant': `${id}-opt-${activeIndex}` } : {})}
         className="hr-cselect-btn"
+        disabled={disabled}
         onClick={() => (open ? close() : openList())}
         onKeyDown={onKeyDown}
       >
@@ -203,10 +286,13 @@ export function HrSelect({
                 id={`${id}-opt-${index}`}
                 role="option"
                 aria-selected={isSelected}
-                className={`hr-cselect-opt${index === activeIndex ? ' is-active' : ''}`}
+                aria-disabled={option.disabled ? true : undefined}
+                className={`hr-cselect-opt${index === activeIndex ? ' is-active' : ''}${
+                  option.disabled ? ' is-disabled' : ''
+                }`}
                 // The button keeps focus, so the pointer must not steal it out from under the listbox.
                 onMouseDown={(ev) => ev.preventDefault()}
-                onMouseEnter={() => setActiveIndex(index)}
+                onMouseEnter={() => (option.disabled ? undefined : setActiveIndex(index))}
                 onClick={() => commit(index)}
               >
                 <span className="hr-cselect-opt-label">{option.label}</span>

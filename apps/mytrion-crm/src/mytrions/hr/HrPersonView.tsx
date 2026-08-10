@@ -61,6 +61,7 @@ export function HrPersonView({
   name,
   subtitle,
   onExit,
+  onOpenPerson,
 }: {
   /** The picker knows a Zoho SIGN-IN; the employee row is resolved from it. */
   zohoUserId: string;
@@ -68,6 +69,8 @@ export function HrPersonView({
   /** "Profile · Role" from the picker — shown while the employee row is still resolving. */
   subtitle?: string;
   onExit: () => void;
+  /** Switch the record to a team member. Absent → team rows are plain text. */
+  onOpenPerson?: ((person: { zohoUserId: string; name: string; subtitle: string | null }) => void) | undefined;
 }) {
   const today = useMemo(() => tashkentToday(), []);
   const [data, setData] = useState<HrPersonOverviewDto | null>(null);
@@ -214,25 +217,53 @@ export function HrPersonView({
               <p className="hr-person-none">Nobody reports to this person.</p>
             ) : (
               <ul className="hr-person-team">
-                {data.team.members.map((member) => (
-                  <li key={member.id}>
-                    <HrAvatar
-                      name={`${member.firstName} ${member.lastName}`.trim()}
-                      employeeId={member.id}
-                      photoFileId={member.photoFileId}
-                      size="sm"
-                    />
-                    <span className="hr-person-team-ident">
-                      <strong>
-                        {member.firstName} {member.lastName}
-                      </strong>
-                      <span>{member.designation ?? member.department ?? '—'}</span>
-                    </span>
-                    <span className="hr-person-relation" data-relation={member.relation}>
-                      {RELATION_LABEL[member.relation]}
-                    </span>
-                  </li>
-                ))}
+                {data.team.members.map((member) => {
+                  const memberName = `${member.firstName} ${member.lastName}`.trim();
+                  /**
+                   * A lead's way to their team's attendance: open the member, and their record carries
+                   * their own week. Only the linked are openable — a row that leads nowhere is worse
+                   * than a row that plainly is not a link.
+                   */
+                  const openable = Boolean(member.zohoUserId && onOpenPerson);
+                  const body = (
+                    <>
+                      <HrAvatar
+                        name={memberName}
+                        employeeId={member.id}
+                        photoFileId={member.photoFileId}
+                        size="sm"
+                      />
+                      <span className="hr-person-team-ident">
+                        <strong>{memberName}</strong>
+                        <span>{member.designation ?? member.department ?? '—'}</span>
+                      </span>
+                      <span className="hr-person-relation" data-relation={member.relation}>
+                        {RELATION_LABEL[member.relation]}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={member.id}>
+                      {openable ? (
+                        <button
+                          type="button"
+                          className="hr-person-team-open"
+                          onClick={() =>
+                            onOpenPerson?.({
+                              zohoUserId: member.zohoUserId as string,
+                              name: memberName,
+                              subtitle: member.designation ?? member.department ?? null,
+                            })
+                          }
+                        >
+                          {body}
+                        </button>
+                      ) : (
+                        body
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

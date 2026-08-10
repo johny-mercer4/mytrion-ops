@@ -159,3 +159,98 @@ describe('HrPersonView', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('backend exploded'));
   });
 });
+
+/**
+ * A lead's way from their own record to their team's attendance: open the member.
+ *
+ * Their attendance lives on their record, so the team card is the route to it — but only for members HR
+ * has linked to a Zoho sign-in. An unlinked row must stay plain text, because a control that leads
+ * nowhere is worse than no control.
+ */
+describe('opening a team member', () => {
+  // `overview` is a FACTORY taking overrides, not an object — spreading it produced a payload with no
+  // team at all, which is why the rows were missing rather than wrong.
+  const withTeam = overview({
+    team: {
+      members: [
+        {
+          id: 'hre_linked',
+          firstName: 'Shohruh',
+          lastName: 'Bekmurodov',
+          designation: 'Analytics Specialist',
+          department: 'Analytics',
+          status: 'Active',
+          photoFileId: null,
+          zohoUserId: '4200',
+          relation: 'department_member',
+        },
+        {
+          id: 'hre_unlinked',
+          firstName: 'Nodira',
+          lastName: 'Yusupova',
+          designation: 'Payroll Specialist',
+          department: 'Finance',
+          status: 'Active',
+          photoFileId: null,
+          zohoUserId: null,
+          relation: 'direct_report',
+        },
+      ],
+      directReportCount: 1,
+      ledDepartments: [{ id: 'hrd_1', name: 'Analytics' }],
+    },
+  } as unknown as Partial<HrPersonOverviewDto>);
+
+  it('opens a linked member’s record', async () => {
+    lookupMock.mockResolvedValue(employee as never);
+    overviewMock.mockResolvedValue(withTeam);
+    const onOpenPerson = vi.fn();
+    render(
+      <HrPersonView
+        zohoUserId="42"
+        name="Xusan Turdiyev"
+        subtitle="Analytics Manager"
+        onExit={vi.fn()}
+        onOpenPerson={onOpenPerson}
+      />,
+    );
+    const row = await screen.findByRole('button', { name: /Shohruh Bekmurodov/ });
+    row.click();
+    expect(onOpenPerson).toHaveBeenCalledWith({
+      zohoUserId: '4200',
+      name: 'Shohruh Bekmurodov',
+      subtitle: 'Analytics Specialist',
+    });
+  });
+
+  it('leaves an unlinked member as plain text', async () => {
+    lookupMock.mockResolvedValue(employee as never);
+    overviewMock.mockResolvedValue(withTeam);
+    render(
+      <HrPersonView
+        zohoUserId="42"
+        name="Xusan Turdiyev"
+        subtitle="Analytics Manager"
+        onExit={vi.fn()}
+        onOpenPerson={vi.fn()}
+      />,
+    );
+    await screen.findByText('Nodira Yusupova');
+    expect(screen.queryByRole('button', { name: /Nodira Yusupova/ })).toBeNull();
+  });
+
+  it('leaves every row plain when no handler is supplied', async () => {
+    lookupMock.mockResolvedValue(employee as never);
+    overviewMock.mockResolvedValue(withTeam);
+    render(
+      <HrPersonView
+        zohoUserId="42"
+        name="Xusan Turdiyev"
+        subtitle="Analytics Manager"
+        onExit={vi.fn()}
+      />,
+    );
+    await screen.findByText('Shohruh Bekmurodov');
+    expect(screen.queryByRole('button', { name: /Shohruh Bekmurodov/ })).toBeNull();
+  });
+});

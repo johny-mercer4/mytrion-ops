@@ -7,14 +7,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Parameters are spelled out so `mock.calls[n][1]` is a typed tuple element rather than `never` —
 // these assertions are about WHAT was handed to the repo, so the arguments have to be reachable.
-const { dwhQueryMock, insertManyMock, reconcileMock, rebucketMock } = vi.hoisted(() => ({
+const { dwhQueryMock, insertManyMock, reconcileMock, rebucketMock, getByIdMock } = vi.hoisted(() => ({
   dwhQueryMock: vi.fn(async (_sql: string, _params?: readonly unknown[]) => [] as unknown[]),
   insertManyMock: vi.fn(async (_ctx: unknown, _rows: readonly unknown[]) => 0),
   reconcileMock: vi.fn(async (_ctx: unknown, _scope?: unknown) => 0),
   rebucketMock: vi.fn(async (_ctx: unknown, _scope?: unknown) => undefined),
+  getByIdMock: vi.fn(async (_ctx: unknown, _id: string) => undefined as unknown),
 }));
 
 vi.mock('../../src/integrations/dwh.js', () => ({ dwhQuery: dwhQueryMock }));
+vi.mock('../../src/repos/hrEmployeeRepo.js', () => ({
+  hrEmployeeRepo: { getById: getByIdMock },
+}));
 vi.mock('../../src/repos/hrAttendancePunchRepo.js', () => ({
   hrAttendancePunchRepo: {
     insertMany: insertManyMock,
@@ -53,6 +57,7 @@ beforeEach(() => {
   resetDwhSyncState();
   insertManyMock.mockResolvedValue(0);
   dwhQueryMock.mockResolvedValue([]);
+  getByIdMock.mockResolvedValue({ id: 'hre_1', faceId: '00000390' });
 });
 
 describe('the DWH query', () => {
@@ -219,5 +224,79 @@ describe('cost control', () => {
     const retry = await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07');
     expect(retry.cached).toBe(false);
     expect(dwhQueryMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Opening one person in the roster pulls only that person.
+ *
+ * This is what replaced syncing the whole window on page load. Measured against the real warehouse: a
+ * week for one employee is 165 rows in 268ms, against 6442 rows for everybody — and the page itself no
+ * longer waits on the DWH at all.
+ */
+describe('one employee at a time', () => {
+  it('filters the warehouse query by that person\'s Face ID', async () => {
+    await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', { employeeId: 'hre_1' });
+    const [sql, params] = dwhQueryMock.mock.calls[0] ?? [];
+    expect(String(sql)).toContain('and emp_code = $4');
+    // Verified on both sides: `hr_employees.face_id` and `acs_event.emp_code` are the same
+    // zero-padded string, so this is equality and not a normalisation problem.
+    expect(params).toEqual([DWH_ATTENDANCE_DOORS, '2026-08-03', '2026-08-07', '00000390']);
+  });
+
+  it('does not add the person filter for a whole-window sync', async () => {
+    await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07');
+    expect(String(dwhQueryMock.mock.calls[0]?.[0])).not.toContain('emp_code = $4');
+    expect(dwhQueryMock.mock.calls[0]?.[1]).toHaveLength(3);
+  });
+
+  /**
+   * 94 of 222 employees have a Face ID, so this is the COMMON case, not an edge one. It must not look
+   * like a week of absences, and it must not cost a warehouse round trip to discover.
+   */
+  it('reports an unenrolled employee without querying the warehouse', async () => {
+    getByIdMock.mockResolvedValue({ id: 'hre_2', faceId: null });
+    const result = await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', {
+      employeeId: 'hre_2',
+    });
+    expect(result.noFaceId).toBe(true);
+    expect(result.fetched).toBe(0);
+    expect(dwhQueryMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a blank Face ID the same as a missing one', async () => {
+    getByIdMock.mockResolvedValue({ id: 'hre_3', faceId: '   ' });
+    const result = await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', {
+      employeeId: 'hre_3',
+    });
+    expect(result.noFaceId).toBe(true);
+    expect(dwhQueryMock).not.toHaveBeenCalled();
+  });
+
+  /** A one-person pull and a whole-window pull fetch different sets, so neither may satisfy the other. */
+  it('keeps the cooldown separate from the whole-window one', async () => {
+    await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', { employeeId: 'hre_1' });
+    const windowRun = await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07');
+    expect(windowRun.cached).toBe(false);
+    expect(dwhQueryMock).toHaveBeenCalledTimes(2);
+
+    const sameAgain = await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', {
+      employeeId: 'hre_1',
+    });
+    expect(sameAgain.cached).toBe(true);
+  });
+
+  it('scopes the rebucket to that employee, but never the employee matching', async () => {
+    dwhQueryMock.mockResolvedValue([row()]);
+    insertManyMock.mockResolvedValue(1);
+    await syncAttendanceFromDwh(ctx, '2026-08-03', '2026-08-07', { employeeId: 'hre_1' });
+    expect(rebucketMock).toHaveBeenCalledWith(ctx, {
+      from: '2026-08-03',
+      to: '2026-08-07',
+      employeeId: 'hre_1',
+    });
+    // `reconcileUnmapped` attaches punches TO employees, so restricting it to one employee would stop
+    // it considering the rows it is supposed to claim.
+    expect(reconcileMock).toHaveBeenCalledWith(ctx, { from: '2026-08-03', to: '2026-08-07' });
   });
 });

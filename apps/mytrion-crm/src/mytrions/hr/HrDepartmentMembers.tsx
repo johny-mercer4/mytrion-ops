@@ -5,6 +5,7 @@
  * Zoho-synced rows can be reassigned by the next People sync; that is an existing product caveat,
  * not unique to this picker.
  */
+import { HrSelect } from './HrSelect';
 import { useMemo, useState } from 'react';
 import { UserMinus, UserPlus } from 'lucide-react';
 import { updateHrEmployee, type HrEmployeeDto } from '../../api/hr';
@@ -114,21 +115,20 @@ export function HrDepartmentMembers({
         <div className="hr-deptm-member-add">
           <label>
             Add person
-            <select
+            <HrSelect
+              label="Add member"
               value={addId}
               disabled={busyId != null || candidates.length === 0}
-              onChange={(e) => setAddId(e.target.value)}
-            >
-              <option value="">
-                {candidates.length === 0 ? 'Everyone is already assigned' : '— choose someone —'}
-              </option>
-              {candidates.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {displayName(e)}
-                  {e.department ? ` · ${e.department}` : ''}
-                </option>
-              ))}
-            </select>
+              onChange={setAddId}
+              options={[
+                {
+                  value: '',
+                  label:
+                    candidates.length === 0 ? 'Everyone is already assigned' : '— choose someone —',
+                },
+                ...candidates.map((e) => ({ value: e.id, label: displayName(e) })),
+              ]}
+            />
           </label>
           <button
             type="button"

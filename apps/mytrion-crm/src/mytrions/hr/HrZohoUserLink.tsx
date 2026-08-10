@@ -1,3 +1,4 @@
+import { HrSelect } from './HrSelect';
 import { useEffect, useMemo, useState } from 'react';
 import { Link2, ShieldCheck, Unlink } from 'lucide-react';
 import {
@@ -73,19 +74,22 @@ export function HrZohoUserLink({ employee }: { employee: HrEmployeeDto }) {
         </div>
       ) : (
         <div className="hr-zoho-picker">
-          <select
+          <HrSelect
+            label="Zoho user"
             value={selected}
             disabled={loading || saving}
-            onChange={(event) => setSelected(event.target.value)}
-            aria-label="Zoho user"
-          >
-            <option value="">{loading ? 'Loading Zoho users…' : 'Choose a Zoho user…'}</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name || user.email || user.id}{user.email && user.name ? ` · ${user.email}` : ''}
-              </option>
-            ))}
-          </select>
+            onChange={setSelected}
+            placeholder={loading ? 'Loading Zoho users…' : 'Choose a Zoho user…'}
+            options={[
+              { value: '', label: loading ? 'Loading Zoho users…' : 'Choose a Zoho user…' },
+              ...users.map((user) => ({
+                value: user.id,
+                label: `${user.name || user.email || user.id}${
+                  user.email && user.name ? ` · ${user.email}` : ''
+                }`,
+              })),
+            ]}
+          />
           <button
             type="button"
             className="hr-btn hr-btn-primary"

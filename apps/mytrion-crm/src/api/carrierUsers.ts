@@ -1,7 +1,6 @@
 /**
- * Carrier User Management — Telegram registration links (no login/password; the bot's mini-app
- * handles sign-in). Profiles: 'owner' (fleet — all the carrier's cards; tied to
- * carrierId/applicationId) and 'driver' (tied to one card).
+ * Carrier User Management — Telegram registration links, registered roster, password-reset queue.
+ * Profiles: 'owner' / 'manager' (fleet) and 'driver' (one card).
  */
 import { request } from './transport';
 
@@ -169,15 +168,65 @@ export async function listRegisteredCompanies(): Promise<RegisteredCompany[]> {
   return data.registrations;
 }
 
-/** Active owner + drivers for one carrier (Sales Client Manage / driver gating). */
+export interface PasswordResetRequest {
+  id: string;
+  carrierUserId: string;
+  registrationId: string | null;
+  carrierId: string | null;
+  companyName: string | null;
+  login: string;
+  profile: CarrierProfile;
+  agentZohoUserId: string | null;
+  agentName: string | null;
+  status: 'pending' | 'resolved' | 'cancelled';
+  note: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** Active owner + managers + drivers + pending password resets for one carrier (Sales Manage). */
 export async function getCarrierRegistrations(
   carrierId: string,
   signal?: AbortSignal,
-): Promise<{ owner: RegisteredCompany | null; drivers: RegisteredCompany[] }> {
-  return (await request('GET', '/carrier-registrations/for-carrier', {
+): Promise<{
+  owner: RegisteredCompany | null;
+  managers: RegisteredCompany[];
+  drivers: RegisteredCompany[];
+  pendingResets: PasswordResetRequest[];
+}> {
+  const data = (await request('GET', '/carrier-registrations/for-carrier', {
     query: { carrier_id: carrierId },
     ...(signal ? { signal } : {}),
-  })) as { owner: RegisteredCompany | null; drivers: RegisteredCompany[] };
+  })) as {
+    owner: RegisteredCompany | null;
+    managers?: RegisteredCompany[];
+    drivers: RegisteredCompany[];
+    pendingResets?: PasswordResetRequest[];
+  };
+  return {
+    owner: data.owner,
+    managers: data.managers ?? [],
+    drivers: data.drivers,
+    pendingResets: data.pendingResets ?? [],
+  };
+}
+
+/** Pending forgot-password queue. Admin → all; Sales agent → own clients (or pass carrier_id). */
+export async function listPasswordResets(opts?: {
+  carrierId?: string;
+  signal?: AbortSignal;
+}): Promise<PasswordResetRequest[]> {
+  const data = (await request('GET', '/carrier/mini-app/password-resets', {
+    ...(opts?.carrierId ? { query: { carrier_id: opts.carrierId } } : {}),
+    ...(opts?.signal ? { signal: opts.signal } : {}),
+  })) as { resets?: PasswordResetRequest[] };
+  return data.resets ?? [];
+}
+
+export async function resolvePasswordReset(id: string, password: string): Promise<void> {
+  await request('POST', `/carrier/mini-app/password-resets/${encodeURIComponent(id)}/resolve`, {
+    body: { password },
+  });
 }
 
 /** Soft-disable a registered owner/driver — reversible, frees their card for reassignment. */

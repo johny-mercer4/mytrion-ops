@@ -473,6 +473,7 @@ export interface AttendanceTeamListItem {
   designation: string | null;
   department: string | null;
   departmentId: string | null;
+  photoFileId: string | null;
   relation: AttendanceTeamRelation;
   shift: AttendanceSummaryDto['shift'];
   /** Null when the roster was fetched as a directory — the detail fetch carries the week. */
@@ -531,6 +532,8 @@ export interface AttendanceSyncDto {
   linked: number;
   skipped: number;
   cached: boolean;
+  /** The person has no Face ID on their record, so the door readers can never produce data for them. */
+  noFaceId?: boolean;
 }
 
 /**
@@ -546,6 +549,8 @@ export async function syncAttendanceFromDwh(opts: {
   weekOf?: string;
   /** Skip the server's cooldown. Set by the Refresh button, never by an automatic load. */
   force?: boolean;
+  /** Pull one person's punches instead of the whole window — what opening someone in the roster does. */
+  employeeId?: string;
 }): Promise<AttendanceSyncDto> {
   return (await request('POST', '/hr/attendance/sync', {
     body: opts,

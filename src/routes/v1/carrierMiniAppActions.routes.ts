@@ -31,6 +31,7 @@ import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { moneyCodeRequestRepo } from '../../repos/moneyCodeRequestRepo.js';
 import { notifyMiniApp } from '../../modules/notifications/service.js';
 import {
+  accessTokenFromAuthHeader,
   requireDriverCardNumber,
   requireRegisteredCarrierUser,
   requireRegisteredOwnerUser,
@@ -38,6 +39,12 @@ import {
 } from '../../modules/carrier/miniAppAuth.js';
 import type { MiniAppActorRegistration } from '../../modules/carrier/miniAppAuth.js';
 import { registerSalesAgentMiniAppScopeHook } from './salesAgentMiniAppScope.js';
+
+function miniAuthOpts(request: { headers: { authorization?: unknown } }): { accessToken: string | undefined } {
+  const raw = request.headers.authorization;
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  return { accessToken: accessTokenFromAuthHeader(typeof header === 'string' ? header : undefined) };
+}
 
 const initDataSchema = z.object({ initData: z.string().min(1) });
 const cardSchema = initDataSchema.extend({ cardId: z.string().min(1).max(120).optional() });
@@ -141,7 +148,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
    */
   app.post('/carrier/mini-app/card/efs', async (request) => {
     const body = cardSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write', miniAuthOpts(request));
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     return efsWrapper.getCardEfsInfo(carrierId, cardNumber);
   });
@@ -154,7 +161,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/override', async (request) => {
     requireWritesEnabled();
     const body = cardSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write', miniAuthOpts(request));
     takeWriteToken(carrierId);
     const { cardNumber, cardId } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -207,7 +214,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/set-status', async (request) => {
     requireWritesEnabled();
     const body = setStatusSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write', miniAuthOpts(request));
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -236,7 +243,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         { statusCode: 422, code: 'LIMIT_CHANGE_TOO_LARGE', expose: true },
       );
     }
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write', miniAuthOpts(request));
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -276,7 +283,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         expose: true,
       });
     }
-    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData, 'card:write', miniAuthOpts(request));
     if (registration.profile === 'driver' && body.driverName) {
       throw new AppError('The driver name on the card is managed by your company owner', {
         statusCode: 403,
@@ -306,7 +313,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/card/fraud-request', async (request) => {
     requireWritesEnabled();
     const body = fraudRequestSchema.parse(request.body);
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write');
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData, 'card:write', miniAuthOpts(request));
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
@@ -347,7 +354,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
   app.post('/carrier/mini-app/money-code/preview', async (request) => {
     requireMoneyCodeEnabled();
     const body = initDataSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData, miniAuthOpts(request));
     return serverCrmWrapper.getMoneyCodePreview(carrierId);
   });
 

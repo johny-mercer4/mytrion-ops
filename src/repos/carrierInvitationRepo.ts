@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   carrierInvitations,
@@ -92,10 +92,59 @@ export const carrierInvitationRepo = {
       cardCount: input.cardCount ?? null,
       agentName: trimOrNull(input.agentName),
       agentZohoUserId: trimOrNull(input.agentZohoUserId),
+      // New invites always require password setup after redeem (legacy rows stay telegram).
+      authMode: 'password',
       expiresAt: new Date(Date.now() + ttlMs),
     };
     const rows = await client.insert(carrierInvitations).values(values).returning();
     return toDto(firstOrThrow(rows, 'Failed to insert carrier invitation'));
+  },
+
+  /**
+   * Pending manager invite whose person-name (driverName column) matches the normalized login.
+   * Used when regenerating: supersede cancels any still-live match before minting a new invite.
+   */
+  async findPendingManagerByLogin(
+    ctx: TenantContext,
+    normalizedLogin: string,
+    client: DbClient = db,
+  ): Promise<CarrierInvitation | undefined> {
+    const rows = await client
+      .select()
+      .from(carrierInvitations)
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.profile, 'manager'),
+          eq(carrierInvitations.status, 'pending'),
+          sql`lower(trim(regexp_replace(coalesce(${carrierInvitations.driverName}, ''), '\\s+', ' ', 'g'))) = ${normalizedLogin}`,
+        ),
+      );
+    return rows.find((r) => r.expiresAt.getTime() >= Date.now());
+  },
+
+  /**
+   * Cancel every still-pending manager invite for this normalized login (tenant-wide — logins
+   * are unique across the tenant). Used to supersede when Sales regenerates a manager link.
+   */
+  async cancelPendingManagersByLogin(
+    ctx: TenantContext,
+    normalizedLogin: string,
+    client: DbClient = db,
+  ): Promise<number> {
+    const rows = await client
+      .update(carrierInvitations)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.profile, 'manager'),
+          eq(carrierInvitations.status, 'pending'),
+          sql`lower(trim(regexp_replace(coalesce(${carrierInvitations.driverName}, ''), '\\s+', ' ', 'g'))) = ${normalizedLogin}`,
+        ),
+      )
+      .returning({ id: carrierInvitations.id });
+    return rows.length;
   },
 
   /**

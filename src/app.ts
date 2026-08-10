@@ -41,6 +41,7 @@ import { verificationClientsRoutes } from './routes/v1/verificationClients.route
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
+import { carrierMiniAppAuthRoutes } from './routes/v1/carrierMiniAppAuth.routes.js';
 import { carrierMiniAppReportRoutes } from './routes/v1/carrierMiniAppReports.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
@@ -224,6 +225,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     // server sends no COOP at all. `same-origin-allow-popups` keeps this document protected from a
     // cross-origin opener while letting popups WE open keep their opener reference.
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    // Local Vite (:5173) → API (:3001) is cross-origin. Helmet's default CORP `same-origin` makes
+    // some browsers (notably Firefox) fail the fetch with a bare NetworkError even when CORS
+    // reflects the Origin. Cross-origin is correct for this public API surface.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
   await app.register(cors, {
     // Reflect the caller's Origin when allowed (exact match or allowed suffix, e.g.
@@ -246,6 +251,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-act-as-role',
       'x-webhook-key-id',
       'x-webhook-timestamp',
+      // Free ngrok interstitial bypass for Telegram mini-app / local tunnel clients.
+      'ngrok-skip-browser-warning',
       'x-webhook-signature',
       'idempotency-key',
       'x-support-bot-confirmation-id',
@@ -418,6 +425,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(clientNewsRoutes);
       await v1.register(supportBotRoutes);
       await v1.register(carrierMiniAppRoutes);
+      await v1.register(carrierMiniAppAuthRoutes);
       await v1.register(carrierMiniAppReportRoutes);
       await v1.register(carrierMiniAppActionsRoutes);
       await v1.register(retentionRoutes);

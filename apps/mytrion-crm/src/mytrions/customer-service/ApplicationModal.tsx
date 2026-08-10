@@ -28,30 +28,16 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Name', label: 'Company Name', type: 'text', get: (a) => a.company },
   { field: 'First_Name', label: 'First Name', type: 'text', get: (a) => a.first },
   { field: 'Last_Name', label: 'Last Name', type: 'text', get: (a) => a.last },
-  { field: 'Email', label: 'Email', type: 'text', get: (a) => a.email },
-  { field: 'Phone', label: 'Phone', type: 'text', get: (a) => a.phone },
+  { field: 'Email', label: 'Email', type: 'readonly', get: (a) => a.email },
+  { field: 'Phone', label: 'Phone', type: 'readonly', get: (a) => a.phone },
   { field: 'emc', label: 'MC', type: 'text', get: (a) => a.mc },
   { field: 'DOT', label: 'DOT', type: 'text', get: (a) => a.dot },
+  { field: 'Address', label: 'Address', type: 'text', get: (a) => a.street },
   { field: 'City', label: 'City', type: 'text', get: (a) => a.city },
   { field: 'State', label: 'State', type: 'text', get: (a) => a.state },
-  {
-    field: 'Stage',
-    label: 'Stage',
-    type: 'picklist',
-    options: ['Application', 'Adjudication', 'Credit Follow-up', 'Implementation', 'Expansion'],
-    get: (a) => a.stage,
-  },
-  {
-    field: 'WEX_Status',
-    label: 'WEX Status',
-    type: 'picklist',
-    options: [
-      'Saved-Complete', 'Additional Authentication Required', 'Pending Decision', 'Decisioned',
-      'Pending Setup Data', 'Pending Setup-Generic', 'Deposit Counter Offer Sent', 'BOCDD-Needed',
-      'Saved-Incomplete', 'App-Incomplete', 'Disqualified', 'Closed/Fraud', 'Closed/Lost', 'Cards Produced',
-    ],
-    get: (a) => a.wex,
-  },
+  { field: 'Zip_Code', label: 'Zip Code', type: 'text', get: (a) => a.zip },
+  { field: 'Stage', label: 'Stage', type: 'readonly', get: (a) => a.stage },
+  { field: 'WEX_Status', label: 'WEX Status', type: 'readonly', get: (a) => a.wex },
   {
     field: 'Type_of_Business',
     label: 'Business Entity Type',
@@ -85,8 +71,6 @@ const MODAL_FIELDS: ModalField[] = [
         live view-model (uncarried values render '—'; no new API calls invented) ── */
   { field: 'Date_Filled', label: 'Date Filled', type: 'readonly', get: (a) => a.date },
   { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent || 'not assigned' },
-  { field: 'Address', label: 'Address', type: 'readonly', get: () => null },
-  { field: 'Zip_Code', label: 'Zip Code', type: 'readonly', get: () => null },
   { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },
   { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: () => null },
   // Bulk-fetched on the Clients-tab table (see Applications.tsx) — already on the row by the time
@@ -178,21 +162,6 @@ export function ApplicationModal({
       const current = values[f.field];
       if (current === undefined || current === initialValue(f, app)) continue;
 
-      if (f.field === 'Email' && current) {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(current))) {
-          errors[f.field] = 'Invalid email format';
-          continue;
-        }
-      }
-      if (f.field === 'Phone' && current) {
-        const digits = String(current).replace(/\D/g, '');
-        if (digits.length !== 10) {
-          errors[f.field] = 'Phone must be exactly 10 digits';
-          continue;
-        }
-        changes[f.field] = digits;
-        continue;
-      }
       if ((f.field === 'emc' || f.field === 'DOT') && current) {
         if (!/^\d+$/.test(String(current))) {
           errors[f.field] = `${f.label} must be digits only`;
@@ -330,21 +299,6 @@ export function ApplicationModal({
                     />
                     <span>{values[f.field] === true ? 'Yes' : 'No'}</span>
                   </label>
-                ) : f.field === 'Email' ? (
-                  <input
-                    type="email"
-                    className="cs-form-input"
-                    value={String(values[f.field] ?? '')}
-                    onChange={(e) => set(f.field, e.target.value)}
-                  />
-                ) : f.field === 'Phone' ? (
-                  <input
-                    type="tel"
-                    className="cs-form-input"
-                    maxLength={20}
-                    value={String(values[f.field] ?? '')}
-                    onChange={(e) => set(f.field, e.target.value)}
-                  />
                 ) : (
                   <input
                     type={f.type === 'number' ? 'number' : 'text'}
