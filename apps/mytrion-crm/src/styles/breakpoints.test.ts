@@ -134,7 +134,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      83,
+      79,
     );
   });
 
@@ -149,7 +149,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      108,
+      100,
     );
   });
 });

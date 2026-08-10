@@ -113,7 +113,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
-@media (max-width: 960px) {
+@media (width < 900px) {
   .ss-root .ss-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -462,7 +462,7 @@
   .ss-root .ss-skel { animation: none !important; }
 }
 
-@media (max-width: 720px) {
+@media (width < 640px) {
   .ss-root .ss-page-head-row { flex-direction: column; align-items: stretch; }
   .ss-root .ss-page-actions { justify-content: flex-start; }
   .ss-root .ss-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
