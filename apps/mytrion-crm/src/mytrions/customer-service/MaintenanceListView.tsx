@@ -3,6 +3,8 @@
  * scan than this card grid"). A plain table over the same page of rows the card grid renders — same
  * data, same onOpen, just a denser layout for scanning many cases at once.
  */
+import type { MouseEvent } from 'react';
+import { copyWithToast } from './copyToast';
 import { fmtMoneyStr, fmtYmd, maintenanceTitle, type MaintenanceRecord } from './live';
 
 /** Same tone maps the card uses (MaintenanceCard.tsx) — a status reads the same color everywhere. */
@@ -20,6 +22,32 @@ const PAY_BADGE: Record<string, string> = {
 };
 
 const dash = (v: string | null | undefined): string => (v && v.trim() ? v : '—');
+
+/** Stops the click from bubbling to the row's onOpen, and copies instead — QA feedback 2026-08-11:
+ *  clicking Company/Carrier ID/Unit #/Amount opened the modal instead of copying. */
+function copyCell(text: string, ev: MouseEvent<HTMLTableCellElement>): void {
+  ev.stopPropagation();
+  copyWithToast(text, ev);
+}
+
+/** className/title/onClick for a copyable cell, folding in `baseClass` — no pointer cursor or
+ *  click handler at all when there's nothing on the row to copy. */
+function copyableCell(
+  baseClass: string,
+  text: string,
+  label: string,
+): {
+  className: string;
+  title: string | undefined;
+  onClick: ((e: MouseEvent<HTMLTableCellElement>) => void) | undefined;
+} {
+  if (!text) return { className: baseClass, title: undefined, onClick: undefined };
+  return {
+    className: `${baseClass} cs-mt-cell-copyable`,
+    title: `Click to copy ${label}`,
+    onClick: (e) => copyCell(text, e),
+  };
+}
 
 export function MaintenanceListView({
   rows,
@@ -49,13 +77,20 @@ export function MaintenanceListView({
           {rows.map((row) => {
             const status = row.status ?? '';
             const payStatus = row.paymentStatus ?? '';
+            const title = maintenanceTitle(row);
+            const companyCell = copyableCell('cs-mt-list-company', title, 'Company');
+            const carrierCell = copyableCell('cs-mt-list-mono', row.carrierId ?? '', 'Carrier ID');
+            const unitCell = copyableCell('cs-mt-list-mono', row.unitNumber ?? '', 'Unit #');
+            const amountCell = copyableCell(
+              'cs-mt-list-amount',
+              row.totalAmount ? fmtMoneyStr(row.totalAmount) : '',
+              'Amount',
+            );
             return (
               <tr key={row.id} className="cs-mt-list-row" onClick={() => onOpen(row)}>
-                <td className="cs-mt-list-company" title={maintenanceTitle(row)}>
-                  {maintenanceTitle(row)}
-                </td>
-                <td className="cs-mt-list-mono">{dash(row.carrierId)}</td>
-                <td className="cs-mt-list-mono">{dash(row.unitNumber)}</td>
+                <td {...companyCell}>{title}</td>
+                <td {...carrierCell}>{dash(row.carrierId)}</td>
+                <td {...unitCell}>{dash(row.unitNumber)}</td>
                 <td>
                   <span className={`cs-badge cs-badge-sm ${STATUS_BADGE[status] ?? 'cs-badge-muted'}`}>
                     {status || '—'}
@@ -82,7 +117,7 @@ export function MaintenanceListView({
                     '—'
                   )}
                 </td>
-                <td className="cs-mt-list-amount">{fmtMoneyStr(row.totalAmount)}</td>
+                <td {...amountCell}>{fmtMoneyStr(row.totalAmount)}</td>
               </tr>
             );
           })}
