@@ -113,8 +113,12 @@ export interface DataTableProps<T> {
   caption: ReactNode;
   captionVisible?: boolean | undefined;
   rows: readonly T[];
-  /** Stable key per row. */
-  rowKey: (row: T) => string;
+  /**
+   * Stable key per row. The index is supplied for datasets with no natural id — a generic dump over
+   * a vendor payload, say — but prefer a real id: an index key re-uses a row's DOM (and its memo)
+   * for a different record when the list reorders.
+   */
+  rowKey: (row: T, index: number) => string;
   columns: readonly DataColumn<T>[];
 
   /**
@@ -309,9 +313,9 @@ export function DataTable<T>({
           ) : rows.length === 0 ? (
             <TableMessageRow colSpan={columns.length}>{empty ?? 'No rows.'}</TableMessageRow>
           ) : (
-            rows.map((row) => (
+            rows.map((row, index) => (
               <DataRow
-                key={rowKey(row)}
+                key={rowKey(row, index)}
                 row={row}
                 columns={columns}
                 selected={selected?.(row)}
@@ -480,7 +484,7 @@ interface CardListProps<T> {
   caption: ReactNode;
   captionVisible: boolean | undefined;
   rows: readonly T[];
-  rowKey: (row: T) => string;
+  rowKey: (row: T, index: number) => string;
   columns: readonly DataColumn<T>[];
   activate: ((row: T) => void) | undefined;
   leading: ((row: T) => ReactNode) | undefined;
@@ -547,9 +551,9 @@ function CardList<T>({
   ) : rows.length === 0 ? (
     <li className={styles.message}>{empty ?? 'No rows.'}</li>
   ) : (
-    rows.map((row) => (
+    rows.map((row, index) => (
       <DataCard
-        key={rowKey(row)}
+        key={rowKey(row, index)}
         row={row}
         leadingColumn={leadingColumn}
         primary={primary}
