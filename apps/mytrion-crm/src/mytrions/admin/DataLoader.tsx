@@ -11,11 +11,11 @@ import {
 } from '../../api/dataLoader';
 import { AlertIcon, DatabaseIcon, RefreshIcon } from '../../components/icons';
 import { useLoad } from '../_shared/useLoad';
-import { ConfirmDialog } from './ConfirmDialog';
 import { PAGE_SIZE, Pager } from './Pager';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 import dl from './DataLoader.module.css';
+import { ConfirmDialog } from '@/ds';
 
 const BATCH_SKELETON = ['46%', '62%', '56%', '70%', '36%', '68px'] as const;
 
@@ -378,12 +378,14 @@ export function DataLoader() {
 
       {confirming && (
         <ConfirmDialog
+          open
+          tone="danger"
           title="Revert this Data Loader batch?"
           body={`Restore ${confirming.rowCount} row${confirming.rowCount === 1 ? '' : 's'} in ${confirming.tableName}. The revert stops without changing anything if any current row no longer matches the journal.`}
           confirmLabel="Revert batch"
-          busy={reverting}
+          confirming={reverting}
           onConfirm={() => void onRevert()}
-          onCancel={() => setConfirming(null)}
+          onClose={() => setConfirming(null)}
         />
       )}
     </div>

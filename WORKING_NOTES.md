@@ -13452,3 +13452,63 @@ but the reason changed (a bottom bar *is* being built), and the single replaceme
 `pnpm build:widget` succeeds and `apps/mytrion-crm/app/` is rebuilt and committed. Confirmed in the
 hashed bundle: `100dvh`, `--layout-bottombar-h:56px`, `overscroll-behavior-x:contain`,
 `touch-action:manipulation`, and `viewport-fit=cover` + the theme script in `app/index.html`.
+
+### 2026-08-10 — Phases 2 and 3 (partial)
+
+**Phase 2 — `ds/DataTable`.** New component rather than a prop on `ds/Table`: Table is a
+children-composition API and never sees a column definition, so it cannot restructure a caller's JSX
+into a card. Three bands — all columns ≥900, `priority: 1` only between 640 and 900 (CSS-only via
+`data-priority`), card list + detail sheet below 640 (a JS branch, because no CSS selector joins the
+text of sibling cells and `display: block` on table/tr/td destroys the native table reading mode).
+The detail sheet is a `ds/Drawer`, which was already a finished bottom sheet — the table half of
+this project needed zero new modal CSS.
+
+Fixed `stickyFirstColumn` while there: the pin was `:first-child`, and `display: none` does not
+change which element is first, so the moment any column could hide the pin landed on an invisible
+cell. Cells now carry `data-pin`.
+
+**Phase 3 — the floor, plus one reference migration.**
+
+`src/styles/responsive-tables.css` is the usable-not-broken floor. The rule that matters is
+`overscroll-behavior-x: contain`, which nobody had: an over-scrolled table chains its scroll to the
+page, and on iOS that gesture is Back — so flicking to the last column of a wide table navigated out
+of the workspace.
+
+**My first draft of that file targeted eleven classes that do not exist** (`.hr-table-wrap`,
+`.cs-stats-grid`, `.mg-panel`, …). Caught by checking, not by review. `breakpoints.test.ts` now
+fails on any selector in that file that no component renders — the same failure mode as
+`.bm-table-desktop-only`, which sat dead through two phases because a stylesheet naming a class
+nobody writes reads as covered.
+
+**The reference migration** (`OpenPoolReadonlyPanel`) is where the parity helper paid for itself. It
+failed on Gallons/Cycle/Window being unreachable on a phone, and chasing that surfaced a worse bug I
+had just written: `onRowActivate` was documented as card-mode-only, so migrating a table whose whole
+desktop interaction is row-click-to-select silently dropped that interaction. It would have looked
+right in a screenshot and been useless in the hand.
+
+The precedence is now **per mode**: table mode prefers `onRowActivate` (on a desktop the detail is
+usually already beside the table, and a modal covers what it describes); card mode prefers `detail`
+(there is no "beside" on a phone, and the dropped columns have nowhere else to be).
+
+Rows are memoised in both modes, with a test that proves the bail-out — the largest table this
+replaces is 200×28 with its search box in the same component, measured at ~105ms per keystroke
+before its row was memoised. Writing that test found two props (`secondaries`, `activate`) rebuilt
+inline that defeated the card memo entirely.
+
+**ConfirmDialog dedup.** Two identical implementations deleted (MIGRATION.md §13), seven call sites
+on `ds/ConfirmDialog`, which brings the sheet treatment with it. The first pass used a file-wide
+regex on `busy=` / `onCancel=` and renamed props on unrelated components that shared the names —
+reverted and redone scoped to the element. Coverage was ported rather than dropped, with one
+deliberate divergence recorded: ds keeps Cancel and Escape live while the action is in flight,
+because a hung request would otherwise leave a modal with no way out.
+
+### Still open
+
+Roughly 23 tables and 28 modals across Sales, Manager, Billing, and the rest of CS. The mechanics
+are now proven end to end, but each remaining table needs a product judgment — *which two or three
+columns does an agent need to triage this row on a phone?* — that should not be guessed. The floor
+means none of them is broken in the meantime.
+
+No browser verification has been done in these sessions: Tier 2 of the plan (the
+`scrollWidth > innerWidth` check, iOS input zoom, rotation, and the stacking-context check on a
+legacy modal) still needs a device or DevTools.

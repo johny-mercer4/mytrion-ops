@@ -14,11 +14,11 @@ import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon
 import { CarrierInvitations } from './CarrierInvitations';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
-import { ConfirmDialog } from './ConfirmDialog';
 import { Pager, PAGE_SIZE } from './Pager';
 import { adminToast } from './toast';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import s from './admin.module.css';
+import { ConfirmDialog } from '@/ds';
 
 /** Title and blurb for each sub-item — the sidebar names the section, the header names the view. */
 const VIEWS = {
@@ -720,13 +720,15 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
 
       {pending && (
         <ConfirmDialog
+          open
+          tone="danger"
           title={pending.title}
           body={pending.body}
           confirmLabel={pending.confirmLabel}
           cancelLabel={pending.cancelLabel}
-          busy={confirmBusy}
+          confirming={confirmBusy}
           onConfirm={() => void runPending()}
-          onCancel={() => setPending(null)}
+          onClose={() => setPending(null)}
         />
       )}
     </div>

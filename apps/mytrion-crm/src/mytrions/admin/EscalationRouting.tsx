@@ -13,11 +13,11 @@ import {
   type RoutingCandidate,
   type RoutingSnapshot,
 } from '../../api/commsAdmin';
-import { ConfirmDialog } from './ConfirmDialog';
 import { PersonPicker } from './PersonPicker';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 import e from './escalationRouting.module.css';
+import { ConfirmDialog } from '@/ds';
 
 /**
  * Escalation Routing — who an escalation goes to at each of the four levels.
@@ -377,12 +377,14 @@ export function EscalationRouting() {
           `position: fixed` still resolves against the viewport. */}
       {pendingRemove && (
         <ConfirmDialog
+          open
+          tone="danger"
           title={pendingRemove.title}
           body={pendingRemove.body}
           confirmLabel="Remove"
-          busy={removing}
+          confirming={removing}
           onConfirm={() => void confirmRemove()}
-          onCancel={() => {
+          onClose={() => {
             if (!removing) setPendingRemove(null);
           }}
         />
