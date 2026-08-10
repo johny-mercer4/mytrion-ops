@@ -413,7 +413,9 @@
     align-items: stretch;
   }
   .hr-holiday-setting-row {
-    grid-template-columns: 90px 1fr 32px;
+    /* `1fr` floors at min-content, so a long holiday name pushed the row wider than the page and
+       was then clipped with no way to reach it. */
+    grid-template-columns: 90px minmax(0, 1fr) 32px;
   }
   .hr-holiday-setting-row small {
     display: none;

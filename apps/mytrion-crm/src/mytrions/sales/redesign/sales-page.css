@@ -533,3 +533,40 @@
     font-size: var(--text-xl) !important;
   }
 }
+
+
+/* ── Create-a-Ticket wizard ────────────────────────────────────────────────
+ * Both layouts are inline style strings, so every rule here needs `!important` to reach them.
+ *
+ * The stepper is three `flex: 1` groups, each an incompressible 34px circle plus a `nowrap` label
+ * plus a connector — ~330px of minimum inside a 296px pane. The department picker is a hard two-up
+ * grid whose cards hold a 46px icon, two lines of text and a 24px tick.
+ */
+@media (width < 640px) {
+  .ss-root .ss-create-stepper {
+    flex-wrap: wrap !important;
+    row-gap: var(--space-2) !important;
+  }
+  .ss-root .ss-create-step {
+    /* Not `flex: 1` any more: three equal thirds of 296px cannot hold a label. Each step takes the
+       width it needs and the row wraps. */
+    flex: 0 1 auto !important;
+    min-inline-size: 0 !important;
+  }
+  /* The connectors are decoration, and a wrapped connector points at nothing. */
+  .ss-root .ss-create-step > div:last-child:not(:first-child) {
+    display: none !important;
+  }
+  .ss-root .ss-create-depts {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Automations modal form rows. A three-up grid of text inputs: a form control's intrinsic minimum
+   is ~150px, so `1fr 1fr 1fr` is ~470px of minimum inside a 296px sheet and the modal scrolled
+   sideways. Inline styles, hence !important. */
+@media (width < 640px) {
+  .ss-root .ss-auto-formrow {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

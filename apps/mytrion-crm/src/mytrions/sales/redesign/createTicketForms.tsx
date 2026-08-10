@@ -258,9 +258,9 @@ export function TicketWizard() {
       </div>
 
       {/* stepper */}
-      <div style={s('display:flex;align-items:center;gap:10px;margin-bottom:26px')}>
+      <div className="ss-create-stepper" style={s('display:flex;align-items:center;gap:10px;margin-bottom:26px')}>
         {([[1, 'Department'], [2, 'Deal'], [3, 'Details']] as const).map(([n, label], i) => (
-          <div key={n} style={s('display:flex;align-items:center;gap:10px;flex:1')}>
+          <div key={n} className="ss-create-step" style={s('display:flex;align-items:center;gap:10px;flex:1')}>
             <div onClick={() => cr.step > n && patch({ step: n as CrState['step'], typeOpen: false, cardOpen: false })} style={s(`display:flex;align-items:center;gap:9px;cursor:${cr.step > n ? 'pointer' : 'default'}`)}>
               <div style={s(circle(n))}>{cr.step > n ? <Icon name="check" size={15} strokeWidth={3} /> : n}</div>
               <span style={s(stepLabel(n))}>{label}</span>
@@ -272,7 +272,7 @@ export function TicketWizard() {
 
       {/* STEP 1 — department */}
       {cr.step === 1 && (
-        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+        <div className="ss-create-depts" style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
           {DEPTS.map((d) => {
             const on = cr.dept === d.id;
             return (

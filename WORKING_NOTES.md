@@ -13589,3 +13589,70 @@ override. Worth doing with a browser open.
 Still no browser verification. The `scrollWidth > innerWidth` check, iOS input
 zoom, rotation, and whether a legacy `position: fixed` modal still paints above
 the header all need a device.
+
+### 2026-08-11 — All 45 audited defects fixed
+
+A 10-agent audit read every Mytrion for the causes of the failures in the user's
+screenshots; a second pass adversarially verified each claim against the file.
+100 raw findings → 77 structural → **45 confirmed**, all now fixed.
+
+**The two that mattered most were both cases of a guard that did not guard.**
+
+`.left` in AppHeader was already shrinkable, but its CONTENTS were not — the
+workspace chip is `flex: none` through four nested layers, so the header's whole
+shrink budget was spent on the left and the acting-as banner paid. Fixing `.left`
+alone (which I did first) achieved nothing.
+
+The iOS 16px input guard was decorative: a bare element selector is (0,0,1) and
+lost to all 43 module rules that size their own fields. Every field in CS, HR and
+Recruit was still 12–15px. It now carries `!important`, scoped below the density
+line.
+
+**Three mechanical sweeps, each desktop-identical by construction:**
+
+- `repeat(N, 1fr)` → `repeat(N, minmax(0, 1fr))`, 29 sites. A bare `1fr` floors
+  at min-content, so a track holding a wide number refuses to shrink and the
+  PAGE scrolls sideways. Now banned outright by breakpoints.test.ts.
+- `minmax(Npx, 1fr)` → `minmax(min(100%, Npx), 1fr)` for the 15 floors above
+  290px. `auto-fill` reduces the column COUNT to one but never the track below
+  its floor, so a 360px grid stayed 360px inside a 280px box.
+- Non-wrapping rows split by kind: tab and chip strips SCROLL (wrapping moves
+  the active tab under the thumb), action clusters WRAP (a horizontally scrolled
+  action hides itself with no affordance saying it is there).
+
+**Dead CSS found twice more.** Billing's mobile KPI rule targeted
+`.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` — three classes styled
+throughout the module that no `.tsx` renders; the real class is `.db-kpi-grid`.
+Same failure as `.bm-table-desktop-only`. My first check said they were live: the
+`-g` flag had silently failed and rg was matching the stylesheets themselves.
+**Always verify a "this is dead" claim with a correctly-scoped search.**
+
+**The `vw` budget flagged a legitimate overlay clamp**, so it was narrowed rather
+than worked around. `width: 100vw` is the defect it was written for;
+`min(300px, calc(100vw - 1rem))` is the correct way to say "never wider than the
+screen". Counting only direct sizing dropped the real number 37 → 5. A heuristic
+that fires on the right answer needs fixing, not a workaround.
+
+**Budgets after this pass:** off-ladder breakpoints 92 → 78, legacy max-width
+124 → 99, bare `vh` 27 → 26, bare `vw` 37 → 5, bare `1fr` repeats → 0 (banned).
+
+### Two mistakes of mine, recorded
+
+1. I **overwrote** `components/DropdownMenu.test.tsx` instead of extending it,
+   destroying nine keyboard tests for shared chrome. Restored and merged — and
+   they immediately caught a regression the portal fix had introduced (focus-on-
+   open ran before the panel mounted, because I had gated its render on the
+   measurement). The tests earned their keep within a minute of being restored.
+2. I let a JSX `{/* */}` comment sit before a returned element, making two root
+   children. Caught by typecheck.
+
+### Still open
+
+Nothing from the audit. What remains is structural: **Sales is ~19k lines of
+inline style strings**, and every responsive rule for it has to be a class hook
+plus `!important` because an inline style outranks any selector. That is a
+conversion job, not a styling job, and it is why Sales needed the most hooks.
+
+**No browser verification.** Everything here is code-reading plus 697 jsdom
+tests. jsdom does no layout, so nothing above proves geometry — re-shooting the
+three screenshots is the only thing that does.

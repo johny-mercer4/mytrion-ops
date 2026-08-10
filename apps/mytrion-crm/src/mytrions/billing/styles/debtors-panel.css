@@ -270,7 +270,13 @@
 .bm-root .db-content-area {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    /* `hidden` silently CLIPPED the trailing columns of every row list built on this frame
+       (Debtors, Prepay, Returns, Opening Balances) — the content was there and unreachable, with
+       no scrollbar to say so. `auto` gives it back; `contain` stops a sideways flick chaining to
+       the page, which on iOS is a Back gesture. */
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
     min-height: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);

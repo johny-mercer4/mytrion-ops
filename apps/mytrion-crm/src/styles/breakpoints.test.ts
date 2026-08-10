@@ -134,7 +134,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      79,
+      78,
     );
   });
 
@@ -149,7 +149,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      100,
+      99,
     );
   });
 });
@@ -208,7 +208,7 @@ describe('viewport units', () => {
   // that must not be covered. Not a blind codemod — `dvh` re-lays-out on every URL-bar frame, which
   // is the wrong trade for a 400-row table.
   it('does not add a bare vh', () => {
-    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 27);
+    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 26);
   });
 
   /**

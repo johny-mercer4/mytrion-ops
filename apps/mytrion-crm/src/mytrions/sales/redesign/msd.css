@@ -899,3 +899,15 @@
 .ss-root .msd-activity-card__rows dd[data-accent] {
   color: var(--accent);
 }
+
+/* The hero KPI strip is a two-up flex row whose halves are `flex: none` around unbreakable mono
+   figures, so it never fit a phone. It stacks below the structure line. */
+@media (width < 640px) {
+  .ss-root .msd-hero-kpi-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ss-root .msd-hero-kpi {
+    min-inline-size: 0;
+  }
+}
