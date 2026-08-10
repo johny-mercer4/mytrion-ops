@@ -108,6 +108,23 @@ describe('DataTable — table mode', () => {
     expect(onRowActivate).toHaveBeenCalledTimes(2);
   });
 
+  it('can hand the keyboard path to a control in the cell instead of the row', () => {
+    // A 222-row directory that makes every row a tab stop puts 222 stops between the table and
+    // everything after it. Those tables put a real button in the identity cell and take the row
+    // click as a mouse convenience only — HR's list says exactly this in its own comment.
+    const onRowActivate = vi.fn();
+    const { container } = render(table({ onRowActivate, rowActivation: 'cell' }));
+    const row = container.querySelector('tbody tr')!;
+
+    expect(row).not.toHaveAttribute('tabindex');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onRowActivate).not.toHaveBeenCalled();
+
+    // The click convenience survives.
+    fireEvent.click(row);
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+  });
+
   it('leaves rows inert when there is nothing to activate', () => {
     // Neither onRowActivate nor detail: a read-only table. A tab stop on every one of 400 rows
     // buries the controls after them for no gain.

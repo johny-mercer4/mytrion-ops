@@ -131,6 +131,20 @@ export interface DataTableProps<T> {
    */
   onRowActivate?: ((row: T) => void) | undefined;
   /**
+   * How a TABLE row exposes `onRowActivate` to the keyboard. Card mode is unaffected — a card is
+   * always a real button.
+   *
+   * `row` (default) — the row is a tab stop and takes Enter/Space. Right when the row IS the
+   *   control: a selection list, where the row is the option.
+   * `cell` — click only, a mouse convenience; the caller puts a real focusable control in the
+   *   identity cell. Right for a long directory, where making every row a tab stop puts 222 stops
+   *   between the table and everything after it. HR's list says exactly this in its own comment.
+   *
+   * With `cell`, the identity column's `cell` usually renders a `<button>` — so give that column a
+   * `mobileCell` returning plain text, or the card's own button would contain a nested one.
+   */
+  rowActivation?: 'row' | 'cell' | undefined;
+  /**
    * The record, as a bottom sheet DataTable owns.
    *
    * PRECEDENCE, and it is per-mode rather than absolute:
@@ -159,6 +173,14 @@ export interface DataTableProps<T> {
   /** Shown when `rows` is empty and `loading` is false. Say what happened and what to try next. */
   empty?: ReactNode;
   selected?: ((row: T) => boolean) | undefined;
+  /**
+   * Per-row PRESENTATION — a terminated employee greyed out, a row with a delete in flight.
+   *
+   * Deliberately two named fields and not a general prop spread: behaviour belongs in
+   * `onRowActivate` / `rowActivation` / `selected`, where it is typed and testable, and a table
+   * that can inject arbitrary handlers per row stops being describable as data.
+   */
+  rowState?: ((row: T) => { className?: string | undefined; busy?: boolean | undefined }) | undefined;
   sort?: DataTableSort | undefined;
 
   density?: TableDensity | undefined;
@@ -222,11 +244,13 @@ export function DataTable<T>({
   skeletonRows = 6,
   empty,
   selected,
+  rowState,
   sort,
   density = 'comfortable',
   layout = 'auto',
   stickyHeader,
   stickyFirstColumn,
+  rowActivation = 'row',
   scroller,
   scrollerClassName,
   scrollerStyle,
@@ -258,6 +282,7 @@ export function DataTable<T>({
         skeletonRows={skeletonRows}
         empty={empty}
         selected={selected}
+        rowState={rowState}
         scrollerClassName={scrollerClassName}
         scrollerStyle={scrollerStyle}
         className={className}
@@ -319,7 +344,9 @@ export function DataTable<T>({
                 row={row}
                 columns={columns}
                 selected={selected?.(row)}
+                state={rowState?.(row)}
                 activate={activateRow}
+                keyboard={rowActivation === 'row'}
               />
             ))
           )}
@@ -357,19 +384,24 @@ interface DataRowProps<T> {
   row: T;
   columns: readonly DataColumn<T>[];
   selected: boolean | undefined;
+  state: { className?: string | undefined; busy?: boolean | undefined } | undefined;
   activate: ((row: T) => void) | undefined;
+  /** False when the caller owns the keyboard path via a control in the identity cell. */
+  keyboard: boolean;
 }
 
-function DataRowInner<T>({ row, columns, selected, activate }: DataRowProps<T>) {
+function DataRowInner<T>({ row, columns, selected, state, activate, keyboard }: DataRowProps<T>) {
   return (
     <TableRow
       {...(selected === undefined ? {} : { selected })}
-      {...(activate
+      {...(state?.className ? { className: state.className } : {})}
+      {...(state?.busy ? { 'aria-busy': true } : {})}
+      {...(activate ? { onClick: () => activate(row) } : {})}
+      {...(activate && keyboard
         ? {
-            onClick: () => activate(row),
             // A row is not a control, so it gets no role change — but it does need to be reachable
             // and activatable without a mouse. Enter and Space, because a selectable row behaves
-            // like an option and users try both.
+            // like an option and users try both. See `rowActivation` for when this is wrong.
             tabIndex: 0,
             onKeyDown: (event: KeyboardEvent) => {
               if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -403,6 +435,7 @@ const DataRow = memo(DataRowInner) as typeof DataRowInner;
 
 interface DataCardProps<T> {
   row: T;
+  state: { className?: string | undefined; busy?: boolean | undefined } | undefined;
   leadingColumn: DataColumn<T> | undefined;
   primary: DataColumn<T> | undefined;
   secondaries: readonly DataColumn<T>[];
@@ -415,6 +448,7 @@ interface DataCardProps<T> {
 
 function DataCardInner<T>({
   row,
+  state,
   leadingColumn,
   primary,
   secondaries,
@@ -454,7 +488,11 @@ function DataCardInner<T>({
   );
 
   return (
-    <li className={styles.item} data-selected={selected || undefined}>
+    <li
+      className={cx(styles.item, state?.className)}
+      data-selected={selected || undefined}
+      {...(state?.busy ? { 'aria-busy': true } : {})}
+    >
       {activate ? (
         // A real <button>, not a clickable div: Enter and Space come free, and `aria-haspopup` tells
         // a screen-reader user that activating this opens a dialog rather than navigating.
@@ -492,6 +530,7 @@ interface CardListProps<T> {
   skeletonRows: number;
   empty: ReactNode;
   selected: ((row: T) => boolean) | undefined;
+  rowState: ((row: T) => { className?: string | undefined; busy?: boolean | undefined }) | undefined;
   scrollerClassName: string | undefined;
   scrollerStyle: CSSProperties | undefined;
   className: string | undefined;
@@ -521,6 +560,7 @@ function CardList<T>({
   skeletonRows,
   empty,
   selected,
+  rowState,
   scrollerClassName,
   scrollerStyle,
   className,
@@ -555,6 +595,7 @@ function CardList<T>({
       <DataCard
         key={rowKey(row, index)}
         row={row}
+        state={rowState?.(row)}
         leadingColumn={leadingColumn}
         primary={primary}
         secondaries={secondaries}
