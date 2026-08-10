@@ -114,9 +114,15 @@ export function searchTransactions(query: string): Promise<BillingTransactionsPa
   return billingGet(`/billing/transactions/search?query=${encodeURIComponent(query)}`);
 }
 
-/** Last-365-day invoices for a carrier (the mapping picker) — CMP read via servercrm. */
-export function searchCarrierInvoices(carrierId: string): Promise<BillingInvoicesResult> {
-  return billingGet(`/billing/invoices/search?carrierId=${encodeURIComponent(carrierId)}`);
+/** Last-365-day invoices for a carrier (the mapping picker) — CMP read via servercrm.
+ *  `withPaymentDates` additionally resolves each PAID/PARTIALLY_PAID invoice's payment date — costs
+ *  extra CMP calls, so only Data Center's detail modal passes it. */
+export function searchCarrierInvoices(
+  carrierId: string,
+  opts?: { withPaymentDates?: boolean },
+): Promise<BillingInvoicesResult> {
+  const qs = opts?.withPaymentDates ? '&withPaymentDates=1' : '';
+  return billingGet(`/billing/invoices/search?carrierId=${encodeURIComponent(carrierId)}${qs}`);
 }
 
 export interface BillingTxStats {
