@@ -178,6 +178,28 @@ Priority columns as a card row below 640, tap opens the full record in a `ds/Dra
 nine-track grid with 430px of fixed track. Modals become sheets; wizards and anything over about a
 screen of form become full-screen.
 
+### Verifying it — jsdom cannot
+
+Every test in this repo runs in jsdom, which does **no layout at all**. A green suite proves
+structure and proves nothing about geometry: it cannot tell you the page overflows, that two labels
+collide, or that a control is 26px wide. Three real-browser defects shipped past a fully green suite
+before this was written — a menu clipped by its own sidebar, a header pushed off screen, and a
+vendor pill sitting on top of the tab bar.
+
+So there is a browser harness. It drives headless Chrome over the DevTools Protocol and needs no
+dependencies:
+
+```
+pnpm audit:serve                 # dev server on :5175, auth bypassed, /v1 proxied to the API
+pnpm audit:mobile                # every route x 320/375/430/639/640/820/1280, names the offenders
+pnpm audit:shots --width 375     # PNGs, for the check no assertion replaces: looking at it
+```
+
+`audit:mobile` fails on `documentElement.scrollWidth > viewport` and on any field under 16px, and
+prints the CSS path of each element painting past the right edge. Run it before claiming a
+responsive change works — and if a page renders empty (no session, no data), say so rather than
+counting the pass: **an empty grid never overflows.**
+
 ### What NOT to copy from `apps/mini-app`
 
 It is the repo's only mobile-first surface and most of it is worth stealing — the app-shell scroll

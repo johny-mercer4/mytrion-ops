@@ -13656,3 +13656,45 @@ conversion job, not a styling job, and it is why Sales needed the most hooks.
 **No browser verification.** Everything here is code-reading plus 697 jsdom
 tests. jsdom does no layout, so nothing above proves geometry — re-shooting the
 three screenshots is the only thing that does.
+
+### 2026-08-11 — Verified in a real browser, and it found things
+
+Built a headless-Chrome harness driven over the DevTools Protocol. **No new dependencies** — Chrome
+is already on the machine and Node 24 ships a native WebSocket.
+
+  pnpm audit:serve    dev server on :5175, VITE_DEV_MOCK_AUTH=1, /v1 proxied to the API
+  pnpm audit:mobile   every route x 320/375/430/639/640/820/1280, names the offenders
+  pnpm audit:shots    PNGs at a given width
+
+`vite.audit.config.ts` exists for one reason worth writing down: the API's CORS allowlist is an
+exact origin match and does not include :5175, so a cross-origin client there fails every fetch —
+and **an audit against empty tables is worthless, because an empty grid never overflows.** Proxying
+`/v1` makes the calls same-origin so the pages render with real data. It also keeps the audit off
+:5173, which is `strictPort` precisely so a developer's own server cannot be disturbed.
+
+**Result: 91 route x viewport combinations, 0 overflowing, 0 fields under 16px.** All twelve
+workspaces render at all seven widths.
+
+### Two defects only the browser could find
+
+1. **The RingCentral fix had never worked.** I targeted `#rc-widget-adapter-frame` and every
+   `iframe[id*=rc-widget]`. The docked pill is a positioned **DIV** — `#rc-widget.Adapter_root` —
+   so nothing moved and it went on covering "Maintenance", "Retention" and "More". Found by probing
+   the live DOM for fixed elements near the bottom edge; `--layout-bottom-inset` had been resolving
+   correctly (`calc(56px + 0px)`) the whole time, at a selector that matched nothing.
+
+2. **Billing's KPI banner was the grid the "dead selector" finding was really about.** The audit
+   correctly said `.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` are styled and never
+   rendered — but the class Billing actually writes is `.bm-summary-banner`, which nobody had a
+   mobile rule for. It sat at `repeat(4, …)` on a 375px screen: ~80px per tile, labels wrapping,
+   figures in a column narrower than they are.
+
+Both are the same lesson: **a fix aimed at the wrong selector is indistinguishable from no fix, and
+only the rendered page can tell you which you have.**
+
+Also tuned from looking rather than reasoning: KPI tiles stay **2-up** down to 320px instead of
+going 1-up at 480. Four full-width tiles put the actual content four screens down, and a 145px tile
+still holds these labels.
+
+The harness is now documented in the modern-web-guidance skill, with the caveat that matters: if a
+page renders empty, say so rather than counting the pass.

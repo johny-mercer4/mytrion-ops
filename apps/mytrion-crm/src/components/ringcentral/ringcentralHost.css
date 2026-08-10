@@ -42,6 +42,13 @@ body[data-cs-modal-open] .rc-phone-stack {
  * --layout-bottom-inset is 0 above the structure line, so this is inert on a desktop.
  */
 @media (width < 640px) {
+  /*
+   * `#rc-widget` FIRST, and it is the one that matters: Embeddable's docked pill is a positioned
+   * DIV wrapper (`#rc-widget.Adapter_root.Adapter_right`), not the iframe. Targeting only the
+   * iframe — which is what the first attempt did — moved nothing, and the pill went on covering
+   * "Maintenance", "Retention" and "More" in the tab bar. Verified against the running app.
+   */
+  #rc-widget,
   #rc-widget-adapter-frame,
   iframe#rc-widget-adapter-frame,
   iframe[id*='rc-widget'],

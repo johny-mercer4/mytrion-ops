@@ -706,3 +706,18 @@
     row-gap: var(--space-2);
   }
 }
+
+/*
+ * The KPI banner. `repeat(4, …)` at every width put four tiles in 375px — ~80px each, so "TOTAL
+ * DEALS" and "LINE OF CREDIT" wrapped to two lines and the figures sat in a column narrower than
+ * they are. This is the grid the audit's "dead selector" finding was really about: the mobile rule
+ * existed but named `.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner`, none of which any
+ * .tsx renders. `.bm-summary-banner` is what Billing actually writes (DataCenter.tsx:493).
+ */
+@media (width < 900px) {
+  .bm-root .bm-summary-banner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Deliberately NOT 1-up below 480: four full-width tiles put the table four screens down, and a
+   145px tile still holds these labels. Checked at 320 and 375 in the browser. */

@@ -526,9 +526,8 @@
 }
 
 @media (width < 480px) {
-  .ss-root .ss-home-stats {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
+  /* The stat tiles stay 2-up here too — see the note in billing/styles/shared-base.css. Only the
+     greeting, which is display type, needs another step down. */
   .ss-root .ss-home-greeting {
     font-size: var(--text-xl) !important;
   }
