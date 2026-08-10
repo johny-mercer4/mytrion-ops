@@ -1,0 +1,70 @@
+/*
+ * The table contract, as CSS only — deliberately NOT a <DataTable> component.
+ *
+ * The three bespoke workspaces carry ~4,000 lines of table CSS between them, with sticky headers,
+ * virtualisation, inline editing and per-column formatting. A component that satisfied Billing's
+ * ledger would be 600 lines nobody else could adopt. This is the four rules the design contract
+ * actually mandates, and a module opts in by adding a class rather than rewriting a table.
+ *
+ * Revisit a real component only when two workspaces independently ask for the same one.
+ *
+ * Usage:
+ *   <div className={table.scroller}>
+ *     <table className={table.table}>
+ *       <th className={table.num}>Amount</th>   <td className={table.num}>$18,420.00</td>
+ */
+
+/* Wide tables scroll inside their own container; the page body never scrolls sideways. */
+.scroller {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table thead th {
+  padding: var(--space-2_5) var(--space-5);
+  border-bottom: 1px solid var(--row-line);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* No row backgrounds — not zebra striping, not a tinted header band. Separation is a 1px divider,
+   and the only fill on a row is the hover wash. */
+.table tbody tr {
+  background: none;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.table tbody td {
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--row-line);
+  color: var(--text-primary);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Numeric columns are right-aligned and monospaced so digits line up vertically down the column.
+   Mandatory in Billing, Finance and Analytics — a money column that does not align cannot be
+   scanned, only read. */
+.num {
+  text-align: right;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

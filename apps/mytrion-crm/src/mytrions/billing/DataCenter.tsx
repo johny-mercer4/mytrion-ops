@@ -85,7 +85,7 @@ const PAY_BADGE: Record<PayType, string> = {
   '': 'bm-badge-muted',
 };
 
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "var(--font-mono)";
 
 /* ── raw → view-model mapping ── */
 const str = (v: unknown): string => (v == null ? '' : String(v));

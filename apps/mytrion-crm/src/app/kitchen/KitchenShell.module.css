@@ -1,0 +1,234 @@
+/*
+ * Kitchen-sink chrome. Flat and quiet on purpose — the harness must not compete with what it is
+ * displaying, and any decoration here would be indistinguishable from a component's own styling in
+ * a screenshot.
+ */
+
+.root {
+  min-block-size: 100%;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+.masthead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  block-size: var(--layout-header-h);
+  padding-inline: var(--space-6);
+  background: var(--surface);
+  border-block-end: 1px solid var(--border-default);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  letter-spacing: var(--tr-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+}
+
+.nav {
+  position: sticky;
+  inset-block-start: var(--layout-header-h);
+  max-block-size: calc(100vh - var(--layout-header-h));
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.navList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-0_5);
+  /* The index is a reference, so its numbering should be scannable rather than decorative. */
+  counter-reset: none;
+}
+
+.navLink {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  transition: background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.navLink:hover {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+
+.main {
+  padding: var(--space-6);
+  display: grid;
+  gap: var(--space-10);
+  /* Dense content is never centre-aligned — the brief is explicit, and a review harness that
+     centres its specimens misrepresents how they will actually sit in a workspace. */
+  justify-items: stretch;
+  max-inline-size: var(--layout-measure);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+  /* Anchor links land under the sticky masthead without this. */
+  scroll-margin-block-start: calc(var(--layout-header-h) + var(--space-4));
+}
+
+.sectionHead {
+  display: grid;
+  gap: var(--space-1);
+  padding-block-end: var(--space-2);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+  letter-spacing: var(--tr-xl);
+  font-weight: var(--fw-xl);
+}
+
+.sectionSub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  max-inline-size: var(--layout-measure-prose);
+}
+
+.sectionBody {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.specimen {
+  display: grid;
+  gap: var(--space-1_5);
+  min-inline-size: 0;
+}
+
+.specimenLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.specimenBody {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+/* ── Theme pair ──────────────────────────────────────────────────────────────
+   Two panes, each forcing its own theme via data-theme on a WRAPPER. This works only because every
+   Horizon token resolves through the custom-property cascade — there is deliberately no `dark:`
+   variant anywhere in the system, and this view is one of the payoffs. */
+.pair {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+.main[data-split] .pair {
+  grid-template-columns: 1fr 1fr;
+}
+/* Below the split breakpoint the panes stack — two columns of dense specimens at 768px is unreadable. */
+@media (max-width: 1024px) {
+  .main[data-split] .pair {
+    grid-template-columns: 1fr;
+  }
+}
+/* When the split is off, only the first pane renders — reviewing one theme at a time. */
+.main:not([data-split]) .pane:last-child {
+  display: none;
+}
+
+.pane {
+  position: relative;
+  background: var(--page);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  min-inline-size: 0;
+}
+
+.paneTag {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.paneBody {
+  display: grid;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .nav {
+    position: static;
+    max-block-size: none;
+    border-inline-end: none;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+  .main {
+    padding: var(--space-4);
+  }
+}

@@ -1,0 +1,131 @@
+/*
+ * TurnError — a turn that failed.
+ *
+ * The design brief in one line: the ERROR MESSAGE is the content, and everything else is chrome
+ * around it. Hence a quiet fill, a danger border and icon that identify the block, and a message in
+ * primary text at body weight rather than in danger red — a red paragraph looks urgent and reads
+ * badly, and this one is meant to be read, copied and acted on.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+
+  padding: var(--space-3);
+  border: 1px solid var(--turn-error-bd);
+  border-radius: var(--radius-panel);
+  background: var(--turn-error-bg);
+
+  font-family: var(--font-body);
+  /* Contain long tool payloads and URLs instead of pushing the transcript sideways. */
+  min-inline-size: 0;
+
+  /* Entrance. `translate:` only while the animation runs — the end state is `none`, so nothing is
+     left permanently transformed. Under prefers-reduced-motion the duration tokens are zeroed
+     globally, and the block simply appears; the alert role, not the motion, is what announces it. */
+  animation: turnErrorIn var(--dur-slow) var(--ease-decelerate);
+}
+@keyframes turnErrorIn {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-1);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* ── Headline ────────────────────────────────────────────────────────────────
+   A <p>, not a heading: a transcript can hold dozens of turns, and an <h3> per failure would build
+   a document outline out of errors. The icon is labelled, so "this failed" survives without colour. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  color: var(--turn-error-fg);
+}
+.kind {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+}
+
+/* ── The message ─────────────────────────────────────────────────────────────
+   Verbatim, selectable, wrapping. `overflow-wrap: anywhere` so an unbroken 200-character URL or a
+   base64 payload wraps instead of widening the whole transcript. */
+.message {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* ── Detail disclosure ──────────────────────────────────────────────────────
+   For the request id, the stack, the tool payload. Collapsed by default, because it is reference
+   material; never the place the primary message hides. */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-medium);
+
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.disclosure:hover {
+  color: var(--text-primary);
+}
+
+.pre {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--struct-pre-bd);
+  border-radius: var(--radius-control);
+  background: var(--struct-pre-bg);
+  color: var(--text-secondary);
+
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+
+  /* Wraps AND scrolls: preformatted diagnostics keep their own line breaks, and the rare very long
+     line scrolls inside this box rather than widening the transcript. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-block-size: var(--space-16);
+  overflow: auto;
+  user-select: text;
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────────
+   Retry first, caller actions after. Wraps rather than compressing the controls — a Retry squeezed
+   to half a word in a narrow dock is worse than a second row. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-0_5);
+}

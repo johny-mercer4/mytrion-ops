@@ -179,18 +179,58 @@ function emit(event: RingCentralCallEvent): void {
   void postRingCentralCallEvent(payload).catch(() => {});
 }
 
+/**
+ * How long an `ended` session stays remembered. RingCentral's widget emits `rc-call-end-notify`
+ * more than once for a single hangup (the SIP stack surfaces terminated / bye / session-ended
+ * separately), and the repeats arrive within a second or two of each other.
+ */
+const ENDED_TOMBSTONE_MS = 60_000;
+/** Bound on the tombstone map, so a long shift cannot grow it without limit. */
+const ENDED_TOMBSTONE_MAX = 500;
+
 function handleCall(kind: RingCentralEventKind, call: RawCall): void {
   const sessionId = call.sessionId ?? call.id ?? '';
   if (sessionId) {
     if (lastKind.get(sessionId) === kind) return; // same phase already surfaced
+    /*
+     * The `ended` guard has to OUTLIVE the event it guards.
+     *
+     * This used to `lastKind.delete(sessionId)` immediately after emitting `ended` — which removed
+     * the very key that would have suppressed the next duplicate. RingCentral emits `ended` two or
+     * three times per hangup, so every repeat found an empty map, passed the check, and emitted
+     * again. Each emission drives a `retention.record_outcome` write, so one hangup cost three
+     * writes and a busy agent could reach the 120/min touchpoint budget and start seeing 429s.
+     */
+    if (kind === 'ended' && endedAt.has(sessionId)) return;
     lastKind.set(sessionId, kind);
     if (kind === 'connected') connectedAt.set(sessionId, Date.now());
   }
   emit(buildCallEvent(kind, call, sessionId));
   if (kind === 'ended' && sessionId) {
-    lastKind.delete(sessionId);
+    // Per-call payload state is finished with; the session KEY is deliberately retained below.
     connectedAt.delete(sessionId);
     sessionDialCtx.delete(sessionId);
+    lastKind.delete(sessionId);
+    rememberEnded(sessionId);
+  }
+}
+
+/** sessionId → epoch ms it ended, so repeat `ended` notifies for the same call are dropped. */
+const endedAt = new Map<string, number>();
+
+function rememberEnded(sessionId: string): void {
+  const now = Date.now();
+  endedAt.set(sessionId, now);
+  // Sweep on write rather than on a timer: no interval to leak, and the map only grows on hangups.
+  if (endedAt.size > ENDED_TOMBSTONE_MAX) {
+    for (const [id, at] of endedAt) {
+      if (now - at > ENDED_TOMBSTONE_MS) endedAt.delete(id);
+    }
+    // Still over after expiry (a burst of calls inside the window) — drop the oldest.
+    if (endedAt.size > ENDED_TOMBSTONE_MAX) {
+      const oldest = [...endedAt.entries()].sort((a, b) => a[1] - b[1]);
+      for (const [id] of oldest.slice(0, endedAt.size - ENDED_TOMBSTONE_MAX)) endedAt.delete(id);
+    }
   }
 }
 

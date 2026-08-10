@@ -94,7 +94,7 @@
 /* Matches the host's sub-view heading (`.ss-page-title`): the display face, not body text. */
 .listTitle {
   margin: 0;
-  font-family: Rajdhani, var(--font-display, inherit), sans-serif;
+  font-family: var(--font-head);
   font-size: var(--ss-text-md, 16px);
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -110,7 +110,7 @@
 }
 
 .count {
-  font-family: 'JetBrains Mono', var(--font-mono, ui-monospace), monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-badge, 11px);
   color: var(--faint, var(--hz-muted));
   font-variant-numeric: tabular-nums;
@@ -356,7 +356,7 @@
 }
 
 .rowNumber {
-  font-family: 'JetBrains Mono', var(--font-mono, ui-monospace), monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-badge, 11px);
   color: var(--faint, var(--hz-muted));
   flex: none;
@@ -399,7 +399,7 @@
 }
 
 .time {
-  font-family: 'JetBrains Mono', var(--font-mono, ui-monospace), monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-badge, 11px);
   color: var(--faint, var(--hz-muted));
   white-space: nowrap;
@@ -497,7 +497,7 @@
 }
 
 .chatSubject {
-  font-family: Rajdhani, var(--font-display, inherit), sans-serif;
+  font-family: var(--font-head);
   font-size: var(--ss-text-md, 16px);
   font-weight: 700;
   letter-spacing: 0.02em;

@@ -38,7 +38,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
       <span style={s('flex:0 0 132px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
         {label}
       </span>
-      <span style={s(`flex:1;min-width:0;font-size:14px;word-break:break-word${mono ? ";font-family:'JetBrains Mono',monospace;font-size:13px" : ''}`)}>
+      <span style={s(`flex:1;min-width:0;font-size:14px;word-break:break-word${mono ? ";font-family:var(--font-mono);font-size:13px" : ''}`)}>
         {value}
       </span>
     </div>
@@ -141,7 +141,7 @@ export function RejectionDetailModal({ row, onClose }: { row: RejectionVM; onClo
               Raw EFS response
             </summary>
             {/* Verbatim, unparsed — this is what support quotes back to EFS. */}
-            <div style={s("margin-top:9px;padding:11px 13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);font-family:'JetBrains Mono',monospace;font-size:12.5px;word-break:break-all;color:var(--text2)")}>
+            <div style={s("margin-top:9px;padding:11px 13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);font-family:var(--font-mono);font-size:12.5px;word-break:break-all;color:var(--text2)")}>
               {row.errorRaw}
             </div>
           </details>

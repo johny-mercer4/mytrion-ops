@@ -30,10 +30,31 @@ export function assessEvidence(passages: RetrievedPassage[]): EvidenceAssessment
   const agreement = (top.signals?.vectorHits ?? 0) > 0 && (top.signals?.lexicalHits ?? 0) > 0;
   const multiQuery = (top.signals?.queryHits ?? 0) >= 2;
   if (vector !== undefined && vector >= env.RAG_MIN_COSINE_SCORE && (agreement || multiQuery)) {
+    /**
+     * Corroboration is evidence, so it moves confidence — it used to only gate this branch.
+     *
+     * That mattered once the lexical leg started working. While `buildFullTextQuery` returned zero
+     * rows for natural-language questions, `agreement` was unreachable, so the only route to the
+     * `shouldUseDeterministic` bar (0.85) was a cosine ≥ 0.733 — rare in practice. Every question
+     * therefore paid for a semantic judge call plus a corrective hop.
+     *
+     * Two retrieval methods independently surfacing the same chunk is the standard hybrid-search
+     * precision signal, and a chunk found by several rewrites of the question is nearly as strong.
+     * Measured cosine for on-target Sales documents runs 0.54–0.82, so a modest bump lets a
+     * genuinely strong match skip grading while weak or conflicting evidence still gets judged.
+     */
+    const corroboration = (agreement ? 0.06 : 0) + (multiQuery ? 0.03 : 0);
     return {
       grade: 'sufficient',
-      confidence: Math.min(0.98, 0.78 + Math.max(0, vector - env.RAG_MIN_COSINE_SCORE) * 0.3),
-      reasons: ['strong semantic match', agreement ? 'vector/lexical agreement' : 'multi-query agreement'],
+      confidence: Math.min(
+        0.98,
+        0.78 + Math.max(0, vector - env.RAG_MIN_COSINE_SCORE) * 0.3 + corroboration,
+      ),
+      reasons: [
+        'strong semantic match',
+        ...(agreement ? ['vector/lexical agreement'] : []),
+        ...(multiQuery ? ['multi-query agreement'] : []),
+      ],
     };
   }
   if (vector !== undefined && vector < env.RAG_MIN_COSINE_SCORE && !agreement) {

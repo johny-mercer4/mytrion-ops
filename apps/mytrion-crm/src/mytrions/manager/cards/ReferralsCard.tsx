@@ -321,12 +321,23 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
                 ? `Updated ${formatCachedAt(cachedAt)}`
                 : '\u00a0'}
           </span>
-          {data && data.periodMonth === periodMonth ? (
-            <span className="mg-rf-live-badge">
-              <Calculator size={13} />
-              {revalidating ? 'Calculating…' : 'Live calculation'}
-            </span>
-          ) : null}
+          {/*
+            Always MOUNTED, hidden until the calculation is live — the same trick `mg-cachedat`
+            above already uses with its \u00a0 placeholder.
+
+            Rendering it conditionally changed the number of items in this flex row between the
+            loading and loaded states. The row wraps, so that extra width was enough to push the
+            month picker, Refresh and the export buttons from the top-right onto a second line the
+            moment data arrived. Reserving the footprint means the header is laid out once.
+          */}
+          <span
+            className="mg-rf-live-badge"
+            data-pending={data && data.periodMonth === periodMonth ? undefined : 'true'}
+            aria-hidden={data && data.periodMonth === periodMonth ? undefined : true}
+          >
+            <Calculator size={13} />
+            {revalidating ? 'Calculating…' : 'Live calculation'}
+          </span>
           <div className="mg-rf-month" data-focus-shell>
             <button
               type="button"

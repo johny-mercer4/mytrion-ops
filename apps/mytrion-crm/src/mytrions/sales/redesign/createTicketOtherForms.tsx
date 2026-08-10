@@ -89,7 +89,7 @@ export function EscalationForm() {
   return (
     <>
       <div style={s('margin-bottom:20px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Escalate a Request</div>
+        <div style={s('font-family:var(--font-head);font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Escalate a Request</div>
         <div style={s('font-size:14px;color:var(--muted);margin-top:3px')}>File an escalation for a request that needs a manager or another team to step in.</div>
       </div>
       <div style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:17px')}>
@@ -197,7 +197,7 @@ export function CreateLeadForm() {
   return (
     <>
       <div style={s('margin-bottom:20px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Create a Lead</div>
+        <div style={s('font-family:var(--font-head);font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Create a Lead</div>
         <div style={s('font-size:14px;color:var(--muted);margin-top:3px')}>Add a new lead to your pipeline. Last name, company, and a 10-digit phone are required.</div>
       </div>
       {result && (
@@ -269,7 +269,7 @@ export function CreateLeadForm() {
         <div>
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:8px')}>
             <div style={s(`${LABEL};margin-bottom:0`)}>Phone <span style={s('color:var(--accent)')}>*</span></div>
-            <span style={s(`font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${digits.length === 10 ? 'var(--ok)' : 'var(--faint)'}`)}>{digits.length}/10 digits</span>
+            <span style={s(`font-size:12px;font-weight:700;font-family:var(--font-mono);color:${digits.length === 10 ? 'var(--ok)' : 'var(--faint)'}`)}>{digits.length}/10 digits</span>
           </div>
           <input value={phone} onChange={(e) => setPhone(e.currentTarget.value)} inputMode="numeric" placeholder="10-digit phone — no dashes, brackets, or spaces" className="ss-in" style={s(FIELD)} />
         </div>

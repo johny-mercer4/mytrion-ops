@@ -1,0 +1,124 @@
+/*
+ * StopButton — the interrupt control for a running generation.
+ *
+ * Geometry deliberately matches Button's ladder (32 / 26, --radius-control, --space-3 / --space-2
+ * inline padding) so a Stop sitting in a toolbar next to a Button lines up on both edges. It is a
+ * separate component rather than a Button variant because it owns the --stop-* token trio and a
+ * different interaction contract (no lift, aria-disabled while busy, width-stable label swap).
+ */
+
+.root {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1_5);
+  /* Never shrink below its content: a Stop that ellipsises is a Stop nobody trusts. */
+  flex: none;
+
+  /* Type — same ramp as Button, for the same reason: it sits beside table-density text. */
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+
+  /* Box */
+  block-size: var(--stop-h);
+  padding-inline: var(--stop-px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--stop-bg);
+  color: var(--stop-fg);
+  cursor: pointer;
+
+  /* Named properties only — never `transition: all`. Note the absence of `translate`: this control
+     must not move under the cursor, so there is nothing to transition. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+/* ── Size ────────────────────────────────────────────────────────────────────
+   The same two steps as Button. 32px and 26px are the shared control ladder, not new numbers. */
+.root[data-size='md'] {
+  --stop-h: 32px;
+  --stop-px: var(--space-3);
+  --stop-glyph: var(--space-2_5);
+}
+.root[data-size='sm'] {
+  --stop-h: 26px;
+  --stop-px: var(--space-2);
+  --stop-glyph: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* Icon-only: a square box, so it aligns with the composer's send button and any icon Button row. */
+.root[data-icon-only='true'] {
+  inline-size: var(--stop-h);
+  padding-inline: 0;
+}
+
+/* ── Hover / active ──────────────────────────────────────────────────────────
+   NO LIFT, unlike Button's primary. A target that rises 1px when the pointer arrives is a target
+   that moves during a mid-stream panic click. Colour is the whole hover here. */
+.root:hover:not([aria-disabled='true']) {
+  background: var(--stop-hover-bg);
+}
+.root:active:not([aria-disabled='true']) {
+  background: color-mix(in oklab, var(--stop-bg) 78%, var(--stop-fg));
+}
+
+/* ── Stopping ────────────────────────────────────────────────────────────────
+   The abort is in flight. The box keeps its size and its focus; only the fill recedes and the mark
+   breathes. Motion is NOT the signal — the accessible name changes to "Stopping" and aria-busy is
+   set, so a reduced-motion or screen-reader user gets the state without it. */
+.root[aria-disabled='true'] {
+  cursor: progress;
+  background: color-mix(in oklab, var(--stop-bg) 62%, transparent);
+  color: var(--stop-fg);
+}
+
+/* The stop mark. A square, because that is what "stop" is — no pictogram, no colour-only meaning. */
+.glyph {
+  flex: none;
+  inline-size: var(--stop-glyph);
+  block-size: var(--stop-glyph);
+  border-radius: var(--radius-control);
+  background: currentColor;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.root[aria-disabled='true'] .glyph {
+  /* An INDEFINITE ambient loop: outside the 220ms transition ceiling by design and floored well
+     above 1s so it reads as "still working", not as a transition that stalled. */
+  animation: stopPulse 1.4s var(--ease-standard) infinite;
+}
+@keyframes stopPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ── Width-stable label swap ─────────────────────────────────────────────────
+   Both labels occupy the same grid cell, so the button measures the wider of the two and the box
+   never changes size when "Stop" becomes "Stopping". Same principle as Button's loading state. */
+.labels {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+}
+.label {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.label[data-on='true'] {
+  visibility: visible;
+}

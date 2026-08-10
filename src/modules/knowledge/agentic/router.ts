@@ -25,7 +25,7 @@ const SALES_AUTOMATION_ACTION =
  * documented workflow instead of being sent to a live-data tool and answered "not documented".
  */
 const PROCEDURAL =
-  /(?:\bhow (?:do|can|would|should) (?:i|we|you)\b|\bhow to\b|\bwhere (?:do|can) (?:i|we)\b|\bwhere is\b|\bwhich (?:tab|section|screen|page|block|automation)\b|\bwhat are the steps\b|\bsteps? to\b|\bwalk me through\b|\bguide me\b|(?<!\p{L})как(?!\s+(?:много|долго))(?!\p{L})|(?<!\p{L})где(?!\p{L})|(?<!\p{L})qanday(?!\p{L})|(?<!\p{L})qayerda(?!\p{L}))/iu;
+  /(?:\bhow (?:do|can|would|should) (?:i|we|you)\b|\bhow to\b|\bwhere (?:do|can) (?:i|we)\b|\bwhere is\b|\bwhich (?:tab|section|screen|page|block|automation)\b|\bwhat are the steps\b|\bsteps? to\b|\bwalk me through\b|\bguide me\b|\bwhat (?:are|is) my options?\b|\bwhat can i do\b|\bmy options\b|(?<!\p{L})как(?!\s+(?:много|долго))(?!\p{L})|(?<!\p{L})где(?!\p{L})|(?<!\p{L})qanday(?!\p{L})|(?<!\p{L})qayerda(?!\p{L}))/iu;
 const EXTERNAL = /\b(public web|search the web|latest news|industry news|fmcsa|irs|government website|outside octane|external source)\b/i;
 const INTERNAL = /\b(octane|horizon|mytrion|sop|policy|procedure|pricing|fuel card|department|workflow)\b/i;
 

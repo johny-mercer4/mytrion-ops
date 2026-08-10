@@ -42,8 +42,36 @@ function formatDetail(value: string | number | boolean | null): string {
   return value ?? '—';
 }
 
+/**
+ * Derive turn-level facts from the steps rather than adding wire fields. `details` already carries
+ * everything: `toolsBound` from buildAgentTools, and `inputTokens`/`cachedInputTokens`/`ttftMs` from
+ * every model call.
+ */
+function derived(steps: TurnTraceEvent[]) {
+  let toolsBound: number | undefined;
+  let input = 0;
+  let cached = 0;
+  let firstTtft: number | undefined;
+  for (const step of steps) {
+    const d = step.details;
+    if (!d) continue;
+    if (typeof d['toolsBound'] === 'number') toolsBound = (toolsBound ?? 0) + d['toolsBound'];
+    if (typeof d['inputTokens'] === 'number') input += d['inputTokens'];
+    if (typeof d['cachedInputTokens'] === 'number') cached += d['cachedInputTokens'];
+    if (firstTtft === undefined && typeof d['ttftMs'] === 'number') firstTtft = d['ttftMs'];
+  }
+  return {
+    toolsBound,
+    ttftMs: firstTtft,
+    // null rather than 0 when nothing was measured — "unknown" and "no hits" are different states.
+    cacheRate: input > 0 ? cached / input : null,
+    inputTokens: input,
+  };
+}
+
 function Summary({ inspection }: { inspection: TurnInspection }) {
   const rag = inspection.ragUsed === true ? 'Used' : inspection.ragUsed === false ? 'Not used' : 'Pending';
+  const extra = derived(inspection.steps);
   return (
     <div className={styles.summary}>
       <div className={styles.summaryItem}>
@@ -64,6 +92,18 @@ function Summary({ inspection }: { inspection: TurnInspection }) {
         <span>Evidence</span>
         <strong>{inspection.passages ?? 0} passages</strong>
         {inspection.confidence !== undefined && <small>{Math.round(inspection.confidence * 100)}% confidence</small>}
+      </div>
+      {/* Tool count drives prompt size and tool-choice accuracy — the number that makes an
+          over-bound agent obvious at a glance instead of after a night of measurement. */}
+      <div className={styles.summaryItem}>
+        <span>Tools bound</span>
+        <strong>{extra.toolsBound ?? '—'}</strong>
+        {extra.inputTokens > 0 && <small>{extra.inputTokens.toLocaleString()} input tokens</small>}
+      </div>
+      <div className={styles.summaryItem}>
+        <span>Prompt cache</span>
+        <strong>{extra.cacheRate === null ? '—' : `${Math.round(extra.cacheRate * 100)}%`}</strong>
+        <small>{extra.ttftMs !== undefined ? `${extra.ttftMs}ms to first token` : 'TTFT pending'}</small>
       </div>
     </div>
   );
@@ -109,7 +149,18 @@ export function TurnInspector({ inspection }: { inspection: TurnInspection | nul
                 <div className={styles.stepBody}>
                   <div className={styles.stepHead}>
                     <span>{step.stage}</span>
-                    <time>{elapsed(inspection.startedAt, step.at)}</time>
+                    <time>
+                      {elapsed(inspection.startedAt, step.at)}
+                      {/* How long THIS step took. Elapsed-since-start alone cannot tell you which
+                          stage is slow, which is the first question anyone asks. */}
+                      {step.durationMs !== undefined && (
+                        <b className={styles.took}>
+                          {step.durationMs < 1_000
+                            ? `${step.durationMs}ms`
+                            : `${(step.durationMs / 1_000).toFixed(1)}s`}
+                        </b>
+                      )}
+                    </time>
                   </div>
                   <p>{step.label}</p>
                   {step.details && Object.keys(step.details).length > 0 && (

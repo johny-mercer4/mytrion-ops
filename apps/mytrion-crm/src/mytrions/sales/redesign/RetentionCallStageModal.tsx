@@ -52,7 +52,7 @@ export function RetentionCallStageModal(props: {
     <div
       role="presentation"
       style={s(
-        'position:fixed;inset:0;z-index:160;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.72);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)',
+        'position:fixed;inset:0;z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur))',
       )}
     >
       <div
@@ -61,7 +61,7 @@ export function RetentionCallStageModal(props: {
         aria-label="Call ended — choose stage"
         onClick={(e) => e.stopPropagation()}
         style={s(
-          'width:100%;max-width:540px;max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
+          'width:100%;max-width:540px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
         )}
       >
         <div style={s('flex-shrink:0;padding:18px 22px;border-bottom:1px solid var(--border)')}>
@@ -79,7 +79,7 @@ export function RetentionCallStageModal(props: {
               </div>
               <div
                 style={s(
-                  "font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px",
+                  "font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-top:2px",
                 )}
               >
                 {bits.join(' · ')}

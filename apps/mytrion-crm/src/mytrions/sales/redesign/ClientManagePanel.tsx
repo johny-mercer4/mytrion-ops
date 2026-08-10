@@ -304,7 +304,7 @@ export function ClientManagePanel({
       {/* 1 — Client identity */}
       <ManageSection title="Client">
         <div style={s('font-size:15px;font-weight:700')}>{companyName || '—'}</div>
-        <div style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+        <div style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono);margin-top:3px")}>
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
         </div>
@@ -439,7 +439,7 @@ export function ClientManagePanel({
             <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>
               Ready to share
             </div>
-            <div style={s("font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>
+            <div style={s("font-size:13px;font-family:var(--font-mono);color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>
               {inviteUrl}
             </div>
             <button
@@ -574,7 +574,7 @@ export function ClientManagePanel({
             value={botChatId}
             onChange={(e) => setBotChatId(e.target.value)}
             placeholder="-1003926878773"
-            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:14px")}
+            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 10px;font-family:var(--font-mono);font-size:14px")}
           />
           <button
             type="button"

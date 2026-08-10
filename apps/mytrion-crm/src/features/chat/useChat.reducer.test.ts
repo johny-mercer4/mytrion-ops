@@ -10,6 +10,7 @@ const EMPTY = {
   conversations: [],
   error: null,
   inspection: null,
+  hydrating: false,
 };
 
 function sent() {
@@ -180,5 +181,43 @@ describe('persisted inspector fallback', () => {
     ]);
     expect(inspection).toMatchObject({ model: 'gpt-test', ragUsed: true, passages: 3, active: false });
     expect(inspection?.steps).toHaveLength(2);
+  });
+});
+
+/**
+ * Restoring the previous conversation used to paint the "Horizon AI" welcome for a beat and then
+ * swap in the messages — a flash that read as a broken panel. `hydrating` gates the transcript
+ * skeleton, and must always settle so the skeleton cannot outlive the fetch.
+ */
+describe('reducer — hydration', () => {
+  const hydrating = { ...EMPTY, hydrating: true };
+
+  it('clears once a restored transcript lands', () => {
+    const s = reducer(hydrating, {
+      type: 'loadTranscript',
+      conversationId: 'cv_1',
+      messages: [blankMessage('m0', 'user', 'earlier question')] as UiMessage[],
+    });
+    expect(s.hydrating).toBe(false);
+    expect(s.messages).toHaveLength(1);
+  });
+
+  it('clears on the explicit end signal (covers the nothing-to-restore and failure paths)', () => {
+    expect(reducer(hydrating, { type: 'hydrated' }).hydrating).toBe(false);
+  });
+
+  it('clears when the user starts a new conversation mid-restore', () => {
+    expect(reducer(hydrating, { type: 'newConversation' }).hydrating).toBe(false);
+  });
+
+  it('returns the same state object when already settled — no needless re-render', () => {
+    const settled = { ...EMPTY, hydrating: false };
+    expect(reducer(settled, { type: 'hydrated' })).toBe(settled);
+  });
+
+  it('does not hydrate away a live turn', () => {
+    const s = reducer(hydrating, { type: 'send', text: 'hi', userId: 'u1', assistantId: 'a1' });
+    expect(s.streaming).toBe(true);
+    expect(s.messages).toHaveLength(2);
   });
 });

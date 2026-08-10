@@ -189,7 +189,7 @@ export function VerificationActionRequest({ requestId, dealId, requirement, onSe
           onClick={submit}
           disabled={sending}
           style={s(
-            `height:40px;padding:0 17px;border:0;border-radius:10px;background:var(--accent);color:white;font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${sending ? 'wait' : 'pointer'};opacity:${sending ? '.7' : '1'}`,
+            `height:40px;padding:0 17px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${sending ? 'wait' : 'pointer'};opacity:${sending ? '.7' : '1'}`,
           )}
         >
           <Icon name={sending ? 'spinner' : 'send'} size={15} />

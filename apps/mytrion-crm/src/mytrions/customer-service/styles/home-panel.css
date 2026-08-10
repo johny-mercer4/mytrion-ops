@@ -46,7 +46,7 @@
     background: var(--cs-accent-soft);
     color: var(--cs-accent-deep);
     border: 1px solid var(--cs-border-gold);
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 21px;
     display: flex;
@@ -60,7 +60,7 @@
 }
 
 .cs-root .cs-home-welcome-greeting {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 26px;
     letter-spacing: -0.01em;
@@ -208,7 +208,7 @@
 }
 
 .cs-root .cs-home-stat-value {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 38px;
     line-height: 1;
@@ -277,7 +277,7 @@
 }
 
 .cs-root .cs-home-perf-value {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 26px;
     color: var(--text-primary);
@@ -320,14 +320,14 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-weight: 700;
     font-size: 17px;
     color: var(--text-primary);
 }
 
 .cs-root .cs-home-card-meta {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-muted);
 }
@@ -349,7 +349,7 @@
 }
 
 .cs-root .cs-home-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -398,7 +398,7 @@
 }
 
 .cs-root .cs-home-ticket-num {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
@@ -468,7 +468,7 @@
 .cs-root .cs-home-activity-time {
     font-size: 11px;
     color: var(--text-muted);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     white-space: nowrap;
 }
 

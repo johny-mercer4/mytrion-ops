@@ -2,14 +2,23 @@
    Kept separate from the legacy HR stylesheets so the shared typography, KPI tiles and loader have
    one small source of truth instead of adding more weight to files that are already at their cap. */
 
-/* HR uses Space Grotesk for UI body + headings (loaded in index.html). */
+/* HR inherits the app faces. The two lines that used to sit here —
+     --font-body: var(--font-body);  --font-head: var(--font-body);
+   were a SELF-REFERENCE, i.e. a cycle: per css-variables-1 both became invalid at computed-value
+   time, so `font-family: var(--font-body)` below was dropped and HR rendered in whatever the UA
+   left on <html>. Deleted rather than "fixed" — HR never needed a font override in the first
+   place; theme.css now owns the faces on raw names (--face-ui / --face-mono).
+
+   The nav sizes below are HR's override of the shell's own scale, now on the --text-* ladder rather
+   than the 14.5 / 13 / 13.5 / 11 they carried. 14.5 and 13.5 are not steps: they are two roles
+   landing half a pixel from two that are, and at 1x they rasterise identically to their neighbours
+   anyway. Three roles now read as three sizes — 14 label, 13 sub and search, 11 section — instead of
+   four values crowded into a 3.5px band. */
 [data-mytrion='hr'] {
-  --font-body: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --font-head: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --mytrion-nav-label-size: 14.5px;
-  --mytrion-nav-sub-size: 13px;
-  --mytrion-nav-search-size: 13.5px;
-  --mytrion-nav-section-size: 11px;
+  --mytrion-nav-label-size: var(--text-base);
+  --mytrion-nav-sub-size: var(--text-sm);
+  --mytrion-nav-search-size: var(--text-sm);
+  --mytrion-nav-section-size: var(--text-2xs);
   font-family: var(--font-body);
 }
 
@@ -64,7 +73,7 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--hr-summary-tone) 34%, transparent);
-  border-radius: 12px;
+  border-radius: var(--hr-r-md);
   color: var(--hr-summary-tone);
   background: color-mix(in srgb, var(--hr-summary-tone) 12%, transparent);
 }
@@ -81,7 +90,7 @@
   grid-column: 1 / -1;
   margin-bottom: 2px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.075em;
   text-transform: uppercase;
@@ -89,7 +98,7 @@
 
 .hr-root .hr-summary-copy strong {
   color: var(--text-primary);
-  font-size: 25px;
+  font-size: var(--text-2xl);
   line-height: 1.05;
   font-weight: 700;
   letter-spacing: -0.035em;
@@ -100,7 +109,7 @@
   grid-column: 1 / -1;
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.35;
 }
 
@@ -134,7 +143,7 @@
   gap: 4px;
   margin-bottom: 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hz-pane-bd));
-  border-radius: 16px;
+  border-radius: var(--hr-r-lg);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   box-shadow: 0 10px 30px -14px var(--accent-glow);
@@ -143,7 +152,7 @@
 .hr-root .hr-page-loader-mark span {
   width: 4px;
   height: 18px;
-  border-radius: 99px;
+  border-radius: var(--hr-r-pill);
   background: currentColor;
   animation: hrLoaderPulse 1s ease-in-out infinite;
 }
@@ -159,13 +168,13 @@
 
 .hr-root .hr-page-loader strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 650;
 }
 
 .hr-root .hr-page-loader small {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 @keyframes hrLoaderPulse {
@@ -195,19 +204,19 @@
   justify-content: center;
   padding: 12px;
   border: 1px solid var(--hz-pane-bd);
-  border-radius: 10px;
+  border-radius: var(--hr-r-md);
   background: color-mix(in srgb, var(--surface-raised) 68%, transparent);
 }
 
 .hr-root .hr-att-totals strong {
-  font-size: 22px;
+  font-size: var(--text-xl);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .hr-root .hr-att-totals span {
   margin-top: 5px;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
 }
 
 .hr-root .hr-att-totals-shift {
@@ -228,97 +237,41 @@
   }
 }
 
-/* ── Light mode — quieter surfaces across every HR tab ─────────────────────
-   Theme light was leaving hard white cards, slate hairlines and hot accent
-   washes that felt sharp. Soften the ground, borders, and card fills so HR
-   reads as one calm workspace in both themes. */
-[data-theme='light'] [data-mytrion='hr'] {
-  --hz-page: #eef1f6;
-  --hz-pane: linear-gradient(
-    150deg,
-    color-mix(in srgb, #ffffff 94%, #e8edf5 6%) 0%,
-    color-mix(in srgb, #f7f9fc 92%, #e4eaf3 8%) 100%
-  );
-  --hz-pane-lift: linear-gradient(
-    150deg,
-    #ffffff 0%,
-    color-mix(in srgb, #f8fafc 90%, #eef2f8 10%) 100%
-  );
-  --hz-pane-alt: color-mix(in srgb, #f3f6fb 88%, #dfe6f1 12%);
-  --hz-pane-bd: rgba(70, 86, 112, 0.1);
-  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  --hz-shadow-rest: 0 1px 2px rgba(40, 54, 78, 0.04);
-  --hz-shadow-lift: 0 10px 28px -16px rgba(40, 54, 78, 0.1);
-  --border: rgba(70, 86, 112, 0.1);
-  --border-light: rgba(70, 86, 112, 0.07);
-  --surface: #fbfcfe;
-  --surface-alt: #f1f4f9;
-  --surface-raised: rgba(40, 54, 78, 0.03);
-  --bg-primary: #eef1f6;
-  --bg-secondary: #e6ebf3;
-  --text-muted: #6b7382;
-}
-
-[data-theme='light'] .hr-root .hr-summary-tile,
-[data-theme='light'] .hr-root .hr-empc,
-[data-theme='light'] .hr-root .hr-deptc,
-[data-theme='light'] .hr-root .hr-settings-card,
-[data-theme='light'] .hr-root .hr-att-roster,
-[data-theme='light'] .hr-root .hr-att-detail,
-[data-theme='light'] .hr-root .hr-att-day,
-[data-theme='light'] .hr-root .hr-modal,
-[data-theme='light'] .hr-root .hr-leave-policy-main,
-[data-theme='light'] .hr-root .hr-leave-escalation,
-[data-theme='light'] .hr-root .hr-holiday-settings,
-[data-theme='light'] .hr-root .hr-leave-default,
-[data-theme='light'] .hr-root .hr-onode {
-  border-color: rgba(70, 86, 112, 0.1);
-  box-shadow: 0 1px 2px rgba(40, 54, 78, 0.035);
-}
-
-[data-theme='light'] .hr-root .hr-summary-tile {
-  background:
-    radial-gradient(
-      circle at 100% 100%,
-      color-mix(in srgb, var(--hr-summary-tone) 8%, transparent),
-      transparent 58%
-    ),
-    var(--hz-pane);
-}
-
-[data-theme='light'] .hr-root .hr-empc:hover,
-[data-theme='light'] .hr-root .hr-deptc:hover,
-[data-theme='light'] .hr-root .hr-onode:hover {
-  border-color: color-mix(in srgb, var(--accent) 28%, rgba(70, 86, 112, 0.12));
-  box-shadow: 0 8px 22px -14px rgba(40, 54, 78, 0.12);
-}
-
-[data-theme='light'] .hr-root .hr-btn,
-[data-theme='light'] .hr-root .hr-chip,
-[data-theme='light'] .hr-root .hr-select,
-[data-theme='light'] .hr-root .hr-search,
-[data-theme='light'] .hr-root .hr-att-search,
-[data-theme='light'] .hr-root .hr-settings-form-grid input,
-[data-theme='light'] .hr-root .hr-settings-form-grid select,
-[data-theme='light'] .hr-root .hr-leave-setting-field select,
-[data-theme='light'] .hr-root .hr-leave-default input,
-[data-theme='light'] .hr-root .hr-holiday-create,
-[data-theme='light'] .hr-root .hr-holiday-create input,
-[data-theme='light'] .hr-root .hr-holiday-create select {
-  border-color: rgba(70, 86, 112, 0.12);
-  background: color-mix(in srgb, #ffffff 88%, #eef2f8 12%);
-}
-
-[data-theme='light'] .hr-root .hr-settings-panes,
-[data-theme='light'] .hr-root .hr-att-panes {
-  background: rgba(70, 86, 112, 0.06);
-}
-
-[data-theme='light'] .hr-root .hr-ocanvas,
-[data-theme='light'] .hr-root .hr-ocanvas-flow {
-  background: #e8edf5;
-}
-
-[data-theme='light'] .hr-root .react-flow__minimap {
-  background: color-mix(in srgb, #ffffff 80%, #e8edf5 20%);
-}
+/* ── Light mode ────────────────────────────────────────────────────────────────────────────────────
+ *
+ * WHAT USED TO BE HERE, AND WHY IT IS GONE.
+ *
+ * This block was a PRIVATE LIGHT PALETTE for HR: 25 hex/rgba literals redefining --surface,
+ * --surface-alt, --surface-raised, --border, --border-light, --text-muted, --bg-primary,
+ * --bg-secondary and the whole --hz-pane* / --hz-shadow-* set on [data-mytrion='hr'], plus six
+ * [data-theme='light'] rules restating borders and shadows per selector. It was the single largest
+ * cluster of colour literals in the module and the only place in HR where the two themes could
+ * drift apart, because dark went through theme.css and light did not.
+ *
+ * Its stated purpose was "theme light was leaving hard white cards, slate hairlines and hot accent
+ * washes". That was true of the light theme it was written against. It is no longer true of the one
+ * that shipped: Luminous Horizon already lands within a couple of levels of every value this block
+ * hand-picked, and it derives them instead of pinning them —
+ *
+ *     this block          theme.css / horizon.css light          delta
+ *     --hz-page  #eef1f6  --page            #e9edf3              4 levels
+ *     --surface  #fbfcfe  --surface-base    #f8f9fa              3 levels
+ *     --surface-alt #f1f4f9  --container-low #f3f4f5             2 levels
+ *     --border rgba(70,86,112,.10)  --glass-bd rgba(20,30,50,.07)  same hairline, cooler
+ *     --hz-shadow-rest 0 1px 2px rgba(40,54,78,.04)
+ *                         --elev-1 gains `0 1px 2px -1px rgb(30 41 59 / .08)` in light and
+ *                         reaches every one of these surfaces through --hz-glass-inset
+ *     --text-muted #6b7382  --outline        #5c5f70             the WCAG fix — #6b7382 fails
+ *                                                                4.5:1 on --page, #5c5f70 clears it
+ *
+ * So every override was either a duplicate of what the theme now gives for free, or (in
+ * --text-muted's case) a contrast regression the theme had already corrected and this block was
+ * quietly reinstating for the whole of HR. Deleting it is what reconnects HR light to the app.
+ *
+ * --bg-secondary went with it: this file was its ONLY declaration anywhere in src, and nothing
+ * reads it.
+ *
+ * If HR light ever genuinely needs to be quieter than the app, do it by pointing --hz-pane* at a
+ * different SEMANTIC token here — never by naming a colour. src/styles/theme.css is the one file
+ * allowed to carry a literal, and src/styles/tokens.test.ts is what enforces that.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */

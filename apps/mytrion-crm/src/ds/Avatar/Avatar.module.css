@@ -1,0 +1,156 @@
+/*
+ * Avatar — a person mark. Sizes are DATA ATTRIBUTES, exactly as Button does variants.
+ *
+ * Two things in here are deliberate and easy to "fix" wrongly:
+ *   1. the root does NOT clip (`overflow` is untouched) — the presence dot deliberately sits on the
+ *      circle's edge, and an `overflow: hidden` on the root would slice it in half. The photo clips
+ *      itself instead;
+ *   2. there is no `transform: scale()` anywhere. A permanent transform promotes the element to its
+ *      own composited layer and makes it a containing block for its children — stacked on the
+ *      header's backdrop-filter that is the un-repainted-panel defect this app has already shipped.
+ */
+
+.root {
+  /* The ring colour that separates the presence dot from whatever is behind the avatar. Exposed as
+     a custom property so an avatar on a coloured row (a selected table row, a toast) can retarget
+     it — `style={{ '--avatar-ring': 'var(--surface-alt)' }}` — instead of the dot growing a halo of
+     the wrong ground. */
+  --avatar-ring: var(--surface);
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* A fixed square that never flexes: an avatar squeezed by a long name beside it becomes an
+     ellipse, and an ellipse reads as a rendering bug rather than as a person. */
+  flex: none;
+  inline-size: var(--avatar-size);
+  block-size: var(--avatar-size);
+
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+
+  /* Initials are a glyph, not copy — selecting them by dragging across a list is never intended. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='xs'] {
+  --avatar-size: 20px;
+  --avatar-dot: 6px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.root[data-size='sm'] {
+  --avatar-size: 24px;
+  --avatar-dot: 7px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.root[data-size='md'] {
+  --avatar-size: 32px;
+  --avatar-dot: 9px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+.root[data-size='lg'] {
+  --avatar-size: 40px;
+  --avatar-dot: 11px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+/* ── Parts ──────────────────────────────────────────────────────────────────── */
+
+.initials {
+  font-family: var(--font-body);
+  font-weight: var(--fw-semibold);
+  /* Initials are caps, and Grotesk sets caps on lowercase sidebearings while its caps are 44%
+     taller — so caps read tighter than the lowercase and need the caps track (theme.css). */
+  letter-spacing: var(--tr-caps);
+  /* Tracking is applied AFTER the last glyph too, so a centred pair of initials sits half a track
+     left of centre. Shifting the line by half the track puts the glyphs back on the axis. */
+  text-indent: calc(var(--tr-caps) / 2);
+}
+
+.image {
+  position: absolute;
+  /* Relative to the padding box, so the root's hairline border stays visible as a ring around the
+     photo instead of being covered by it. */
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  /* cover, not contain: a non-square headshot must fill the circle. `contain` would letterbox it
+     against the fallback ground and look like a broken image. */
+  object-fit: cover;
+  object-position: center;
+  border-radius: var(--radius-pill);
+}
+
+/* ── Presence ────────────────────────────────────────────────────────────────
+   FOUR STATUSES, FOUR SHAPES. Colour is the fast channel, not the only one: online is a solid
+   disc, busy a barred disc, away a crescent, offline a hollow ring. Deuteranopia collapses the
+   success green and the danger red toward the same tone — the shapes are what keep "online" and
+   "do not disturb" apart, and they survive greyscale printing too (CONVENTIONS §6).
+
+   The 2px ring in --avatar-ring is what separates the dot from the photo underneath; without it a
+   green dot on a green shirt disappears. */
+.status {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  inline-size: var(--avatar-dot);
+  block-size: var(--avatar-dot);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--avatar-ring);
+  /* Clips the cut-outs below. It does NOT clip the ring above — an element's own box-shadow is not
+     subject to its own overflow — which is exactly the behaviour wanted here. */
+  overflow: hidden;
+}
+
+.status[data-status='online'] {
+  background: var(--intent-success-fg);
+}
+
+/* BUSY — a barred disc. The bar is the ground colour punched through the fill. */
+.status[data-status='busy'] {
+  background: var(--intent-danger-fg);
+}
+.status[data-status='busy']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 22%;
+  inset-block-start: 50%;
+  block-size: 2px;
+  margin-block-start: -1px;
+  border-radius: var(--radius-pill);
+  background: var(--avatar-ring);
+}
+
+/* AWAY — a crescent, cut by a ground-coloured disc offset to the top-inline-end corner. */
+.status[data-status='away'] {
+  background: var(--intent-warning-fg);
+}
+.status[data-status='away']::after {
+  content: '';
+  position: absolute;
+  inline-size: 68%;
+  block-size: 68%;
+  inset-block-start: -16%;
+  inset-inline-end: -16%;
+  border-radius: var(--radius-pill);
+  background: var(--avatar-ring);
+}
+
+/* OFFLINE — a hollow ring. Hollow rather than grey-filled because "no signal" and "a signal that is
+   grey" are different statements, and the empty centre says the first one without any colour. */
+.status[data-status='offline'] {
+  background: var(--avatar-ring);
+  box-shadow:
+    0 0 0 2px var(--avatar-ring),
+    inset 0 0 0 2px var(--text-muted);
+}

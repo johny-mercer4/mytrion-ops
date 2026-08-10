@@ -218,7 +218,7 @@ function buildBlueprintGraph(flow: FlowDef, accent: string): { nodes: Node[]; ed
     };
     if (e.label) {
       edge.label = e.label;
-      edge.labelStyle = { fill: col, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700 };
+      edge.labelStyle = { fill: col, fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700 };
       edge.labelBgStyle = { fill: 'var(--bg1)', stroke: col };
       edge.labelBgPadding = [7, 3];
       edge.labelBgBorderRadius = 5;

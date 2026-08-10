@@ -1,0 +1,165 @@
+/*
+ * InlineDiff — a unified, line-level diff.
+ *
+ * Every value is a var(--token). The diff group of the token layer (--diff-*) carries the tints, the
+ * rule and the mono face; everything else comes from the dimension ladders.
+ *
+ * NO MOTION AT ALL. Nothing in a diff changes by moving, so there is nothing to transition. That is
+ * a decision, not an omission: a tint that animates in makes a reader wait to find out what changed.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1_5);
+  /* A diff is a block of evidence; it fills whatever column it is dropped into. */
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────────
+   Label on the left, counts on the right. The counts are TEXT — "2 added, 1 removed" — because a
+   colour key above a tinted table is exactly the affordance a colour-blind reader cannot use. */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.label {
+  font-family: var(--diff-font);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  color: var(--text-secondary);
+  /* A long file path truncates rather than pushing the counts off the row. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counts {
+  flex: none;
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  color: var(--diff-gutter-fg);
+}
+
+/* ── Viewport ───────────────────────────────────────────────────────────────
+   The scroll container. It carries the border and the corner so the rows can run edge to edge —
+   a row tint that stops short of the frame reads as a highlight, not as a diff line. */
+.viewport {
+  inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: auto;
+  border: 1px solid var(--diff-rule);
+  border-radius: var(--radius-panel);
+  /* Dense data is FLAT and OPAQUE — never glass. A blurred layer under a 400-row table is the
+     compositing cliff this app has already fallen off once. */
+  background: var(--surface-data);
+}
+
+.table {
+  border-collapse: collapse;
+  /* Fill the frame when the content is narrow, so the tints reach both edges; grow past it when the
+     content is wide, which is what makes the viewport scroll. */
+  min-inline-size: 100%;
+  font-family: var(--diff-font);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.row[data-kind='add'] {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
+}
+.row[data-kind='del'] {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+}
+.row[data-kind='changed'] {
+  background: var(--diff-changed-bg);
+  /* The token layer ships --diff-changed-bg with no matching fg. Aliased here rather than
+     hardcoded, so the day --diff-changed-fg lands this line is the only edit. */
+  --diff-changed-fg: var(--intent-warning-fg);
+  color: var(--diff-changed-fg);
+}
+.row[data-kind='context'] {
+  background: var(--surface-data);
+  color: var(--text-secondary);
+}
+
+/* ── Line numbers ───────────────────────────────────────────────────────────
+   Off by default. Right-aligned, un-selectable, so copying the diff copies the code and not a
+   column of numbers nobody wanted. */
+.num {
+  inline-size: 1%;
+  white-space: nowrap;
+  text-align: right;
+  padding-block: var(--space-0_5);
+  padding-inline: var(--space-1_5);
+  color: var(--diff-gutter-fg);
+  user-select: none;
+  border-inline-end: 1px solid var(--diff-rule);
+}
+
+/* ── Gutter — the channel that survives greyscale ────────────────────────────
+   `+` / `-` / `~` as real text in the mono column. This is the reason --diff-gutter-fg exists and
+   the reason this component is not just two background colours. */
+.gutter {
+  inline-size: 1%;
+  text-align: center;
+  padding-block: var(--space-0_5);
+  padding-inline: var(--space-1_5);
+  font-weight: var(--fw-bold);
+  color: var(--diff-gutter-fg);
+  user-select: none;
+}
+
+/* On a tinted row the marker takes the ROW's ink instead of the muted gutter tone: a 12px glyph is
+   the one thing here that must never be near the contrast floor, and the row's fg is the tone that
+   is already known-AA against the row's own bg. The marker's meaning is its SHAPE either way. */
+.row[data-kind='add'] .gutter,
+.row[data-kind='del'] .gutter,
+.row[data-kind='changed'] .gutter {
+  color: inherit;
+}
+
+.text {
+  padding-block: var(--space-0_5);
+  padding-inline-end: var(--space-2);
+  /* Verbatim: leading indentation is often the only thing that distinguishes two lines. */
+  white-space: pre;
+}
+
+.root[data-wrap='true'] .text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  color: var(--text-muted);
+}
+
+/* Visually hidden, still announced. `clip` rather than `display: none` because a hidden element is
+   not read at all, and the spoken kind ("Added.") is load-bearing here. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,36 @@
+/*
+ * ConfirmDialog — the small amount of appearance a confirmation adds on top of Dialog.
+ * Everything structural (panel, scrim, scroll ownership, motion) comes from Dialog.module.css and
+ * ModalChrome.module.css; nothing here re-states it.
+ */
+
+/* The title line. Inline-flex rather than a leading float so the glyph aligns to the FIRST line of
+   a wrapped title instead of drifting to its vertical centre. */
+.heading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* The severity glyph. Colour is the second signal, not the first — the glyph itself is what
+   survives greyscale and the deuteranopia case where --intent-danger-fg and --text-primary sit a
+   few degrees apart. */
+.glyph {
+  display: inline-flex;
+  color: var(--intent-danger-fg);
+  /* Baselines do not line up between a 16px glyph box and 18px type; centring the glyph against
+     the first line reads correctly and survives a wrapped title. */
+  align-self: center;
+  flex: none;
+}
+
+/* A confirmation body is one paragraph. If it needs two, the decision is too complicated to be a
+   confirmation and wants a Dialog with real content. */
+.body {
+  margin: 0;
+  color: var(--text-secondary);
+  /* Slightly wider than the panel would give it, so the sentence does not fragment across four
+     short lines at the sm size. */
+  max-inline-size: var(--layout-measure-prose);
+  overflow-wrap: anywhere;
+}

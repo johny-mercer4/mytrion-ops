@@ -1,0 +1,42 @@
+/*
+ * The message row shared by Input and Textarea. See fieldParts.tsx for why this is a `_field`
+ * folder rather than a component of its own.
+ */
+
+.message {
+  /* A <p> arrives with a user-agent margin that would open a 16px gap under every field in a dense
+     form. Reset it, then own the one gap that matters. */
+  margin: 0;
+  padding-block-start: var(--space-1);
+
+  display: flex;
+  /* flex-start, not center: a two-line error must hang its glyph on the FIRST line. `center` puts
+     the glyph in the gutter between the lines, where it reads as belonging to neither. */
+  align-items: flex-start;
+  gap: var(--space-1);
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  color: var(--text-muted);
+
+  transition: color var(--dur-instant) var(--ease-standard);
+}
+
+/* Danger tone. --intent-danger-fg is the status ink, not the 13% wash: this is text and has to
+   clear 4.5:1, which --intent-danger-bd (30% alpha) cannot do at any size. */
+.message[data-invalid='true'] {
+  color: var(--intent-danger-fg);
+}
+
+.messageIcon {
+  /* --icon-size-sm is 16px and --lh-xs is 16px, so the glyph box and the first line box are the
+     same height and align on their tops with no nudge. Do not "fix" this with a margin. */
+  flex: none;
+}
+
+.messageText {
+  /* Long validation copy wraps rather than pushing the field's container wider. */
+  min-inline-size: 0;
+}

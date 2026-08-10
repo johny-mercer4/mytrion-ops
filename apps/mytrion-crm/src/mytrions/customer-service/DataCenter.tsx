@@ -28,7 +28,7 @@ const FILTERS: Array<{ id: string; label: string }> = [
 
 const MAX_ROWS = 300;
 
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "var(--font-mono)";
 
 const s = (v: unknown): string => (v == null ? '' : String(v));
 

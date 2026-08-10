@@ -1,0 +1,207 @@
+/*
+ * Tabs — WAI-ARIA tabs, manual activation. Read CONVENTIONS.md alongside this.
+ *
+ * Variants and states are DATA ATTRIBUTES on the root and on each tab, never extra classes, so one
+ * selector surface describes the whole component and the DOM tells you the state when you inspect it.
+ */
+
+.root {
+  /* A column, so the panel sits under the rail without the caller having to wrap anything. */
+  display: flex;
+  flex-direction: column;
+  /* Without this a long tab set forces its flex parent wider instead of scrolling — the single most
+     common way a horizontal scroller silently stops scrolling. */
+  min-inline-size: 0;
+
+  /* The room the GLOBAL :focus-visible ring needs to paint outside a tab's border box. The tab list
+     is a scroll container, and a scroll container clips at its PADDING box — without this the ring
+     on the first, last or bottom edge of a tab would be sliced off. Derived from the focus tokens
+     rather than picked, so it stays correct if the ring ever gets thicker. */
+  --tabs-ring-pad: calc(var(--focus-ring-offset) + var(--focus-ring-width));
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --tabs-h: 36px;
+  --tabs-px: var(--space-3);
+}
+.root[data-size='sm'] {
+  --tabs-h: 28px;
+  --tabs-px: var(--space-2);
+}
+
+/* ── The rail ────────────────────────────────────────────────────────────────
+   Scrolls horizontally and NEVER wraps. A tab set that wraps to a second row changes its own
+   height as the viewport narrows, which pushes the panel down mid-read and moves the tab you were
+   aiming at out from under the cursor. */
+.list {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-0_5);
+  min-inline-size: 0;
+  overflow-x: auto;
+  /* Only one axis may be a scroller here; `hidden` on the block axis is what keeps a stray 1px of
+     content from turning this into a two-directional scroll box. The ring still has room because
+     of the padding below. */
+  overflow-y: hidden;
+  padding: var(--tabs-ring-pad);
+
+  /* The scrollbar is HIDDEN, not styled. A reserved gutter on the platforms that draw one would sit
+     between the tabs and the rail hairline and push the selected-tab indicator off it. Nothing
+     becomes unreachable: arrow keys scroll the focused tab into view, and the rail is a
+     touch/trackpad scroller everywhere else. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* A trackpad flick that runs past the last tab must not chain to the page — on macOS/Chrome that
+     chained scroll is what triggers swipe-to-go-back, i.e. scrolling the tabs navigates away. */
+  overscroll-behavior-x: contain;
+}
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── A tab ──────────────────────────────────────────────────────────────────── */
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1_5);
+  /* Never shrink a tab below its label — an ellipsised tab label is a tab nobody can choose. */
+  flex: none;
+
+  block-size: var(--tabs-h);
+  padding-inline: var(--tabs-px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  cursor: pointer;
+
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  /* CONSTANT across selection. A heavier selected label is a WIDER selected label, and in a
+     horizontal scroller that re-lays out every tab to the right of the one you just clicked. The
+     selected state is carried by the indicator bar and by colour together, never by weight. */
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+
+  /* Named properties only — `transition: all` re-runs the machinery for every changed property and
+     silently overrides narrower transitions set elsewhere. */
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.root[data-size='sm'] .tab {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.label {
+  /* Its own box so the count badge and icon never get pulled into the label's line-height rounding. */
+  display: inline-block;
+}
+
+/* Hover applies to idle tabs only: a wash under the selected tab would compete with its indicator. */
+.tab:hover:not([aria-disabled='true']):not([data-state='selected']) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.tab:active:not([aria-disabled='true']) {
+  background: var(--surface-alt);
+}
+
+/* ── Variant: line (default) ─────────────────────────────────────────────────
+   The hairline lives on the ROOT, not on the scroller, so it spans the full container width while
+   the tabs scroll inside it — a rail that scrolled away with its tabs would read as a broken box. */
+.root[data-variant='line'] {
+  border-block-end: 1px solid var(--border-subtle);
+}
+.root[data-variant='line'] .tab[data-state='selected'] {
+  color: var(--text-primary);
+}
+/* The indicator. It reaches down through the list's ring padding to sit on the rail; it may not
+   cross INTO the rail, because the scroll container clips at its padding box. Sitting flush on top
+   of the hairline is the intended look. */
+.root[data-variant='line'] .tab[data-state='selected']::after {
+  content: '';
+  position: absolute;
+  inset-inline: var(--space-1);
+  inset-block-end: calc(-1 * var(--tabs-ring-pad));
+  block-size: 2px;
+  background: var(--accent-strong);
+  border-radius: var(--radius-pill);
+}
+
+/* ── Variant: pill ───────────────────────────────────────────────────────────
+   A segmented track. For tabs inside a card or a toolbar, where an underline would read as a
+   divider belonging to the card rather than to the tabs. */
+.root[data-variant='pill'] .list {
+  /* Hugs its own tabs instead of spanning the row — a full-width segmented track with three tabs in
+     it reads as an empty toolbar. */
+  align-self: flex-start;
+  max-inline-size: 100%;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+}
+.root[data-variant='pill'] .tab[data-state='selected'] {
+  background: var(--accent-soft);
+  /* A real border, not a tint: this is the 3:1 boundary that identifies the chosen segment, and
+     colour must never be the only thing carrying that. */
+  border-color: var(--intent-info-bd);
+  color: var(--accent);
+}
+
+/* ── Count badge ─────────────────────────────────────────────────────────────
+   Tabular figures, so a row of counts sits on one vertical rhythm instead of jittering per digit. */
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-inline-size: 18px;
+  block-size: 16px;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--intent-neutral-bg);
+  color: var(--text-muted);
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.tab[data-state='selected'] .count {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   RECOLOUR, not an opacity multiply, so the label keeps a KNOWN contrast ratio. No
+   `pointer-events: none` — that would kill the tooltip explaining why and is banned outright
+   (CONVENTIONS §5). The tab stays focusable, which is the point of aria-disabled over disabled. */
+.tab[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.tab[aria-disabled='true'] .count {
+  background: var(--disabled-bg);
+  color: var(--disabled-fg);
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────────
+   No padding and no surface of its own: a tab panel is a container, and giving it chrome would
+   double every card border in the app. It is focusable (see TabPanel's docblock), so it needs to be
+   able to show a ring — hence no overflow clipping here either. */
+.panel {
+  min-inline-size: 0;
+}

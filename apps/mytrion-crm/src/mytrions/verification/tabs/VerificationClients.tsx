@@ -168,7 +168,10 @@ export function VerificationClients() {
 
       {firstLoad ? (
         <div className="vf-cardc-grid" aria-busy="true" aria-label="Loading clients">
-          {Array.from({ length: 12 }, (_, i) => (
+          {/* PAGE_SIZE, not a round 12: the first load is always unfiltered, so it lands exactly one
+              full page of cards. Reserving half of that made the grid double in height the moment
+              data arrived — the same class of jump the skeleton exists to prevent. */}
+          {Array.from({ length: PAGE_SIZE }, (_, i) => (
             <div key={i} className="vf-sk vf-sk-card" />
           ))}
         </div>

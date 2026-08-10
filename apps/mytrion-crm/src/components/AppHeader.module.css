@@ -1,0 +1,213 @@
+/* 64px — the contract's measure, and what gives the 36px search room to sit with correct optical
+   padding. It replaces three heights: 58px here, 56px in Billing, and no header at all in CS. */
+.bar {
+  position: relative;
+  z-index: var(--z-sticky);
+  flex: none;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-6);
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border-bottom: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+}
+
+/* Sits ON the bottom border, not above it, so it reads as the edge catching light. */
+.hairline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ramp);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3_5);
+  flex: none;
+  min-width: 0;
+}
+
+.wordmark {
+  /* A link, but never underlined — background-clip:text means an underline would paint in the
+     element's (transparent) text colour and vanish, so it reads as a bug rather than an affordance. */
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  background: var(--ramp);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  background: var(--glass-bd);
+  flex: none;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* ONE treatment for every control in the right cluster. Exported from the file that owns the
+   header and handed down, rather than left to each control — that is what makes "no ghost-versus-
+   filled mix" mechanically true instead of a thing reviewers have to notice. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  min-width: 34px;
+  padding: 0 var(--space-2_5);
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  background: var(--field);
+  border: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: all var(--dur-slow) var(--hz-ease);
+}
+
+.chip:hover,
+.chip[aria-expanded='true'] {
+  background: var(--glass-hi);
+  border-color: var(--glass-bd-hi);
+  color: var(--text-primary);
+}
+
+/*
+ * The account chip carries two lines of text plus a 26px avatar, so it needs more room than the
+ * 34px icon squares beside it. --space-1 on the right put the avatar hard against the border.
+ */
+.account {
+  height: auto;
+  min-height: 38px;
+  padding: var(--space-1_5) var(--space-2) var(--space-1_5) var(--space-3);
+  gap: var(--space-2_5);
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 0;
+  text-align: right;
+}
+
+.name {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16ch;
+}
+
+.role {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16ch;
+}
+
+.avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--ramp-d);
+  color: var(--on-accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Below 880px the name/role block is the first thing to go — the avatar still answers "who am I
+   signed in as", and the chip stays a 34px square like its neighbours. */
+@media (max-width: 880px) {
+  .who {
+    display: none;
+  }
+
+  .account {
+    padding: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .bar {
+    padding: 0 var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .wordmark {
+    font-size: 14px;
+    letter-spacing: 0.12em;
+  }
+}
+
+@media (max-width: 560px) {
+  /* At this width the wordmark and the workspace chip are competing for the same 200px. The chip
+     wins: it says where you are and is the control that moves you. */
+  .wordmark {
+    display: none;
+  }
+}
+
+/*
+ * The wordmark-as-link has NO hover state on purpose. The pointer cursor is the whole affordance.
+ *
+ * It used to fade to `opacity: .85` on hover, which flickered. The text is painted with
+ * `background-clip: text` + a transparent fill, so the glyphs are a mask over a gradient rather
+ * than coloured text. Changing opacity makes that node its own compositing layer, and the
+ * gradient-through-a-text-mask has to be re-rasterized on the way in and again on the way out —
+ * which is visible as a flash across the letters. There is no value of the fade worth that, and
+ * no other property can shift here without breaking the clip.
+ *
+ * Focus-visible stays: it is a keyboard affordance, not a hover effect, and it draws an outline
+ * OUTSIDE the element rather than touching the clipped fill.
+ */
+a.wordmark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-xs);
+}

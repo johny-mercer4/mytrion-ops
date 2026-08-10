@@ -745,3 +745,22 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
+
+/* Skeleton geometry for the Analytics panels. Each mirrors the shape of the content it stands in
+   for, so the card does not resize when the fetch resolves. */
+.cs-root .cs-an-skel-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+.cs-root .cs-an-skel-row {
+    display: flex;
+    justify-content: space-between;
+}
+.cs-root .cs-an-skel-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}

@@ -319,7 +319,7 @@ export function CarriersTab() {
                 {f.label}
                 <span
                   style={s(
-                    `font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${on ? 'var(--accent)' : 'var(--faint)'}`,
+                    `font-family:var(--font-mono);font-size:11px;font-weight:800;color:${on ? 'var(--accent)' : 'var(--faint)'}`,
                   )}
                 >
                   {counts[f.id] ?? 0}
@@ -420,7 +420,7 @@ export function CarriersTab() {
                     <div style={s('font-size:17px;font-weight:700')}>{c.owner}</div>
                     <div
                       style={s(
-                        "font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
+                        "font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-top:3px",
                       )}
                     >
                       {c.address || '—'}
@@ -436,19 +436,19 @@ export function CarriersTab() {
                 </div>
                 <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600")}>{c.dot}</div>
+                    <div style={s("font-family:var(--font-mono);font-size:20px;font-weight:600")}>{c.dot}</div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>DOT #</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;color:var(--ok)")}>{c.units}</div>
+                    <div style={s("font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--ok)")}>{c.units}</div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Power Units</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;color:var(--violet)")}>{c.phone}</div>
+                    <div style={s("font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--violet)")}>{c.phone}</div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Phone</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                    <div style={s(`font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:${statusColor(c.status)}`)}>{c.status}</div>
+                    <div style={s(`font-family:var(--font-mono);font-size:16px;font-weight:600;color:${statusColor(c.status)}`)}>{c.status}</div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Status</div>
                   </div>
                 </div>

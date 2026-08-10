@@ -1,0 +1,138 @@
+/*
+ * Skeleton — the loading placeholder, plus SkeletonRegion's busy wrapper.
+ *
+ * Variants are DATA ATTRIBUTES, per CONVENTIONS §3: [data-variant='text'], [data-text-size='sm'],
+ * [data-radius='panel']. The DOM tells you which placeholder you are looking at.
+ *
+ * Dimensions arrive as custom properties (--sk-w / --sk-h / --sk-line-w) set inline by the
+ * component, so every default lives HERE per variant and a caller only overrides what they passed.
+ */
+
+.root {
+  /* Local defaults. Each variant overrides the ones it owns; the fallbacks below keep a skeleton
+     rendering something sane even if a caller passes nothing at all. */
+  --sk-base: var(--surface-alt);
+  /* The sheen is mixed from --text-muted, NOT from a lighter surface. A "lighter" sheen is only
+     lighter in dark mode — on the light theme's near-white --surface-alt there is nothing above it
+     to move toward, and the shimmer disappears. Mixing the ink colour in goes lighter on dark and
+     darker on light, so one declaration reads in both themes. */
+  --sk-sheen: color-mix(in srgb, var(--text-muted) 18%, var(--surface-alt));
+
+  display: block;
+  /* A placeholder must never be the thing that widens a flex row — it is standing in for content
+     that will size itself in a moment. */
+  max-inline-size: 100%;
+}
+
+/* ── The sheen ───────────────────────────────────────────────────────────────
+   One declaration block for every painted surface: the two solid variants and the text bars. The
+   gradient is 200% wide and `@keyframes shimmer` (global.css) slides its background-position
+   across — background-position, so nothing is transformed and no element is promoted to its own
+   composited layer. A translated overlay here would put a permanent transform on every row of a
+   loading table, which is precisely the un-repainted-panel defect this app has already shipped. */
+.root[data-variant='circle'],
+.root[data-variant='rect'],
+.line::before {
+  background-color: var(--sk-base);
+  background-image: linear-gradient(
+    90deg,
+    var(--sk-base) 0%,
+    var(--sk-sheen) 50%,
+    var(--sk-base) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  /* An INDEFINITE ambient loop — deliberately outside the 220ms transition ceiling and floored at
+     >=1s, so it reads as "working" rather than as a transition that has stalled. Shared with the
+     rest of the app via --animate-shimmer so there is one duration, not nine. */
+  animation: var(--animate-shimmer);
+}
+
+/* ── Text ────────────────────────────────────────────────────────────────────
+   The row is the type step's LINE BOX (--lh-*), not the bar. That is the whole point: the block
+   occupies exactly the height the real paragraph will, so nothing below it moves when the text
+   arrives. The bar is a shorter element centred inside that box, the way a glyph's ink sits inside
+   its line box. */
+.root[data-variant='text'] {
+  display: flex;
+  flex-direction: column;
+  inline-size: var(--sk-w, 100%);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  block-size: var(--sk-lh);
+}
+.line::before {
+  content: '';
+  display: block;
+  /* Full width unless the component marked this one as the ragged last line. */
+  inline-size: var(--sk-line-w, 100%);
+  block-size: var(--sk-bar);
+  /* Pill, because text bars with square corners read as table cells rather than as prose. */
+  border-radius: var(--radius-pill);
+}
+
+/* Size steps. --sk-lh is the real line-height token, so the row height is not an approximation of
+   the type ladder — it IS the type ladder. --sk-bar is an integer from the space ladder rather than
+   a fraction of the line-height: a 10.44px bar rasterises with a soft edge at 1x, and a blurred
+   placeholder reads as a rendering fault. */
+.root[data-text-size='2xs']  { --sk-lh: var(--lh-2xs);  --sk-bar: var(--space-2); }
+.root[data-text-size='xs']   { --sk-lh: var(--lh-xs);   --sk-bar: var(--space-2_5); }
+.root[data-text-size='sm']   { --sk-lh: var(--lh-sm);   --sk-bar: var(--space-2_5); }
+.root[data-text-size='base'] { --sk-lh: var(--lh-base); --sk-bar: var(--space-3); }
+.root[data-text-size='md']   { --sk-lh: var(--lh-md);   --sk-bar: var(--space-3); }
+.root[data-text-size='lg']   { --sk-lh: var(--lh-lg);   --sk-bar: var(--space-3_5); }
+.root[data-text-size='xl']   { --sk-lh: var(--lh-xl);   --sk-bar: var(--space-4); }
+
+/* ── Circle ──────────────────────────────────────────────────────────────────
+   --sk-w is the DIAMETER and aspect-ratio derives the height, so a caller cannot accidentally ship
+   an ellipse by passing two lengths that disagree. */
+.root[data-variant='circle'] {
+  inline-size: var(--sk-w, var(--space-8));
+  aspect-ratio: 1;
+  border-radius: var(--radius-pill);
+  /* Avatars sit in flex rows next to text; without this the circle squashes into an oval the
+     moment the row is tight. */
+  flex: none;
+}
+
+/* ── Rect ────────────────────────────────────────────────────────────────────
+   The default height is a fallback, not a suggestion — pass the real one. */
+.root[data-variant='rect'] {
+  inline-size: var(--sk-w, 100%);
+  block-size: var(--sk-h, var(--space-8));
+  border-radius: var(--sk-radius);
+}
+.root[data-variant='rect'][data-radius='control'] { --sk-radius: var(--radius-control); }
+.root[data-variant='rect'][data-radius='panel']   { --sk-radius: var(--radius-panel); }
+.root[data-variant='rect'][data-radius='pill']    { --sk-radius: var(--radius-pill); }
+
+/* ── Region ──────────────────────────────────────────────────────────────────
+   Deliberately unstyled apart from the busy affordance: it wraps whatever layout the caller already
+   has, and a wrapper that imposes display/padding would force every call site to fight it. */
+.region {
+  display: contents;
+}
+/* `display: contents` removes the box from layout, which is what a transparent wrapper should do —
+   but a box with no box cannot be given a cursor, so the busy hint goes on the children. Only while
+   busy, and only progress: the region is not disabled, it is not finished. */
+.region[data-busy='true'] > * {
+  cursor: progress;
+}
+
+/* The live region. Removed from paint, kept in the accessibility tree, and never `display: none` —
+   a region hidden that way is not announced at all, which would silently undo the entire point of
+   SkeletonRegion. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

@@ -1,8 +1,11 @@
-/* Global reset + base. Tokens live in theme.css; component styling lives in each
-   component's *.module.css or Tailwind utilities. One token-driven system (see DESIGN_SYSTEM.md). */
+/* Global reset + base. Tokens live in theme.css (three tiers); atmosphere, glass, elevation and
+   motion aliases live in horizon.css; webfaces live in fonts.css. Component styling lives in each
+   component's *.module.css. One token system — see docs/design/FOUNDATIONS.md. */
 @import 'tailwindcss';
+/* Faces first: @font-face must be registered before anything paints text with them. */
+@import './fonts.css';
 @import './theme.css';
-/* Horizon brand gradient + glass primitives. After theme.css so it wins over the base scale. */
+/* Horizon after theme.css so the atmosphere and elevation win over the base scale. */
 @import './horizon.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
@@ -44,140 +47,48 @@
   --color-tint-info-bd: var(--tint-info-bd);
   --color-tint-neutral-bg: var(--tint-neutral-bg);
   --color-tint-neutral-bd: var(--tint-neutral-bd);
-  --radius-xs: var(--radius-xs);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
-  --radius-xl: var(--radius-lg);
-  --font-sans: var(--font-body);
-  --font-heading: var(--font-head);
-  --font-mono: var(--font-mono);
+  --radius-xs: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-panel);
+  --radius-lg: var(--radius-panel);
+  --radius-xl: var(--radius-panel);
+  /* These point at the RAW face names, never at --font-body / --font-mono. The previous
+     `--font-mono: var(--font-mono)` here was a third self-reference: it emitted inside
+     @layer theme while theme.css's declaration was unlayered, so the literal only won by
+     cascade-layer accident. Moving theme.css into a layer would have killed --font-mono,
+     --font-num, .num and [data-num] together, with no error anywhere. */
+  --font-sans: var(--face-ui);
+  --font-heading: var(--face-ui);
+  --font-mono: var(--face-mono);
   /* skeleton sheen (see @keyframes shimmer) */
   --animate-shimmer: shimmer 1.4s ease-in-out infinite;
 }
 
-/* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
-   module's hue; everything else (bg/surface/text/status) stays the shared scale. Dark is the
-   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7.
-   `--accent-2` is the far end of the module's accent gradient — it defaults to the accent itself
-   (so a single-hue module is unchanged) and is only distinct where a module runs a real ramp. */
-[data-mytrion] { --accent-2: var(--accent); }
-
-/* Admin IS the Horizon workspace: its accent is the brand ramp itself, sky → sunset, so every
-   accent-driven surface in the module (nav rail, active tab, primary button, progress, focus ring)
-   is literally the Mytrion Horizon gradient. See styles/horizon.css. */
-[data-mytrion='admin'] {
-  --accent: var(--hz-sky);
-  --accent-2: var(--hz-sun);
-  --accent-strong: var(--hz-sky-deep);
-  --on-accent: var(--hz-on-gradient);
-  --accent-soft: rgba(56, 189, 248, 0.12);
-  --accent-glow: rgba(56, 189, 248, 0.26);
-}
-[data-theme='light'] [data-mytrion='admin'] {
-  --accent-soft: rgba(2, 132, 199, 0.1);
-  --accent-glow: rgba(2, 132, 199, 0.2);
-}
-
-/* Match Sales redesign theme.css (.ss-root / .ss-root.light) — not wizard --rocket */
-[data-mytrion='sales'] { --accent: #4cc2f5; --accent-strong: #7c5cff; --on-accent: #04131c; --accent-soft: rgba(76, 194, 245, 0.14); --accent-glow: rgba(76, 194, 245, 0.26); }
-[data-theme='light'] [data-mytrion='sales'] { --accent: #2563eb; --accent-strong: #1d4ed8; --on-accent: #fff; --accent-soft: rgba(37, 99, 235, 0.1); --accent-glow: rgba(37, 99, 235, 0.2); }
-
-[data-mytrion='billing'] { --accent: #8b5cf6; --accent-strong: #a482f8; --on-accent: #160a2e; --accent-soft: rgba(139, 92, 246, 0.13); --accent-glow: rgba(139, 92, 246, 0.28); }
-[data-theme='light'] [data-mytrion='billing'] { --accent: #7c3aed; --accent-strong: #6d28d9; --on-accent: #fff; --accent-soft: rgba(124, 58, 237, 0.1); --accent-glow: rgba(124, 58, 237, 0.2); }
-
-[data-mytrion='collection'] { --accent: #f0564e; --accent-strong: #f6817a; --on-accent: #2a0908; --accent-soft: rgba(240, 86, 78, 0.13); --accent-glow: rgba(240, 86, 78, 0.28); }
-[data-theme='light'] [data-mytrion='collection'] { --accent: #d5342b; --accent-strong: #c22b23; --on-accent: #fff; --accent-soft: rgba(213, 52, 43, 0.1); --accent-glow: rgba(213, 52, 43, 0.2); }
-
-[data-mytrion='finance'] { --accent: #10b981; --accent-strong: #34d399; --on-accent: #04231a; --accent-soft: rgba(16, 185, 129, 0.13); --accent-glow: rgba(16, 185, 129, 0.28); }
-[data-theme='light'] [data-mytrion='finance'] { --accent: #0e9e6e; --accent-strong: #0b8a5f; --on-accent: #fff; --accent-soft: rgba(14, 158, 110, 0.1); --accent-glow: rgba(14, 158, 110, 0.2); }
-
-[data-mytrion='customer-service'] { --accent: #D4B84A; --accent-strong: #E0C96A; --on-accent: #1A1400; --accent-soft: rgba(212, 184, 74, 0.12); --accent-glow: rgba(212, 184, 74, 0.14); }
-[data-theme='light'] [data-mytrion='customer-service'] { --accent: #C9A227; --accent-strong: #D4AF37; --on-accent: #1A1400; --accent-soft: rgba(201, 162, 39, 0.12); --accent-glow: rgba(201, 162, 39, 0.14); }
-
-[data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
-[data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
-
-/* Manager runs pink → rose: the workspace picker's Manager tile is pink, and the module used to be
-   teal, so the card you clicked and the workspace you landed in disagreed. */
-[data-mytrion='trailhead'] {
-  --accent: #2dd4bf;
-  --accent-2: #34d399;
-  --accent-strong: #5eead4;
-  --on-accent: #04231f;
-  --accent-soft: rgba(45, 212, 191, 0.13);
-  --accent-glow: rgba(45, 212, 191, 0.28);
-}
-[data-theme='light'] [data-mytrion='trailhead'] {
-  --accent: #0d9488;
-  --accent-2: #059669;
-  --accent-strong: #0f766e;
-  --on-accent: #fff;
-  --accent-soft: rgba(13, 148, 136, 0.1);
-  --accent-glow: rgba(13, 148, 136, 0.2);
-}
-
-/**
- * HR is PURPLE, not coral.
+/*
+ * Workspace identity — ONE token, two readers.
  *
- * The Mytrion picker has always drawn HR's card in purple (`HORIZON_BY_ID.hr = purple` in
- * app/horizonGlass.ts — "purple-500, deliberately a step warmer than Admin's violet"), but entering the
- * module swapped the accent to coral. The card promised one identity and the workspace delivered
- * another. These now match: purple-400 on dark and purple-600 on light, the same family the card's
- * icon chip and glow are built from.
+ * These blocks used to declare --accent / --accent-2 / --accent-strong / --accent-soft /
+ * --accent-glow / --on-accent per workspace, which meant nine versions of every hover, focus ring,
+ * chip and progress bar to keep in sync. Now: --accent is the Horizon ramp in every workspace, and
+ * identity travels as --badge-tone, which EXACTLY TWO things may read — the launcher card and the
+ * header badge. A workspace is recognisable at the door and consistent once you are inside.
+ * src/styles/tokens.test.ts fails the build if any block here declares an --accent*.
  */
-[data-mytrion='hr'] {
-  --accent: #c084fc;
-  --accent-2: #a855f7;
-  --accent-strong: #d8b4fe;
-  /* Ink on a filled accent button — purple-400 is light enough to need a dark foreground. */
-  --on-accent: #2e1065;
-  --accent-soft: rgba(192, 132, 252, 0.13);
-  --accent-glow: rgba(168, 85, 247, 0.28);
-}
-[data-theme='light'] [data-mytrion='hr'] {
-  /* Stepped down for a pale field: purple-400 on white is too low-contrast for text and borders. */
-  --accent: #9333ea;
-  --accent-2: #7e22ce;
-  --accent-strong: #7e22ce;
-  --on-accent: #fff;
-  --accent-soft: rgba(147, 51, 234, 0.08);
-  --accent-glow: rgba(147, 51, 234, 0.16);
-}
-
-[data-mytrion='recruit'] {
-  --accent: #9b7cf6;
-  --accent-2: #5f9cf4;
-  --accent-strong: #b49df8;
-  --on-accent: #10072d;
-  --accent-soft: rgba(155, 124, 246, 0.13);
-  --accent-glow: rgba(155, 124, 246, 0.28);
-}
-[data-theme='light'] [data-mytrion='recruit'] {
-  --accent: #7654d8;
-  --accent-2: #347fd5;
-  --accent-strong: #6442c4;
-  --on-accent: #fff;
-  --accent-soft: rgba(118, 84, 216, 0.1);
-  --accent-glow: rgba(118, 84, 216, 0.2);
-}
-
-[data-mytrion='manager'] {
-  --accent: #f472b6;
-  --accent-2: #fb7185;
-  --accent-strong: #f9a8d4;
-  --on-accent: #2a0716;
-  --accent-soft: rgba(244, 114, 182, 0.13);
-  --accent-glow: rgba(244, 114, 182, 0.28);
-}
-[data-theme='light'] [data-mytrion='manager'] {
-  --accent: #db2777;
-  --accent-2: #e11d48;
-  --accent-strong: #be185d;
-  --on-accent: #fff;
-  --accent-soft: rgba(219, 39, 119, 0.1);
-  --accent-glow: rgba(219, 39, 119, 0.2);
-}
+/* The generic fallback goes FIRST. `[data-mytrion]` and `[data-mytrion='admin']` have IDENTICAL
+   specificity (0,1,0), so placing it last would beat every workspace and paint them all alike. */
+[data-mytrion] { --badge-tone: var(--accent); }
+[data-mytrion='admin'] { --badge-tone: var(--tone-sky); }
+[data-mytrion='sales'] { --badge-tone: var(--tone-cyan); }
+[data-mytrion='billing'] { --badge-tone: var(--tone-emerald); }
+[data-mytrion='collection'] { --badge-tone: var(--tone-purple); }
+[data-mytrion='finance'] { --badge-tone: var(--tone-teal); }
+[data-mytrion='customer-service'] { --badge-tone: var(--tone-orange); }
+[data-mytrion='verification'] { --badge-tone: var(--tone-indigo); }
+[data-mytrion='recruit'] { --badge-tone: var(--tone-violet); }
+[data-mytrion='hr'] { --badge-tone: var(--tone-pink); }
+[data-mytrion='manager'] { --badge-tone: var(--tone-rose); }
+[data-mytrion='trailhead'] { --badge-tone: var(--tone-blue); }
+[data-mytrion='analyst'] { --badge-tone: var(--tone-amber); }
 
 * {
   box-sizing: border-box;
@@ -194,6 +105,8 @@ body {
   font-family: var(--font-body);
   font-size: var(--text-base);
   line-height: var(--lh-base);
+  letter-spacing: var(--tr-base);
+  font-weight: var(--fw-body);
   background: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -204,53 +117,138 @@ button {
   font-family: inherit;
 }
 
-/* Global keyboard focus ring — buttons, links, custom controls (DESIGN_SYSTEM.md §8). */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-xs);
+/*
+ * ── Type roles ──────────────────────────────────────────────────────────────────────────────
+ * letter-spacing cannot ride in the `font` shorthand, so a role is a class, not a single token.
+ * Use these instead of assembling size + line-height + tracking + weight by hand; a role that is
+ * assembled by hand is a role that drifts.
+ */
+.t-label   { font: var(--fw-2xs) var(--text-2xs) / var(--lh-2xs) var(--font-body);
+             letter-spacing: var(--tr-2xs); }
+.t-eyebrow { font: var(--fw-semibold) var(--text-2xs) / var(--lh-2xs) var(--font-body);
+             letter-spacing: var(--tr-caps-micro); text-transform: uppercase; }
+.t-meta    { font: var(--fw-body) var(--text-xs) / var(--lh-xs) var(--font-body);
+             letter-spacing: var(--tr-xs); }
+.t-cell    { font: var(--fw-body) var(--text-sm) / var(--lh-sm) var(--font-body);
+             letter-spacing: var(--tr-sm); }
+.t-body    { font: var(--fw-body) var(--text-base) / var(--lh-base) var(--font-body);
+             letter-spacing: var(--tr-base); }
+.t-title   { font: var(--fw-lg) var(--text-lg) / var(--lh-lg) var(--font-head);
+             letter-spacing: var(--tr-lg); }
+.t-page    { font: var(--fw-xl) var(--text-xl) / var(--lh-xl) var(--font-head);
+             letter-spacing: var(--tr-xl); }
+.t-display { font: var(--fw-4xl) var(--text-4xl) / var(--lh-4xl) var(--font-head);
+             letter-spacing: var(--tr-4xl); }
+
+/*
+ * Figures. SMALL figures — ids, codes, timestamps, table columns — are Space Mono with
+ * tabular-nums, so financial columns align vertically for scanning. Not optional in Billing,
+ * Finance or Analytics, where a column that jitters by digit width is unreadable at a glance.
+ *
+ * LARGE figures are NOT Space Mono. At 26px and up, Mono's very wide fit (0.1476em, the loosest
+ * thing we ship) reads as a licence plate; a KPI value is the one number that is meant to be
+ * beautiful as well as aligned, so it takes Grotesk with tabular-nums instead. Use `.num-lg`.
+ *
+ * Use `<td data-num>` or `className="num"`.
+ */
+.num,
+[data-num] {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: var(--tr-fig);
+}
+.num-lg {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: var(--tr-fig-2xl);
 }
 
 /*
- * Form controls never take the hard outline. Mytrion modules either:
- *   1. paint an accent border / soft glow on the field itself, or
- *   2. wrap a bare field in a shell that owns :focus-within.
- * Letting :focus-visible outline land on the bare field is what produced the ugly
- * "internal" accent ring inside search bars across every Mytrion.
+ * ── Emphasis. Space Grotesk ships NO italic. ────────────────────────────────────────────────
+ * <em>/<i> would otherwise get a SYNTHESIZED oblique, which shears a geometric face badly and is
+ * worst at exactly the 11-13px sizes this app is densest at. Emphasis maps to weight instead.
+ * If a true italic is ever required for citation or long-form prose, that is a third family and a
+ * decision, not a default.
  */
-:is(input, textarea, select):focus-visible {
+:is(em, i) {
+  font-style: normal;
+  font-weight: var(--fw-body-strong);
+  color: var(--text-primary);
+}
+
+/* ── Focus. Token-driven. ────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  /* The old `border-radius: var(--radius-xs)` here was a BUG: it set the ELEMENT's radius while
+     focused, squaring an 8px panel or a 999px pill down to 4px for the duration of the focus.
+     Browsers already follow border-radius for outline. Deleted. */
+}
+
+/*
+ * Form controls never take the hard outline. Mytrion modules either paint an accent border on the
+ * field itself, or wrap a bare field in a shell that owns :focus-within. Letting :focus-visible
+ * land on the bare field is what produced the "internal" accent ring inside search bars.
+ */
+:is(input, textarea, select, [contenteditable]):focus-visible {
+  outline: none;
+}
+
+/* The focus-shell contract: ONE attribute, ONE authored appearance, ZERO module names. */
+[data-focus-shell] :is(input, textarea, select, [contenteditable]):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+[data-focus-shell]:focus-within {
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-halo);
+}
+[data-focus-ring='none']:focus-visible {
   outline: none;
 }
 
 /*
- * Focus shells — bordered wrappers with a bare inner field. Clear BOTH outline and the
- * module-level glow ring (`box-shadow`) so only the wrapper's :focus-within chrome shows.
- *
- * Prefer `data-focus-shell` on new wrappers. The class list covers existing search / select /
- * composer shells. CSS-module wrappers (hashed names) keep the same rule locally:
- * admin.module.css `.search`, MytrionShell.module.css `.navSearch`, Composer.module.css `.pill`.
+ * DEPRECATED bridge — remove in Phase 3, not before.
+ * These fifteen module class names are the pre-token focus-shell list. They stay ONLY until the
+ * Phase 3 codemod puts `data-focus-shell` on the corresponding wrappers; deleting them now would
+ * regress focus on every search and select field in Billing, CS, HR, Manager, Finance and Sales at
+ * once. Do not add to this list — new wrappers use the attribute.
+ * Migration note: docs/design/MIGRATION.md, "focus shells".
  */
 :is(
-  [data-focus-shell],
-  .hr-search,
-  .hr-att-search,
-  .hr-select,
-  .hr-prefixed,
-  .mg-search,
-  .mg-rf-search,
-  .mg-rf-month,
-  .fi-search,
-  .vf-search,
-  .cs-app-search,
-  .cs-citi-search-bar,
-  .bm-search-bar,
-  .db-search-wrap,
-  .bm-ai-input-row,
+  .hr-search, .hr-att-search, .hr-select, .hr-prefixed,
+  .mg-search, .mg-rf-search, .mg-rf-month,
+  .fi-search, .vf-search,
+  .cs-app-search, .cs-citi-search-bar,
+  .bm-search-bar, .db-search-wrap, .bm-ai-input-row,
   .ss-pool-search
 )
   :is(input, textarea, select):focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/*
+ * ── Disabled. RECOLOUR, not an opacity multiply. ────────────────────────────────────────────
+ * `:where()` has ZERO specificity, so all existing module rules still win without !important —
+ * that is what makes this adoptable incrementally rather than as a 175-site flag day.
+ *
+ * NO `pointer-events: none`: it kills the tooltip that explains WHY the control is disabled and
+ * removes it from the tab order. Use native `disabled` when no explanation is owed, and
+ * `aria-disabled` when one is.
+ */
+:where(
+  button, input, select, textarea, fieldset, a[href],
+  [role='button'], [role='menuitem'], [role='tab'], [role='option'], [role='checkbox']
+):is(:disabled, [aria-disabled='true']) {
+  cursor: var(--disabled-cursor);
+  color: var(--disabled-fg);
+  border-color: var(--disabled-bd);
+  background: var(--disabled-bg);
+  /* --elev-0, not `none` — same list-composition invariant as elevation. */
+  box-shadow: var(--elev-0);
 }
 
 ::selection {
@@ -265,13 +263,15 @@ button {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
 
-/* Animations used across the chat surface + tool chips. */
+/* Animations used across the chat surface + tool chips.
+   These are INDEFINITE AMBIENT LOOPS and are deliberately outside the 220ms transition ceiling —
+   they are floored at >=1s so they read as ambient rather than as a transition that has stalled. */
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -315,14 +315,50 @@ button {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    /*
+     * animation-DELAY was missing, and a zeroed duration does not zero a delay. A staggered grid
+     * (`opacity: 0` + `animation-delay: Ns` + `forwards`) therefore held every card invisible for
+     * the full stagger before snapping in all at once — the exact opposite of what this query is
+     * for. Prefer writing the animation inside `(prefers-reduced-motion: no-preference)` so the
+     * hidden start state never applies at all; this is the backstop for the ones that don't.
+     */
+    animation-delay: 0s !important;
+  }
+
+  /*
+   * The `*` selector above does NOT match view-transition pseudo-elements — they are generated
+   * outside the document tree, so the theme crossfade ran at full length for reduced-motion users.
+   * That was a live hole in a block documented as neutralising motion app-wide.
+   */
+  html.theme-vt::view-transition-old(root),
+  html.theme-vt::view-transition-new(root) {
+    animation-duration: 1ms !important;
+  }
+
+  /* Zero the tokens too, so the clean path needs no !important and does not fight specificity. */
+  :root {
+    --dur-instant: 0.01ms;
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+    --hz-hover-lift-sm: none;
+    --lift-1: none;
+    --lift-2: none;
+  }
+
+  html {
+    scroll-behavior: auto !important;
   }
 }
 
-/* Smooth theme crossfade (View Transitions API — see themeContext.tsx). */
+/* Smooth theme crossfade (View Transitions API — see themeContext.tsx).
+   220ms, not the old 420ms: a View Transition is NOT exempt from the motion ceiling. The two
+   snapshots have zero geometric delta — only colour changes — so the extra 200ms bought nothing
+   except a longer stretch of low-contrast intermediate state. */
 html.theme-vt::view-transition-old(root),
 html.theme-vt::view-transition-new(root) {
-  animation-duration: 0.42s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-spring);
   mix-blend-mode: normal;
 }
 

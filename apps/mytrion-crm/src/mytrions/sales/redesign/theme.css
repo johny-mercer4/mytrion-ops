@@ -1,23 +1,27 @@
 /* Sales Mytrion redesign — design tokens + primitives, ported VERBATIM from the
    reference prototype (Sales Mytrion.dc.html). Dark is the default; `.ss-root.light`
    is the light theme. Scoped under .ss-root so it never leaks into the rest of the app. */
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 html,body{height:100%;margin:0}
   *,*::before,*::after{box-sizing:border-box}
   .ss-root{
-    --bg:#0B0F17; --bg2:#0d1320; --surface:#151b27; --surface-2:#1a2130; --alt:#10151f;
-    --raised:rgba(226,232,240,.05); --brand:#E2E8F0; --accent:#4cc2f5; --accent-2:#7c5cff;
-    /* Label color for accent-filled/gradient controls — near-black so it clears WCAG AA on the
-       bright cyan→violet gradient (white on cyan is ~2:1 and fails). Mirrors the app --on-accent. */
-    --on-accent:#04131c;
-    --accent-rgb:76,194,245; --violet-rgb:124,92,255;
-    --text:#E7ECF3; --text2:#B4C0D3; --muted:#7d8aa3; --faint:#4a5568;
-    --border:rgba(226,232,240,.09); --border2:rgba(226,232,240,.055);
-    --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 40px rgba(0,0,0,.42);
-    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    /* DE-FORKED. This block used to redeclare --surface, --border, --accent, --on-accent and
+       --shadow-sm — the GLOBAL names — inside .ss-root. Because .ss-root is a descendant of the
+       [data-mytrion] root, its declarations always won, so every palette change in styles/theme.css
+       silently skipped Sales. Those five are gone; Sales now inherits them.
+       The Sales-LOCAL names below (--bg, --text2, --muted, --faint …) are kept because ~4,000 lines
+       of .ss-* CSS read them — they are repointed at the global scale, not deleted. */
+    --bg:var(--bg-primary); --bg2:var(--surface-alt); --surface-2:var(--surface-alt);
+    --alt:var(--surface-alt); --raised:var(--surface-raised); --brand:var(--text-primary);
+    /* Channel triplets for rgba() call sites, which cannot read a token. Must be kept in step with
+       --accent in styles/theme.css: dark #a5e7ff, light #0043c8. */
+    --accent-rgb:165,231,255; --violet-rgb:255,174,222;
+    --text:var(--text-primary); --text2:var(--text-secondary); --muted:var(--text-muted);
+    --faint:var(--border-strong);
+    --border2:var(--border-light);
+    --shadow:var(--shadow-lg);
     --card-grad:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0));
-    --ok:#34d399; --warn:#fbbf24; --danger:#f87171; --orange:#fb923c; --violet:#a78bfa; --cyan:#38d6d0;
+    --ok:#34d399; --warn:#fbbf24; --violet:#a78bfa; --cyan:#38d6d0;
     /* Type scale — one documented source of truth; px match the app --text-* scale (styles/theme.css).
        New redesign code should use these; legacy inline sizes are being rounded onto them
        (12.5→13, 11.5→12, 10.5→11). Sizes are theme-independent, so they live only here. */
@@ -32,17 +36,11 @@ html,body{height:100%;margin:0}
     color-scheme:dark;
   }
   .ss-root.light{
-    --bg:#eef1f6; --bg2:#e7ecf3; --surface:#ffffff; --surface-2:#f7f9fc; --alt:#f1f4f9;
-    --raised:rgba(15,23,42,.035); --brand:#0F172A; --accent:#2563EB; --accent-2:#7c3aed;
-    /* Light accents are dark enough to carry white text at AA, so the label stays white here. */
-    --on-accent:#ffffff;
-    --accent-rgb:37,99,235; --violet-rgb:124,58,237;
-    --text:#101828; --text2:#3d4a5c; --muted:#697586; --faint:#aab4c2;
-    --border:rgba(15,23,42,.09); --border2:rgba(15,23,42,.055);
-    --shadow:0 1px 2px rgba(15,23,42,.06), 0 14px 34px rgba(15,23,42,.10);
-    --shadow-sm:0 1px 2px rgba(15,23,42,.05);
+    /* Only what genuinely differs in light. Everything else re-derives, because the Sales-local
+       names above are var() of global tokens that [data-theme='light'] has already swapped. */
+    --accent-rgb:0,67,200; --violet-rgb:0,103,127;
     --card-grad:linear-gradient(180deg,rgba(255,255,255,0),rgba(15,23,42,.012));
-    --ok:#059669; --warn:#d97706; --danger:#dc2626; --orange:#ea580c; --violet:#7c3aed; --cyan:#0891b2;
+    --ok:#059669; --warn:#d97706; --violet:#7c3aed; --cyan:#0891b2;
     /* Darker text-grade variants so accent/ok labels clear WCAG AA (4.5:1) on the hero's tinted gradient. */
     --ok-text:#036b4e; --accent-text:#1d4ed8;
     /* Same tint base; darker label text so tier pills clear WCAG AA on the near-white light surface. */
@@ -66,6 +64,21 @@ html,body{height:100%;margin:0}
   .ss-root ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   .ss-root *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
   @keyframes ss-spin{to{transform:rotate(360deg)}}
+  /*
+   * `.ss-spin` — the class two automation panels have always asked for and never had.
+   *
+   * AutoWexEligibility and AutoCardCredentials both render
+   * `<Icon name="spinner" className="ss-spin" />` while a WEX round trip is in flight, but no rule
+   * for this class existed anywhere in the app: the keyframes above were only ever consumed by
+   * `.ss-tab-spin` and one rule in tickets.css. So the glyph rendered COMPLETELY MOTIONLESS for the
+   * whole ~20s request, which is indistinguishable from a hang — this is the "stuck loader with
+   * animation" reported in the WEX Tasks modal.
+   *
+   * Reduced motion stops the rotation but keeps the glyph, so the label beside it still reads as a
+   * pending state rather than the element vanishing.
+   */
+  .ss-spin{animation:ss-spin .75s linear infinite;transform-origin:50% 50%}
+  @media (prefers-reduced-motion: reduce){ .ss-spin{animation:none} }
   @keyframes ss-pulse{0%,100%{opacity:.4}50%{opacity:1}}
   @keyframes ss-shimmer{0%{background-position:-460px 0}100%{background-position:460px 0}}
   @keyframes ss-sweep{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
@@ -79,12 +92,18 @@ html,body{height:100%;margin:0}
   .ss-fu{animation:ss-up .4s cubic-bezier(.2,0,0,1) both}
   .ss-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.06) 37%,var(--raised) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear;border-radius:var(--radius-md)}
   .ss-root.light .ss-skel{background:linear-gradient(90deg,rgba(15,23,42,.06) 25%,rgba(15,23,42,.12) 37%,rgba(15,23,42,.06) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear}
-  /* Picklist micro-loader bars — accent shimmer (visible in light + dark). */
-  @keyframes ss-pick-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  /* The PERCENTAGE sweep, for bars sized `background-size: 200% 100%`. `ss-shimmer` above is the
+     PIXEL sweep (-460px -> 460px) and pairs with `900px 100%`; mixing the two makes the gradient
+     travel far past the element and the bar reads as flat with an occasional pass. */
+  @keyframes ss-shimmer-pct{0%{background-position:200% 0}100%{background-position:-200% 0}}
   .ss-pick-skel{
     height:12px;border-radius:4px;
     background:linear-gradient(90deg,rgba(226,232,240,.08) 0%,rgba(var(--accent-rgb),.22) 50%,rgba(226,232,240,.08) 100%);
-    background-size:200% 100%;animation:ss-pick-shimmer 1.35s ease-in-out infinite;
+    background-size:200% 100%;animation:ss-shimmer-pct 1.4s linear infinite;
+    /* 1.4s LINEAR, matching .ss-skel. The sweep technique stays percentage-based (it suits a
+       12px bar better than .ss-skel's 900px pixel sweep), but the TIMING must match: two
+       skeletons pulsing at 1.35s ease-in-out and 1.4s linear in the same modal drift in and
+       out of phase, which reads as one of them stuttering. */
   }
   .ss-root.light .ss-pick-skel{
     background:linear-gradient(90deg,rgba(15,23,42,.06) 0%,rgba(var(--accent-rgb),.18) 50%,rgba(15,23,42,.06) 100%);
@@ -93,7 +112,12 @@ html,body{height:100%;margin:0}
   .ss-pick-skel--sm{height:9px}
   .ss-pick-loader{padding:4px 0;pointer-events:none}
   .ss-deal-id-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-  .ss-float-drop{z-index:200}
+  /* The Automations deal/card picker, portaled OUT of its modal so it escapes overflow:hidden —
+     which makes it a SIBLING of `.ss-scrim`, not a descendant. At the old 200 it cleared the old
+     scrim (130) by luck; now the scrim is on --z-modal (2100) it would be buried. --z-popover is
+     the layer the scale defines for a dropdown belonging to an open modal. (AutoFloatingDrop also
+     sets this inline, and inline wins — this keeps the class from disagreeing with it.) */
+  .ss-float-drop{z-index:var(--z-popover)}
   .ss-tab-x:hover{color:var(--text)!important;background:var(--raised)!important}
   .ss-vw-opt{transition:background .12s}
   .ss-vw-opt:hover{background:var(--alt)!important}
@@ -153,7 +177,7 @@ html,body{height:100%;margin:0}
   .ss-auto-result-icon--err{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
   .ss-auto-result-icon--empty{background:var(--alt);color:var(--muted)}
   .ss-auto-result-title{
-    font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.03em;
+    font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:.03em;
     text-transform:uppercase;color:var(--text);line-height:1.25;min-width:0;
   }
   .ss-auto-result-msg{
@@ -168,7 +192,7 @@ html,body{height:100%;margin:0}
   }
   .ss-auto-result-detrow:last-child{border-bottom:none}
   .ss-auto-result-detlabel{color:var(--muted);font-weight:600}
-  .ss-auto-result-detvalue{color:var(--text);font-weight:700;text-align:right;font-family:'JetBrains Mono',monospace}
+  .ss-auto-result-detvalue{color:var(--text);font-weight:700;text-align:right;font-family:var(--font-mono)}
   .ss-auto-result-actions{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
   .ss-auto-result-btn{
     flex:1;min-height:44px;min-width:120px;border:none;border-radius:var(--radius-md);
@@ -194,7 +218,7 @@ html,body{height:100%;margin:0}
   /* Rich tracking / WEX task results */
   .ss-auto-rich{display:flex;flex-direction:column;gap:12px;min-height:0}
   .ss-auto-rich-title{
-    font-family:Rajdhani,sans-serif;font-size:17px;font-weight:700;letter-spacing:.04em;
+    font-family:var(--font-head);font-size:17px;font-weight:700;letter-spacing:.04em;
     text-transform:uppercase;color:var(--text);
   }
   .ss-track-summary,.ss-wex-summary{
@@ -206,7 +230,7 @@ html,body{height:100%;margin:0}
   }
   .ss-wex-summary-text{font-size:14px;color:var(--text);line-height:1.55;white-space:pre-wrap}
   .ss-track-link{
-    font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;letter-spacing:.02em;
+    font-family:var(--font-mono);font-size:15px;font-weight:800;letter-spacing:.02em;
     color:var(--accent);text-decoration:none;border-radius:6px;padding:4px 8px;margin:-4px -8px;
     transition:background .14s ease,color .14s ease,box-shadow .14s ease;
   }
@@ -284,24 +308,45 @@ html,body{height:100%;margin:0}
   }
   .ss-root.light .ss-attach{background:var(--surface-2)}
   .ss-root.light .ss-attach:hover,.ss-root.light .ss-attach.is-drag{background:rgba(var(--accent-rgb),.07)!important}
-  /* Modal scrim — readable over light + dark canvases */
+  /* Modal scrim — the shared overlay for every Sales modal. Canonical form: ds/Dialog/Dialog.module.css.
+     --z-modal, not 130: the raw number sat above --z-sticky (100) only by luck, and it left the
+     overlay's layer un-comparable with every other modal surface in the app.
+     --scrim, not rgba(15,23,42,…): that ink is only correct in dark, which is exactly why this rule
+     needed a `.ss-root.light` fork. --scrim mixes from --page, so it dims in dark and frosts in
+     light by construction — one value, both themes, and the fork is gone.
+     The gutter stays PADDING on the overlay (var(--space-6) is the same 24px), so a click on it
+     still lands on this element and reads as a backdrop click. */
   .ss-scrim{
-    position:fixed;inset:0;z-index:130;display:flex;align-items:center;justify-content:center;padding:24px;
-    background:rgba(15,23,42,.48);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    position:fixed;inset:0;z-index:var(--z-modal);
+    display:flex;align-items:center;justify-content:center;padding:var(--space-6);
+    background:var(--scrim);
+    backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));
   }
-  .ss-root.light .ss-scrim{background:rgba(15,23,42,.42)}
-  a{color:var(--accent);text-decoration:none}
-  a:hover{color:var(--accent);text-decoration:underline}
+  /* SCOPED. These were bare `a` / `a:hover`, so once Sales' CSS chunk loaded they applied to every
+     anchor in the document — and CSS chunks are never unloaded. Visiting Sales once made every link
+     in the app underline on hover for the rest of the session, most visibly on the launcher, where
+     each workspace card is an <a> and the underline propagated to its title, blurb and tag. */
+  .ss-root a{color:var(--accent);text-decoration:none}
+  .ss-root a:hover{color:var(--accent);text-decoration:underline}
 
   /* ── Retention case modal ─────────────────────────────────────────────────── */
+  /* `max-height:100%`, not `min(90vh,820px)`: 90vh is measured against the VIEWPORT and so knows
+     nothing about the 20px gutter its overlay is padding it with — the panel grew past the gutter
+     and had its top edge clipped off-screen. 100% resolves against the overlay's content box, which
+     is the gutter already subtracted.
+     `flex:none` because the default flex-shrink:1 lets a tall panel be squeezed under its own cap
+     and hand the overflow back to the page instead of scrolling the body. */
   .ss-ret-modal{
-    position:relative;width:min(560px,100%);max-height:min(90vh,820px);
+    position:relative;width:min(560px,100%);max-height:min(100%,820px);flex:none;
     display:flex;flex-direction:column;border-radius:var(--radius-lg);
     border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow);
     overflow:hidden;animation:ss-fadein .18s ease both;
   }
+  /* The one scrolling row. `min-height:0` is load-bearing — without it a flex child floors at
+     min-content and refuses to scroll. overflow-y is stated here rather than relying on the
+     `.ss-scroll` class the JSX happens to also apply. */
   .ss-ret-modal-body{
-    position:relative;flex:1;min-height:0;padding:16px 18px;
+    position:relative;flex:1;min-height:0;overflow-y:auto;padding:16px 18px;
     display:flex;flex-direction:column;gap:16px;
   }
   .ss-ret-modal-content{display:flex;flex-direction:column;gap:16px;transition:opacity .15s ease}
@@ -422,7 +467,7 @@ html,body{height:100%;margin:0}
     display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;
     font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border:1px solid;
   }
-  .ss-call-dur{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:650;color:var(--text2);min-width:3ch}
+  .ss-call-dur{font-family:var(--font-mono);font-size:12px;font-weight:650;color:var(--text2);min-width:3ch}
   .ss-root.light .ss-call-row{
     background:var(--surface);
     border-color:rgba(15,23,42,.08);
@@ -452,7 +497,7 @@ html,body{height:100%;margin:0}
     background:rgba(var(--accent-rgb),.12);
   }
   .ss-ret-hero-title{
-    font-family:Rajdhani,sans-serif;font-weight:700;font-size:var(--ss-text-xl);
+    font-family:var(--font-head);font-weight:700;font-size:var(--ss-text-xl);
     letter-spacing:.05em;text-transform:uppercase;color:var(--text);line-height:1.1;
   }
   .ss-ret-hero-sub{font-size:var(--ss-text-sm);color:var(--muted);line-height:1.45;margin-top:4px;max-width:52ch}
@@ -472,7 +517,7 @@ html,body{height:100%;margin:0}
     font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
   }
   .ss-ret-metric-val{
-    font-family:'JetBrains Mono',monospace;font-size:var(--ss-text-lg);font-weight:600;color:var(--text);
+    font-family:var(--font-mono);font-size:var(--ss-text-lg);font-weight:600;color:var(--text);
     letter-spacing:-.02em;line-height:1.15;
   }
   .ss-ret-metric-val.is-warn{color:var(--warn)}
@@ -491,7 +536,7 @@ html,body{height:100%;margin:0}
   }
   .ss-ret-tab.is-on{background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)}
   .ss-ret-tab-count{
-    font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+    font-family:var(--font-mono);font-size:11px;font-weight:600;
     padding:1px 7px;border-radius:99px;background:var(--raised);color:var(--muted);
   }
   .ss-ret-tab.is-on .ss-ret-tab-count{background:rgba(var(--accent-rgb),.16);color:var(--accent-text)}
@@ -508,7 +553,7 @@ html,body{height:100%;margin:0}
   .ss-ret-col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
   .ss-ret-col-hint{font-size:11px;font-weight:600;color:var(--faint);margin-top:3px;letter-spacing:.01em}
   .ss-ret-col-meta{
-    text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);line-height:1.25;
+    text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--muted);line-height:1.25;
   }
   .ss-ret-col-meta strong{display:block;color:var(--text);font-weight:600;font-size:14px}
   .ss-ret-col-body{
@@ -527,7 +572,7 @@ html,body{height:100%;margin:0}
     animation:ss-up .35s cubic-bezier(.2,0,0,1) both;
   }
   .ss-ret-card-meta{
-    font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
+    font-family:var(--font-mono);font-size:11px;font-weight:500;
     color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .ss-ret-card:hover{
@@ -544,11 +589,11 @@ html,body{height:100%;margin:0}
     background:linear-gradient(105deg,#1d4ed8 0%,#2563eb 48%,#6d28d9 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
   }
-  .ss-ret-pips{font-size:11px;letter-spacing:.12em;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .ss-ret-pips{font-size:11px;letter-spacing:.12em;color:var(--muted);font-family:var(--font-mono)}
   .ss-ret-timer{display:flex;flex-direction:column;gap:4px;margin-top:2px}
   .ss-ret-timer-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .ss-ret-timer-remain{
-    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;letter-spacing:.01em;
+    font-family:var(--font-mono);font-size:13px;font-weight:800;letter-spacing:.01em;
   }
   .ss-ret-timer-event{
     font-size:11px;font-weight:600;color:var(--muted);line-height:1.35;
@@ -751,7 +796,7 @@ html,body{height:100%;margin:0}
     display:inline-flex;align-items:center;gap:7px;transition:border-color .14s,background .14s,color .14s;
   }
   .ss-pool-chip em{
-    font-style:normal;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+    font-style:normal;font-family:var(--font-mono);font-size:11px;font-weight:600;
     padding:1px 6px;border-radius:999px;background:var(--raised);color:var(--muted);
   }
   .ss-pool-chip.is-on{
@@ -800,18 +845,21 @@ html,body{height:100%;margin:0}
   .ss-pool-row.is-skel span{
     display:block;height:12px;border-radius:6px;
     background:linear-gradient(90deg,var(--alt),var(--raised),var(--alt));
-    background-size:200% 100%;animation:ss-shimmer 1.2s ease infinite;
+    background-size:200% 100%;animation:ss-shimmer-pct 1.4s linear infinite;
+    /* Was `ss-shimmer 1.2s ease` — the PIXEL keyframe against a percentage background-size, so
+       the sweep overshot the bar, plus a third timing in an app with two. Now the matching
+       keyframe at the shared 1.4s linear. */
   }
   .ss-pool-check{display:flex;align-items:center;justify-content:center}
   .ss-pool-check input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
   .ss-pool-check-spacer{width:15px;height:15px}
-  .ss-pool-mono{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600}
+  .ss-pool-mono{font-family:var(--font-mono);font-size:13px;font-weight:600}
   .ss-pool-mono.muted{color:var(--muted);font-weight:500;font-size:12px}
   .ss-pool-company{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ss-pool-agent,.ss-pool-quiet{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ss-pool-quiet.is-warn{color:var(--warn)}
   .ss-pool-cycle{font-size:13px;font-weight:700}
-  .ss-pool-window{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600}
+  .ss-pool-window{font-family:var(--font-mono);font-size:12px;font-weight:600}
   .ss-pool-window.is-ok{color:var(--ok)}
   .ss-pool-window.is-warn{color:var(--warn)}
   .ss-pool-window.is-danger{color:var(--danger)}
@@ -826,15 +874,19 @@ html,body{height:100%;margin:0}
   .ss-pool-status.is-mine{
     border-color:color-mix(in srgb,var(--accent) 40%,var(--border));color:var(--accent-text);
   }
+  /* `max-height:100%` + `flex:none` — see .ss-ret-modal above for why 92vh was wrong. */
   .ss-pool-modal{
     position:relative;width:100%;max-width:540px;border-radius:var(--radius-lg, 16px);
     background:var(--surface);
     border:1px solid color-mix(in srgb,var(--accent) 22%,var(--border));
     box-shadow:var(--shadow), 0 0 0 1px color-mix(in srgb,var(--accent) 8%,transparent);
     animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden;
-    display:flex;flex-direction:column;max-height:min(92vh, 760px);
+    display:flex;flex-direction:column;max-height:100%;flex:none;
   }
+  /* `flex:none` pins the header: with the default shrink factor a tall body would squash the
+     title/icon row rather than scroll under it. */
   .ss-pool-modal-head{
+    flex:none;
     padding:18px 20px 14px;border-bottom:1px solid var(--border);
     display:flex;align-items:flex-start;gap:12px;
     background:
@@ -866,11 +918,16 @@ html,body{height:100%;margin:0}
     background:rgba(var(--accent-rgb),.10);color:var(--accent-text);
   }
   .ss-pool-modal-title{
-    font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.02em;
+    font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:.02em;
     line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .ss-pool-modal-sub{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.4}
-  .ss-pool-modal-body{padding:18px 22px;display:flex;flex-direction:column;gap:16px;overflow:auto}
+  /* The one scrolling row. `min-height:0` is what actually lets it scroll — `overflow:auto` alone
+     on a flex child that floors at min-content never gets the chance to overflow. */
+  .ss-pool-modal-body{
+    flex:1;min-height:0;overflow-y:auto;
+    padding:18px 22px;display:flex;flex-direction:column;gap:16px;
+  }
   .ss-pool-modal-summary{
     padding:14px 15px;border-radius:var(--radius-md);
     border:1px solid color-mix(in srgb,var(--accent) 18%,var(--border));
@@ -963,7 +1020,9 @@ html,body{height:100%;margin:0}
   .ss-pool-confirm-title{font-size:14px;font-weight:800;color:var(--text)}
   .ss-pool-confirm-text{font-size:13px;color:var(--text2);line-height:1.45}
   .ss-pool-accent{color:var(--accent-text)}
+  /* `flex:none` pins the action bar — the two 44px buttons must never be shrunk or scrolled away. */
   .ss-pool-modal-foot{
+    flex:none;
     padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px;
     background:color-mix(in srgb,var(--alt) 70%,var(--surface));
   }
@@ -1003,22 +1062,12 @@ html,body{height:100%;margin:0}
 
 /* Shell responsiveness + RingCentral safe area. The sidebar already has an explicit collapse control;
    narrow screens keep the collapsed rail visible instead of allowing the content pane to clip. */
-.ss-root .ss-main-column{padding-right:0}
+
 @media (max-width:900px){
-  .ss-root .ss-sidebar{max-width:68px!important;width:68px!important}
-  .ss-root .ss-sidebar-brand,.ss-root .ss-sidebar-search{display:none!important}
-  .ss-root .ss-sidebar nav{padding-left:9px!important;padding-right:9px!important}
-  .ss-root .ss-sidebar nav button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
-  .ss-root .ss-sidebar nav button>span:not(.ss-tab-ico){display:none!important}
-  .ss-root .ss-sidebar-footer{padding-left:9px!important;padding-right:9px!important}
-  .ss-root .ss-sidebar-footer>a,.ss-root .ss-sidebar-footer>button{justify-content:center!important;padding-left:0!important;padding-right:0!important}
-  .ss-root .ss-sidebar-footer>a>span,.ss-root .ss-sidebar-footer>button>span,.ss-root .ss-sidebar-footer>div>div:last-child{display:none!important}
-  .ss-root .ss-sidebar-footer>div{justify-content:center!important;padding-left:0!important;padding-right:0!important}
   .ss-root .ss-main-topbar{padding-left:16px!important;padding-right:16px!important}
   .ss-root .ss-panels{padding-left:16px!important;padding-right:16px!important}
 }
 @media (max-width:640px){
-  .ss-root .ss-sidebar{max-width:56px!important;width:56px!important}
   .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
   .ss-root .ss-main-topbar>div:last-child{display:none}
   .ss-root .ss-panels{padding:16px 12px 132px!important}

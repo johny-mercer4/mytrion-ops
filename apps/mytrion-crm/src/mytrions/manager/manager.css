@@ -41,11 +41,11 @@
   --mg-pad: clamp(20px, 3vw, 34px);
 
   /* ── Radii — four steps, plus the pill. Everything else was drift. ── */
-  --mg-r-xs: 6px;
-  --mg-r-sm: 8px;
-  --mg-r-md: 12px;
-  --mg-r-lg: 16px;
-  --mg-r-pill: 999px;
+  --mg-r-xs: var(--radius-xs);
+  --mg-r-sm: var(--radius-sm);
+  --mg-r-md: var(--radius-md);
+  --mg-r-lg: var(--radius-md);
+  --mg-r-pill: var(--radius-full);
 
   --mg-tone-fallback: var(--accent);
 

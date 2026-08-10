@@ -1,0 +1,49 @@
+/*
+ * StoppedNote — the calm counterpart to TurnError.
+ *
+ * Everything about this file is restraint: neutral fill, muted text, no border, no intent colour.
+ * The one piece of visual identity it keeps is the square stop mark, which rhymes with StopButton
+ * so the note reads as the consequence of that press rather than as a new kind of event.
+ */
+
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Sits inline under a partial answer, so it is a strip rather than a card: it must not compete
+     with the answer it annotates. */
+  padding-block: var(--space-1_5);
+  padding-inline: var(--space-2_5);
+  border-radius: var(--radius-control);
+  background: var(--stopped-note-bg);
+  color: var(--stopped-note-fg);
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* The stop mark, muted. Shape, not colour, is what identifies this — the colour is intentionally
+   the quietest thing on the row. */
+.glyph {
+  flex: none;
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-control);
+  background: currentColor;
+}
+
+.text {
+  /* Wraps rather than truncates. A note explaining what happened to an answer is not decoration,
+     so it never gets an ellipsis. */
+  min-inline-size: 0;
+}
+
+/* Trailing action slot — normally a neutral RetryButton. Pushed to the end so the note reads
+   left-to-right as "what happened" then "what you can do". */
+.action {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+}

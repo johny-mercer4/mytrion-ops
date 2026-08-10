@@ -5,9 +5,12 @@ import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.con
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { AccountMenu } from '../../components/AccountMenu';
-import { TopBar } from '../../components/TopBar';
+import { ActAsPicker } from '../../components/ActAsPicker';
+import { AppHeader } from '../../components/AppHeader';
+import headerStyles from '../../components/AppHeader.module.css';
+import { isAdmin } from '../../access/resolveAccess';
+import { initials } from '../../lib/initials';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
-import { horizonSkin } from './horizonSkin';
 import styles from './MytrionShell.module.css';
 
 /**
@@ -33,13 +36,6 @@ function writeCollapsed(value: boolean): void {
   }
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-}
-
 export interface NavItem {
   key: string;
   label: string;
@@ -55,8 +51,22 @@ export interface NavItem {
    * Optional per-item icon colour. A long categorised sidebar is much faster to scan when each
    * destination has its own hue than when fifteen identical grey glyphs sit in a column. Applied as
    * the `--nav-tone` custom property; the label stays on the text scale so only the glyph is tinted.
+   *
+   * REST STATE ONLY. The selected row overrides it, so one selected row looks the same in every
+   * workspace — a per-destination hue there would compete with the gradient rail beside it.
    */
   tone?: string;
+  /**
+   * Right-aligned count: open tickets, unclaimed carriers, items in a queue. Space Mono with
+   * tabular-nums, on the gradient fill. Hidden when the rail is collapsed.
+   */
+  trailing?: number | string;
+  /**
+   * The destination exists in the nav but is not built yet: an outlined "Soon" pill, and the row is
+   * not clickable. Modules used to fake this by concatenating " · Soon" into the label, which also
+   * made the rail's search match on the word "Soon".
+   */
+  soon?: boolean;
 }
 
 export interface NavSection {
@@ -105,8 +115,9 @@ function NavItemButton({
     <div>
       <button
         type="button"
-        title={item.label}
+        title={item.soon ? `${item.label} — coming soon` : item.label}
         aria-label={item.label}
+        disabled={item.soon ?? false}
         {...(hasChildren ? { 'aria-expanded': open } : {})}
         {...(selected ? { 'aria-current': 'page' as const } : {})}
         className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
@@ -117,6 +128,11 @@ function NavItemButton({
       >
         <span className={styles.navIcon}>{item.icon}</span>
         <span className={styles.navLabel}>{item.label}</span>
+        {item.soon ? (
+          <span className={styles.navSoon}>Soon</span>
+        ) : item.trailing !== undefined && item.trailing !== '' ? (
+          <span className={styles.navCount}>{item.trailing}</span>
+        ) : null}
       </button>
       {open ? (
         <div className={styles.navSub}>
@@ -166,6 +182,7 @@ export function MytrionShell({
   footerNav = [],
   enableNavSearch = false,
   enableDockChat = false,
+  contentScroll = 'shell',
 }: {
   id: MytrionId;
   children: ReactNode;
@@ -181,6 +198,17 @@ export function MytrionShell({
    * department Mytrion re-exposes that department's scoped agent in the sidebar.
    */
   enableDockChat?: boolean;
+  /**
+   * Who owns vertical scroll.
+   *   'shell'   — the centre pane scrolls. Correct for every module that renders plain panels.
+   *   'content' — the centre pane does not scroll and the child owns its own scroller.
+   *
+   * The second exists for surfaces that virtualise: Billing's ledger measures against a scroll ref,
+   * and a second scroll parent silently corrupts its range math, so it renders the wrong rows
+   * rather than failing visibly. This is the shell PROP the contract allows in place of a fourth
+   * shell — a workspace that needs different chrome does not get its own frame.
+   */
+  contentScroll?: 'shell' | 'content';
 }) {
   const user = useUserContext();
   const m = MYTRIONS[id];
@@ -188,7 +216,28 @@ export function MytrionShell({
   const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const [chatView, setChatView] = useState(false);
   const [navQuery, setNavQuery] = useState('');
+  // The header field is separate from the rail's tab filter on purpose — one says "the Horizon
+  // ecosystem", the other says "tabs". Nothing consumes this yet; see GlobalSearch.
+  const [globalQuery, setGlobalQuery] = useState('');
   const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  // Admins can view-as anyone (the picker fetches the roster); a granted non-admin is handed their
+  // scoped list so the SAME control only offers permitted targets. No targets at all -> no control.
+  const viewAsTargets = user.viewAsTargets ?? [];
+  const viewAs = isAdmin(user) ? (
+    <ActAsPicker triggerClassName={headerStyles.chip} />
+  ) : viewAsTargets.length > 0 ? (
+    <ActAsPicker
+      triggerClassName={headerStyles.chip}
+      targets={viewAsTargets.map((t) => ({
+        zohoUserId: t.zohoUserId,
+        name: t.name,
+        email: null,
+        profile: null,
+        role: null,
+      }))}
+    />
+  ) : null;
 
   const toggleSidebar = useCallback((): void => {
     setCollapsed((prev) => {
@@ -237,15 +286,25 @@ export function MytrionShell({
     <div
       className={styles.shell}
       data-mytrion={id}
-      data-horizon={horizonSkin(id)}
       /* Published on the ROOT, not just the <nav>, so a module's own global stylesheet can respond —
          CSS-module class names are hashed and unreachable from hr.css, but a data attribute is not.
          Modules opt in by writing a rule; none are affected until they do. */
       data-sidebar-collapsed={collapsed ? 'true' : undefined}
     >
-      <TopBar contextBadge={m.tag} mytrion={id} showSwitch />
-      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
-          modules that haven't opted into the skin (see horizonSkin.ts). */}
+      {/* identity="none": the signed-in worker appears once, at the foot of the rail. Two avatars
+          on one screen is two answers to "where do I sign out". */}
+      <AppHeader
+        context={{ mytrion: id }}
+        search={{
+          placeholder: 'Search the Horizon ecosystem…',
+          value: globalQuery,
+          onChange: setGlobalQuery,
+        }}
+        actions={viewAs}
+        identity="none"
+      />
+      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame, in every
+          workspace. This used to be inert unless the module was on the horizonSkin allowlist. */}
       <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
         <nav
@@ -352,7 +411,7 @@ export function MytrionShell({
           </div>
         </nav>
 
-        <div className={styles.center}>
+        <div className={styles.center} data-scroll={contentScroll}>
           {chatView ? (
             // A chat crash must never take down the working surface — remount on retry.
             <ErrorBoundary>

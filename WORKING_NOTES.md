@@ -12417,7 +12417,7 @@ Locked decisions:
 - Manager name required at invite time with uniqueness check (active account / pending invite / active registration).
 
 Backend:
-- Migration `0111_mini_app_password_auth` — `carrier_users` telegram/registration link, `auth_mode` on invites + registrations, `mini_app_password_resets`.
+- Migration `0112_mini_app_password_auth` — `carrier_users` telegram/registration link, `auth_mode` on invites + registrations, `mini_app_password_resets`.
 - Routes under `/carrier/mini-app/auth/*` + Sales password-reset resolve.
 - Sales can revoke owned-carrier registrations (was admin-only).
 - Access token TTL for mini-app clients: `1d`.
@@ -12469,3 +12469,927 @@ sections; less helper copy. Shared chrome in `clientManageUi.tsx`. Rebuilt widge
 
 Verify Manage: Profile=Manager, same name twice → second generate succeeds; registered
 manager name still 409.
+
+## 2026-08-07 — AI Chat in Mytrion Admin: the failure was one malformed tool schema
+
+Consulted the `modern-web-guidance` skill first (hard rule 10 — it exists now).
+
+### Why EVERY Horizon answer failed, not just card activation
+
+The chat's "The AI service failed to complete this request" had nothing to do with Sales
+self-knowledge. Reproduced against a live server and read the actual log line:
+
+```
+400 Invalid schema for function 'zoho_mcp__ZohoCRM_getWebhookAssociatedModules':
+schema must be a JSON Schema of 'type: "object"', got 'type: "None"'
+```
+
+`"None"` is OpenAI reporting a **missing** `type` key, not a literal string. The chain:
+
+1. MCP tools declare `inputSchema: z.unknown()` (the MCP server validates arguments); their real
+   JSON Schema lives on `rawParameters`.
+2. `agentTools.ts` built every tool's schema with `zodToJsonSchema(rt.inputSchema)`, so for MCP
+   tools that is `zodToJsonSchema(z.unknown())` → `{}` — no `type`.
+3. OpenAI validates the WHOLE tool list per request and rejects all of it if one function's
+   parameters are not `type: "object"`.
+
+So one MCP tool in the bound set failed every agent turn regardless of the question. Two bugs in
+one: the model also never saw those tools' real parameters, because the zod schema threw them away.
+
+`openAiToolSchema()` now prefers `rawParameters` and guarantees an object-typed root. Also hardened
+`mcpTools.paramsForOpenAi` to strip invalid `type` values recursively and report which upstream tools
+it repaired, so a genuinely bad Zoho schema degrades one argument instead of every conversation.
+Nothing caught this because `vitest.config.ts` pins `FF_ZOHO_MCP_ENABLED=0`, so no test ever built an
+MCP-backed tool set.
+
+**Verified live** (server on :3011 against the local DB, which carries the synced catalog): the brief's
+scenario now answers exactly as specified — `ERROR: None`, 5 passages, cited to
+`Sales Mytrion — Card Activation (C-1)`, walking Automations → search "Card Activation"/C-1 → the
+block under the **Customer Service section** → client → card → Activate Card.
+
+### Switch Mytrion
+
+Now a plain `<Link to="/main">` instead of a dropdown — one click lands on the picker. `TopBar`'s
+`mytrion` prop went unused and was dropped. `MytrionMenu` is left in place (still tested) in case a
+bespoke shell wants the shortcut later; nothing renders it today.
+
+### Light/dark contrast
+
+`MessageBubble.module.css` was written dark-only: `#fff`, `#e2e8f0` and `rgba(255,255,255,…)` text on
+light tints. In light mode the error box was white-on-pink (the screenshot), markdown `h3` was
+white-on-white, and inline `code` was near-white text on a near-invisible background. Converted 23
+colour-bearing rules to the token scale — status chips and citation errors onto `--tint-*`, citation
+chips and picker states onto `--accent-*` so they recolour per Mytrion, `.pickerConfirm` onto
+`--on-accent`, and the dark-only scrollbar thumb onto `--border`. The only hardcoded `rgba` left is
+the sheen on the accent-filled user bubble, which is correct in both themes.
+
+### Test as: Zoho user
+
+The backend already did the hard part: `x-act-as-zoho-user-id` is the ONLY trusted input, the
+target's name/profile/role come from the CRM directory, and `actAsContext` runs the turn with the
+target's own DB-resolved grant, role, scopes and `userId` — with the real admin recorded as
+`impersonatorUserId`. Escalation-guarded.
+
+Added a **chat-scoped** target (`features/chat/testAs.ts`) deliberately separate from the per-Mytrion
+"View as" store: reusing that would re-scope the Knowledge Base and database browsers to the test
+user too. Only the chat endpoints send it, only the id is sent, admin-only, and changing the target
+starts a new conversation so one transcript never mixes two identities.
+
+Rebuilt `apps/mytrion-crm/app` and confirmed `Test as` / `Testing as` / `octane.chatTestAs.v1` are in
+the hashed bundle.
+
+Gates: backend 2412 passed / 1 skipped, frontend 549 passed, typecheck clean both trees, lint 0
+errors (23 pre-existing warnings).
+
+**Aside on the ERR_CONNECTION_REFUSED you saw:** that was simply the API not running on :3001 — the
+`/v1/auth/me` and `/v1/knowledge/*` calls had nothing to answer them. Worth knowing separately: the
+Render prod Postgres dropped this machine's connection twice during testing and killed the server
+("Connection terminated unexpectedly"), which is the same flakiness that interrupted the catalog
+sync. Local work is much steadier against `:5433`.
+
+### Test-as menu was unreadable, and the restore flashed
+
+Two defects visible in one screenshot of the open "Test as" list.
+
+**Transparency.** I had used `--surface-raised` as the dropdown's background. That token is
+`rgba(255,255,255,0.045)` — a ~4% tint designed to sit ON an opaque surface, not to BE one — so the
+menu was ~95% transparent and the transcript read straight through the user rows. Now `--surface`
+(opaque `#1b212c` / `#ffffff`) plus elevation. Checked the neighbours: the History overlay already
+used opaque `--surface-alt`, and the two other `--surface-raised` backgrounds (the scroll-to-bottom
+FAB, a header chip) are glass-over-opaque-panel by design, so they stay.
+
+**Stacking.** The accent-filled user bubble painted ON TOP of the open menu. `.bodyWrap` is
+positioned and every bubble carries `backdrop-filter`, which makes each its own stacking context, so
+a menu inside the unpositioned header lost. `.header` now has `position: relative; z-index: 3` and
+the menu sits at `z-index: 60`.
+
+**Restore loader.** `useChat` had no notion of hydrating: on mount it restored the previous
+conversation asynchronously, so `MessageList` painted the "Horizon AI" welcome and then swapped in
+the messages — a flash that reads as a broken panel. Added `hydrating` to the reducer, seeded lazily
+from `getLastConversationId` so a user with no stored conversation never sees a skeleton at all, and
+settled on every exit: transcript loaded, explicit `hydrated` (covers nothing-to-restore AND the
+silent stale-id failure, via `.finally`), or the user starting a new conversation. `MessageList`
+renders skeleton turns mirroring the real bubble geometry — one affordance for the region, no spinner
+layered on top, and `role="status"` so it is announced. Five reducer tests cover the settle paths,
+including that `hydrated` on settled state returns the SAME object (no needless re-render).
+
+Gates: frontend 554 passed / 87 files, typecheck clean, bundle rebuilt and verified (opaque
+`background:var(--surface)` at `z-index:60`, header `z-index:3`, "Restoring your conversation").
+
+## 2026-08-08 — Horizon RAG: Phase 0 baseline (measured, not guessed)
+
+Added `scripts/benchSalesChat.ts`: posts four canonical Sales self-knowledge questions at
+`/v1/agent`, then reads back the telemetry the run already writes — `rag_runs` and `llm_calls` — and
+prints wall/LLM/RAG timings, hops, tool calls, grades, models and whether the expected document was
+cited. Local DB on `:5433` (prod Postgres drops connections and corrupts exactly these timings).
+
+**Baseline, 83 MCP tools bound, all flags as found:**
+
+| case | wall | llm calls | llm ms | rag_runs | hops | tools | cited expected |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| card-activation | 13780ms | 2 | 11619 | 0 | 0 | 1 | yes |
+| retention-generation | 11204ms | 2 | 10603 | 0 | 0 | 1 | yes |
+| open-pool-claim | 6584ms | 0 | 0 | 0 | 0 | 0 | **FAILED** |
+| limit-max | 15205ms | 1 | 8290 | 0 | 0 | 0 | **FAILED** |
+
+Mean **11,693ms**. Cost **$0.0537** for four questions. 3/4 cited the right document; **2/4 failed**.
+
+Three things this proves rather than suspects:
+
+1. **The failures are 429s, not network faults.**
+   `429 Rate limit reached for gpt-4o-mini … on tokens per min (TPM): Limit 200000, Used 200000`.
+   Four how-to questions saturated the org's entire per-minute token quota. This is almost certainly
+   what the user's "network error" at +56.4s was too, and what "Mytrion feels unstable" means.
+2. **71,130 input tokens per model call** (avg over 5 calls, max 71,848) — for "how do I activate a
+   card". That is the ~102 tool schemas. Two calls per turn ≈ 142k tokens, so the 200k TPM ceiling
+   allows **~1.4 questions per minute** before failing. Latency, cost and instability are all one
+   root cause.
+3. **`rag_runs` is 0 for every case** — the agentic loop genuinely never executes; only
+   `agenticRetrieve` writes those rows. And every call is `role=answer, model=gpt-4o-mini`, confirming
+   the model collapse: orchestrator, tool selection and answering all on the weakest model.
+
+Note the two successes cited a *neighbouring* doc alongside the right one (Card Deactivation next to
+Card Activation; Transactions Report next to Retention) — the ranking imprecision expected from
+single-shot kNN with no grading or reranking.
+
+## 2026-08-08 — Phases 1+2: tool surface cut, prompt contradiction removed
+
+### Measured result
+
+| metric | baseline | after 1+2 | change |
+| --- | --- | --- | --- |
+| mean wall per question | 11,693ms | **5,450ms** | 2.1× faster |
+| input tokens per model call | 71,130 | **11,558** | **6.2× less** |
+| model latency per call | 6,102ms | 2,420ms | 2.5× faster |
+| cost, four questions | $0.0537 | **$0.0143** | 3.8× cheaper |
+| failures | **2 of 4** (429s) | **0 of 4** | fixed |
+| on-target citation | 3 of 4 | **4 of 4** | fixed |
+| tool calls per question | 0–1 | 1 (`knowledge_search`) | no CRM calls |
+
+Per turn is now ~23k tokens against the 200k TPM ceiling instead of ~142k — roughly 8.6 questions
+per minute rather than 1.4, which is why the 429s stopped.
+
+### What changed
+
+**Named MCP tools instead of `zoho_mcp.*`** (`manifests/shared.ts` → `SALES_MCP_TOOLS`,
+`MANAGER_MCP_TOOLS`; applied in `sales.ts`, `dataCenter.ts`, `manager.ts`). The wildcard bound all 83
+discovered read tools to Sales.
+
+The first cut only got 71k → 35k, so I measured the schemas individually rather than assuming.
+**Two of the six tools I had allowlisted were 30,665 of the remaining 32,005 tokens** —
+`ZohoCRM_getRecordCount` (~15,247) and `ZohoCRM_getRelatedRecords` (~15,418). Zoho ships pathological
+schemas: **37 of its 203 tools exceed 4,000 characters**, and `ZohoCRM_getModules` is ~5,296 tokens.
+Both were dropped; native `zoho_crm.query` does counts (`SELECT COUNT(*)`) and related-list joins in
+COQL for no prompt overhead. Sales' MCP surface is now ~1,341 tokens.
+
+Two boot guards in `loadMcpTools`, because naming tools trades a token problem for a drift problem:
+- warn when a manifest names an MCP tool discovery did not return (that agent silently lost a
+  capability);
+- warn when an allowlisted tool's schema exceeds 4,000 chars, so the next 15k-token schema is a
+  visible decision instead of a silent tax.
+
+Fixed the stale `app.ts` comment claiming no agent lists MCP tools — sales and manager both did.
+
+**Prompt contradiction removed** (`sales.ts`). The persona carried the self-knowledge rule *and*
+"Use these directly **to avoid searching the knowledge base** for basic queries". The CRM/MCP hints
+are now explicitly scoped to *record* questions, and the self-knowledge block states that a how-to
+answer comes from `knowledge_search` alone — naming `zoho_crm.query`, `zoho_mcp.*`, `crm.*`,
+`warehouse.*`, `dbt_mcp.*` as off-limits for "how do I / where is / what does <code> do", plus "one
+search is normally enough; do not repeat the same search".
+
+### Tests
+
+- `agent-golden.test.ts`: no manifest may wildcard `zoho_mcp`; a simulated 83-tool discovery must
+  keep every agent under a 30-tool budget (a wildcard reintroduction fails it); the matcher itself is
+  pinned; and the Sales persona must not contain "avoid searching the knowledge base" while it must
+  name the forbidden how-to tools. 20 tests in that file now.
+- `department-agents.test.ts` updated to the tighter policy: each MCP tool is visible only to the
+  departments that named it, and a discovered-but-un-allowlisted tool is admin-only. These two tests
+  failing was the change working — they encoded the old wildcard behaviour.
+
+Backend 2419 passed / 1 skipped, lint 0 errors, typecheck clean.
+
+**Still on the legacy retrieval path** — `rag_runs` is 0 for every case, so none of the CRAG loop ran
+yet. Phase 3 next.
+
+## 2026-08-08 — Phase 3: the CRAG loop is live, and the lexical leg was dead
+
+Enabled `FF_RAG_V2_RETRIEVAL=1` (the gate `scopedRag` needs alongside `FF_AGENTIC_RAG`) and
+`FF_RAG_MODEL_POLICY=1` (role-based models). The loop started running — `rag_runs` went from 0 to 1
+per turn, models split correctly into `answer:gpt-5.4-mini` / `router:gpt-5.4-nano` — but it was
+**slower**: mean 10,105ms, 5 LLM calls per question, `hops=2` every time, grades `partial/0.62`.
+
+`partial/0.62` is the literal deterministic-partial constant, so `assessEvidence` was never reaching
+its `sufficient` branch. Rather than tune the threshold I instrumented the fusion, and found the
+actual defect:
+
+**The full-text leg returned zero rows for every natural-language question.**
+`buildFullTextQuery` used `websearch_to_tsquery('simple', <the whole question>)`. websearch ANDs its
+terms and the `simple` config removes no stop words, so a chunk had to contain "how", "do", "i", "a"
+and "in" as literal lexemes. Measured against the Sales corpus: `'activate card'` matched 5 chunks,
+`"How do I activate a card in Sales Mytrion?"` matched **0**. The leg swallowed nothing and logged
+nothing — it simply always found nothing.
+
+The cost of that was much larger than lost recall. `assessEvidence` needs vector/lexical `agreement`
+to certify evidence as `sufficient`; with the leg dead, `agreement` was unreachable, so every
+question fell through to the semantic judge and then a corrective second hop — two extra model calls
+per turn to re-derive what a working keyword match already knew.
+
+Two changes:
+
+1. **`orOfTerms` + the english column.** The leg now builds `activate or card or sales or mytrion` and
+   runs `websearch_to_tsquery('english', …)` against `content_tsv` (english stems and drops stop
+   words; both columns are GIN-indexed). OR restores recall — a question shares only some words with
+   its answer — while `ts_rank_cd` keeps precision by rewarding term density: for
+   "how are retention cases generated" the top three ranked chunks are all the correct document
+   (0.90, 0.90, 0.70). Still `websearch_to_tsquery`, not `to_tsquery`, so hostile text degrades
+   instead of throwing. Terms are de-duplicated, capped at 12, interrogatives dropped, and intra-word
+   hyphens kept so `C-16` survives as one term.
+2. **Corroboration now moves confidence** in `assessEvidence` (+0.06 vector/lexical agreement, +0.03
+   multi-query, cap 0.98). It previously only gated the branch, so with the lexical leg dead the only
+   route past `shouldUseDeterministic`'s 0.85 bar was cosine ≥ 0.733 — rare, since on-target Sales
+   documents measure 0.54–0.82. Two retrieval methods independently surfacing the same chunk is the
+   standard hybrid-search precision signal; it should count.
+
+### Measured
+
+| metric | baseline | after 1+2 | after 3 |
+| --- | --- | --- | --- |
+| mean wall | 11,693ms | 5,450ms | **6,180ms** |
+| LLM calls (4 questions) | 5 | 8 | 13 |
+| hops per question | n/a (loop off) | n/a | **1** |
+| evidence grade | — | — | **sufficient/0.90–0.91** |
+| retrieval ms | 0 (loop off) | 0 | 1,456–2,227 |
+| failures | 2 of 4 | 0 | 0 |
+| on-target citation | 3 of 4 | 4 of 4 | 4 of 4, exactly one doc each |
+| cost (4 questions) | $0.0537 | $0.0143 | $0.0755 |
+
+Versus the first Phase 3 attempt (10,105ms, 20 calls, hops=2, partial grades) this is 39% faster with
+7 fewer model calls. Versus the original baseline: **1.9× faster, zero failures, 4/4 citations**, and
+now with genuine evidence grading rather than a single-shot kNN.
+
+**Cost is the honest regression**: $0.0537 → $0.0755, because answers moved from `gpt-4o-mini` to
+`gpt-5.4-mini`. That is the model that fixed tool selection, so I would keep it; if cost matters more
+than answer quality, `resolveModelPolicy`'s `answer` role is the one dial to change.
+
+`limit-max` used 4 calls rather than 3 — its confidence landed just under the bar, so the judge ran.
+That is the adaptive behaviour working, not a defect.
+
+Tests: 6 new `assessEvidence` cases (corroboration raises confidence, cannot rescue a sub-floor
+match, cannot override `outdated`, caps at 0.98) and 6 for `orOfTerms` (OR form, interrogatives
+dropped, codes intact, de-dup/cap, empty input, injection-safe). The existing full-text RBAC test now
+asserts the transformed query is the parameter — its real point, that department names inside a
+question never become filters, is unchanged and still passes. Backend 2431 passed, lint 0 errors.
+
+## 2026-08-08 — "hello" took 122s because the production database was unreachable
+
+Reported: a bare "hello" hung for 122.4s and died with
+`Failed query: insert into "conversations" …`. The params in that error are all valid, so it was
+never a schema fault — the insert was waiting on a connection.
+
+Measured directly: the Render Postgres is **`CONNECT_TIMEOUT` after 47s** from this machine. Not slow,
+not rate-limited — it does not complete a handshake. It worked earlier today (the catalog sync and the
+first agent runs went through it), so it changed state during the session; the same fault killed the
+dev server twice mid-bench with "Connection terminated unexpectedly" and forced three passes to sync
+the catalog.
+
+`postgres.js` had `connect_timeout: 30` and retries, so ~4 attempts × 30s ≈ 122s, at which point the
+agent's 120s wall fired. The user waited two minutes and got a message that reads like a schema bug.
+
+Two fixes:
+
+1. **`.env` now points at the local database** (`localhost:5433`, measured **0.014s** vs unreachable).
+   The old URL is preserved as a commented `MYTRION_OPS_DATABASE_URL_PROD`. The local DB is fully
+   usable: 112 migrations, the 30 Sales self-knowledge docs, and an `Administrator` profile default
+   carrying all-department access — so a real Zoho admin session resolves the same authority it would
+   in prod. Only conversation history is empty. This is what CLAUDE.md's local run stack always
+   prescribed; `.env` pointing at prod was the hazard.
+2. **`connect_timeout` 30 → 8 seconds** (`src/db/client.ts`). A reachable Postgres handshakes in tens
+   of milliseconds, so 8s is generous for a healthy path and fails fast on a dead one — seconds with a
+   clear error instead of a two-minute hang. Boot is unaffected: `runMigrationsOnBoot` keeps its own
+   retry budget (`DB_BOOT_WAIT_SECONDS`).
+
+### Verified
+
+| request | before | after |
+| --- | --- | --- |
+| `hello` | **122,400ms**, failed | **42ms**, "Hello, John! How can I help you today?", zero tools |
+| "How do I activate a card in Sales Mytrion?" | failed | 24,716ms, `grade: sufficient / 0.928`, one `knowledge_search`, no CRM call, correct click path including the Customer Service section |
+
+### Two findings this surfaced — not yet fixed
+
+- **The orchestrator costs ~18s.** Pinned to `agent: 'sales'` the same question is 6,180ms; routed
+  through the orchestrator it is 24,716ms. That is the "+11.7s Consulting Sales" from the original
+  trace, and Admin chat always goes through the orchestrator. It is now the largest remaining latency
+  item — bigger than everything Phases 1–3 removed.
+- **Citations are lost on the orchestrator path.** `rag.grade` is `sufficient` and the answer is
+  correctly grounded, but `citations: []` reaches the client, so the UI shows no sources. Pinned to
+  the child, citations populate. Something between the child's `reportSources` and the orchestrator's
+  final result drops them.
+
+Backend 2431 passed / 1 skipped with the shorter timeout.
+
+## 2026-08-08 — Phase A: prompt caching was already working; the telemetry was lying
+
+Concept #14 (KV/prefix caching) looked completely unexploited: **0.0% cache hits across 61 real
+calls** at ~10,400 input tokens each, and `llm_calls.ttft_ms` existed with nothing writing it. The
+plan's first step was to measure rather than optimise, which turned out to matter — the expensive half
+of the plan was unnecessary.
+
+**A1, the experiment.** Sent the real Sales child system prompt plus the real bound tool schemas
+directly to OpenAI three times, different user message each time:
+
+| call | prompt | cached | latency |
+| --- | --- | --- | --- |
+| 1 | 4,914 | 0 (cold) | 2,425ms |
+| 2 | 4,909 | **4,736 (96.5%)** | 1,392ms |
+| 3 | 4,911 | **4,736 (96.4%)** | 1,286ms |
+
+Caching engages, and nearly halves latency. Then instrumented a real agent turn to see what the
+runtime actually receives:
+
+| call | input_tokens | cache_read |
+| --- | --- | --- |
+| 1 | 11,225 | 0 (cold) |
+| 2 | 12,025 | **10,880 (90.5%)** |
+| 3 | 11,225 | **10,880 (96.9%)** |
+| 4 | 12,049 | **10,880 (90.3%)** |
+
+So the prefix was **always** caching at 90–97%. `childSystemPrompt` is static (persona +
+`SHARED_AGENT_RULES` + escalation targets) and the volatile `<TurnContext>` sits in the human message,
+i.e. the suffix — the design was right all along.
+
+**The bug** was one branch in `runTracker.handleLLMEnd`. `llmOutput.tokenUsage` exists and carries
+exactly `promptTokens` / `completionTokens` / `totalTokens` — **no cache fields** — so that branch won
+every time and hardcoded `cached = 0`, never reaching the `usage_metadata` that does carry
+`input_token_details.cache_read`. Cache reads are now harvested from `usage_metadata` regardless of
+which source supplied the counts (`usageFromGenerations`).
+
+**Consequences fixed alongside it:**
+
+- **`ttft_ms` now recorded** via `handleLLMNewToken` (first token per LLM run). `latencyMs` measures
+  the whole generation, which hides exactly what caching improves. Measured **1,145ms** average TTFT.
+  Router/grader stay blank because they use the raw non-streaming client — correct, not missing.
+- **Cost was overstated.** `computeCost` billed all ~11k prompt tokens at the full input rate while
+  10,880 of them were cache reads. Added `cachedInput` rates to `MODEL_PRICING` and split the input
+  charge. An unpriced model falls back to the full rate so the `AGENT_MAX_COST_USD` guard can never
+  trip too late.
+- **A4 dropped as unnecessary.** It existed to stabilise the prefix; the prefix was never unstable.
+
+### Measured after Phase A
+
+| metric | before A | after A |
+| --- | --- | --- |
+| cache hit rate | 0.0% (reported) | **92.5%** (real, now visible) |
+| TTFT | not recorded | **1,145ms** |
+| reported cost, 4 questions | $0.0755 | **$0.0166** |
+| mean wall | 6,180ms | 5,977ms (unchanged, as expected) |
+| on-target citations | 4 of 4 | 4 of 4 |
+
+**Read that cost line carefully: this did not save money.** Real spend was always ~$0.0166 — the old
+figure was a measurement error. The useful consequence is that **the per-question cost is ~$0.0041,
+not $0.0189**, so the earlier "~$830/month at 100 agents" projection is wrong by ~4.5×; it is closer
+to **~$180/month**. That materially changes the infrastructure-spend advice given earlier.
+
+Tests: 5 new `computeCost` cases (cached billed at the cached rate, unchanged when nothing cached,
+cached clamped to prompt tokens so cost cannot go negative, negative input ignored, unpriced model
+never discounted). Backend **2436** passed / 1 skipped, lint 0 errors, typecheck clean.
+
+## 2026-08-08 — Phase B: a grounded answer was showing no sources
+
+Reproduced: `grade: sufficient / 0.926`, `ragPassages: 5`, correct answer — and `citations: []`, so
+Admin's source list was empty on a properly grounded answer.
+
+`citationCheck.validateCitations` had two paths and was missing the third. Markers present and used →
+the cited subset. No markers at all (classic retrieval) → everything retrieved. But **markers present
+and the answer used none** fell into the first path's filter and produced `[]`.
+
+Whether the model writes `[S1]` is a stylistic accident; it says nothing about whether the answer was
+grounded. An answer that *looks* ungrounded costs more trust than a slightly broad source list, so an
+unmarked (or entirely-hallucinated-marker) answer now falls back to the retrieved set — the same
+semantics the classic path already had. It cannot invent sources: nothing retrieved still reports
+nothing.
+
+Also fixed the instruction that caused it. `RAG_USAGE_RULE` ended "Cite the docId of any passage you
+rely on", while `buildGroundingBlock` tells the model to "cite the [Sn] marker" — and `[Sn]` is what
+`validateCitations` checks and what the UI's source list is built from. The persona was training the
+model to emit citations the pipeline then discarded. It now asks for the markers.
+
+**Verified live on the orchestrator path** that produced the empty list:
+`CITATIONS: ['Sales Mytrion — Card Activation (C-1)']`, with `markers in answer: []` — the model still
+did not write `[S1]`, and the source shows anyway. Five passages deduped to the one document they came
+from, which is correct.
+
+Four new tests cover the gap: unmarked answer falls back, cited subset still wins when the answer did
+cite, all-hallucinated markers fall back after stripping, and nothing retrieved reports nothing.
+Backend **2440** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Phase C: the ambiguous cases immediately found a real bug, and rerank lost
+
+Added three deliberately ambiguous bench cases spanning two documents each — fraud hold vs override,
+balance vs card list, viewing money codes vs drawing one — and changed the quality metric from a
+boolean to **expected-doc coverage**. The existing four are clean single-document vector hits, so a
+reranker measured only against those would have had nothing to reorder and the test would have been
+rigged in its favour.
+
+### The new cases found a silent abstention bug before rerank was even tried
+
+`balance-and-cards` scored **0/2** with `hops: 0`, `duration_ms: 3`. `rag_runs` said
+`route: tool, grade: not_documented, abstained: true`. The agent had called `knowledge_search` and been
+told "use a live-data tool instead".
+
+Cause: `routeRetrievalIntent` judges a USER utterance — "how do I…" stays on knowledge, "how many
+gallons this month" goes to a tool. But `scopedRag` feeds it the MODEL's keyword query
+("client balance account cards"), which has no procedural markers and so reads as a live-data
+aggregate. Deciding *not* to retrieve belongs to the chat layer, before the tool is called; once the
+model has called `knowledge_search`, the request should be honoured. `agenticRetrieve` now takes
+`explicitKnowledgeRequest` and coerces a `tool` verdict to `knowledge`. Casual/empty still abstains —
+searching a greeting is waste, not a lost answer — and external intent is untouched.
+
+Also extended `PROCEDURAL`: **"what are my options"** was a how-to phrasing the first pass missed
+(`TOOL_AGGREGATE` matched `client`, `LIVE_SCOPE` matched `my`, nothing marked it procedural), so
+"A client's card is on fraud hold — what are my options?" routed to a live tool. Genuine aggregates
+that say "my" ("what is my total gallons this month") still route to tools; golden routing stays
+280/280.
+
+That fix alone took coverage **8/10 → 9/10**.
+
+### Rerank: measured, and rejected
+
+| | rerank OFF | rerank ON |
+| --- | --- | --- |
+| mean wall | **5,779ms** | 6,967ms (+21%) |
+| retrieval | 1,353–1,659ms | 2,169–2,709ms (+55%) |
+| expected-doc coverage | **9/10** | **8/10** |
+| cost (7 questions) | $0.0292 | $0.0283 |
+
+Slower **and** less accurate — it regressed `balance-and-cards` from 2/2 back to 1/2 and did not fix
+the one case it might have. `rerankPassages` asks `models.default` (gpt-4o-mini) to reorder candidates
+that RRF already ranked using vector/lexical agreement; a cheap listwise judgement is noisier than
+that signal, so it can only degrade it. `FF_RAG_RERANK=0` is now explicit in `.env` with these numbers
+in a comment, so it does not get flipped on hopefully later.
+
+### Scratchpad: deliberately NOT measured, because the bench cannot show it anything
+
+A scratchpad earns its keep on multi-step computation. Every question in this bench is documentation
+lookup, so implementing one and "measuring" it here would be theatre in the opposite direction —
+guaranteed to look useless regardless of merit. The honest trigger is a question class we do not test
+yet: retention-timer arithmetic ("client breached 5 days ago with 3 failed attempts — when does it
+reach Open Pool?"), which needs business-day counting across the retention rules. Adding those cases
+is the prerequisite, and verifying them needs judgement rather than substring matching.
+
+Remaining miss: `money-codes-view-and-draw` at 1/2 — cites the Money Code automation but not Data
+Center, where issued codes are viewed. A recall problem across two document *kinds*, not an ordering
+problem, which is consistent with rerank not helping.
+
+Backend **2449** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Phase D + a correction to the Phase C rerank claim
+
+**Strict structured output.** `planQueries` and `judgeEvidence` moved from
+`response_format: { type: 'json_object' }` + hand-parsing to strict `json_schema` (constrained
+decoding). Both keep their fallbacks — the point is that they now fire far less often. This mattered
+most for the judge: a malformed grade silently degrades to the deterministic assessment, so a broken
+judge is indistinguishable from a confident one in the traces. Verified live: 0 planner/judge parse
+failures across a full bench run, latency unchanged (mean 5,803ms vs 5,779ms — noise).
+
+### Correction: the rerank rejection was over-claimed
+
+I wrote that rerank was "slower AND less accurate", citing coverage 9/10 → 8/10. That second half was
+wrong. Running the **identical** configuration twice more produced 8/10 and then 9/10, with
+`balance-and-cards` flipping between 1/2 and 2/2. A one-point coverage difference is inside run-to-run
+variance, so it is not evidence of anything.
+
+What survives scrutiny:
+
+- **Latency is real and mechanical**: +21% mean wall, +55% retrieval time, because rerank adds an LLM
+  call per retrieval. Reproducible by construction.
+- **No measurable accuracy benefit**: it did not fix `money-codes-view-and-draw`, which is stably 1/2
+  with and without it.
+
+So: rejected on latency for no measured gain — not because it degrades quality. `.env` now records
+that framing instead of the original over-claim.
+
+**The metric itself was the deeper problem**, since "measure before enabling" is worthless with a
+metric that moves on its own. `benchSalesChat.ts` now takes `--runs N` and prints per-case stability:
+
+```
+per-case stability over 3 runs:
+  card-activation            1/1 1/1 1/1  stable  mean 10313ms
+  fraud-options              2/2 2/2 2/2  stable  mean  5409ms
+  balance-and-cards          1/2 1/2 1/2  stable  mean  6658ms
+  money-codes-view-and-draw  1/2 1/2 1/2  stable  mean  5786ms
+```
+
+Stable *within* a batch, but that same case read 2/2 in an earlier batch — so use `--runs 3` before
+deciding anything on coverage, and treat a 1-point gap as no signal.
+
+Current honest state: coverage **8–9/10**, the four single-document cases rock solid at 1/1,
+`fraud-options` solid at 2/2, and the two remaining multi-document cases borderline —
+`money-codes-view-and-draw` reproducibly misses the Data Center document, which is a recall problem
+across document *kinds*, not an ordering one.
+
+Backend **2449** passed / 1 skipped, lint 0 errors.
+
+## 2026-08-08 — Knowledge lifecycle: a sync endpoint, because the cron flag is a loaded gun
+
+The nightly `maintenance.platform-knowledge-sync` never runs in production. The obvious fix — set
+`FF_JOBS_ENABLED=1` on Render — is **not safe**, and it took reading the job catalog to see why.
+
+Cron scheduling has no per-job switch. `scheduler.ts` filters `CRON_SCHEDULES` by exactly three
+things: `DISABLED_JOB_QUEUES` (the weekly retention scan + 4 KPI jobs) and a `FF_ORCHESTRATOR_ENABLED`
+gate on two LLM automations — which render.yaml already sets to `1`. So flipping the flag registers
+**11 schedules at once**, including:
+
+- `notification.poll` every **2 minutes** — card-status, receipt and invoice messages over Telegram.
+- `notification.statement-weekly`, Mondays 07:00 — `runWeeklyStatements()` sends fuel-transaction and
+  EFS money-code reports (PDF + XLSX, including discount pricing) to carrier owners.
+
+The catalog comments call both "no-op w/o pilot carriers". **That comment is stale.** `pilotCarriers()`
+selects every row in `registered_mini_app_companies` with `status='active'` and `profile != 'driver'`;
+`NOTIFY_POLL_CARRIERS` is only a manual *extras* list. And unlike the pollers, `runWeeklyStatements`
+has **no first-run baseline guard** — its dedupe key covers the text notification, not the document
+sends, and `retryLimit: 0` because those sends are not idempotent. The first Monday after such a flip
+would mail last week's bundle to real paying customers. A nightly knowledge refresh is not worth that.
+
+A Render Cron Job running the existing one-shot is also impossible as things stand: the runtime image
+carries only `scripts/docker/start-prod.sh`, and `tsx` is a devDependency under `pnpm install --prod`.
+
+**So: `POST /v1/knowledge/platform-sync`** (`knowledge.routes.ts`, `adminGuard`), which reuses
+`syncPlatformKnowledge` verbatim. Any scheduler can hit it with the API key.
+
+Verified live against the local corpus:
+
+| call | result |
+| --- | --- |
+| first | `ready: 4, skipped: 42` in 1,946ms |
+| second | `ready: 0, skipped: 46` in **131ms** |
+| two concurrent | one `200`, one `409 SYNC_IN_FLIGHT` |
+| unauthenticated | `401` |
+
+Two things worth noting from that. A warm re-run is **essentially free** — `ingestDocument` resolves
+the checksum (line 128) before it embeds (line 192), so an unchanged document costs one query and no
+OpenAI call. And the 4 that *were* re-ingested are the agent-capability documents: they are generated
+from the manifests, so editing the Sales persona and its MCP tool list correctly invalidated them. The
+catalog tracks code, which is the whole point of it being generated.
+
+Deliberately independent of `FF_PLATFORM_KNOWLEDGE`, matching the one-shot script: you need to
+populate the corpus *before* exposing it.
+
+Four tests: unauthenticated refused, admin gets counts + duration, concurrent second call gets 409
+without a second sync, and the in-flight guard clears after a failure so one bad run cannot wedge the
+endpoint. Backend **2453** passed / 1 skipped, lint 0 errors.
+
+**Not changed:** `FF_JOBS_ENABLED` stays off. Fixing the stale "no-op w/o pilot carriers" comments and
+giving `runWeeklyStatements` a first-run guard would be the prerequisites for ever enabling it, and
+both are separate work with real customer-facing risk.
+
+## 2026-08-08 — pass@k, and the chunker defect it uncovered
+
+### Why retrieval-level, not answer-level
+
+`benchSalesChat.ts` measures whether the model *cited* the expected document, and that number is
+unstable — 8/10 and 9/10 on identical configurations. Cause: `citationCheck` narrows `citations` to the
+model's chosen subset when the answer writes `[Sn]` markers and widens it to everything retrieved when
+it does not. The answer-level denominator is chosen by the model, so no amount of k repairs it.
+
+`scripts/evalRetrievalPassK.ts` removes the orchestrator, the answer model and the citation filter and
+asks the only question a retrieval gate should: **did the right document come back in the top k?**
+
+Two guards make the number trustworthy:
+
+- **A preflight that hard-fails** when a selected expectation cannot be satisfied by the corpus at all.
+  An audit found 7 of the fixture's 21 evidence-bearing seeds are unsatisfiable (wrong department
+  scope, or a `requiredTerms` word present nowhere), so scoring them would report a permanent ~33%
+  failure floor that is a fixture bug. Default scope is therefore the 8 sales-mytrion seeds; the rest
+  is recorded debt.
+- **The satisfiability and scoring checks search `section_path` as well as `content`,** because the
+  chunker lifts markdown headings out of the body. Measured: "tool" appears in 29 chunk bodies and
+  **56 section paths**; "freshness" in 0 bodies and 1 section path. Checking `content` alone reports
+  false negatives on any heading-only term — and that is exactly why the fixture's
+  `platform-rbac` seed (`requiredTerms: ['tool']`) looked broken.
+
+### It reported 76% and the cause was not retrieval
+
+First run: document recall **97.9%**, evidence coverage **76.0%**. Splitting those two levels is what
+made the diagnosis possible — collapsing them would have read as a 24% retrieval problem and sent
+someone tuning similarity thresholds that were working correctly.
+
+Probing the worst case: "What does Automation C-16 do?" returned **Override the Card at rank 1**, but
+that chunk held neither "30" nor "fraud hold". Same shape for Limits — right document at ranks 1–4,
+"350" present, "ULSD" in none.
+
+**The chunker was fragmenting structured documents.** `chunkText` emitted at least one chunk per
+`structuralSections` entry regardless of size, so a **1,778-character document became 6 chunks
+averaging 296 characters against a 1,000-character budget** — one per `##` heading. "receives an
+approximately 30-minute active window" (under *Result*) and "does not lift the fraud hold" (under
+*Important*) could never share a passage.
+
+Fixed by packing consecutive small sections up to `chunkSize`. A single section stays byte-identical,
+so prose documents are unaffected; two or more get their leaf heading inlined, because the model only
+ever sees `content` in the grounding block and would otherwise read sections run together. A section
+larger than the budget still splits alone.
+
+### Result — same k, no extra tokens per turn
+
+| | before | after |
+| --- | --- | --- |
+| chunks per automation doc | 6 @ 296 chars | **1–2 @ 666–865** |
+| document recall pass@1 | 97.9% | **100.0%** |
+| evidence coverage pass@1 | **76.0%** | **100.0%** (96/96) |
+| flaky cases | 1 | **0** |
+
+Raising `k` to 10 had also lifted coverage to 87.5%, but that costs ~2–3k uncached tokens on every
+turn (the grounding block is a tool result, not part of the cached prefix). Fixing the chunker got more
+than that for free, and made the corpus cheaper to embed and store as a side effect.
+
+Six chunker tests added, including one that pins a pre-existing quirk rather than silently changing it:
+a document whose first heading is `##` gets a leading `" > "` in `section_path`, because
+`structuralSections` indexes headings by depth. Harmless, but every embedding would shift if altered.
+
+Backend **2459** passed / 1 skipped, lint 0 errors.
+
+**Operational note:** `ingestDocument` skips by *document* checksum, so a chunker change does not
+re-chunk anything by itself. The Sales corpus was re-ingested by deleting those rows and re-running the
+sync. Any future chunker change needs the same deliberate step — and prod needs it too, or prod keeps
+the fragmented chunks.
+
+## 2026-08-08 — Turn Inspector: the three numbers that were recorded but invisible
+
+The scorecard rated RAG observability "Partial". Reading the component first showed that was pessimistic
+in one way and right in another: `step.details` is already rendered generically as key/value pairs, so
+`cachedInputTokens` and `hops` were **already** on screen per step. The genuine gaps were narrower.
+
+Added:
+
+- **Tools bound** (`buildAgentTools` → `inspect`), with a write-tool count. Nothing had ever emitted
+  this, which is precisely why a `zoho_mcp.*` wildcard binding ~102 tools to Sales took a night of
+  measurement to find. Live turn now reports `toolsBound: 22` for Sales (18 native + 4 named MCP).
+- **TTFT into the trace.** `runTracker` computed it for `llm_calls` but never passed it to `inspect`, so
+  it reached the database and not the UI. Live: `ttftMs` 1856 and 793 across the turn's two calls.
+- **Per-step duration.** `durationMs` was on the event and simply not rendered; the timeline only
+  showed elapsed-since-turn-start, which cannot tell you *which* stage is slow.
+- **Two summary tiles** — Tools bound and Prompt cache (with TTFT) — derived from the steps rather than
+  new wire fields, since `details` already carries everything. Unmeasured shows an em dash, not `0%`:
+  "unknown" and "no cache hits" are different states and conflating them is how the 0%-cache bug hid.
+
+Verified end-to-end on a streamed turn: `toolsBound: 22`, `writeTools: 0`, `ttftMs`, and
+`cachedInputTokens: 10880` all arrive at the client. Four inspector tests, bundle rebuilt
+(`Tools bound` / `Prompt cache` present in the hashed output). Backend 2459, frontend **556**, lint 0.
+
+### Correction: Russian retrieves worse than Uzbek
+
+I have said several times — including in the published scorecard — that **Uzbek** is the weak language,
+based on one ad-hoc probe showing ~0.25 similarity. Measured properly with pass@k over all 80
+sales-mytrion cases at k=5:
+
+| language | evidence coverage pass@1 |
+| --- | --- |
+| en | **100.0%** (64/64) |
+| ru | **87.5%** (42/48) |
+| uz | 95.8% (46/48) |
+
+**Russian is the weakest, not Uzbek.** All three genuine retrieval misses are one seed —
+"Как активировать карту в Sales Mytrion?" — whose document is not retrieved at all for 3 of its 4
+Russian variants, while the identical English question is perfect. The earlier probe was run against
+the *fragmented* chunks and generalised from a single question.
+
+The recommendation shifts accordingly: the fix is still cross-lingual anchors in the documents, but it
+should be driven by this measurement rather than by an assumption, and Russian card-activation phrasing
+is the concrete first case. I have deliberately not authored the RU/UZ text — governed knowledge that
+Sales agents rely on should not carry translations I invented without a native reviewer, and the team
+speaks both languages.
+
+## 2026-08-08 — Scratchpad: measured, and not needed
+
+The plan's condition for a scratchpad was to first add a question class that could show its value —
+retention-timer arithmetic — rather than measure it on documentation lookups where it could only look
+useless. Done: four computational cases in `benchSalesChat.ts`, plus an `expectPhrases` check that
+scores the ANSWER rather than the citations, because getting the arithmetic right is the question.
+
+Two of agent D's six proposed questions were **discarded**, not scored: the document does not pin down
+whether the Reached window counts the same day, and worst-case totals chained across three agents are
+not determined by it either. Scoring those would have measured my guess.
+
+Also instrumented `reasoning_tokens` (only on `usage_metadata`, same as cache reads). It reads **0 over
+75 calls** for `gpt-5.4-mini`, so the "the model already reasons internally, an explicit scratchpad
+would be redundant" argument does **not** apply here — that had to be checked rather than assumed.
+
+**First measurement said answer facts 4/7. That was my metric, not the model.** The answers were
+correct:
+
+> "…so with 3 already logged, 2 more attempts are needed. Each attempt has a 1-business-day SLA. [S1]"
+> "An Open Pool item is available for 3 business days; if unclaimed, it moves to Retention for a
+> 10-business-day wait. [S1]"
+
+The retention document writes "1-business-day" and "10-business-day" hyphenated and the model
+reproduces that faithfully; my assertions used spaces. Made the match hyphen-insensitive:
+
+| | before fix | after |
+| --- | --- | --- |
+| answer facts | 4/7 | **7/7** |
+| expected-doc coverage | 13/14 | **14/14** |
+
+**Conclusion: no scratchpad.** `gpt-5.4-mini` performs 5 − 3 = 2 and the 3-business-days → 10-business-day
+chain correctly, cites `[S1]` while doing it, and costs nothing extra. Adding a scratchpad would spend
+output tokens and latency on every turn to reproduce an answer that is already right. The four
+computational cases stay in the bench as the regression guard, so if a model or prompt change breaks
+this reasoning it shows up as `answer facts` dropping rather than as a vague complaint.
+
+**Trigger to revisit:** `answer facts` falling below 7/7, or a genuinely harder class — anything needing
+a calendar (business days across a specific weekend), which the document deliberately does not specify
+and which no amount of prompting can invent.
+
+That is the fourth time this session a reported failure turned out to be the measurement: the 0% cache
+rate, "Uzbek is the weak language", "rerank is less accurate", and now 4/7 answer facts.
+
+Backend **2459** passed / 1 skipped, lint 0 errors.
+
+---
+
+## 2026-08-08 — the four remaining items: flags, prod re-chunk, orchestrator, Russian retrieval
+
+### 1. The three flags are now declared in `render.yaml`, not left to the dashboard
+
+`FF_PLATFORM_KNOWLEDGE=1`, `FF_RAG_V2_RETRIEVAL=1`, `FF_RAG_MODEL_POLICY=1`. Each carries a comment
+saying what breaks without it, because each fails *silently*: `FF_PLATFORM_KNOWLEDGE=0` makes
+`agentic/loop.ts` hard-scope retrieval to `domain=operations`, so the entire Sales corpus is invisible;
+`FF_RAG_V2_RETRIEVAL=0` falls through to legacy kNN with no grading or corrective hop even when
+`FF_AGENTIC_RAG=1`; `FF_RAG_MODEL_POLICY=0` collapses every role onto `gpt-4o-mini`.
+
+Two flags are deliberately NOT added, and the reasons are recorded next to the existing exclusions:
+`FF_RAG_RERANK` (measured: +21% wall, +55% retrieval time, no accuracy gain) and `FF_JOBS_ENABLED`
+(starts 11 schedules at once, including Telegram document sends).
+
+Also annotated `plan: starter` in `render.yaml` rather than "fixing" it: the live service is Standard,
+so applying this blueprint would DOWNGRADE it to 512 MB. The block has drifted into documentation.
+
+**Local `.env` carries `FF_JOBS_ENABLED=1`** — noted because I had been describing it as off. Boot logs
+`pg-boss workers + schedules registered`. Harmless here only because the local DB has 0 active
+non-driver mini-app registrations, so `pilotCarriers()` is empty and nothing can be sent. That is also
+why local is not a valid rehearsal for the prod risk: prod has recipients.
+
+### 2. Prod re-chunk: `POST /v1/knowledge/platform-sync?rechunk=1`
+
+The chunk-packing fix could not reach existing content. Ingest dedupes on the DOCUMENT checksum, and
+the platform catalog is generated from TypeScript source, so its text is byte-identical every run —
+measured, a plain sync answers `{skipped: 46}` in **72ms** and rotates nothing, forever.
+
+`rechunk` bypasses the checksum short-circuit (still applying a department re-tag on the way past) and
+lets `commitIngestion` replace the chunks in its existing transaction. Measured on the local corpus:
+
+| | plain | `?rechunk=1` |
+| --- | --- | --- |
+| result | `{skipped: 46}` | `{ready: 46}` |
+| duration | 72ms | **11.7s** |
+| chunk rows | unchanged | all replaced (143 → 142) |
+
+Ran it twice: identical shape both times (142 chunks, avg 799 chars, max 1199), so it converges rather
+than drifting. Opt-in per call — it re-embeds every chunk, so it is not something to leave on.
+
+### 3. The orchestrator overhead was ~18s. It is now ~2.5s, and mostly not because of tonight.
+
+Re-measured before changing anything, which was the right call:
+
+| | earlier this session | measured today |
+| --- | --- | --- |
+| pinned `agent: 'sales'` | 6,180ms | 6,979ms |
+| routed through orchestrator | 24,716ms | 8,804 / 9,558ms (warm) |
+| the gap | **~18.5s** | **~2.5s** |
+
+The tool-allowlist and prompt-caching work closed it as a side effect. It is no longer the largest
+remaining latency item, so it did not deserve the structural change I had planned. Optimistic
+pre-routing was also rejected on inspection: `escalate` only means something with the orchestrator
+present, so a pinned child that cannot answer has no recovery path.
+
+**What the measurement did surface is a grounding bug, which matters more than the seconds.** The child
+emits `[S1]` markers correctly; the orchestrator then rewrote its answer and dropped every marker on
+**0/3** runs. Citations survived only via the `citationCheck` fallback — which lists *everything
+retrieved*, so Admin showed 4 sources for an answer that rested on 1.
+
+Two changes: a hard `ORCHESTRATOR_PROMPT` rule to carry markers through and relay a single
+specialist's complete answer instead of rewriting it, and — for the runs where it still paraphrases —
+`StreamOutcome.childTexts`, letting `validateCitations` inherit the specialist's own marker set
+instead of falling back to every passage.
+
+| | before | after |
+| --- | --- | --- |
+| `[Sn]` markers survive | 0/3 runs | **4/4 runs** |
+| sources listed | 4 | **1** |
+| routed wall (warm) | 10,747ms | ~9,181ms |
+| prompt cache hit | 57% | **89%** |
+
+The final text is never swapped — only which sources are listed. The orchestrator's tokens have already
+streamed to the user, and rewriting what they watched arrive is worse than a broad source list.
+
+**A measurement lesson, again.** The first round of "after" numbers showed no improvement, and I nearly
+reported that. The process on `:3011` was `pnpm tsx src/server.ts` with **no `--watch`**, started
+before the edits — I was benchmarking unchanged code. Restarting it produced the table above. Check
+what the server is actually running before trusting a delta.
+
+### 4. Russian retrieval: 87.5% → 98.6%, and it was the query planner
+
+Three ru variants of seed 21 were *never* retrieved. Cause, confirmed by probing `planQueries` rather
+than guessing: for a Russian question the planner returned three **Russian** queries.
+
+```
+Q: Как активировать карту в Sales Mytrion?
+   → активация карты Sales Mytrion как активировать
+   → Sales Mytrion карта активация инструкция первый запуск
+   → Mytrion Sales активация карты шаги и требования
+```
+
+The corpus is English. So the lexical leg (an `english` tsvector) could match only the literal product
+name, and multi-query spent all three shots on the same cross-lingual handicap.
+
+Fixed on the **query** side — the planner is now told the knowledge base is English and asked to make
+the first query an English translation, preserving product names and service codes. No document text
+was authored: translating stored knowledge needs a native reviewer, translating a search query needs
+nobody.
+
+| pass@k, 80 cases, 3 attempts, k=5 | before | after |
+| --- | --- | --- |
+| document recall pass@k | 77/80 | **80/80** |
+| evidence coverage pass@k | 77/80 | **80/80** |
+| never retrieved | 3 (all ru) | **0** |
+| en | 100% | 100% |
+| ru | 87.5% | **98.6%** |
+| uz | 95.8% | 91.7% |
+
+**Uzbek is now the weak language, and it moved the wrong way.** 4 of 5 remaining flaky cases are uz.
+Two of them (`rag-v1-21-09`, `rag-v1-26-09`) were already flaky before this change. I am not going to
+churn the planner prompt further on 3-attempt data — but this is the honest open item, and the likely
+fix (Uzbek aliases in the documents) is the one that needs a native reviewer.
+
+### The gate that was green in CI and red locally
+
+`pnpm test` failed 22 tests in `billing-auto-map-route.test.ts`, all with 503 — including the ones
+asserting 401. Confirmed pre-existing by stashing. `BILLING_INGEST_SECRET` defaults to `''`, and
+`requireIngestSecret` answers 503 `SERVER_MISCONFIGURED` when it is empty, before any auth check. It is
+absent from local `.env` but supplied as a dummy in the CI workflow — so **CI passed while a bare
+checkout failed**, which is the worst possible direction for a hard test gate to be wrong in.
+
+Pinned `API_KEY` and `BILLING_INGEST_SECRET` in the `vitest.config.ts` env baseline, whose documented
+job is exactly this. The suite now passes on a checkout with no `.env` at all.
+
+### Gates
+
+Backend **2474** passed / 1 skipped · frontend **556** passed · lint **0 errors** (23 pre-existing
+warnings) · typecheck clean. No frontend `src/` changes this round, so no bundle rebuild was required.
+
+Sales bench, all changes live: mean **5,066ms** (best recorded), 33 LLM calls, expected-doc coverage
+**14/14**, answer facts **7/7**, failures **0**, forbidden tool calls **0**, ~$0.0042/question.
+
+---
+
+## 2026-08-09 — Horizon standardization (feature/Redesigner)
+
+Collapsed twelve workspaces onto one shell and one token system, per the approved Claude Design
+project (`Mytrion Horizon Shell` + `Horizon Standardization Spec` + the dual-launcher mocks).
+Eleven commits, `cdc3f40c`..`c2d29efa`.
+
+### Decisions worth not re-litigating
+
+- **Hybrid accent.** The spec says "one Horizon ramp, no module hue"; the launcher mock still paints
+  per-workspace card hues. Both are right about different things. `--accent` is the Horizon ramp in
+  all twelve workspaces, and identity travels as `--badge-tone`, which exactly two things may read:
+  the launcher card and the header badge. `tokens.test.ts` fails if a `[data-mytrion]` block
+  declares an `--accent*`.
+- **"Departments" stat removed** from the launcher. `COMING_SOON_PICKER_TILES` derives from an empty
+  array, so it rendered the identical number to "Active Workspaces" on every load. Replaced with
+  "Workspaces you can reach"; the third card became "Last active" as a link.
+- **Tokens repointed, not renamed.** >5,000 `var()` sites, and `tsc` never reads a `.css` file, so a
+  rename is 100% visual risk with no compiler net. `--hz-*` (2,843 sites) stayed as an alias layer.
+- **`.bm-root` / `.cs-root` / `.ss-root` kept** on content divs. They are token scopes, not style
+  scopes — ~20,000 lines of panel CSS read properties declared on them.
+- **Mobile bottom navs deleted, not migrated** (Billing, CS). The shared rail is already a horizontal
+  strip under 768px; two nav bars on one phone screen is worse than either.
+- **`ss.nav.collapsed` / `cs.nav.collapsed` not migrated.** One workspace-wide rail preference is the
+  point. Affected agents get an expanded rail once, after deploy.
+- **CITI Folder's different active-row colour is gone** (CS). A per-destination hue on the row is
+  what the contract bans; the glyph tint is its replacement.
+
+### Defects found and fixed on the way — all silently invalid before
+
+- `--hz-muted`, `--hz-pane-solid`, `--hz-input-bg`, `--hz-blur-lg`: consumed, never declared. 18
+  declarations were invalid-at-computed-value-time (15 in comms alone).
+- `ui/button.tsx` read `var(--secondary)`/`var(--foreground)`; the theme names them `--color-*`.
+- `datacenter-panel.css` read an undeclared `--surface-card`, so that input had no background.
+- Billing and CS declared `--accent-glow` as a box-shadow while the global is a colour consumed
+  inside `--hz-shadow-lift`, voiding lift in both scopes. Renamed to `--accent-ring-glow`.
+- Six Sales controls paired `background: var(--accent)` with a hardcoded `#fff` — ~1.35:1 against
+  the new accent, i.e. an invisible label on every primary CTA in the ticket wizard.
+- Reduced motion never zeroed `animation-delay`, so a staggered grid stayed blank for the whole
+  stagger and then snapped in.
+- Two radius scales the audit missed (`--fi-r-*`, `--hr-r-*`) — caught by `tokens.test.ts`.
+
+### The one automated guard
+
+`src/styles/tokens.test.ts`. There is no stylelint on this app (`.eslintrc.cjs` ignores it), no
+visual-regression harness, and jsdom computes nothing from CSS Modules — so every visual claim here
+was verified by build + hand, and this test is the only thing that will catch a regression.
+
+**Still to do:** a browser pass over all twelve workspaces in both themes. `pnpm typecheck`,
+`pnpm test` (88 files / 570 tests) and a production build are green, but none of them can see a
+colour.
+

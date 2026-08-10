@@ -1,0 +1,297 @@
+/*
+ * StructuredOutput — the non-prose half of a model answer.
+ *
+ * Two rules drive everything below:
+ *   1. The table is the app's table. Same flat, opaque, unstriped language as
+ *      _shared/table.module.css — a model's table that looks unlike the ones the user already
+ *      trusts reads as untrustworthy.
+ *   2. Code and pre are OPAQUE panels (--struct-*-bg are color-mix'd INTO --surface, not tinted
+ *      overlays), so nothing behind them shows through and no composited layer is created.
+ *
+ * Variants are data attributes: [data-kind], [data-collapsed], [data-num].
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+/* ── Clamp ───────────────────────────────────────────────────────────────────
+   Bounded by default. --so-lines comes from the `maxLines` prop; the line box is the block type
+   size, so the clamp is expressed in lines of output rather than an arbitrary pixel height. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2_5);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.body[data-collapsed='true'] {
+  --so-lines: 24;
+  max-block-size: calc(var(--so-lines) * var(--lh-xs));
+  overflow: hidden;
+}
+
+/* The fade is a HINT, never the signal — the button below carries the meaning, because a
+   high-contrast or forced-colors user may not see this at all. */
+.body[data-faded='true'] {
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--space-10)), transparent);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  flex: none;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.toggle:hover {
+  background: var(--row-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ── Block frame ─────────────────────────────────────────────────────────────
+   <figure> resets: the browser's default margin would fight the flex gap. */
+.block {
+  margin: 0;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.blockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block-end: var(--space-1);
+}
+
+/* The language / filename / stream name. Mono, because it names a machine artefact. */
+.blockLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--struct-marker-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Copy ────────────────────────────────────────────────────────────────────
+   Always visible, never hover-revealed: a control that only exists under a mouse does not exist on
+   touch and is invisible to anyone scanning the block. The confirmed state changes the WORD as well
+   as the glyph, so the change is not carried by colour. */
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: var(--space-0_5) var(--space-1_5);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.copy:hover {
+  background: var(--row-hover);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+.copy[data-copied='true'] {
+  color: var(--tool-ok-fg);
+  border-color: var(--tool-ok-bd);
+  background: var(--tool-ok-bg);
+}
+
+/* ── Code / pre ──────────────────────────────────────────────────────────────
+   Wide output scrolls INSIDE its own box; the conversation column never scrolls sideways. The
+   element is focusable (tabIndex in the TSX) so that scrollbar is reachable by keyboard. */
+.pre {
+  margin: 0;
+  padding: var(--space-2_5) var(--space-3);
+  background: var(--struct-code-bg);
+  color: var(--struct-code-fg);
+  border: 1px solid var(--struct-pre-bd);
+  border-radius: var(--radius-panel);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  /* Code keeps its own line breaks. Wrapping source silently changes what it looks like it says. */
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* Raw stdout / traces — a different surface from source, because it is a different kind of thing. */
+.pre[data-plain='true'] {
+  background: var(--struct-pre-bg);
+  color: var(--text-secondary);
+}
+
+.code {
+  font: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────────
+   The app's four table rules, sourced from the --ui-table-* group. No tinted header band and no
+   zebra striping on purpose: separation is a 1px rule, and the only fill on a row is the hover
+   wash. Copying the workspace tables exactly is what makes model output look like data. */
+.scroller {
+  inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: auto;
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-family: var(--ui-table-cell-font);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.caption {
+  caption-side: top;
+  text-align: left;
+  padding-block-end: var(--space-1_5);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--struct-marker-fg);
+}
+
+.table thead th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-table-rule);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ui-table-head-fg);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  background: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.table tbody tr:hover {
+  background: var(--ui-table-row-hover);
+}
+
+.table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-table-rule);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Numeric columns: right-aligned, numeric face, tabular figures — so a column of amounts can be
+   SCANNED down its decimal point instead of read row by row. */
+.table th[data-num='true'],
+.table td[data-num='true'] {
+  text-align: right;
+  font-family: var(--ui-table-num-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Quote ───────────────────────────────────────────────────────────────────
+   A quoted source, not an aside. The rule is the whole treatment: no italics (they wreck the
+   numeral shapes that show up in quoted policy) and no tinted panel. */
+.quote {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--struct-quote-rule);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-base);
+}
+
+.attribution {
+  padding-inline-start: var(--space-3);
+  padding-block-start: var(--space-1);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--struct-marker-fg);
+}
+
+/* ── Lists ───────────────────────────────────────────────────────────────────
+   Markers are muted so the ITEMS carry the emphasis; a bullet at text weight competes with the
+   first word of every line. */
+.list {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-base);
+  color: var(--text-primary);
+}
+.list li {
+  margin-block-end: var(--space-1);
+}
+.list li::marker {
+  color: var(--struct-marker-fg);
+}
+/* Ordered lists get the numeric face so step numbers stay the same width past 9. */
+.list[data-ordered='true'] li::marker {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The one live region ─────────────────────────────────────────────────────
+   Visually hidden, still rendered. `display: none` or `visibility: hidden` would remove it from the
+   accessibility tree and the announcement would never happen. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

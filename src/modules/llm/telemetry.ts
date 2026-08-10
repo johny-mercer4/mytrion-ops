@@ -17,6 +17,8 @@ export interface LlmTelemetryInput {
   resolved: ResolvedModel;
   status: 'ok' | 'error';
   latencyMs: number;
+  /** Time to first token, when the call streamed. */
+  ttftMs?: number;
   inputTokens?: number;
   cachedInputTokens?: number;
   outputTokens?: number;
@@ -30,7 +32,12 @@ export interface LlmTelemetryInput {
 export async function recordLlmTelemetry(input: LlmTelemetryInput): Promise<void> {
   const inputTokens = input.inputTokens ?? 0;
   const outputTokens = input.outputTokens ?? 0;
-  const cost = computeCost({ model: input.resolved.model, promptTokens: inputTokens, completionTokens: outputTokens });
+  const cost = computeCost({
+    model: input.resolved.model,
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
+    cachedPromptTokens: input.cachedInputTokens ?? 0,
+  });
   try {
     await llmCallRepo.record(input.ctx, {
       ...(input.conversationId ? { conversationId: input.conversationId } : {}),
@@ -40,6 +47,7 @@ export async function recordLlmTelemetry(input: LlmTelemetryInput): Promise<void
       model: input.resolved.model,
       status: input.status,
       latencyMs: input.latencyMs,
+      ...(input.ttftMs !== undefined ? { ttftMs: input.ttftMs } : {}),
       inputTokens,
       cachedInputTokens: input.cachedInputTokens ?? 0,
       outputTokens,

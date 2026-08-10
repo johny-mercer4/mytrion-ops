@@ -104,83 +104,89 @@ export function TaskAssignModal({
               });
             }}
           >
-            {error ? <div className="mg-tk-error">{error}</div> : null}
+            {/* The one scrolling row. The footer is a SIBLING of it, not a child, which is
+                what pins Cancel/Assign to the bottom edge instead of letting them come to
+                rest wherever the fields happen to end. */}
+            <div className="mg-tk-form-body">
+              {error ? <div className="mg-tk-error">{error}</div> : null}
 
-            <label className="mg-tk-field">
-              <span>Subject</span>
-              <input
-                ref={subjectRef}
-                required
-                maxLength={200}
-                value={subject}
-                placeholder="What needs doing?"
-                onChange={(event) => setSubject(event.target.value)}
-              />
-            </label>
-
-            <div className="mg-tk-field-row">
               <label className="mg-tk-field">
-                <span>Assign to</span>
-                <select value={assignee} onChange={(event) => setAssignee(event.target.value)}>
-                  {workers.length === 0 ? <option value="">No eligible agents</option> : null}
-                  {workers.map((worker) => (
-                    <option key={worker.zohoUserId} value={worker.zohoUserId}>
-                      {worker.displayName ?? worker.email ?? worker.zohoUserId}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mg-tk-field">
-                <span>Type</span>
-                <select value={type} onChange={(event) => setType(event.target.value)}>
-                  {types.map((item) => (
-                    <option key={item.id} value={item.code}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="mg-tk-field-row">
-              <label className="mg-tk-field">
-                <span>Priority</span>
-                <select
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value as WorkerTaskPriority)}
-                >
-                  {PRIORITIES.map((value) => (
-                    <option key={value} value={value}>
-                      {value[0]?.toUpperCase()}
-                      {value.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mg-tk-field">
-                <span>
-                  Deadline <em>optional</em>
-                </span>
+                <span>Subject</span>
                 <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(event) => setDeadline(event.target.value)}
+                  ref={subjectRef}
+                  required
+                  maxLength={200}
+                  value={subject}
+                  placeholder="What needs doing?"
+                  onChange={(event) => setSubject(event.target.value)}
                 />
               </label>
-            </div>
 
-            <label className="mg-tk-field">
-              <span>
-                Description <em>optional</em>
-              </span>
-              <textarea
-                rows={5}
-                maxLength={10_000}
-                value={description}
-                placeholder="Context, links, what done looks like…"
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </label>
+              <div className="mg-tk-field-row">
+                <label className="mg-tk-field">
+                  <span>Assign to</span>
+                  <select value={assignee} onChange={(event) => setAssignee(event.target.value)}>
+                    {workers.length === 0 ? <option value="">No eligible agents</option> : null}
+                    {workers.map((worker) => (
+                      <option key={worker.zohoUserId} value={worker.zohoUserId}>
+                        {worker.displayName ?? worker.email ?? worker.zohoUserId}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mg-tk-field">
+                  <span>Type</span>
+                  <select value={type} onChange={(event) => setType(event.target.value)}>
+                    {types.map((item) => (
+                      <option key={item.id} value={item.code}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="mg-tk-field-row">
+                <label className="mg-tk-field">
+                  <span>Priority</span>
+                  <select
+                    value={priority}
+                    onChange={(event) => setPriority(event.target.value as WorkerTaskPriority)}
+                  >
+                    {PRIORITIES.map((value) => (
+                      <option key={value} value={value}>
+                        {value[0]?.toUpperCase()}
+                        {value.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mg-tk-field">
+                  <span>
+                    Deadline <em>optional</em>
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={deadline}
+                    onChange={(event) => setDeadline(event.target.value)}
+                  />
+                </label>
+              </div>
+
+              <label className="mg-tk-field">
+                <span>
+                  Description <em>optional</em>
+                </span>
+                <textarea
+                  rows={5}
+                  maxLength={10_000}
+                  value={description}
+                  placeholder="Context, links, what done looks like…"
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              </label>
+
+            </div>
 
             <footer className="mg-tk-form-foot">
               <button type="button" className="mg-btn" onClick={onClose}>

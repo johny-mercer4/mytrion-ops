@@ -307,7 +307,7 @@ export function InboxTab() {
                   <span style={s('display:block;font-size:14px;font-weight:700;line-height:1.35')}>{item.title}</span>
                   <span style={s('display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;color:var(--muted);margin-top:4px;line-height:1.5')}>{item.desc}</span>
                   <span style={s('display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap')}>
-                    <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{item.time}</span>
+                    <span style={s("font-size:12px;color:var(--muted);font-family:var(--font-mono)")}>{item.time}</span>
                     <span style={s(priority.style)}>{priority.text}</span>
                     {item.tag ? <span style={s('font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{item.tag}</span> : null}
                   </span>

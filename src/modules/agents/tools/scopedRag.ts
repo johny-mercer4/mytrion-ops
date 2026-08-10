@@ -63,6 +63,9 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
         const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
         const result = await agenticRetrieve(retrievalCtx, query, {
           k: limit,
+          // The model called knowledge_search: it has already decided it wants documentation, so the
+          // intent router must not answer "use a live tool instead" and abstain.
+          explicitKnowledgeRequest: true,
           allowExternalSearch: Boolean(manifest.webSearch),
           ...(run.turnContext?.task.resolvedAsk ? { resolvedAsk: run.turnContext.task.resolvedAsk } : {}),
         });

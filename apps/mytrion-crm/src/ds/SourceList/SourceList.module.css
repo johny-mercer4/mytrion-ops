@@ -1,0 +1,140 @@
+/*
+ * SourceList — the evidence drawer under an answer.
+ *
+ * Everything here is xs type in muted colour: this is an audit trail sitting under the content it
+ * backs, and it must never out-shout the answer. The one place colour rises is the citation marker,
+ * which has to match the inline chip for the connection to read.
+ */
+
+.root {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+}
+
+/* The disclosure. A ghost Button, so the summary line reads as chrome rather than as an action the
+   user is being pushed toward — and its colour is left to the Button variant on purpose. A
+   single-class override here would lose to `[data-variant='ghost']` on specificity anyway, and
+   winning that fight with a doubled selector is how a design system starts disagreeing with
+   itself. */
+.toggle {
+  /* The sm Button pads 8px, a row pads 6px. Two pixels back and the summary's glyph sits in the
+     same optical column as the markers underneath it. */
+  margin-inline-start: calc(var(--space-0_5) * -1);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-0_5);
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: block;
+  border-radius: var(--radius-control);
+}
+
+/* ── Row ────────────────────────────────────────────────────────────────────
+   One interactive element per row — a button, a link, or nothing. `.row` styles all three the same
+   so the list does not visibly reshuffle when the caller adds an `onSelect`. */
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-1) var(--space-1_5);
+
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  text-align: start;
+  text-decoration: none;
+
+  color: var(--source-item-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.row:hover:not([data-static='true']) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+
+/* A non-interactive row keeps the layout but drops every affordance that promises a click. */
+.row[data-static='true'] {
+  cursor: auto;
+}
+
+/* ACTIVE — the row a citation points at. Border + background, plus aria-current in the DOM, so the
+   state is not carried by the tint alone. */
+.item[data-active='true'] .row {
+  background: var(--cite-bg);
+  border-color: var(--cite-bd);
+  color: var(--text-primary);
+}
+
+/* ── Parts ──────────────────────────────────────────────────────────────────── */
+
+/* The marker. Same font and same brackets as CitationChip's inline `[1]`, which is the entire
+   reason a reader can jump between the sentence and this row without a legend. */
+.marker {
+  flex: none;
+  font-family: var(--cite-marker-font);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--cite-fg);
+  font-variant-numeric: tabular-nums;
+}
+.marker::before {
+  content: '[';
+  color: var(--cite-marker-fg);
+}
+.marker::after {
+  content: ']';
+  color: var(--cite-marker-fg);
+}
+
+/* Stand-in when a source was never cited inline — the row still needs a left-hand anchor or the
+   titles lose their column. */
+.icon {
+  flex: none;
+  color: var(--source-icon);
+}
+
+.text {
+  display: grid;
+  gap: var(--space-0_5);
+  min-inline-size: 0;
+}
+
+.title {
+  color: inherit;
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  color: var(--source-icon);
+  overflow-wrap: anywhere;
+}
+
+/* Trailing external-link glyph. Pushed to the end so a mixed list of links and plain rows keeps one
+   ragged-right edge instead of two. */
+.external {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--source-icon);
+  align-self: center;
+}

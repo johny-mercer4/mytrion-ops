@@ -51,7 +51,7 @@ export function ClientLoyaltyComparison(props: ClientLoyaltyComparisonProps) {
             </div>
             <div
               style={s(
-                "margin-top:5px;font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--text)",
+                "margin-top:5px;font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text)",
               )}
             >
               {numFmt(Math.round(period.gallons))}
@@ -75,7 +75,7 @@ export function ClientLoyaltyComparison(props: ClientLoyaltyComparisonProps) {
       >
         <span>
           <strong
-            style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}
+            style={s("font-family:var(--font-mono);color:var(--text)")}
           >
             {props.accountActiveCards}
           </strong>{' '}

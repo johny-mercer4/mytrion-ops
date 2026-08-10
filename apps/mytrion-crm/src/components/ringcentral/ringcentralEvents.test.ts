@@ -105,4 +105,33 @@ describe('outbound call → lead correlation', () => {
     const second = events.filter((e) => e.sessionId === 's2').find((e) => e.kind === 'ended');
     expect(second?.leadId).toBeUndefined();
   });
+
+  /*
+   * RingCentral emits `rc-call-end-notify` two or three times for a single hangup. Every emission
+   * drives a `retention.record_outcome` write, so a duplicate is not cosmetic — it multiplies the
+   * agent's write volume and is what pushed users into HTTP 429 against the 120/min touchpoint
+   * budget. The guard used to delete its own key immediately after emitting, so every repeat found
+   * an empty map and passed.
+   */
+  it('emits `ended` once per hangup however many times the widget notifies', () => {
+    widgetMessage(widget, ringing('dup1'));
+    widgetMessage(widget, ended('dup1'));
+    widgetMessage(widget, ended('dup1'));
+    widgetMessage(widget, ended('dup1'));
+
+    const ends = events.filter((e) => e.sessionId === 'dup1' && e.kind === 'ended');
+    expect(ends).toHaveLength(1);
+  });
+
+  it('still reports a genuinely new call after an earlier one ended', () => {
+    widgetMessage(widget, ringing('a1'));
+    widgetMessage(widget, ended('a1'));
+    widgetMessage(widget, ended('a1'));
+
+    // A different session must not be suppressed by the previous call's tombstone.
+    widgetMessage(widget, ringing('a2'));
+    widgetMessage(widget, ended('a2'));
+
+    expect(events.filter((e) => e.kind === 'ended' && e.sessionId === 'a2')).toHaveLength(1);
+  });
 });

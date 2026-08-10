@@ -32,7 +32,7 @@
 }
 
 .bm-root .db-title {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: var(--font-head);
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--text-primary);
@@ -171,7 +171,7 @@
 
 .bm-root .db-refresh-btn:hover:not(:disabled) {
     background: var(--accent-bg);
-    box-shadow: var(--accent-glow);
+    box-shadow: var(--accent-ring-glow);
 }
 
 .bm-root .db-refresh-btn:disabled {
@@ -231,7 +231,7 @@
 }
 
 .bm-root .db-kpi-value {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 1.75rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -361,7 +361,7 @@
 
 /* ── Row Content Styling ── */
 .bm-root .db-carrier-id {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -420,7 +420,7 @@
 
 .bm-root .db-age-text {
     font-size: 0.75rem;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-secondary);
     flex-shrink: 0;
@@ -452,19 +452,19 @@
 }
 
 .bm-root .db-count-text {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-secondary);
 }
 
 .bm-root .db-money-muted {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-secondary);
 }
 
 .bm-root .db-money-bold {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--danger-text);
@@ -521,7 +521,7 @@
 }
 
 .bm-root .db-inv-val {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-primary);

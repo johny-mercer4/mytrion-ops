@@ -76,14 +76,14 @@ function DealCallWizard({
   return (
     <div
       onClick={() => pushToast('Add a note', 'Enter a note about the call before closing.')}
-      style={s('position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)')}
+      style={s('position:fixed;inset:0;z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur))')}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Log the deal call note"
         onClick={(e) => e.stopPropagation()}
-        style={s('width:100%;max-width:480px;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+        style={s('width:100%;max-width:480px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
       >
         <div style={s('flex-shrink:0;padding:18px 22px;border-bottom:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:center;gap:10px')}>
@@ -92,7 +92,7 @@ function DealCallWizard({
             </span>
             <div style={s('flex:1;min-width:0')}>
               <div style={s('font-size:16px;font-weight:700')}>Call ended — note for {title}</div>
-              <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+              <div style={s("font-size:13px;color:var(--muted);font-family:var(--font-mono);margin-top:2px")}>
                 {call.peer} · {fmtDuration(call.durationMs)}{call.result ? ` · ${call.result}` : ''}
               </div>
             </div>
@@ -102,7 +102,7 @@ function DealCallWizard({
           </div>
         </div>
 
-        <div style={s('padding:18px 22px')}>
+        <div className="ss-scroll" style={s('flex:1;min-height:0;overflow-y:auto;padding:18px 22px')}>
           <div style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Call note — required</div>
           <textarea
             value={note}

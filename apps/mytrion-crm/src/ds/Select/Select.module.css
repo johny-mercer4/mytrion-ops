@@ -1,0 +1,399 @@
+/*
+ * Select — listbox / combobox. Read CONVENTIONS.md and Button.module.css alongside this.
+ *
+ * Variants and states are DATA ATTRIBUTES, not extra classes, on two surfaces: the root carries the
+ * control's state (`data-state`, `data-multiple`, `data-invalid`, `data-disabled`, `data-loading`)
+ * and each row carries its own (`data-active`, `data-selected`, `data-disabled`). Inspecting the DOM
+ * tells you which row the keyboard is on without opening React DevTools.
+ */
+
+.root {
+  /* The popup is absolutely positioned against this box, so the root — not the shell — owns the
+     containing block. `position: relative` and NOT a transform: a transform here would promote a
+     composited layer for every Select on the page. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+  min-inline-size: 0;
+}
+
+/* ── Size ────────────────────────────────────────────────────────────────────
+   The same two steps as Button, so a Select and a Button in one toolbar share a baseline. */
+.root[data-size='md'] {
+  --select-h: 32px;
+  --select-fs: var(--text-sm);
+  --select-lh: var(--lh-sm);
+  --select-tr: var(--tr-sm);
+}
+.root[data-size='sm'] {
+  --select-h: 26px;
+  --select-fs: var(--text-xs);
+  --select-lh: var(--lh-xs);
+  --select-tr: var(--tr-xs);
+}
+
+/* ── Label ─────────────────────────────────────────────────────────────────── */
+.label {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+/* Hidden from PAINT, not from the accessibility tree. `display: none` would take the name with it,
+   leaving a combobox that announces as nothing at all. */
+.label[data-hidden='true'] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── The field ─────────────────────────────────────────────────────────────── */
+.shell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--select-h);
+  padding-inline: var(--space-2);
+  background: var(--ui-field-bg);
+  color: var(--ui-field-fg);
+  border: 1px solid var(--ui-field-bd);
+  border-radius: var(--ui-field-radius);
+  cursor: pointer;
+
+  /* Named properties only. `transition: all` re-runs the machinery for every changed property and
+     silently overrides narrower transitions set elsewhere. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.root:not([data-disabled='true']) .shell:hover {
+  border-color: var(--border-strong);
+}
+/* Open is a state the field must show even before the popup is read — the border is what ties the
+   two boxes together as one control. */
+.root[data-state='open'] .shell {
+  border-color: var(--focus-ring-color);
+}
+
+/* Chips and the input share one wrapping row. `min-inline-size: 0` on both is what lets the input
+   shrink instead of pushing the trailing controls out of the field. */
+.values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding-block: var(--space-0_5);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--select-fs);
+  line-height: var(--select-lh);
+  letter-spacing: var(--select-tr);
+  text-overflow: ellipsis;
+}
+.input::placeholder {
+  color: var(--ui-field-placeholder);
+  /* Opacity is Firefox's default on placeholders and makes the contrast ratio unknowable. The token
+     is already a measured value; let it be the whole answer. */
+  opacity: 1;
+}
+/* The non-searchable mode. The element is still an <input> so there is one keyboard implementation,
+   but nothing about it should suggest a text cursor. */
+.input[data-readonly='true'] {
+  cursor: pointer;
+  caret-color: transparent;
+  user-select: none;
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0_5);
+  max-inline-size: 100%;
+  padding-inline: var(--space-1_5);
+  padding-block: var(--space-0_5);
+  background: var(--intent-info-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--intent-info-bd);
+  border-radius: var(--radius-control);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+}
+.chipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chipRemove,
+.clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  transition:
+    color var(--dur-instant) var(--ease-standard),
+    background-color var(--dur-instant) var(--ease-standard);
+}
+.chipRemove:hover,
+.clear:hover {
+  color: var(--text-primary);
+  background: var(--row-hover);
+}
+
+/* ── Trailing ──────────────────────────────────────────────────────────────── */
+.trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0_5);
+  flex: none;
+  align-self: flex-start;
+  /* Pin the affordances to the FIRST line of a wrapping chip field, so they stay where the user
+     last saw them instead of sliding down as chips accumulate. */
+  block-size: calc(var(--select-h) - 2px);
+}
+.chevron {
+  color: var(--text-muted);
+  flex: none;
+}
+
+/* Ambient loop — deliberately outside the 220ms transition ceiling and floored at >=1s, so it reads
+   as "working" rather than as a transition that has stalled. */
+.spinner {
+  inline-size: var(--icon-size-sm);
+  block-size: var(--icon-size-sm);
+  flex: none;
+  border: 2px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: var(--radius-pill);
+  animation: selectSpin 1s linear infinite;
+}
+@keyframes selectSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ── Message ───────────────────────────────────────────────────────────────── */
+.message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  color: var(--text-muted);
+}
+.root[data-invalid='true'] .message {
+  color: var(--intent-danger-fg);
+}
+
+/* ── Invalid ─────────────────────────────────────────────────────────────────
+   --intent-danger-fg, not the 30%-alpha -bd: this is the only boundary identifying an errored
+   control, and CONVENTIONS §6 puts that at 3:1, which an alpha wash does not clear. */
+.root[data-invalid='true'] .shell {
+  border-color: var(--intent-danger-fg);
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, not an opacity multiply, so the label keeps a KNOWN contrast ratio instead of an
+   unknowable composite. No pointer-events: none — see CONVENTIONS §5. */
+.root[data-disabled='true'] .shell {
+  cursor: var(--disabled-cursor);
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+  color: var(--disabled-fg);
+}
+.root[data-disabled='true'] .input,
+.root[data-disabled='true'] .input::placeholder,
+.root[data-disabled='true'] .chevron,
+.root[data-disabled='true'] .chip {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+
+/* ── Popup ───────────────────────────────────────────────────────────────────
+   Anchored to the root, below by default and flipped above by `data-placement`. No positioning
+   library: the trade is documented in the component's docblock (an ancestor with overflow: hidden
+   will clip this). OPAQUE, never glass — a blurred surface under a scrolling 400-row list is the
+   compositing cliff this app has already fallen off once. */
+.popup {
+  --select-popup-h: 288px;
+
+  position: absolute;
+  inset-inline: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--select-popup-h);
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: selectPopIn var(--dur-slow) var(--ease-decelerate);
+}
+.popup[data-placement='bottom'] {
+  inset-block-start: calc(100% + var(--space-1));
+}
+.popup[data-placement='top'] {
+  inset-block-end: calc(100% + var(--space-1));
+}
+/* `translate:`, not `transform:` — and only for the duration of the entrance, so nothing is left
+   holding a composited layer once the panel is at rest. */
+@keyframes selectPopIn {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-0_5);
+  }
+}
+.popup[data-placement='top'] {
+  animation-name: selectPopInUp;
+}
+@keyframes selectPopInUp {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--space-0_5) * -1);
+  }
+}
+
+.list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+}
+
+.groupLabel {
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1_5) var(--space-1);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+}
+
+/* ── Option ──────────────────────────────────────────────────────────────────
+   TWO independent signals, because they can be true at once:
+     selected → a background wash AND a check glyph (never colour alone),
+     active   → an inset left marker, a different channel entirely, so a highlighted row that is
+                also selected still reads as both. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--select-h);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: var(--select-fs);
+  line-height: var(--select-lh);
+  letter-spacing: var(--select-tr);
+  color: var(--text-primary);
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+}
+.option[data-selected='true'] {
+  background: var(--accent-soft);
+}
+.option[data-active='true'] {
+  background: var(--row-hover);
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+.option[data-active='true'][data-selected='true'] {
+  background: var(--accent-glow);
+}
+.option[data-disabled='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  background: transparent;
+  box-shadow: var(--elev-0);
+}
+
+.optionIcon {
+  color: var(--text-muted);
+  flex: none;
+}
+.optionLabel {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.optionHint {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-family: var(--font-num);
+}
+.optionTick {
+  flex: none;
+  color: var(--accent);
+}
+
+/* The multi-select box. A checkbox SHAPE, not a tick alone: it is what tells the user, before they
+   click anything, that this list takes more than one answer. */
+.check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: var(--icon-size-sm);
+  block-size: var(--icon-size-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--on-accent);
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard);
+}
+.option[data-selected='true'] .check {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* ── Empty / loading ─────────────────────────────────────────────────────────
+   Sits OUTSIDE the listbox: it is prose about the list, not a row in it, and a listbox whose only
+   child is "no results" announces that string as a choosable option. */
+.empty {
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  color: var(--text-muted);
+  border-block-start: 1px solid var(--border-subtle);
+}
+.list:empty + .empty {
+  border-block-start: none;
+}

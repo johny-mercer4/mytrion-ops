@@ -5,6 +5,7 @@ import { Icon } from './icons';
 import { useLoad } from './live';
 import { badge } from './salesData';
 import { str } from './autoLive';
+import { AUTO_PENDING_PILL } from './autoControls';
 
 const GUARDED_ACTIONS = new Set(['boca-boe-link', 'close-app', 'wex-tasks']);
 
@@ -87,7 +88,7 @@ export function AutoWexEligibilityNotice({
 }) {
   if (loading) {
     return (
-      <div role="status" aria-busy="true" style={s('display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px')}>
+      <div role="status" aria-busy="true" style={s(AUTO_PENDING_PILL)}>
         <Icon name="spinner" size={16} className="ss-spin" />
         Checking current WEX status…
       </div>
@@ -102,7 +103,7 @@ export function AutoWexEligibilityNotice({
   return (
     <div
       role={blocked ? 'alert' : 'status'}
-      style={s(`padding:13px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,${color} 10%,transparent);border:1px solid color-mix(in srgb,${color} 30%,transparent);color:var(--text2);font-size:13px;line-height:1.45`)}
+      style={s(`padding:13px 15px;border-radius:var(--radius-md);background:color-mix(in srgb,${color} 10%,transparent);border:1px solid color-mix(in srgb,${color} 30%,transparent);color:var(--text2);font-size:var(--ss-text-xs);line-height:1.45`)}
     >
       <div style={s('display:flex;align-items:center;gap:9px')}>
         <Icon name={blocked ? 'ban' : 'checkCircle'} size={17} color={color} />

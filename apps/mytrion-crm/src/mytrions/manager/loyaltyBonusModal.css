@@ -2,18 +2,37 @@
   position: fixed;
   z-index: var(--z-modal);
   inset: 0;
-  display: grid;
-  place-items: center;
+  /* Flex, not grid, and that is a correctness point rather than a preference (same reasoning as
+     ds/Dialog): the panel is capped `max-height: min(900px, 100%)`, and a percentage against an
+     AUTO grid track is circular — the track is sized by the item and the item is sized by the
+     track, which browsers resolve by falling back to max-content, so the cap never binds. A flex
+     container's content box is definite, so the percentage has something real to measure against.
+     Centring is unchanged: place-items:center and align/justify-content:center put a
+     content-sized single child in exactly the same place. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter. It is padding on THIS element and not a margin on the panel, so clicking it still
+     reads as a backdrop click. */
   padding: 22px;
   /* One scrim token for both Manager dialogs — this file and referralModal.css had two different
      veils at two different z-indexes for the same job. */
   background: var(--mg-scrim);
   backdrop-filter: blur(12px) saturate(0.75);
+  -webkit-backdrop-filter: blur(12px) saturate(0.75);
 }
 
 .mg-root .mg-lty-modal {
-  width: min(960px, 96vw);
-  max-height: min(900px, 94vh);
+  /* 100%, not 96vw/94vh. A viewport unit measures the WHOLE viewport and so ignores the scrim's own
+     22px gutter — the panel overflowed the gutter and its top edge was clipped off-screen. `100%`
+     is the scrim's padded content box, which is the box the panel is actually allowed to fill; the
+     design maxima survive inside the min(). */
+  width: min(960px, 100%);
+  max-height: min(900px, 100%);
+  /* Belt-and-braces: the overlay is a flex ROW, so this governs the panel's WIDTH and is inert for height.
+     The height cap is max-height above; this only guarantees the panel is never squeezed if the
+     overlay is ever switched to a column. */
+  flex: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -29,6 +48,9 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 13px;
+  /* Pinned: the body row is the only thing allowed to scroll, so the header must not be shrunk
+     away by the default flex-shrink:1 when the client has a long override history. */
+  flex: none;
   padding: 18px 20px;
   border-bottom: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);
@@ -108,7 +130,10 @@
   color: var(--text-primary);
 }
 
+/* The one scrolling row. `min-height: 0` is required — without it the row floors at min-content and
+   refuses to scroll; `flex: 1` makes it, and not the pinned header/footer, absorb the free space. */
 .mg-root .mg-lty-modal-body {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 18px 20px 22px;
@@ -353,6 +378,8 @@
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   gap: 8px;
+  /* Pinned alongside the header — Save/Reset must never scroll away. */
+  flex: none;
   padding: 13px 20px;
   border-top: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);

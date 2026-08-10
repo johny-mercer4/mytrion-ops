@@ -7,7 +7,7 @@
   flex-direction: column;
   gap: var(--space-4);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--border-strong, var(--border)) transparent;
 }
 
 .list::-webkit-scrollbar {
@@ -45,7 +45,7 @@
 
 .emptyTitle {
   margin: 0;
-  font-family: 'Outfit', 'Inter', var(--font-head);
+  font-family: var(--font-head);
   font-size: var(--text-3xl);
   font-weight: 800;
   line-height: 1.2;
@@ -105,4 +105,54 @@
 
 .toBottom:active {
   transform: translateY(1px);
+}
+
+/* ── restoring the previous conversation ──
+   Mirrors the real transcript's geometry so nothing shifts when the messages land. Uses the shared
+   shimmer (--animate-shimmer); reduced-motion is neutralised app-wide in global.css, where the bars
+   simply sit still — still a legible placeholder without the sweep. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+.skelTurnUser {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.skelTurnAssistant {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.skelUserBubble,
+.skelAssistant {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 78%;
+  min-width: 120px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 18px;
+  border: 1px solid var(--border-light);
+}
+
+/* The real user bubble is accent-filled; tint the placeholder so the two turns stay tellable apart. */
+.skelUserBubble {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.skelAssistant {
+  background: var(--surface-alt);
+}
+
+.skelLine {
+  height: 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  animation: var(--animate-shimmer, none);
 }

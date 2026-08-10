@@ -19,9 +19,11 @@ vi.mock('../context/UserContextProvider', () => ({
     ...mockCtx.current,
   }),
 }));
-// Stub the picker so this test doesn't mount TopBar/ActAsPicker (session/api heavy).
-vi.mock('./MytrionPicker', () => ({
-  MytrionPicker: ({ ids }: { ids: string[] }) => <div data-testid="picker">picker:{ids.join(',')}</div>,
+// Stub the launcher so this test doesn't mount AppHeader/ActAsPicker (session/api heavy).
+// vi.mock on a path nothing imports does NOT error — it silently stops applying and the real
+// component mounts without providers, so this path must move whenever the launcher does.
+vi.mock('./launcher/WorkspaceLauncher', () => ({
+  WorkspaceLauncher: ({ ids }: { ids: string[] }) => <div data-testid="picker">picker:{ids.join(',')}</div>,
 }));
 
 import { Landing } from './Landing';

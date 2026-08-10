@@ -137,7 +137,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
         <div className="bm-modal-header">
           <div className="bm-modal-title">
             Match Return — {ret.customerName || ret.referenceNumber || 'Unknown'}
-            <span className="text-danger" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-danger" style={{ fontFamily: "var(--font-mono)" }}>
               {' '}
               · -{fmtCurrency(ret.amount)}
             </span>
@@ -152,7 +152,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
         <div className="bm-modal-body">
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
             Reference{' '}
-            <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{ret.referenceNumber || '—'}</b>
+            <b style={{ fontFamily: "var(--font-mono)" }}>{ret.referenceNumber || '—'}</b>
             {' · '}
             {typeLabel(ret.returnType)}
             {' · '}
@@ -238,7 +238,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
                       </div>
                       <div
                         className="rt-ellipsis"
-                        style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}
+                        style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: "var(--font-mono)" }}
                       >
                         #{tx.name}
                         {tx.reference ? ` · ref ${tx.reference}` : ''}
@@ -264,7 +264,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
                         <span className="db-cmp-quiet">Unmapped</span>
                       )}
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, fontFamily: "var(--font-mono)" }}>
                           {fmtCurrency(tx.amount)}
                         </div>
                         <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>{formatDay(tx.createdDate)}</div>

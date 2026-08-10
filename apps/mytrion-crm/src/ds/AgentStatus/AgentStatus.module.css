@@ -1,0 +1,180 @@
+/*
+ * AgentStatus — what the agent is doing, as one dot and one label.
+ *
+ * States are DATA ATTRIBUTES on .root. Each one changes SHAPE as well as colour, so the six read
+ * apart in greyscale; the label is never hidden, so they read apart with no colour at all.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* It may shrink, but only into `.detail` — the indicator and the label below are `flex: none`, so
+     what gives way under pressure is the supplementary identifier and never the state itself. */
+  flex: 0 1 auto;
+  max-inline-size: 100%;
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-medium);
+  color: var(--agent-idle-fg);
+
+  /* Named properties, never `transition: all`. Colour is the only thing that moves between states;
+     the dot's size change is instant on purpose, so a state flip is not mistaken for motion that
+     means something. */
+  transition:
+    color var(--dur-base) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard);
+}
+
+.root[data-size='sm'] {
+  gap: var(--space-1_5);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+}
+
+/* ── Indicator ───────────────────────────────────────────────────────────────
+   A dot for the three in-progress states, an icon for the three settled ones. `--dot` is sized off
+   the spacing ladder so it stays on the 4px rhythm at both sizes. */
+.dot {
+  inline-size: var(--dot);
+  block-size: var(--dot);
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+  background: currentColor;
+  flex: none;
+}
+.root[data-size='md'] .dot {
+  --dot: var(--space-2);
+}
+.root[data-size='sm'] .dot {
+  --dot: var(--space-1_5);
+}
+
+/* Wraps the Icon rather than styling it: `Icon` takes no styling props by contract, and the
+   rotation below needs an element of its own anyway. `inline-flex` kills the baseline gap a raw
+   inline glyph would leave under the dot's optical centre. */
+.glyph {
+  display: inline-flex;
+  flex: none;
+  color: currentColor;
+}
+
+.label {
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Secondary text — a tool name, a target. Mono because it is nearly always an identifier, and it
+   borrows the tool label face rather than inventing a second one. */
+.detail {
+  font-family: var(--tool-label-font);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--agent-idle-fg);
+  /* This one MAY truncate: it is supplementary, and the state itself is already fully readable.
+     `min-inline-size: 0` is what actually lets it — a flex item's automatic minimum size is its
+     content, so without this the row overflows instead of ellipsising. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── States ──────────────────────────────────────────────────────────────────
+   idle — hollow ring. Nothing is happening, so nothing is filled in. */
+.root[data-state='idle'] {
+  color: var(--agent-idle-fg);
+}
+.root[data-state='idle'] .dot {
+  background: transparent;
+}
+
+/* thinking — a filled dot on a slow ambient pulse. This is the one state where the surface is
+   otherwise completely still, which is exactly why it is the state that gets the pulse. */
+.root[data-state='thinking'] {
+  color: var(--agent-thinking);
+}
+.root[data-state='thinking'] .dot {
+  color: var(--agent-thinking-dot);
+  /* INDEFINITE ambient loop — exempt from the 220ms ceiling and floored well above 1s, so it reads
+     as breathing rather than as a transition that stalled. Opacity only: no transform, so the dot
+     never becomes its own composited layer. */
+  animation: agentPulse 1.8s var(--ease-standard) infinite;
+}
+
+/* streaming — filled dot inside a halo, and deliberately STILL. StreamingText's caret is already
+   the moving thing on this surface; a second rhythm beside it is noise, not information. */
+.root[data-state='streaming'] {
+  color: var(--agent-live-fg);
+}
+.root[data-state='streaming'] .dot {
+  border-color: var(--agent-live-bd);
+  box-shadow: 0 0 0 var(--space-1) var(--agent-live-glow);
+}
+
+/* tool-running — a rotating progress glyph. A different SILHOUETTE from the dots, because "waiting
+   on a system of record" is a different kind of slow from "the model is composing". */
+.root[data-state='tool-running'] {
+  color: var(--tool-running-fg);
+}
+.root[data-state='tool-running'] .glyph {
+  animation: agentSpin 1.2s linear infinite;
+}
+
+.root[data-state='done'] {
+  color: var(--tool-ok-fg);
+}
+
+.root[data-state='error'] {
+  color: var(--tool-failed-fg);
+}
+
+/* The detail follows the state's tone only when the state is a failure — there, the identifier IS
+   part of the bad news ("denied: dwh_query") and greying it out buries the useful half. */
+.root[data-state='error'] .detail {
+  color: currentColor;
+}
+
+@keyframes agentPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes agentSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* Both loops stop. Nothing is lost: every state already carries its own word and its own shape, so
+   motion was never the thing telling you which state this is. */
+@media (prefers-reduced-motion: reduce) {
+  .root[data-state='thinking'] .dot,
+  .root[data-state='tool-running'] .glyph {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* The live region. Removed from paint, kept in the accessibility tree, and never
+   `display: none` — a hidden-that-way region is not announced at all. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

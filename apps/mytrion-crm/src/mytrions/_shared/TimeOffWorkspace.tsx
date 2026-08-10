@@ -509,7 +509,15 @@ export function TimeOffWorkspace({
   }, [currentYear, year]);
 
   if (loading && !overview) {
-    return <HrPageLoader label="Preparing your leave calendar…" />;
+    // The loader renders inside the SAME wrapper the loaded workspace uses, so the page gutter and
+    // the embedded top offset are already in place when the data lands. Returning the bare loader
+    // meant the whole surface was laid out twice — once with no padding, once with 24/32px of it —
+    // which is the jump that reads as a flicker on first paint.
+    return (
+      <div className={`${styles.workspace} ${embedded ? styles.embedded : ''}`}>
+        <HrPageLoader label="Preparing your leave calendar…" />
+      </div>
+    );
   }
 
   return (

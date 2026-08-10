@@ -396,7 +396,7 @@ export function Returns() {
                         </div>
                         <div
                           className="rt-ellipsis"
-                          style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}
+                          style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: "var(--font-mono)" }}
                         >
                           {ret.referenceNumber || '—'}
                           {ret.last4 ? ` · ••${ret.last4}` : ''}

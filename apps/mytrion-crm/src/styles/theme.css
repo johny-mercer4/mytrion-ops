@@ -1,104 +1,161 @@
 /*
- * Mytrion CRM design tokens — the durable source of truth (see DESIGN_SYSTEM.md).
- * Dark ("Soft Midnight") is the default on :root; light applies under [data-theme="light"]
- * (toggled by useTheme on <html>). Per-module accents live in global.css ([data-mytrion]).
- * Components read token names ONLY — no hardcoded hex, no arbitrary px.
+ * Mytrion Horizon — design tokens. THE ONLY FILE IN THE APP THAT MAY CONTAIN A COLOUR LITERAL.
+ * (src/styles/tokens.test.ts enforces that, and every other invariant noted below.)
+ *
+ * THREE TIERS, ONE DIRECTION. A tier may only ever point DOWNWARD.
+ *
+ *   TIER 1  PRIMITIVES  raw scales. The Horizon Digital Cockpit (dark) / Luminous Horizon (light)
+ *                       palette, plus the raw dimension ladders. Carries literals. Names nothing
+ *                       about role — `--primary` is a colour, not a purpose.
+ *   TIER 2  SEMANTIC    role aliases: what a thing IS, not what colour it is. `--surface`,
+ *                       `--text-secondary`, `--border-subtle`, `--intent-danger-bg`,
+ *                       `--agent-thinking`. Every one is a var() of tier 1 and never a literal.
+ *   TIER 3  COMPONENT   per-component references to tier 2: `--ui-table-head-bg`, `--ui-btn-*`.
+ *                       Exists so a component can be re-skinned without touching the role layer.
+ *
+ * Components consume tier 2 and tier 3. Never tier 1.
+ *   The ONE documented exception is the dimension ladders (--radius-*, --text-*, --space-*,
+ *   --font-*). Those names are simultaneously the primitive and the semantic contract — there is
+ *   no useful role layer between "8px" and "a panel corner", and inventing one would rename ~1,500
+ *   call sites for nothing. Tier 1 is therefore sealed for COLOUR only.
+ *
+ * Never point tier 1 at tier 2. That is a cycle, and a cycle is a blank page — see the fonts block,
+ * which is where that exact bug shipped three times.
+ *
+ * Dark is the default on :root; light applies under [data-theme='light'] (set on <html> by
+ * useTheme). Because every alias is a var() of a raw token, the light block only has to restate the
+ * palette — which is what makes it structurally impossible for the two themes to drift apart on a
+ * semantic name. Light is a first-class mode, not a filter over dark.
+ *
+ * Glass, the horizon band, elevation and motion aliases live in horizon.css. No token may be
+ * declared in both files: their [data-theme='light'] blocks have equal specificity, so a duplicate
+ * would resolve by @import order, i.e. by accident.
  */
-:root {
+
+/*
+ * Dark is BOTH the :root default and an explicitly addressable selector.
+ *
+ * `:root` alone was not enough: it makes dark the default but leaves no way to re-assert it inside
+ * a subtree of a light document. That matters for any nested-theme surface — the kitchen sink's
+ * side-by-side panes, a dark preview embedded in a light settings page, a themed email preview.
+ * Listing `[data-theme='dark']` here costs one selector and zero duplicated values, and it is what
+ * makes `<div data-theme="dark">` work anywhere.
+ */
+:root,
+[data-theme='dark'] {
   color-scheme: dark;
 
-  /* ── Color — Soft Midnight (dark, default) ───────────────────────────────── */
-  --bg-primary: #12161e;
-  --bg-secondary: #161b24;
-  --surface: #1b212c;
-  --surface-alt: #161a23;
-  --surface-raised: rgba(255, 255, 255, 0.045);
-  --sidebar-bg: #13171f;
-  --header-bg: #13171f;
-  --text-primary: #e7eaf0;
-  --text-secondary: #a9b0bd;
-  --text-muted: #6e7682;
-  --border: rgba(255, 255, 255, 0.09);
-  --border-light: rgba(255, 255, 255, 0.06);
-  --border-dark: rgba(255, 255, 255, 0.045);
-  --accent: #38bef0;
-  --accent-strong: #2cb6ec;
-  --on-accent: #04131c;
-  --accent-soft: rgba(56, 190, 240, 0.12);
-  --accent-glow: rgba(56, 190, 240, 0.26);
-  /* Far end of the accent ramp. Same as --accent unless a module declares a real gradient
-     (see [data-mytrion] in global.css); lets `accent → accent-2` be written unconditionally. */
-  --accent-2: var(--accent);
-  --success: #34d399;
-  --warning: #fbbf4d;
-  --danger: #f4716f;
-  --purple: #a78bfa;
-  --orange: #fb8a3c;
-  --black: #ffffff;
-  --blue: #3b82f6;
-  --red: #ef4444;
-  --green: #10b981;
-  /* CS Mytrion / loader accent — enterprise gold (softened) */
-  --yellow: #D4B84A;
-  --dark-purple: #7e22ce;
-  --light-blue: #0ea5e9;
-  --rocket: #f43f5e;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.58), 0 6px 16px rgba(0, 0, 0, 0.42);
+  /* ═══════════════════════════════════════════════════════════════════════════════════════════
+     TIER 1 — PRIMITIVES
+     ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
-  /* ── Status tints — one scale (tracks the status color via color-mix in both themes) ── */
-  --tint-good-bg: color-mix(in srgb, var(--success) 13%, transparent);
-  --tint-good-bd: color-mix(in srgb, var(--success) 30%, transparent);
-  --tint-warn-bg: color-mix(in srgb, var(--warning) 13%, transparent);
-  --tint-warn-bd: color-mix(in srgb, var(--warning) 30%, transparent);
-  --tint-bad-bg: color-mix(in srgb, var(--danger) 13%, transparent);
-  --tint-bad-bd: color-mix(in srgb, var(--danger) 30%, transparent);
-  --tint-info-bg: var(--accent-soft);
-  --tint-info-bd: color-mix(in srgb, var(--accent) 30%, transparent);
-  --tint-neutral-bg: var(--surface-alt);
-  --tint-neutral-bd: var(--border);
+  /* ── Palette — Horizon Digital Cockpit (dark, default) ─────────────────────── */
+  --page: #0a0e1a;
+  --surface-base: #0f131f;
+  --container-low: #171b28;
+  --container: #1b1f2c;
+  --container-high: #262a37;
+  --container-highest: #313442;
 
-  /* ── Radii ───────────────────────────────────────────────────────────────── */
-  /* One corner across the app: a button, an input, a card, a table and a modal all round at 6px.
-     The four steps are kept as names rather than collapsed into one token so call sites don't all
-     have to change, and so the ramp can be reintroduced by editing this block alone. */
-  --radius-xs: 6px;
-  --radius-sm: 6px;
-  --radius-md: 6px;
-  --radius-lg: 6px;
-  /* Not part of the flattening — this is what makes pills, avatars and status dots round rather
-     than 6px rectangles. */
-  --radius-full: 999px;
+  --on-surface: #dfe2f3;
+  --on-surface-variant: #bbc9cf;
+  --outline: #859399;
+  --outline-variant: #3c494e;
 
-  /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
-  --text-2xs: 10.5px;
-  --lh-2xs: 14px;
-  /* Composer font on phones — 16px is the iOS threshold below which Safari auto-zooms inputs. */
+  --primary: #a5e7ff;
+  --primary-container: #00d2ff;
+  --tint: #47d6ff;
+  --secondary: #ffaede;
+  --secondary-container: #ff34cd;
+  --on-primary: #003543;
+  --error: #ffb4ab;
+
+  /* The horizon ember. NOT a new colour: this is the FuelMark orange, promoted from the hardcoded
+     --fuel gradient at the foot of this file to a named primitive, because the brand ramp has no
+     warm end at all — --secondary is oklch(84.2% .112 343.4), i.e. magenta, 72 degrees of hue away
+     from ember, and light's --secondary is outright teal. The horizon thesis needs a warm band and
+     this is the only warm value the brand already owns.
+     Deliberately its own name rather than an alias of --orange / --tone-orange: those two are
+     consumed DYNAMICALLY (MYTRIONS[id].hue, wayfinding glyphs), and the page atmosphere must not
+     shift when a workspace re-gamuts its card. */
+  --ember: #fb923c;
+
+  /* ── Type ladder ────────────────────────────────────────────────────────────
+     Size · line-height · tracking · role weight, per step.
+     Tracking DECREASES monotonically as size increases (per the brief), but the whole curve is
+     anchored ~0.05em LOWER than you would use for Inter or SF, and that is a measurement, not a
+     preference: Space Grotesk's mean lowercase sidebearing pair is 0.1188em at weight 400 against
+     SF Pro's 0.0712em — 67% wider in em, 74% wider once normalised against its smaller x-height
+     (0.486em vs 0.508em). The face already ships ~+0.05em of tracking inside its sidebearings.
+     Adding the textbook +0.02em at 12px would put dense table text near +0.07em of PERCEIVED
+     tracking, where word shapes stop cohering and scanning gets slower rather than faster.
+     The weight axis self-tightens too — 0.1279em @300 -> 0.1188 @400 -> 0.1075 @500 -> 0.0964 @700
+     — so headings get free tightening from their weight. That is why the negative end stops at
+     -0.026em instead of the -0.04em a normally-fitted face would want.
+
+     --text-2xs is 11px, NOT the old 10.5px. Two steps 0.5px apart are not a scale (they rasterise
+     identically at 1x), and one move absorbs both the 33 raw 10.5px sites and the 188 off-scale
+     11px sites the audit found. --lh-2xs stays 14px, so no row height moves. */
+  --text-2xs: 11px;    --lh-2xs: 14px;    --tr-2xs: 0.005em;    --fw-2xs: 500;
+  --text-xs: 12px;     --lh-xs: 16px;     --tr-xs: 0.003em;     --fw-xs: 400;
+  --text-sm: 13px;     --lh-sm: 18px;     --tr-sm: 0.001em;     --fw-sm: 400;
+  --text-base: 14px;   --lh-base: 20px;   --tr-base: 0em;       --fw-base: 400;
+  --text-md: 15px;     --lh-md: 22px;     --tr-md: -0.003em;    --fw-md: 400;
+  --text-lg: 18px;     --lh-lg: 24px;     --tr-lg: -0.008em;    --fw-lg: 500;
+  --text-xl: 22px;     --lh-xl: 28px;     --tr-xl: -0.012em;    --fw-xl: 500;
+  --text-2xl: 26px;    --lh-2xl: 31px;    --tr-2xl: -0.016em;   --fw-2xl: 600;
+  --text-3xl: 32px;    --lh-3xl: 37px;    --tr-3xl: -0.020em;   --fw-3xl: 600;
+  /* The launcher title — the app's only 48px site, previously untokenised. At wght 300 the fit
+     WIDENS to 0.1279em, so this step needs the most correction of the whole ladder just to reach
+     the equivalent of a 400-weight fit while keeping the design's specified Light stroke. */
+  --text-4xl: 48px;    --lh-4xl: 52px;    --tr-4xl: -0.026em;   --fw-4xl: 300;
+  /* 16px is the iOS threshold below which Safari auto-zooms an focused input. Not a scale step. */
   --text-input-mobile: 16px;
-  --text-xs: 12px;
-  --lh-xs: 16px;
-  --text-sm: 13px;
-  --lh-sm: 18px;
-  --text-base: 14px;
-  --lh-base: 20px;
-  --text-md: 15px;
-  --lh-md: 22px;
-  --text-lg: 18px;
-  --lh-lg: 24px;
-  --text-xl: 22px;
-  --lh-xl: 28px;
-  --text-2xl: 26px;
-  --lh-2xl: 31px;
-  --text-3xl: 32px;
-  --lh-3xl: 37px;
+
+  /* CAPS. Grotesk sets caps on the same sidebearings as lowercase while its caps are 44% taller
+     (cap 0.700em vs x-height 0.486em), so relative to their own height caps read 44% TIGHTER than
+     the lowercase does — and caps have no ascender/descender rhythm to help the eye. These two
+     values replace the 0.04->0.16em spread currently scattered across 77 rules. Note tracking gets
+     LOOSER as caps get SMALLER, the same direction as the text ladder. */
+  --tr-caps: 0.06em;
+  --tr-caps-micro: 0.08em;
+
+  /* FIGURES track one notch looser than text at the same size: tabular advances already build the
+     spacing in, and negative tracking on a tabular column visually crowds the thousands separator
+     against the digit before it. */
+  --tr-fig: -0.01em;
+  --tr-fig-2xl: -0.010em;
+  --tr-fig-3xl: -0.014em;
+
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
   --fw-extra: 800;
 
-  /* ── Spacing — 4px rhythm ──────────────────────────────────────────────────── */
+  /* Dark-mode optical compensation, possible only because Grotesk is variable. Geometric strokes
+     optically thin on a dark ground; the axis lets us answer with 20 units instead of jumping a
+     whole named weight. Body/table roles only — --fw-regular is left alone so no existing call
+     site shifts. */
+  --fw-body: 420;
+  --fw-body-strong: 520;
+
+  /* ── Fonts ──────────────────────────────────────────────────────────────────
+     THE LITERAL FAMILY STACKS LIVE HERE, ON RAW NAMES, AND NOWHERE ELSE.
+     What was here before was `--font-head: var(--font-head)` — a self-reference. Per
+     css-variables-1, a cycle makes every property in it invalid at computed-value time, so every
+     `font-family: var(--font-body)` in the app was DROPPED and the entire UI rendered in whatever
+     Tailwind preflight left on <html>. It shipped that way. The fix is structural, not a value
+     swap: give fonts the raw layer they never had, so the semantic names point at DIFFERENT names
+     and no cycle is expressible.
+     @font-face blocks live in fonts.css. Space Grotesk ships NO italic — see the italic policy in
+     FOUNDATIONS.md; emphasis maps to weight and colour, never to a synthesized oblique. */
+  --face-ui: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --face-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── Spacing — 4px rhythm ───────────────────────────────────────────────────
+     The half-steps (2/6/10/14px) are real and load-bearing at this density. What is NOT on the
+     ladder — 3, 5, 7, 9, 11, 13px — is 361 declarations of drift, not a sub-scale. */
   --space-0_5: 2px;
   --space-1: 4px;
   --space-1_5: 6px;
@@ -114,72 +171,476 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* ── Motion ────────────────────────────────────────────────────────────────── */
+  /* ── Radii — THREE, named by intent ─────────────────────────────────────────
+     Named by what they corner, because "md" told nobody which of the two real values to reach for
+     and that is how 22 distinct hardcoded radii grew. The five legacy names below are aliases, so
+     no call site has to move.
+     NOTE: horizon.css used to carry an imported comment claiming "a design built on 12-16px
+     radii". That was HorizonNew prose, never a measurement of this app — 763 tokenised call sites
+     sit at 4/8/999 against 297 strays. The comment was wrong, not the scale. */
+  --radius-control: 4px;
+  --radius-panel: 8px;
+  --radius-pill: 999px;
+
+  --radius-xs: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-panel);
+  --radius-lg: var(--radius-panel);
+  /* Declared HERE, not only inside global.css's @theme inline. It had 7 call sites reachable only
+     because Tailwind emitted it into @layer theme — any edit to that block silently changed the
+     chat composer's corner. */
+  --radius-xl: var(--radius-panel);
+  --radius-full: var(--radius-pill);
+
+  /* ── Motion ─────────────────────────────────────────────────────────────────
+     CEILING IS 220ms, and it governs STATE TRANSITIONS and ENTRANCE/EXIT animations: anything with
+     a start state, an end state, and a user action between them.
+     Indefinite ambient loops (shimmer 1.4s, spin, thinkBounce, blink) are OUTSIDE this rule and
+     are floored at >=1s, so they read as ambient rather than as a transition that has stalled. */
+  --dur-instant: 80ms;
   --dur-fast: 120ms;
   --dur-base: 170ms;
   --dur-slow: 220ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized: cubic-bezier(0.4, 0, 0, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
 
-  /* ── Z-index scale ─────────────────────────────────────────────────────────── */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: var(--ease-decelerate);
+  /* --ease-emphasized is gone: it had zero call sites. */
+
+  /* ── Layout constants ───────────────────────────────────────────────────────
+     Real values, verified against AppHeader.module.css and MytrionShell.module.css rather than
+     against the tokens that claimed to describe them. The old --header-height (declared four times
+     as 44/48/56/56px) and --sidebar-width (238px and 216px) had ZERO consumers app-wide — eleven
+     dead declarations describing numbers nothing read, while the real values sat as literals in
+     the two shell files. Those are deleted, not reconciled.
+     Breakpoints (560 / 768 / 1024) are NOT tokens: a custom property cannot be used in an @media
+     condition. They live in FOUNDATIONS.md and nowhere else. */
+  --layout-header-h: 64px;
+  --layout-rail-w: 248px;
+  --layout-rail-w-collapsed: 68px;
+  --layout-measure: 1280px;
+  --layout-measure-prose: 62ch;
+  --layout-gutter: var(--space-6);
+  --layout-gutter-compact: var(--space-4);
+  --layout-section-gap: var(--space-6);
+
+  /* ── Icon ───────────────────────────────────────────────────────────────────
+     ONE family: Material Symbols Sharp. Two sizes, no exceptions.
+
+     TWO live axes, and the shipped font contains only these two:
+       FILL  0/1  the state axis. 0 idle, 1 selected. Replaces the "ship two icons per nav row"
+                  pattern with one glyph. Costs 4 KB and is the capability a stroke set cannot
+                  offer at any price.
+       wght  300  optically matches Grotesk's stroke beside it. NOT 400 — 400 is heavier than the
+                  text it labels, and the icon starts leading the eye.
+
+     opsz and GRAD were PINNED OUT of the font, which took it from 114.8 KB to 34.0 KB:
+       - opsz's range is 20..48, and BOTH our sizes resolve to the floor (a 16px icon already gets
+         the opsz-20 cut). The axis cost 46 KB to express a value we can never leave.
+       - GRAD only ever had two values (dark/light), never a range, and the dark-ground
+         compensation moves onto wght below. It cost 32 KB.
+     Do not reference 'GRAD' or 'opsz' in font-variation-settings — those axes no longer exist in
+     the shipped face. */
+  --icon-size: 20px;
+  --icon-size-sm: 16px;
+  --icon-fill: 0;
+  /* Dark. Geometric glyphs optically bloom on a dark ground; ten units of weight answers that,
+     which is the job GRAD used to do for 32 KB. */
+  --icon-wght: 290;
+
+  /* ── Z-index ────────────────────────────────────────────────────────────────
+     A raw z-index is legal ONLY in the -1..3 band, for sibling ordering inside an already-isolated
+     stacking context. Everything else is one of these. --z-popover is new: a confirm dialog over
+     an open modal, and a dropdown inside one, are a real layer that previously escalated to 9995. */
   --z-base: 0;
   --z-raised: 10;
   --z-sticky: 100;
   --z-dropdown: 1000;
   --z-overlay: 2000;
   --z-modal: 2100;
+  --z-popover: 2200;
   --z-toast: 3000;
   --z-tooltip: 4000;
 
-  /* ── Fonts ─────────────────────────────────────────────────────────────────── */
-  --font-head: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Satoshi', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Space Mono', ui-monospace, monospace;
+  /* ═══════════════════════════════════════════════════════════════════════════════════════════
+     TIER 2 — SEMANTIC
+     ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Fonts by role ──────────────────────────────────────────────────────────
+     Different names from the raw layer above, which is the whole point — a cycle is now
+     unspellable. */
+  --font-body: var(--face-ui);
+  --font-head: var(--face-ui);
+  --font-mono: var(--face-mono);
+  /* SMALL figures — ids, codes, timestamps, table columns. Space Mono, via .num / [data-num]. */
+  --font-num: var(--face-mono);
+  /* LARGE figures — KPI values, hero counters. Grotesk with tabular-nums, NOT Space Mono: at 26px+
+     Mono's 0.1476em fit reads as a licence plate, and the KPI is the one number meant to be
+     beautiful rather than merely aligned. */
+  --font-figure: var(--face-ui);
+
+  /* ── Ground and panes ───────────────────────────────────────────────────────
+     --surface is the CARD level (M3 surface-container), not the base plane: that is what 377 call
+     sites already mean by it. */
+  --bg-primary: var(--page);
+  --surface: var(--container);
+  --surface-alt: var(--container-low);
+  --surface-raised: var(--glass-hi);
+  --sidebar-bg: var(--glass);
+  --header-bg: var(--glass);
+  /* Dense-data ground. THE decision from the glass resolution: tables, forms, lists and data cards
+     are FLAT and OPAQUE. Glass is for chrome that floats over content, never for the content.
+     A blurred surface under a 400-row table is the compositing cliff this app has already fallen
+     off once. */
+  --surface-data: var(--container);
+  --surface-data-alt: var(--container-low);
+
+  /* ── Ink ────────────────────────────────────────────────────────────────────── */
+  --text-primary: var(--on-surface);
+  --text-secondary: var(--on-surface-variant);
+  --text-muted: var(--outline);
+  --text-disabled: var(--disabled-fg);
+
+  /* ── Edges. Alpha, not the opaque --outline-variant: a solid hairline over a 24px blur reads as
+     a drawn box rather than the edge of glass. --border-strong is for the rare rule that genuinely
+     sits on an opaque surface. ────────────────────────────────────────────────── */
+  --border: var(--glass-bd);
+  --border-subtle: var(--row-line);
+  --border-default: var(--glass-bd);
+  --border-light: var(--row-line);
+  --border-dark: color-mix(in srgb, var(--glass-bd) 60%, transparent);
+  --border-strong: var(--outline-variant);
+
+  /* ── Accent — ONE ramp app-wide. Workspace identity is the launcher card and the header badge,
+     and it travels as --badge-tone (see global.css), never as --accent. ─────────
+       --accent        text / icon / border / color-mix washes (1,204 sites)
+       --accent-2      far end of the brand ramp, for `accent -> accent-2` gradients
+       --accent-strong the saturated FILL and hover step
+       --on-accent     ink on that fill */
+  --accent: var(--primary);
+  --accent-2: var(--secondary);
+  --accent-strong: var(--primary-container);
+  --on-accent: var(--on-primary);
+  --accent-soft: color-mix(in srgb, var(--tint) 14%, transparent);
+  --accent-glow: color-mix(in srgb, var(--tint) 30%, transparent);
+
+  /* ── Status ─────────────────────────────────────────────────────────────────── */
+  --success: #34d399;
+  --warning: #fbbf4d;
+  --danger: var(--error);
+
+  /* ── Intent — the role layer over status. A component asks for "danger background", not for
+     "13% of the error colour". One scale, derived, so every intent tracks its status hue. ─────── */
+  --intent-success-fg: var(--success);
+  --intent-success-bg: color-mix(in srgb, var(--success) 13%, transparent);
+  --intent-success-bd: color-mix(in srgb, var(--success) 30%, transparent);
+  --intent-warning-fg: var(--warning);
+  --intent-warning-bg: color-mix(in srgb, var(--warning) 13%, transparent);
+  --intent-warning-bd: color-mix(in srgb, var(--warning) 30%, transparent);
+  --intent-danger-fg: var(--danger);
+  --intent-danger-bg: color-mix(in srgb, var(--danger) 13%, transparent);
+  --intent-danger-bd: color-mix(in srgb, var(--danger) 30%, transparent);
+  --intent-info-fg: var(--accent);
+  --intent-info-bg: var(--accent-soft);
+  --intent-info-bd: color-mix(in srgb, var(--tint) 30%, transparent);
+  --intent-neutral-fg: var(--text-secondary);
+  --intent-neutral-bg: var(--field);
+  --intent-neutral-bd: var(--border);
+
+  /* The --tint-* names are the same scale under the names 40k lines of module CSS already read.
+     Aliases, not a second definition. */
+  --tint-good-bg: var(--intent-success-bg);
+  --tint-good-bd: var(--intent-success-bd);
+  --tint-warn-bg: var(--intent-warning-bg);
+  --tint-warn-bd: var(--intent-warning-bd);
+  --tint-bad-bg: var(--intent-danger-bg);
+  --tint-bad-bd: var(--intent-danger-bd);
+  --tint-info-bg: var(--intent-info-bg);
+  --tint-info-bd: var(--intent-info-bd);
+  --tint-neutral-bg: var(--intent-neutral-bg);
+  --tint-neutral-bd: var(--intent-neutral-bd);
+
+  /* ── Categorical hues — NOT identity, NOT status. Consumed DYNAMICALLY as `var(--${hue})` from
+     MYTRIONS[id].hue, so grep reports zero call sites for most of them. Do not delete on that
+     evidence. ─────────────────────────────────────────────────────────────────── */
+  --purple: #c9b6ff;
+  --orange: #ffb787;
+  --blue: #8fc6ff;
+  --red: var(--error);
+  --green: var(--success);
+  --yellow: var(--warning);
+  --black: var(--on-surface);
+  --dark-purple: #a58bff;
+  --light-blue: var(--tint);
+  --rocket: var(--secondary);
+
+  /* ── Elevation aliases. The four levels are defined in horizon.css, because dark elevates with
+     light and light elevates with shadow, and that split belongs beside the glass it interacts
+     with. ─────────────────────────────────────────────────────────────────────── */
+  --shadow-sm: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+
+  /* ── Focus ──────────────────────────────────────────────────────────────────── */
+  --focus-ring-color: var(--accent);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-halo: 0 0 0 3px var(--accent-soft);
+
+  /* ── Disabled — RECOLOUR, not an opacity multiply. --disabled-opacity is for NON-TEXT decoration
+     only (an icon-only control, a swatch, a thumbnail); anything carrying a label recolours, so the
+     label keeps a known contrast ratio instead of an unknowable composite. ────── */
+  --disabled-opacity: 0.45;
+  --disabled-fg: color-mix(in oklab, var(--text-secondary) 58%, var(--surface));
+  --disabled-bg: var(--field);
+  --disabled-bd: var(--border);
+  --disabled-cursor: not-allowed;
+
+  /* ═══════════════════════════════════════════════════════════════════════════════════════════
+     TIER 2 — AI-NATIVE SEMANTICS
+     Agents, tool calls and streaming are first-class primitives in this product, so they get a
+     first-class token group rather than borrowing chat's leftovers. Every name here maps to
+     something features/chat ALREADY renders — derived from ToolSummary.status, TurnTraceEvent.status
+     and UiMessage, not invented.
+     ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+  /* streaming */
+  --stream-text: var(--text-primary);
+  --stream-caret: var(--accent);
+  --stream-caret-glow: var(--accent-glow);
+  --stream-cursor-w: 2px;
+
+  /* agent status */
+  --agent-thinking: var(--text-muted);
+  --agent-thinking-dot: var(--accent);
+  --agent-live-fg: var(--intent-success-fg);
+  --agent-live-bd: var(--intent-success-bd);
+  --agent-live-glow: color-mix(in srgb, var(--success) 18%, transparent);
+  --agent-idle-fg: var(--text-muted);
+  --agent-badge-fg: var(--text-secondary);
+  --agent-badge-bg: var(--intent-neutral-bg);
+  --agent-badge-bd: var(--intent-neutral-bd);
+  --agent-handoff-fg: var(--accent);
+
+  /* tool-call lifecycle. FIVE states, not four: 'denied' is RBAC refusing the call, which is not a
+     failure — the tool worked exactly as designed. The UI collapses it into failed today and that
+     is a defect the token layer should stop encoding. */
+  --tool-pending-fg: var(--text-muted);
+  --tool-pending-bg: var(--intent-neutral-bg);
+  --tool-pending-bd: var(--intent-neutral-bd);
+  --tool-running-fg: var(--intent-info-fg);
+  --tool-running-bg: var(--intent-info-bg);
+  --tool-running-bd: var(--intent-info-bd);
+  --tool-ok-fg: var(--intent-success-fg);
+  --tool-ok-bg: var(--intent-success-bg);
+  --tool-ok-bd: var(--intent-success-bd);
+  --tool-failed-fg: var(--intent-danger-fg);
+  --tool-failed-bg: var(--intent-danger-bg);
+  --tool-failed-bd: var(--intent-danger-bd);
+  --tool-denied-fg: var(--intent-warning-fg);
+  --tool-denied-bg: var(--intent-warning-bg);
+  --tool-denied-bd: var(--intent-warning-bd);
+  /* INTERRUPTED — the call never resolved, because the user pressed stop or the connection dropped.
+     This is a sixth state and it is not decoration: 'failed' asserts that the backend ANSWERED and
+     said no. Interrupted asserts nothing. For a money-code write or a CMP mutation, the honest
+     statement is "we do not know whether this ran", and rendering that as a failure is a false
+     claim about a financial operation.
+     Deliberately NEUTRAL, not the danger triad: a user pressing stop is a normal action (see
+     --stopped-note-*, which takes the same position), and an unknown outcome is not an error.
+     Painting it red would tell the operator something the system does not know. The copy carries
+     the meaning — "Interrupted — no result" — which is also why this never relies on colour. */
+  --tool-interrupted-fg: var(--intent-neutral-fg);
+  --tool-interrupted-bg: var(--intent-neutral-bg);
+  --tool-interrupted-bd: var(--intent-neutral-bd);
+  --tool-label-font: var(--font-mono);
+
+  /* citations + sources */
+  --cite-fg: var(--accent);
+  --cite-bg: var(--accent-soft);
+  --cite-bd: color-mix(in srgb, var(--accent) 32%, transparent);
+  --cite-hover-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  --cite-hover-bd: color-mix(in srgb, var(--accent) 52%, transparent);
+  --cite-invalid-fg: var(--intent-danger-fg);
+  --cite-invalid-bg: var(--intent-danger-bg);
+  --cite-marker-fg: var(--text-muted);
+  --cite-marker-font: var(--font-mono);
+  --source-item-fg: var(--text-secondary);
+  --source-icon: var(--text-muted);
+
+  /* grounding + provenance */
+  --ground-fg: var(--text-muted);
+  --ground-rule: var(--border-subtle);
+  --ground-verified-fg: var(--intent-success-fg);
+  --ground-none-fg: var(--text-muted);
+
+  /* confidence — three bands plus unknown. 'unknown' is NOT 'low': an ungrounded answer and a
+     low-confidence one mean different things and must never share a colour. */
+  --conf-high: var(--intent-success-fg);
+  --conf-med: var(--intent-warning-fg);
+  --conf-low: var(--intent-danger-fg);
+  --conf-unknown: var(--text-muted);
+  --conf-track: var(--intent-neutral-bg);
+  --conf-fill: var(--accent);
+  --conf-font: var(--font-num);
+
+  /* runtime trace timeline */
+  --trace-rail: var(--border-subtle);
+  --trace-node-bg: var(--surface-raised);
+  --trace-node-bd: var(--border-subtle);
+  --trace-node-running: var(--tool-running-fg);
+  --trace-node-ok: var(--tool-ok-fg);
+  --trace-node-error: var(--tool-failed-fg);
+  --trace-took-bg: var(--surface-alt);
+
+  /* inline diff / approval */
+  --diff-add-bg: var(--intent-success-bg);
+  --diff-add-fg: var(--intent-success-fg);
+  --diff-del-bg: var(--intent-danger-bg);
+  --diff-del-fg: var(--intent-danger-fg);
+  --diff-changed-bg: var(--intent-warning-bg);
+  --diff-gutter-fg: var(--text-muted);
+  --diff-rule: var(--border-subtle);
+  --diff-font: var(--font-mono);
+  --approve-fg: var(--on-accent);
+  --approve-bg: var(--accent-strong);
+  --reject-fg: var(--intent-danger-fg);
+  --reject-bg: var(--intent-danger-bg);
+  --reject-bd: var(--intent-danger-bd);
+
+  /* elicitation (generative-UI picker) */
+  --elicit-surface: var(--surface);
+  --elicit-bd: var(--border-default);
+  --elicit-opt-bg: var(--surface-alt);
+  --elicit-opt-bd: var(--border-default);
+  --elicit-opt-hover-bd: color-mix(in srgb, var(--accent) 42%, var(--border));
+  --elicit-opt-on-bg: var(--accent-soft);
+  --elicit-opt-on-bd: color-mix(in srgb, var(--accent) 52%, transparent);
+  --elicit-hint-fg: var(--text-muted);
+
+  /* retry / stop / turn error */
+  --retry-fg: var(--intent-danger-fg);
+  --retry-bd: var(--intent-danger-bd);
+  --stop-fg: var(--on-accent);
+  --stop-bg: var(--danger);
+  --stop-hover-bg: color-mix(in srgb, var(--danger) 85%, var(--page));
+  --stopped-note-fg: var(--text-muted);
+  --stopped-note-bg: var(--intent-neutral-bg);
+  --turn-error-fg: var(--intent-danger-fg);
+  --turn-error-bg: var(--intent-danger-bg);
+  --turn-error-bd: var(--intent-danger-bd);
+
+  /* structured output */
+  --struct-code-bg: color-mix(in srgb, var(--text-primary) 7%, var(--surface));
+  --struct-code-fg: var(--text-primary);
+  --struct-pre-bg: color-mix(in srgb, var(--text-primary) 6%, var(--surface));
+  --struct-pre-bd: var(--border-default);
+  --struct-quote-rule: var(--border-dark);
+  --struct-marker-fg: var(--text-muted);
+
+  /* ═══════════════════════════════════════════════════════════════════════════════════════════
+     TIER 3 — COMPONENT
+     Only for components that already exist and already diverge. A token here without a real use
+     site is a guess; the rest arrive in Phase 3 with the components that consume them.
+     ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+  /* table — the CSS-only table in _shared/table.module.css. Flat and opaque by decision. */
+  --ui-table-head-bg: var(--surface-data-alt);
+  --ui-table-head-fg: var(--text-muted);
+  --ui-table-row-bg: var(--surface-data);
+  --ui-table-row-hover: var(--row-hover);
+  --ui-table-rule: var(--border-subtle);
+  --ui-table-cell-font: var(--font-body);
+  --ui-table-num-font: var(--font-num);
+
+  /* panel / card — _shared/page.module.css */
+  --ui-panel-bg: var(--surface-data);
+  --ui-panel-bd: var(--border-default);
+  --ui-panel-radius: var(--radius-panel);
+  --ui-panel-pad: var(--space-4);
+
+  /* KPI tile */
+  --ui-kpi-value-font: var(--font-figure);
+  --ui-kpi-value-size: var(--text-2xl);
+  --ui-kpi-value-tr: var(--tr-fig-2xl);
+  --ui-kpi-label-fg: var(--text-muted);
+  --ui-kpi-delta-up: var(--intent-success-fg);
+  --ui-kpi-delta-down: var(--intent-danger-fg);
+  --ui-kpi-delta-flat: var(--text-muted);
+
+  /* field — the one input appearance, consumed through [data-focus-shell] */
+  --ui-field-bg: var(--field);
+  --ui-field-bd: var(--border-default);
+  --ui-field-fg: var(--text-primary);
+  --ui-field-placeholder: var(--text-muted);
+  --ui-field-radius: var(--radius-control);
 
   /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */
   --gem: linear-gradient(135deg, #4285f4 0%, #9b72cb 52%, #d96570 100%);
-  --fuel: linear-gradient(135deg, #fb923c, #f97316);
+  --fuel: linear-gradient(135deg, var(--ember), #f97316);
 }
 
 [data-theme='light'] {
   color-scheme: light;
-  --bg-primary: #f6f8fb;
-  --bg-secondary: #eef1f6;
-  --surface: #ffffff;
-  --surface-alt: #f3f5f9;
-  --surface-raised: rgba(16, 24, 40, 0.035);
-  --sidebar-bg: #ffffff;
-  --header-bg: #ffffff;
-  --text-primary: #18202e;
-  --text-secondary: #4d5666;
-  /* Was #8a92a1 — ~3.1:1 on --surface, under the 4.5:1 floor, which is what made light-mode stat
-     labels, table headers and hints read as "barely visible". #69707e is ~4.7:1 and still clearly
-     the quietest step in the scale. Dark's --text-muted is untouched. */
-  --text-muted: #69707e;
-  --border: rgba(20, 30, 50, 0.1);
-  --border-light: rgba(20, 30, 50, 0.07);
-  --border-dark: rgba(20, 30, 50, 0.05);
-  --accent: #0c8fc7;
-  --accent-strong: #0e9ad6;
-  --on-accent: #ffffff;
-  --accent-soft: rgba(12, 143, 199, 0.1);
-  --accent-glow: rgba(12, 143, 199, 0.2);
+
+  /* ══ TIER 1 — Luminous Horizon. Only the palette is restated; every alias above re-derives. ══ */
+  --page: #e9edf3;
+  --surface-base: #f8f9fa;
+  --container-low: #f3f4f5;
+  --container: #edeeef;
+  --container-high: #e7e8e9;
+  --container-highest: #e1e3e4;
+
+  --on-surface: #191c1d;
+  --on-surface-variant: #434656;
+  /* WCAG FIX. Was #737688, which failed AA as --text-muted on every light surface that ships:
+     3.82:1 on --page, 4.26:1 on --surface, 4.08:1 on --container-low — at full opacity, before any
+     disabled dimming, on the micro-labels that make up 35% of all 11px rules. #5c5f70 is the first
+     value that clears 4.5:1 everywhere INCLUDING the horizon band's worst stop (4.70:1). Hue is
+     preserved: oklch(48.9% .027 277.4) against the old oklch(56.9% .028 279.1). */
+  --outline: #5c5f70;
+  --outline-variant: #c3c5d9;
+
+  --primary: #0043c8;
+  --primary-container: #0057ff;
+  --tint: #004ee7;
+  --secondary: #00677f;
+  --secondary-container: #00ccf9;
+  --on-primary: #ffffff;
+  --error: #ba1a1a;
+
+  /* The --fuel second stop — the deeper of the two brand oranges, which is the one that reads on a
+     pale field. Still no new colour. */
+  --ember: #f97316;
+
+  /* Light does not need the dark-ground stroke compensation. */
+  --fw-body: 400;
+  --fw-body-strong: 500;
+
+  /* Icons do not bloom on a light ground, so they take the nominal weight. */
+  --icon-wght: 300;
+
+  /* ══ The ONE alias that inverts ═══════════════════════════════════════════════
+     In dark, containers step UP from the base plane, so a card is --container. In light they step
+     DOWN, so a card is --surface-base (#f8f9fa) and --container-low stays the inset level. Mapping
+     --surface to --container here would turn all 377 card surfaces grey against an #e9edf3 page
+     and collapse the figure/ground separation light mode depends on — horizon.css records a
+     previous version of exactly that bug ("white cards floating on white with nothing to separate
+     them… no ground"). Do not "simplify" this asymmetry away. */
+  --surface: var(--surface-base);
+  --surface-data: var(--surface-base);
+  --surface-data-alt: var(--container-low);
+
+  /* Status. good/warn unchanged; danger takes the palette error tone. */
   --success: #1f9d62;
   --warning: #b9791a;
-  --danger: #d14545;
-  --purple: #6d52d6;
-  --orange: #d9641a;
-  --black: #09090b;
-  --blue: #2563eb;
-  --red: #dc2626;
-  --green: #059669;
-  /* CS Mytrion / loader accent — enterprise gold (softened, light) */
-  --yellow: #C9A227;
+  --danger: var(--error);
+
+  /* Categorical hues, stepped down for a pale field — the dark set is too light to read on white.
+     --red/--green/--yellow/--light-blue/--rocket/--black inherit through their :root indirection. */
+  --purple: #5b34c4;
+  --orange: #b4531a;
+  --blue: #1854c9;
   --dark-purple: #4c1d95;
-  --light-blue: #38bdf8;
-  --rocket: #c026d3;
-  --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
-  --shadow-md: 0 8px 22px rgba(20, 30, 50, 0.08), 0 2px 6px rgba(20, 30, 50, 0.05);
-  --shadow-lg: 0 20px 48px rgba(20, 30, 50, 0.14), 0 6px 16px rgba(20, 30, 50, 0.08);
 }
