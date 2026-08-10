@@ -44,12 +44,14 @@ function effectivePriority<T>(column: DataColumn<T>): TableColumnPriority | unde
 /**
  * Where a column lands in the card row below the structure line.
  *
+ *   `leading`    the 40px slot before the text — a selection checkbox, an avatar, a status glyph.
+ *                At most one. Takes precedence over the `leading` prop.
  *   `primary`    the line that identifies the row. Exactly one per table.
  *   `secondary`  joined with `·` into one muted line under it. Any number; they truncate together.
  *   `value`      one right-aligned token — an amount, a status Badge. At most one.
  *   `hidden`     (default) not on the card. Still in the detail sheet.
  */
-export type DataColumnMobile = 'primary' | 'secondary' | 'value' | 'hidden';
+export type DataColumnMobile = 'leading' | 'primary' | 'secondary' | 'value' | 'hidden';
 
 export interface DataColumn<T> {
   /** Stable identity: the React key, the sort key, and the `<dt>` anchor in the detail sheet. */
@@ -137,7 +139,15 @@ export interface DataTableProps<T> {
    * right answer for each and the reason this is not one global rule.
    */
   detail?: DataTableDetail<T> | undefined;
-  /** Card-mode leading slot — a 40px avatar or status glyph. */
+  /**
+   * Card-mode leading slot, for something derived from the row rather than from a column — an
+   * avatar, a status glyph. A column can claim the slot instead with `mobile: 'leading'`, which
+   * wins over this.
+   *
+   * NOT automatically `aria-hidden`. Decorative content must carry its own — but the slot also
+   * legitimately holds a selection checkbox, and hiding a FOCUSABLE control from assistive tech is
+   * an accessibility violation rather than a tidy-up.
+   */
   leading?: ((row: T) => ReactNode) | undefined;
 
   loading?: boolean | undefined;
@@ -389,6 +399,7 @@ const DataRow = memo(DataRowInner) as typeof DataRowInner;
 
 interface DataCardProps<T> {
   row: T;
+  leadingColumn: DataColumn<T> | undefined;
   primary: DataColumn<T> | undefined;
   secondaries: readonly DataColumn<T>[];
   value: DataColumn<T> | undefined;
@@ -400,6 +411,7 @@ interface DataCardProps<T> {
 
 function DataCardInner<T>({
   row,
+  leadingColumn,
   primary,
   secondaries,
   value,
@@ -413,13 +425,12 @@ function DataCardInner<T>({
     return column.mobileCell ? column.mobileCell(row) : column.cell(row);
   };
 
+  // A column claiming the slot wins over the row-derived prop; a table has one leading thing.
+  const leadingNode = leadingColumn ? render(leadingColumn) : leading ? leading(row) : null;
+
   const inner = (
     <>
-      {leading ? (
-        <span className={styles.leading} aria-hidden="true">
-          {leading(row)}
-        </span>
-      ) : null}
+      {leadingNode === null ? null : <span className={styles.leading}>{leadingNode}</span>}
       <span className={styles.text}>
         <span className={styles.primary}>{render(primary)}</span>
         {secondaries.length > 0 ? (
@@ -516,8 +527,9 @@ function CardList<T>({
   // `filter` returns a NEW array every call, so deriving these inline would hand DataCard a fresh
   // prop on every render and defeat its memo. `find` happens to be stable, but they are derived
   // together so the reason stays in one place.
-  const { primary, secondaries, value } = useMemo(
+  const { leadingColumn, primary, secondaries, value } = useMemo(
     () => ({
+      leadingColumn: columns.find((c) => c.mobile === 'leading'),
       primary: columns.find((c) => c.mobile === 'primary'),
       secondaries: columns.filter((c) => c.mobile === 'secondary'),
       value: columns.find((c) => c.mobile === 'value'),
@@ -539,6 +551,7 @@ function CardList<T>({
       <DataCard
         key={rowKey(row)}
         row={row}
+        leadingColumn={leadingColumn}
         primary={primary}
         secondaries={secondaries}
         value={value}

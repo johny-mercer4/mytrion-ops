@@ -232,6 +232,49 @@ describe('DataTable — card mode', () => {
   });
 });
 
+describe('DataTable — the leading slot', () => {
+  it('lets a column claim it, and keeps an interactive one reachable', () => {
+    // The slot legitimately holds a selection checkbox (CS's CITI Folder is a bulk queue). Marking
+    // the slot aria-hidden would hide a FOCUSABLE control from assistive tech, which is a violation
+    // rather than a tidy-up — so decorative content brings its own aria-hidden instead.
+    setViewport(375);
+    const columns: DataColumn<Row>[] = [
+      {
+        id: 'select',
+        header: 'Select',
+        mobile: 'leading',
+        cell: (r) => <input type="checkbox" aria-label={`Select ${r.carrier}`} readOnly />,
+      },
+      { id: 'carrier', header: 'Carrier', cell: (r) => r.carrier, mobile: 'primary', rowHeader: true },
+    ];
+    render(<DataTable caption="T" rows={ROWS} rowKey={(r) => r.id} columns={columns} />);
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Select Northwind Freight' }),
+    ).toBeInTheDocument();
+  });
+
+  it('prefers a leading COLUMN over the row-derived leading prop', () => {
+    setViewport(375);
+    const columns: DataColumn<Row>[] = [
+      { id: 'flag', header: 'Flag', mobile: 'leading', cell: () => 'FROM-COLUMN' },
+      { id: 'carrier', header: 'Carrier', cell: (r) => r.carrier, mobile: 'primary', rowHeader: true },
+    ];
+    render(
+      <DataTable
+        caption="T"
+        rows={ROWS}
+        rowKey={(r) => r.id}
+        columns={columns}
+        leading={() => 'FROM-PROP'}
+      />,
+    );
+    const first = screen.getAllByRole('listitem')[0]!;
+    expect(first).toHaveTextContent('FROM-COLUMN');
+    expect(first).not.toHaveTextContent('FROM-PROP');
+  });
+});
+
 describe('DataTable — crossing the structure line', () => {
   it('switches rendering without the caller re-mounting anything', async () => {
     const view = render(table());
