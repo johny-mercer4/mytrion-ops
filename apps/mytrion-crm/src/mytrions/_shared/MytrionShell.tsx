@@ -1,4 +1,5 @@
 import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
+import { tabsFor } from '../../access/tabRegistry';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useIsCompact, useIsPhone } from '../../hooks/useMediaQuery';
@@ -290,6 +291,34 @@ export function MytrionShell({
   const sections: NavSection[] = navSections?.length
     ? navSections
     : [{ id: 'main', label: '', items: flatFallback }];
+  /**
+   * Dev-only: warn about a nav row the tab registry does not declare.
+   *
+   * This is the direction that actually hurts. An unregistered key cannot be granted by a permission
+   * set, so the moment anyone holds a SCOPED grant for this Mytrion the tab becomes invisible to
+   * them — with nothing in the admin UI to turn it back on, because it never appears in the picker.
+   * The opposite direction (a declared tab nobody renders) is caught by tabRegistry.test.ts.
+   *
+   * A warning rather than a throw: a missing registry entry must never be able to take a workspace
+   * down, and it is harmless until someone writes a scoped set.
+   *
+   * Skipped under test, where suites legitimately render this shell with invented fixture keys.
+   */
+  if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
+    const declared = new Set(tabsFor(id).map((t) => t.key));
+    for (const section of sections) {
+      for (const item of section.items) {
+        if (item.key && !declared.has(item.key)) {
+          console.warn(
+            `[tabRegistry] ${id} renders nav key "${item.key}", which is not declared in ` +
+              `MYTRION_TABS. It cannot be granted by a permission set, so a scoped user will never ` +
+              `see it. Add it to the Mytrion's *Tabs.ts.`,
+          );
+        }
+      }
+    }
+  }
+
   const q = navQuery.trim().toLowerCase();
   const visibleSections = filterSections(sections, q);
   const showSearch = enableNavSearch || Boolean(navSections?.length);
