@@ -62,6 +62,18 @@ export function clickToDial(phone: string, toCall = true): boolean {
   const phoneNumber = normalizeDialNumber(phone);
   if (!phoneNumber) return false;
 
+  /**
+   * The iframe is the truth, not the global.
+   *
+   * `window.RCAdapter` is installed by the vendor script and can outlive the widget — a persisted
+   * session probe restores it before the iframe exists, and teardown could not reach it at all until
+   * it started deleting it. Checking `clickToCall` first therefore let this call `revealRingCentralWidget()`
+   * on a torn-down widget: the softphone "popped open" on a Mytrion it was not mounted on and the
+   * call went nowhere. Both branches below already required the frame, so this early return costs no
+   * working call path.
+   */
+  if (!isRingCentralReady()) return false;
+
   if (typeof window.RCAdapter?.clickToCall === 'function') {
     revealRingCentralWidget();
     window.RCAdapter.clickToCall(phoneNumber, toCall);
