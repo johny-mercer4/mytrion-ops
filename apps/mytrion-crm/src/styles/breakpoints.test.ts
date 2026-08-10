@@ -88,6 +88,12 @@ function census(files: readonly string[], re: RegExp): { count: number; sample: 
 }
 
 /**
+ * RE-BASELINING ON A MERGE. These numbers only go down through work on THIS branch — but a merge
+ * from `build` legitimately brings in code written where this guard did not exist, and the right
+ * response is to record the new baseline, not to rewrite a teammate's CSS inside a merge commit.
+ * When you raise one, say in the commit which merge moved it and why the new sites are not live
+ * defects. Everywhere else, the rule below stands.
+ *
  * EXACT equality, in both directions, and that is the whole mechanism.
  *
  * `<=` would let a budget go stale: someone fixes twenty sites, the number stays at the old value,
@@ -158,7 +164,9 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
   // A width the layout cannot go below is what actually produces a horizontal page scrollbar. These
   // three budgets are the whole "make it fit" backlog, counted rather than listed.
   it('does not add a CSS min-width in px', () => {
-    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 74);
+    // 74 -> 76 on the merge of origin/build (PR #166, CS Applications sort/filter). Neither is a
+    // live defect: one is a 16px badge dot, the other a 150px filter field inside a wrapping row.
+    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 76);
   });
 
   it('does not add an inline minWidth in TSX', () => {
@@ -279,7 +287,10 @@ describe('touch', () => {
         if (sample.length < 8) sample.push(at(file, m.index, text));
       }
     }
-    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 43);
+    // 43 -> 44 on the merge of origin/build: `.cs-app-sort select.cs-form-input` at 13px. Not a live
+    // defect — the !important guard in global.css already beats it below the density line. It is
+    // counted because it is one more rule that guard has to fight.
+    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 44);
   });
 });
 
