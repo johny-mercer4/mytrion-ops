@@ -23,10 +23,17 @@
  * surface, and a touchscreen laptop is 1400px wide.
  */
 
+/*
+ * NOT every element named "wrap" is the scroller. `.fi-tablewrap` is the rounded FRAME — it carries
+ * `overflow: hidden` on purpose, to clip the table to its own border radius — and `.fi-tablescroll`
+ * inside it is what actually scrolls. Listing the frame here would both break that clipping and
+ * nest two horizontal scrollers, which is the same "two scroll parents" defect the shell documents
+ * one level up. Verified one by one against each workspace's CSS; the class existing is not
+ * evidence that the rule belongs on it.
+ */
 .cs-table-wrap,
 .bm-table-wrap,
 .hr-listwrap,
-.fi-tablewrap,
 .fi-tablescroll,
 .mg-efs-tablewrap,
 .msd-tx-wrap,
@@ -47,7 +54,7 @@
    Nothing reflows; the table stops wasting inches. At 900px the rail is already collapsed and the
    content pane is doing the work. */
 @media (width < 900px) {
-  :is(.cs-table-wrap, .bm-table-wrap, .hr-listwrap, .fi-tablewrap, .fi-tablescroll,
+  :is(.cs-table-wrap, .bm-table-wrap, .hr-listwrap, .fi-tablescroll,
       .mg-efs-tablewrap, .msd-tx-wrap, [data-table-scroller]) :is(th, td) {
     padding-inline: var(--space-2);
   }

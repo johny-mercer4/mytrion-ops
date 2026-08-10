@@ -13512,3 +13512,80 @@ means none of them is broken in the meantime.
 No browser verification has been done in these sessions: Tier 2 of the plan (the
 `scrollWidth > innerWidth` check, iOS input zoom, rotation, and the stacking-context check on a
 legacy modal) still needs a device or DevTools.
+
+### 2026-08-10 — Phase 3 continued: eleven tables migrated
+
+Customer Service 5/7, Manager 4/4, HR 2/2. ~500 lines of hand-written table
+markup replaced by column definitions; each surface gains a card list and, where
+it does not already own a detail modal, a record sheet below 640px.
+
+**Mobile roles are a judgment per table**, written down at each definition rather
+than inferred. The recurring shape: who the row is (primary), enough to identify
+it (secondary), and the one thing it is triaged on (value). Everything else opens
+with the record instead of competing for a 375px row. Two tables did something
+more specific — the KPI leaderboard takes its value from the ACTIVE SORT (you
+sorted by gallons because gallons is the question), and the EFS dossier's generic
+RowTable assigns roles by POSITION because its shape is whatever the vendor
+returned.
+
+**Four capabilities the migrations forced into `ds/DataTable`**, each from a real
+surface rather than speculation:
+
+- `rowActivation: 'row' | 'cell'`. HR's lists put a real button in the name cell
+  and treat the row click as a mouse convenience — their own comment says making
+  every row focusable "would put a tab stop on every one of 222 rows and leave
+  the admin actions inside it unreachable". DataTable was adding tabIndex to
+  every activatable row, which would have quietly undone that.
+- `rowState`. A terminated employee greyed out, a row with a delete in flight
+  aria-busy. Two named fields, not a prop spread — behaviour belongs in the
+  typed props, and a table that can inject arbitrary handlers per row stops
+  being describable as data.
+- `mobile: 'leading'` + un-hiding the leading slot. It was hard-coded
+  `aria-hidden`, which is right for a decorative avatar and an accessibility
+  violation for CITI Folder's bulk-select checkbox — hidden from assistive tech
+  but still in the tab order.
+- `rowKey` receives the index, for a generic dump over a vendor payload with no
+  natural id.
+
+**A recurring trap worth knowing:** an identity cell that renders a `<button>`
+needs a `mobileCell` returning plain text, because the card is itself a button
+and a button inside a button is invalid HTML. Now documented on the prop.
+
+**Two bugs of my own, both caught by looking rather than by review:**
+
+1. The budget helper asserted `count === min(count, budget)`, which passes
+   whenever the count goes DOWN — so a budget could go stale silently and let
+   regressions land later under the same green test. Exact equality now, in both
+   directions, which is what makes it a ratchet. Turning it on immediately showed
+   four stale budgets; they are locked at the real numbers (off-ladder 92→83,
+   legacy syntax 124→108).
+2. `responsive-tables.css` was giving `.fi-tablewrap` `overflow-x: auto`. That
+   class is the rounded FRAME — it carries `overflow: hidden` deliberately, to
+   clip the table to its radius — and `.fi-tablescroll` inside it is the real
+   scroller. The rule both broke the clipping and nested two horizontal
+   scrollers. **The class existing is not evidence that the rule belongs on it**,
+   which the dead-selector test cannot tell you; each one has to be read against
+   its own workspace's CSS.
+
+### Deliberately not migrated
+
+`finance/efsPanels.tsx`'s movements table groups rows under day headers using
+multiple `<tbody>` elements. DataTable renders one, and grouping is a real
+feature — this is exactly the case its docblock reserves for `ds/Table` directly.
+Left alone rather than flattened.
+
+### Still open
+
+Billing (10 tables, including the one virtualised surface), Sales' dash panel and
+`DetailSheet` cluster, Admin's KpiData, CS Applications (28 columns, per-cell
+click handlers) and Analytics. All covered by the floor in the meantime.
+
+Sales' `DetailSheet` → `ds/Dialog` is scoped but not done: its four call sites
+pass `avatar` and `badges`, which `ModalChrome` has no slots for, so the
+conversion is a header redesign rather than a swap — and its accessible name
+currently comes from a separate `ariaLabel` prop that `aria-labelledby` would
+override. Worth doing with a browser open.
+
+Still no browser verification. The `scrollWidth > innerWidth` check, iOS input
+zoom, rotation, and whether a legacy `position: fixed` modal still paints above
+the header all need a device.
