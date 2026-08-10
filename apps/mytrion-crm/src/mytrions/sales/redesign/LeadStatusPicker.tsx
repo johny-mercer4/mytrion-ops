@@ -19,7 +19,7 @@ export function LeadStatusPicker({
   ariaLabel?: string;
 }) {
   return (
-    <div style={s('display:grid;grid-template-columns:repeat(2,1fr);gap:8px')} role="radiogroup" aria-label={ariaLabel}>
+    <div style={s('display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px')} role="radiogroup" aria-label={ariaLabel}>
       {options.map((o) => {
         const active = value === o.value;
         const { color, icon } = statusMeta(o.value);

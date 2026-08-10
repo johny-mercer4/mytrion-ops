@@ -43,7 +43,12 @@ export type { BadgeIntent, BadgeProps, BadgeSize } from './Badge/Badge';
 export { Avatar, AvatarGroup } from './Avatar';
 export type { AvatarGroupProps, AvatarProps, AvatarSize, AvatarStatus } from './Avatar';
 export { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSelectCell } from './Table';
-export type { TableAlign, TableBodyProps, TableCellProps, TableDensity, TableHeadProps, TableHeaderCellProps, TableLayout, TableMessageRowProps, TableProps, TableRowProps, TableSelectCellProps, TableSortDirection } from './Table';
+export type { TableAlign, TableBodyProps, TableCellProps, TableDensity, TableHeadProps, TableHeaderCellProps, TableLayout, TableMessageRowProps, TableProps, TableRowProps, TableSelectCellProps, TableColumnPriority, TableScroller, TableSortDirection } from './Table';
+// One column definition, two renderings: a real table on a desktop, a tap-to-detail card list below
+// the structure line. Reach for this before Table — Table is the escape hatch for the tables too
+// irregular to describe as data, not the default.
+export { DataTable } from './DataTable';
+export type { DataColumn, DataColumnMobile, DataTableDetail, DataTableProps, DataTableSort } from './DataTable';
 export { Pagination } from './Pagination/Pagination';
 export type { PaginationProps, PaginationSize } from './Pagination/Pagination';
 export { TabPanel, Tabs } from './Tabs';

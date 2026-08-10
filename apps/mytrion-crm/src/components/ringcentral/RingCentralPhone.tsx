@@ -433,7 +433,10 @@ export function RingCentralPhone() {
        */
       style={{
         position: 'fixed',
-        bottom: '96px',
+        // Clears the CS Copilot FAB, and below the structure line the tab bar and home
+        // indicator too. This component mounts in WorkerLayout, outside the shell, which is
+        // why --layout-bottom-inset lives on :root.
+        bottom: 'calc(96px + var(--layout-bottom-inset, 0px))',
         right: '24px',
         zIndex: 200,
         display: 'flex',

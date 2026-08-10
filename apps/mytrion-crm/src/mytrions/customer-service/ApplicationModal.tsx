@@ -8,10 +8,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { saveApplication } from '@/api/cs';
-import { ConfirmDialog } from './ConfirmDialog';
 import { copyWithToast } from './copyToast';
 import type { Application } from './data';
 import { useScrollLock } from './useScrollLock';
+import { ConfirmDialog } from '@/ds';
 
 type FieldType = 'text' | 'number' | 'picklist' | 'boolean' | 'textarea' | 'readonly';
 
@@ -339,18 +339,20 @@ export function ApplicationModal({
 
       {confirmDiscard ? (
         <ConfirmDialog
+          open
+          tone="danger"
           title="Discard unsaved changes?"
           body={`${dirtyCount} change${dirtyCount === 1 ? '' : 's'} on this application ${
             dirtyCount === 1 ? 'has' : 'have'
           } not been saved. Closing now loses ${dirtyCount === 1 ? 'it' : 'them'}.`}
           confirmLabel="Discard"
           cancelLabel="Keep editing"
-          busy={false}
+          confirming={false}
           onConfirm={() => {
             setConfirmDiscard(false);
             onClose();
           }}
-          onCancel={() => setConfirmDiscard(false)}
+          onClose={() => setConfirmDiscard(false)}
         />
       ) : null}
     </div>

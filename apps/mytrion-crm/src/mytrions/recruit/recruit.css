@@ -20,7 +20,8 @@
   min-height: 100%;
   color: var(--text-primary);
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 15px;
+  /* iOS zooms the whole document on a focused field below 16px, and does not zoom back. */
+  font-size: var(--text-input-mobile);
 }
 
 .recruit-page {

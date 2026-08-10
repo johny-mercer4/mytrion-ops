@@ -59,10 +59,13 @@ export function ActAsPicker({
     return (
       <div className={`${styles.banner}${placement === 'sidebar' ? ` ${styles.bannerSidebar}` : ''}`}>
         <span className={styles.dot} aria-hidden="true" />
-        Acting as <strong className={styles.who}>{actingAs.name}</strong>
+        {/* Wrapped rather than left as a bare text node so a narrow viewport can drop the words and
+            keep the name — the dot and the accent already say "you are impersonating". */}
+        <span className={styles.bannerWord}>Acting as</span>
+        <strong className={styles.who}>{actingAs.name}</strong>
         <button type="button" className={styles.exit} onClick={() => setActingAs(null)} title="Exit — back to admin">
           <XIcon size={12} />
-          Exit
+          <span className={styles.bannerWord}>Exit</span>
         </button>
       </div>
     );

@@ -24,12 +24,12 @@ export function CompanySkeleton() {
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <div className="ss-skel" style={s('height:48px;width:55%')} />
-      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+      <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px')}>
         <div className="ss-skel" style={s('height:140px')} />
         <div className="ss-skel" style={s('height:140px')} />
         <div className="ss-skel" style={s('height:140px')} />
       </div>
-      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+      <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px')}>
         <div className="ss-skel" style={s('height:140px')} />
         <div className="ss-skel" style={s('height:140px')} />
         <div className="ss-skel" style={s('height:140px')} />
@@ -46,7 +46,7 @@ export function DebtorsSkeleton() {
         <div className="ss-skel" style={s('height:34px;width:96px')} />
       </div>
       <div className="ss-skel" style={s('height:38px;width:100%')} />
-      <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:10px')}>
+      <div style={s('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px')}>
         <div className="ss-skel" style={s('height:72px')} />
         <div className="ss-skel" style={s('height:72px')} />
         <div className="ss-skel" style={s('height:72px')} />

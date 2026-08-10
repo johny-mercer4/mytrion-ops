@@ -95,3 +95,27 @@ Where it holds a value: `empty · filled · invalid`. Where it can be chosen: `s
 Every component carries a docblock covering: what it is, the variants, the keyboard map, and — the
 part people skip — **when NOT to use it**. That block is what a design agent reads through the
 emitted `.d.ts`, so it is API documentation, not decoration.
+
+## Responsive
+
+The ladder is four numbers — `(width < 480 | 640 | 900 | 1200px)` — in **range syntax, never
+`max-width`**. `src/styles/breakpoints.test.ts` fails on a fifth. `640` is the structure line (the
+surface changes shape) and `900` is the density line (it only gets tighter). Full rationale in
+`docs/design/FOUNDATIONS.md` §5.
+
+**A ds component takes a prop, not a viewport.** §2 says a component takes props and nothing else,
+and that holds here: the kitchen sink and the Figma library build have no viewport story, and the
+library ships into a sandbox where `matchMedia` may not exist at all. Express responsiveness in CSS
+where you can; where a component genuinely must branch in JS, it reads the shared internal hook
+whose absent-`matchMedia` snapshot is `false` — i.e. the **desktop** rendering, never a mobile one
+nothing can measure. The composition layer (`mytrions/_shared`) is where a viewport becomes a prop.
+
+**Overlays need no `z-index`.** `Dialog` and `Drawer` are native `<dialog>` + `showModal()`, so they
+live in the top layer and escape every stacking context by construction. Do not add one "to be
+safe" — and never add `z-index`, `transform`, `filter` or `contain` to anything that could become an
+ancestor of page content, which traps the app's legacy `position: fixed` modals behind the header.
+
+**Touch:** 44px minimum via an overhanging hit area, never by growing the control. A `:hover` that
+changes `opacity`/`visibility`/`display`/`pointer-events`/`transform` is unreachable with a finger
+and needs an `@media (hover: none)` reset. Fields are already 16px below the density line via
+`--text-input-mobile` — that is why iOS does not zoom them; do not re-solve it per component.

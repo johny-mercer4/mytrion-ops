@@ -484,7 +484,7 @@ export function AutoTab() {
                   )}
 
                   {showUnitDriver && (
-                    <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
+                    <div className="ss-auto-formrow" style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
                       <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
                       <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(AUTO_INPUT)} /></div>
                       <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(AUTO_INPUT)} /></div>

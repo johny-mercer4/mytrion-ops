@@ -434,7 +434,7 @@ export function CarriersTab() {
                     onCreate={() => void onCreateLead(c)}
                   />
                 </div>
-                <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
+                <div style={s('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:12px;margin-top:20px')}>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                     <div style={s("font-family:var(--font-mono);font-size:20px;font-weight:600")}>{c.dot}</div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>DOT #</div>

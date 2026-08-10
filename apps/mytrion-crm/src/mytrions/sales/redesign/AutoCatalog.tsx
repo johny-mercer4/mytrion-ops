@@ -116,7 +116,7 @@ export function AutoCatalog({
       {sections.map(({ category, items: sectionItems }) => (
         <section key={category.code}>
           <CategoryHeader category={category} count={sectionItems.length} />
-          <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
+          <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px')}>
             {sectionItems.map((a) => {
               const dragging = dragId === a.id;
               const over = overId === a.id && dragId !== a.id;

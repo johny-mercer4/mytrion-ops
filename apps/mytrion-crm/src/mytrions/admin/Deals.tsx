@@ -15,7 +15,6 @@ import {
 import { listAgents, type AgentUser } from '../../api/agents';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { RefreshIcon, SearchIcon } from '../../components/icons';
-import { ConfirmDialog } from './ConfirmDialog';
 import { DealTransferDrawer, type PriorOwnerState } from './DealTransferDrawer';
 import {
   dash,
@@ -25,6 +24,7 @@ import {
 } from './dealsHelpers';
 import { adminToast } from './toast';
 import s from './admin.module.css';
+import { ConfirmDialog } from '@/ds';
 
 const BROWSE_SKELETON = ['42%', '28%', '32%', '22%', '24%', '20%', '16%'] as const;
 const RECOVERY_SKELETON = ['40%', '28%', '30%', '28%', '22%', '20%'] as const;
@@ -598,12 +598,14 @@ export function Deals() {
 
       {confirmOpen && selected ? (
         <ConfirmDialog
+          open
+          tone="danger"
           title="Transfer ownership?"
           body={`Move Deal, Contact, and Company from ${dash(selected.ownerName)} to ${dash(selectedAgent?.name ?? toAgentId)}. This writes to Zoho immediately.`}
           confirmLabel="Transfer now"
-          busy={busy}
+          confirming={busy}
           onConfirm={() => void runTransfer()}
-          onCancel={() => {
+          onClose={() => {
             if (!busy) setConfirmOpen(false);
           }}
         />

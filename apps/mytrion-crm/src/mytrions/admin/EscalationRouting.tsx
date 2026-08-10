@@ -13,11 +13,11 @@ import {
   type RoutingCandidate,
   type RoutingSnapshot,
 } from '../../api/commsAdmin';
-import { ConfirmDialog } from './ConfirmDialog';
 import { PersonPicker } from './PersonPicker';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 import e from './escalationRouting.module.css';
+import { ConfirmDialog } from '@/ds';
 
 /**
  * Escalation Routing — who an escalation goes to at each of the four levels.
@@ -377,12 +377,14 @@ export function EscalationRouting() {
           `position: fixed` still resolves against the viewport. */}
       {pendingRemove && (
         <ConfirmDialog
+          open
+          tone="danger"
           title={pendingRemove.title}
           body={pendingRemove.body}
           confirmLabel="Remove"
-          busy={removing}
+          confirming={removing}
           onConfirm={() => void confirmRemove()}
-          onCancel={() => {
+          onClose={() => {
             if (!removing) setPendingRemove(null);
           }}
         />
@@ -805,7 +807,13 @@ function CLevelPool({
   }
 
   return (
-    <div className={e.row} style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(240px, 22rem) auto' }}>
+    <div
+      className={e.row}
+      // The 240px floor is what `.row`'s own narrow-screen rule exists to remove, and an inline
+      // style outranks it — so this row alone stayed three-up on a phone. `min(100%, 240px)` keeps
+      // the desktop width and lets it collapse.
+      style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(min(100%, 240px), 22rem) auto' }}
+    >
       <div className={e.rowMain}>
         <span className={e.rowTitle}>C-Level pool</span>
         <span className={e.rowMeta}>

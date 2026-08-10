@@ -109,7 +109,7 @@ const COPIED_MS = 1600;
  *
  * TABLES USE THE APP'S OWN TABLE LANGUAGE. Flat and opaque, uppercase muted header with no tinted
  * band, 1px rules, hover wash, numeric columns right-aligned in the numeric face with `tabular-nums`
- * — the same four rules as `_shared/table.module.css`. This is not decoration: output that looks
+ * — the same four rules as `ds/Table`. This is not decoration: output that looks
  * different from the tables the user trusts elsewhere reads as untrustworthy, and a model's table is
  * the last place you want to spend credibility.
  *

@@ -171,7 +171,7 @@
    from the stored value). Everything tinted below reads it, so one department = one colour. */
 .hr-root .hr-deptc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 292px), 1fr));
   gap: 14px;
 }
 .hr-root .hr-deptc {
@@ -485,7 +485,11 @@
    container, and a container that grows with its content has no height to measure. */
 .hr-root .hr-ocanvas {
   position: relative;
-  height: clamp(460px, calc(100vh - 300px), 860px);
+  /* 460px of a 640px phone viewport is the whole scroll region, and React Flow captures the
+     touch gesture inside it — so the org chart became a trap you could not scroll past. The floor
+     drops below the structure line; `svh` rather than `vh` so the URL bar cannot make it taller
+     than the screen. */
+  height: clamp(460px, calc(100svh - 300px), 860px);
   border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
@@ -1030,4 +1034,11 @@
   font-size: var(--text-sm);
   color: var(--tone-emerald, var(--accent));
   font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+@media (width < 640px) {
+  .hr-root .hr-ocanvas {
+    /* Short enough that the page scrolls past it with a thumb on either side of the canvas. */
+    height: clamp(280px, calc(100svh - 320px), 420px);
+  }
 }

@@ -497,7 +497,7 @@ export function AutoTransactionsPanel({
   return (
     <div style={s(shell)}>
       <div style={s(splitLayout ? 'flex-shrink:0' : '')}>
-        <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:10px')}>
+        <div style={s('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px')}>
           {[
             ['Txns', String(liveTotals.count)],
             ['Funded', money(liveTotals.funded)],

@@ -1,6 +1,10 @@
 /**
  * The menu primitive. Shared chrome — the header and the sidebar both hang off it — and almost all of
  * its behaviour is keyboard, which is the part nobody notices is broken by clicking around.
+ *
+ * The second block covers the panel being PORTALLED to <body>. That was a bug fix, and a portal is
+ * easy to break in ways these keyboard tests would not notice: the outside-press listener tests
+ * whether the target is inside the trigger's subtree, and the panel is no longer in it.
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -100,5 +104,73 @@ describe('DropdownMenu', () => {
     fireEvent.click(trigger);
     fireEvent.click(trigger);
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+});
+
+
+/**
+ * Reported from the running app: with the sidebar collapsed to 68px, opening the account menu from
+ * the rail showed a sliced-off panel — "Pro…" and "Sig…" — with Profile and Sign out unreachable.
+ * The cause was `position: absolute` inside `.sidebar`, which sets `overflow: hidden` because it
+ * animates its own width and has to clip the labels while it does.
+ *
+ * jsdom does no layout, so this cannot assert the panel is VISIBLE. What it can assert is the
+ * structural property that makes clipping impossible: the panel is not a descendant of whatever
+ * contains the trigger.
+ */
+describe('DropdownMenu — panel placement', () => {
+  function inClipper(onSelect = vi.fn()) {
+    const view = render(
+      <div style={{ overflow: 'hidden' }} data-testid="clipper">
+        <DropdownMenu label="Account" trigger={<span>JM</span>} placement="up" align="start">
+          {(close) => (
+            <MenuItem
+              onSelect={() => {
+                onSelect();
+                close();
+              }}
+            >
+              Profile
+            </MenuItem>
+          )}
+        </DropdownMenu>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+    return { ...view, onSelect, menu: screen.getByRole('menu') };
+  }
+
+  it('renders the panel outside any clipping ancestor', () => {
+    const { getByTestId, menu } = inClipper();
+    expect(getByTestId('clipper').contains(menu)).toBe(false);
+    expect(menu.parentElement).toBe(document.body);
+  });
+
+  it('positions itself in viewport coordinates', () => {
+    const { menu } = inClipper();
+    // `fixed`, not `absolute`: an absolutely-positioned panel resolves against an offset parent that
+    // may be the very element clipping it.
+    expect(menu.style.position).toBe('fixed');
+    expect(menu.style.bottom).not.toBe('');
+    expect(menu.style.left).not.toBe('');
+  });
+
+  it('still treats a press on an item as inside', () => {
+    // The dismiss listener tested only `rootRef.contains(target)`. Portalling moves the panel out of
+    // that subtree, so without also testing the menu ref the first press on Profile would close the
+    // menu instead of choosing it.
+    const { onSelect } = inClipper();
+    const item = screen.getByRole('menuitem', { name: 'Profile' });
+    fireEvent.pointerDown(item);
+    expect(screen.queryByRole('menu')).not.toBeNull();
+    fireEvent.click(item);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves nothing behind in <body> on unmount', () => {
+    const { unmount } = inClipper();
+    expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+    unmount();
+    expect(document.querySelectorAll('[role="menu"]')).toHaveLength(0);
   });
 });

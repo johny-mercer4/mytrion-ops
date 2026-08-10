@@ -30,6 +30,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* A flex item floors at min-content without this, which is what stopped the whole left
+     cluster shrinking and pushed the acting-as banner off a 320px header. */
+  min-inline-size: 0;
 }
 
 /* 22px gradient tile. The workspace tone washes over the brand ramp rather than replacing it, so
@@ -58,6 +61,12 @@
   letter-spacing: 0.01em;
   color: var(--text-primary);
   white-space: nowrap;
+  /* The workspace name is the only thing in the header's LEFT cluster that can give way —
+     .tile and .chevron both carry flex: none. Unconditional, not nested under .face: the
+     single-workspace branch renders a bare span with no .face wrapper. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chevron {
@@ -169,4 +178,13 @@
 .rowCheck {
   flex: none;
   color: var(--accent);
+}
+
+/* Above the structure line the chip keeps flex: none and its full intrinsic width, so the desktop
+   header is byte-identical. Below it, the name is what yields. */
+@media (width < 640px) {
+  .chip {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+  }
 }

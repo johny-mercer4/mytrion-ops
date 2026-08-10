@@ -1,48 +1,14 @@
 /* =====================================================
    Billing Mytrion — Responsive Styles
-   Breakpoints: 768px · 640px · 480px · 380px
+   Breakpoints: the ladder, and only the ladder — (width < 640px) and (width < 480px).
+   See docs/design/FOUNDATIONS.md 5; src/styles/breakpoints.test.ts fails on a fifth value.
    ===================================================== */
-
-/* ═══════════════════════════════════════════════
-   §1  SIDEBAR — collapse to mobile bottom nav (≤ 768px)
-   ═══════════════════════════════════════════════ */
-
-@media (max-width: 768px) {
-
-    /* Shrink content bottom-padding so it doesn't overlap the bottom nav */
-    .bm-root .bm-content {
-    }
-
-    .bm-root .bm-panel {
-    }
-
-    .bm-root .bm-ai-panel {
-    }
-}
-
-/* ═══════════════════════════════════════════════
-   §2  HEADER  (≤ 640px)
-   ═══════════════════════════════════════════════ */
-
-@media (max-width: 640px) {
-    .bm-root {
-        --header-height: 48px;
-    }
-
-}
-
-@media (max-width: 480px) {
-    .bm-root {
-        --header-height: 44px;
-    }
-
-}
 
 /* ═══════════════════════════════════════════════
    §3  PANEL CONTENT  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     .bm-root .bm-panel {
         padding: 1rem;
         gap: 1rem;
@@ -52,11 +18,12 @@
         font-size: 0.9375rem;
     }
 
-    /* Stats grids — 2 columns on mobile */
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
-        grid-template-columns: repeat(2, 1fr);
+    /* The KPI row. `.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` used to be listed
+       here and are styled all over this module, but NO .tsx renders any of the three — the class
+       Billing actually writes is `.db-kpi-grid`. Same failure as `.bm-table-desktop-only`: a rule
+       that reads as covered in review and has never once applied. */
+    .bm-root .db-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.625rem;
     }
 
@@ -85,41 +52,20 @@
     }
 }
 
-@media (max-width: 480px) {
+@media (width < 480px) {
     .bm-root .bm-panel {
         padding: 0.75rem;
         gap: 0.75rem;
     }
 
     /* Stats — keep 2 columns but tighter */
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
-        gap: 0.5rem;
-    }
 
     .bm-root .bm-stat-card {
         padding: 0.75rem;
     }
-
-    /* Hide table on very small screens, show list fallback */
-    .bm-root .bm-table-desktop-only {
-        display: none;
-    }
-
-    .bm-root .bm-list-mobile-only {
-        display: flex;
-    }
-
-    /* Bottom nav labels — shrink */
 }
 
-@media (max-width: 380px) {
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
-        grid-template-columns: 1fr 1fr;
-    }
+@media (width < 480px) {
 
 }
 
@@ -127,7 +73,7 @@
    §4  AI CHAT  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     .bm-root .bm-ai-header {
         padding: 0.625rem 1rem;
     }
@@ -149,7 +95,7 @@
     }
 }
 
-@media (max-width: 480px) {
+@media (width < 480px) {
     .bm-root .bm-ai-msg-bubble {
         max-width: 92%;
         font-size: 0.75rem;
@@ -171,7 +117,7 @@
 /* Bottom sheet. The 16vh strip above the sheet is now the OVERLAY's padding rather than a `84vh`
    cap on the panel: same height, but the gutter and the panel's `max-height: 100%` are one
    measurement instead of two that can disagree, and the strip stays a backdrop-click target. */
-@media (max-width: 640px) {
+@media (width < 640px) {
     .bm-root .bm-modal-backdrop {
         align-items: flex-end;
         padding: 16vh 0 0;

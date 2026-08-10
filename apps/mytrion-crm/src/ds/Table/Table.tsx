@@ -18,6 +18,17 @@ export type TableLayout = 'auto' | 'fixed';
 /** The three values `aria-sort` actually takes here. Same strings, so they pass straight through. */
 export type TableSortDirection = 'ascending' | 'descending' | 'none';
 export type TableAlign = 'start' | 'center' | 'end';
+/**
+ * Which viewport bands still show a column.
+ *   1  always — the identity column and the one number the row is about.
+ *   2  dropped below the DENSITY line (900px).
+ *   3  dropped below the WIDE-DESKTOP line (1200px) — the first to go.
+ * Purely visual: the cell stays in the DOM and in the header association, so find-in-page and a
+ * screen reader's table mode still reach it.
+ */
+export type TableColumnPriority = 1 | 2 | 3;
+/** Who owns horizontal scrolling. See `TableProps.scroller`. */
+export type TableScroller = 'auto' | 'none';
 
 const cx = (...parts: Array<string | false | null | undefined>): string =>
   parts.filter(Boolean).join(' ');
@@ -72,6 +83,19 @@ export interface TableProps extends Omit<TableHTMLAttributes<HTMLTableElement>, 
   scrollerStyle?: CSSProperties;
   /** Ref to the scroll container, for scroll restoration or a virtualiser. */
   scrollerRef?: Ref<HTMLDivElement>;
+  /**
+   * `auto` (default) — this element scrolls.
+   * `none` — an ANCESTOR owns scrolling; this one gets `overflow: visible`.
+   *
+   * `none` exists for one specific hazard. A windowed table measures `clientHeight`/`scrollTop` on
+   * a scroll ref it was given, and a second scroll parent between that ref and the rows silently
+   * corrupts the range math — so it renders the wrong rows rather than failing visibly. That is the
+   * same defect `MytrionShell`'s `contentScroll='content'` exists for, one level down.
+   *
+   * If you set this, the ancestor must own `overflow` AND the sticky header stops working, because
+   * `position: sticky` resolves against the nearest scrollport and that is no longer this element.
+   */
+  scroller?: TableScroller | undefined;
 }
 
 /**
@@ -149,6 +173,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
     scrollerClassName,
     scrollerStyle,
     scrollerRef,
+    scroller = 'auto',
     ...rest
   },
   ref,
@@ -157,6 +182,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
     <div
       ref={scrollerRef}
       className={cx(styles.scroller, scrollerClassName)}
+      data-scroller={scroller}
       style={scrollerStyle}
     >
       <table
@@ -276,6 +302,8 @@ export interface TableHeaderCellProps
   align?: TableAlign;
   /** Renders the sort control and puts `aria-sort` on the cell. */
   sortable?: boolean;
+  /** Hide this column below a viewport band. Must match the `priority` on every cell beneath it. */
+  priority?: TableColumnPriority | undefined;
   /** Current state of THIS column. `none` means sortable but not currently sorted. */
   sortDirection?: TableSortDirection;
   /**
@@ -310,6 +338,7 @@ export const TableHeaderCell = forwardRef<HTMLTableCellElement, TableHeaderCellP
       numeric,
       align,
       sortable = false,
+      priority,
       sortDirection = 'none',
       onSort,
       children,
@@ -328,6 +357,7 @@ export const TableHeaderCell = forwardRef<HTMLTableCellElement, TableHeaderCellP
         className={cx(styles.headCell, className)}
         data-num={numeric || undefined}
         data-align={align}
+        data-priority={priority}
         data-sortable={sortable || undefined}
         // Only on a sortable column. `aria-sort="none"` on a column that cannot be sorted tells the
         // user a control exists where there is none.
@@ -373,6 +403,17 @@ export interface TableCellProps extends Omit<TdHTMLAttributes<HTMLTableCellEleme
   rowHeader?: boolean;
   /** Single-line with an ellipsis. Inert unless the column has a width — see `Table layout="fixed"`. */
   truncate?: boolean;
+  /** Hide this cell below a viewport band. Must match the `priority` on its header. */
+  priority?: TableColumnPriority | undefined;
+  /**
+   * Marks THIS cell as the one `stickyFirstColumn` pins.
+   *
+   * Without it the pin is positional (`:first-child`), which is wrong the moment any column can be
+   * hidden: `display: none` does not change which element is first, so the pin lands on an
+   * invisible cell and nothing sticks. Set it on the identity column — `DataTable` does this
+   * automatically and refuses to give that column a priority above 1.
+   */
+  pinned?: boolean | undefined;
 }
 
 /**
@@ -382,12 +423,13 @@ export interface TableCellProps extends Omit<TdHTMLAttributes<HTMLTableCellEleme
  * shrink-to-fit column width and the indeterminate state.
  */
 export const TableCell = forwardRef<HTMLTableCellElement, TableCellProps>(function TableCell(
-  { numeric, align, rowHeader = false, truncate, className, ...rest },
+  { numeric, align, rowHeader = false, truncate, priority, pinned, className, ...rest },
   ref,
 ) {
   const cls = cx(styles.cell, className);
   const num = numeric || undefined;
   const trunc = truncate || undefined;
+  const pin = pinned || undefined;
 
   // Two real elements rather than a `<td role="rowheader">`: the native th/scope pair is what
   // browsers build their header-association table from, and an ARIA role alone does not populate it.
@@ -400,6 +442,8 @@ export const TableCell = forwardRef<HTMLTableCellElement, TableCellProps>(functi
       data-num={num}
       data-align={align}
       data-truncate={trunc}
+      data-priority={priority}
+      data-pin={pin}
       {...rest}
     />
   ) : (
@@ -409,6 +453,8 @@ export const TableCell = forwardRef<HTMLTableCellElement, TableCellProps>(functi
       data-num={num}
       data-align={align}
       data-truncate={trunc}
+      data-priority={priority}
+      data-pin={pin}
       {...rest}
     />
   );

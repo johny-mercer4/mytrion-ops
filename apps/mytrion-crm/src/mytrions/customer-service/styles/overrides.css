@@ -126,7 +126,9 @@
 .cs-root .cs-copilot-fab {
     position: fixed;
     right: 24px;
-    bottom: 24px;
+    /* Clears the mobile tab bar + home indicator. --layout-bottom-inset is 0 on a desktop,
+       so this is the same 24px there. */
+    bottom: calc(24px + var(--layout-bottom-inset, 0px));
     z-index: 90;
     width: 56px;
     height: 56px;
@@ -158,7 +160,7 @@
 .cs-root .cs-copilot-panel {
     position: fixed;
     right: 24px;
-    bottom: 92px;
+    bottom: calc(92px + var(--layout-bottom-inset, 0px));
     z-index: 95;
     width: 380px;
     max-width: calc(100vw - 40px);

@@ -708,7 +708,7 @@
 /* Two columns on wide modals, one when narrow — rows never split across the fold. */
 .fi-sect-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
   gap: 0 30px;
   padding: 4px 15px 8px;
 }
@@ -724,7 +724,12 @@
   border-bottom: none;
 }
 .fi-dt-l {
-  flex: none;
+  /* Was `flex: none` beside a `justify-content: space-between` row, so a long label pushed the
+     value off the card instead of giving way. It is the label — it is what should truncate. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -974,8 +979,10 @@ table.fi-table {
 }
 
 /* Narrow screens: the row grid collapses to name + debt, the rest wraps away. */
-@media (max-width: 860px) {
+@media (width < 900px) {
   .fi-row {
+    /* Two tracks for a row that renders three items: the third wrapped into an implicit track and
+       broke the alignment. `.fi-row-hide` below removes it, so the count now matches. */
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .fi-row .fi-row-hide {

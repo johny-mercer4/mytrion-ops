@@ -294,3 +294,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The three Settings tabs sit in a non-wrapping inline-flex row whose combined min-content is
+   ~310px — wider than the content box a 320px phone leaves. They scroll rather than wrap, for the
+   same reason as every other tab strip: wrapping moves the active tab under the thumb. */
+@media (width < 640px) {
+  .hr-root .hr-settings-tabs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .hr-root .hr-settings-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}

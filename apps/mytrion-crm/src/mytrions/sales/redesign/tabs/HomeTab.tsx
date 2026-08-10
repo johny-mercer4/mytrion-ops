@@ -386,14 +386,14 @@ export function HomeTab() {
           than also picking up `.ss-page`'s 16px flex gap between every block. */}
       <div>
       {/* hero */}
-      <div style={s('display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-bottom:18px')}>
-        <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
+      <div className="ss-home-hero" style={s('display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-bottom:18px')}>
+        <div className="ss-home-card" style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
-          <div style={s('font-family:var(--font-head);font-weight:700;font-size:32px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
+          <div className="ss-home-greeting" style={s('font-family:var(--font-head);font-weight:700;font-size:32px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           {/* Daily goal bar — Deals.Application_Date (application filled), owner-scoped COQL. */}
           <div style={s('margin-top:18px')} aria-busy={appsLoading || undefined}>
-            <div style={s('display:flex;justify-content:space-between;align-items:center;margin-bottom:8px')}>
+            <div className="ss-home-labelrow" style={s('display:flex;justify-content:space-between;align-items:center;margin-bottom:8px')}>
               <span style={s('font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>
                 Today's Goal
               </span>
@@ -436,8 +436,8 @@ export function HomeTab() {
             <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
           </div>
         </div>
-        <div style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
-          <div style={s('display:flex;justify-content:space-between;align-items:baseline')}>
+        <div className="ss-home-card" style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
+          <div className="ss-home-labelrow" style={s('display:flex;justify-content:space-between;align-items:baseline')}>
             <span style={s('font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
             <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--text2)")}>{timeFmt}</span>
           </div>
@@ -452,7 +452,7 @@ export function HomeTab() {
             <div style={s(`position:absolute;inset:0;width:${workdayFill};border-radius:99px;background:${workday.barGradient};transition:width .35s ease,background .35s ease`)}></div>
             <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid ${workday.accent};box-shadow:0 2px 8px color-mix(in srgb, ${workday.accent} 55%, transparent);transition:left .35s ease,border-color .35s ease`)}></div>
           </div>
-          <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:600')}>
+          <div className="ss-home-endpoints" style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:600')}>
             <span>{workdayStartLabel}</span>
             <span style={s(`color:${workday.accent};font-family:var(--font-mono);font-weight:700`)}>{workday.statusLabel}</span>
             <span>{workdayEndLabel}</span>
@@ -461,7 +461,7 @@ export function HomeTab() {
       </div>
 
       {/* Habit loop — streak · personal best · week (from Deals Application_Date COQL). */}
-      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
+      <div className="ss-home-stats" style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px;margin-bottom:18px')}>
         <StreakStat emoji="🔥" value={streakDays} label="day streak" tone="var(--orange)" loading={appsLoading} />
         <StreakStat emoji="⭐" value={bestDay} label="best day · apps" sub={bestDayLabel ?? ''} tone="var(--warn)" loading={appsLoading} />
         <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" loading={appsLoading} />
@@ -525,7 +525,7 @@ export function HomeTab() {
                   {snapshotGroups.map((g) => (
                     <div key={g.label} style={s('margin-bottom:16px')}>
                       <div style={s('font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
-                      <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
+                      <div className="ss-home-stats" style={s('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:12px')}>
                         {g.cells.map((c) => (
                           <div
                             key={c.label}
@@ -558,7 +558,7 @@ export function HomeTab() {
               Recent Inbox column — whose cards carry long unbroken subject lines — grew past its half
               and squeezed Quick Actions into a sliver that wrapped every card title onto three lines.
               minmax(0,…) lets the text ellipsise instead of dictating the column width. */}
-          <div style={s('display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px')}>
+          <div className="ss-home-hero" style={s('display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px')}>
             <div>
               <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
               <div style={s('display:flex;flex-direction:column;gap:12px')}>

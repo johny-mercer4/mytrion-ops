@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Search, TriangleAlert } from 'lucide-react';
+import { DataTable, type DataColumn } from '@/ds';
 import { getSalesKpiBoard, type SalesAgentKpi, type SalesKpiBoard } from '../../../api/managerKpi';
 import { SalesKpiSkeleton } from './SalesKpiSkeleton';
 import './salesKpi.css';
@@ -79,6 +80,57 @@ export function SalesKpiBlock() {
   const peak = useMemo(
     () => (sort === 'agent' ? 0 : Math.max(0, ...rows.map((r) => metric(r, sort)))),
     [rows, sort],
+  );
+
+  /**
+   * MOBILE ROLES — the agent names the row, and THE ONE VALUE IS WHATEVER THE BOARD IS SORTED BY.
+   * That is the point of a leaderboard: you sorted by gallons because gallons is the question, so
+   * gallons is the number the card should carry. The other three metrics open with the record.
+   */
+  const columns = useMemo<DataColumn<SalesAgentKpi>[]>(
+    () =>
+      COLUMNS.map((c) => ({
+        id: c.key,
+        header: c.hint ? <span title={c.hint}>{c.label}</span> : c.label,
+        sortable: true,
+        numeric: c.numeric,
+        ...(c.numeric ? { align: 'end' as const } : {}),
+        ...(c.key === 'agent'
+          ? {
+              rowHeader: true,
+              mobile: 'primary' as const,
+              cell: (row: SalesAgentKpi) => (
+                <>
+                  <span className="mg-kpi-agent">
+                    {row.agent}
+                    {!row.inWarehouse ? (
+                      <span
+                        className="mg-kpi-flag"
+                        title="Fills applications but owns no carrier in the warehouse — a lead-gen or new agent. The fuel figures are structurally zero, not a bad cycle."
+                      >
+                        <TriangleAlert size={11} aria-hidden /> no book
+                      </span>
+                    ) : null}
+                  </span>
+                  {/* A bar against the leader on the ACTIVE sort — rank is legible without reading
+                      five columns of digits. */}
+                  {peak > 0 ? (
+                    <span className="mg-kpi-bar" aria-hidden="true">
+                      <span style={{ width: `${Math.max(2, (metric(row, sort) / peak) * 100)}%` }} />
+                    </span>
+                  ) : null}
+                </>
+              ),
+              // The card's primary line is one line; the bar and the flag belong to the table.
+              mobileCell: (row: SalesAgentKpi) => row.agent,
+            }
+          : {
+              mobile: (c.key === sort ? 'value' : 'hidden') as 'value' | 'hidden',
+              cell: (row: SalesAgentKpi) =>
+                c.key === 'gallons' ? n1(metric(row, c.key)) : n0(metric(row, c.key)),
+            }),
+      })),
+    [peak, sort],
   );
 
   const totals = board?.totals;
@@ -161,59 +213,21 @@ export function SalesKpiBlock() {
       ) : null}
 
       {!loading && !error && rows.length > 0 ? (
-        <div className="mg-efs-tablewrap">
-          <table className="mg-efs-table mg-kpi-table">
-            <thead>
-              <tr>
-                {COLUMNS.map((c) => (
-                  <th key={c.key} className={c.numeric ? 'is-num' : ''} title={c.hint}>
-                    <button
-                      type="button"
-                      className={`mg-kpi-sort${sort === c.key ? ' is-on' : ''}`}
-                      onClick={() => setSort(c.key)}
-                      aria-pressed={sort === c.key}
-                    >
-                      {c.label}
-                    </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.agent}>
-                  <td>
-                    <span className="mg-kpi-agent">
-                      {row.agent}
-                      {!row.inWarehouse ? (
-                        <span
-                          className="mg-kpi-flag"
-                          title="Fills applications but owns no carrier in the warehouse — a lead-gen or new agent. The fuel figures are structurally zero, not a bad cycle."
-                        >
-                          <TriangleAlert size={11} aria-hidden /> no book
-                        </span>
-                      ) : null}
-                    </span>
-                    {/* A bar against the leader on the ACTIVE sort — rank is legible without
-                        reading five columns of digits. */}
-                    {peak > 0 ? (
-                      <span className="mg-kpi-bar" aria-hidden="true">
-                        <span style={{ width: `${Math.max(2, (metric(row, sort) / peak) * 100)}%` }} />
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="is-num">{n0(row.clients)}</td>
-                  <td className="is-num">{n0(row.swipes)}</td>
-                  <td className="is-num">{n1(row.gallons)}</td>
-                  <td className="is-num">
-                    {n0(row.appFills)}
-
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Sales agents this cycle"
+          rows={rows}
+          rowKey={(row) => row.agent}
+          columns={columns}
+          className="mg-efs-table mg-kpi-table"
+          scrollerClassName="mg-efs-tablewrap"
+          sort={{
+            by: sort,
+            // One direction only: every metric here is "more is better", so the sort is a ranking
+            // and flipping it would just show the bottom of the board.
+            direction: 'descending',
+            onSort: (columnId) => setSort(columnId as SortKey),
+          }}
+        />
       ) : null}
     </section>
   );

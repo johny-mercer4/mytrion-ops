@@ -207,7 +207,7 @@
 /* ── Client grid: the card IS the tier ───────────────────────────────────────── */
 .mg-root .mg-lty-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
   gap: 12px;
 }
 .mg-root .mg-lty-c {
@@ -441,7 +441,7 @@
 /* ── Per-card figures ───────────────────────────────────────────────────────── */
 .mg-root .mg-lty-figs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   border-radius: var(--mg-r-sm);
   overflow: hidden;

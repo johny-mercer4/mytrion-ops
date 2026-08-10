@@ -2,7 +2,8 @@
 
 .stack {
   position: fixed;
-  bottom: var(--space-4);
+  /* Clears the mobile tab bar + home indicator; 0 on a desktop. */
+  bottom: calc(var(--space-4) + var(--layout-bottom-inset, 0px));
   right: var(--space-4);
   z-index: var(--z-toast);
   display: flex;
