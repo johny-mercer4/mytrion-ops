@@ -12407,6 +12407,69 @@ Note the new journal guard earned its place immediately: I first numbered this m
 which `origin/build` already uses, and the duplicate-number test caught it before it was applied
 anywhere.
 
+## 2026-08-07 — Mini-app password auth (invite → password → 1d Bearer)
+
+Locked decisions:
+- Telegram shell only (for now).
+- No forced migration: existing `authMode=telegram` registrations keep initData-only access.
+- New invites mint `authMode=password`; after redeem the user sets a password, then logs in daily.
+- Forget-password fans out to Sales Inbox + Telegram DM (if agent mini-app bound) + Manage pending queue.
+- Manager name required at invite time with uniqueness check (active account / pending invite / active registration).
+
+Backend:
+- Migration `0112_mini_app_password_auth` — `carrier_users` telegram/registration link, `auth_mode` on invites + registrations, `mini_app_password_resets`.
+- Routes under `/carrier/mini-app/auth/*` + Sales password-reset resolve.
+- Sales can revoke owned-carrier registrations (was admin-only).
+- Access token TTL for mini-app clients: `1d`.
+
+UI:
+- Sales Manage: manager name field, registered users Remove, pending password resets.
+- Mini-app: set-password / login / update / forgot / logout screens.
+
+Branch: `feature/miniapp-password-auth`.
+Still needed before merge: `pnpm db:migrate`, rebuild `apps/mini-app/app` + CRM widget if shipping UI, end-to-end Telegram smoke.
+
+## 2026-08-08 — set-password 500 after Remove (disabled carrier_users)
+
+Symptom: create password after re-invite → Internal Server Error.
+Cause: `upsertForTelegram` used `findByTelegramUserId` (active-only). A prior Remove left
+`status=disabled` for the same telegram id; insert hit `carrier_users_tenant_telegram_uk`.
+Fix: look up any status (`findAnyByTelegramUserId`) and reactivate in place. On disable, suffix
+the login so company/manager names stay re-inviteable (login unique is status-agnostic).
+
+## 2026-08-08 — mini-app "Could not reach Octane. Load failed" on invite links
+
+Cause: `pnpm -C apps/mini-app build` ran with shell `NODE_ENV=development`, so Vite baked
+`VITE_API_URL=http://localhost:3001` into `app/`. Telegram WebView cannot reach host localhost.
+Fix: force `NODE_ENV=production vite build --mode production` in package.json; config keys off
+`import.meta.env.MODE === 'development'` only for the Vite dev server. Verified rebuilt bundle
+has `baseUrl:""` and zero `localhost:3001` refs.
+
+## 2026-08-08 — login / registration auth UI polish
+
+Password login/set/forgot vertically centered with Octane logo (same composition as Confirm).
+Account summary uses Confirm-style left/right rows (company + role badge; driver card last-6).
+Mode-specific copy (welcome back / create password); labeled password field; Forgot inside the form.
+Confirm shows manager/driver name + card last-6 when present; password-mode footnote instead of
+“no password required”. Public invite payload now includes `driverName`, `cardId`, `authMode`.
+Rebuilt `apps/mini-app/app` (`index-BCbDCGws.js`).
+
+## 2026-08-08 — Manager invite regenerate + Manage UI cleanup
+
+**Invite fix:** Generating a manager link for a name that already had a *pending* invite
+hard-failed with ConflictError (`assertLoginAvailable` → `findPendingManagerByLogin`).
+Desired: regenerate supersedes. Pending check removed from `assertLoginAvailable`;
+`createCarrierInvite` cancels pending manager invites for that normalized login (tenant-wide,
+logins are unique) then creates the new invite in one transaction. Active
+`carrier_users` login / registered manager still block.
+
+**Manage UI:** `ClientManagePanel` section order is now Client → Registration link (profile
++ generate) → Registered users → Pending password resets → Support bot. Consistent card
+sections; less helper copy. Shared chrome in `clientManageUi.tsx`. Rebuilt widget `app/`.
+
+Verify Manage: Profile=Manager, same name twice → second generate succeeds; registered
+manager name still 409.
+
 ## 2026-08-07 — AI Chat in Mytrion Admin: the failure was one malformed tool schema
 
 Consulted the `modern-web-guidance` skill first (hard rule 10 — it exists now).
@@ -13329,3 +13392,4 @@ was verified by build + hand, and this test is the only thing that will catch a 
 **Still to do:** a browser pass over all twelve workspaces in both themes. `pnpm typecheck`,
 `pnpm test` (88 files / 570 tests) and a production build are green, but none of them can see a
 colour.
+

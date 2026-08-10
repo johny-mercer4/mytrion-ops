@@ -3,6 +3,7 @@ export * from './users.js';
 export * from './carrier_users.js';
 export * from './carrier_invitations.js';
 export * from './registered_mini_app_companies.js';
+export * from './mini_app_password_resets.js';
 export * from './sales_agent_mini_app.js';
 export * from './mini_app_notifications.js';
 export * from './client_news.js';

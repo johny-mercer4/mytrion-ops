@@ -1,9 +1,13 @@
 /**
- * Backend config — dev talks cross-origin to the octane-assistant backend (VITE_API_URL);
- * production is same-origin once the mini-app is deployed behind the same host.
+ * Backend config — Vite dev server talks cross-origin to the API (VITE_API_URL).
+ * Vendored / Telegram builds are served at /mini-app/ on the API host — same-origin,
+ * baseUrl must stay empty. Never bake localhost into `app/` (a shell with
+ * NODE_ENV=development used to flip import.meta.env.DEV during `vite build`).
  */
 export function resolveApiConfig(): { baseUrl: string } {
-  if (import.meta.env.DEV) return { baseUrl: (import.meta.env.VITE_API_URL ?? '').trim() };
+  if (import.meta.env.MODE === 'development') {
+    return { baseUrl: (import.meta.env.VITE_API_URL ?? '').trim() };
+  }
   return { baseUrl: '' };
 }
 

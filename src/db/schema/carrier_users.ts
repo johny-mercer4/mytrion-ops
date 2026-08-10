@@ -5,21 +5,18 @@ import { index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-cor
 // (see CLAUDE.md), and keeping schema files free of value-level sibling imports lets
 // drizzle-kit load each file individually.
 
-/** The two carrier access profiles. Owner (fleet) sees ALL the carrier's cards; Driver is a
- * CHILD of an owner and is tied to a single card (with that card's limits). */
-export type CarrierProfile = 'owner' | 'driver';
+/** Carrier access profiles. Owner/manager see ALL the carrier's cards; driver is tied to one card. */
+export type CarrierProfile = 'owner' | 'manager' | 'driver';
 
 /**
  * carrier_users — login/password accounts for CARRIER COMPANIES (audience 'customer'),
  * separate from the internal `users` table so external client accounts can never collide
- * with Octane workers. Created by admins in the Mytrion Admin ("Carrier User Management");
- * consumed by /v1/auth/client/login (future Telegram mini-app + the /client web page).
+ * with Octane workers. Minted when a Telegram invite is accepted and a password is set;
+ * consumed by mini-app password login (Bearer, 1-day TTL).
  *
  * RBAC ties by profile:
- *   owner  → carrierId OR applicationId (an account can be provisioned on the application id
- *            alone, before the carrier exists; carrier_id is back-filled later).
- *   driver → parentUserId (the owning fleet account) + cardId (the single card it may see).
- *            Company scope is INHERITED from the parent at login, never stored twice.
+ *   owner / manager → carrierId OR applicationId (manager is owner-equivalent).
+ *   driver → parentUserId (optional) + cardId (the single card it may see).
  * A session minted from one of these rows is locked down: audience 'customer', viewer
  * role, no scopes, departments = the effective company tags.
  */
@@ -30,7 +27,7 @@ export const carrierUsers = pgTable(
       .primaryKey()
       .$defaultFn(() => `cu_${createId()}`),
     tenantId: text('tenant_id').notNull(),
-    /** Access profile: 'owner' (fleet — all cards) or 'driver' (one card, child of an owner). */
+    /** Access profile: 'owner' / 'manager' (fleet) or 'driver' (one card). */
     profile: text('profile').$type<CarrierProfile>().notNull().default('owner'),
     /** The carrier company id (DWH/EFS). Nullable — application-only accounts get it later. */
     carrierId: text('carrier_id'),
@@ -45,6 +42,10 @@ export const carrierUsers = pgTable(
     /** Sign-in name (unique per tenant; case-insensitive — stored lowercased). */
     login: text('login').notNull(),
     passwordHash: text('password_hash').notNull(),
+    /** Linked Telegram mini-app registration (registered_mini_app_companies.id). */
+    registrationId: text('registration_id'),
+    /** Telegram user bound at password setup — required while the shell is Telegram-only. */
+    telegramUserId: text('telegram_user_id'),
     /** The Octane sales agent (Zoho user) who owns this carrier — display/attribution. */
     agentName: text('agent_name'),
     agentZohoUserId: text('agent_zoho_user_id'),
@@ -61,6 +62,14 @@ export const carrierUsers = pgTable(
       table.applicationId,
     ),
     parentIdx: index('carrier_users_tenant_parent_idx').on(table.tenantId, table.parentUserId),
+    registrationIdx: index('carrier_users_tenant_registration_idx').on(
+      table.tenantId,
+      table.registrationId,
+    ),
+    telegramIdx: uniqueIndex('carrier_users_tenant_telegram_uk').on(
+      table.tenantId,
+      table.telegramUserId,
+    ),
   }),
 );
 

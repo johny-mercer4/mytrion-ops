@@ -46,6 +46,7 @@ export interface UpsertRegisteredMiniAppCompanyInput {
   driverName?: string | undefined;
   companyType?: CarrierCompanyType | undefined;
   cardCount?: number | undefined;
+  authMode?: 'password' | 'telegram' | undefined;
 }
 
 function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
@@ -238,6 +239,33 @@ export const registeredMiniAppCompanyRepo = {
     return rows[0] ? toDto(rows[0]) : undefined;
   },
 
+  /**
+   * Active manager whose display name (driverName) matches the normalized login — uniqueness
+   * guard when Sales creates another manager invite.
+   */
+  async findActiveManagerByLogin(
+    ctx: TenantContext,
+    normalizedLogin: string,
+    exceptRegistrationId?: string,
+  ): Promise<RegisteredMiniAppCompany | undefined> {
+    const rows = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.profile, 'manager'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+          sql`lower(trim(regexp_replace(coalesce(${registeredMiniAppCompanies.driverName}, ''), '\\s+', ' ', 'g'))) = ${normalizedLogin}`,
+          ...(exceptRegistrationId
+            ? [sql`${registeredMiniAppCompanies.id} <> ${exceptRegistrationId}`]
+            : []),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  },
+
   /** Active managers of one carrier — the owner/manager's team roster in the mini-app. */
   async listManagersByCarrier(
     ctx: TenantContext,
@@ -286,6 +314,15 @@ export const registeredMiniAppCompanyRepo = {
     return rows[0] ? toDto(rows[0]) : undefined;
   },
 
+  async findDtoById(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(and(eq(registeredMiniAppCompanies.id, id), eq(registeredMiniAppCompanies.tenantId, ctx.tenantId)))
+      .limit(1);
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   /** Soft-disable: revokes access without deleting the row, preserving registration history. */
   async revoke(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
     const rows = await db
@@ -319,6 +356,7 @@ export const registeredMiniAppCompanyRepo = {
       driverName: input.driverName ?? null,
       companyType: input.companyType ?? null,
       cardCount: input.cardCount ?? null,
+      authMode: input.authMode ?? 'telegram',
     };
     const rows = await client
       .insert(registeredMiniAppCompanies)
@@ -342,6 +380,8 @@ export const registeredMiniAppCompanyRepo = {
           driverName: input.driverName ?? null,
           companyType: input.companyType ?? null,
           cardCount: input.cardCount ?? null,
+          // A password-mode invite upgrades a legacy telegram-only registration; never downgrade.
+          authMode: input.authMode === 'password' ? 'password' : sql`${registeredMiniAppCompanies.authMode}`,
           // Redeeming a valid invite IS the grant of access, so it must clear a previous revoke.
           // Without these the row kept status='revoked' through a successful redeem: the call
           // returned 201 with a registration, and every subsequent request 403'd MINI_APP_REVOKED

@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   cancelInvitation,
   listInvitations,
+  listPasswordResets,
   listRegisteredCompanies,
   listSupportBotChats,
   revokeRegistration,
   setSupportBotChat,
   type CarrierInvitation,
+  type PasswordResetRequest,
   type RegisteredCompany,
 } from '../../api/carrierUsers';
 import { ApiError, request } from '../../api/transport';
 import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierInvitations } from './CarrierInvitations';
+import { CarrierPasswordResets } from './CarrierPasswordResets';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -24,11 +27,11 @@ import s from './admin.module.css';
 const VIEWS = {
   registered: {
     title: 'Registered companies',
-    sub: 'Owners, managers, and drivers who finished signing in inside the mini-app.',
+    sub: 'Owners, managers, and drivers who finished mini-app sign-in. Revoke access here; password resets appear in the queue below.',
   },
   invitations: {
     title: 'Invitations',
-    sub: 'Every registration link generated — live, redeemed, or spent.',
+    sub: 'Every registration link generated — live, redeemed, or spent. New invites use password login after redeem.',
   },
 } as const;
 
@@ -59,10 +62,9 @@ interface CarrierGroup {
 type StatusFilter = 'all' | 'active' | 'revoked';
 
 /**
- * Carrier User Management — generates Telegram invite links for owners and drivers (no
- * login/password; the bot's mini-app handles sign-in). The registered tree is who's actually
- * FINISHED registering (registered_mini_app_companies) — a sent invite that was never opened
- * doesn't show up there; see Audit Log for invite-generation history.
+ * Carrier User Management — Telegram invite links + registered roster + password-reset queue.
+ * The registered tree is who's finished registering (registered_mini_app_companies); invites that
+ * were never opened stay under Invitations.
  *
  * `view` picks which table the sidebar sub-item is asking for. Both live in this one component so
  * the confirm dialog, the busy row, and the invite form are shared rather than duplicated — and so
@@ -86,6 +88,8 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
   const [regPage, setRegPage] = useState(1);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [passwordResets, setPasswordResets] = useState<PasswordResetRequest[]>([]);
+  const [resetsLoading, setResetsLoading] = useState(true);
   // Support-bot group per carrier (chat-map). Admins view/set/re-point the STATIC Telegram group id
   // inline — the manual counterpart of the bot's auto-bind (wire a group before an owner registers).
   const [botChats, setBotChats] = useState<Map<string, string>>(new Map());
@@ -104,8 +108,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
     if (!opts?.quiet) setLoading(true);
     setError('');
     setBotChatsUnavailable(false);
+    if (!opts?.quiet) setResetsLoading(true);
     try {
-      const [regs, chatMap] = await Promise.all([
+      const [regs, chatMap, resets] = await Promise.all([
         listRegisteredCompanies(),
         // Best-effort, and the outcome has to be distinguishable: an empty list means "nothing
         // mapped", a rejection means "we don't know" — collapsing both into [] said the first.
@@ -113,14 +118,20 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           (chats) => ({ ok: true as const, chats }),
           () => ({ ok: false as const }),
         ),
+        listPasswordResets().then(
+          (rows) => ({ ok: true as const, rows }),
+          () => ({ ok: false as const, rows: [] as PasswordResetRequest[] }),
+        ),
       ]);
       setRegistrations(regs);
+      setPasswordResets(resets.rows);
       if (chatMap.ok) setBotChats(new Map(chatMap.chats.map((c): [string, string] => [c.carrierId, c.chatId])));
       else setBotChatsUnavailable(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      setResetsLoading(false);
     }
   }, []);
 
@@ -715,6 +726,12 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         </div>
       </div>
       {!loading && <Pager page={regPageSafe} total={filtered.length} onChange={setRegPage} />}
+
+          <CarrierPasswordResets
+            resets={passwordResets}
+            loading={resetsLoading}
+            onResolved={() => void load({ quiet: true })}
+          />
         </>
       )}
 

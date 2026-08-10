@@ -10,12 +10,18 @@
  * The caller layer only handles auth/scope; the rules live here.
  */
 import { env } from '../../config/env.js';
+import { db } from '../../db/client.js';
 import { AppError, ConflictError } from '../../lib/errors.js';
 import { countDwhCards, isActiveCardOfCarrier } from '../../integrations/dwhCards.js';
 import { carrierInvitationRepo, type CarrierInvitationDto } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import type { CarrierCompanyType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import {
+  assertLoginAvailable,
+  assertOwnerCompanyLoginAvailable,
+  normalizeLogin,
+} from './miniAppPasswordAuth.js';
 
 export interface CreateCarrierInviteArgs {
   profile: 'owner' | 'manager' | 'driver';
@@ -169,20 +175,50 @@ export async function createCarrierInvite(
   // would make requireRegisteredOwner reject the manager once they register (fail-closed gate).
   if (args.profile === 'manager') {
     companyType = 'fleet-manager';
+    if (!driverName) {
+      throw new AppError('A manager invite needs the manager name (used as their login)', {
+        statusCode: 400,
+        code: 'MANAGER_NEEDS_NAME',
+        expose: true,
+      });
+    }
+    await assertLoginAvailable(ctx, driverName);
   }
 
-  const invite = await carrierInvitationRepo.create(ctx, {
+  if (args.profile === 'owner' && args.companyName?.trim()) {
+    await assertOwnerCompanyLoginAvailable(ctx, args.companyName);
+  }
+
+  const createInput = {
     profile: args.profile,
     ...(carrierId ? { carrierId } : {}),
     ...(applicationId ? { applicationId } : {}),
     ...(args.companyName?.trim() ? { companyName: args.companyName.trim() } : {}),
     ...(cardId ? { cardId } : {}),
-    ...(driverName ? { driverName } : {}),
+    ...(driverName
+      ? {
+          // Persist the canonical spacing for manager logins so uniqueness checks stay stable.
+          driverName: args.profile === 'manager' ? driverName.replace(/\s+/g, ' ').trim() : driverName,
+        }
+      : {}),
     ...(companyType ? { companyType } : {}),
     ...(cardCount !== undefined ? { cardCount } : {}),
     ...(args.agentName?.trim() ? { agentName: args.agentName.trim() } : {}),
     ...(args.agentZohoUserId?.trim() ? { agentZohoUserId: args.agentZohoUserId.trim() } : {}),
     ...(args.ttlHours !== undefined ? { ttlHours: args.ttlHours } : {}),
-  });
+  };
+
+  // Manager regenerate: cancel any still-pending invite for this login, then mint a new one
+  // (matches Sales "generate again" — old link stops working). Active registrations still block.
+  if (args.profile === 'manager' && driverName) {
+    const login = normalizeLogin(driverName);
+    const invite = await db.transaction(async (tx) => {
+      await carrierInvitationRepo.cancelPendingManagersByLogin(ctx, login, tx);
+      return carrierInvitationRepo.create(ctx, createInput, tx);
+    });
+    return { invite, inviteUrl: buildInviteUrl(invite.id) };
+  }
+
+  const invite = await carrierInvitationRepo.create(ctx, createInput);
   return { invite, inviteUrl: buildInviteUrl(invite.id) };
 }
