@@ -1,0 +1,83 @@
+/*
+ * Every table scroller in the app, made to behave on a touch screen.
+ *
+ * This is the "usable-not-broken" floor for the workspaces that are not getting a designed mobile
+ * layout. It does NOT make a 28-column table pleasant on a phone — that is what ds/DataTable is for.
+ * It guarantees the three things whose absence makes one actively broken:
+ *
+ *   1. THE PAGE NEVER SCROLLS SIDEWAYS. A horizontally scrolling document takes the header and the
+ *      tab bar with it, so the user loses their bearings to reach a column.
+ *   2. A SIDEWAYS FLICK DOES NOT LEAVE THE APP. This is the one nobody had. `overflow-x: auto`
+ *      without `overscroll-behavior-x: contain` lets an over-scrolled table chain its scroll to the
+ *      page, and on iOS that gesture is Back — so flicking to the last column of a wide table
+ *      navigates out of the workspace. ds/Table gets this right and documents why; every bespoke
+ *      wrapper in the app predates it.
+ *   3. MOMENTUM. Without `-webkit-overflow-scrolling: touch` an inner scroller on iOS moves exactly
+ *      as far as the finger and stops dead, which reads as a broken control rather than a slow one.
+ *
+ * EVERY SELECTOR HERE WAS VERIFIED AGAINST THE TSX. A stylesheet that targets a class nobody writes
+ * is worse than no stylesheet: it reads as covered, and the next person to add the class inherits
+ * rules written for something else. (Phase 0 deleted `.bm-table-desktop-only` for exactly that.)
+ *
+ * Applied at every width, not inside a media query: these are correctness rules for a touch
+ * surface, and a touchscreen laptop is 1400px wide.
+ */
+
+.cs-table-wrap,
+.bm-table-wrap,
+.hr-listwrap,
+.fi-tablewrap,
+.fi-tablescroll,
+.mg-efs-tablewrap,
+.msd-tx-wrap,
+[data-table-scroller] {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * The tables inside them carry a `min-width` (720px in CS's pool and Finance, 640px in HR and
+ * Sales' MSD, 1040px in Admin) so their columns keep a readable density instead of crushing. That
+ * is deliberate and stays — it only works if the wrapper actually scrolls, which is what the block
+ * above guarantees.
+ */
+
+/* ── Below the density line ──────────────────────────────────────────────────
+   Nothing reflows; the table stops wasting inches. At 900px the rail is already collapsed and the
+   content pane is doing the work. */
+@media (width < 900px) {
+  :is(.cs-table-wrap, .bm-table-wrap, .hr-listwrap, .fi-tablewrap, .fi-tablescroll,
+      .mg-efs-tablewrap, .msd-tx-wrap, [data-table-scroller]) :is(th, td) {
+    padding-inline: var(--space-2);
+  }
+}
+
+/* ── Below the structure line ────────────────────────────────────────────────
+   A panel that pads itself 24px a side has given away 48 of a 375px screen before any content. */
+@media (width < 640px) {
+  .cs-root .cs-panel,
+  .bm-root .bm-panel,
+  .recruit-root .recruit-panel {
+    padding-inline: var(--space-3);
+  }
+
+  /* Debtors' KPI row is the app's one hardcoded multi-column KPI grid; the rest already use
+     `auto-fit` with a floor and reflow on their own. */
+  .bm-root .db-kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /*
+   * A toolbar that was one flex row wraps instead of overflowing. Without this the search field and
+   * the filter chips push the primary action past the edge of the screen, where nothing scrolls to
+   * reach it.
+   */
+  .bm-root .bm-toolbar,
+  .hr-root .hr-toolbar,
+  .fi-root .fi-toolbar,
+  .mg-root .mg-toolbar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}

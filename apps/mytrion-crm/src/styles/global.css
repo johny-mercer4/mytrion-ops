@@ -7,6 +7,7 @@
 @import './theme.css';
 /* Horizon after theme.css so the atmosphere and elevation win over the base scale. */
 @import './horizon.css';
+@import './responsive-tables.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
    `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules

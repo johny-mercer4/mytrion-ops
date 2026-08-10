@@ -231,6 +231,35 @@ describe('touch', () => {
   });
 });
 
+describe('responsive-tables.css', () => {
+  /**
+   * A stylesheet that targets a class nobody writes is worse than no stylesheet: it reads as
+   * covered in review, and the next person to add that class inherits rules authored for something
+   * else. This app has already shipped that — `.bm-table-desktop-only` / `.bm-list-mobile-only`
+   * were styled for a card fallback no `.tsx` ever rendered, and sat dead through two phases until
+   * Phase 0 deleted them.
+   *
+   * So every class this file names has to exist in the app it claims to cover.
+   */
+  it('only targets classes that some component actually renders', () => {
+    const css = code(join(SRC, 'styles/responsive-tables.css'));
+    const classes = new Set(
+      [...css.matchAll(/\.([a-z][a-z0-9-]*)/g)].map((m) => m[1]!),
+    );
+
+    const markup = TS_FILES.filter((f) => f.endsWith('.tsx'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+
+    const missing = [...classes].filter((name) => !markup.includes(name));
+    expect(
+      missing,
+      'These classes are styled in responsive-tables.css but rendered by nothing. Either the ' +
+        'class was renamed, or the rule was written for a component that does not exist.',
+    ).toEqual([]);
+  });
+});
+
 describe('the stacking-context trap', () => {
   /**
    * `MytrionShell.module.css` carries a long comment explaining that a `z-index` on `.shell .body`

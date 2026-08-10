@@ -92,6 +92,39 @@ describe('DataTable — table mode', () => {
     expect(rowHeader).not.toHaveAttribute('data-priority');
   });
 
+  it('makes a row activatable when the caller asks, in table mode too', () => {
+    // The desktop half of the per-mode precedence: a selectable row stays selectable, and stays
+    // reachable without a mouse. Dropping this in a migration looks correct in a screenshot and is
+    // useless in the hand.
+    const onRowActivate = vi.fn();
+    const { container } = render(table({ onRowActivate }));
+    const row = container.querySelector('tbody tr')!;
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    fireEvent.click(row);
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onRowActivate).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves rows inert when there is nothing to activate', () => {
+    // Neither onRowActivate nor detail: a read-only table. A tab stop on every one of 400 rows
+    // buries the controls after them for no gain.
+    const { container } = render(
+      <DataTable caption="Read only" rows={ROWS} rowKey={(r) => r.id} columns={COLUMNS} />,
+    );
+    expect(container.querySelector('tbody tr')).not.toHaveAttribute('tabindex');
+  });
+
+  it('opens the sheet from a desktop row when detail is the only affordance', () => {
+    // A table with a record but no other detail surface: the row is the way in, on both form
+    // factors. onRowActivate is what overrides this on a desktop.
+    const { container } = render(table());
+    fireEvent.click(container.querySelector('tbody tr')!);
+    expect(document.querySelector('dialog')?.open).toBe(true);
+  });
+
   it('shows the empty state instead of an empty grid', () => {
     render(table({ rows: [], empty: 'No applications match this filter.' }));
     expect(screen.getByText('No applications match this filter.')).toBeInTheDocument();
@@ -159,13 +192,35 @@ describe('DataTable — card mode', () => {
     expect([...dialog.querySelectorAll('dt')].map((d) => d.textContent)).not.toContain('Driver');
   });
 
-  it('defers to onRowActivate when the caller already owns a detail view', () => {
+  it('calls onRowActivate when there is no sheet to open', () => {
+    const onRowActivate = vi.fn();
+    setViewport(375);
+    render(
+      <DataTable
+        caption="T"
+        rows={ROWS}
+        rowKey={(r) => r.id}
+        columns={COLUMNS}
+        onRowActivate={onRowActivate}
+      />,
+    );
+    fireEvent.click(screen.getAllByRole('button')[0]!);
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+    expect(document.querySelector('dialog')?.open).not.toBe(true);
+  });
+
+  /**
+   * The precedence is PER MODE, and this is the case that forces it. A table whose desktop
+   * interaction is row-selection — the row lights up and a panel beside it fills in — has no
+   * "beside" on a phone, and the columns that dropped off the card have nowhere else to be. So the
+   * card opens the record even though the desktop row merely selects.
+   */
+  it('prefers the sheet over onRowActivate on a phone', () => {
     const onRowActivate = vi.fn();
     renderPhone({ onRowActivate });
     fireEvent.click(screen.getAllByRole('button')[0]!);
-    expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
-    // The caller's modal is the detail view; DataTable must not also open one.
-    expect(document.querySelector('dialog')?.open).not.toBe(true);
+    expect(document.querySelector('dialog')?.open).toBe(true);
+    expect(onRowActivate).not.toHaveBeenCalled();
   });
 
   it('is not interactive when there is nothing to open', () => {
@@ -205,5 +260,69 @@ describe('DataTable — crossing the structure line', () => {
 describe('DataTable — parity', () => {
   it('loses no data between the two renderings', async () => {
     await expectDataParity({ element: table() });
+  });
+});
+
+describe('DataTable — row memoisation', () => {
+  /**
+   * The largest table this replaces is 200 rows x 28 columns with its search box in the same
+   * component; before its row was memoised every keystroke re-rendered ~5,600 cells, measured at
+   * ~105ms per character. A migration that silently dropped that would reintroduce a fixed defect,
+   * so the bail-out is asserted rather than assumed.
+   */
+  it('does not re-render a row whose data and columns are unchanged', () => {
+    const cell = vi.fn((r: Row) => r.carrier);
+    const columns: DataColumn<Row>[] = [
+      { id: 'carrier', header: 'Carrier', cell, mobile: 'primary', rowHeader: true },
+    ];
+
+    const view = render(
+      <DataTable caption="T" rows={ROWS} rowKey={(r) => r.id} columns={columns} />,
+    );
+    expect(cell).toHaveBeenCalledTimes(ROWS.length);
+    cell.mockClear();
+
+    // Same `rows` and same `columns` identity — the shape a caller gets from useMemo, and the shape
+    // this bail-out depends on.
+    view.rerender(
+      <DataTable caption="T changed" rows={ROWS} rowKey={(r) => r.id} columns={columns} />,
+    );
+    expect(cell).not.toHaveBeenCalled();
+  });
+
+  it('memoises the card row too', () => {
+    setViewport(375);
+    const cell = vi.fn((r: Row) => r.carrier);
+    const columns: DataColumn<Row>[] = [
+      { id: 'carrier', header: 'Carrier', cell, mobile: 'primary', rowHeader: true },
+    ];
+
+    const view = render(
+      <DataTable caption="T" rows={ROWS} rowKey={(r) => r.id} columns={columns} />,
+    );
+    cell.mockClear();
+    view.rerender(
+      <DataTable caption="T changed" rows={ROWS} rowKey={(r) => r.id} columns={columns} />,
+    );
+    expect(cell).not.toHaveBeenCalled();
+  });
+
+  it('DOES re-render when a row object changes', () => {
+    const cell = vi.fn((r: Row) => r.carrier);
+    const columns: DataColumn<Row>[] = [
+      { id: 'carrier', header: 'Carrier', cell, mobile: 'primary', rowHeader: true },
+    ];
+    const view = render(
+      <DataTable caption="T" rows={ROWS} rowKey={(r) => r.id} columns={columns} />,
+    );
+    cell.mockClear();
+
+    const edited = [{ ...ROWS[0]!, carrier: 'Renamed Co' }, ROWS[1]!];
+    view.rerender(
+      <DataTable caption="T" rows={edited} rowKey={(r) => r.id} columns={columns} />,
+    );
+    // Only the changed row re-renders; the untouched one still bails.
+    expect(cell).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Renamed Co')).toBeInTheDocument();
   });
 });

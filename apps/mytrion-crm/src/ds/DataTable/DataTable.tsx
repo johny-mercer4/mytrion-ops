@@ -1,4 +1,13 @@
-import { useId, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useId,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { useDataTableMode } from '../_internal/useMediaQuery';
 import { Drawer } from '../Drawer/Drawer';
 import { Icon } from '../Icon/Icon';
@@ -21,6 +30,16 @@ import styles from './DataTable.module.css';
 
 const cx = (...parts: Array<string | false | null | undefined>): string =>
   parts.filter(Boolean).join(' ');
+
+/**
+ * The identity column is never droppable. `Table`'s sticky-column rule falls back to `:first-child`,
+ * and `display: none` does not change which element is first — a hidden identity column would leave
+ * the pin on an invisible cell. Enforced here rather than documented, so a caller cannot get it
+ * wrong from a distance.
+ */
+function effectivePriority<T>(column: DataColumn<T>): TableColumnPriority | undefined {
+  return column.rowHeader ? undefined : column.priority;
+}
 
 /**
  * Where a column lands in the card row below the structure line.
@@ -97,11 +116,26 @@ export interface DataTableProps<T> {
   columns: readonly DataColumn<T>[];
 
   /**
-   * Card-mode tap target. Use when the caller already owns a detail modal — the common case in a
-   * migration. Table mode does not call it; desktop keeps whatever cell-level semantics it had.
+   * Makes a row activatable — selection, or opening the caller's own detail view.
+   *
+   * Applies in BOTH modes: a table row becomes clickable and keyboard-activatable, and a card
+   * becomes a button. Use it for SELECTION, not navigation — a row that navigates on click breaks
+   * middle-click, cmd-click and "copy link address", so put a real `<a>` in the identity cell for
+   * that.
    */
   onRowActivate?: ((row: T) => void) | undefined;
-  /** Used ONLY when `onRowActivate` is absent: DataTable owns a Drawer and renders the record. */
+  /**
+   * The record, as a bottom sheet DataTable owns.
+   *
+   * PRECEDENCE, and it is per-mode rather than absolute:
+   *   table mode  `onRowActivate` wins. On a desktop the detail is usually already on screen beside
+   *               the table, so opening a modal over it would cover the thing it describes.
+   *   card mode   `detail` wins. There is no "beside" on a phone, and the columns that dropped off
+   *               the card have nowhere else to be — without a sheet they are simply unreachable,
+   *               which is exactly what `expectDataParity` fails on.
+   * A table with both gets row-selection on a desktop and a record sheet on a phone, which is the
+   * right answer for each and the reason this is not one global rule.
+   */
   detail?: DataTableDetail<T> | undefined;
   /** Card-mode leading slot — a 40px avatar or status glyph. */
   leading?: ((row: T) => ReactNode) | undefined;
@@ -188,14 +222,12 @@ export function DataTable<T>({
   const [detailRow, setDetailRow] = useState<T | null>(null);
   const captionId = useId();
 
-  // The identity column is never droppable: `Table`'s sticky-column rule falls back to
-  // `:first-child`, and `display: none` does not change which element is first — a hidden identity
-  // column would pin an invisible cell. Forced here rather than documented, so a caller cannot get
-  // it wrong from a distance.
-  const effectivePriority = (column: DataColumn<T>): TableColumnPriority | undefined =>
-    column.rowHeader ? undefined : column.priority;
-
-  const activate = onRowActivate ?? (detail ? (row: T) => setDetailRow(row) : undefined);
+  // Stable identity, or the row memos never bail — an inline arrow here is a new prop on every
+  // render and would silently undo the memoisation the rows exist to provide.
+  const openDetail = useCallback((row: T) => setDetailRow(row), []);
+  // See the `detail` prop: the winner differs by mode, on purpose.
+  const activateCard = detail ? openDetail : onRowActivate;
+  const activateRow = onRowActivate ?? (detail ? openDetail : undefined);
 
   if (mode === 'card') {
     return (
@@ -206,7 +238,7 @@ export function DataTable<T>({
         rows={rows}
         rowKey={rowKey}
         columns={columns}
-        activate={activate}
+        activate={activateCard}
         leading={leading}
         loading={loading}
         skeletonRows={skeletonRows}
@@ -268,23 +300,13 @@ export function DataTable<T>({
             <TableMessageRow colSpan={columns.length}>{empty ?? 'No rows.'}</TableMessageRow>
           ) : (
             rows.map((row) => (
-              <TableRow
+              <DataRow
                 key={rowKey(row)}
-                {...(selected ? { selected: selected(row) } : {})}
-              >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.id}
-                    {...(column.numeric ? { numeric: true } : {})}
-                    {...(column.align ? { align: column.align } : {})}
-                    {...(column.truncate ? { truncate: true } : {})}
-                    {...(column.rowHeader ? { rowHeader: true, pinned: true } : {})}
-                    {...(effectivePriority(column) ? { priority: effectivePriority(column) } : {})}
-                  >
-                    {column.cell(row)}
-                  </TableCell>
-                ))}
-              </TableRow>
+                row={row}
+                columns={columns}
+                selected={selected?.(row)}
+                activate={activateRow}
+              />
             ))
           )}
         </TableBody>
@@ -298,6 +320,145 @@ export function DataTable<T>({
     </>
   );
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Rows — memoised
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHY THESE ARE MEMOISED, and why it is not premature.
+ *
+ * The largest table this replaces renders 200 rows x 28 columns = ~5,600 cells, and its search box
+ * lives in the same component. Before the row it replaces was memoised, every keystroke re-rendered
+ * all of them — measured at ~105ms per character, i.e. six dropped frames while typing. A migration
+ * that dropped that memo would reintroduce a defect somebody already found and fixed.
+ *
+ * The bail-out depends on the CALLER handing over stable props, exactly as it did before: a
+ * `columns` array built once (useMemo, or module scope) and row objects whose identity survives an
+ * unrelated re-render. A `columns` array rebuilt inline on every render defeats this silently — the
+ * table will still be correct, just as slow as it was before anyone measured it.
+ */
+interface DataRowProps<T> {
+  row: T;
+  columns: readonly DataColumn<T>[];
+  selected: boolean | undefined;
+  activate: ((row: T) => void) | undefined;
+}
+
+function DataRowInner<T>({ row, columns, selected, activate }: DataRowProps<T>) {
+  return (
+    <TableRow
+      {...(selected === undefined ? {} : { selected })}
+      {...(activate
+        ? {
+            onClick: () => activate(row),
+            // A row is not a control, so it gets no role change — but it does need to be reachable
+            // and activatable without a mouse. Enter and Space, because a selectable row behaves
+            // like an option and users try both.
+            tabIndex: 0,
+            onKeyDown: (event: KeyboardEvent) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              activate(row);
+            },
+          }
+        : {})}
+    >
+      {columns.map((column) => (
+        <TableCell
+          key={column.id}
+          {...(column.numeric ? { numeric: true } : {})}
+          {...(column.align ? { align: column.align } : {})}
+          {...(column.truncate ? { truncate: true } : {})}
+          {...(column.rowHeader ? { rowHeader: true, pinned: true } : {})}
+          {...(effectivePriority(column) ? { priority: effectivePriority(column) } : {})}
+        >
+          {column.cell(row)}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+}
+
+// `memo` erases the generic — its signature returns a component typed over the resolved props, so
+// `<DataRow row={someRow} />` would lose T and infer `unknown`. Casting back to the original
+// function's type is the standard way to keep a memoised generic component generic; it changes no
+// runtime behaviour, only what the type checker can still see.
+const DataRow = memo(DataRowInner) as typeof DataRowInner;
+
+interface DataCardProps<T> {
+  row: T;
+  primary: DataColumn<T> | undefined;
+  secondaries: readonly DataColumn<T>[];
+  value: DataColumn<T> | undefined;
+  leading: ((row: T) => ReactNode) | undefined;
+  activate: ((row: T) => void) | undefined;
+  hasDetail: boolean;
+  selected: boolean | undefined;
+}
+
+function DataCardInner<T>({
+  row,
+  primary,
+  secondaries,
+  value,
+  leading,
+  activate,
+  hasDetail,
+  selected,
+}: DataCardProps<T>) {
+  const render = (column: DataColumn<T> | undefined): ReactNode => {
+    if (!column) return null;
+    return column.mobileCell ? column.mobileCell(row) : column.cell(row);
+  };
+
+  const inner = (
+    <>
+      {leading ? (
+        <span className={styles.leading} aria-hidden="true">
+          {leading(row)}
+        </span>
+      ) : null}
+      <span className={styles.text}>
+        <span className={styles.primary}>{render(primary)}</span>
+        {secondaries.length > 0 ? (
+          <span className={styles.secondary}>
+            {secondaries.map((column, i) => (
+              <span key={column.id}>
+                {i > 0 ? <span className={styles.sep}> · </span> : null}
+                {render(column)}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+      {value ? <span className={styles.value}>{render(value)}</span> : null}
+      {activate ? <Icon name="chevron_right" size="sm" className={cx(styles.chevron)} /> : null}
+    </>
+  );
+
+  return (
+    <li className={styles.item} data-selected={selected || undefined}>
+      {activate ? (
+        // A real <button>, not a clickable div: Enter and Space come free, and `aria-haspopup` tells
+        // a screen-reader user that activating this opens a dialog rather than navigating.
+        <button
+          type="button"
+          className={styles.card}
+          {...(hasDetail ? { 'aria-haspopup': 'dialog' as const } : {})}
+          onClick={() => activate(row)}
+        >
+          {inner}
+        </button>
+      ) : (
+        <div className={styles.card}>{inner}</div>
+      )}
+    </li>
+  );
+}
+
+const DataCard = memo(DataCardInner) as typeof DataCardInner;
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
    Card list — the rendering below the structure line
@@ -352,14 +513,17 @@ function CardList<T>({
   detailRow,
   onCloseDetail,
 }: CardListProps<T>) {
-  const primary = columns.find((c) => c.mobile === 'primary');
-  const secondaries = columns.filter((c) => c.mobile === 'secondary');
-  const value = columns.find((c) => c.mobile === 'value');
-
-  const renderCard = (column: DataColumn<T> | undefined, row: T): ReactNode => {
-    if (!column) return null;
-    return column.mobileCell ? column.mobileCell(row) : column.cell(row);
-  };
+  // `filter` returns a NEW array every call, so deriving these inline would hand DataCard a fresh
+  // prop on every render and defeat its memo. `find` happens to be stable, but they are derived
+  // together so the reason stays in one place.
+  const { primary, secondaries, value } = useMemo(
+    () => ({
+      primary: columns.find((c) => c.mobile === 'primary'),
+      secondaries: columns.filter((c) => c.mobile === 'secondary'),
+      value: columns.find((c) => c.mobile === 'value'),
+    }),
+    [columns],
+  );
 
   const body = loading ? (
     <li className={styles.message}>
@@ -371,53 +535,19 @@ function CardList<T>({
   ) : rows.length === 0 ? (
     <li className={styles.message}>{empty ?? 'No rows.'}</li>
   ) : (
-    rows.map((row) => {
-      const inner = (
-        <>
-          {leading ? (
-            <span className={styles.leading} aria-hidden="true">
-              {leading(row)}
-            </span>
-          ) : null}
-          <span className={styles.text}>
-            <span className={styles.primary}>{renderCard(primary, row)}</span>
-            {secondaries.length > 0 ? (
-              <span className={styles.secondary}>
-                {secondaries.map((column, i) => (
-                  <span key={column.id}>
-                    {i > 0 ? <span className={styles.sep}> · </span> : null}
-                    {renderCard(column, row)}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-          </span>
-          {value ? <span className={styles.value}>{renderCard(value, row)}</span> : null}
-          {activate ? (
-            <Icon name="chevron_right" size="sm" className={cx(styles.chevron)} />
-          ) : null}
-        </>
-      );
-
-      return (
-        <li key={rowKey(row)} className={styles.item} data-selected={selected?.(row) || undefined}>
-          {activate ? (
-            // A real <button>, not a clickable div: Enter and Space come free, and `aria-haspopup`
-            // tells a screen-reader user that activating this opens a dialog rather than navigating.
-            <button
-              type="button"
-              className={styles.card}
-              {...(detail ? { 'aria-haspopup': 'dialog' as const } : {})}
-              onClick={() => activate(row)}
-            >
-              {inner}
-            </button>
-          ) : (
-            <div className={styles.card}>{inner}</div>
-          )}
-        </li>
-      );
-    })
+    rows.map((row) => (
+      <DataCard
+        key={rowKey(row)}
+        row={row}
+        primary={primary}
+        secondaries={secondaries}
+        value={value}
+        leading={leading}
+        activate={activate}
+        hasDetail={Boolean(detail)}
+        selected={selected?.(row)}
+      />
+    ))
   );
 
   return (

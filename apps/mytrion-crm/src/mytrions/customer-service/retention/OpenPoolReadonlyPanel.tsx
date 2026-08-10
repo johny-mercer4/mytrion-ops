@@ -26,6 +26,7 @@ import { csRetention } from '@/api/csRetention';
 import { useLoad } from '../live';
 import { subscribeCsRetentionLive } from './retentionLiveBus';
 import { CaseBadge, deadlineLabel, statusLabel, statusTone } from './casesUi';
+import { DataTable, type DataColumn } from '@/ds';
 
 type SortKey = 'companyName' | 'carrierId' | 'daysInactive' | 'gallons90d' | 'assignmentCount';
 type StatusFilter = 'all' | 'available' | 'pending';
@@ -45,12 +46,88 @@ const ENTRY_REASONS = [
   { label: 'Retention', hint: '10 BD expiry' },
 ] as const;
 
-const COLUMNS: Array<{ key: SortKey; label: string; numeric?: boolean }> = [
-  { key: 'companyName', label: 'Company' },
-  { key: 'carrierId', label: 'Carrier' },
-  { key: 'daysInactive', label: 'Quiet', numeric: true },
-  { key: 'gallons90d', label: 'Gallons 90d', numeric: true },
-  { key: 'assignmentCount', label: 'Cycle', numeric: true },
+/**
+ * One definition, two renderings — see ds/DataTable.
+ *
+ * The mobile roles are the answer to "what does an agent need to triage this row on a phone?":
+ * WHO it is (company, primary), WHICH carrier and HOW LONG it has been quiet (secondary), and WHERE
+ * it stands (status, the one value). Gallons, cycle count and the claim window are real data but
+ * they are what you check AFTER deciding a row is worth opening, so they live in the detail sheet
+ * rather than competing for a 375px row.
+ *
+ * Module scope, not inline: DataTable memoises its rows on `columns` identity, and an array rebuilt
+ * every render would silently undo that.
+ */
+/** Exported for OpenPoolReadonlyPanel.test.tsx, which asserts card/table data parity. */
+export const COLUMNS: Array<DataColumn<RetentionCaseRow> & { sortKey?: SortKey }> = [
+  {
+    id: 'companyName',
+    sortKey: 'companyName',
+    header: 'Company',
+    sortable: true,
+    rowHeader: true,
+    mobile: 'primary',
+    cell: (c) => (
+      <span className="cs-pool-company">
+        <Building2 size={14} strokeWidth={2.2} aria-hidden />
+        {c.companyName || c.carrierId}
+      </span>
+    ),
+  },
+  {
+    id: 'carrierId',
+    sortKey: 'carrierId',
+    header: 'Carrier',
+    sortable: true,
+    mobile: 'secondary',
+    cell: (c) => <span className="cs-pool-mono">{c.carrierId}</span>,
+  },
+  {
+    id: 'daysInactive',
+    sortKey: 'daysInactive',
+    header: 'Quiet',
+    sortable: true,
+    numeric: true,
+    mobile: 'secondary',
+    cell: (c) => (
+      <span className={`cs-pool-quiet is-${quietTone(c.daysInactive)}`}>{quietLabel(c)}</span>
+    ),
+  },
+  {
+    id: 'gallons90d',
+    sortKey: 'gallons90d',
+    header: 'Gallons 90d',
+    sortable: true,
+    numeric: true,
+    priority: 2,
+    cell: (c) => <span className="cs-pool-mono">{fmtGal(c.gallons90d)}</span>,
+  },
+  {
+    id: 'assignmentCount',
+    sortKey: 'assignmentCount',
+    header: 'Cycle',
+    sortable: true,
+    numeric: true,
+    priority: 2,
+    cell: (c) => <span className="cs-pool-mono">{c.assignmentCount}/3</span>,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    mobile: 'value',
+    cell: (c) => <CaseBadge tone={statusTone(c.statusCode)}>{statusLabel(c.statusCode)}</CaseBadge>,
+  },
+  {
+    id: 'window',
+    header: 'Window',
+    priority: 3,
+    cell: (c) => (
+      <span className="cs-pool-window">
+        <CalendarClock size={12} strokeWidth={2.3} aria-hidden />
+        {deadlineLabel(c)}
+      </span>
+    ),
+  },
 ];
 
 function fmtWhen(iso: string | null | undefined): string {
@@ -371,86 +448,30 @@ export function OpenPoolReadonlyPanel() {
               )}
             </div>
           ) : (
-            <div className="cs-table-wrap cs-pool-table-wrap">
-              <table className="cs-table cs-pool-table">
-                <caption className="cs-sr-only">
-                  Deals in the Sales Open Pool. Select a row to read its timeline.
-                </caption>
-                <thead>
-                  <tr>
-                    {COLUMNS.map((col) => (
-                      <th
-                        key={col.key}
-                        className={col.numeric ? 'is-num' : undefined}
-                        aria-sort={
-                          sort.key === col.key
-                            ? sort.dir === 'asc'
-                              ? 'ascending'
-                              : 'descending'
-                            : 'none'
-                        }
-                      >
-                        <button
-                          type="button"
-                          className={`cs-pool-sort${sort.key === col.key ? ' active' : ''}`}
-                          onClick={() => toggleSort(col.key)}
-                        >
-                          {col.label}
-                          <span className="cs-pool-sort-arrow" aria-hidden>
-                            {sort.key === col.key ? (sort.dir === 'desc' ? '▼' : '▲') : '↕'}
-                          </span>
-                        </button>
-                      </th>
-                    ))}
-                    <th>Status</th>
-                    <th>Window</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((c) => (
-                    <tr
-                      key={c.id}
-                      className={`cs-pool-row${selectedId === c.id ? ' active' : ''}`}
-                      onClick={() => setSelectedId(c.id)}
-                      tabIndex={0}
-                      aria-selected={selectedId === c.id}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setSelectedId(c.id);
-                        }
-                      }}
-                    >
-                      <td>
-                        <span className="cs-pool-company">
-                          <Building2 size={14} strokeWidth={2.2} aria-hidden />
-                          {c.companyName || c.carrierId}
-                        </span>
-                      </td>
-                      <td className="cs-pool-mono">{c.carrierId}</td>
-                      <td className="is-num">
-                        <span className={`cs-pool-quiet is-${quietTone(c.daysInactive)}`}>
-                          {quietLabel(c)}
-                        </span>
-                      </td>
-                      <td className="is-num cs-pool-mono">{fmtGal(c.gallons90d)}</td>
-                      <td className="is-num cs-pool-mono">{c.assignmentCount}/3</td>
-                      <td>
-                        <CaseBadge tone={statusTone(c.statusCode)}>
-                          {statusLabel(c.statusCode)}
-                        </CaseBadge>
-                      </td>
-                      <td>
-                        <span className="cs-pool-window">
-                          <CalendarClock size={12} strokeWidth={2.3} aria-hidden />
-                          {deadlineLabel(c)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              caption="Deals in the Sales Open Pool. Select a row to read its timeline."
+              rows={rows}
+              rowKey={(c) => c.id}
+              columns={COLUMNS}
+              scrollerClassName="cs-table-wrap cs-pool-table-wrap"
+              className="cs-table cs-pool-table"
+              density="compact"
+              selected={(c) => c.id === selectedId}
+              /* Desktop: the row selects, and the timeline drawer beside it does the rest.
+                 Phone: there is no "beside", and Gallons / Cycle / Window fall off the card — so
+                 tapping opens the record instead. DataTable resolves that per mode; see its
+                 `detail` prop. */
+              onRowActivate={(c) => setSelectedId(c.id)}
+              detail={{
+                title: (c) => c.companyName || c.carrierId,
+                subtitle: (c) => c.carrierId,
+              }}
+              sort={{
+                by: sort.key,
+                direction: sort.dir === 'asc' ? 'ascending' : 'descending',
+                onSort: (columnId) => toggleSort(columnId as SortKey),
+              }}
+            />
           )}
         </div>
 
