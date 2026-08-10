@@ -16,10 +16,14 @@ iframe#rc-widget-adapter-frame:hover {
 }
 
 /*
- * The phone's fixed card stack (sign-in prompt + call toasts) sits outside every Mytrion root, and
- * `.cs-root { isolation: isolate }` traps a modal's z-index inside that root — so the card would
- * paint over an open dialog's footer buttons no matter how high the dialog's z-index goes. Step
- * aside while a CS modal is open instead; useScrollLock sets the flag for its lifetime.
+ * The phone's fixed card stack (sign-in prompt + call toasts) is portalled OUTSIDE the shell, so it
+ * sits in the root stacking context while every modal is inside `.shell { isolation: isolate }`.
+ * A dialog therefore cannot outrank the card by z-index however high it goes — the comparison is
+ * between the card and `.shell` itself, not the dialog. Step aside while a CS modal is open
+ * instead; useScrollLock sets the flag for its lifetime.
+ *
+ * (This used to be attributed to `.cs-root { isolation: isolate }`, which has since been removed —
+ * but the workaround is still required, for the reason above.)
  */
 /* !important because the stack carries an inline `display: flex` (this component styles inline
    throughout), and an inline declaration outranks any stylesheet selector. */

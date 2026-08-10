@@ -1,0 +1,222 @@
+/*
+ * Switch — a real input, an inert track, a knob that moves.
+ *
+ * Same anatomy as Checkbox and Radio: everything paints off the native pseudo-classes (`:checked`,
+ * `:focus-visible`) so an uncontrolled switch is correct without React knowing its value. Data
+ * attributes carry only what CSS cannot know — size, placement, and the disabled/explained pair.
+ *
+ * Geometry, so the numbers are not mysterious. Track 34x20 (md) / 30x18 (sm), 1px border,
+ * 2px inline padding, knob 16 / 14. Travel is therefore
+ *   34 - 2(border) - 4(padding) - 16(knob) = 12px, and 30 - 2 - 4 - 14 = 10px.
+ * Change any one of those four and --switch-travel must move with it.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: flex-start;
+  /* Unlike Checkbox and Radio, the control box here is exactly the width of the track — there is no
+     surround to space the label optically, so the gap is explicit. */
+  gap: var(--space-2);
+  cursor: pointer;
+  font-family: var(--font-body);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Size — the row heights match Button md/sm, so a switch row and a button row align ────────── */
+.root[data-size='md'] {
+  --choice-hit: 32px;
+  --choice-line: var(--lh-sm);
+  --switch-w: 34px;
+  --switch-h: 20px;
+  --switch-knob: 16px;
+  --switch-travel: 12px;
+}
+.root[data-size='sm'] {
+  --choice-hit: 26px;
+  --choice-line: var(--lh-xs);
+  --switch-w: 30px;
+  --switch-h: 18px;
+  --switch-knob: 14px;
+  --switch-travel: 10px;
+}
+
+/* ── Placement ──────────────────────────────────────────────────────────────
+   `start` is the settings-row reading: the question is the sentence, the control is the answer at
+   the end of it. Paired with `data-full` the text takes the slack and the switch lands on the
+   right edge, so a column of rows aligns its switches on one line. */
+.root[data-placement='start'] {
+  flex-direction: row-reverse;
+}
+.root[data-full='true'] {
+  display: flex;
+  inline-size: 100%;
+}
+.root[data-full='true'] .text {
+  flex: 1 1 auto;
+}
+
+/* ── The hit square ─────────────────────────────────────────────────────────
+   Taller than the track, so the target is a Button-height row rather than a 20px sliver. */
+.control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--switch-w);
+  block-size: var(--choice-hit);
+  flex: none;
+}
+
+/*
+ * The real input, stretched over the hit square. NOT `display: none` and NOT `visibility: hidden`:
+ * either would remove it from the accessibility tree and the tab order, and `role="switch"` on an
+ * element nothing can reach is decoration.
+ */
+.input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+/* ── Track ──────────────────────────────────────────────────────────────────── */
+.track {
+  display: flex;
+  align-items: center;
+  inline-size: var(--switch-w);
+  block-size: var(--switch-h);
+  padding-inline: var(--space-0_5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--field);
+  /* Named properties only — never `transition: all`. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+/*
+ * ── Knob ───────────────────────────────────────────────────────────────────
+ * `translate:`, never `transform:`. A `transform` promotes the element to its own composited layer
+ * and makes it a containing block for its children; stacked on the app's `backdrop-filter` chrome
+ * that is the un-repainted-panel defect this codebase has already shipped. At rest the property is
+ * `none`, so an OFF switch holds no offset at all and there is nothing permanent to promote.
+ *
+ * The travel is a physical length, so RTL gets an explicit mirror below rather than an off-by-a-
+ * track-width knob.
+ */
+.knob {
+  inline-size: var(--switch-knob);
+  block-size: var(--switch-knob);
+  border-radius: var(--radius-pill);
+  background: var(--text-secondary);
+  translate: none;
+  transition:
+    translate var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+
+/* ── Checked ────────────────────────────────────────────────────────────────
+   Position AND colour move together. Position is the primary signal — it is the one that survives
+   greyscale and the one a reduced-motion user still reads, because the end state is what carries
+   the meaning, not the travel between the two. */
+.input:checked ~ .track {
+  background: var(--accent-strong);
+  border-color: transparent;
+}
+.input:checked ~ .track .knob {
+  translate: var(--switch-travel);
+  background: var(--on-accent);
+}
+[dir='rtl'] .input:checked ~ .track .knob {
+  translate: calc(var(--switch-travel) * -1);
+}
+
+/* ── Hover — gated on data-disabled, not :not(:disabled), so an aria-disabled control cannot
+   out-specify its own disabled recolour. ──────────────────────────────────────────────────────── */
+.root:not([data-disabled='true']):hover .track {
+  border-color: var(--accent);
+}
+.root:not([data-disabled='true']):hover .knob {
+  background: var(--text-primary);
+}
+.root:not([data-disabled='true']):hover .input:checked ~ .track {
+  background: color-mix(in oklab, var(--accent-strong) 86%, var(--text-primary));
+}
+.root:not([data-disabled='true']):hover .input:checked ~ .track .knob {
+  background: var(--on-accent);
+}
+
+/* ── Active ─────────────────────────────────────────────────────────────────── */
+.root:not([data-disabled='true']):active .track {
+  background: var(--surface-alt);
+}
+.root:not([data-disabled='true']):active .input:checked ~ .track {
+  background: color-mix(in oklab, var(--accent-strong) 74%, var(--text-primary));
+}
+
+/*
+ * ── Focus — the GLOBAL ring, relocated to the element the user can see.
+ * global.css sets `input:focus-visible { outline: none }` app-wide, and this input is a transparent
+ * overlay in any case, so a ring drawn on it would frame nothing. Same three tokens, same
+ * appearance: this is not a per-component focus style.
+ */
+.input:focus-visible ~ .track {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── Disabled — RECOLOUR, never an opacity multiply, and never pointer-events: none ──────────── */
+.root[data-disabled='true'] {
+  cursor: var(--disabled-cursor);
+}
+.root[data-disabled='true'] .track {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+}
+.root[data-disabled='true'] .knob {
+  background: var(--disabled-fg);
+}
+/* Explicit, because `.input:checked ~ .track .knob` above out-specifies the rule directly before
+   this one — an ON-but-disabled switch would otherwise keep an --on-accent knob on a --disabled-bg
+   track, which is a contrast failure rather than a cosmetic one. */
+.root[data-disabled='true'] .input:checked ~ .track .knob {
+  background: var(--surface);
+}
+.root[data-disabled='true'] .label,
+.root[data-disabled='true'] .description {
+  color: var(--disabled-fg);
+}
+
+/* ── Text column — the FIRST line centres on the track; a description flows below it. ─────────── */
+.text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  padding-block: calc((var(--choice-hit) - var(--choice-line)) / 2);
+}
+
+.label {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+}
+.root[data-size='sm'] .label {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+.description {
+  margin-block-start: var(--space-0_5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}

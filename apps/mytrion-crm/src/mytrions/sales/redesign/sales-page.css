@@ -81,7 +81,7 @@
    it reads as "inside", never as a second page title. */
 .ss-root .ss-page-title {
   margin: 0;
-  font-family: Rajdhani, sans-serif;
+  font-family: var(--font-head);
   font-weight: 700;
   font-size: var(--ss-text-lg);
   letter-spacing: 0.03em;
@@ -137,7 +137,7 @@
   color: var(--muted);
 }
 .ss-root .ss-metric-val {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-lg);
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -202,7 +202,7 @@
   cursor: not-allowed;
 }
 .ss-root .ss-subtab-count {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-badge);
   font-weight: 600;
   padding: 1px 7px;
@@ -374,7 +374,7 @@
   gap: 10px;
 }
 .ss-root .ss-pager-pos {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--ss-text-2xs);
   color: var(--text2);
   white-space: nowrap;

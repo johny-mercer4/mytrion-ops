@@ -16,7 +16,12 @@ vi.mock('../../context/UserContextProvider', () => ({
     allDepartmentAccess: true,
   }),
 }));
-vi.mock('../../components/TopBar', () => ({ TopBar: () => <div /> }));
+// Stubbed because the real header pulls in the workspace switcher (router), the view-as picker
+// (session/API) and the theme toggle. The rail is what is under test.
+// NOTE: vi.mock on a path nothing imports fails SILENTLY — it simply stops applying and the real
+// component mounts. If these eight cases start failing together after a rename, check this line
+// before anything else.
+vi.mock('../../components/AppHeader', () => ({ AppHeader: () => <div /> }));
 // The sidebar's user row is an AccountMenu, which reads the theme. No ThemeProvider in this harness —
 // the shell's own behaviour is what is under test, not the account menu's.
 vi.mock('../../hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
@@ -187,5 +192,34 @@ describe('MytrionShell — sidebar collapse', () => {
     }).not.toThrow();
     // The toggle still works for this session; it just cannot be remembered for the next one.
     expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('marks an unbuilt destination without pretending it is a queue', () => {
+    // Modules used to fake this by concatenating " · Soon" into the label, which also made the
+    // rail's own search match on the word "Soon".
+    render(
+      <MytrionShell
+        id="hr"
+        navSections={[
+          {
+            id: 'x',
+            label: 'Work',
+            items: [
+              { key: 'home', label: 'Home', icon: <i />, active: true },
+              { key: 'tickets', label: 'Tickets', icon: <i />, soon: true },
+              { key: 'inbox', label: 'Inbox', icon: <i />, trailing: 7 },
+            ],
+          },
+        ]}
+      >
+        <div />
+      </MytrionShell>,
+    );
+
+    const soon = screen.getByRole('button', { name: 'Tickets' });
+    expect(soon).toBeDisabled();
+    expect(soon).toHaveTextContent('Soon');
+    // The accessible name stays the destination, so a screen reader is not told "Tickets Soon".
+    expect(screen.getByRole('button', { name: 'Inbox' })).toHaveTextContent('7');
   });
 });

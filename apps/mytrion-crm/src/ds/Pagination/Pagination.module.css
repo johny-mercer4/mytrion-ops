@@ -1,0 +1,156 @@
+/*
+ * Pagination — the page list, prev/next, the page-size select and the live range summary.
+ *
+ * The buttons are the Button component and are NOT restyled here. The only thing this stylesheet
+ * says about them is `min-inline-size`, which is a layout constraint rather than an appearance:
+ * without it a "9" button and a "10" button are different widths and the row re-flows every time
+ * the page count crosses a power of ten.
+ */
+
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Wrapping is correct HERE (unlike the tab rail) — this control sits at the bottom of a table, so
+     a second row grows downward into empty space instead of pushing content the user is reading. */
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  font-family: var(--font-body);
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --pg-h: 32px;
+  --pg-min: 32px;
+}
+.root[data-size='sm'] {
+  --pg-h: 26px;
+  --pg-min: 26px;
+}
+
+/* ── Status side: the summary, and the page-size select ─────────────────────── */
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  /* Tabular figures so the line does not shift horizontally as the numbers change under it —
+     this is a LIVE region, and a live region that jitters is a live region people stop reading. */
+  font-variant-numeric: tabular-nums;
+}
+
+.sizer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.sizerLabel {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  white-space: nowrap;
+}
+
+/* The focus SHELL. The ring on this control is `[data-focus-shell]:focus-within` from global.css —
+   the bare <select> never draws one, which is what stops the "ring inside the field" look. Nothing
+   about :focus-visible is re-declared here, per CONVENTIONS §5. */
+.selectShell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: var(--ui-field-bg);
+  border: 1px solid var(--ui-field-bd);
+  border-radius: var(--ui-field-radius);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.selectShell[data-disabled='true'] {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bd);
+}
+
+.select {
+  /* The native arrow is drawn by the platform in the platform's colour and cannot be themed; the
+     Icon below replaces it. `appearance: none` is the only way to remove it. */
+  appearance: none;
+  background: transparent;
+  border: 0;
+  block-size: var(--pg-h);
+  /* Trailing room for the icon that replaced the native arrow. */
+  padding-inline: var(--space-2) var(--space-6);
+  color: var(--ui-field-fg);
+  font-family: var(--font-num);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.select:disabled {
+  /* RECOLOUR, not an opacity multiply — the value keeps a known contrast ratio. */
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.selectIcon {
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  /* Decoration sitting ON TOP of the control it decorates: clicks must reach the select underneath.
+     This is not the banned `pointer-events: none` — that ban is about DISABLED controls, which must
+     stay hoverable so their tooltip can explain themselves. */
+  pointer-events: none;
+}
+.selectShell[data-disabled='true'] .selectIcon {
+  color: var(--disabled-fg);
+}
+
+/* ── Controls side ──────────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.pages {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0_5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Layout only — see the file header. Button owns everything else about these. */
+.pageBtn {
+  min-inline-size: var(--pg-min);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The ellipsis. A static glyph, sized to the button row so the list keeps one baseline; it is not a
+   button and must not look like one, so it takes the muted ink and no box at all. */
+.gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-6);
+  block-size: var(--pg-h);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  user-select: none;
+}

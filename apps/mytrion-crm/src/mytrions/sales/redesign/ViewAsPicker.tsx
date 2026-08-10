@@ -70,7 +70,7 @@ export function ViewAsPicker() {
       >
         <span
           style={s(
-            'display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff',
+            'display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--on-accent)',
           )}
         >
           <Icon name="user" size={10} strokeWidth={2.5} />

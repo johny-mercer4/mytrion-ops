@@ -18,31 +18,13 @@
 .bm-root {
     position: relative;
     background: var(--hz-page);
-    isolation: isolate;
+    /* NO `isolation: isolate`. It existed to contain `.bm-ambience` at z-index:-1, and that element
+       is no longer rendered — the shell owns the ambience now. Its only remaining effect was to
+       create a stacking context that trapped Billing's modals, so a dialog at --z-modal still
+       painted behind the app header. */
 }
 
-.bm-root .bm-ambience {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: var(--hz-mesh);
-    transition: background var(--hz-dur-tone) var(--hz-ease);
-}
 .bm-root .bm-ambience::before,
-.bm-root .bm-ambience::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-}
-.bm-root .bm-ambience::before {
-    background-image: var(--hz-grid);
-    background-size: var(--hz-grid-size);
-}
-.bm-root .bm-ambience::after {
-    background: var(--hz-vignette);
-    transition: background var(--hz-dur-tone) var(--hz-ease);
-}
 
 /* Both sit above the ambient backdrop (z-index 0). The header must ALSO outrank the body: they are
    siblings, so an equal z-index let the later-in-DOM body paint over the header — burying the
@@ -50,7 +32,7 @@
 
    `.bm-body` deliberately has NO z-index. It keeps `position: relative` (panels position against it),
    but a z-index would make it a STACKING CONTEXT — and every modal renders inside it, so their
-   `z-index: 9990` would be scoped to that context and lose to the header's 100. The result was the app
+   `z-index: var(--z-modal)` would be scoped to that context and lose to the header's 100. The result was the app
    header painting across the top of every billing modal: the Prepay ledger, the transaction modal, the
    ledger statement. A descendant can never escape an ancestor's stacking context, so the fix has to be
    here rather than in the modals.
@@ -60,187 +42,27 @@
 .bm-root .bm-body {
     position: relative;
 }
-.bm-root .bm-header {
-    position: relative;
-    z-index: 100;
-}
 
 /* ── Masthead ────────────────────────────────────────────────────────────── */
-.bm-root .bm-header {
-    background: color-mix(in srgb, var(--hz-page) 78%, transparent);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
-    border-bottom: 1px solid var(--hz-glass-bd);
-    transition:
-        background var(--hz-dur-tone) var(--hz-ease),
-        border-color var(--hz-dur-tone) var(--hz-ease);
-}
+
 /* A hairline of the module ramp under the masthead — the brand signature on every screen. */
-.bm-root .bm-header::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 1px;
-    pointer-events: none;
-    background: linear-gradient(90deg, var(--billing-accent) 0%, var(--accent-2) 100%);
-    opacity: 0.5;
-}
 
 /* The platform lockup, identical to Admin's BrandMark (components/BrandMark.module.css): Space
    Grotesk, uppercase, 0.08em tracking, MYTRION in ink and HORIZON on the Horizon ramp. The module
    name lives in the badge beside it, so every Mytrion reads the same in the masthead. */
-.bm-root .bm-header-title {
-    font-family: var(--font-head);
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-primary);
-}
-.bm-root .bm-header-title span {
-    background: var(--hz-gradient-r);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-}
-
-.bm-root .bm-header-badge {
-    background: linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--billing-accent) 14%, transparent) 0%,
-        color-mix(in srgb, var(--accent-2) 8%, transparent) 100%
-    );
-    border-color: color-mix(in srgb, var(--billing-accent) 34%, transparent);
-    box-shadow: var(--hz-glass-inset);
-}
-
-.bm-root .bm-header-theme {
-    background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-sm));
-    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
-    border-color: var(--hz-pane-bd);
-    box-shadow: var(--hz-glass-inset);
-    transition:
-        color var(--hz-dur-wash) var(--hz-ease),
-        background var(--hz-dur-wash) var(--hz-ease),
-        border-color var(--hz-dur-wash) var(--hz-ease),
-        box-shadow var(--hz-dur-wash) var(--hz-ease),
-        transform var(--hz-dur-wash) var(--hz-ease);
-}
-.bm-root .bm-header-theme:hover {
-    background: var(--hz-pane-lift);
-    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
-    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
-    transform: var(--hz-hover-lift-sm);
-}
 
 /* Labelled sibling of the theme toggle — same glass chrome, but sized for TEXT.
    `.bm-header-theme` is a fixed 32x32 icon square, so reusing it for "Switch Mytrion" crushed the
    label into the box. Matches the header's 32px rhythm and the badge's 3px radius. */
-.bm-root .bm-header-switch {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 32px;
-    padding: 0 11px;
-    flex-shrink: 0;
-    border-radius: 3px;
-    border: 1px solid var(--hz-pane-bd);
-    background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-sm));
-    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
-    box-shadow: var(--hz-glass-inset);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    text-decoration: none;
-    cursor: pointer;
-    transition:
-        color var(--hz-dur-wash) var(--hz-ease),
-        background var(--hz-dur-wash) var(--hz-ease),
-        border-color var(--hz-dur-wash) var(--hz-ease),
-        box-shadow var(--hz-dur-wash) var(--hz-ease),
-        transform var(--hz-dur-wash) var(--hz-ease);
-}
-.bm-root .bm-header-switch:hover {
-    background: var(--hz-pane-lift);
-    color: var(--billing-accent);
-    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
-    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
-    transform: var(--hz-hover-lift-sm);
-}
 
 /* The identity chip is the one solid piece of gradient in the chrome. */
-.bm-root .bm-header-avatar {
-    background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
-    color: var(--on-accent-solid);
-    border-color: transparent;
-    box-shadow: 0 0 12px var(--billing-accent-glow), var(--hz-glass-inset-strong);
-}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
-.bm-root .bm-sidebar {
-    background: var(--hz-glass);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
-    border-right: 1px solid var(--hz-glass-bd);
-    box-shadow: var(--hz-glass-inset);
-    transition:
-        background var(--hz-dur-tone) var(--hz-ease),
-        border-color var(--hz-dur-tone) var(--hz-ease);
-}
-
-.bm-root .bm-nav-item {
-    border: 1px solid transparent;
-    transition:
-        color var(--hz-dur-wash) var(--hz-ease),
-        background var(--hz-dur-wash) var(--hz-ease),
-        border-color var(--hz-dur-wash) var(--hz-ease),
-        box-shadow var(--hz-dur-wash) var(--hz-ease),
-        transform var(--hz-dur-wash) var(--hz-ease);
-}
-.bm-root .bm-nav-item:hover:not(:disabled) {
-    background: var(--hz-glass-hover);
-    border-color: var(--hz-glass-bd-hover);
-    box-shadow: var(--hz-glass-inset);
-    transform: translateX(2px);
-}
 
 /* Selected tab: the ramp as a wash + the existing ::before rail turned into a gradient. */
 .bm-root .bm-nav-item.active,
-.bm-root .bm-nav-item.active:hover {
-    background: linear-gradient(
-        100deg,
-        color-mix(in srgb, var(--billing-accent) 14%, transparent) 0%,
-        color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
-    );
-    border-color: color-mix(in srgb, var(--billing-accent) 28%, transparent);
-    box-shadow: 0 2px 14px -4px var(--billing-accent-glow), var(--hz-glass-inset);
-    transform: none;
-}
-.bm-root .bm-nav-item.active::before {
-    background: linear-gradient(180deg, var(--billing-accent) 0%, var(--accent-2) 100%);
-}
-.bm-root .bm-nav-item.active .nav-icon {
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--billing-accent) 55%, transparent));
-}
-.bm-root .bm-nav-item.bm-nav-disabled:hover,
-.bm-root .bm-nav-item:disabled:hover {
-    background: none;
-    border-color: transparent;
-    box-shadow: none;
-    transform: none;
-}
 
-.bm-root .bm-sidebar-footer {
-    border-top: 1px solid var(--hz-glass-bd);
-}
+.bm-root .bm-nav-item.bm-nav-disabled:hover,
 
 /* ── Content ─────────────────────────────────────────────────────────────── */
 .bm-root .bm-content {
@@ -441,12 +263,6 @@
 }
 
 /* ── Mobile bottom nav ───────────────────────────────────────────────────── */
-.bm-root .bm-bottom-nav {
-    background: color-mix(in srgb, var(--hz-page) 82%, transparent);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
-    border-top: 1px solid var(--hz-glass-bd);
-}
 
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
 /* Soft accent ring on buttons/links — never on bare form fields (search shells own focus). */
@@ -461,11 +277,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .bm-root .bm-nav-item:hover,
     .bm-root .bm-btn:hover,
     .bm-root .bm-refresh-btn:hover,
-    .bm-root .bm-summary-item:hover,
-    .bm-root .bm-header-theme:hover {
+    .bm-root .bm-summary-item:hover {
         transform: none;
     }
 }

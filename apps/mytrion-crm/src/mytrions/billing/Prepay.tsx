@@ -39,7 +39,7 @@ const P_CHEVRON_LEFT = 'M15 19l-7-7 7-7';
 const P_CHEVRON_RIGHT = 'M9 5l7 7-7 7';
 const P_DOWNLOAD = 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3';
 
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "var(--font-mono)";
 const ITEMS_PER_PAGE = 50;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

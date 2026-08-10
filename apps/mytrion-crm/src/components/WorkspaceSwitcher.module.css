@@ -1,0 +1,172 @@
+/* The chip. 34px, on the same field-and-hairline treatment as every other header control — the
+   contract is explicit that the right cluster and this chip must not read as different kinds of
+   thing. `--badge-tone` is one of only two places workspace identity is allowed to surface. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-2) 0 var(--space-1_5);
+  border-radius: var(--radius-xs);
+  background: var(--field);
+  border: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+  font-family: inherit;
+  flex: none;
+  transition: all var(--dur-slow) var(--hz-ease);
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:hover,
+.interactive[aria-expanded='true'] {
+  background: var(--glass-hi);
+  border-color: var(--glass-bd-hi);
+}
+
+.face {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 22px gradient tile. The workspace tone washes over the brand ramp rather than replacing it, so
+   twelve badges stay recognisably one family. */
+.tile {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  color: var(--on-accent);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--badge-tone) 62%, transparent),
+      transparent 88%
+    ),
+    var(--ramp-d);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3);
+}
+
+.name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--dur-slow) var(--hz-ease);
+}
+
+.interactive[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+/* ── The menu ───────────────────────────────────────────────────────────────── */
+
+.menu {
+  width: 318px;
+  max-width: calc(100vw - var(--space-8));
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.heading {
+  padding: var(--space-1_5) var(--space-2_5) var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-2_5);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: 1px solid transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--dur-base) var(--hz-ease);
+}
+
+.row:hover {
+  background: var(--row-hover);
+  border-color: var(--glass-bd);
+}
+
+.rowCurrent {
+  background: var(--ramp-soft);
+  border-color: var(--glass-bd-hi);
+}
+
+.rowTile {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  background: var(--field);
+  border: 1px solid var(--glass-bd);
+  color: var(--badge-tone);
+}
+
+.rowCurrent .rowTile {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--badge-tone) 62%, transparent),
+      transparent 88%
+    ),
+    var(--ramp-d);
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3);
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rowName,
+.rowBlurb {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowName {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.rowBlurb {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+.rowCheck {
+  flex: none;
+  color: var(--accent);
+}

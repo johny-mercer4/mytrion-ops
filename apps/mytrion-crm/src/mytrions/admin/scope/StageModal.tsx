@@ -86,8 +86,8 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                 </svg>
               </div>
               <div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, letterSpacing: '.18em', color: node.color }}>{kicker}</div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 30, lineHeight: 1.05, color: 'var(--ink)' }}>{node.title}</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, letterSpacing: '.18em', color: node.color }}>{kicker}</div>
+                <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 30, lineHeight: 1.05, color: 'var(--ink)' }}>{node.title}</div>
               </div>
             </div>
             <button
@@ -181,7 +181,7 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                           </span>
                           <span className="oct-dept-block__name">{d.name}</span>
                           {d.external && (
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: '.1em', color: col, border: `1px solid ${col}`, borderRadius: 3, padding: '2px 6px' }}>
+                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '.1em', color: col, border: `1px solid ${col}`, borderRadius: 3, padding: '2px 6px' }}>
                               EXT
                             </span>
                           )}
@@ -218,7 +218,7 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                                       <span
                                         style={{
                                           display: 'flex', width: 22, height: 22, flex: 'none', alignItems: 'center', justifyContent: 'center',
-                                          background: hexA(col, 0.16), borderRadius: 3, fontFamily: "'JetBrains Mono',monospace", fontSize: 8, fontWeight: 600, color: col,
+                                          background: hexA(col, 0.16), borderRadius: 3, fontFamily: "var(--font-mono)", fontSize: 8, fontWeight: 600, color: col,
                                         }}
                                       >
                                         {pl.abbr}
@@ -246,7 +246,7 @@ export function StageModal({ node, onClose }: { node: DetailNode; onClose: () =>
                   <EngineDiagram engine={node.engine} color={node.color} />
                 ) : (
                   <>
-                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
                       AUTOMATED{' '}
                       <span style={{ color: node.color, border: '1px solid var(--gb)', borderRadius: 3, padding: '2px 7px', fontSize: 9 }}>
                         by {node.autoBy ?? 'R&D'}

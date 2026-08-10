@@ -21,5 +21,31 @@ export default defineConfig({
   // Build into app/ — the web root a Zoho widget (zet) serves and packs. sourcemap is OFF: the
   // app/ dir is packed into the .zet and served publicly, and maps would expose source (and could
   // re-expose any inlined env value). Flip to true only for local debugging, never for a shipped build.
-  build: { outDir: 'app', emptyOutDir: true, sourcemap: false },
+  build: {
+    outDir: 'app',
+    emptyOutDir: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Fonts get a STABLE, UNHASHED path under assets/fonts/ so index.html can preload them by
+        // name without knowing a build hash.
+        //
+        // Under assets/ is mandatory, not stylistic: errorHandler.ts only 308-rescues paths
+        // containing '/assets/', and `base: './'` above means a deep SPA route like
+        // /main/salesmytrion would otherwise resolve './fonts/x.woff2' to '/main/fonts/x.woff2'
+        // and 404. That is why the faces are imported through the Vite graph rather than dropped
+        // in public/.
+        //
+        // Unhashed is safe because these four files never change: a webface is versioned by its
+        // filename. If a face is ever swapped, rename the file — @fastify/static serves non-HTML
+        // as `immutable, max-age=1y`, so a same-named replacement would be cached for a year.
+        assetFileNames: (info) => {
+          const name = info.name ?? info.originalFileNames?.[0] ?? '';
+          return name.endsWith('.woff2')
+            ? 'assets/fonts/[name][extname]'
+            : 'assets/[name]-[hash][extname]';
+        },
+      },
+    },
+  },
 });

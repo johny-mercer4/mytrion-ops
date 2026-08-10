@@ -247,3 +247,11 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* Below 880px the label goes and the control becomes an icon square, matching the other header
+   chips. The accessible name survives on the button itself. */
+@media (max-width: 880px) {
+  .triggerLabel {
+    display: none;
+  }
+}

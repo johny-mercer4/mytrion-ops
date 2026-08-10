@@ -1,0 +1,226 @@
+/*
+ * DropdownMenu — the floating command list.
+ *
+ * Shares the floating-panel appearance with Tooltip on purpose: one surface, one shadow, one blur,
+ * so a menu and a hint read as the same layer of the app rather than two designers' guesses.
+ *
+ * `--overlay-gap` is read back off `.menu` by useAnchoredLayer — the distance from the trigger stays
+ * a token even though the arithmetic happens in JS.
+ */
+
+.menu {
+  --overlay-gap: var(--space-1);
+  /* Narrow enough to sit under a 32px icon button without looking detached, wide enough that
+     "Download as spreadsheet" does not wrap. */
+  --menu-min-w: 184px;
+  --menu-max-w: 320px;
+  /* Scroll ownership: the MENU scrolls, never the page behind it. A long menu that pushes the
+     document taller is a menu that moves the trigger out from under itself. */
+  --menu-max-h: 60vh;
+  /* The leading column. One value, so an icon row, a tick row and a plain row all align on the
+     same label edge — the thing that makes a mixed menu look drawn rather than assembled. */
+  --menu-leading-w: var(--icon-size-sm);
+  /* One row height, so the arrow keys always travel the same distance. */
+  --menu-row-h: 28px;
+
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  min-inline-size: var(--menu-min-w);
+  max-inline-size: var(--menu-max-w);
+  inline-size: max-content;
+  max-block-size: var(--menu-max-h);
+  overflow-y: auto;
+  /* Stops a menu scrolled to its end from handing the wheel to the page beneath it. */
+  overscroll-behavior: contain;
+
+  padding-block: var(--space-1);
+  /* Inset the rows. Not decoration: the global :focus-visible ring sits 2px OUTSIDE the row box,
+     and without this gutter `overflow-y: auto` clips the ring off the focused row — the one row
+     whose outline is the only thing telling a keyboard user where they are. */
+  padding-inline: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  /* Chrome floating over content — the one place horizon.css allows a blur. The menu is short and
+     its own scrolling is confined to it, so this is a single small composited layer, not a blur
+     under four hundred table rows. */
+  backdrop-filter: blur(var(--chrome-blur));
+  -webkit-backdrop-filter: blur(var(--chrome-blur));
+
+  font-family: var(--font-body);
+
+  /* Entrance only, emerging from the trigger's side. No `forwards` fill, so `translate` returns to
+     unset the moment it finishes — a menu holding a permanent transform would be a composited layer
+     AND a containing block for its children, stacked on top of a backdrop-filter, which is exactly
+     the un-repainted-panel defect this app has already shipped. */
+  animation: menuIn var(--dur-fast) var(--ease-decelerate);
+}
+
+/* `data-side` is written AFTER collision flipping, so a menu that flipped upward animates downward
+   from the trigger rather than from wherever it was originally asked to sit. */
+.menu[data-side='bottom'] {
+  --menu-from: 0 calc(var(--space-1) * -1);
+}
+.menu[data-side='top'] {
+  --menu-from: 0 var(--space-1);
+}
+.menu[data-side='left'] {
+  --menu-from: var(--space-1) 0;
+}
+.menu[data-side='right'] {
+  --menu-from: calc(var(--space-1) * -1) 0;
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    translate: var(--menu-from, 0 0);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* ── Row ─────────────────────────────────────────────────────────────────────
+   A real <button>, which is where Enter/Space activation and the disabled semantics come from. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--menu-row-h);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: start;
+
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard);
+}
+
+/* Hover and keyboard focus paint the SAME highlight, because in a menu they are the same state:
+   the pointer moves focus (see onMouseEnter in the component), so two different appearances would
+   mean the row under the cursor and the row the keyboard will act on could look different. The
+   global :focus-visible ring still lands on top of it and is not restyled here. */
+.row:hover,
+.row:focus {
+  background: var(--row-hover);
+}
+
+.row:active {
+  background: var(--surface-alt);
+}
+
+/* DESTRUCTIVE — the same bar as Button's danger variant: irreversible, not merely important.
+   The colour REINFORCES the label; it never carries the meaning alone. */
+.row[data-destructive='true'] {
+  color: var(--intent-danger-fg);
+}
+.row[data-destructive='true']:hover,
+.row[data-destructive='true']:focus {
+  background: var(--intent-danger-bg);
+}
+
+/* DISABLED — recolour, never an opacity multiply, so the label keeps a known contrast ratio. The
+   row stays focusable and stays in the arrow sequence; `pointer-events: none` is banned outright
+   (CONVENTIONS §5) because it would also kill the tooltip explaining why. */
+.row[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.row[aria-disabled='true']:hover,
+.row[aria-disabled='true']:focus {
+  /* Focus must still be visible on a row you cannot use — otherwise a keyboard user tabs into a
+     void. The ground stays flat; the global focus ring is what says "you are here". */
+  background: transparent;
+}
+
+/* The leading column. Present but empty by default so nothing shifts as rows tick and untick — a
+   checkbox menu whose labels jump 22px on every click is unusable at speed. Collapsed entirely
+   when no row in the menu has anything to put there. */
+.rowLeading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 0;
+  color: var(--text-muted);
+  transition: color var(--dur-instant) var(--ease-standard);
+}
+.menu[data-leading='true'] .rowLeading {
+  inline-size: var(--menu-leading-w);
+}
+/* The icon takes the row's own tone at the two moments the row is addressed, so a destructive row's
+   glyph is not left cool grey against a red label. */
+.row:hover .rowLeading,
+.row:focus .rowLeading,
+.row[data-destructive='true'] .rowLeading,
+.row[data-checked='true'] .rowLeading {
+  color: currentColor;
+}
+.row[aria-disabled='true'] .rowLeading {
+  color: var(--disabled-fg);
+}
+
+.rowLabel {
+  flex: 1 1 auto;
+  /* A long label ellipsises rather than wrapping to a second line: rows stay one height, so the
+     arrow keys move a predictable distance and the list reads as a column. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Trailing qualifier — a shortcut, a count, a scope. Mono, because these are almost always
+   glyph-for-glyph values that should align down the column. */
+.rowHint {
+  flex: none;
+  margin-inline-start: var(--space-4);
+  color: var(--text-muted);
+  font-family: var(--font-num);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+}
+.row[aria-disabled='true'] .rowHint {
+  color: var(--disabled-fg);
+}
+
+/* ── Section label ───────────────────────────────────────────────────────────
+   Names the group beneath it via aria-labelledby, so it is content, not decoration. Not focusable:
+   the arrow keys walk commands, and a heading is not a command. */
+.sectionLabel {
+  padding-block: var(--space-1_5) var(--space-1);
+  padding-inline: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  /* Caps need their own tracking — Grotesk fits caps on lowercase sidebearings, so untracked caps
+     read 44% tighter than the text around them (theme.css, --tr-caps-micro). */
+  letter-spacing: var(--tr-caps-micro);
+}
+
+/* ── Separator ───────────────────────────────────────────────────────────────
+   role="separator", so it is announced as a boundary rather than being invisible to a screen
+   reader — the grouping is information, not styling. */
+.separator {
+  block-size: 1px;
+  margin-block: var(--space-1);
+  margin-inline: var(--space-1);
+  background: var(--border-subtle);
+}

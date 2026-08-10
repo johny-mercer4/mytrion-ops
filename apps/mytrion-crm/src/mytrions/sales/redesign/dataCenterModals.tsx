@@ -36,7 +36,7 @@ import { DetailSheet, ModalFooter } from './dataCenterSheet';
 import { emitKpiActivity } from './kpiTelemetry';
 
 function avStyle(col: string): string {
-  return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
+  return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
 }
 const CARD = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
 const CARD_LABEL = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
@@ -55,7 +55,7 @@ function StatCard({ label, value, mono, color }: { label: string; value: string;
   return (
     <div style={s(CARD)}>
       <div style={s(CARD_LABEL)}>{label}</div>
-      <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:21px" : 'font-size:15px'};font-weight:700;margin-top:5px${color ? `;color:${color}` : ''}`)}>
+      <div style={s(`${mono ? "font-family:var(--font-mono);font-size:21px" : 'font-size:15px'};font-weight:700;margin-top:5px${color ? `;color:${color}` : ''}`)}>
         {value}
       </div>
     </div>
@@ -66,7 +66,7 @@ function DateRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={s(DATE_ROW)}>
       <span style={s('font-size:13px;color:var(--muted)')}>{label}</span>
-      <span style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace")}>{value}</span>
+      <span style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:var(--font-mono)")}>{value}</span>
     </div>
   );
 }
@@ -77,7 +77,7 @@ function ContactCallRow({ label, value, onCall }: { label: string; value: string
     <div style={s('display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border2)')}>
       <div style={s('flex:1;min-width:0')}>
         <div style={s('font-size:11px;color:var(--muted)')}>{label}</div>
-        <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+        <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:var(--font-mono);margin-top:2px")}>
           {value.trim() ? value : '—'}
         </div>
       </div>
@@ -122,10 +122,10 @@ function EditCard({
           placeholder={placeholder}
           inputMode={inputMode ?? 'text'}
           className="ss-in"
-          style={s(`${INPUT_CSS}${mono ? ";font-family:'JetBrains Mono',monospace" : ''}`)}
+          style={s(`${INPUT_CSS}${mono ? ";font-family:var(--font-mono)" : ''}`)}
         />
       ) : (
-        <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:21px;margin-top:5px" : 'font-size:15px;margin-top:5px'};font-weight:700`)}>
+        <div style={s(`${mono ? "font-family:var(--font-mono);font-size:21px;margin-top:5px" : 'font-size:15px;margin-top:5px'};font-weight:700`)}>
           {display}
         </div>
       )}
@@ -331,7 +331,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                   <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
-                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:var(--font-mono);margin-top:2px")}>{applied.Email || '—'}</div>
                 </div>
               )}
             </div>
@@ -474,7 +474,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
                   <Icon name="trend" size={12} />
                   Win probability
                 </span>
-                <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
+                <span style={s(`color:${meta.col};font-weight:800;font-family:var(--font-mono)`)}>{deal.prob}%</span>
               </div>
               <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
                 <div style={s(`height:100%;width:${deal.prob}%;background:${meta.col}`)} />
@@ -499,7 +499,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                   <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
-                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:var(--font-mono);margin-top:2px")}>{applied.Email || '—'}</div>
                 </div>
               )}
               {editing ? (
@@ -510,7 +510,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                   <div style={s('font-size:11px;color:var(--muted)')}>Secondary email</div>
-                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:var(--font-mono);margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
                 </div>
               )}
             </div>

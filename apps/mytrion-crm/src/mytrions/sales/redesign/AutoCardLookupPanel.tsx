@@ -3,6 +3,7 @@ import { requestBlob } from '@/api/transport';
 import type { CardLookupRow } from './autoLive';
 import { s } from './dc';
 import { deliverBlob } from './txnExportLibs';
+import { AUTO_BUSY_LABEL } from './autoControls';
 
 type Format = 'pdf' | 'xlsx';
 
@@ -58,32 +59,32 @@ export function AutoCardLookupPanel({
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       <div style={s('display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px')}>
         <div>
-          <div style={s('font-size:14px;font-weight:800;color:var(--text)')}>{rows.length} live card{rows.length === 1 ? '' : 's'}</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>Use the card actions in Automations to activate, deactivate, update limits, or change unit/driver details.</div>
+          <div style={s('font-size:var(--ss-text-sm);font-weight:800;color:var(--text)')}>{rows.length} live card{rows.length === 1 ? '' : 's'}</div>
+          <div style={s('font-size:var(--ss-text-2xs);color:var(--muted);margin-top:3px')}>Use the card actions in Automations to activate, deactivate, update limits, or change unit/driver details.</div>
         </div>
         <div style={s('display:flex;gap:8px')}>
-          <button type="button" disabled={busy !== null} onClick={() => download('pdf')} className="ss-auto-result-btn-sec" style={s('height:36px;padding:0 14px;font-size:13px')}>
-            {busy === 'pdf' ? 'Preparing…' : 'Download PDF Report'}
+          <button type="button" disabled={busy !== null} onClick={() => download('pdf')} className="ss-auto-result-btn-sec" style={s('height:36px;padding:0 14px;font-size:var(--ss-text-xs)')}>
+            {busy === 'pdf' ? AUTO_BUSY_LABEL : 'Download PDF Report'}
           </button>
-          <button type="button" disabled={busy !== null} onClick={() => download('xlsx')} className="ss-auto-result-btn-sec" style={s('height:36px;padding:0 14px;font-size:13px')}>
-            {busy === 'xlsx' ? 'Preparing…' : 'Download Excel Report'}
+          <button type="button" disabled={busy !== null} onClick={() => download('xlsx')} className="ss-auto-result-btn-sec" style={s('height:36px;padding:0 14px;font-size:var(--ss-text-xs)')}>
+            {busy === 'xlsx' ? AUTO_BUSY_LABEL : 'Download Excel Report'}
           </button>
         </div>
       </div>
       {message && (
-        <div style={s(`padding:10px 12px;border-radius:var(--radius-md);font-size:13px;color:var(--${message.tone === 'ok' ? 'ok' : 'danger'});background:color-mix(in srgb,var(--${message.tone === 'ok' ? 'ok' : 'danger'}) 10%,transparent);border:1px solid color-mix(in srgb,var(--${message.tone === 'ok' ? 'ok' : 'danger'}) 28%,transparent)`)}>
+        <div style={s(`padding:10px 12px;border-radius:var(--radius-md);font-size:var(--ss-text-xs);color:var(--${message.tone === 'ok' ? 'ok' : 'danger'});background:color-mix(in srgb,var(--${message.tone === 'ok' ? 'ok' : 'danger'}) 10%,transparent);border:1px solid color-mix(in srgb,var(--${message.tone === 'ok' ? 'ok' : 'danger'}) 28%,transparent)`)}>
           {message.text}
         </div>
       )}
       <div className="ss-scroll" style={s('overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)')}>
         <div style={s('min-width:940px')}>
-          <div style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;background:var(--surface-2);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
+          <div style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;background:var(--surface-2);font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
             {['Card ID', 'Card #', 'Unit', 'Driver ID', 'Driver Name', 'X-Ref', 'Status', 'Override'].map((header) => <span key={header}>{header}</span>)}
           </div>
           {rows.map((row, index) => (
-            <div key={`${row.cardId}-${row.cardNumber}-${index}`} className="ss-row-h" style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;border-top:1px solid var(--border2);font-size:13px;align-items:center')}>
-              <span style={s("font-family:'JetBrains Mono',monospace")}>{row.cardId || '—'}</span>
-              <span style={s("font-family:'JetBrains Mono',monospace;font-weight:700")}>{row.cardNumber ? `•••• ${row.cardNumber.slice(-6)}` : '—'}</span>
+            <div key={`${row.cardId}-${row.cardNumber}-${index}`} className="ss-row-h" style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;border-top:1px solid var(--border2);font-size:var(--ss-text-xs);align-items:center')}>
+              <span style={s("font-family:var(--font-mono)")}>{row.cardId || '—'}</span>
+              <span style={s("font-family:var(--font-mono);font-weight:700")}>{row.cardNumber ? `•••• ${row.cardNumber.slice(-6)}` : '—'}</span>
               <span>{row.unit || '—'}</span>
               <span>{row.driverId || '—'}</span>
               <span>{row.driverName || '—'}</span>

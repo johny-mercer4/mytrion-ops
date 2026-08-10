@@ -44,7 +44,7 @@ function Gauge(props: {
         />
         <circle cx="8" cy="56" r="3.5" fill="var(--border)" />
         <circle cx="92" cy="56" r="3.5" fill="var(--border)" />
-        <text x="50" y="48" textAnchor="middle" fill="var(--text)" style={{ fontSize: 15, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>
+        <text x="50" y="48" textAnchor="middle" fill="var(--text)" style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
           {msdFmtNum(props.value)}
         </text>
         <text x="50" y="58" textAnchor="middle" fill="var(--muted)" style={{ fontSize: 7.5, fontWeight: 600 }}>

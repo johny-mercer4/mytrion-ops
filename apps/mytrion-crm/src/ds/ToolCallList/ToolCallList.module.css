@@ -1,0 +1,104 @@
+/*
+ * ToolCallList — the tool calls of one turn as a dense vertical timeline.
+ *
+ * The rail is drawn per item rather than as one line behind the list, so the last node terminates
+ * the rail instead of leaving a stub hanging under it.
+ */
+
+.root {
+  display: block;
+  /* The gutter the rail and the nodes live in. Declared here (and matched by the node's own size)
+     so the line and the circles share one origin. */
+  --tc-gutter: var(--space-6);
+  --tc-node: var(--space-5);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr) and not 1fr: a grid track sized `1fr` refuses to shrink below its content, which
+     is how a wide payload ends up widening the whole conversation column. */
+  grid-template-columns: var(--tc-gutter) minmax(0, 1fr);
+  column-gap: var(--space-1);
+  align-items: start;
+}
+
+/* The rail segment: from under this node down past the gap to the next node's rim. The last item
+   has none, so the timeline ends on a node. */
+.item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(var(--tc-gutter) / 2);
+  inset-block-start: calc(var(--space-1) + var(--tc-node));
+  inset-block-end: calc(var(--space-2) * -1);
+  inline-size: 1px;
+  background: var(--trace-rail);
+}
+
+/* ── Node ───────────────────────────────────────────────────────────────────
+   Sits above the rail (z-index) with an opaque fill, so the line runs behind it rather than through
+   it. The offset aligns its centre with the card header's first line. */
+.node {
+  position: relative;
+  z-index: 1;
+  grid-column: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--tc-node);
+  block-size: var(--tc-node);
+  margin-block-start: var(--space-1);
+  margin-inline: auto;
+  border-radius: var(--radius-pill);
+  background: var(--trace-node-bg);
+  border: 1px solid var(--trace-node-bd);
+  color: var(--tool-pending-fg);
+  transition: border-color var(--dur-base) var(--ease-standard);
+}
+
+.item[data-status='running'] .node {
+  border-color: var(--trace-node-running);
+  color: var(--trace-node-running);
+}
+.item[data-status='ok'] .node {
+  border-color: var(--trace-node-ok);
+  color: var(--trace-node-ok);
+}
+.item[data-status='error'] .node {
+  border-color: var(--trace-node-error);
+  color: var(--trace-node-error);
+}
+/* No --trace-node-denied exists, and inventing one is not this component's job: the trace layer only
+   models running/ok/error. Denied borrows the tool-lifecycle token instead — never the error node,
+   which would put a refusal and an outage in the same colour. */
+.item[data-status='denied'] .node {
+  border-color: var(--tool-denied-bd);
+  color: var(--tool-denied-fg);
+}
+
+.card {
+  grid-column: 2;
+  min-inline-size: 0;
+}
+
+/* One region for the whole list, opt-in, transitions only. See the component docblock. */
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: calc(var(--space-0_5) * -1);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

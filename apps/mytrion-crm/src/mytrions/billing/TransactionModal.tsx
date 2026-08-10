@@ -649,7 +649,7 @@ export function TransactionModal({
               <span className="bm-field-label">Amount</span>
               <span
                 className="bm-field-value"
-                style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.9375rem', fontWeight: 700, color: 'var(--success-text)' }}
+                style={{ fontFamily: "var(--font-mono)", fontSize: '0.9375rem', fontWeight: 700, color: 'var(--success-text)' }}
               >
                 {fmtCurrency(tx.amount)}
               </span>
@@ -1038,14 +1038,14 @@ export function TransactionModal({
                               {invoiceRefs.length > 1 ? `Invoice ${i + 1}` : 'Invoice Number'}
                               {ref.carrierId ? <span style={{ textTransform: 'none', letterSpacing: 0 }}> · Carrier {ref.carrierId}</span> : null}
                             </div>
-                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div style={{ fontFamily: "var(--font-mono)", fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {ref.invoiceNumber ? `#${ref.invoiceNumber}` : `ID ${ref.invoiceId}`}
                             </div>
                           </div>
                           {ref.paymentId ? (
                             <div style={{ flexShrink: 0, textAlign: 'right' }}>
                               <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>Payment</div>
-                              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>#{ref.paymentId}</div>
+                              <div style={{ fontFamily: "var(--font-mono)", fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>#{ref.paymentId}</div>
                             </div>
                           ) : null}
                         </div>
@@ -1144,10 +1144,10 @@ function SplitSection(props: SplitSectionProps) {
             {splits.map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-alt)', border: '1px solid var(--border)', borderRadius: '0.375rem', padding: '0.4rem 0.6rem' }}>
                 <span className="bm-badge" style={splitTypeBadge(a.type)}>{splitTypeLabel(a.type)}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600 }}>{a.carrierId}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600 }}>{a.carrierId}</span>
                 {a.type === 'invoice' ? <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>#{a.invoiceNumber}</span> : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>{a.type === 'prepay' ? 'top-up' : 'already in CMP'}</span>}
                 <span style={{ flex: 1 }} />
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.75rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(a.amount)}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.75rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(a.amount)}</span>
                 <button className="bm-btn" style={{ fontSize: '0.62rem', padding: '0.15rem 0.45rem', background: 'transparent', border: '1px solid var(--danger-border)', color: 'var(--danger-text)', borderRadius: '0.25rem', cursor: 'pointer' }} onClick={() => onRemoveSplit(i)} title="Remove split">
                   ✕
                 </button>
@@ -1364,7 +1364,7 @@ function SplitBreakdown({ allocations }: { allocations: { type?: string; carrier
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.18rem' }}>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.73rem', color: 'var(--text-primary)', fontWeight: 600 }}>{a.carrierId}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.73rem', color: 'var(--text-primary)', fontWeight: 600 }}>{a.carrierId}</span>
                 <span className="bm-badge" style={{ ...splitTypeBadge((a.type as SplitType) ?? 'syncOnly'), fontSize: '0.54rem', padding: '1px 5px' }}>
                   {a.type === 'invoice' ? 'Invoice' : a.type === 'prepay' ? 'Prepay' : 'In CMP'}
                 </span>
@@ -1372,14 +1372,14 @@ function SplitBreakdown({ allocations }: { allocations: { type?: string; carrier
               {a.invoiceNumber ? <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', fontWeight: 500 }}>INV #{a.invoiceNumber}</div> : null}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.8rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(readNum(a.amount))}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.8rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(readNum(a.amount))}</span>
               {a.status === 'success' ? <Icon d="M5 13l4 4L19 7" size={13} w={2.5} stroke="var(--success-text)" /> : a.status === 'error' ? <Icon d="M6 18L18 6M6 6l12 12" size={13} w={2.5} stroke="var(--danger-text)" /> : null}
             </div>
           </div>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.45rem 0.75rem', background: 'var(--success-bg)', borderTop: '1px solid var(--success-border)' }}>
           <span style={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--success-text)', fontWeight: 600 }}>Total Allocated</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.8rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(total)}</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.8rem', fontWeight: 700, color: 'var(--success-text)' }}>{fmtCurrency(total)}</span>
         </div>
       </div>
     </div>
@@ -1395,7 +1395,7 @@ function FieldRow({ label, value, mono, muted }: { label: string; value: string;
       <span
         className="bm-field-value"
         style={{
-          ...(mono ? { fontFamily: "'JetBrains Mono', monospace", fontSize: muted ? '0.6875rem' : '0.75rem' } : {}),
+          ...(mono ? { fontFamily: "var(--font-mono)", fontSize: muted ? '0.6875rem' : '0.75rem' } : {}),
           ...(muted ? { color: 'var(--text-muted)' } : {}),
         }}
       >
@@ -1409,7 +1409,7 @@ function BudgetCell({ label, value, bg, border, color }: { label: string; value:
   return (
     <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: '0.375rem', padding: '0.45rem 0.6rem', textAlign: 'center' }}>
       <div className="tx-field-sublabel" style={{ marginBottom: '0.2rem' }}>{label}</div>
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.78rem', fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: '0.78rem', fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

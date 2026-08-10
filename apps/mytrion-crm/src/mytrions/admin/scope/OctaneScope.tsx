@@ -20,7 +20,7 @@ import './scope-detail.css';
 
 type Lifecycle = 'intake' | 'after';
 
-const MONO = "'JetBrains Mono',monospace";
+const MONO = "var(--font-mono)";
 
 export function OctaneScope() {
   const [lc, setLc] = useState<Lifecycle>('intake');
@@ -338,7 +338,7 @@ export function OctaneScope() {
           <div style={{ pointerEvents: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
               <div style={{ width: 11, height: 11, background: 'var(--liveColor)', borderRadius: '50%', boxShadow: '0 0 12px var(--liveColor)', transition: 'background .9s,box-shadow .9s' }} />
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 21, letterSpacing: '.13em', color: 'var(--ink)' }}>OCTANE SCOPE</div>
+              <div style={{ fontFamily: "var(--font-head)", fontWeight: 700, fontSize: 21, letterSpacing: '.13em', color: 'var(--ink)' }}>OCTANE SCOPE</div>
             </div>
             <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '.1em', color: 'var(--sub)', marginTop: 5, marginLeft: 22 }}>
               CUSTOMER LIFECYCLE — VISUAL MAP

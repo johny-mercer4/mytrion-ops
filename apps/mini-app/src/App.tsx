@@ -7,16 +7,20 @@ import {
   listManagers,
   revokeManager,
   type ManagerUser,
-  driverSelfRegister,
   fetchAccountStatus,
   fetchBalance,
   fetchCardFunds,
   fetchFleet,
   fetchInvoices,
   fetchLastUsed,
+  fetchAuthState,
   fetchMiniAppSession,
   fetchPaymentInfo,
   fetchRegistrationPreview,
+  loadPersistedLoginHints,
+  logoutMiniApp,
+  persistLoginHints,
+  type LoginHints,
   fetchCompany,
   fetchBillingForm,
   fetchTracking,
@@ -80,6 +84,7 @@ import { Toast, type ToastKind, type ToastState } from './components/Toast';
 import { TabBar, TABS as HOME_TABS, type HomeTab } from './screens/TabBar';
 import { ServicesTab } from './screens/ServicesTab';
 import { InboxTab } from './screens/InboxTab';
+import { PasswordAuthScreen } from './screens/PasswordAuth';
 import { SlideIn } from './components/SlideIn';
 import { useSlideDirection } from './lib/useSlideDirection';
 
@@ -95,7 +100,11 @@ type Screen =
   | 'fleet'
   | 'login'
   | 'agent-portfolio'
-  | 'agent-company';
+  | 'agent-company'
+  | 'auth-set-password'
+  | 'auth-login'
+  | 'auth-update-password'
+  | 'auth-forgot';
 
 interface Session {
   isDriver: boolean;
@@ -555,33 +564,67 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
   const { t } = useI18n();
   const isSalesAgent = preview.profile === 'sales_agent';
   const isManager = preview.profile === 'manager';
+  const isDriver = preview.profile === 'driver';
   const isOwner = preview.profile === 'owner' || isManager;
   const ownerLabel = isManager
     ? t('role.manager')
     : preview.companyType === 'fleet-manager'
       ? t('role.fleet')
       : t('role.owner');
+  const roleLabel = isSalesAgent ? t('agent.role') : isOwner ? ownerLabel : t('role.driver');
+  const personName = preview.driverName?.trim() || null;
+  const cardTail = preview.cardId ? preview.cardId.replace(/\D/g, '').slice(-6) : null;
+  const passwordMode = !isSalesAgent && preview.authMode !== 'telegram';
   const cd = countdown(preview.expiresAt);
   return (
     <Screen center>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
         <LogoLockup size={40} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
-          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isSalesAgent ? t('agent.confirm') : isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
+          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.45 }}>
+            {isSalesAgent ? t('agent.confirm') : isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}
+          </div>
         </div>
         <DetailCard>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '14px 16px' }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{isSalesAgent ? t('agent.workspace') : t('confirm.company')}</span>
             <span className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{preview.companyName ?? '—'}</span>
           </div>
           <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{isOwner ? t('confirm.accountType') : t('confirm.role')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '14px 16px' }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{isOwner || isSalesAgent ? t('confirm.accountType') : t('confirm.role')}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg)', padding: '5px 11px', borderRadius: 8, background: 'var(--secondary)' }}>
-              {isSalesAgent ? t('agent.role') : isOwner ? ownerLabel : t('role.driver')}
+              {roleLabel}
             </span>
           </div>
+          {isManager && personName && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '14px 16px' }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('auth.managerName')}</span>
+                <span className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{personName}</span>
+              </div>
+            </>
+          )}
+          {isDriver && personName && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '14px 16px' }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('auth.driverName')}</span>
+                <span className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{personName}</span>
+              </div>
+            </>
+          )}
+          {isDriver && cardTail && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '14px 16px' }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('auth.cardLast6')}</span>
+                <span className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {cardTail}</span>
+              </div>
+            </>
+          )}
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
           {busy ? <Spinner size={20} color="#FFFFFF" /> : t('confirm.cta')}
@@ -592,67 +635,18 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
             <span>{t('confirm.expires', { time: cd.short })}</span>
           </div>
         )}
-        <div style={{ fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', lineHeight: 1.5 }}>{t('confirm.footnote')}</div>
-        {/* Generic support only during registration — the sales agent's name (who generated the link)
-            was on the confirm screen and its own row above; both are removed. */}
+        <div style={{ fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', lineHeight: 1.5 }}>
+          {passwordMode ? t('confirm.footnotePassword') : t('confirm.footnote')}
+        </div>
         <SupportCard />
       </div>
     </Screen>
   );
 }
 
-/**
- * Onboarding entry when there's no invite link + no prior registration: choose Driver or Company.
- * Driver self-registers by fuel-card number (the number is on the physical card); Company accounts
- * are invite-only, so that branch just points to the registration link.
- */
-function LoginScreen({
-  firstName,
-  defaultName,
-  onDriverRegister,
-}: {
-  firstName: string;
-  /** The Telegram profile name, used to prefill — not to decide. See `name` below. */
-  defaultName: string;
-  onDriverRegister: (cardNumber: string, driverName: string) => Promise<void>;
-}) {
+/** First-time / unknown Telegram users — invite link only (no Driver/Company chooser, no card login). */
+function LoginScreen({ firstName }: { firstName: string }) {
   const { t } = useI18n();
-  const [role, setRole] = useState<'choose' | 'driver' | 'company'>('choose');
-  const [card, setCard] = useState('');
-  /**
-   * Prefilled from Telegram, but the driver's to correct. This name is what their OWNER sees beside
-   * this card in the fleet roster and what support reads on a ticket — and a Telegram display name
-   * is whatever the person happened to set: a nickname, an emoji, the phone's default. It was being
-   * taken silently.
-   */
-  const [name, setName] = useState(defaultName);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit() {
-    const value = card.replace(/\s/g, '');
-    if (value.length < 4) {
-      setError(t('login.cardInvalid'));
-      return;
-    }
-    const who = name.trim();
-    if (!who) {
-      setError(t('login.nameRequired'));
-      return;
-    }
-    setBusy(true);
-    setError('');
-    haptic('tap');
-    try {
-      await onDriverRegister(value, who);
-    } catch (e) {
-      haptic('error');
-      setError(e instanceof ApiError ? e.message : t('error.reason'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
@@ -661,88 +655,9 @@ function LoginScreen({
           <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
           <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{t('login.subtitle')}</div>
         </div>
-
-        {role === 'choose' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-            {([
-              { key: 'driver', icon: 'truck' as const, label: t('login.driver'), sub: t('login.driverSub'), primary: true },
-              { key: 'company', icon: 'users' as const, label: t('login.company'), sub: t('login.companySub'), primary: false },
-            ] as const).map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                className="press"
-                onClick={() => { haptic('tap'); setRole(opt.key); }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  textAlign: 'left',
-                  padding: '15px 16px',
-                  border: opt.primary ? 'none' : '1px solid var(--border)',
-                  borderRadius: 16,
-                  background: opt.primary ? 'var(--primary)' : 'var(--card)',
-                  boxShadow: opt.primary ? CTA_SHADOW : 'var(--card-shadow)',
-                  color: opt.primary ? '#FFFFFF' : 'var(--fg)',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: opt.primary ? 'rgba(255,255,255,.18)' : 'var(--secondary)', color: opt.primary ? '#FFFFFF' : 'var(--link-accent)' }}>
-                  <Icon name={opt.icon} size={22} strokeWidth={1.9} className="" />
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 16, fontWeight: 700 }}>{opt.label}</span>
-                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 500, marginTop: 2, color: opt.primary ? 'rgba(255,255,255,.8)' : 'var(--muted-fg)' }}>{opt.sub}</span>
-                </span>
-                {opt.primary ? <Chevron style={{ color: 'rgba(255,255,255,.85)' }} /> : <Chevron />}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {role === 'driver' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-            <label style={{ width: '100%' }}>
-              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.cardPrompt')}</span>
-              <input
-                value={card}
-                inputMode="numeric"
-                autoComplete="off"
-                onChange={(e) => setCard(groupCardNumber(e.target.value.replace(/\D/g, '').slice(0, 19)))}
-                placeholder={t('login.cardPlaceholder')}
-                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', padding: '0 14px', boxSizing: 'border-box' }}
-              />
-            </label>
-            <label style={{ width: '100%' }}>
-              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.namePrompt')}</span>
-              <input
-                value={name}
-                autoComplete="name"
-                onChange={(e) => setName(e.target.value.slice(0, 200))}
-                placeholder={t('login.namePlaceholder')}
-                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, padding: '0 14px', boxSizing: 'border-box' }}
-              />
-              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.45 }}>{t('login.nameHint')}</span>
-            </label>
-            {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
-            <CtaButton onClick={() => void submit()} disabled={busy}>
-              {busy ? <Spinner size={20} color="#FFFFFF" /> : t('login.continue')}
-            </CtaButton>
-            <button type="button" className="press" onClick={() => { setRole('choose'); setError(''); }} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
-              {t('common.back')}
-            </button>
-          </div>
-        )}
-
-        {role === 'company' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', alignItems: 'center' }}>
-            <div style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--muted-fg)', textAlign: 'center', padding: '14px 16px', background: 'var(--secondary)', borderRadius: 14 }}>{t('login.companyInfo')}</div>
-            <button type="button" className="press" onClick={() => setRole('choose')} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
-              {t('common.back')}
-            </button>
-          </div>
-        )}
+        <div style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--muted-fg)', textAlign: 'center', padding: '14px 16px', background: 'var(--secondary)', borderRadius: 14, width: '100%' }}>
+          {t('login.inviteOnlyInfo')}
+        </div>
       </div>
     </Screen>
   );
@@ -2088,18 +2003,25 @@ function ProfileSheet({
   company,
   initData,
   isOwner,
+  passwordAuth,
   onCopy,
   theme,
   onTheme,
+  onUpdatePassword,
+  onLogout,
   onClose,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
   initData: string;
   isOwner: boolean;
+  /** True when this registration uses password login (not legacy telegram-only). */
+  passwordAuth: boolean;
   onCopy: (text: string, toast: string) => void;
   theme: Theme;
   onTheme: (t: Theme) => void;
+  onUpdatePassword: () => void;
+  onLogout: () => void;
   onClose: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
@@ -2195,6 +2117,20 @@ function ProfileSheet({
             );
           })}
         </div>
+
+        {passwordAuth && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('auth.loginTitle')}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              <button type="button" className="press" onClick={() => { haptic('tap'); onUpdatePassword(); }} style={{ height: 44, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                {t('auth.updatePassword')}
+              </button>
+              <button type="button" className="press" onClick={() => { haptic('tap'); onLogout(); }} style={{ height: 44, borderRadius: 12, border: '1px solid color-mix(in srgb, var(--destructive) 35%, var(--border))', background: 'color-mix(in srgb, var(--destructive) 10%, transparent)', color: 'var(--destructive)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                {t('auth.logout')}
+              </button>
+            </div>
+          </>
+        )}
         </div>
       </div>
     </>
@@ -4062,9 +3998,6 @@ export function App() {
   const initData = wa?.initData ?? '';
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
-  /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
-   *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
-  const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
   const { t, lang } = useI18n();
 
@@ -4073,6 +4006,7 @@ export function App() {
   const [errorReason, setErrorReason] = useState('');
   const [preview, setPreview] = useState<RegistrationPreview | null>(null);
   const [registration, setRegistration] = useState<RegistrationView | null>(null);
+  const [loginHints, setLoginHints] = useState<LoginHints | null>(null);
   const [salesAgent, setSalesAgent] = useState<SalesAgentView | null>(null);
   const [agentCompanies, setAgentCompanies] = useState<SalesAgentCompany[]>([]);
   const [selectedAgentCompany, setSelectedAgentCompany] = useState<SalesAgentCompany | null>(null);
@@ -4270,19 +4204,82 @@ export function App() {
     wa?.expand();
     initTheme();
 
+    /** Password-mode users never use the Driver/Company chooser after first verify. */
+    function showCachedPasswordLogin(): boolean {
+      const cached = loadPersistedLoginHints();
+      if (!cached?.hasPassword) return false;
+      setLoginHints(cached);
+      setScreen('auth-login');
+      return true;
+    }
+
+    /** Returns true when navigation was handled (set-password / login / password home / revoked). */
+    function enterPasswordAuthFlow(
+      state: Exclude<Awaited<ReturnType<typeof fetchAuthState>>, { status: 'unregistered' }>,
+      fallbackRegistration?: RegistrationView,
+    ): boolean {
+      setLoginHints(state.loginHints);
+      persistLoginHints(
+        state.status === 'needs_password'
+          ? { ...state.loginHints, hasPassword: false }
+          : { ...state.loginHints, hasPassword: state.status !== 'revoked' },
+      );
+      setRegistration(state.registration ?? fallbackRegistration ?? null);
+      if (state.status === 'revoked') {
+        // Already verified via invite once — never send them to Driver/Company chooser.
+        showError(t('error.revoked'), t('error.revokedTitle'));
+        return true;
+      }
+      if (state.status === 'needs_password') {
+        setScreen('auth-set-password');
+        return true;
+      }
+      if (state.status === 'needs_login') {
+        setScreen('auth-login');
+        return true;
+      }
+      if (state.status === 'authenticated' && state.authMode === 'password') {
+        setScreen('home');
+        return true;
+      }
+      return false;
+    }
+
+    /** true → caller may open home (legacy telegram-mode). false → password UI or chooser already shown. */
+    async function gatePasswordAuth(initData: string, registration: RegistrationView): Promise<boolean> {
+      try {
+        const state = await fetchAuthState(initData);
+        if (state.status === 'unregistered') {
+          if (!showCachedPasswordLogin()) setScreen('login');
+          return false;
+        }
+        if (enterPasswordAuthFlow(state, registration)) return false;
+        setRegistration(state.registration ?? registration);
+        return true;
+      } catch {
+        return true;
+      }
+    }
+
     async function restoreSession(initData: string) {
       try {
+        const auth = await fetchAuthState(initData);
+        // Returning password users: open password login/home — invite link not required.
+        if (auth.status !== 'unregistered' && enterPasswordAuthFlow(auth)) return;
+
+        if (auth.status === 'unregistered' && showCachedPasswordLogin()) return;
+
         const res = await fetchMiniAppSession(initData);
         if (res.kind === 'sales_agent') {
           showSalesAgentPortfolio(res.salesAgent, res.companies);
           return;
         }
         setRegistration(res.registration);
-        setScreen('home');
+        const ok = await gatePasswordAuth(initData, res.registration);
+        if (ok) setScreen('home');
       } catch (e) {
-        // Not-registered isn't an error — it's the onboarding entry point (choose Driver / Company).
         if (e instanceof ApiError && e.code === 'MINI_APP_NOT_REGISTERED') {
-          setScreen('login');
+          if (!showCachedPasswordLogin()) setScreen('login');
           return;
         }
         if (e instanceof ApiError) {
@@ -4299,8 +4296,8 @@ export function App() {
       return;
     }
     if (!id) {
-      // Outside Telegram (no initData) or no link — still offer the login/role choice.
-      setScreen('login');
+      // No invite in the URL — password users still log in; only true first-timers see Driver/Company.
+      if (!showCachedPasswordLogin()) setScreen('login');
       return;
     }
     fetchRegistrationPreview(id)
@@ -4334,6 +4331,13 @@ export function App() {
               return;
             }
             setRegistration(redeemed.registration);
+            // Redeemed invite is not a session — password-mode must log in (or set password once).
+            const state = await fetchAuthState(wa.initData);
+            if (state.status === 'unregistered') {
+              if (!showCachedPasswordLogin()) setScreen('login');
+              return;
+            }
+            if (enterPasswordAuthFlow(state, redeemed.registration)) return;
             setScreen('home');
             return;
           } catch (e) {
@@ -4396,17 +4400,35 @@ export function App() {
     setBusy(true);
     haptic('tap');
     redeemRegistration(preview.id, wa.initData)
-      .then((res) => {
+      .then(async (res) => {
         haptic('success');
         if (res.kind === 'sales_agent') {
           showSalesAgentPortfolio(res.salesAgent, res.companies, res.selectedCarrierId);
-        } else if ('alreadyRegistered' in res) {
-          setRegistration(res.registration);
-          setScreen('already');
-        } else {
-          setRegistration(res.registration);
-          setScreen('success');
+          return;
         }
+        setRegistration(res.registration);
+        try {
+          const state = await fetchAuthState(wa.initData);
+          if (state.status !== 'unregistered') {
+            setLoginHints(state.loginHints);
+            persistLoginHints({
+              ...state.loginHints,
+              hasPassword: state.status !== 'needs_password',
+            });
+            if (state.status === 'needs_password' || state.status === 'needs_login') {
+              setScreen(state.status === 'needs_password' ? 'auth-set-password' : 'auth-login');
+              return;
+            }
+            if (state.authMode === 'password') {
+              setScreen('home');
+              return;
+            }
+          }
+        } catch {
+          /* fall through */
+        }
+        if ('alreadyRegistered' in res) setScreen('already');
+        else setScreen('success');
       })
       .catch((e) => {
         haptic('error');
@@ -4415,12 +4437,39 @@ export function App() {
       .finally(() => setBusy(false));
   }
 
-  async function submitDriverCard(cardNumber: string, driverName: string): Promise<void> {
-    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await driverSelfRegister(wa.initData, cardNumber, driverName);
-    setRegistration(res.registration);
-    haptic('success');
-    setScreen('home');
+  async function handleLogout() {
+    if (!wa?.initData) return;
+    try {
+      await logoutMiniApp(wa.initData);
+    } catch {
+      /* still clear local session */
+    }
+    setProfileOpen(false);
+    setOpenAction(null);
+    // Invite is one-time verify — logout returns to password login, never Driver/Company chooser.
+    const hints =
+      loginHints
+        ? { ...loginHints, hasPassword: true }
+        : loadPersistedLoginHints()
+          ?? (registration?.authMode === 'password' || registration
+            ? {
+                profile: registration.profile,
+                primaryLabel: registration.companyName ?? 'Company',
+                cardLast6:
+                  registration.profile === 'driver' && registration.cardId
+                    ? registration.cardId.replace(/\D/g, '').slice(-6) || null
+                    : null,
+                companyName: registration.companyName,
+                hasPassword: true,
+              }
+            : null);
+    if (hints) {
+      setLoginHints(hints);
+      persistLoginHints(hints);
+      setScreen('auth-login');
+      return;
+    }
+    setScreen('login');
   }
 
   function goHome() {
@@ -4557,10 +4606,33 @@ export function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: 'auto' }}>
         {screen === 'loading' && <LoadingScreen />}
         {screen === 'error' && <ErrorScreen title={errorTitle} reason={errorReason} agentName={supportAgentName} />}
-        {screen === 'login' && <LoginScreen firstName={firstName} defaultName={telegramName} onDriverRegister={submitDriverCard} />}
+        {screen === 'login' && <LoginScreen firstName={firstName} />}
         {screen === 'confirm' && preview && <ConfirmScreen preview={preview} firstName={firstName} busy={busy} onConfirm={confirm} />}
         {screen === 'success' && <SuccessScreen session={session} company={company} onContinue={goHome} />}
         {screen === 'already' && <AlreadyScreen company={company} agentName={supportAgentName} onContinue={goHome} />}
+        {(screen === 'auth-set-password' || screen === 'auth-login' || screen === 'auth-update-password' || screen === 'auth-forgot') && loginHints && wa?.initData && (
+          <PasswordAuthScreen
+            mode={screen === 'auth-set-password' ? 'set' : screen === 'auth-login' ? 'login' : screen === 'auth-update-password' ? 'update' : 'forgot'}
+            initData={wa.initData}
+            hints={loginHints}
+            onAuthed={(reg, hints) => {
+              setRegistration(reg);
+              setLoginHints(hints);
+              setOpenAction(null);
+              setProfileOpen(false);
+              setTab('home');
+              setScreen('home');
+            }}
+            onForgot={screen === 'auth-login' ? () => setScreen('auth-forgot') : undefined}
+            onBack={
+              screen === 'auth-forgot'
+                ? () => setScreen('auth-login')
+                : screen === 'auth-update-password'
+                  ? () => setScreen('home')
+                  : undefined
+            }
+          />
+        )}
         {screen === 'agent-portfolio' && salesAgent && (
           <SalesAgentPortfolioScreen
             agent={salesAgent}
@@ -4648,9 +4720,14 @@ export function App() {
           company={company}
           initData={wa?.initData ?? ''}
           isOwner={session.isOwner}
+          passwordAuth={
+            registration?.authMode === 'password' || loginHints?.hasPassword === true
+          }
           onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
           theme={theme}
           onTheme={chooseTheme}
+          onUpdatePassword={() => { setProfileOpen(false); if (loginHints) setScreen('auth-update-password'); }}
+          onLogout={() => { void handleLogout(); }}
           onClose={() => setProfileOpen(false)}
         />
       ) : null}

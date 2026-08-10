@@ -19,10 +19,10 @@
   --co-gap: 18px;
   --co-gap-lg: 26px;
   --co-pad: clamp(20px, 3vw, 34px);
-  --co-r-sm: 8px;
-  --co-r-md: 12px;
-  --co-r-lg: 16px;
-  --co-r-pill: 999px;
+  --co-r-sm: var(--radius-sm);
+  --co-r-md: var(--radius-md);
+  --co-r-lg: var(--radius-md);
+  --co-r-pill: var(--radius-full);
   --co-tone-fallback: var(--accent);
 
   height: 100%;

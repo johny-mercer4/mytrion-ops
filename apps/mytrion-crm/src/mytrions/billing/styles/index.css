@@ -19,3 +19,5 @@
 /* LAST: the Horizon glass layer wins over the panel sheets above at equal specificity. */
 @import './bm-horizon.css';
 @import './bm-horizon-panels.css';
+/* LAST OF ALL: undoes the page-root assumptions now that .bm-root is a content div. */
+@import './mounted.css';

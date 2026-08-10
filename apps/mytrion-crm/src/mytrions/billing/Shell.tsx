@@ -1,20 +1,34 @@
 /**
- * Billing Mytrion shell — 1:1 port of the zoho-octane/app/billing-mytrion app.js template
- * (bm-header / bm-body = bm-sidebar + bm-content / bm-bottom-nav), machine-scoped under
- * `.bm-root`. Billing defaults to DARK; `.light-mode` on the root flips the palette (theme
- * persisted under the widget's own key `mytrion-billing-theme`).
+ * Billing Mytrion — the panels, mounted inside the shared MytrionShell.
  *
- * Data Center / Transactions / Debtors / Prepay / Returns are live. Floating AI copilot is
- * intentionally not mounted yet (not ready).
+ * This used to be a bespoke shell: its own 56px header (wordmark, badge, a Switch Mytrion link, a
+ * hand-inlined sun/moon toggle, its own avatar), its own 216px sidebar with seven verbatim Zoho
+ * icon paths, and a mobile bottom nav. All of that chrome is gone; the header, rail, collapse
+ * preference, view-as and theme control are the ones every other workspace uses.
+ *
+ * `.bm-root` STAYS, on a content div. It is a token scope, not a style scope — ~7,000 lines of
+ * `.bm-root .bm-*` panel CSS read custom properties declared on it, so dropping the class would
+ * unset them all and the panels would render against var() fallbacks, i.e. transparent and black.
+ * That looks like a CSS load failure rather than a scoping bug, which is what makes it worth
+ * spelling out here.
+ *
+ * The mobile bottom nav is deleted rather than migrated: below 768px the shared rail is already a
+ * horizontal strip, and shipping both would give a phone two navigation bars.
  */
 import { useMemo, useState, type ReactNode } from 'react';
+import {
+  CreditCard,
+  Database,
+  MessagesSquare,
+  Scale,
+  Undo2,
+  Users,
+  Wallet,
+} from 'lucide-react';
 
-import { isAdmin } from '../../access/resolveAccess';
-import { ActAsPicker } from '../../components/ActAsPicker';
-import { MytrionSwitchLink } from '../../components/MytrionSwitchLink';
 import { useImpersonation } from '../../context/ImpersonationProvider';
-import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
+import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
 import { Ledger } from './Ledger';
@@ -32,106 +46,25 @@ type SectionId =
   | 'ledger'
   | 'tickets';
 
-interface NavDef {
-  id: SectionId;
-  label: string;
-  shortLabel: string;
-  iconPath: string;
-  disabled: boolean;
-}
-
-/* Widget nav (icon paths verbatim). Prepay/Returns are Phase-2 "Soon" stubs. */
-const NAV_ITEMS: NavDef[] = [
-  {
-    id: 'datacenter',
-    label: 'Data Center',
-    shortLabel: 'Data',
-    iconPath:
-      'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4',
-    disabled: false,
-  },
-  {
-    id: 'transactions',
-    label: 'Transactions',
-    shortLabel: 'Payments',
-    iconPath:
-      'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
-    disabled: false,
-  },
-  {
-    id: 'debtors',
-    label: 'Debtors',
-    shortLabel: 'Debtors',
-    iconPath:
-      'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
-    disabled: false,
-  },
-  {
-    id: 'prepay',
-    label: 'Prepay',
-    shortLabel: 'Prepay',
-    iconPath:
-      'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
-    disabled: false,
-  },
-  {
-    id: 'returns',
-    label: 'Returns',
-    shortLabel: 'Returns',
-    iconPath: 'M3 10h10a5 5 0 015 5v1M3 10l4-4M3 10l4 4',
-    disabled: false,
-  },
-  {
-    id: 'ledger',
-    label: 'Ledger',
-    shortLabel: 'Ledger',
-    // A balance scale — the sub-ledger model this tab implements. Deliberately distinct: `debtors`
-    // and `prepay` above already share one identical icon path.
-    iconPath:
-      'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
-    disabled: false,
-  },
-  {
-    id: 'tickets',
-    label: 'Tickets',
-    shortLabel: 'Tickets',
-    // chat bubbles
-    iconPath:
-      'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
-    // PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
-    // while the real work sits in Desk. The console itself is untouched — drop this flag to un-park.
-    disabled: true,
-  },
-];
-
-/** Single source for the parked Tickets queue — read from NAV_ITEMS so the flag cannot drift. */
-const TICKETS_PARKED = NAV_ITEMS.some((i) => i.id === 'tickets' && i.disabled);
-
-
+/**
+ * PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty
+ * while the real work sits in Desk. The console itself is untouched — flip this to un-park. It
+ * gates both the nav row and the mount, so a deep link cannot open a queue the nav refuses to show.
+ */
+const TICKETS_PARKED = true;
 
 export function BillingShell() {
-  const user = useUserContext();
-  const admin = isAdmin(user);
   const { actingAs } = useImpersonation();
+  /* The toggle is the header's now, but the class stays: 63 declarations under
+     `.bm-root.light-mode` are Billing-specific values, not forked globals. It mirrors the shared
+     preference — there was never a separate storage key, despite a stale comment claiming one. */
+  const { theme } = useTheme();
   const actAsKey = actingAs?.zohoUserId ?? 'self';
   const [active, setActive] = useState<SectionId>('datacenter');
-  // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
+  // Widget parity: panels lazy-mount on first visit and stay mounted, so tab state survives hops.
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ datacenter: true });
-  const { theme, toggle: toggleTheme } = useTheme();
 
-  // Topbar avatar: initials + name from the session identity.
-  const workerName = user.userName || 'Agent';
-  const workerInitials =
-    workerName
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => w[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase() || 'BM';
-
-  function navigate(id: SectionId, disabled: boolean) {
-    if (disabled) return;
+  function navigate(id: SectionId): void {
     setActive(id);
     setMounted((m) => (m[id] ? m : { ...m, [id]: true }));
   }
@@ -145,8 +78,6 @@ export function BillingShell() {
       prepay: <Prepay />,
       returns: <Returns />,
       ledger: <Ledger />,
-      // The SHARED console, PARKED — see the NAV_ITEMS entry. Gated on the same flag so a deep link
-      // cannot open a queue the nav refuses to show.
       ...(TICKETS_PARKED
         ? {}
         : { tickets: <TicketConsole mode="queue" department="billing" title="Billing tickets" /> }),
@@ -160,79 +91,64 @@ export function BillingShell() {
       <div style={{ display: active === id ? 'contents' : 'none' }}>{node}</div>
     ) : null;
 
+  const item = (id: SectionId, label: string, icon: ReactNode) => ({
+    key: id,
+    label,
+    icon,
+    active: active === id,
+    onClick: () => navigate(id),
+  });
+
+  /**
+   * The seven verbatim Zoho `iconPath` strings are replaced by lucide, which also fixes a bug the
+   * old file documented on itself: Debtors and Prepay shipped the identical path.
+   */
+  const navSections: NavSection[] = [
+    {
+      id: 'money',
+      label: 'Money',
+      items: [
+        item('datacenter', 'Data Center', <Database size={19} />),
+        item('transactions', 'Transactions', <CreditCard size={19} />),
+        item('ledger', 'Ledger', <Scale size={19} />),
+      ],
+    },
+    {
+      id: 'recovery',
+      label: 'Recovery',
+      items: [
+        item('debtors', 'Debtors', <Users size={19} />),
+        item('prepay', 'Prepay', <Wallet size={19} />),
+        item('returns', 'Returns', <Undo2 size={19} />),
+      ],
+    },
+    {
+      id: 'comms',
+      label: 'Comms',
+      items: [
+        {
+          key: 'tickets',
+          label: 'Tickets',
+          icon: <MessagesSquare size={19} />,
+          // A real `soon` row now, instead of the hand-rolled disabled button + .nav-soon span.
+          soon: TICKETS_PARKED,
+          ...(TICKETS_PARKED ? {} : { active: active === 'tickets', onClick: () => navigate('tickets') }),
+        },
+      ],
+    },
+  ];
+
   return (
-    <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
-      {/* Ambient Horizon backdrop — mesh + 64px grid + vignette behind the whole module. Purely
-          decorative and pointer-events:none, so it cannot intercept anything. */}
-      <div className="bm-ambience" aria-hidden="true" />
-      {/* ═══ HEADER (design: logo · BILLING · spacer · theme · avatar) ═══ */}
-      <header className="bm-header">
-        <div className="bm-header-title">MYTRION<span> HORIZON</span></div>
-        <span className="bm-header-badge">BILLING</span>
-        <div style={{ flex: 1 }} />
-        <MytrionSwitchLink className="bm-header-switch" label="Switch Mytrion" />
-        {admin ? (
-          <div style={{ marginRight: 10 }}>
-            <ActAsPicker />
-          </div>
-        ) : null}
-        <button
-          className="bm-header-theme"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? (
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-              />
-            </svg>
-          ) : (
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-              />
-            </svg>
-          )}
-        </button>
-        <div className="bm-header-avatar" title={workerName}>
-          {workerInitials}
-        </div>
-      </header>
-
-      {/* ═══ BODY ═══ */}
-      <div className="bm-body">
-        <aside className="bm-sidebar">
-          <nav className="bm-sidebar-nav">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                className={`bm-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' bm-nav-disabled' : ''}`}
-                disabled={item.disabled}
-                aria-current={active === item.id ? 'page' : undefined}
-                title={item.disabled ? 'Coming soon' : item.label}
-                onClick={() => navigate(item.id, item.disabled)}
-              >
-                <svg className="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.iconPath} />
-                </svg>
-                <span className="nav-label">{item.label}</span>
-                {item.disabled ? <span className="nav-soon">Soon</span> : null}
-              </button>
-            ))}
-          </nav>
-
-          {/* Sidebar footer (design): version string only. */}
-          <div className="bm-sidebar-footer">Mytrion Billing · v2.0</div>
-        </aside>
-
+    <MytrionShell
+      id="billing"
+      navSections={navSections}
+      enableNavSearch
+      /* Ledger and Data Center virtualise against their own scroll ref (useWindowedRows). A second
+         scroll parent silently corrupts the range math and renders the wrong rows, so the content
+         keeps ownership of scrolling. */
+      contentScroll="content"
+    >
+      <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
         <main className="bm-content">
           {panel('datacenter', els.datacenter)}
           {panel('transactions', els.transactions)}
@@ -242,24 +158,6 @@ export function BillingShell() {
           {panel('ledger', els.ledger)}
         </main>
       </div>
-
-      {/* ═══ MOBILE BOTTOM NAV ═══ */}
-      <nav className="bm-bottom-nav">
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            className={`bottom-nav-btn${active === item.id ? ' active' : ''}${item.disabled ? ' bottom-nav-disabled' : ''}`}
-            disabled={item.disabled}
-            onClick={() => navigate(item.id, item.disabled)}
-          >
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.iconPath} />
-            </svg>
-            <span>{item.disabled ? 'Soon' : item.shortLabel}</span>
-          </button>
-        ))}
-      </nav>
-    </div>
+    </MytrionShell>
   );
 }
-

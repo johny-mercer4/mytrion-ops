@@ -19,7 +19,7 @@
   padding: 36px;
   text-align: center;
   border: 1px solid var(--hz-pane-bd, var(--border));
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   background:
     radial-gradient(
       circle at 50% 42%,
@@ -39,7 +39,7 @@
   gap: 4px;
   margin-bottom: 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hz-pane-bd, var(--border)));
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   box-shadow: 0 10px 30px -14px var(--accent-glow);
@@ -48,7 +48,7 @@
 .mark span {
   width: 4px;
   height: 18px;
-  border-radius: 99px;
+  border-radius: var(--radius-full);
   background: currentColor;
   animation: pulse 1s ease-in-out infinite;
 }

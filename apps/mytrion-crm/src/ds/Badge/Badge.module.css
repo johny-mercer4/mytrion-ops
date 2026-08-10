@@ -1,0 +1,125 @@
+/*
+ * Badge — a static status/metadata chip. Follows Button: variants and states are DATA ATTRIBUTES,
+ * one selector surface, zero literals outside the local dimension custom properties.
+ *
+ * There is no :hover, no :active and no :focus-visible block in this file, and their absence is the
+ * specification: a Badge is not interactive. If a state block ever appears here, the component has
+ * become a Chip and belongs somewhere else.
+ */
+
+.root {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--badge-gap);
+  /* A status chip in a table cell must not be squeezed by a greedy sibling — a badge that
+     ellipsises its own label has lost the only channel that works for every reader. */
+  flex: none;
+  vertical-align: middle;
+
+  /* Type */
+  font-family: var(--font-body);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+
+  /* Box. `min-block-size` rather than a fixed height: the 16px icon sets the floor in the sm size,
+     and a fixed height would clip it instead of letting the chip grow the 0px it needs. */
+  min-block-size: var(--badge-h);
+  padding-inline: var(--badge-px);
+  border: 1px solid transparent;
+  /* --radius-control, not --radius-pill: the system has a two-step radius (4 / 8) and a badge is a
+     control-scale box. A pill here would be the only third radius on the screen. */
+  border-radius: var(--radius-control);
+
+  /* No transition. Nothing about a badge changes in response to the user; the only thing that
+     changes it is a new render with a new intent, and animating THAT would animate a data update. */
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='md'] {
+  --badge-h: 20px;
+  --badge-px: var(--space-2);
+  --badge-gap: var(--space-1);
+  --badge-dot: 6px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+.root[data-size='sm'] {
+  --badge-h: 16px;
+  --badge-px: var(--space-1_5);
+  --badge-gap: var(--space-0_5);
+  --badge-dot: 5px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  /* Caps-adjacent micro text needs the looser end of the ladder — see the tracking note in
+     theme.css: tracking gets LOOSER as the type gets smaller. */
+  letter-spacing: var(--tr-2xs);
+}
+
+/* ── Intents ─────────────────────────────────────────────────────────────────
+   Five tinted status intents plus one filled emphasis intent. Every one reads its colour from the
+   `--intent-*` role layer rather than from `--success` / `--danger` directly, so a theme that
+   re-tunes the tint strength moves all six at once and neither mode can drift.
+
+   The border is load-bearing, not trim: `--intent-*-bg` is a 13% wash, which on `--surface` is a
+   figure/ground difference well under 3:1. The 30% border is what makes the chip a legible OBJECT
+   at AA rather than a faint smudge — CONVENTIONS §6. */
+
+.root[data-intent='neutral'] {
+  background: var(--intent-neutral-bg);
+  color: var(--intent-neutral-fg);
+  border-color: var(--intent-neutral-bd);
+}
+
+.root[data-intent='success'] {
+  background: var(--intent-success-bg);
+  color: var(--intent-success-fg);
+  border-color: var(--intent-success-bd);
+}
+
+.root[data-intent='warning'] {
+  background: var(--intent-warning-bg);
+  color: var(--intent-warning-fg);
+  border-color: var(--intent-warning-bd);
+}
+
+.root[data-intent='danger'] {
+  background: var(--intent-danger-bg);
+  color: var(--intent-danger-fg);
+  border-color: var(--intent-danger-bd);
+}
+
+.root[data-intent='info'] {
+  background: var(--intent-info-bg);
+  color: var(--intent-info-fg);
+  border-color: var(--intent-info-bd);
+}
+
+/* ACCENT — the one FILLED treatment. Emphasis, not status: "New", "Beta", an unread count.
+   It uses --accent-strong/--on-accent (the same pair as the primary Button) rather than a wash,
+   because the whole point is that it out-ranks the five tinted chips beside it. */
+.root[data-intent='accent'] {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+
+/* ── Parts ──────────────────────────────────────────────────────────────────── */
+
+/* The dot inherits currentColor, so it is the intent's own foreground and can never fall out of
+   sync with the label beside it — including inside the filled accent chip, where the ink is
+   --on-accent and a hardcoded status hue would vanish. */
+.dot {
+  inline-size: var(--badge-dot);
+  block-size: var(--badge-dot);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  flex: none;
+}
+
+.label {
+  /* Its own element so the icon/dot gap is a flex gap rather than a margin on text, and so a caller
+     can target the label in a composed component without reaching through the chip's box. */
+  display: inline-block;
+}

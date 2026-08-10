@@ -46,10 +46,7 @@
 
   /* Softer than the inherited global 6px. Sharp corners on a dense grid read as spreadsheet, which
      is precisely the thing this audience is being moved away from. */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  /* Radius fork deleted: the one scale in styles/theme.css now reaches this subtree. */
 
   /* Breathing room. Larger type in the same boxes is worse than the old type, so the rhythm goes up
      with it. */
@@ -76,31 +73,13 @@
 .ss-root {
   position: relative;
   background: var(--hz-page);
-  isolation: isolate;
+  /* NO `isolation: isolate`. It existed to contain `.ss-ambience` at z-index:-1, and that
+     element is no longer rendered — the shell owns the ambience now. Its only remaining
+     effect was to create a stacking context that trapped this workspace's modals, so a
+     dialog at --z-modal still painted behind the app header. */
 }
 
-.ss-root .ss-ambience {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: var(--hz-mesh);
-  transition: background var(--hz-dur-tone) var(--hz-ease);
-}
 .ss-root .ss-ambience::before,
-.ss-root .ss-ambience::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-.ss-root .ss-ambience::before {
-  background-image: var(--hz-grid);
-  background-size: var(--hz-grid-size);
-}
-.ss-root .ss-ambience::after {
-  background: var(--hz-vignette);
-  transition: background var(--hz-dur-tone) var(--hz-ease);
-}
 
 /* ── Sidebar nav ─────────────────────────────────────────────────────────── */
 /* `.ss-tab-x:hover` in theme.css uses !important, so this has to as well to win. */
@@ -484,7 +463,7 @@
 
 .ss-root .ss-soon-panel__title {
   margin: 0;
-  font-family: Rajdhani, sans-serif;
+  font-family: var(--font-head);
   font-weight: 700;
   font-size: 28px;
   letter-spacing: 0.04em;
@@ -522,4 +501,30 @@
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
+}
+
+/*
+ * Sales was written as its own page root — `height: 100vh; display: flex; flex-direction: row` on
+ * `.ss-root`, with the sidebar as its first flex child — and is now a content div inside
+ * MytrionShell's centre pane. These undo that.
+ */
+
+.ss-root {
+  /* Was a row (sidebar | main). The rail is the shell's now, so the content stacks. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  /* The shell's ambience shows through. */
+  background: none;
+}
+
+/* The toast portals into `document.querySelector('.ss-root')`, so the class has to survive the
+   move — it does, on this div. `position: fixed` inside it resolves against the viewport as long as
+   no ancestor carries transform/filter/backdrop-filter; the shell's .center carries none. */
+.ss-root .ss-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }

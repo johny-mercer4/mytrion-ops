@@ -37,13 +37,13 @@ export function RetentionCaseHeader(props: {
           <>
             <div
               style={s(
-                'font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+                'font-family:var(--font-head);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
               )}
             >
               {props.companyName}
             </div>
             <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px')}>
-              <span style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace")}>
+              <span style={s("font-size:13px;color:var(--text2);font-family:var(--font-mono)")}>
                 {props.carrierId}
               </span>
               {props.phoneLoading ? (
@@ -55,7 +55,7 @@ export function RetentionCaseHeader(props: {
               ) : props.phoneDisplay ? (
                 <span
                   style={s(
-                    "font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+                    "font-family:var(--font-mono);font-size:16px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
                   )}
                 >
                   {props.phoneDisplay}

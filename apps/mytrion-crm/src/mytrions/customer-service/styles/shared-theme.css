@@ -7,6 +7,10 @@
    ===================================================== */
 
 .cs-root {
+    /* De-forked: --surface, --border*, --text-*, --accent*, --success and --error are GLOBAL
+       token names. Redeclaring them here meant every palette change in styles/theme.css
+       silently skipped this workspace. They are inherited now, which also picks up the
+       light-mode surface inversion this scope used to get wrong. */
     /* ── Canvas — the shared Horizon field, so CS sits on the same ground as every other module ── */
     --color-bg-primary: var(--hz-page);
     --color-bg-secondary: #EBEEF2;
@@ -25,7 +29,6 @@
     --cs-accent-glow: rgba(180, 83, 9, 0.20);
     --cs-border-gold: rgba(180, 83, 9, 0.26);
     /* Far end of the module's ramp — `accent → accent-2` is CS's slice of the Horizon gradient. */
-    --accent-2: #EA580C;
     --cs-success: #1B8A54;
     --cs-success-soft: rgba(27, 138, 84, 0.10);
     --cs-warning: #A66B14;
@@ -45,9 +48,6 @@
     /* ── Text ── */
     --color-text-primary: #0F172A;
     --color-text-muted: #64748B;
-    --text-primary: #0F172A;
-    --text-secondary: #475569;
-    --text-muted: #64748B;
     --text-on-dark: #FFFFFF;
 
     /* ── Micro-type & ghost tones ── */
@@ -64,8 +64,7 @@
     --brand-navy: #EBEEF2;
     --brand-navy-mid: #F1F5F9;
     --brand-dark: #EBEEF2;
-    --accent: #B45309;
-    --accent-glow: rgba(180, 83, 9, 0.20);
+    --accent-ring-glow: rgba(180, 83, 9, 0.20);
 
     /* ── Layout ── */
     --sidebar-width: 238px;
@@ -75,14 +74,12 @@
     --sec-gap: 26px;
     --card-pad: 22px;
     --panel-pad: 38px;
-    --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 16px;
-    --r-xl: 22px;
+    --r-sm: var(--radius-sm);
+    --r-md: var(--radius-md);
+    --r-lg: var(--radius-md);
+    --r-xl: var(--radius-md);
 
     /* ── Surfaces ── */
-    --surface: #FFFFFF;
-    --surface-alt: #F8FAFC;
     --surface-2: #F1F5F9;
     --surface-3: #E2E8F0;
     --surface-raised: var(--hz-glass-hover);
@@ -97,10 +94,7 @@
     --accent-strong: var(--cs-accent-hover);
 
     /* ── Borders (neutral slate — not cool blue) ── */
-    --border: rgba(15, 23, 42, 0.10);
     --border-2: rgba(15, 23, 42, 0.06);
-    --border-light: rgba(15, 23, 42, 0.06);
-    --border-dark: rgba(15, 23, 42, 0.04);
     --color-border: rgba(15, 23, 42, 0.10);
     --border-hover: rgba(15, 23, 42, 0.18);
 
@@ -110,8 +104,6 @@
     --skeleton-hi: #E2E8F0;
 
     /* ── Status ── */
-    --success: #1B8A54;
-    --error: #C04540;
 
     /* ── Shadows — the shared Horizon elevation steps (slate-tinted, never black) ── */
     --shadow-sm: var(--hz-shadow-rest);
@@ -156,7 +148,6 @@
     --cs-accent-softer: rgba(245, 158, 11, 0.06);
     --cs-accent-glow: rgba(245, 158, 11, 0.26);
     --cs-border-gold: rgba(251, 191, 36, 0.28);
-    --accent-2: #FB923C;
     --cs-success: #3DBF72;
     --cs-success-soft: rgba(61, 191, 114, 0.12);
     --cs-warning: #E0A93A;
@@ -174,9 +165,6 @@
 
     --color-text-primary: #E2E8F0;
     --color-text-muted: #8494A7;
-    --text-primary: #E2E8F0;
-    --text-secondary: #A8B4C4;
-    --text-muted: #8494A7;
 
     --th-color: #8494A7;
     --placeholder-color: #8494A7;
@@ -190,21 +178,15 @@
     --brand-navy: #141A24;
     --brand-navy-mid: #1C2430;
     --brand-dark: #141A24;
-    --accent: #FBBF24;
-    --accent-glow: rgba(245, 158, 11, 0.26);
+    --accent-ring-glow: rgba(245, 158, 11, 0.26);
 
-    --surface: #171D28;
-    --surface-alt: #1C2430;
     --surface-2: #1C2430;
     --surface-3: #252E3C;
     --surface-raised: var(--hz-glass-hover);
     --sidebar-bg: var(--hz-glass);
     --header-bg: var(--hz-glass);
 
-    --border: rgba(226, 232, 240, 0.08);
     --border-2: rgba(226, 232, 240, 0.05);
-    --border-light: rgba(226, 232, 240, 0.05);
-    --border-dark: rgba(226, 232, 240, 0.03);
     --color-border: rgba(226, 232, 240, 0.08);
     --border-hover: rgba(226, 232, 240, 0.14);
 
@@ -212,8 +194,6 @@
     --track-bg: #252E3C;
     --skeleton-hi: #1C2430;
 
-    --success: #3DBF72;
-    --error: #E07068;
 
     --shadow-sm: var(--hz-shadow-rest);
     --shadow-md: var(--hz-shadow-lift);

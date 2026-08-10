@@ -310,8 +310,38 @@ function mapDeal(r: Record<string, unknown>, i: number, dealIdByCarrier: Map<str
   };
 }
 
+/**
+ * In-flight de-duplication for the roster read.
+ *
+ * `shouldLoadDeals` in AutoTab is a BOOLEAN that flips false->true when a modal opens and back on
+ * close, and it is useLoad's only deps key — so opening a second automation refetches the whole
+ * roster, which the call site itself calls "one of the heavier Sales reads". Opening five
+ * automations meant five identical reads.
+ *
+ * This shares the PROMISE while one is in flight and for a short settle window after it resolves.
+ * Deliberately NOT a TTL result cache: the roster's `.catch(() => [])` below degrades a failed CRM
+ * leg into an empty array, so a cache keyed on the resolved value would store a partial failure as
+ * a success and serve an empty deal picker until it expired, with no way for the user to retry.
+ * Here a rejection clears the entry immediately, and the window is short enough that a genuinely
+ * new modal opened later still reads fresh.
+ */
+let dealsInFlight: { promise: Promise<Deal[]>; at: number } | null = null;
+const DEALS_SETTLE_MS = 2_000;
+
+export function loadDeals(): Promise<Deal[]> {
+  const now = Date.now();
+  if (dealsInFlight && now - dealsInFlight.at < DEALS_SETTLE_MS) return dealsInFlight.promise;
+  const promise = loadDealsUncached();
+  dealsInFlight = { promise, at: now };
+  // A failure must never be reused — drop the entry so the next open retries for real.
+  void promise.catch(() => {
+    if (dealsInFlight?.promise === promise) dealsInFlight = null;
+  });
+  return promise;
+}
+
 /** Agent roster (clients.by_agent) enriched with Zoho Deal ids from CRM when available. */
-export async function loadDeals(): Promise<Deal[]> {
+async function loadDealsUncached(): Promise<Deal[]> {
   const [roster, crm] = await Promise.all([
     callTouchpoint('clients.by_agent', {}),
     loadCrmDeals().catch(() => []),

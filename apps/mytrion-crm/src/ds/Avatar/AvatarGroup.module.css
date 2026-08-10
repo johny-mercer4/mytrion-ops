@@ -1,0 +1,82 @@
+/*
+ * AvatarGroup — an overlapping cluster with a +N overflow chip.
+ *
+ * The size ladder below repeats Avatar's numbers rather than importing them, and that is a
+ * limitation of CSS Modules, not a preference: `--avatar-size` is declared ON the Avatar root, so a
+ * value inherited from this group would be overridden by the child's own declaration. The group
+ * needs the number for two things the child cannot provide — the overlap offset and the +N chip's
+ * box — so it declares its own copy. Keep the two ladders in step.
+ */
+
+.root {
+  /* The ground the separator rings are punched out of. Retarget it when the cluster sits on
+     something other than a card — and pass the same value to each Avatar's --avatar-ring, so the
+     presence dots and the separator rings agree. */
+  --avatar-group-ring: var(--surface);
+
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────── */
+.root[data-size='xs'] {
+  --avatar-size: 20px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.root[data-size='sm'] {
+  --avatar-size: 24px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.root[data-size='md'] {
+  --avatar-size: 32px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+.root[data-size='lg'] {
+  --avatar-size: 40px;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+/* Every member — avatars and the +N chip alike — gets the ring that separates it from the one it
+   overlaps. Without it two dark avatars merge into one blob at 20px. */
+.root > * {
+  box-shadow: 0 0 0 2px var(--avatar-group-ring);
+  border-radius: var(--radius-pill);
+}
+
+/* The overlap. 28% of the diameter is the point where the cluster still reads as a stack but each
+   face keeps enough of its own circle to be a face. Depth is DOM order — no z-index, see the
+   component docblock. */
+.root > * + * {
+  margin-inline-start: calc(var(--avatar-size) * -0.28);
+}
+
+/* ── Overflow chip ──────────────────────────────────────────────────────────
+   Deliberately the same box and the same ground as an Avatar's initials fallback, so it reads as
+   "more of these" rather than as a different kind of object sitting at the end of the row. */
+.more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: var(--avatar-size);
+  block-size: var(--avatar-size);
+
+  border: 1px solid var(--border-default);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+
+  /* A count is a figure: Space Mono via the --font-num role, tabular so +9 and +12 sit on the same
+     advance and the chip does not twitch as people are added. */
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-fig);
+
+  user-select: none;
+  -webkit-user-select: none;
+}

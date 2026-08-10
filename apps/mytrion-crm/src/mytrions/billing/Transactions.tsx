@@ -613,7 +613,7 @@ export function Transactions() {
                             ) : null}
                             {tx.memo && tx.txn ? <span style={{ opacity: 0.3 }}>·</span> : null}
                             {tx.txn ? (
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.6rem', opacity: 0.5 }}>#{tx.txn}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: '0.6rem', opacity: 0.5 }}>#{tx.txn}</span>
                             ) : null}
                             {(tx.source === 'mx' || tx.source === 'stripe') && tx.status && (tx.sender || tx.name) ? (
                               <span className={`bm-badge ${txStatusBadgeClass(tx.source, tx.status)}`} style={{ fontSize: '0.55rem', padding: '0.1rem 0.4rem', marginLeft: '0.25rem' }}>

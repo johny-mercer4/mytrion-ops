@@ -1,0 +1,203 @@
+/*
+ * Textarea — the one multi-line field. Read CONVENTIONS.md and Button.module.css alongside this.
+ *
+ * States are DATA ATTRIBUTES on the SHELL ([data-invalid], [data-disabled], [data-readonly],
+ * [data-grow]); size is a data attribute on the root. Same surface as Input.
+ *
+ * THE SHELL CHROME IS DUPLICATED FROM Input.module.css ON PURPOSE. `composes: … from` would share
+ * the border and the ground, and in exchange would couple the two components' cascade order — a
+ * change to one module's emit order would silently move the other's hover. What the two fields
+ * genuinely share (the aria wiring and the message row) lives in `src/ds/_field/`; a border is not
+ * enough shared surface to buy a shared stylesheet.
+ *
+ * As in Input, there is NO rest-state focus rule here: global.css owns
+ * `[data-focus-shell]:focus-within`. The one focus rule below exists to break a specificity tie.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  inline-size: 100%;
+
+  --fld-py: var(--space-1_5);
+  --fld-px: var(--space-2_5);
+  --fld-text: var(--text-sm);
+  --fld-lh: var(--lh-sm);
+  --fld-tr: var(--tr-sm);
+}
+
+.root[data-size='sm'] {
+  --fld-py: var(--space-1);
+  --fld-px: var(--space-2);
+  --fld-text: var(--text-xs);
+  --fld-lh: var(--lh-xs);
+  --fld-tr: var(--tr-xs);
+}
+
+/* Off by default a textarea still fills its column — `fullWidth` defaults to true — so this is the
+   opt-OUT: shrink to whatever the caller sized the root to. */
+.root:not([data-full='true']) {
+  inline-size: auto;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────────── */
+.shell {
+  display: flex;
+  padding-block: var(--fld-py);
+  padding-inline: var(--fld-px);
+
+  background: var(--ui-field-bg);
+  border: 1px solid var(--fld-bd);
+  border-radius: var(--ui-field-radius);
+  color: var(--ui-field-fg);
+
+  /*
+   * EDGE — the same measurement as Input.module.css, and the same reason. --ui-field-bd resolves to
+   * --glass-bd, a 7% white hairline measuring 1.73:1 dark / 1.62:1 light against the card it sits
+   * on; --border-strong is no better at 1.7:1. Neither clears the 3:1 CONVENTIONS §6 requires for
+   * the boundary of an interactive control. 55% of --text-secondary measures 3.89:1 / 3.90:1 and
+   * re-derives per theme instead of pinning a literal.
+   */
+  --fld-bd: color-mix(in oklab, var(--text-secondary) 55%, transparent);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* [data-invalid] is excluded rather than out-specified: this rule sets `border-color` directly,
+   which would beat the `--fld-bd` the invalid rule sets and repaint an invalid field's border
+   neutral on hover. */
+.shell:hover:not([data-disabled='true']):not([data-readonly='true']):not([data-invalid='true']) {
+  border-color: color-mix(in oklab, var(--text-secondary) 75%, transparent);
+  background: var(--surface-alt);
+}
+
+/* ── Invalid ─────────────────────────────────────────────────────────────────
+   Border + wash + (in the markup) aria-invalid + the error glyph in the message. Four signals, of
+   which exactly one is colour. */
+.shell[data-invalid='true'] {
+  --fld-bd: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.shell[data-invalid='true']:hover:not([data-disabled='true']) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/*
+ * The one focus rule in this file, and it exists to WIN a specificity tie, not to restyle focus.
+ * `[data-focus-shell]:focus-within` in global.css is (0,2,0) and so is `.shell[data-invalid='true']`
+ * — a tie resolves by stylesheet order, i.e. by whichever bundler chunk landed last, which is not a
+ * decision anyone made. (0,3,0) here makes it deterministic: focusing an invalid field must not
+ * launder the error into looking fine.
+ */
+.shell[data-invalid='true']:focus-within {
+  border-color: var(--intent-danger-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 24%, transparent);
+}
+
+/* ── Read-only ───────────────────────────────────────────────────────────────
+   Still focusable, still selectable, still scrollable — that is the point, and the reason it is not
+   `disabled`. The softer edge is deliberate: nothing here invites typing, so the boundary is
+   describing a surface rather than identifying a control. */
+.shell[data-readonly='true'] {
+  background: var(--surface-alt);
+  --fld-bd: var(--border-strong);
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, never an opacity multiply. No `pointer-events: none` — CONVENTIONS §5. */
+.shell[data-disabled='true'] {
+  background: var(--disabled-bg);
+  --fld-bd: var(--disabled-bd);
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  box-shadow: var(--elev-0);
+}
+
+/* ── The field itself ────────────────────────────────────────────────────────
+   Stripped bare: no border, no ground, no outline. Everything visible is the shell. */
+.field {
+  flex: 1 1 auto;
+  /* A flex item will not shrink below its content without this, so one unbroken paste pushes the
+     shell past its container instead of wrapping inside it. */
+  min-inline-size: 0;
+  inline-size: 100%;
+
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+
+  /* `textarea` does not inherit font-family — global.css sets it on `button` only — and its UA
+     default is MONOSPACE, which is the most visible way a field can fall out of the type system. */
+  font-family: var(--font-body);
+  font-size: var(--fld-text);
+  line-height: var(--fld-lh);
+  letter-spacing: var(--fld-tr);
+  font-weight: var(--fw-body);
+
+  appearance: none;
+  /* The UA gives a textarea `vertical-align: baseline`, which leaves a descender-sized gap under it
+     inside the shell. It is a block-level child here, so the gap is pure noise. */
+  display: block;
+
+  /* No height transition anywhere in this file. autoGrow rewrites `height` on every keystroke, and
+     animating that would put the caret's line permanently behind the box it lives in. The growth is
+     also never the only signal of anything, so a reduced-motion user loses nothing by it being
+     instant — CONVENTIONS §4. */
+}
+
+/* Resize is a data attribute so the resolved value (autoGrow forces `none`) is visible in the DOM
+   rather than hidden in an inline style. `horizontal`/`both` are not offered: a field that can be
+   dragged wider than its column breaks the form's grid and cannot be undone with the keyboard. */
+.field[data-resize='none'] {
+  resize: none;
+}
+.field[data-resize='vertical'] {
+  resize: vertical;
+  /* The grip must not let the user drag the box smaller than the rows they asked for. */
+  min-block-size: calc(var(--fld-lh) * 2);
+}
+
+.field::placeholder {
+  color: var(--ui-field-placeholder);
+  /* Firefox ships placeholders at reduced opacity, which composites --text-muted into a ratio we
+     cannot measure. Pin it so the audited 4.5:1 is the one that actually ships. */
+  opacity: 1;
+}
+
+.field:disabled {
+  color: var(--disabled-fg);
+  /* WebKit overrides `color` on a disabled control with its own text fill and ignores the cascade;
+     -webkit-text-fill-color is the only property that reaches it. */
+  -webkit-text-fill-color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  resize: none;
+}
+.field:disabled::placeholder {
+  color: var(--disabled-fg);
+  -webkit-text-fill-color: var(--disabled-fg);
+}
+
+/* ── Mobile type step ────────────────────────────────────────────────────────
+ * NOT a design preference. Below 16px, iOS Safari zooms the whole page when a field takes focus and
+ * does not zoom back out — the user is left panning a form sideways. --text-input-mobile is 16px for
+ * exactly this and theme.css documents it as "not a scale step".
+ * This matters MORE on a textarea than on an input: the zoom lands mid-composition, and it also
+ * changes the line-height autoGrow measures, so a field that skipped this would grow in the wrong
+ * units too.
+ * 767px, i.e. below the 768px breakpoint in FOUNDATIONS.md. A media query, not a token: a custom
+ * property cannot be used in a media condition.
+ */
+@media (max-width: 767px) {
+  .root,
+  .root[data-size='sm'] {
+    --fld-text: var(--text-input-mobile);
+    --fld-lh: var(--lh-base);
+    --fld-tr: var(--tr-base);
+  }
+}

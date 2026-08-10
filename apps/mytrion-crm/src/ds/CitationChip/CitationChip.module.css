@@ -1,0 +1,164 @@
+/*
+ * CitationChip — an inline `[1]` inside prose.
+ *
+ * Two hard constraints shape this file. It lives INSIDE a paragraph, so it must not alter the line
+ * box a sentence sits on; and its preview must stay in the accessibility tree at all times, so it
+ * is hidden with `opacity`, never `display: none` or `visibility: hidden` (both of which delete the
+ * aria-describedby target the keyboard path depends on).
+ */
+
+.root {
+  /* inline-block so the absolutely positioned preview has a predictable containing block. The
+     superscript offset lives HERE, not on the button, so the button keeps a clean square box. */
+  position: relative;
+  display: inline-block;
+  vertical-align: super;
+  white-space: nowrap;
+}
+
+/* ── The chip ───────────────────────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-0_5);
+
+  /* Sized off the space ladder rather than a bespoke height: the chip is 16px tall, which is the
+     xs line box, so a paragraph containing one does not grow taller than a paragraph without. */
+  block-size: var(--space-4);
+  min-inline-size: var(--space-4);
+  padding-inline: var(--space-1);
+  margin-inline: var(--space-0_5);
+
+  font-family: var(--cite-marker-font);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  font-weight: var(--fw-medium);
+
+  color: var(--cite-fg);
+  background: var(--cite-bg);
+  border: 1px solid var(--cite-bd);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+/* Brackets are CHROME, not content: they belong to the citation convention, not to the marker
+   value, and the accessible name says "Source 1" rather than "[1]" because of it. */
+.chip::before {
+  content: '[';
+  color: var(--cite-marker-fg);
+}
+.chip::after {
+  content: ']';
+  color: var(--cite-marker-fg);
+}
+
+.marker {
+  font-variant-numeric: tabular-nums;
+}
+
+.chip:hover:not([aria-disabled='true']) {
+  background: var(--cite-hover-bg);
+  border-color: var(--cite-hover-bd);
+}
+.chip:active:not([aria-disabled='true']) {
+  background: var(--cite-hover-bg);
+  border-color: var(--cite-fg);
+}
+
+/* ACTIVE — the matching SourceList row is open. A persistent state, so it must not look like
+   hover: the border goes to full strength and the brackets take the citation colour, which reads
+   as "this one" even in greyscale. */
+.root[data-active='true'] .chip {
+  background: var(--cite-hover-bg);
+  border-color: var(--cite-hover-bd);
+}
+.root[data-active='true'] .chip::before,
+.root[data-active='true'] .chip::after {
+  color: var(--cite-fg);
+}
+
+/* ── Invalid ────────────────────────────────────────────────────────────────
+   The model cited something that is not in the source set. THREE signals, none of them colour on
+   its own: a dashed border (shape), a struck-through marker (texture), and an accessible name that
+   says "source not found" (text). Silently painting this as a healthy citation is the trust bug
+   this state exists to prevent. */
+.root[data-invalid='true'] .chip {
+  color: var(--cite-invalid-fg);
+  background: var(--cite-invalid-bg);
+  border-color: var(--cite-invalid-fg);
+  border-style: dashed;
+  cursor: var(--disabled-cursor);
+}
+.root[data-invalid='true'] .chip::before,
+.root[data-invalid='true'] .chip::after {
+  color: var(--cite-invalid-fg);
+}
+/* On .marker, not on .chip — a flex container does not reliably propagate text-decoration to its
+   flex items, and the brackets are flex items. */
+.root[data-invalid='true'] .marker {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* ── Preview ────────────────────────────────────────────────────────────────
+   Revealed by hover AND focus. Sits above the chip; falls back to overlapping the line below it
+   only if the caller's container clips — document that, do not fight it with JS positioning. */
+.preview {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-end: calc(100% + var(--space-1));
+  z-index: var(--z-tooltip);
+
+  display: grid;
+  gap: var(--space-0_5);
+  inline-size: max-content;
+  max-inline-size: calc(var(--space-16) * 4);
+  padding: var(--space-2) var(--space-2_5);
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-md);
+
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  /* The chip inherits `vertical-align: super` and `nowrap` from its inline context; the preview is
+     a panel and must reset both or a long title runs off the screen edge. */
+  vertical-align: baseline;
+  white-space: normal;
+  text-align: start;
+
+  /* Hidden by OPACITY. `display: none` / `visibility: hidden` would remove this node from the
+     accessibility tree, and it is the aria-describedby target — a screen-reader user would lose
+     the source title that a mouse user gets for free. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.root[data-revealed='true'] .preview {
+  opacity: 1;
+}
+
+.previewTitle {
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+
+.previewMeta {
+  color: var(--source-item-fg);
+  overflow-wrap: anywhere;
+}
+
+.root[data-invalid='true'] .previewTitle {
+  color: var(--cite-invalid-fg);
+}

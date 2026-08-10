@@ -304,14 +304,14 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                         {c.companyName || '—'}
                       </span>
-                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
+                      <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--muted)")}>
                         {c.carrierId}
                       </span>
                       <span>
                         <RetentionFreqBadge f={c.transactionFrequency} />
                       </span>
                       <span style={s('font-size:13px;color:var(--muted)')}>{quietCaption(c)}</span>
-                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
+                      <span style={s("font-family:var(--font-mono);font-size:13px")}>
                         {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                       </span>
                       <span
@@ -342,7 +342,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {c.companyName || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
+                    <span style={s("font-family:var(--font-mono);font-size:13px;color:var(--muted)")}>
                       {c.carrierId}
                     </span>
                     <span>
@@ -355,7 +355,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     >
                       {quietCaption(c)}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
+                    <span style={s("font-family:var(--font-mono);font-size:13px")}>
                       {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>
                     <span>

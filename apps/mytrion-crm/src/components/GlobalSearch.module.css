@@ -1,0 +1,74 @@
+/* 36px pill, capped at the spec's 460px measure. Hidden under 1100px, where the header has to
+   choose between the wordmark, the workspace chip and this. */
+.field {
+  flex: 1;
+  min-width: 0;
+  max-width: 460px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  height: 36px;
+  padding: 0 var(--space-3_5);
+  border-radius: var(--radius-full);
+  background: var(--field);
+  border: 1px solid var(--glass-bd);
+  box-shadow: var(--glare);
+  color: var(--text-secondary);
+  transition:
+    border-color var(--dur-slow) var(--hz-ease),
+    background var(--dur-slow) var(--hz-ease);
+}
+
+.field:focus-within {
+  border-color: var(--glass-bd-hi);
+  background: var(--glass-hi);
+}
+
+.glyph {
+  flex: none;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/* The shortcut hint is a figure, so it takes the mono face like every other code in the app. */
+.kbd {
+  flex: none;
+  padding: 2px var(--space-1_5);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  border: 1px solid var(--glass-bd);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1100px) {
+  .field {
+    display: none;
+  }
+}

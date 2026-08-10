@@ -1,0 +1,38 @@
+/*
+ * Billing was written as its own page root — `.bm-root { height: 100vh; overflow: hidden }` — and
+ * is now a content div inside MytrionShell's centre pane. These are the four things that assumption
+ * leaves behind. Loaded last (see styles/index.css) so it wins over shared-base.
+ *
+ * This file should shrink over time: each rule here is a place the panel CSS still believes it owns
+ * the viewport.
+ */
+
+.bm-root {
+  /* 100vh inside a pane that is already viewport-height makes the page twice as tall and produces
+     two scrollbars. */
+  height: 100%;
+  min-height: 0;
+  /* The shell passes contentScroll="content", so the scroller Billing's virtualised tables measure
+     against is still Billing's own — but it is .bm-content, not the root. */
+  overflow: hidden;
+  /* The ambience shows through from the shell; an opaque root would hide it and Billing would be
+     the one workspace sitting on a flat field. */
+  background: none;
+}
+
+.bm-root .bm-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The mobile bottom nav is gone — the shared rail becomes a horizontal strip under 768px, and two
+   navigation bars on one phone screen is worse than either alone. Without this, every panel keeps
+   62px of padding reserved for a bar that no longer exists. */
+@media (max-width: 768px) {
+  .bm-root,
+  .bm-root .bm-content,
+  .bm-root .bm-panel {
+    padding-bottom: 0;
+  }
+}

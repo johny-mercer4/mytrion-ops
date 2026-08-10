@@ -1,0 +1,325 @@
+/*
+ * Input — the one text field. Read CONVENTIONS.md and Button.module.css alongside this.
+ *
+ * States are DATA ATTRIBUTES on the SHELL ([data-invalid], [data-disabled], [data-readonly],
+ * [data-filled]) and sizes are a data attribute on the root. One selector surface, and the DOM tells
+ * you the state when you inspect it.
+ *
+ * THERE IS NO REST-STATE FOCUS RULE IN THIS FILE, AND THAT IS DELIBERATE. `global.css` owns
+ * `[data-focus-shell]:focus-within` — it recolours this shell's border and adds --focus-halo. The
+ * only focus rule below is the INVALID one, which has to out-specify that global rule on purpose;
+ * see its comment.
+ */
+
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  /* The root is a column of [shell, message]; the message owns its own top gap so an input with no
+     message has no trailing space at all. */
+  align-items: stretch;
+  /* A flex item with no intrinsic width collapses to zero once the native `size` attribute is
+     overridden by `inline-size: 100%` on the field. 200px is the floor, not the width — a caller
+     sets a real width, or passes fullWidth. */
+  min-inline-size: 200px;
+
+  /* Sizing lives on custom properties so the shell, the field, the icons and the affordance buttons
+     all move together from one place per size. */
+  --fld-h: 32px;
+  --fld-px: var(--space-2_5);
+  --fld-gap: var(--space-2);
+  /* 22px + the global focus ring (2px wide at 2px offset) = exactly the shell's 30px inner box, so
+     a focused affordance never draws over the shell's own border. Same arithmetic at `sm`. */
+  --fld-affordance: 22px;
+  --fld-text: var(--text-sm);
+  --fld-lh: var(--lh-sm);
+  --fld-tr: var(--tr-sm);
+}
+
+.root[data-size='sm'] {
+  --fld-h: 26px;
+  --fld-px: var(--space-2);
+  --fld-gap: var(--space-1_5);
+  --fld-affordance: 16px;
+  --fld-text: var(--text-xs);
+  --fld-lh: var(--lh-xs);
+  --fld-tr: var(--tr-xs);
+}
+
+.root[data-full='true'] {
+  display: flex;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────────
+   The box the user sees. It owns the border, the ground and the focus chrome; the <input> inside is
+   stripped bare so that exactly one element paints the field. */
+.shell {
+  display: flex;
+  align-items: center;
+  gap: var(--fld-gap);
+  padding-inline: var(--fld-px);
+
+  /* min-block-size, NOT block-size. On mobile the field jumps to 16px (see the media query at the
+     foot of this file) and a fixed 26px `sm` box would clip its own descenders. A minimum lets the
+     control grow exactly as far as the type forces it to and no further. */
+  min-block-size: var(--fld-h);
+
+  background: var(--ui-field-bg);
+  border: 1px solid var(--fld-bd);
+  border-radius: var(--ui-field-radius);
+  color: var(--ui-field-fg);
+
+  /*
+   * EDGE. --ui-field-bd resolves to --glass-bd, a 7% white hairline; measured against the card it
+   * sits on that is 1.73:1 in dark and 1.62:1 in light. --border-strong (--outline-variant) is no
+   * better at 1.7:1. Both are correct for DECORATING a panel and neither clears the 3:1 that
+   * CONVENTIONS §6 requires for the boundary of an interactive control — and a field's boundary is
+   * the only thing that says "you may type here".
+   * So the field derives its edge from --text-secondary, the strongest ink role short of primary:
+   * 55% over the card measures 3.89:1 dark / 3.90:1 light. Still a tier-2 consumer, still one
+   * value, and it re-derives per theme instead of pinning a literal.
+   */
+  --fld-bd: color-mix(in oklab, var(--text-secondary) 55%, transparent);
+
+  /* Named properties only. `transition: all` here would also animate the border-radius and the
+     block-size that the mobile type step changes, which is a resize on every rotation. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* [data-invalid] is excluded rather than merely out-specified below: a bare `.shell:hover` sets
+   `border-color` DIRECTLY, which wins over the `--fld-bd` the invalid rule sets, so hovering an
+   invalid field would quietly repaint its border neutral. */
+.shell:hover:not([data-disabled='true']):not([data-readonly='true']):not([data-invalid='true']) {
+  border-color: color-mix(in oklab, var(--text-secondary) 75%, transparent);
+  background: var(--surface-alt);
+}
+
+/* ── Invalid ─────────────────────────────────────────────────────────────────
+   Border + wash + (in the markup) aria-invalid + the error glyph in the message. Four signals, of
+   which exactly one is colour. */
+.shell[data-invalid='true'] {
+  --fld-bd: var(--intent-danger-fg);
+  background: var(--intent-danger-bg);
+}
+.shell[data-invalid='true']:hover:not([data-disabled='true']) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/*
+ * The one focus rule in this file, and it exists to WIN a specificity tie, not to restyle focus.
+ * `[data-focus-shell]:focus-within` in global.css is (0,2,0); so is `.shell[data-invalid='true']`.
+ * A tie resolves by stylesheet order — i.e. by whichever bundler chunk happened to land last, which
+ * is not a decision anyone made. (0,3,0) here makes the outcome deterministic: a focused invalid
+ * field keeps its danger border and gets a danger halo, so focus never launders an error into
+ * looking fine.
+ */
+.shell[data-invalid='true']:focus-within {
+  border-color: var(--intent-danger-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 24%, transparent);
+}
+
+/* ── Read-only ───────────────────────────────────────────────────────────────
+   Still focusable, still selectable, still copyable — that is the whole point of read-only and the
+   reason it is not `disabled`. It reads as an inert surface rather than as a broken control. */
+.shell[data-readonly='true'] {
+  background: var(--surface-alt);
+  --fld-bd: var(--border-strong);
+}
+
+/* ── Disabled ────────────────────────────────────────────────────────────────
+   Recolour, never an opacity multiply, so the value keeps a KNOWN contrast ratio. No
+   `pointer-events: none` — see CONVENTIONS §5: it kills the tooltip that explains why. */
+.shell[data-disabled='true'] {
+  background: var(--disabled-bg);
+  --fld-bd: var(--disabled-bd);
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+  box-shadow: var(--elev-0);
+}
+
+/* ── The field itself ────────────────────────────────────────────────────────
+   Stripped to nothing: no border, no ground, no outline. Everything the user sees is the shell. */
+.field {
+  flex: 1 1 auto;
+  /* Without this a flex item refuses to shrink below its content, so one long value pushes the
+     whole shell past its container instead of scrolling inside it. */
+  min-inline-size: 0;
+  inline-size: 100%;
+
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+
+  /* `input` does not inherit font-family — global.css only sets it on `button` — so a field that
+     does not name it renders in the UA's default sans and quietly breaks the type system. */
+  font-family: var(--font-body);
+  font-size: var(--fld-text);
+  line-height: var(--fld-lh);
+  letter-spacing: var(--fld-tr);
+  font-weight: var(--fw-body);
+
+  /* `search` and `number` arrive with UA chrome — a rounded WebKit search box, an inner shadow.
+     none puts every type on the same ground. */
+  appearance: none;
+}
+
+.field::placeholder {
+  color: var(--ui-field-placeholder);
+  /* Firefox ships placeholders at reduced opacity, which composites the colour into something we
+     cannot measure. Pin it so --text-muted's audited 4.5:1 is the ratio that actually ships. */
+  opacity: 1;
+}
+
+/* WebKit paints its OWN clear button inside `type="search"`. We render one that is keyboard
+   reachable, carries an accessible name and matches the icon family; two clear buttons in one field
+   is a bug, so the UA's is removed. */
+.field::-webkit-search-cancel-button,
+.field::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
+/* `type="number"` spinners go, for CONSISTENCY rather than taste: Firefox already drops them under
+   the `appearance: none` above while WebKit keeps them, so leaving them ships two different controls
+   under one component name — and in WebKit they land in the same trailing slot as the clear button.
+   No affordance is lost: ArrowUp/ArrowDown still step the value natively, which is how a keyboard
+   user was stepping it in the first place. */
+.field::-webkit-outer-spin-button,
+.field::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.field:disabled {
+  color: var(--disabled-fg);
+  /* WebKit overrides `color` on a disabled input with its own text fill and ignores the cascade.
+     -webkit-text-fill-color is the only property that reaches it, which is why the value is set
+     twice rather than once. */
+  -webkit-text-fill-color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.field:disabled::placeholder {
+  color: var(--disabled-fg);
+  -webkit-text-fill-color: var(--disabled-fg);
+}
+
+/*
+ * Autofill. Chrome and Safari paint a fixed pale-yellow ground on an autofilled input, straight
+ * over the dark theme, and no `background` declaration reaches it. A very large inset box-shadow is
+ * the one thing that paints on top. --surface (opaque) rather than --ui-field-bg, because --field is
+ * a 4% white wash and a translucent shadow lets the yellow through.
+ * The `:focus` variant is not redundant: `[data-focus-shell] input:focus-visible { box-shadow: none }`
+ * is (0,2,1) and would otherwise clear this while the field is focused, i.e. while you are looking
+ * at it. (0,3,0) beats it.
+ */
+.field:-webkit-autofill,
+.field:-webkit-autofill:hover,
+.field:-webkit-autofill:focus {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--surface);
+  -webkit-text-fill-color: var(--ui-field-fg);
+  caret-color: var(--ui-field-fg);
+}
+
+/* ── Leading icon and affixes ────────────────────────────────────────────── */
+.leading {
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+/* (0,3,0) — it only has to beat `.leading` (0,1,0), but the focus-within qualifier is what makes the
+   field feel like it woke up without moving anything. */
+.shell:focus-within .leading {
+  color: var(--text-secondary);
+}
+.shell[data-disabled='true'] .leading {
+  color: var(--disabled-fg);
+}
+
+.affix {
+  flex: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fld-text);
+  line-height: var(--fld-lh);
+  letter-spacing: var(--fld-tr);
+  /* A unit mark is not a drag handle; dragging across the field should select the VALUE. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.shell[data-disabled='true'] .affix {
+  color: var(--disabled-fg);
+}
+
+/* ── Affordances: clear, reveal ──────────────────────────────────────────────
+   Real `<button type="button">`s, in the tab order, with accessible names set in the TSX. They take
+   the GLOBAL :focus-visible ring — that is correct here and is not the defect the focus-shell
+   contract exists to prevent, which was about the ring landing on the BARE FIELD. The sizes above
+   are chosen so the ring (2px at 2px offset) still fits inside the shell's inner box. */
+.affordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  inline-size: var(--fld-affordance);
+  block-size: var(--fld-affordance);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.affordance:hover:not(:disabled) {
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+.affordance:active:not(:disabled) {
+  background: var(--surface-alt);
+}
+/* The pressed half of the reveal toggle. `aria-pressed` is the fact; this is the fact made visible,
+   because a toggle whose only "on" signal is announced to screen readers is invisible to everyone
+   else. */
+.affordance[aria-pressed='true'] {
+  color: var(--accent);
+}
+.affordance:disabled,
+.affordance[aria-disabled='true'] {
+  color: var(--disabled-fg);
+  background: transparent;
+  cursor: var(--disabled-cursor);
+}
+
+/* ── Mobile type step ────────────────────────────────────────────────────────
+ * NOT a design preference. Below 16px, iOS Safari zooms the entire page when an input takes focus,
+ * and it does not zoom back out — the user lands on a form they now have to pan sideways to read.
+ * --text-input-mobile is 16px for exactly this and is documented in theme.css as "not a scale step".
+ * The line-height goes up with it, and the shell's min-block-size (not block-size) absorbs the
+ * difference, so `sm` grows instead of clipping.
+ * 767px, i.e. below the 768px breakpoint in FOUNDATIONS.md. A media query, not a token: a custom
+ * property cannot be used in a media condition.
+ */
+@media (max-width: 767px) {
+  .root {
+    --fld-text: var(--text-input-mobile);
+    --fld-lh: var(--lh-base);
+    --fld-tr: var(--tr-base);
+  }
+  .root[data-size='sm'] {
+    --fld-text: var(--text-input-mobile);
+    --fld-lh: var(--lh-base);
+    --fld-tr: var(--tr-base);
+  }
+}

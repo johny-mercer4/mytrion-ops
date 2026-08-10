@@ -1,0 +1,14 @@
+{
+  "projectId": "33355c13-6e86-4298-af1a-05a52aac7751",
+  "shape": "package",
+  "pkg": "octane-assistant-web",
+  "globalName": "MytrionHorizon",
+  "buildCmd": "corepack pnpm -C apps/mytrion-crm build:ds",
+  "srcDir": "src/ds",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/horizon-all.css",
+  "docsDir": "../../docs/design",
+  "extraFonts": [
+    "dist/horizon-tokens.css"
+  ]
+}

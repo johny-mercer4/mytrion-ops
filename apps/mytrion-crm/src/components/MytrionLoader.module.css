@@ -80,7 +80,7 @@
 }
 
 .brand {
-  font-family: Rajdhani, sans-serif;
+  font-family: var(--font-head);
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.12em;
@@ -99,7 +99,7 @@
 }
 
 .loadingText {
-  font-family: Rajdhani, sans-serif;
+  font-family: var(--font-head);
   font-weight: 700;
   font-size: 17px;
   letter-spacing: 0.08em;

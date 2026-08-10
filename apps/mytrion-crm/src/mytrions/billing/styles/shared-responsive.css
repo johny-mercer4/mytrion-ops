@@ -8,29 +8,17 @@
    ═══════════════════════════════════════════════ */
 
 @media (max-width: 768px) {
-    .bm-root .bm-sidebar {
-        display: none;
-    }
-
-    .bm-root .bm-bottom-nav {
-        display: flex;
-        align-items: stretch;
-    }
 
     /* Shrink content bottom-padding so it doesn't overlap the bottom nav */
     .bm-root .bm-content {
-        padding-bottom: var(--bottom-nav-height);
     }
 
     .bm-root .bm-panel {
-        padding-bottom: calc(var(--bottom-nav-height) + 1.25rem);
     }
 
     .bm-root .bm-ai-panel {
-        padding-bottom: var(--bottom-nav-height);
     }
 }
-
 
 /* ═══════════════════════════════════════════════
    §2  HEADER  (≤ 640px)
@@ -41,18 +29,6 @@
         --header-height: 48px;
     }
 
-    .bm-root .bm-header {
-        padding: 0 0.875rem;
-    }
-
-    .bm-root .bm-header-logo {
-        width: 28px;
-        height: 28px;
-    }
-
-    .bm-root .bm-header-title {
-        font-size: 0.875rem;
-    }
 }
 
 @media (max-width: 480px) {
@@ -60,15 +36,7 @@
         --header-height: 44px;
     }
 
-    .bm-root .bm-header-title {
-        font-size: 0.8125rem;
-    }
-
-    .bm-root .bm-header-badge {
-        display: none;
-    }
 }
-
 
 /* ═══════════════════════════════════════════════
    §3  PANEL CONTENT  (≤ 640px)
@@ -144,9 +112,6 @@
     }
 
     /* Bottom nav labels — shrink */
-    .bm-root .bottom-nav-btn {
-        font-size: 0.4375rem;
-    }
 }
 
 @media (max-width: 380px) {
@@ -156,11 +121,7 @@
         grid-template-columns: 1fr 1fr;
     }
 
-    .bm-root .bottom-nav-btn span:first-of-type {
-        display: none;
-    }
 }
-
 
 /* ═══════════════════════════════════════════════
    §4  AI CHAT  (≤ 640px)
@@ -203,20 +164,21 @@
     }
 }
 
-
 /* ═══════════════════════════════════════════════
    §5  MODAL  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
+/* Bottom sheet. The 16vh strip above the sheet is now the OVERLAY's padding rather than a `84vh`
+   cap on the panel: same height, but the gutter and the panel's `max-height: 100%` are one
+   measurement instead of two that can disagree, and the strip stays a backdrop-click target. */
 @media (max-width: 640px) {
     .bm-root .bm-modal-backdrop {
         align-items: flex-end;
-        padding: 0;
+        padding: 16vh 0 0;
     }
 
     .bm-root .bm-modal-box {
         max-width: 100%;
         border-radius: var(--radius-md) var(--radius-md) 0 0;
-        max-height: 84vh;
     }
 }

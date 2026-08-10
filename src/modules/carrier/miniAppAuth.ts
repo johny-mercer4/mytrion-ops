@@ -7,12 +7,13 @@
  * exist in exactly one place.
  */
 import { createId } from '@paralleldrive/cuid2';
-import { AppError } from '../../lib/errors.js';
+import { AppError, AuthError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { findDwhCardByIdAnyStatus } from '../../integrations/dwhCards.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
+import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
 import {
   parseInitDataUser,
   verifyTelegramInitData,
@@ -21,11 +22,26 @@ import {
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { getCurrentContext } from '../../plugins/requestContext.js';
+import { verifyToken } from '../auth/jwt.js';
 import {
   assertMiniAppCapability,
   type MiniAppActorProfile,
   type MiniAppCapability,
 } from './miniAppCapabilities.js';
+
+export interface MiniAppAuthOpts {
+  /** Bearer from Authorization — required when the registration has a password account. */
+  accessToken?: string | undefined;
+  /** Login / set-password / forgot / session bootstrap may use initData alone. */
+  allowWithoutPasswordSession?: boolean | undefined;
+}
+
+/** Pull a Bearer token out of the standard Authorization header. */
+export function accessTokenFromAuthHeader(authorization: string | undefined): string | undefined {
+  if (!authorization?.startsWith('Bearer ')) return undefined;
+  const token = authorization.slice('Bearer '.length).trim();
+  return token || undefined;
+}
 
 export type MiniAppActorRegistration = Omit<RegisteredMiniAppCompany, 'profile'> & {
   profile: MiniAppActorProfile;
@@ -113,11 +129,13 @@ export function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUs
 }
 
 /**
- * Resolve the current Telegram user to an existing mini-app registration. This is the returning
- * user's login path once onboarding is complete: Telegram proves identity; no password is involved.
+ * Resolve the current Telegram user to an existing mini-app registration.
+ * Legacy (no password) accounts keep initData-only access. Password accounts must present a
+ * 1-day Bearer from /carrier/mini-app/auth/login (unless allowWithoutPasswordSession).
  */
 export async function requireRegisteredMiniAppUser(
   initData: string,
+  opts: MiniAppAuthOpts = {},
 ): Promise<{ ctx: TenantContext; registration: MiniAppActorRegistration; tgUser: TelegramWebAppUser; telegramUserId: string }> {
   const { tgUser, telegramUserId } = verifyTelegramUser(initData);
   const agentCtx = getCurrentContext();
@@ -147,6 +165,7 @@ export async function requireRegisteredMiniAppUser(
         driverName: agentCtx.userName ?? null,
         companyType: selected.companyType,
         cardCount: selected.cardCount,
+        authMode: 'telegram',
         status: 'active',
         revokedAt: null,
         createdAt: now,
@@ -172,6 +191,28 @@ export async function requireRegisteredMiniAppUser(
       expose: true,
     });
   }
+
+  // Legacy telegram-mode registrations keep initData-only access. Password-mode accounts must
+  // present a 1-day Bearer after set-password (unless the caller is the auth bootstrap itself).
+  if (registration.authMode === 'password' && !opts.allowWithoutPasswordSession) {
+    const passwordUser = await carrierUserRepo.findByTelegramUserId(lookup, telegramUserId);
+    if (!passwordUser) {
+      throw new AuthError('Set a password to finish registration', { code: 'PASSWORD_SETUP_REQUIRED' });
+    }
+    if (!opts.accessToken) {
+      throw new AuthError('Password login required', { code: 'PASSWORD_LOGIN_REQUIRED' });
+    }
+    let claims;
+    try {
+      claims = await verifyToken(opts.accessToken, 'access');
+    } catch {
+      throw new AuthError('Session expired — log in again', { code: 'PASSWORD_SESSION_EXPIRED' });
+    }
+    if (!claims.client || claims.client.carrierUserId !== passwordUser.id) {
+      throw new AuthError('Session does not match this account', { code: 'PASSWORD_SESSION_MISMATCH' });
+    }
+  }
+
   return {
     ctx: telegramCtx(registration.profile, telegramUserId),
     registration,
@@ -187,9 +228,13 @@ export async function requireRegisteredMiniAppUser(
  */
 export async function requireRegisteredOwner(
   initData: string,
-  capability: MiniAppCapability = 'fleet:manage',
+  capabilityOrOpts: MiniAppCapability | MiniAppAuthOpts = 'fleet:manage',
+  maybeOpts: MiniAppAuthOpts = {},
 ): Promise<{ ctx: TenantContext; registration: MiniAppActorRegistration; carrierId: string; tgUser: TelegramWebAppUser }> {
-  const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
+  const capability =
+    typeof capabilityOrOpts === 'string' ? capabilityOrOpts : 'fleet:manage';
+  const opts = typeof capabilityOrOpts === 'string' ? maybeOpts : capabilityOrOpts;
+  const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData, opts);
   if (
     !registration ||
     !isOwnerOrSalesAgent(registration.profile) ||
@@ -219,9 +264,13 @@ export async function requireRegisteredOwner(
  */
 export async function requireRegisteredCarrierUser(
   initData: string,
-  capability: MiniAppCapability = 'company:read',
+  capabilityOrOpts: MiniAppCapability | MiniAppAuthOpts = 'company:read',
+  maybeOpts: MiniAppAuthOpts = {},
 ): Promise<{ registration: MiniAppActorRegistration; carrierId: string }> {
-  const { registration } = await requireRegisteredMiniAppUser(initData);
+  const capability =
+    typeof capabilityOrOpts === 'string' ? capabilityOrOpts : 'company:read';
+  const opts = typeof capabilityOrOpts === 'string' ? maybeOpts : capabilityOrOpts;
+  const { registration } = await requireRegisteredMiniAppUser(initData, opts);
   if (!registration.carrierId) {
     throw new AppError('This registration has no linked carrier yet', {
       statusCode: 404,
@@ -243,9 +292,13 @@ export async function requireRegisteredCarrierUser(
  */
 export async function requireRegisteredOwnerUser(
   initData: string,
-  capability: MiniAppCapability = 'financial:read',
+  capabilityOrOpts: MiniAppCapability | MiniAppAuthOpts = 'financial:read',
+  maybeOpts: MiniAppAuthOpts = {},
 ): Promise<{ registration: MiniAppActorRegistration; carrierId: string }> {
-  const { registration } = await requireRegisteredMiniAppUser(initData);
+  const capability =
+    typeof capabilityOrOpts === 'string' ? capabilityOrOpts : 'financial:read';
+  const opts = typeof capabilityOrOpts === 'string' ? maybeOpts : capabilityOrOpts;
+  const { registration } = await requireRegisteredMiniAppUser(initData, opts);
   if (!isOwnerOrSalesAgent(registration.profile) || !registration.carrierId) {
     throw new AppError('This view is only available to the company owner', {
       statusCode: 403,
@@ -333,6 +386,7 @@ export function toRegistrationView(row: {
   cardId: string | null;
   agentName: string | null;
   cardNumber?: string | null;
+  authMode?: 'password' | 'telegram' | null;
 }) {
   return {
     id: row.id,
@@ -344,5 +398,6 @@ export function toRegistrationView(row: {
     cardId: row.cardId,
     agentName: row.agentName,
     cardNumber: row.cardNumber ?? null,
+    authMode: row.authMode === 'password' ? ('password' as const) : ('telegram' as const),
   };
 }

@@ -1,0 +1,374 @@
+/*
+ * Table — the densest surface in the product. Read CONVENTIONS.md alongside this.
+ *
+ * Variants and states are DATA ATTRIBUTES, not extra classes: one selector surface, and the DOM
+ * tells you the state when you inspect it.
+ *
+ * FLAT AND OPAQUE, BY DECISION. Every ground here is --ui-table-* (which resolves to --surface-data
+ * / --surface-data-alt). No glass, no backdrop-filter, no atmosphere behind the data. Those tokens
+ * exist precisely because a blurred surface under a 400-row table is the compositing cliff this app
+ * has already fallen off once: every blurred element is its own composited layer, and a scrolling
+ * table re-rasterises it on every frame.
+ */
+
+/* ── Scroller ────────────────────────────────────────────────────────────────
+   Wide tables scroll INSIDE this element. The page body never scrolls sideways — a horizontally
+   scrolling document moves the header, the rail and the toolbar off-screen along with the column
+   the user was trying to reach.
+
+   `overflow: auto` on BOTH axes, not just x: `position: sticky` resolves against the nearest
+   scrollport, so the sticky header only sticks if this element is also the vertical scroller. Give
+   it a bounded `max-block-size` (via `scrollerStyle`/`scrollerClassName`) or the page scrolls
+   instead and the header has nothing to stick to.
+
+   No radius and no border here on purpose: the surface that owns the corner (a Card, a panel) owns
+   the radius. A table that rounds its own corners inside a rounded panel gives you two arcs. */
+.scroller {
+  overflow: auto;
+  /* Contains the visually-hidden <caption>, which is absolutely positioned. */
+  position: relative;
+  /* Stops an over-scrolled table from chaining sideways scroll to the page behind it — on a
+     trackpad that is how a horizontal flick ends up navigating back. */
+  overscroll-behavior-x: contain;
+  background-color: var(--ui-table-row-bg);
+}
+
+/* ── Table ──────────────────────────────────────────────────────────────────── */
+.table {
+  /* Density is a set of custom properties declared once here and read by every descendant, so the
+     sort button's padding can be identical to the cell padding it replaces without either side
+     hardcoding the other's number. */
+  --tbl-cell-py: var(--space-3);
+  --tbl-cell-px: var(--space-4);
+  --tbl-head-py: var(--space-2_5);
+  --tbl-check-size: var(--space-4);
+
+  inline-size: 100%;
+
+  /* SEPARATE, NOT COLLAPSE — and this is the single most load-bearing line in the file.
+     Under `border-collapse: collapse` the borders belong to the TABLE, not to the cells, so a
+     `position: sticky` header cell scrolls away from its own bottom rule and leaves a hairline
+     stranded mid-table. `separate` with zero spacing paints the identical single-hairline grid
+     (each cell draws only its block-end edge, so adjacent cells never double up) AND lets a sticky
+     cell carry its rule with it. */
+  border-collapse: separate;
+  border-spacing: 0;
+
+  background-color: var(--ui-table-row-bg);
+  color: var(--text-primary);
+  font-family: var(--ui-table-cell-font);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+  text-align: start;
+}
+
+/* ── Density ─────────────────────────────────────────────────────────────────
+   Two, because two is what the product actually has: a reading density and a scanning density.
+   A third would be someone's preference rather than a use case. */
+.table[data-density='compact'] {
+  --tbl-cell-py: var(--space-1_5);
+  --tbl-cell-px: var(--space-3);
+  --tbl-head-py: var(--space-1_5);
+  --tbl-check-size: var(--space-3_5);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+}
+
+/* Fixed layout: column widths come from the first row and stop depending on content. Required for
+   `truncate` to do anything, and it is what keeps a sticky first column from resizing as rows
+   stream in underneath it. */
+.table[data-layout='fixed'] {
+  table-layout: fixed;
+}
+
+/* ── Caption ─────────────────────────────────────────────────────────────────
+   Hidden VISUALLY, never removed. `display: none` and `visibility: hidden` both drop the element
+   from the accessibility tree, which would leave the table with no accessible name at all — the
+   opposite of the point. This is the clip pattern: still rendered, still announced, occupies
+   nothing. */
+.caption {
+  caption-side: top;
+  padding: var(--tbl-cell-py) var(--tbl-cell-px);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--tr-xs);
+  text-align: start;
+}
+.caption[data-visible='false'] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Header cells ────────────────────────────────────────────────────────────
+   11px caps at --tr-caps-micro: caps in Space Grotesk sit on lowercase sidebearings while being 44%
+   taller, so relative to their own height they read tighter than the body does and need the tracking
+   back. */
+.headCell {
+  padding: var(--tbl-head-py) var(--tbl-cell-px);
+  background-color: var(--ui-table-head-bg);
+  color: var(--ui-table-head-fg);
+  border-block-end: 1px solid var(--ui-table-rule);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  text-align: start;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* ── Body cells ──────────────────────────────────────────────────────────────
+   Every cell paints its own opaque ground rather than letting the row's show through. That is not
+   redundancy: a sticky cell composites against whatever scrolls beneath it, and a transparent
+   sticky cell smears the rows passing under it. */
+.cell {
+  padding: var(--tbl-cell-py) var(--tbl-cell-px);
+  background-color: var(--ui-table-row-bg);
+  border-block-end: 1px solid var(--ui-table-rule);
+  text-align: start;
+  vertical-align: middle;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+/* A row header (`<th scope="row">`) is the row's identity, so it carries the dark-ground weight
+   compensation the rest of the row does not need. */
+.cell[data-row-header='true'] {
+  color: var(--text-primary);
+  font-weight: var(--fw-body-strong);
+}
+
+/* The last rule in the body is the table's own bottom edge; drawing it again gives a double
+   hairline against whatever panel wraps this. */
+.body > tr:last-child > * {
+  border-block-end: 0;
+}
+
+/* ── Alignment ───────────────────────────────────────────────────────────────
+   `numeric` implies end-alignment; `align` is the explicit override and therefore comes after it in
+   source order so it wins at equal specificity. */
+.cell[data-num],
+.headCell[data-num] {
+  text-align: end;
+}
+
+/* THE .num TREATMENT. Space Mono + tabular figures, so a money column aligns digit-for-digit down
+   its length and can be SCANNED rather than read. Mandatory in Billing, Finance and Analytics.
+   Restated here rather than leaning on the global `[data-num]` rule because src/ds has to render
+   standing alone — in the library build and in a design tool there is no global.css. The element
+   still emits `data-num` so the app-level rule and this one agree rather than compete. */
+.cell[data-num] {
+  font-family: var(--ui-table-num-font);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: var(--tr-fig);
+  white-space: nowrap;
+}
+
+/* Header labels stay in the UI face. A monospaced column HEADING buys no alignment (there are no
+   digits in "Amount") and costs the caps rhythm the rest of the header row has. */
+.cell[data-align='start'],
+.headCell[data-align='start'] {
+  text-align: start;
+}
+.cell[data-align='center'],
+.headCell[data-align='center'] {
+  text-align: center;
+}
+.cell[data-align='end'],
+.headCell[data-align='end'] {
+  text-align: end;
+}
+
+/* Truncation needs a bounded column, which in practice means `layout="fixed"` plus a width on the
+   header cell. Without one there is nothing to overflow and this rule is inert. */
+.cell[data-truncate='true'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Sticky header ───────────────────────────────────────────────────────────
+   On the TH, not on the THEAD: `position: sticky` on a `<thead>` is unsupported in Safari and was
+   only ever specified for table cells. */
+.table[data-sticky-header='true'] .headCell {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+}
+
+/* ── Sticky first column ─────────────────────────────────────────────────────
+   The first cell of every row, head and body alike, pinned to the inline start. It gets an inline-end
+   rule so the boundary the rest of the table slides under is visible rather than inferred.
+
+   The layering is three-deep and has to be: body cells scroll UNDER the pinned column (--z-raised),
+   the whole pinned column scrolls UNDER the header (--z-sticky), and the corner cell — sticky on
+   both axes at once — has to sit above the header it is part of. */
+.table[data-sticky-col='true'] > * > tr > *:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: var(--z-raised);
+  border-inline-end: 1px solid var(--ui-table-rule);
+}
+.table[data-sticky-col='true'][data-sticky-header='true'] > thead > tr > *:first-child {
+  z-index: calc(var(--z-sticky) + 1);
+}
+
+/* ── Row states ──────────────────────────────────────────────────────────────
+   HOVER is painted as a background IMAGE layer over the cell's opaque background COLOR, not as a
+   replacement colour. --ui-table-row-hover is a translucent wash by design; assigning it to
+   `background-color` would make the cell translucent, and a translucent sticky cell smears the rows
+   scrolling beneath it. A one-stop gradient is a solid fill that happens to live on the image layer,
+   so the wash composites over the opaque ground exactly as intended and the cell stays opaque. */
+.row:hover > * {
+  background-image: linear-gradient(var(--ui-table-row-hover), var(--ui-table-row-hover));
+}
+
+/* SELECTED. The wash is mixed INTO the opaque ground rather than layered over it, for the same
+   opacity reason, and it is deliberately not the only signal: the row also carries an accent bar on
+   its leading edge, and the selection checkbox is checked. Colour alone never means anything here —
+   a red/green-blind user and a greyscale print both have to be able to tell. */
+.row[data-selected='true'] > * {
+  background-color: color-mix(in oklab, var(--accent) 12%, var(--ui-table-row-bg));
+}
+.row[data-selected='true'] > *:first-child {
+  box-shadow: inset var(--space-0_5) 0 0 0 var(--accent);
+}
+
+/* DISABLED recolours; it never multiplies opacity, so the text keeps a KNOWN contrast ratio instead
+   of an unknowable composite. No `pointer-events: none` — see CONVENTIONS §5; it would kill the
+   tooltip that explains why the row is inert and remove its controls from the tab order. Disabling
+   the controls INSIDE the row is the caller's job, and the row does not fake it by swallowing
+   clicks. */
+.row[data-disabled='true'] > * {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+.row[data-disabled='true']:hover > * {
+  background-image: none;
+}
+
+/* ── Sort control ────────────────────────────────────────────────────────────
+   A real <button> filling the whole cell, so the click target is the header rather than the six
+   characters of its label. The TH drops its padding and the button takes it, which is why both read
+   the same --tbl-* custom properties. */
+.headCell[data-sortable='true'] {
+  padding: 0;
+}
+.sortButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  inline-size: 100%;
+  padding: var(--tbl-head-py) var(--tbl-cell-px);
+  background: none;
+  border: 0;
+  /* Inherit rather than restate: the button must be typographically invisible inside its cell, and
+     anything restated here would drift from .headCell the first time that block is edited. */
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.sortButton:hover {
+  color: var(--text-primary);
+}
+
+/* A numeric column right-aligns, so its sort affordance has to sit on the LEFT of the label or the
+   glyph pushes the heading away from the digits it labels. */
+.headCell[data-num] .sortButton,
+.headCell[data-align='end'] .sortButton {
+  flex-direction: row-reverse;
+}
+
+/* `text-align` does nothing to a flex container's items, so a centred sortable heading has to be
+   justified rather than aligned. The start and end cases fall out of the main axis for free — end
+   via the row-reverse above. */
+.headCell[data-align='center'] .sortButton {
+  justify-content: center;
+}
+
+/* The glyph is present in ALL THREE states — a neutral swap_vert when unsorted. Revealing it on
+   hover instead is the standard mistake: the column then looks unsortable to anyone who has not
+   already hovered it, and to every touch user, who has no hover at all. */
+.sortIcon {
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.headCell[aria-sort='ascending'] .sortIcon,
+.headCell[aria-sort='descending'] .sortIcon {
+  color: var(--accent);
+}
+.headCell[aria-sort='ascending'] .sortButton,
+.headCell[aria-sort='descending'] .sortButton {
+  color: var(--text-primary);
+}
+
+/* ── Selection cell ──────────────────────────────────────────────────────────
+   Declared AFTER .headCell and .cell so its padding wins at equal specificity — this class is
+   always composed with one of them rather than replacing it. */
+.selectCell {
+  /* A 1px width on a table cell is a shrink-to-fit instruction, not a measurement: the browser
+     gives the column its content width and hands every spare pixel to the other columns. */
+  inline-size: 1px;
+  padding-block: var(--tbl-cell-py);
+  padding-inline: var(--tbl-cell-px);
+  text-align: start;
+  white-space: nowrap;
+}
+.checkbox {
+  display: block;
+  inline-size: var(--tbl-check-size);
+  block-size: var(--tbl-check-size);
+  margin: 0;
+  /* A NATIVE checkbox, recoloured. `appearance: none` plus a hand-drawn box would mean
+     re-implementing the indeterminate dash, the checkmark, the high-contrast-mode forced colours and
+     the platform focus behaviour — four things the platform already ships and one of which
+     (indeterminate) cannot be expressed in CSS at all without a pseudo-element hack. */
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+.checkbox:disabled {
+  accent-color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+
+/* ── Message row ─────────────────────────────────────────────────────────────
+   The full-width slot the caller fills with an empty state, an error, or a loading skeleton. The
+   Table owns the BOX; it never owns the words or the spinner. */
+.messageCell {
+  padding-block: var(--space-8);
+  padding-inline: var(--tbl-cell-px);
+  background-color: var(--ui-table-row-bg);
+  border-block-end: 1px solid var(--ui-table-rule);
+  color: var(--text-secondary);
+  text-align: center;
+  /* Uppercase caps are a HEADER treatment; a sentence rendered in them is slower to read. */
+  text-transform: none;
+  letter-spacing: var(--tr-sm);
+}
+
+/* A message cell already spans every column, so pinning it to the inline start would pin the whole
+   row to itself and put a stray vertical rule down the middle of an empty state. Matched selector
+   weight to the sticky rule above, and placed after it, so this wins. */
+.table[data-sticky-col='true'] > * > tr > .messageCell {
+  position: static;
+  border-inline-end: 0;
+}

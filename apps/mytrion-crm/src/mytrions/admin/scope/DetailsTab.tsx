@@ -29,7 +29,7 @@ export function DetailsTab({ node }: { node: DetailNode }) {
     <div className="oct-rail" style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '28px 36px' }}>
       {platforms.length > 0 && (
         <>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 14 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 14 }}>
             PLATFORMS &amp; VENDORS
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginBottom: 30 }}>
@@ -56,7 +56,7 @@ export function DetailsTab({ node }: { node: DetailNode }) {
                   <span
                     style={{
                       display: 'flex', width: 20, height: 20, flex: 'none', alignItems: 'center', justifyContent: 'center',
-                      background: hexA(node.color, 0.12), borderRadius: 2, fontFamily: "'JetBrains Mono',monospace", fontSize: 8, fontWeight: 600, color: node.color,
+                      background: hexA(node.color, 0.12), borderRadius: 2, fontFamily: "var(--font-mono)", fontSize: 8, fontWeight: 600, color: node.color,
                     }}
                   >
                     {pl.abbr}
@@ -71,7 +71,7 @@ export function DetailsTab({ node }: { node: DetailNode }) {
 
       {metrics.length > 0 && (
         <>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 14 }}>METRICS</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: '.16em', color: 'var(--sub)', marginBottom: 14 }}>METRICS</div>
           <div className="oct-metric-grid">
             {metrics.map((m, mi) => (
               <div
@@ -87,7 +87,7 @@ export function DetailsTab({ node }: { node: DetailNode }) {
                   </svg>
                   {m.label}
                 </div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: 'var(--ink)' }}>{m.value}</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: 'var(--ink)' }}>{m.value}</div>
               </div>
             ))}
           </div>

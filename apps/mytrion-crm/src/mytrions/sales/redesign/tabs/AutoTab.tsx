@@ -27,22 +27,26 @@ import { AutoCardCredentialsPanel, useCardCredentials } from '../AutoCardCredent
 import { AutoReportFilters } from '../AutoReportFilters';
 import type { TxnReportState } from '../txnReport';
 import { useAccessibleDialog } from '../useAccessibleDialog';
+import { AUTO_INPUT } from '../autoControls';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
-const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:14px;color:var(--text2);line-height:1.5';
-const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:14px;color:var(--danger);line-height:1.5';
+const labelCss = 'font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:var(--ss-text-sm);color:var(--danger);line-height:1.5';
 // Date defaults/bounds follow the NY calendar (the sales floor's day), not the viewer's/UTC —
 // toISOString() here used to show "tomorrow" for late-evening ET users.
 const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;transition:all .14s`;
-const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
+  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:var(--ss-text-sm);font-weight:700;cursor:pointer;transition:all .14s`;
+/* --on-accent, never #fff: --accent is a PALE cyan in dark (#a5e7ff) and --accent-2 a pale
+   pink, so white ink on this fill is ~1.35:1 — an invisible label on every primary button in
+   the automation modals. The rest of the Sales module already used the token; these three
+   inline constants were the holdouts. */
+const btnP = (extra: string): string => `border:none;background:${grad};color:var(--on-accent);font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
   <Icon name="close" size={16} strokeWidth={2.4} />
@@ -371,12 +375,14 @@ export function AutoTab() {
         )}
       </SalesPage>
 
-      {/* Scrim matches dataCenterSheet (.78 / blur 6) — .62 / blur 3 left the catalog legible through
-          the dialog. The panel takes the shared `ss-modal-box` recipe (accent rail +
-          --hz-modal-surface + blur) instead of an inline --surface, which at 0.66 alpha was the main
-          reason the modal read as translucent in dark mode. */}
+      {/* Scrim is the shared --scrim token, not a hardcoded near-black: the old rgba(3,7,14,.78) was
+          only correct in dark and painted ink over the pale page in light. --scrim is mixed from
+          --page, so it inverts by construction. The gutter (--space-6) lives on the OVERLAY, not as a
+          margin on the panel, so clicking it still reads as a backdrop click. The panel takes the
+          shared `ss-modal-box` recipe (accent rail + --hz-modal-surface + blur) instead of an inline
+          --surface, which at 0.66 alpha was the main reason the modal read as translucent in dark. */}
       {b && (
-        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)')}>
           <div
             ref={autoDialogRef}
             className="ss-modal-box"
@@ -385,16 +391,20 @@ export function AutoTab() {
             aria-labelledby="sales-auto-title"
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}
+            /* `max-height:100%` (not 88vh): a vh cap ignores the overlay's own --space-6 gutter, so a
+               tall run panel overflowed it and clipped its own header off-screen. `flex:none` is inert here
+               (the overlay is a flex ROW, so it governs width) and is kept only so the panel stays
+               un-squeezable if that ever becomes a column. The body row below is the ONLY scroller. */
+            style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}
           >
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(autoIconColor(b), 48))}>
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
-                <div id="sales-auto-title" style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:21px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
+                <div id="sales-auto-title" style={s('font-family:var(--font-head);font-weight:700;font-size:var(--ss-text-lg);letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
-                <div style={s('font-size:14px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
+                <div style={s('font-size:var(--ss-text-sm);color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
               <button
                 type="button"
@@ -418,7 +428,7 @@ export function AutoTab() {
                   {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
                   )}
 
                   {needsDeal && (
@@ -475,19 +485,19 @@ export function AutoTab() {
 
                   {showUnitDriver && (
                     <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
-                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
-                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(inp42)} /></div>
-                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(inp42)} /></div>
+                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(AUTO_INPUT)} /></div>
                     </div>
                   )}
 
                   {isLimits && (
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(inp42)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-                        <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(inp42)} /></div>
+                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(AUTO_INPUT)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                        <div><Lbl t="Change amount (gallons)" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" min="1" max={LIMIT_CHANGE_MAX} step="1" placeholder="e.g. 100" className="ss-in" style={s(AUTO_INPUT)} /></div>
                       </div>
-                      <div style={s(`font-size:12px;color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
+                      <div style={s(`font-size:var(--ss-text-2xs);color:${autoLimitValue && !limitReady ? 'var(--danger)' : 'var(--muted)'}`)}>Added to or subtracted from the card&apos;s existing limit. Maximum {LIMIT_CHANGE_MAX} gallons per run.</div>
                       <div>
                         <Lbl t="Direction" />
                         <div style={s('display:flex;gap:9px')}>
@@ -513,7 +523,7 @@ export function AutoTab() {
                       )}
                       {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
                       {mcPreview && (
-                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:14px;color:var(--text2);line-height:1.5`)}>
+                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5`)}>
                           {mcPreview.eligible
                             ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
                             : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
@@ -521,9 +531,9 @@ export function AutoTab() {
                       )}
                       {mcPreview?.eligible && (
                         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
-                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} aria-label="Why is this money code needed?" className="ss-in" style={s(inp42)}>
+                          <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} aria-label="Why is this money code needed?" className="ss-in" style={s(AUTO_INPUT)}>
                             {/* Server list wins — servercrm validates against its own set, so the
                                 fallback constant is only for a preview that has not landed yet. */}
                             <option value="" disabled>Why is this money code needed?</option>
@@ -548,27 +558,27 @@ export function AutoTab() {
                   )}
 
                   {b.id === 'reactivation' && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}>
                       Submits a reactivation email request for <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong>. You will receive the answer by email.
                     </div>
                   )}
 
                   {b.id === 'card-replacement' && hasDeal && (
                     <div>
-                      <div style={s('font-size:14px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
+                      <div style={s('font-size:var(--ss-text-sm);color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
-                        <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(inp42)} /></div>
-                        <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(inp42)} /></div>
+                        <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                        <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(AUTO_INPUT)} /></div>
                         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                          <div><Lbl t="State" /><input value={autoAddr.state} onChange={(e) => setAddr('state', e.target.value)} placeholder="ST" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Zip" /><input value={autoAddr.zip} onChange={(e) => setAddr('zip', e.target.value)} placeholder="00000" className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="State" /><input value={autoAddr.state} onChange={(e) => setAddr('state', e.target.value)} placeholder="ST" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                          <div><Lbl t="Zip" /><input value={autoAddr.zip} onChange={(e) => setAddr('zip', e.target.value)} placeholder="00000" className="ss-in" style={s(AUTO_INPUT)} /></div>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:14px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:var(--ss-text-sm);color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -576,8 +586,8 @@ export function AutoTab() {
                       {unavailable && <div style={s(noteWarn)}>This action isn&apos;t available for self-service yet — file a ticket and the team will handle it.</div>}
                       <div style={s('display:flex;justify-content:flex-end')}>
                         {canRun
-                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:14px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
-                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:14px;cursor:not-allowed')}>{runVerb}</button>}
+                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:var(--ss-text-sm);box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
+                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:var(--ss-text-sm);cursor:not-allowed')}>{runVerb}</button>}
                       </div>
                     </div>
                   )}

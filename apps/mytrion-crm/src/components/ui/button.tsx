@@ -12,8 +12,12 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-foreground hover:bg-primary/80',
         outline:
           'border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
+        // The Tailwind theme names these --color-secondary / --color-foreground; bare --secondary
+        // and --foreground are undeclared, so this color-mix was invalid and the hover never
+        // painted. It matters more now: theme.css declares a raw --secondary (the Horizon sunset),
+        // so leaving the short names would have quietly turned this hover pink.
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--color-secondary),var(--color-foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
           'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
         destructive:

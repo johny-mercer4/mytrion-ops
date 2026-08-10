@@ -9,7 +9,7 @@
 .ss-root .ss-verification-card::before { content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--verification-tone,var(--accent));opacity:.78; }
 .ss-root .ss-verification-card:hover { transform:var(--hz-hover-lift-sm);border-color:color-mix(in srgb,var(--verification-tone,var(--accent)) 38%,var(--border));box-shadow:0 12px 32px -18px color-mix(in srgb,var(--verification-tone,var(--accent)) 45%,transparent),var(--shadow-sm); }
 .ss-root .ss-verification-card-title { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ss-text-md);font-weight:700; }
-.ss-root .ss-verification-meta { margin-top:6px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:var(--ss-text-2xs); }
+.ss-root .ss-verification-meta { margin-top:6px;color:var(--muted);font-family:var(--font-mono);font-size:var(--ss-text-2xs); }
 
 /* ── Verification record (Zoho Deals fields) ───────────────────────────────────
    Chips on the card, tiles in the detail. Tone colours the VALUE only — a card whose every chip is
@@ -34,7 +34,7 @@
 }
 .ss-root .ss-vf-card-decision .is-empty { color:var(--faint);font-weight:600;font-style:italic; }
 .ss-root .ss-vf-card-decision em {
-  font-style:normal;font-family:'JetBrains Mono',monospace;font-size:var(--ss-text-2xs);
+  font-style:normal;font-family:var(--font-mono);font-size:var(--ss-text-2xs);
   font-weight:600;color:var(--muted);
 }
 .ss-root .ss-vf-card-attention {
@@ -47,7 +47,7 @@
   margin-top:auto;padding-top:14px;font-size:var(--ss-text-2xs);color:var(--muted);
 }
 .ss-root .ss-vf-card-foot .is-mono,
-.ss-root .ss-vf-verdict.is-mono { font-family:'JetBrains Mono',monospace; }
+.ss-root .ss-vf-verdict.is-mono { font-family:var(--font-mono); }
 
 .ss-root .ss-vf-section {
   display:flex;flex-direction:column;gap:12px;padding:18px;
@@ -71,7 +71,7 @@
 }
 .ss-root .ss-vf-tile-lbl { font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted); }
 .ss-root .ss-vf-tile-val {
-  font-family:'JetBrains Mono',monospace;font-size:var(--ss-text-md);font-weight:600;
+  font-family:var(--font-mono);font-size:var(--ss-text-md);font-weight:600;
   line-height:1.25;word-break:break-word;
 }
 .ss-root .ss-vf-tile-hint { font-size:var(--ss-text-badge);color:var(--faint); }

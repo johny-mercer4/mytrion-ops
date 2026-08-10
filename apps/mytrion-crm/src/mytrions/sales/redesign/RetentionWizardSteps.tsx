@@ -52,12 +52,12 @@ export function WizardChrome(props: {
       <div>
         <div
           style={s(
-            'font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
+            'font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
           )}
         >
           Stage
         </div>
-        <div style={s('font-size:15px;font-weight:800;color:var(--text);margin-top:2px')}>
+        <div style={s('font-size:var(--ss-text-base);font-weight:800;color:var(--text);margin-top:2px')}>
           {props.stage}
         </div>
       </div>
@@ -66,7 +66,7 @@ export function WizardChrome(props: {
           {props.steps.map((st, i) => (
             <div key={st.n} style={s('display:flex;align-items:center;gap:8px')}>
               {i > 0 && (
-                <div style={s('width:18px;height:2px;background:var(--border);border-radius:99px')} />
+                <div style={s('width:18px;height:2px;background:var(--border);border-radius:var(--radius-full)')} />
               )}
               <StepPill n={st.n} label={st.label} active={st.active} done={st.done} />
             </div>
@@ -75,7 +75,7 @@ export function WizardChrome(props: {
       ) : props.stepLabel ? (
         <div
           style={s(
-            "font-size:12px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace",
+            "font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted);font-family:var(--font-mono)",
           )}
         >
           {props.stepLabel}
@@ -99,12 +99,12 @@ function StepPill({
   return (
     <div
       style={s(
-        `display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${col}`,
+        `display:inline-flex;align-items:center;gap:6px;font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${col}`,
       )}
     >
       <span
         style={s(
-          `width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;border:1px solid ${col};background:${active || done ? 'color-mix(in srgb,var(--accent) 14%,transparent)' : 'transparent'}`,
+          `width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:var(--ss-text-badge);border:1px solid ${col};background:${active || done ? 'color-mix(in srgb,var(--accent) 14%,transparent)' : 'transparent'}`,
         )}
       >
         {done ? '✓' : n}
@@ -118,14 +118,14 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
   return (
     <div
       style={s(
-        'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);font-size:13px;color:var(--text);line-height:1.45',
+        'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);font-size:var(--ss-text-xs);color:var(--text);line-height:1.45',
       )}
     >
       <div style={s('font-weight:800')}>Call ended — choose a stage.</div>
       {line ? (
         <div
           style={s(
-            "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
+            "margin-top:6px;font-family:var(--font-mono);font-size:var(--ss-text-base);font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
           )}
         >
           {line}
@@ -150,7 +150,7 @@ function CallDialButton(props: {
       className="ss-btn-p"
       aria-busy={awaitingCallEnd}
       style={s(
-        `height:${height}px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall || awaitingCallEnd ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+        `height:${height}px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:var(--ss-text-sm);cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall || awaitingCallEnd ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
       )}
     >
       {awaitingCallEnd ? (
@@ -186,7 +186,7 @@ export function CallFirstBlock(props: {
     >
       <div>
         <SectionTitle>Step 1 · Call the client</SectionTitle>
-        <div style={s('font-size:13px;color:var(--text2);line-height:1.5;margin-top:6px')}>
+        <div style={s('font-size:var(--ss-text-xs);color:var(--text2);line-height:1.5;margin-top:6px')}>
           Call first. When the call ends, a stage dialog opens — Out of Reach, Reached,
           Dissatisfied, or Vacation. Out of Reach auto-logs attempt 1 for RingCentral.
         </div>
@@ -195,18 +195,18 @@ export function CallFirstBlock(props: {
         <div
           className="ss-skel"
           aria-label="Loading phone"
-          style={s('height:22px;width:160px;border-radius:6px')}
+          style={s('height:22px;width:160px;border-radius:var(--radius-sm)')}
         />
       ) : phone ? (
         <div
           style={s(
-            "font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+            "font-family:var(--font-mono);font-size:var(--ss-text-lg);font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
           )}
         >
           {phone}
         </div>
       ) : (
-        <div style={s('font-size:13px;font-weight:600;color:var(--warn)')}>
+        <div style={s('font-size:var(--ss-text-xs);font-weight:600;color:var(--warn)')}>
           No phone on file — add a number on the deal before calling.
         </div>
       )}
@@ -253,7 +253,7 @@ export function AttemptStep(props: {
     >
       <div>
         <SectionTitle>Log attempt — call or messenger + short note</SectionTitle>
-        <div style={s('font-size:13px;color:var(--text2);line-height:1.45;margin-top:6px')}>
+        <div style={s('font-size:var(--ss-text-xs);color:var(--text2);line-height:1.45;margin-top:6px')}>
           Attempt {row.outOfReachAttempts}/5. RingCentral logs on call end. Other channels need a
           short note (screenshot optional). At 5 → Open Pool.
         </div>
@@ -265,12 +265,12 @@ export function AttemptStep(props: {
             'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);display:flex;flex-direction:column;gap:10px',
           )}
         >
-          <div style={s('font-size:13px;color:var(--text);line-height:1.4')}>
+          <div style={s('font-size:var(--ss-text-xs);color:var(--text);line-height:1.4')}>
             <strong>Call ended — retry logging.</strong>
             {callPeerLine(pendingCall) ? (
               <div
                 style={s(
-                  "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--accent-text)",
+                  "margin-top:6px;font-family:var(--font-mono);font-size:var(--ss-text-base);font-weight:700;color:var(--accent-text)",
                 )}
               >
                 {callPeerLine(pendingCall)}
@@ -283,7 +283,7 @@ export function AttemptStep(props: {
               onClick={() => void props.onLogPhoneCall()}
               className="ss-btn-p"
               style={s(
-                'height:36px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer',
+                'height:36px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:var(--ss-text-xs);cursor:pointer',
               )}
             >
               Retry RingCentral log
@@ -301,7 +301,7 @@ export function AttemptStep(props: {
 
       {!forceAttempt && (
         <>
-          <div style={s('font-size:12px;font-weight:700;color:var(--muted)')}>
+          <div style={s('font-size:var(--ss-text-2xs);font-weight:700;color:var(--muted)')}>
             Or message another channel
           </div>
           <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
@@ -317,7 +317,7 @@ export function AttemptStep(props: {
                   aria-pressed={active}
                   onClick={() => props.setChannel(id)}
                   style={s(
-                    `width:42px;height:42px;border-radius:12px;border:1px solid ${active ? meta.color : 'var(--border)'};background:${active ? `color-mix(in srgb,${meta.color} 16%,var(--surface))` : 'var(--surface)'};color:${active ? meta.color : 'var(--text2)'};cursor:pointer;display:inline-flex;align-items:center;justify-content:center`,
+                    `width:42px;height:42px;border-radius:var(--radius-md);border:1px solid ${active ? meta.color : 'var(--border)'};background:${active ? `color-mix(in srgb,${meta.color} 16%,var(--surface))` : 'var(--surface)'};color:${active ? meta.color : 'var(--text2)'};cursor:pointer;display:inline-flex;align-items:center;justify-content:center`,
                   )}
                 >
                   <RetentionChannelIcon channel={id} size={18} />
@@ -326,7 +326,7 @@ export function AttemptStep(props: {
             })}
           </div>
           {brand && (
-            <div style={s(`font-size:13px;font-weight:700;color:${brand.color}`)}>
+            <div style={s(`font-size:var(--ss-text-xs);font-weight:700;color:${brand.color}`)}>
               Logging via {brand.label}
             </div>
           )}
@@ -337,11 +337,11 @@ export function AttemptStep(props: {
             className="ss-in"
             aria-required
             style={s(
-              `height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid ${noteMissing ? 'var(--danger)' : 'var(--border)'};background:var(--surface);color:var(--text);font-size:13px;box-shadow:${noteMissing ? '0 0 0 1px color-mix(in srgb,var(--danger) 35%,transparent)' : 'none'}`,
+              `height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid ${noteMissing ? 'var(--danger)' : 'var(--border)'};background:var(--surface);color:var(--text);font-size:var(--ss-text-xs);box-shadow:${noteMissing ? '0 0 0 1px color-mix(in srgb,var(--danger) 35%,transparent)' : 'none'}`,
             )}
           />
           {noteMissing && (
-            <div style={s('font-size:12px;font-weight:700;color:var(--danger);margin-top:-6px')}>
+            <div style={s('font-size:var(--ss-text-2xs);font-weight:700;color:var(--danger);margin-top:-6px')}>
               Note required for messenger / email attempts
             </div>
           )}
@@ -355,7 +355,7 @@ export function AttemptStep(props: {
             disabled={busy || props.channel === 'ringcentral' || noteMissing}
             onClick={() => void props.onLogOtherChannel()}
             style={s(
-              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
+              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:var(--ss-text-xs);cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
             )}
           >
             Log {CHANNEL_OPTIONS.find((c) => c.id === props.channel)?.label ?? 'channel'} attempt
@@ -417,7 +417,7 @@ export function StageStep(props: {
       {!embedded && (
         <div>
           <SectionTitle>{props.title ?? 'Choose stage'}</SectionTitle>
-          <div style={s('font-size:13px;color:var(--text2);line-height:1.45;margin-top:6px')}>
+          <div style={s('font-size:var(--ss-text-xs);color:var(--text2);line-height:1.45;margin-top:6px')}>
             {alreadyOoR
               ? 'After each attempt, pick a stage. Out of Reach stays available until attempt 5 → Open Pool.'
               : showOutOfReach
@@ -469,7 +469,7 @@ export function StageStep(props: {
           placeholder="Return date / vacation note (recommended)…"
           className="ss-in"
           style={s(
-            'height:38px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 40%,var(--border));background:var(--surface);color:var(--text);font-size:13px',
+            'height:38px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 40%,var(--border));background:var(--surface);color:var(--text);font-size:var(--ss-text-xs)',
           )}
         />
       )}
@@ -480,7 +480,7 @@ export function StageStep(props: {
           disabled={busy}
           onClick={props.onConfirmStage}
           style={s(
-            `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:${pickColor};color:${STAGE_ON};font-weight:800;font-size:15px;letter-spacing:.01em;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};box-shadow:0 8px 22px color-mix(in srgb,${pickColor} 35%,transparent)`,
+            `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:${pickColor};color:${STAGE_ON};font-weight:800;font-size:var(--ss-text-base);letter-spacing:.01em;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};box-shadow:0 8px 22px color-mix(in srgb,${pickColor} 35%,transparent)`,
           )}
         >
           {busy ? 'Saving…' : confirmLabel}
@@ -493,7 +493,7 @@ export function StageStep(props: {
           disabled={busy}
           onClick={() => void onAct('no_action_2bd')}
           style={s(
-            'height:34px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:12px;cursor:pointer',
+            'height:34px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:var(--ss-text-2xs);cursor:pointer',
           )}
         >
           Escalate — no action in 2 BD
@@ -527,14 +527,14 @@ function StatusCard(props: {
       <div style={s('display:flex;align-items:center;gap:9px')}>
         <span
           style={s(
-            `width:30px;height:30px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${color} 22%,transparent);color:${color}`,
+            `width:30px;height:30px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${color} 22%,transparent);color:${color}`,
           )}
         >
           <Icon name={icon} size={15} strokeWidth={2.5} color={color} />
         </span>
-        <div style={s(`font-size:14px;font-weight:800;color:${color}`)}>{props.title}</div>
+        <div style={s(`font-size:var(--ss-text-sm);font-weight:800;color:${color}`)}>{props.title}</div>
       </div>
-      <div style={s('font-size:12px;color:var(--text2);margin-top:8px;line-height:1.4;padding-left:39px')}>
+      <div style={s('font-size:var(--ss-text-2xs);color:var(--text2);margin-top:8px;line-height:1.4;padding-left:39px')}>
         {props.hint}
       </div>
     </button>
@@ -545,7 +545,7 @@ export function SectionTitle({ children }: { children: string }) {
   return (
     <div
       style={s(
-        'font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
+        'font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
       )}
     >
       {children}
@@ -557,7 +557,7 @@ export function InfoBanner({ title, children }: { title: string; children: strin
   return (
     <div
       style={s(
-        'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:13px;color:var(--text2);line-height:1.45',
+        'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:var(--ss-text-xs);color:var(--text2);line-height:1.45',
       )}
     >
       <strong style={s('color:var(--text)')}>{title}</strong> {children}
@@ -590,7 +590,7 @@ export function ToneBtn({
       disabled={busy}
       onClick={onClick}
       style={s(
-        `height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,${col} 35%,var(--border));background:color-mix(in srgb,${col} 12%,transparent);color:${col};font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
+        `height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,${col} 35%,var(--border));background:color-mix(in srgb,${col} 12%,transparent);color:${col};font-weight:700;font-size:var(--ss-text-xs);cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
       )}
     >
       {label}

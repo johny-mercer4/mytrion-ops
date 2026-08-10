@@ -10,6 +10,10 @@
    ===================================================== */
 
 .bm-root {
+    /* De-forked: --surface, --border*, --text-*, --accent*, --success and --error are GLOBAL
+       token names. Redeclaring them here meant every palette change in styles/theme.css
+       silently skipped this workspace. They are inherited now, which also picks up the
+       light-mode surface inversion this scope used to get wrong. */
     /* ── Dark Mode (default) ── */
     /* The shared Horizon field, so Billing sits on the same ground as every other module and the
        translucent panes have something to blur against. */
@@ -31,7 +35,6 @@
 
     /* ── Billing accent — sky, i.e. --hz-1/--hz-sky ── */
     /* Far end of the module's ramp; `accent → accent-2` is Billing's slice of the Horizon gradient. */
-    --accent-2:            #818cf8;
     --billing-accent:      #38bdf8;
     --billing-accent-glow: rgba(56, 189, 248, 0.20);
     --billing-success:     #2ECC71;
@@ -46,7 +49,7 @@
     --accent-border:       rgba(56, 189, 248, 0.26);
     --accent-border-strong: rgba(56, 189, 248, 0.45);
     --accent-ring:         0 0 0 2px rgba(56, 189, 248, 0.18);
-    --accent-glow:         0 0 12px rgba(56, 189, 248, 0.30);
+    --accent-ring-glow: 0 0 12px rgba(56, 189, 248, 0.30);
     --accent-on:           #38bdf8;
     --accent-hover:        #7dd3fc;
     --on-accent-solid:     #06283b;
@@ -79,9 +82,6 @@
     /* ── Text ── */
     --color-text-primary: #c8ccda;
     --color-text-muted:   #5e6680;
-    --text-primary:       #c8ccda;
-    --text-secondary:     #9399b4;
-    --text-muted:         #5e6680;
     --text-on-dark:       #c8ccda;
 
     /* ── Backward-compat aliases ── */
@@ -91,7 +91,6 @@
     --brand-navy:         #1c1d26;
     --brand-navy-mid:     #22232e;
     --brand-dark:         #1c1d26;
-    --accent:             #38bdf8;
 
     /* ── Layout ── */
     --sidebar-width:      216px;
@@ -100,16 +99,11 @@
     --bottom-nav-height:  62px;
 
     /* ── Surfaces — translucent panes; the blur lives in bm-horizon.css ── */
-    --surface:        #252632;
-    --surface-alt:    #2a2b38;
     --surface-raised: var(--hz-glass-hover);
     --sidebar-bg:     var(--hz-glass);
     --header-bg:      var(--hz-glass);
 
     /* ── Borders ── */
-    --border:       rgba(200, 204, 218, 0.11);
-    --border-light: rgba(200, 204, 218, 0.06);
-    --border-dark:  rgba(200, 204, 218, 0.04);
     --color-border: rgba(200, 204, 218, 0.11);
 
     /* ── Design parity: progress-bar track + card shadow (dark = none) ── */
@@ -122,8 +116,6 @@
     --muted-bd:     rgba(200, 204, 218, 0.14);
 
     /* ── Status ── */
-    --success: #2ECC71;
-    --error:   #EF4444;
 
     /* ── Shadows — the shared Horizon elevation steps ── */
     --shadow-sm: var(--hz-shadow-rest);
@@ -137,11 +129,7 @@
 
     /* ── Radii — relaxed from the 1–4px "Razor-Sharp" ramp (see note at top of file).
           --radius-full was a dead token at 4px; it is now an actual pill. ── */
-    --radius-xs:   4px;
-    --radius-sm:   6px;
-    --radius-md:   8px;
-    --radius-lg:   12px;
-    --radius-full: 999px;
+  /* Radius fork deleted: the one scale in styles/theme.css now reaches this subtree. */
 }
 
 /* ── Light Mode ── */
@@ -155,7 +143,6 @@
     --color-accent:        #2563eb;
 
     /* Billing accent — vivid blue pops cleanly on white surfaces */
-    --accent-2:            #4f46e5;
     --billing-accent:      #2563eb;
     --billing-accent-glow: rgba(37, 99, 235, 0.12);
     --billing-success:     #16a34a;
@@ -170,7 +157,7 @@
     --accent-border:       rgba(37, 99, 235, 0.22);
     --accent-border-strong: rgba(37, 99, 235, 0.40);
     --accent-ring:         0 0 0 2px rgba(37, 99, 235, 0.15);
-    --accent-glow:         0 0 0 3px rgba(37, 99, 235, 0.12);
+    --accent-ring-glow: 0 0 0 3px rgba(37, 99, 235, 0.12);
     --accent-on:           #2563eb;
     --accent-hover:        #1d4ed8;
     --on-accent-solid:     #ffffff;
@@ -199,9 +186,6 @@
     /* Text — deep navy, not harsh black */
     --color-text-primary:  #1a1d38;
     --color-text-muted:    #8890b0;
-    --text-primary:        #1a1d38;
-    --text-secondary:      #4f5578;
-    --text-muted:          #8890b0;
     --text-on-dark:        #1a1d38;
 
     /* Aliases */
@@ -211,19 +195,13 @@
     --brand-navy:         #eceffe;
     --brand-navy-mid:     #f5f7ff;
     --brand-dark:         #eceffe;
-    --accent:             #2563eb;
 
     /* Surfaces — clean white panes on the tinted Horizon page */
-    --surface:        #ffffff;
-    --surface-alt:    #f1f3fd;
     --surface-raised: var(--hz-glass-hover);
     --sidebar-bg:     var(--hz-glass);
     --header-bg:      var(--hz-glass);
 
     /* Borders — subtle navy tint, not flat black alpha */
-    --border:       rgba(88, 95, 150, 0.13);
-    --border-light: rgba(88, 95, 150, 0.07);
-    --border-dark:  rgba(88, 95, 150, 0.04);
     --color-border: rgba(88, 95, 150, 0.13);
 
     /* Design parity: track + soft card shadow on white surfaces */
@@ -245,6 +223,4 @@
     --modal-box-bg:      #ffffff;
 
     /* Status — richer on white backgrounds */
-    --success: #16a34a;
-    --error:   #dc2626;
 }

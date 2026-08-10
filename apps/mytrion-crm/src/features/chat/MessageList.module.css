@@ -45,7 +45,7 @@
 
 .emptyTitle {
   margin: 0;
-  font-family: 'Outfit', 'Inter', var(--font-head);
+  font-family: var(--font-head);
   font-size: var(--text-3xl);
   font-weight: 800;
   line-height: 1.2;

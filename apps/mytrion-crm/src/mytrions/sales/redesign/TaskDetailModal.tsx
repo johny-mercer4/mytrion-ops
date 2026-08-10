@@ -37,10 +37,10 @@ function deadlineLabel(value: string | null): string {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div style={s('padding:12px 14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-      <div style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
+      <div style={s('font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
         {label}
       </div>
-      <div style={s('margin-top:6px;font-size:14px;font-weight:650;color:var(--text);line-height:1.45;word-break:break-word')}>
+      <div style={s('margin-top:6px;font-size:var(--ss-text-sm);font-weight:650;color:var(--text);line-height:1.45;word-break:break-word')}>
         {value}
       </div>
     </div>
@@ -51,7 +51,7 @@ function Chip({ text, tone }: { text: string; tone: string }) {
   return (
     <span
       style={s(
-        `display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${tone} 15%,transparent);border:1px solid color-mix(in srgb,${tone} 34%,transparent);color:${tone}`,
+        `display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--radius-full);font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${tone} 15%,transparent);border:1px solid color-mix(in srgb,${tone} 34%,transparent);color:${tone}`,
       )}
     >
       {text}
@@ -130,7 +130,7 @@ export function TaskDetailModal({
               disabled={moving}
               onClick={() => onMove('in_progress')}
               style={s(
-                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text);font-weight:750;font-size:14px;cursor:pointer;font-family:inherit',
+                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text);font-weight:750;font-size:var(--ss-text-sm);cursor:pointer;font-family:inherit',
               )}
             >
               Start
@@ -142,7 +142,7 @@ export function TaskDetailModal({
               disabled={moving}
               onClick={() => onMove('completed')}
               style={s(
-                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--ok),color-mix(in srgb,var(--ok) 70%,var(--accent)));color:#fff;font-weight:750;font-size:14px;cursor:pointer;font-family:inherit',
+                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--ok),color-mix(in srgb,var(--ok) 70%,var(--accent)));color:#fff;font-weight:750;font-size:var(--ss-text-sm);cursor:pointer;font-family:inherit',
               )}
             >
               Complete
@@ -154,7 +154,7 @@ export function TaskDetailModal({
               disabled={moving}
               onClick={() => onMove('open')}
               style={s(
-                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:750;font-size:14px;cursor:pointer;font-family:inherit',
+                'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:750;font-size:var(--ss-text-sm);cursor:pointer;font-family:inherit',
               )}
             >
               Reopen
@@ -165,7 +165,7 @@ export function TaskDetailModal({
             disabled={moving}
             onClick={onClose}
             style={s(
-              'height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit',
+              'height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:var(--ss-text-sm);cursor:pointer;font-family:inherit',
             )}
           >
             Close
@@ -183,23 +183,23 @@ export function TaskDetailModal({
 
         {task.description ? (
           <div>
-            <div style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>
+            <div style={s('font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>
               Description
             </div>
-            <p style={s('margin:0;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-size:14px;line-height:1.55;white-space:pre-wrap')}>
+            <p style={s('margin:0;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-size:var(--ss-text-sm);line-height:1.55;white-space:pre-wrap')}>
               {task.description}
             </p>
           </div>
         ) : null}
 
         <div>
-          <div style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>
+          <div style={s('font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>
             History
           </div>
           {eventsLoading ? (
-            <div style={s('padding:16px;color:var(--muted);font-size:13px')}>Loading history…</div>
+            <div style={s('padding:16px;color:var(--muted);font-size:var(--ss-text-xs)')}>Loading history…</div>
           ) : events.length === 0 ? (
-            <div style={s('padding:18px;border:1px dashed var(--border2);border-radius:var(--radius-md);color:var(--muted);font-size:13px')}>
+            <div style={s('padding:18px;border:1px dashed var(--border2);border-radius:var(--radius-md);color:var(--muted);font-size:var(--ss-text-xs)')}>
               No events yet.
             </div>
           ) : (
@@ -209,13 +209,13 @@ export function TaskDetailModal({
                   key={event.id}
                   style={s('padding:11px 13px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt)')}
                 >
-                  <div style={s('font-weight:750;font-size:13px;text-transform:capitalize')}>
+                  <div style={s('font-weight:750;font-size:var(--ss-text-xs);text-transform:capitalize')}>
                     {friendly(event.eventType)}
                     {event.fromStatus && event.toStatus
                       ? ` · ${friendly(event.fromStatus)} → ${friendly(event.toStatus)}`
                       : ''}
                   </div>
-                  <div style={s('margin-top:3px;color:var(--muted);font-size:12px')}>
+                  <div style={s('margin-top:3px;color:var(--muted);font-size:var(--ss-text-2xs)')}>
                     {new Date(event.occurredAt).toLocaleString()}
                   </div>
                 </div>

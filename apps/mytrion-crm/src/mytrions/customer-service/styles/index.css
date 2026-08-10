@@ -22,3 +22,5 @@
 /* LAST: the Horizon glass layer wins over the panel sheets above at equal specificity. */
 @import './cs-horizon.css';
 @import './cs-horizon-panels.css';
+/* LAST OF ALL: undoes the page-root assumptions now that .cs-root is a content div. */
+@import './mounted.css';

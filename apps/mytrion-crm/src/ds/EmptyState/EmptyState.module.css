@@ -1,0 +1,154 @@
+/*
+ * EmptyState — the one "nothing here" / "this failed" block.
+ *
+ * Variants and states are DATA ATTRIBUTES: [data-size], [data-tone], [data-band]. Inspecting the
+ * DOM tells you which of the two facts this block is stating, which matters more here than for most
+ * components — the whole point of the component is that an absence and a failure do not look alike.
+ */
+
+.root {
+  /* Layout — a centred column. Centred because it is the only thing in its region; a left-aligned
+     block inside 1200px of nothing reads as a list item whose siblings failed to render. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  position: relative;
+  /* The band paints on ::before at z-index -1. `isolation` gives that a stacking context of its own
+     to sit behind, so a negative index cannot escape and slide under the page's own background.
+     Deliberately NOT a transform for the same job — a permanent transform makes this a containing
+     block for its children and is the composited-layer trap CONVENTIONS §3 names. */
+  isolation: isolate;
+
+  border-radius: var(--radius-panel);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+/* ── Size ───────────────────────────────────────────────────────────────────
+   Two, and they are weights rather than scales: `page` owns a region, `panel` fills a card. */
+.root[data-size='page'] {
+  --es-plate: 48px;
+  --es-measure: 48ch;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  /* Enough height that the band has somewhere to be a band. Min, not fixed: a long description or
+     a wrapped action row grows the block rather than overflowing it. */
+  min-block-size: 320px;
+}
+
+.root[data-size='panel'] {
+  --es-plate: 36px;
+  --es-measure: 42ch;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  min-block-size: 0;
+}
+
+/* ── The horizon band ───────────────────────────────────────────────────────
+   ONE hue transition running vertically, so the bands read horizontally — the same geometry as the
+   page field in horizon.css, at a fraction of the strength and in ALPHA rather than opaque mixes,
+   so whatever surface the block sits on still shows through.
+
+   Contrast: the strongest stop is 9% ember, and every text token used below is already verified
+   against the full-strength 13% band in FOUNDATIONS.md, so AA holds in both themes with room to
+   spare. That is also why the description uses --text-secondary and not --text-muted: muted is the
+   token that sits closest to the floor, and it has no margin left to spend on atmosphere.
+
+   Never at `panel` size, never on the error tone. See EmptyState.tsx. */
+.root[data-band='true']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--tint) 5%, transparent) 0%,
+    transparent 40%,
+    color-mix(in srgb, var(--ember) 4%, transparent) 56%,
+    color-mix(in srgb, var(--ember) 9%, transparent) var(--hz-band-y),
+    color-mix(in srgb, var(--ember) 4%, transparent) 70%,
+    transparent 88%
+  );
+}
+
+/* ── Glyph ──────────────────────────────────────────────────────────────────
+   A plate rather than a bare icon: at 20px on 320px of empty region a lone glyph reads as dust.
+   The plate is what gives the absence a shape, which is also the non-colour half of the tone
+   signal — the error plate is a different colour AND a different ring weight. */
+.glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--es-plate);
+  block-size: var(--es-plate);
+  border-radius: var(--radius-pill);
+  background: var(--intent-neutral-bg);
+  border: 1px solid var(--intent-neutral-bd);
+  color: var(--text-muted);
+  margin-block-end: var(--space-1);
+}
+
+.root[data-tone='error'] .glyph {
+  background: var(--intent-danger-bg);
+  border-color: var(--intent-danger-bd);
+  color: var(--intent-danger-fg);
+}
+
+/* ── Copy ───────────────────────────────────────────────────────────────────
+   `margin: 0` on both because the title may render as an h2/h3/h4, and a UA heading margin would
+   silently change the spacing depending on which level the caller passed. */
+.title {
+  margin: 0;
+  font-family: var(--font-head);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.root[data-size='page'] .title {
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  letter-spacing: var(--tr-lg);
+  font-weight: var(--fw-lg);
+}
+
+.root[data-size='panel'] .title {
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  letter-spacing: var(--tr-base);
+  font-weight: var(--fw-medium);
+}
+
+/* The sentence that tells someone what to do next. It is the reason this component exists, so it
+   gets a real measure rather than being allowed to run the full width of a 1280px region — a
+   centred line longer than ~50 characters loses the eye on the return sweep. */
+.description {
+  margin: 0;
+  max-inline-size: var(--es-measure);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--tr-sm);
+  font-weight: var(--fw-body);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────────
+   Wraps rather than shrinks: the buttons inside are `flex: none` by Button's own rule, so without
+   `flex-wrap` a narrow panel would push them out of the block instead of onto a second row. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+}
+
+.root[data-size='page'] .actions {
+  margin-block-start: var(--space-2);
+}

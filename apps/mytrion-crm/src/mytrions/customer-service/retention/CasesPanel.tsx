@@ -23,6 +23,7 @@ import {
   CaseDetailSkeleton,
   CasesListSkeleton,
   FIELD_ICONS,
+  CaseTimeline,
   Field,
   MetaIcon,
   deadlineDetail,
@@ -47,14 +48,6 @@ const phaseLabel = (code: string) =>
       : code === 'phase_1_agent'
         ? 'Sales (Phase 1)'
         : code;
-
-const fmtWhen = (iso: string) =>
-  new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 
 const fmtGal = (v: number | null | undefined) =>
   v == null || !Number.isFinite(v) ? '—' : `${Math.round(v).toLocaleString('en-US')} gal`;
@@ -557,27 +550,8 @@ export function CasesPanel() {
                 </>
               ) : null}
 
-              <div className="cs-ret-timeline-wrap">
-                <h4>Timeline</h4>
-                {detail?.events?.length ? (
-                  <ul className="cs-ret-timeline">
-                    {detail.events.map((ev, i) => (
-                      <li key={ev.id} style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
-                        <div className="cs-ret-timeline-title">
-                          {ev.eventType}
-                          {ev.toStatus ? ` → ${statusLabel(ev.toStatus)}` : ''}
-                        </div>
-                        <div className="cs-muted">{fmtWhen(ev.occurredAt)}</div>
-                        {ev.notes ? <div className="cs-ret-timeline-notes">{ev.notes}</div> : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="cs-muted" style={{ fontSize: 12 }}>
-                    No events yet
-                  </div>
-                )}
-              </div>
+              <CaseTimeline events={detail?.events ?? []} />
+
             </div>
           )}
         </div>

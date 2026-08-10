@@ -10,18 +10,27 @@
 
 .menu {
   position: absolute;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   min-width: 208px;
   max-width: 280px;
-  padding: 5px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--surface-raised, var(--surface));
-  /* Tinted with the workspace accent rather than a neutral drop — a black shadow over a coloured
-     header reads as a sticker sitting on top of the page. */
-  box-shadow:
-    0 24px 48px -20px color-mix(in srgb, var(--accent) 26%, rgba(6, 9, 16, 0.5)),
-    0 2px 6px rgba(6, 9, 16, 0.28);
+  padding: var(--space-1_5);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-bd-hi);
+  /*
+   * --menu-bg, NOT --surface-raised.
+   *
+   * --surface-raised is a ~7% white VEIL meant to lift an opaque surface, not to BE one. Reading it
+   * here left the panel effectively transparent: the page underneath showed straight through the
+   * workspace switcher and the account menu, in every workspace.
+   *
+   * --menu-bg is the popover tint, but it is 92% — designed to sit on top of a backdrop blur. This
+   * layers it over an opaque --surface instead, so the panel is FULLY opaque and cannot bleed no
+   * matter what is behind it. That is deliberate over adding backdrop-filter: a menu is the one
+   * piece of chrome that must stay legible over arbitrary content, and this costs no composited
+   * layer (see the blur budget in styles/tokens.test.ts, which may only ever decrease).
+   */
+  background: linear-gradient(var(--menu-bg), var(--menu-bg)), var(--surface);
+  box-shadow: var(--menu-shadow), var(--glare);
   animation: menuIn 140ms var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
 .down {
