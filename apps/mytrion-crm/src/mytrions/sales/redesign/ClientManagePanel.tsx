@@ -1,8 +1,6 @@
 /**
  * Client Management — generate Telegram registration links for owner / manager / driver.
- * Owner and manager share the no-card fleet path (manager = owner-equivalent access, no card).
- * Driver is a child of the owner: only available after an active owner registration exists,
- * and each driver is tied to one carrier fuel card (by card number).
+ * Owner/manager share the no-card path; driver needs an active owner + one fuel card.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
@@ -11,10 +9,13 @@ import {
   getCarrierRegistrations,
   listCards,
   listSupportBotChats,
+  resolvePasswordReset,
+  revokeRegistration,
   searchClients,
   setSupportBotChat,
   type CarrierProfile,
   type DwhCard,
+  type PasswordResetRequest,
   type RegisteredCompany,
 } from '@/api/carrierUsers';
 import { getImpersonation } from '@/api/impersonation';
@@ -22,23 +23,15 @@ import { getSession } from '@/api/session';
 import { ApiError } from '@/api/transport';
 import { copyToClipboard } from '@/mytrions/admin/carrierUserUtil';
 
+import {
+  friendlyManageError,
+  ManageSection,
+  MANAGE_FIELD,
+  MANAGE_LABEL,
+} from './clientManageUi';
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
-
-/**
- * Distinguish a data-warehouse outage from a real ownership denial so the Manage panel doesn't
- * read "no cards" when the warehouse is down. The reads are gated by assertCarrierOwned (DWH probe),
- * which surfaces 502 DWH_ERROR / 503 DWH_UNCONFIGURED vs a 403 RBAC "not your client".
- */
-function friendlyManageError(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === 'DWH_ERROR' || e.status === 502) return 'Data warehouse temporarily unavailable — try again shortly.';
-    if (e.code === 'DWH_UNCONFIGURED' || e.status === 503) return 'Card data is unavailable right now (warehouse not configured).';
-    if (e.status === 403) return "This carrier isn't in your client list.";
-  }
-  return e instanceof Error ? e.message : String(e);
-}
 
 export function ClientManagePanel({
   carrierId,
@@ -66,23 +59,25 @@ export function ClientManagePanel({
   const [cardsError, setCardsError] = useState('');
 
   const [owner, setOwner] = useState<RegisteredCompany | null | undefined>(undefined);
+  const [managers, setManagers] = useState<RegisteredCompany[]>([]);
   const [drivers, setDrivers] = useState<RegisteredCompany[]>([]);
+  const [pendingResets, setPendingResets] = useState<PasswordResetRequest[]>([]);
   const [regsBusy, setRegsBusy] = useState(false);
   const [regsError, setRegsError] = useState('');
   const [regsTick, setRegsTick] = useState(0);
+  const [managerName, setManagerName] = useState('');
+  const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
+  const [resetBusyId, setResetBusyId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetTargetId, setResetTargetId] = useState<string | null>(null);
 
-  // Support-bot group mapping (2026-07-23, owner ask): show the STATIC Telegram group id bound to
-  // this carrier and let an admin set/edit it — the manual counterpart of the bot's auto-bind
-  // (needed when the group should be wired BEFORE any owner registration, or re-pointed).
+  // Support-bot group id — manual bind (before owner registers) or re-point.
   const [botChatId, setBotChatId] = useState('');
   const [botChatSaved, setBotChatSaved] = useState<string | null>(null);
   const [botChatBusy, setBotChatBusy] = useState(false);
   const [botChatMsg, setBotChatMsg] = useState('');
 
-  // Deal owner = the SALES AGENT the client must see in the mini-app (2026-07-23, owner ask).
-  // Before: invites stamped whoever clicked Generate (actingAs/worker) — wrong person whenever an
-  // admin or a colleague generated the link. The DWH deal row is the source of truth; the
-  // logged-in worker stays only as the fallback for deals with no resolvable owner.
+  // Deal owner from DWH — stamped on invites (not the worker who clicked Generate).
   const [dealOwner, setDealOwner] = useState<{ name: string; zohoUserId: string | null } | null>(null);
 
   const prevProfile = useRef(profile);
@@ -92,6 +87,7 @@ export function ClientManagePanel({
     prevProfile.current = profile;
     setCardId('');
     setDriverName('');
+    setManagerName('');
     setInviteUrl('');
   }, [profile]);
 
@@ -149,7 +145,7 @@ export function ClientManagePanel({
     const chat = botChatId.trim();
     if (!cid || !chat || botChatBusy) return;
     if (!/^-?\d{5,20}$/.test(chat)) {
-      setBotChatMsg('Group id must be numeric (e.g. -1003926878773 — from the group\'s info or @getidsbot).');
+      setBotChatMsg('Group id must be numeric (e.g. -1003926878773).');
       return;
     }
     setBotChatBusy(true);
@@ -157,7 +153,7 @@ export function ClientManagePanel({
     try {
       await setSupportBotChat(chat, cid);
       setBotChatSaved(chat);
-      setBotChatMsg('Saved — the bot answers this group within ~5 minutes.');
+      setBotChatMsg('Saved — bot answers this group within ~5 minutes.');
     } catch (e) {
       setBotChatMsg(e instanceof ApiError && e.status === 403 ? 'Admin access required to map bot groups.' : friendlyManageError(e));
     } finally {
@@ -167,7 +163,9 @@ export function ClientManagePanel({
 
   useEffect(() => {
     setOwner(undefined);
+    setManagers([]);
     setDrivers([]);
+    setPendingResets([]);
     setRegsError('');
     const cid = carrierId.trim();
     if (!cid) {
@@ -180,7 +178,9 @@ export function ClientManagePanel({
       .then((res) => {
         if (ac.signal.aborted) return;
         setOwner(res.owner);
-        setDrivers(res.drivers);
+        setManagers(res.managers ?? []);
+        setDrivers(res.drivers ?? []);
+        setPendingResets(res.pendingResets ?? []);
       })
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setRegsError(friendlyManageError(e));
@@ -211,14 +211,17 @@ export function ClientManagePanel({
     cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
   const inviteEligible = clientStatus === 'active';
+  const isManager = profile === 'manager';
   const valid =
     inviteEligible &&
-    (isOwnerLike
+    (profile === 'owner'
       ? carrierId.trim().length > 0
-      : ownerReady &&
-        carrierId.trim().length > 0 &&
-        cardId.trim().length > 0 &&
-        driverName.trim().length > 0);
+      : isManager
+        ? carrierId.trim().length > 0 && managerName.trim().length > 0
+        : ownerReady &&
+          carrierId.trim().length > 0 &&
+          cardId.trim().length > 0 &&
+          driverName.trim().length > 0);
 
   let blocker = '';
   if (!inviteEligible) {
@@ -228,8 +231,10 @@ export function ClientManagePanel({
         : 'Registration links are only available for active clients.';
   } else if (!carrierId.trim()) {
     blocker = 'This client has no carrier id — cannot generate a link.';
+  } else if (isManager && !managerName.trim()) {
+    blocker = "Enter the manager's name — it becomes their login.";
   } else if (isDriver && !ownerReady) {
-    blocker = 'Register the owner user first — drivers can only be created under an active owner user.';
+    blocker = 'Register the owner first — then invite drivers per card.';
   } else if (isDriver && !cardId.trim()) {
     blocker = 'Pick the carrier card number this driver is for.';
   } else if (isDriver && !driverName.trim()) {
@@ -255,12 +260,13 @@ export function ClientManagePanel({
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(isDriver && cardId.trim() ? { cardId: cardId.trim() } : {}),
         ...(isDriver && driverName.trim() ? { driverName: driverName.trim() } : {}),
+        ...(isManager && managerName.trim() ? { driverName: managerName.trim() } : {}),
         ...(agentName ? { agentName } : {}),
         ...(agentZohoUserId ? { agentZohoUserId } : {}),
       });
       setInviteUrl(res.inviteUrl);
       pushToast('Link ready', `${profileLabel} registration link generated.`);
-      if (isOwnerLike) setRegsTick((n) => n + 1);
+      setRegsTick((n) => n + 1);
     } catch (err: unknown) {
       pushToast("Couldn't generate", err instanceof Error ? err.message : String(err));
     } finally {
@@ -274,23 +280,30 @@ export function ClientManagePanel({
     pushToast(ok ? 'Copied' : "Couldn't copy", ok ? 'Registration link on clipboard.' : 'Copy the link manually.');
   }
 
-  const field = 'width:100%;height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;outline:none;box-sizing:border-box';
-  const label = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;display:block';
-  const tile = 'padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
-
   const ownerStatusLabel = regsBusy
-    ? 'Checking owner user…'
+    ? 'Checking owner…'
     : regsError
-      ? 'Could not check owner user'
+      ? 'Could not check owner'
       : ownerReady
-        ? 'Owner user registered'
+        ? 'Owner registered'
         : 'No owner user yet';
 
+  const profileHint =
+    profile === 'owner'
+      ? 'Company name becomes their login.'
+      : profile === 'manager'
+        ? 'Manager name becomes their login. Regenerating replaces a pending link.'
+        : 'Tied to one card — last 6 digits become their login.';
+
+  function profileBtnStyle(active: boolean, enabled = true): string {
+    return `flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${active ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:${enabled ? 'pointer' : 'default'};opacity:${enabled ? '1' : '.45'}`;
+  }
+
   return (
-    <form onSubmit={(e) => void generateInvite(e)} style={s('display:flex;flex-direction:column;gap:16px')}>
-      <div style={s(tile)}>
-        <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Client</div>
-        <div style={s('font-size:15px;font-weight:700;margin-top:5px')}>{companyName || '—'}</div>
+    <form onSubmit={(e) => void generateInvite(e)} style={s('display:flex;flex-direction:column;gap:14px')}>
+      {/* 1 — Client identity */}
+      <ManageSection title="Client">
+        <div style={s('font-size:15px;font-weight:700')}>{companyName || '—'}</div>
         <div style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
@@ -302,58 +315,31 @@ export function ClientManagePanel({
               : 'Inactive — registration links are blocked.'}
           </div>
         )}
-        {dealOwner && (
-          <div style={s('margin-top:4px;font-size:13px;color:var(--text2)')}>
-            Sales agent: <b>{dealOwner.name}</b> — stamped on the registration link; the client sees this name in the mini-app.
-          </div>
-        )}
-        <div style={s(`margin-top:10px;font-size:13px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
-          {ownerStatusLabel}
-          {ownerReady && owner?.telegramUsername ? ` · @${owner.telegramUsername}` : ''}
+        <div style={s('margin-top:10px;display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px')}>
+          <span style={s(`font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
+            {ownerStatusLabel}
+            {ownerReady && owner?.telegramUsername ? ` · @${owner.telegramUsername}` : ''}
+          </span>
+          {dealOwner && (
+            <span style={s('color:var(--text2)')}>
+              Sales agent: <b style={s('color:var(--text)')}>{dealOwner.name}</b>
+            </span>
+          )}
         </div>
-      </div>
+      </ManageSection>
 
-      <div style={s(tile)}>
-        <span style={s(label)}>Support bot group</span>
+      {/* 2 — Primary: profile + generate link */}
+      <ManageSection title="Registration link" hint={profileHint}>
+        <span style={s(MANAGE_LABEL)}>Profile</span>
         <div style={s('display:flex;gap:8px')}>
-          <input
-            value={botChatId}
-            onChange={(e) => setBotChatId(e.target.value)}
-            placeholder="-1003926878773"
-            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:14px")}
-          />
-          <button
-            type="button"
-            onClick={() => void saveBotChat()}
-            disabled={botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved}
-            style={s(`height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:14px;cursor:pointer;opacity:${botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved ? '.5' : '1'}`)}
-          >
-            {botChatBusy ? 'Saving…' : botChatSaved ? 'Update' : 'Save'}
-          </button>
-        </div>
-        <div style={s('margin-top:7px;font-size:13px;color:var(--text2)')}>
-          {botChatSaved
-            ? `Bound: ${botChatSaved} — the support bot answers this Telegram group.`
-            : 'Optional: paste the Telegram group id to wire the support bot BEFORE the owner registers. Otherwise the group binds itself on the registered owner\'s first message.'}
-        </div>
-        {botChatMsg && <div style={s('margin-top:5px;font-size:13px;color:var(--warn)')}>{botChatMsg}</div>}
-      </div>
-
-      <div>
-        <span style={s(label)}>Profile</span>
-        <div style={s('display:flex;gap:8px')}>
-          <button
-            type="button"
-            onClick={() => setProfile('owner')}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'owner' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'owner' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'owner' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:pointer`)}
-          >
+          <button type="button" onClick={() => setProfile('owner')} style={s(profileBtnStyle(profile === 'owner'))}>
             Owner
           </button>
           <button
             type="button"
             onClick={() => setProfile('manager')}
-            title="Owner-equivalent fleet access, no card assigned"
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'manager' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'manager' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'manager' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:pointer`)}
+            title="Owner-equivalent fleet access, no card"
+            style={s(profileBtnStyle(profile === 'manager'))}
           >
             Manager
           </button>
@@ -368,119 +354,239 @@ export function ClientManagePanel({
             }}
             disabled={!ownerReady}
             title={ownerReady ? 'Driver under this owner user' : 'Requires an active owner user'}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'driver' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'driver' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'driver' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
+            style={s(profileBtnStyle(profile === 'driver', ownerReady))}
           >
             Driver
           </button>
         </div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.45')}>
-          {profile === 'owner'
-            ? 'Owner user link — fleet access for all cards. Drivers unlock after this owner user finishes registration.'
-            : profile === 'manager'
-              ? 'Manager link — owner-equivalent fleet access, no card assigned. For a company manager who needs full visibility without a driver card.'
-              : 'Driver user link — child of the owner user, tied to one carrier card number.'}
-        </div>
-      </div>
 
-      {isDriver && ownerReady && (
-        <>
-          <div>
-            <span style={s(label)}>Card number</span>
-            {cardsBusy && <div style={s('font-size:13px;color:var(--muted)')}>Loading cards…</div>}
-            {cardsError && <div style={s('font-size:13px;color:var(--danger)')}>{cardsError}</div>}
-            {!cardsBusy && !cardsError && availableCards.length === 0 && (
-              <div style={s('font-size:13px;color:var(--muted)')}>
-                {(cards?.length ?? 0) === 0
-                  ? 'No active cards on this carrier.'
-                  : 'Every active card already has a driver.'}
-              </div>
-            )}
-            {availableCards.length > 0 && (
-              <select
-                value={cardId}
-                onChange={(e) => setCardId(e.target.value)}
-                style={s(field)}
-              >
-                <option value="">Select a card number…</option>
-                {availableCards.map((c) => (
-                  <option key={c.cardId ?? c.cardNumber ?? ''} value={c.cardId ?? ''}>
-                    {(c.cardNumber || c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
-                  </option>
-                ))}
-              </select>
-            )}
-            {drivers.length > 0 && (
-              <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4')}>
-                {drivers.length} driver{drivers.length === 1 ? '' : 's'} already on cards
-                {drivers
-                  .filter((d) => d.cardId)
-                  .slice(0, 4)
-                  .map((d) => {
-                    const num = cards?.find((c) => c.cardId === d.cardId)?.cardNumber ?? d.cardId;
-                    return ` · ${num}${d.driverName ? ` (${d.driverName})` : ''}`;
-                  })
-                  .join('')}
-                {drivers.length > 4 ? '…' : ''}
-              </div>
-            )}
-          </div>
-          <div>
-            <span style={s(label)}>Driver name</span>
+        {isManager && (
+          <div style={s('margin-top:12px')}>
+            <span style={s(MANAGE_LABEL)}>Manager name</span>
             <input
-              value={driverName}
-              onChange={(e) => setDriverName(e.target.value)}
-              placeholder="Full name"
-              style={s(field)}
+              value={managerName}
+              onChange={(e) => setManagerName(e.target.value.slice(0, 200))}
+              placeholder="Unique name — used as login"
+              style={s(MANAGE_FIELD)}
             />
           </div>
-        </>
-      )}
+        )}
 
-      {isDriver && !ownerReady && (
-        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
-          Generate the owner user registration link first. After the owner user registers in Telegram, Driver unlocks so you can invite per card number.
-        </div>
-      )}
+        {isDriver && ownerReady && (
+          <div style={s('margin-top:12px;display:flex;flex-direction:column;gap:12px')}>
+            <div>
+              <span style={s(MANAGE_LABEL)}>Card number</span>
+              {cardsBusy && <div style={s('font-size:13px;color:var(--muted)')}>Loading cards…</div>}
+              {cardsError && <div style={s('font-size:13px;color:var(--danger)')}>{cardsError}</div>}
+              {!cardsBusy && !cardsError && availableCards.length === 0 && (
+                <div style={s('font-size:13px;color:var(--muted)')}>
+                  {(cards?.length ?? 0) === 0
+                    ? 'No active cards on this carrier.'
+                    : 'Every active card already has a driver.'}
+                </div>
+              )}
+              {availableCards.length > 0 && (
+                <select value={cardId} onChange={(e) => setCardId(e.target.value)} style={s(MANAGE_FIELD)}>
+                  <option value="">Select a card number…</option>
+                  {availableCards.map((c) => (
+                    <option key={c.cardId ?? c.cardNumber ?? ''} value={c.cardId ?? ''}>
+                      {(c.cardNumber || c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div>
+              <span style={s(MANAGE_LABEL)}>Driver name</span>
+              <input
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                placeholder="Full name"
+                style={s(MANAGE_FIELD)}
+              />
+            </div>
+          </div>
+        )}
 
-      {blocker && isOwnerLike && (
-        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
-          {blocker}
-        </div>
-      )}
-      {blocker && isDriver && ownerReady && (
-        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
-          {blocker}
-        </div>
-      )}
+        {isDriver && !ownerReady && (
+          <div style={s('margin-top:12px;font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
+            Generate an owner link first. Driver unlocks after the owner registers.
+          </div>
+        )}
 
-      {/* Do not render an invitation action for debtors/inactive clients. The API enforces the
-          same rule; omitting the control keeps the UI from suggesting that an override exists. */}
-      {inviteEligible && (isOwnerLike || ownerReady) && (
-        <button
-          type="submit"
-          disabled={busy || !valid}
-          className="ss-btn-p"
-          style={s(`height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
-        >
-          <Icon name="link" size={16} color="#fff" />
-          {busy ? 'Generating…' : 'Generate registration link'}
-        </button>
-      )}
+        {blocker && (isOwnerLike || (isDriver && ownerReady)) && (
+          <div style={s('margin-top:12px;font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
+            {blocker}
+          </div>
+        )}
 
-      {inviteUrl && (
-        <div style={s(tile)}>
-          <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Registration link</div>
-          <div style={s("font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>{inviteUrl}</div>
+        {/* Do not render an invitation action for debtors/inactive clients. The API enforces the
+            same rule; omitting the control keeps the UI from suggesting that an override exists. */}
+        {inviteEligible && (isOwnerLike || ownerReady) && (
+          <button
+            type="submit"
+            disabled={busy || !valid}
+            className="ss-btn-p"
+            style={s(`margin-top:14px;width:100%;height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
+          >
+            <Icon name="link" size={16} color="#fff" />
+            {busy ? 'Generating…' : 'Generate registration link'}
+          </button>
+        )}
+
+        {inviteUrl && (
+          <div style={s('margin-top:12px;padding:12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
+            <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>
+              Ready to share
+            </div>
+            <div style={s("font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>
+              {inviteUrl}
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyLink()}
+              style={s('margin-top:10px;height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px')}
+            >
+              <Icon name="copy" size={14} />
+              Copy link
+            </button>
+          </div>
+        )}
+      </ManageSection>
+
+      {/* 3 — Registered users */}
+      <ManageSection title="Registered users" hint="Remove cuts off mini-app access immediately.">
+        {regsBusy && (
+          <div style={s('font-size:13px;color:var(--muted);padding:4px 0')}>Loading…</div>
+        )}
+        {regsError && <div style={s('font-size:13px;color:var(--danger);margin-bottom:8px')}>{regsError}</div>}
+        {!regsBusy && !owner && managers.length === 0 && drivers.length === 0 ? (
+          <div style={s('font-size:13px;color:var(--muted);padding:4px 0')}>
+            No registered users yet.
+          </div>
+        ) : (
+          [
+            ...(owner ? [owner] : []),
+            ...managers,
+            ...drivers,
+          ].map((u) => (
+            <div
+              key={u.id}
+              style={s('display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border2)')}
+            >
+              <div style={s('flex:1;min-width:0')}>
+                <div style={s('font-size:14px;font-weight:700')}>
+                  {u.profile === 'owner'
+                    ? u.companyName || 'Owner'
+                    : u.driverName || (u.profile === 'manager' ? 'Manager' : 'Driver')}
+                </div>
+                <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+                  {u.profile}
+                  {u.telegramUsername ? ` · @${u.telegramUsername}` : ''}
+                  {u.cardId ? ` · card …${u.cardId.slice(-6)}` : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={revokeBusyId === u.id}
+                onClick={() => {
+                  if (!window.confirm(`Remove ${u.profile} access? They will be logged out immediately.`)) return;
+                  setRevokeBusyId(u.id);
+                  void revokeRegistration(u.id)
+                    .then(() => {
+                      pushToast('Removed', `${u.profile} access revoked.`);
+                      setRegsTick((n) => n + 1);
+                    })
+                    .catch((err: unknown) => {
+                      pushToast("Couldn't remove", err instanceof Error ? err.message : String(err));
+                    })
+                    .finally(() => setRevokeBusyId(null));
+                }}
+                style={s(`height:32px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger);font-weight:700;font-size:12px;cursor:pointer;opacity:${revokeBusyId === u.id ? '.5' : '1'}`)}
+              >
+                {revokeBusyId === u.id ? '…' : 'Remove'}
+              </button>
+            </div>
+          ))
+        )}
+      </ManageSection>
+
+      {/* 4 — Pending password resets */}
+      <ManageSection title="Pending password resets" hint="Set a new password when a mini-app user forgets theirs.">
+        {pendingResets.length === 0 ? (
+          <div style={s('font-size:13px;color:var(--muted);padding:4px 0')}>
+            No pending reset requests.
+          </div>
+        ) : (
+          pendingResets.map((r) => (
+            <div key={r.id} style={s('padding:10px 0;border-top:1px solid var(--border2)')}>
+              <div style={s('font-size:14px;font-weight:700')}>{r.login} · {r.profile}</div>
+              {r.note && <div style={s('font-size:12px;color:var(--text2);margin-top:4px')}>{r.note}</div>}
+              {resetTargetId === r.id ? (
+                <div style={s('display:flex;gap:8px;margin-top:8px')}>
+                  <input
+                    type="password"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="New password (min 4)"
+                    style={s(`${MANAGE_FIELD};flex:1`)}
+                  />
+                  <button
+                    type="button"
+                    disabled={resetBusyId === r.id || resetPassword.length < 4}
+                    onClick={() => {
+                      setResetBusyId(r.id);
+                      void resolvePasswordReset(r.id, resetPassword)
+                        .then(() => {
+                          pushToast('Password updated', `${r.login} can log in with the new password.`);
+                          setResetTargetId(null);
+                          setResetPassword('');
+                          setRegsTick((n) => n + 1);
+                        })
+                        .catch((err: unknown) => {
+                          pushToast("Couldn't reset", err instanceof Error ? err.message : String(err));
+                        })
+                        .finally(() => setResetBusyId(null));
+                    }}
+                    style={s('height:36px;padding:0 12px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer')}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setResetTargetId(r.id); setResetPassword(''); }}
+                  style={s('margin-top:8px;height:32px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:12px;cursor:pointer')}
+                >
+                  Set new password
+                </button>
+              )}
+            </div>
+          ))
+        )}
+      </ManageSection>
+
+      {/* 5 — Support bot (secondary) */}
+      <ManageSection title="Support bot group" hint={botChatSaved ? `Bound: ${botChatSaved}` : 'Optional Telegram group id for the support bot.'}>
+        <div style={s('display:flex;gap:8px')}>
+          <input
+            value={botChatId}
+            onChange={(e) => setBotChatId(e.target.value)}
+            placeholder="-1003926878773"
+            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:14px")}
+          />
           <button
             type="button"
-            onClick={() => void copyLink()}
-            style={s('margin-top:12px;height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px')}
+            onClick={() => void saveBotChat()}
+            disabled={botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved}
+            style={s(`height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:14px;cursor:pointer;opacity:${botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved ? '.5' : '1'}`)}
           >
-            <Icon name="copy" size={14} />
-            Copy link
+            {botChatBusy ? 'Saving…' : botChatSaved ? 'Update' : 'Save'}
           </button>
         </div>
-      )}
+        {botChatMsg && <div style={s('margin-top:8px;font-size:13px;color:var(--warn)')}>{botChatMsg}</div>}
+      </ManageSection>
     </form>
   );
 }

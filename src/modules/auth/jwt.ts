@@ -119,8 +119,9 @@ async function sign(claims: TokenClaims, type: TokenType, ttl: string): Promise<
     .sign(secretKey());
 }
 
-export function signAccessToken(claims: TokenClaims): Promise<string> {
-  return sign(claims, 'access', env.JWT_ACCESS_TTL);
+/** Optional `ttl` overrides the worker default (e.g. mini-app client sessions use `1d`). */
+export function signAccessToken(claims: TokenClaims, ttl: string = env.JWT_ACCESS_TTL): Promise<string> {
+  return sign(claims, 'access', ttl);
 }
 
 export function signRefreshToken(claims: TokenClaims): Promise<string> {

@@ -8,10 +8,17 @@ import { AppError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { buildCardLookupReport } from '../../modules/carrier/cardLookupReport.js';
 import {
+  accessTokenFromAuthHeader,
   requireRegisteredOwnerUser,
   telegramCtx,
   verifyTelegramUser,
 } from '../../modules/carrier/miniAppAuth.js';
+
+function miniAuthOpts(request: { headers: { authorization?: unknown } }): { accessToken: string | undefined } {
+  const raw = request.headers.authorization;
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  return { accessToken: accessTokenFromAuthHeader(typeof header === 'string' ? header : undefined) };
+}
 
 const cardLookupReportSchema = z.object({
   initData: z.string().min(1),

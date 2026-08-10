@@ -1,15 +1,61 @@
 /**
- * Public API client — no auth headers. The registration link's id (in the URL) is the
- * capability; the real identity proof is Telegram's initData HMAC, verified server-side on redeem.
+ * Public API client for the Telegram mini-app. Identity is Telegram initData; password-mode
+ * accounts also send a 1-day Bearer after login/set-password.
  */
 import { resolveApiConfig, v1Url } from './config';
 
 let salesAgentCarrierId: string | null = null;
+let accessToken: string | null = null;
+
+const TOKEN_KEY = 'octane_mini_app_access_token';
+/** Survives logout (token cleared) so returning users land on password login, not Driver/Company. */
+const HINTS_KEY = 'octane_mini_app_login_hints';
 
 /** The selected company is a request selector, never authority. The backend re-authorizes it
  * against the registered agent's fresh active roster on every scoped call. */
 export function setSalesAgentCarrierId(carrierId: string | null): void {
   salesAgentCarrierId = carrierId?.trim() || null;
+}
+
+export function getAccessToken(): string | null {
+  if (accessToken) return accessToken;
+  try {
+    accessToken = sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    accessToken = null;
+  }
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function persistLoginHints(hints: LoginHints | null): void {
+  try {
+    if (hints) sessionStorage.setItem(HINTS_KEY, JSON.stringify(hints));
+    else sessionStorage.removeItem(HINTS_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function loadPersistedLoginHints(): LoginHints | null {
+  try {
+    const raw = sessionStorage.getItem(HINTS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LoginHints;
+    if (!parsed || typeof parsed !== 'object' || !parsed.profile || !parsed.primaryLabel) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 export class ApiError extends Error {
@@ -26,6 +72,7 @@ export class ApiError extends Error {
 async function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
   const { baseUrl } = resolveApiConfig();
   const url = v1Url(baseUrl, path);
+  const token = getAccessToken();
   let res: Response;
   try {
     res = await fetch(url, {
@@ -33,6 +80,10 @@ async function request(method: 'GET' | 'POST', path: string, body?: unknown): Pr
       headers: {
         ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
         ...(salesAgentCarrierId ? { 'x-mini-app-carrier-id': salesAgentCarrierId } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Free ngrok serves an interstitial to browser UAs; Telegram WebViews that look like
+        // Safari/Chrome need this header on API calls (document load is UA-gated separately).
+        'ngrok-skip-browser-warning': '1',
       },
       ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }),
     });
@@ -67,6 +118,10 @@ export interface RegistrationPreview {
   companyType: CompanyType | null;
   cardCount: number | null;
   agentName: string | null;
+  /** Manager display name, or driver name on driver invites. */
+  driverName?: string | null;
+  cardId?: string | null;
+  authMode?: 'password' | 'telegram';
   /** ISO deadline — drives the "This link expires in …" pill on the confirm screen. */
   expiresAt?: string;
 }
@@ -90,6 +145,8 @@ export interface RegistrationView {
   agentName: string | null;
   /** Driver only: the real fuel-card number (from the DWH replica), null when unresolved. */
   cardNumber: string | null;
+  /** password-mode accounts get Profile → Update / Forgot / Log out. */
+  authMode?: 'password' | 'telegram';
 }
 
 export interface SalesAgentCompany {
@@ -139,18 +196,78 @@ export async function fetchMiniAppSession(initData: string): Promise<MiniAppSess
   return (await request('POST', '/carrier/mini-app/session', { initData })) as MiniAppSessionResult;
 }
 
-/** Driver self-registration by fuel-card number — no invite link (the number identifies the carrier
- * + card; Telegram initData proves identity). Owners/companies still register via invite links. */
-export async function driverSelfRegister(
+export interface LoginHints {
+  profile: Profile;
+  primaryLabel: string;
+  cardLast6: string | null;
+  companyName: string | null;
+  hasPassword: boolean;
+}
+
+export type AuthStateResult =
+  | { status: 'unregistered' }
+  | {
+      status: 'needs_password' | 'needs_login' | 'authenticated' | 'revoked';
+      authMode?: 'password' | 'telegram';
+      registration: RegistrationView;
+      loginHints: LoginHints;
+    };
+
+export async function fetchAuthState(initData: string): Promise<AuthStateResult> {
+  return (await request('POST', '/carrier/mini-app/auth/state', { initData })) as AuthStateResult;
+}
+
+export async function setMiniAppPassword(
   initData: string,
-  cardNumber: string,
-  driverName?: string,
-): Promise<{ registration: RegistrationView }> {
-  return (await request('POST', '/carrier/mini-app/driver-self-register', {
+  password: string,
+): Promise<{ accessToken: string; registration: RegistrationView; loginHints: LoginHints }> {
+  const res = (await request('POST', '/carrier/mini-app/auth/set-password', {
     initData,
-    cardNumber,
-    ...(driverName ? { driverName } : {}),
-  })) as { registration: RegistrationView };
+    password,
+  })) as { accessToken: string; registration: RegistrationView; loginHints: LoginHints };
+  setAccessToken(res.accessToken);
+  persistLoginHints({ ...res.loginHints, hasPassword: true });
+  return res;
+}
+
+export async function loginMiniApp(
+  initData: string,
+  password: string,
+): Promise<{ accessToken: string; registration: RegistrationView; loginHints: LoginHints }> {
+  const res = (await request('POST', '/carrier/mini-app/auth/login', {
+    initData,
+    password,
+  })) as { accessToken: string; registration: RegistrationView; loginHints: LoginHints };
+  setAccessToken(res.accessToken);
+  persistLoginHints({ ...res.loginHints, hasPassword: true });
+  return res;
+}
+
+export async function logoutMiniApp(initData: string): Promise<void> {
+  try {
+    await request('POST', '/carrier/mini-app/auth/logout', { initData });
+  } finally {
+    setAccessToken(null);
+  }
+}
+
+export async function updateMiniAppPassword(
+  initData: string,
+  currentPassword: string,
+  nextPassword: string,
+): Promise<void> {
+  await request('POST', '/carrier/mini-app/auth/update-password', {
+    initData,
+    currentPassword,
+    nextPassword,
+  });
+}
+
+export async function forgotMiniAppPassword(initData: string, note?: string): Promise<void> {
+  await request('POST', '/carrier/mini-app/auth/forgot-password', {
+    initData,
+    ...(note ? { note } : {}),
+  });
 }
 
 export interface CompanyDetails {

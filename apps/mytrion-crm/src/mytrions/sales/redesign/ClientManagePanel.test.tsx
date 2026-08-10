@@ -20,7 +20,12 @@ vi.mock('./ctx', () => ({
 describe('ClientManagePanel registration eligibility', () => {
   beforeEach(() => {
     carrierApi.createCarrierInvitation.mockReset();
-    carrierApi.getCarrierRegistrations.mockReset().mockResolvedValue({ owner: null, drivers: [] });
+    carrierApi.getCarrierRegistrations.mockReset().mockResolvedValue({
+      owner: null,
+      managers: [],
+      drivers: [],
+      pendingResets: [],
+    });
     carrierApi.listCards.mockReset().mockResolvedValue([]);
     carrierApi.listSupportBotChats.mockReset().mockResolvedValue([]);
     carrierApi.searchClients.mockReset().mockResolvedValue([]);
@@ -39,6 +44,8 @@ describe('ClientManagePanel registration eligibility', () => {
     await screen.findByText('No owner user yet');
     expect(screen.getByText('Debtor — registration links are blocked.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Generate registration link' })).not.toBeInTheDocument();
+    // Support bot stays available (secondary) even when invite generate is blocked.
+    expect(screen.getByText('Support bot group')).toBeInTheDocument();
   });
 
   it('offers registration links to active clients', async () => {
@@ -52,5 +59,8 @@ describe('ClientManagePanel registration eligibility', () => {
 
     await screen.findByText('No owner user yet');
     expect(screen.getByRole('button', { name: 'Generate registration link' })).toBeEnabled();
+    expect(screen.getByText('Registration link')).toBeInTheDocument();
+    expect(screen.getByText('Registered users')).toBeInTheDocument();
+    expect(screen.getByText('Pending password resets')).toBeInTheDocument();
   });
 });

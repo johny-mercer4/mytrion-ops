@@ -6,7 +6,7 @@
   "description": "Telegram Mini App for owner-operator onboarding — opened from the @octane_support_ai_bot invite link, confirms the invite and registers the carrier via the Telegram identity (no login form).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && NODE_ENV=production vite build --mode production",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },

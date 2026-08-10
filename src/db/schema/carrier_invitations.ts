@@ -48,6 +48,8 @@ export const carrierInvitations = pgTable(
     cardCount: integer('card_count'),
     agentName: text('agent_name'),
     agentZohoUserId: text('agent_zoho_user_id'),
+    /** 'password' = redeem must set a login password; 'telegram' = legacy initData-only. */
+    authMode: text('auth_mode').$type<'password' | 'telegram'>().notNull().default('password'),
     status: text('status').$type<CarrierInvitationStatus>().notNull().default('pending'),
     /** Set once the bot/mini-app redeems the invite into a real carrier_users row (future work). */
     redeemedCarrierUserId: text('redeemed_carrier_user_id'),
