@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { useDataTableMode } from '../_internal/useMediaQuery';
@@ -74,6 +75,27 @@ export interface DataColumn<T> {
    * group, a three-line block. Return `null` to drop it from the card while keeping it in the sheet.
    */
   mobileCell?: ((row: T) => ReactNode) | undefined;
+  /**
+   * Props for the TABLE CELL itself, in table mode only.
+   *
+   * Exists for click-to-copy, which this app has in two tables and wants in more: the affordance is
+   * the WHOLE CELL, not the text inside it. Putting the handler on the rendered content instead
+   * leaves the cell's padding still activating the row, so a click lands on copy or on "open the
+   * record" depending on which pixel it hit — which is worse than not having it.
+   *
+   * A handler here must `stopPropagation` when the table also has `onRowActivate`, or the copy will
+   * open the record as well.
+   *
+   * NOT applied in card mode, deliberately: the card is itself a button, and a second click target
+   * nested inside it is ambiguous under a thumb. Give the column a `mobileCell` instead.
+   */
+  cellProps?:
+    | ((row: T) => {
+        className?: string | undefined;
+        title?: string | undefined;
+        onClick?: ((event: MouseEvent<HTMLTableCellElement>) => void) | undefined;
+      })
+    | undefined;
   /** `false` removes the column from the detail sheet. Default true. */
   detail?: boolean | undefined;
 
@@ -414,6 +436,7 @@ function DataRowInner<T>({ row, columns, selected, state, activate, keyboard }: 
       {columns.map((column) => (
         <TableCell
           key={column.id}
+          {...(column.cellProps?.(row) ?? {})}
           {...(column.numeric ? { numeric: true } : {})}
           {...(column.align ? { align: column.align } : {})}
           {...(column.truncate ? { truncate: true } : {})}

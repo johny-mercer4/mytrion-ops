@@ -32,13 +32,18 @@ const dash = (v: string | null | undefined): string => (v && v.trim() ? v : '—
  * A cell you can click to copy — QA feedback 2026-08-11: clicking Company / Carrier ID / Unit # /
  * Amount opened the record modal instead of copying, because those cells had no handler at all.
  *
- * `stopPropagation` is what makes it work: the row itself is the activate target, so without it a
- * copy click would also open the modal. Nothing to copy means no handler and no pointer cursor,
- * rather than a control that looks live and does nothing.
+ * THE WHOLE CELL is the target, via `cellProps` — exactly as the original did by spreading onto the
+ * `<td>`. Putting the handler on the rendered content instead leaves the cell's padding still
+ * activating the row, so a click copies or opens the record depending on which pixel it hit.
  *
- * DESKTOP ONLY, deliberately. Below the structure line the row becomes a card that IS a button, and
- * a second click target nested inside it is ambiguous under a thumb — so the copy columns give
- * `mobileCell` plain text. The values are all in the record the card opens.
+ * `stopPropagation` is what makes it work at all: the row is the activate target, so without it a
+ * copy click opens the modal too. Nothing to copy means no handler and no pointer cursor, rather
+ * than a control that looks live and does nothing.
+ *
+ * DESKTOP ONLY, deliberately — `cellProps` is table-mode only. Below the structure line the row
+ * becomes a card that IS a button, and a second click target nested inside it is ambiguous under a
+ * thumb, so the copy columns give `mobileCell` plain text. Every value is in the record the card
+ * opens.
  */
 function copyable(
   baseClass: string,
@@ -46,8 +51,8 @@ function copyable(
   label: string,
 ): {
   className: string;
-  title?: string;
-  onClick?: (event: MouseEvent<HTMLSpanElement>) => void;
+  title?: string | undefined;
+  onClick?: ((event: MouseEvent<HTMLTableCellElement>) => void) | undefined;
 } {
   if (!text) return { className: baseClass };
   return {
@@ -75,31 +80,24 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Company',
     rowHeader: true,
     mobile: 'primary',
-    cell: (row) => <span {...copyable('cs-mt-list-company', maintenanceTitle(row), 'Company')}>
-      {maintenanceTitle(row)}
-    </span>,
+    cellProps: (row) => copyable('cs-mt-list-company', maintenanceTitle(row), 'Company'),
+    cell: (row) => maintenanceTitle(row),
     mobileCell: (row) => maintenanceTitle(row),
   },
   {
     id: 'carrierId',
     header: 'Carrier ID',
     mobile: 'secondary',
-    cell: (row) => (
-      <span {...copyable('cs-mt-list-mono', row.carrierId ?? '', 'Carrier ID')}>
-        {dash(row.carrierId)}
-      </span>
-    ),
+    cellProps: (row) => copyable('cs-mt-list-mono', row.carrierId ?? '', 'Carrier ID'),
+    cell: (row) => dash(row.carrierId),
     mobileCell: (row) => dash(row.carrierId),
   },
   {
     id: 'unit',
     header: 'Unit #',
     mobile: 'secondary',
-    cell: (row) => (
-      <span {...copyable('cs-mt-list-mono', row.unitNumber ?? '', 'Unit #')}>
-        {dash(row.unitNumber)}
-      </span>
-    ),
+    cellProps: (row) => copyable('cs-mt-list-mono', row.unitNumber ?? '', 'Unit #'),
+    cell: (row) => dash(row.unitNumber),
     mobileCell: (row) => dash(row.unitNumber),
   },
   {
@@ -166,17 +164,9 @@ export const COLUMNS: DataColumn<MaintenanceRecord>[] = [
     header: 'Amount',
     numeric: true,
     align: 'end',
-    cell: (row) => (
-      <span
-        {...copyable(
-          'cs-mt-list-amount',
-          row.totalAmount ? fmtMoneyStr(row.totalAmount) : '',
-          'Amount',
-        )}
-      >
-        {fmtMoneyStr(row.totalAmount)}
-      </span>
-    ),
+    cellProps: (row) =>
+      copyable('cs-mt-list-amount', row.totalAmount ? fmtMoneyStr(row.totalAmount) : '', 'Amount'),
+    cell: (row) => fmtMoneyStr(row.totalAmount),
     mobileCell: (row) => fmtMoneyStr(row.totalAmount),
   },
 ];
