@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
+import { useIsCompact, useIsPhone } from '../../hooks/useMediaQuery';
+import { MobileTabBar } from './MobileTabBar';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -20,11 +22,17 @@ import styles from './MytrionShell.module.css';
  */
 const COLLAPSE_KEY = 'octane.sidebar.collapsed.v1';
 
-function readCollapsed(): boolean {
+/**
+ * `null` means "never chosen", which is NOT the same as "chosen expanded": below the density line
+ * the rail defaults to collapsed, and only a stored preference may override that. Reading a missing
+ * key as `false` would make every tablet open with a 248px rail eating a third of the viewport.
+ */
+function readCollapsed(): boolean | null {
   try {
-    return localStorage.getItem(COLLAPSE_KEY) === '1';
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    return raw === '1' ? true : raw === '0' ? false : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -67,6 +75,15 @@ export interface NavItem {
    * made the rail's search match on the word "Soon".
    */
   soon?: boolean;
+  /**
+   * Pin to the mobile tab bar (below the structure line). At most four per workspace; anything
+   * beyond that, and everything unmarked, is reachable through More.
+   *
+   * Optional on purpose. With nothing marked, the bar takes the first four reachable destinations in
+   * nav order — which is already correct for ten of the thirteen workspaces, because a workspace's
+   * first section is ordered by how often it is opened. Only mark items when that default is wrong.
+   */
+  primary?: boolean;
 }
 
 export interface NavSection {
@@ -219,7 +236,21 @@ export function MytrionShell({
   // The header field is separate from the rail's tab filter on purpose — one says "the Horizon
   // ecosystem", the other says "tabs". Nothing consumes this yet; see GlobalSearch.
   const [globalQuery, setGlobalQuery] = useState('');
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  /**
+   * The rail's two rungs. Derived, not synced: the old version ran an effect that wrote `collapsed`
+   * on every viewport change, which rendered twice on load and — worse — let a phone rotation call
+   * `setCollapsed(false)` so the NEXT toggle wrote a preference derived from a forced value,
+   * silently corrupting a choice the user made at a desk.
+   *
+   * Below 640 there is no rail to collapse; below 900 the 248px rail leaves a tablet 572px of
+   * content, so the already-shipped 68px form is the default there — but a stored preference still
+   * wins, because "my screen is 820px" is not the same statement as "I want this narrow".
+   */
+  const phone = useIsPhone();
+  const compact = useIsCompact();
+  const [collapsePref, setCollapsePref] = useState<boolean | null>(readCollapsed);
+  const collapsed = collapsePref ?? compact;
 
   // Admins can view-as anyone (the picker fetches the roster); a granted non-admin is handed their
   // scoped list so the SAME control only offers permitted targets. No targets at all -> no control.
@@ -240,31 +271,19 @@ export function MytrionShell({
   ) : null;
 
   const toggleSidebar = useCallback((): void => {
-    setCollapsed((prev) => {
-      const next = !prev;
+    setCollapsePref((prev) => {
+      // Toggling relative to what is ON SCREEN, not to the stored value — on a tablet with no stored
+      // preference the rail is already collapsed, so the first click must expand it, not collapse
+      // something that is not open.
+      const next = !(prev ?? compact);
       writeCollapsed(next);
       // Drop any filter on the way in. The rail hides the labels the query filters on, so leaving it
       // set would silently hide destinations with nothing on screen explaining why.
       if (next) setNavQuery('');
       return next;
     });
-  }, []);
+  }, [compact]);
 
-  /**
-   * Below 768px the sidebar is a horizontal strip, not a rail (see the media query), so "collapsed" has
-   * no meaning there. Force it open on the way down so a preference set on a desktop does not leave a
-   * phone with a row of unlabelled icons.
-   */
-  useEffect(() => {
-    const narrow = window.matchMedia('(max-width: 768px)');
-    const sync = (): void => {
-      if (narrow.matches) setCollapsed(false);
-      else setCollapsed(readCollapsed());
-    };
-    sync();
-    narrow.addEventListener('change', sync);
-    return () => narrow.removeEventListener('change', sync);
-  }, []);
   const flatFallback: NavItem[] = nav ?? [
     { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
   ];
@@ -282,6 +301,40 @@ export function MytrionShell({
     item.onClick?.();
   };
 
+  /**
+   * What the tab bar and its More sheet navigate. The rail's footer destinations (HR's Settings,
+   * Recruit's admin tabs) and the opt-in chat dock live below the nav list on a desktop; with no
+   * rail there is no "below", so they join the sheet as a trailing unlabelled group rather than
+   * quietly disappearing on a phone.
+   */
+  const mobileSections: NavSection[] = phone
+    ? [
+        ...sections,
+        ...(footerNav.length > 0 || enableDockChat
+          ? [
+              {
+                id: '_footer',
+                label: '',
+                items: [
+                  ...footerNav,
+                  ...(enableDockChat
+                    ? [
+                        {
+                          key: '_chat',
+                          label: 'Chat',
+                          icon: <ChatIcon />,
+                          active: chatView,
+                          onClick: () => setChatView(true),
+                        },
+                      ]
+                    : []),
+                ],
+              },
+            ]
+          : []),
+      ]
+    : [];
+
   return (
     <div
       className={styles.shell}
@@ -291,8 +344,11 @@ export function MytrionShell({
          Modules opt in by writing a rule; none are affected until they do. */
       data-sidebar-collapsed={collapsed ? 'true' : undefined}
     >
-      {/* identity="none": the signed-in worker appears once, at the foot of the rail. Two avatars
-          on one screen is two answers to "where do I sign out". */}
+      {/* The signed-in worker appears exactly once per surface — two avatars on one screen is two
+          answers to "where do I sign out". On a desktop that one place is the foot of the rail, so
+          the header suppresses its own. Below the structure line there IS no rail, and without this
+          switch the account menu (and with it Profile and Sign out) becomes unreachable on a
+          phone. */}
       <AppHeader
         context={{ mytrion: id }}
         search={{
@@ -301,12 +357,15 @@ export function MytrionShell({
           onChange: setGlobalQuery,
         }}
         actions={viewAs}
-        identity="none"
+        identity={phone ? 'menu' : 'none'}
       />
       {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame, in every
           workspace. This used to be inert unless the module was on the horizonSkin allowlist. */}
       <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
+        {/* Not `display: none` — the rail is genuinely absent below the structure line, so the tab
+            bar is the one navigation in the accessibility tree rather than the second of two. */}
+        {phone ? null : (
         <nav
           id="mytrion-sidebar"
           className={styles.sidebar}
@@ -410,6 +469,7 @@ export function MytrionShell({
             />
           </div>
         </nav>
+        )}
 
         <div className={styles.center} data-scroll={contentScroll}>
           {chatView ? (
@@ -424,6 +484,18 @@ export function MytrionShell({
           )}
         </div>
       </div>
+
+      {/* A SIBLING OF .body, in flow — never position:fixed. See MobileTabBar's docblock: a fixed
+          bar makes every workspace hand-maintain a matching bottom pad (this app already has the
+          orphaned 132px to prove that fails), and it would need a z-index, which on any ancestor of
+          the content traps every legacy position:fixed modal behind the header. */}
+      {phone ? (
+        <MobileTabBar
+          sections={mobileSections}
+          onSelect={select}
+          label={`${m.title} navigation`}
+        />
+      ) : null}
     </div>
   );
 }

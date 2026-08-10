@@ -309,10 +309,44 @@ the two shell files. Deleted, not reconciled.
 | `--layout-rail-w-collapsed` | 68px |
 | `--layout-measure` | 1280px |
 | `--layout-measure-prose` | 62ch |
-| `--layout-gutter` | 24px (16px ≤768px) |
+| `--layout-gutter` | 24px (16px below the density line) |
+| `--layout-bottombar-h` | 0px (56px below the structure line) |
+| `--layout-bottom-inset` | `--layout-bottombar-h` + `env(safe-area-inset-bottom)` |
 
-Breakpoints are **560 / 768 / 1024**. They are deliberately *not* tokens — a custom property cannot
-be used in an `@media` condition. They live here and nowhere else.
+### Breakpoints
+
+Four, and only four. Written in **range syntax**, never `max-width`:
+
+| Name | Condition | Role |
+| --- | --- | --- |
+| `xs` | `(width < 480px)` | small phone — 2-up grids go 1-up, sheet gutters tighten |
+| `sm` | `(width < 640px)` | **STRUCTURE** — rail → tab bar + sheet, modals → sheets, tables → cards |
+| `md` | `(width < 900px)` | **DENSITY** — rail forced collapsed, compact gutters, 16px inputs |
+| `lg` | `(width < 1200px)` | wide-desktop only — multi-column dashboards, Sales' 1180px measure |
+
+They are deliberately *not* tokens — a custom property cannot be used in an `@media` condition.
+**They live here and in `src/styles/breakpoints.test.ts`, which is what actually holds the line.**
+This page carried a three-number ladder for two phases while the tree grew to 32 distinct
+breakpoint values; documentation alone has already been tried here and has already failed.
+
+Two lines, not one, because 900px is where the desktop chrome genuinely stops fitting but an iPad
+in portrait is 810–834px. Forcing the phone shell onto a tablet — or onto a split-screen laptop —
+is the complaint generator. Between 640 and 900 the answer is the **already-shipped collapsed 68px
+rail**, which leaves 752px of content at 820px. The disruptive structural change lands only on
+actual phones.
+
+Direction stays **desktop-first** (`max-width`-shaped). `(width >= N)` is for a block that must not
+exist on mobile at all; the collapsed-rail block is the legitimate case.
+
+**Range syntax costs nothing in browser support.** esbuild downlevels `@media (width < 640px)` to
+`@media not all and (min-width: 640px)` at build time — verified in the shipped bundle — which is
+CSS2-era syntax with the *exclusive* boundary preserved exactly (at 640px the block does not
+apply). So the authoring clarity is free: there is no Safari-16.4 floor on the output.
+
+Why the boundary matters enough to legislate: the shell used to switch at `max-width: 768px` while
+every `ds/*` field guarded at `max-width: 767px`, so a viewport exactly 768px wide got the mobile
+shell *and* 13px inputs — and iOS answers a sub-16px focused field by zooming the whole page and
+not zooming back. `<` and `>=` cannot produce that class of gap.
 
 ---
 

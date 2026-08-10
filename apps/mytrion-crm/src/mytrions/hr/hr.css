@@ -1625,7 +1625,7 @@
 
 .hr-root .hr-person-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 14px;
   align-items: start;
 }
@@ -2057,6 +2057,13 @@
 }
 /* Flipped when there is no room below — `.hr-root` is a scroll container, so a popup running past its
    bottom edge is CLIPPED, not scrolled to. */
+/* Readable, clearly inert. Not `opacity` alone — that dims the text below legibility, and the whole
+   reason this entry exists is to be read. */
+.hr-root .hr-cselect-opt.is-disabled {
+  color: var(--text-muted);
+  cursor: default;
+  font-style: italic;
+}
 .hr-root .hr-cselect-list.is-up {
   top: auto;
   bottom: calc(100% + 4px);
@@ -2104,4 +2111,33 @@
   width: 100%;
   min-width: 0;
   max-width: none;
+}
+
+/*
+ * A team row that opens that person's record. Inherits the row's own layout so a linked and an unlinked
+ * member sit on the same grid — only the affordance differs, not the alignment.
+ */
+.hr-root .hr-person-team-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px;
+  margin: -4px;
+  border: 0;
+  border-radius: var(--hr-r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast, 140ms) var(--ease-standard, ease);
+}
+.hr-root .hr-person-team-open:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.hr-root .hr-person-team-open:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
 }

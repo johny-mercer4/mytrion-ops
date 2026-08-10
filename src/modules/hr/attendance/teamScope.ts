@@ -37,6 +37,30 @@ function nameMatches(q: string, emp: HrEmployeeRow): boolean {
  * - all (HR Manager / Admin): entire Active directory
  * Self is never included (My Data is separate).
  */
+/**
+ * Roster order: FIRST name, the way people are addressed here.
+ *
+ * Was last name, which read as a phone book — you scan the roster looking for "Shohruh", not for
+ * "Bekmurodov", and in this directory surname order buries every `Abdu*` prefix together at the top so
+ * the first screenful is one indistinguishable block.
+ *
+ * Plain `localeCompare`, deliberately. The directory mixes `UMIDJON ABDUGAPPOROV` (Zoho imports arrive
+ * upper-cased) with `Shohruh Abdullayev`, and locale collation already interleaves those correctly —
+ * `Alina Bekzod UMIDJON ZAFAR`, not the shouting ones bunched in front. Codepoint order (`<`, or
+ * sorting in SQL without a collation) is what would bunch them; `sensitivity: 'base'` is not needed for
+ * it and only adds accent/case FOLDING, which would make two spellings of one name compare equal.
+ *
+ * The id is the final tiebreaker so two genuinely identical names hold a fixed order rather than
+ * inheriting whatever sequence the query happened to return.
+ */
+function compareByFirstName(a: AttendanceTeamMember, b: AttendanceTeamMember): number {
+  return (
+    a.employee.firstName.localeCompare(b.employee.firstName) ||
+    a.employee.lastName.localeCompare(b.employee.lastName) ||
+    a.employee.id.localeCompare(b.employee.id)
+  );
+}
+
 export async function resolveAttendanceTeam(
   ctx: TenantContext,
   selfEmployeeId: string,
@@ -92,12 +116,10 @@ export async function resolveAttendanceTeam(
   const directItems: AttendanceTeamMember[] = directs
     .filter((e) => e.id !== selfEmployeeId)
     .map((e) => ({ employee: e, relation: 'direct_report' as const }));
+  directItems.sort(compareByFirstName);
 
   const allItems = canViewAll ? orgItems : [...managerAllMap.values()];
-  allItems.sort((a, b) => {
-    const ln = a.employee.lastName.localeCompare(b.employee.lastName);
-    return ln !== 0 ? ln : a.employee.firstName.localeCompare(b.employee.firstName);
-  });
+  allItems.sort(compareByFirstName);
 
   const pool = scope === 'direct' ? directItems : allItems;
   const items = pool.filter((m) => nameMatches(query, m.employee));
@@ -108,6 +130,30 @@ export async function resolveAttendanceTeam(
     allCount: allItems.length,
     items,
   };
+}
+
+/**
+ * Does this person actually manage anyone?
+ *
+ * The definition of "team lead" for attendance, and deliberately a DATABASE question rather than a
+ * profile-name one. `mytrions.config.ts` still carries `allowedProfiles: ['HR']` with a comment saying
+ * the real Zoho profile names are unconfirmed — so gating on a title like "Team Lead" would be gating on
+ * a string nobody has verified, and it would silently grant or deny access whenever Zoho is retitled.
+ * Reporting lines and department leads are facts we own.
+ *
+ * Two small queries in parallel rather than a full `resolveAttendanceTeam`, because this runs on every
+ * attendance request a non-HR caller makes and the full resolve reads the whole directory.
+ */
+export async function managesAnyone(
+  ctx: TenantContext,
+  selfEmployeeId: string,
+): Promise<boolean> {
+  if (!selfEmployeeId) return false;
+  const [directs, ledDeptIds] = await Promise.all([
+    hrEmployeeRepo.listByReportingTo(ctx, selfEmployeeId, { status: 'Active', limit: 1 }),
+    hrDepartmentRepo.listIdsLedBy(ctx, selfEmployeeId),
+  ]);
+  return directs.length > 0 || ledDeptIds.length > 0;
 }
 
 /** Throw if the caller may not open this employee's attendance summary. */

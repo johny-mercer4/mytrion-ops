@@ -12,7 +12,7 @@
  */
 import { memo } from 'react';
 
-import { fmtMoneyStr, fmtYmd, maintenanceTitle, type MaintenanceRecord } from './live';
+import { fmtMoneyStr, fmtYmd, localYmd, maintenanceTitle, type MaintenanceRecord } from './live';
 
 /** Status → the module's existing badge tones. Unknown values stay muted rather than unstyled. */
 const STATUS_BADGE: Record<string, string> = {
@@ -53,6 +53,10 @@ export const MaintenanceCard = memo(function MaintenanceCard({
   const title = maintenanceTitle(row);
   const subName =
     row.name && row.name.trim().toLowerCase() !== title.trim().toLowerCase() ? row.name : '';
+  // CS feedback 2026-08-11: `source === 'mytrion'` never turns off — every case created from here on
+  // has that source, so the chip would eventually sit on 100% of cards. Time-boxed to the case's own
+  // creation day (LOCAL calendar day, not a naive UTC slice — see localYmd) instead.
+  const isNew = localYmd(row.createdAt) === localYmd(new Date());
 
   return (
     <button
@@ -75,8 +79,8 @@ export const MaintenanceCard = memo(function MaintenanceCard({
 
       <div className="cs-mt-card-type">
         {row.caseType ? <span className="cs-mt-chip-type">{row.caseType}</span> : null}
-        {row.source === 'mytrion' ? (
-          <span className="cs-mt-chip-new" title="Created in Mytrion">
+        {isNew ? (
+          <span className="cs-mt-chip-new" title="Created today">
             New
           </span>
         ) : null}

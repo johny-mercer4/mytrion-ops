@@ -7,6 +7,7 @@
 @import './theme.css';
 /* Horizon after theme.css so the atmosphere and elevation win over the base scale. */
 @import './horizon.css';
+@import './responsive-tables.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
    `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules
@@ -380,4 +381,144 @@ html.theme-vt::view-transition-new(root) {
   from {
     opacity: 0;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * RESPONSIVE — the two lines
+ *
+ * 640 is the STRUCTURE line: the page changes shape (rail → tab bar, modal → sheet, table → cards).
+ * 900 is the DENSITY line: nothing moves, things get tighter.
+ * Range syntax throughout, never max-width — `(width < 640px)` excludes 640, where
+ * `(max-width: 640px)` includes it, and mixing the two spellings is how the shell ended up
+ * switching at 768 while ds/* guarded at 767. The full ladder lives in docs/design/FOUNDATIONS.md
+ * and is enforced by src/styles/breakpoints.test.ts.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Density line ──────────────────────────────────────────────────────────────────────────── */
+@media (width < 900px) {
+  :root {
+    /* FOUNDATIONS has claimed "24px, 16px on narrow" since Phase 2. Until now nothing implemented
+       it and both tokens had zero consumers. */
+    --layout-gutter: var(--layout-gutter-compact);
+  }
+
+  /*
+   * iOS zooms the entire page when a focused field renders below 16px, and it does not zoom back
+   * out — the user is left panned sideways on a form. `--text-input-mobile` already guards every
+   * ds/* field; this covers the hand-rolled ones (the module search inputs, ~15 of them).
+   *
+   * A bare element selector loses to anything like `.cs-app-search input`, so this rule alone is
+   * not sufficient — breakpoints.test.ts budgets `font-size` on an input outside styles/ and ds/
+   * precisely so those 43 sites get counted down rather than silently re-breaking it.
+   */
+  /*
+   * `!important`, and it is load-bearing rather than lazy.
+   *
+   * A bare element selector is (0,0,1) and loses to every module rule that sizes its own fields —
+   * `.cs-root .cs-app-search input` (0,2,1), `.cs-root .cs-an-rc-field input[type='date']` (0,3,1),
+   * and 41 more across CS, HR, Recruit, Billing and Sales. Without this the guard was decorative:
+   * an audit of the running app found every field in three workspaces still rendering at 12-15px,
+   * so focusing any of them zoomed the document and left the user panned sideways with no way back.
+   *
+   * Scoped to below the DENSITY line, so no desktop control changes size. Between 640 and 900 this
+   * does make tablet fields 16px — which is the point: an iPad is exactly where the zoom fires.
+   *
+   * The per-module declarations are still counted by breakpoints.test.ts and still worth removing;
+   * this stops them being a live accessibility defect in the meantime.
+   */
+  input,
+  textarea,
+  select {
+    font-size: var(--text-input-mobile) !important;
+  }
+}
+
+/* ── Structure line ────────────────────────────────────────────────────────────────────────── */
+@media (width < 640px) {
+  :root {
+    /* Consumed as --layout-bottom-inset by the fixed chrome that lives outside the shell. */
+    --layout-bottombar-h: 56px;
+  }
+
+  /*
+   * App, not page.
+   *
+   * All three elements take the SAME height so the chain cannot disagree. `100%` on <html> resolves
+   * against the small viewport while `100dvh` starts at the large one, so mixing them makes #root
+   * taller than body by exactly the URL-bar height — and with body clipping, the bottom bar is what
+   * gets cut off. The shell is already built for this: .center is the single overflow-y:auto region
+   * and every workspace root is height:100%, so nothing here relied on document scroll.
+   */
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  body {
+    /* No rubber-band past the ends, and no blue flash under a thumb that rests on a label. */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/*
+ * A horizontal strip — filter chips, a tab row, a scrolling toolbar.
+ *
+ * A class rather than an inline style because ::-webkit-scrollbar cannot be expressed inline and
+ * `scrollbar-width` alone still leaves the bar visible on WebKit. `overscroll-behavior-x: contain`
+ * is the load-bearing one: without it a swipe past the last chip is a back-navigation, which on iOS
+ * means the strip silently doubles as an exit from the app.
+ */
+.hscroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Kill the tap delay on things that are unambiguously controls. NOT applied globally: a blanket
+ * `touch-action: manipulation` also removes double-tap-to-zoom, which is a real accessibility
+ * affordance on a dense internal tool. :where() keeps specificity at 0 so any component still wins.
+ */
+:where(button, [role='button'], a[href], summary, label) {
+  touch-action: manipulation;
+}
+
+@media (hover: none) {
+  /*
+   * Reveal-on-hover is unreachable with a finger. Colour and background hovers are harmless — they
+   * simply never fire — so only the controls that HIDE until hover need an escape hatch. Mark one
+   * with data-hover-reveal rather than wrapping the 149 :hover rules in a (hover: hover) query:
+   * many of those pair `:hover` with a non-hover selector in the same list (`.navActive,
+   * .navActive:hover`), and a mechanical wrap would take the active state down with it.
+   */
+  :where([data-hover-reveal]) {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  /* Touch has no hover state to acknowledge a press, so the press itself has to. */
+  :where(.press):active {
+    transform: scale(0.97);
+  }
+  :where(.row-press):active {
+    /* A scale nudge on a full-width list row reads as jitter; opacity does not. */
+    opacity: 0.55;
+  }
+}
+
+.press,
+.row-press {
+  transition:
+    transform var(--dur-fast) var(--ease-spring),
+    opacity var(--dur-fast) var(--ease-spring);
 }

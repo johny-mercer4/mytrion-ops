@@ -136,12 +136,14 @@ import { ingestAttendanceWebhook } from '../../src/modules/hr/attendance/ingestW
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { hrAttendancePunchRepo } from '../../src/repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../src/repos/hrAttendanceShiftRepo.js';
+import { hrDepartmentRepo } from '../../src/repos/hrDepartmentRepo.js';
 import { hrEmployeeRepo } from '../../src/repos/hrEmployeeRepo.js';
 
 const ingest = vi.mocked(ingestAttendanceWebhook);
 const shifts = vi.mocked(hrAttendanceShiftRepo);
 const punches = vi.mocked(hrAttendancePunchRepo);
 const employees = vi.mocked(hrEmployeeRepo);
+const depts = vi.mocked(hrDepartmentRepo);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -231,13 +233,38 @@ describe('HR attendance shifts', () => {
     expect(res.json()).toMatchObject({ name: 'UZB Main' });
   });
 
-  it('GET export refuses a non-admin HR reader', async () => {
+  /**
+   * DELIBERATE POLICY CHANGE. This asserted 403 — export was Mytrion-Admin only.
+   *
+   * That was incoherent rather than strict: an HR Manager can already read any employee's week on
+   * screen through `/hr/attendance/summary`, so refusing them the CSV of the same data protected
+   * nothing and only pushed people to screenshot it. Export now answers to the SAME per-employee rule
+   * as the panel — which is also what lets a team lead export their own team and nobody else's (see
+   * "team lead attendance access" below).
+   *
+   * The old test also passed no `employeeId`, so after the gate opened it failed on validation (400)
+   * rather than on permission — it could not have told the two apart.
+   */
+  it('GET export now answers to the same rule as the on-screen summary', async () => {
+    const target = { id: 'hre_x', firstName: 'Any', lastName: 'Body' };
+    employees.getById.mockResolvedValue(target as never);
+    employees.findByZohoUserId.mockResolvedValue({ id: 'hre_self' } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/export?from=2026-07-01&to=2026-07-07&employeeId=hre_x',
+      headers: bearer(await workerToken('HR Manager')),
+    });
+    // An HR Manager holds org-wide attendance view, so the CSV is data they can already read.
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('GET export still requires an employee — it is never a company-wide dump', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/attendance/export?from=2026-07-01&to=2026-07-07',
       headers: bearer(await workerToken('HR Manager')),
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(400);
   });
 
   it('allows a department manager to assign a shift to a direct report', async () => {
@@ -482,5 +509,130 @@ describe('roster fetches a directory by default', () => {
       headers: bearer(await workerToken('HR Manager')),
     });
     expect(teamListMock.mock.calls[0]?.[6]).toEqual({ withTotals: true });
+  });
+});
+
+/**
+ * Team leads can read their own team's attendance without HR access.
+ *
+ * This WIDENS who reaches these routes, so what follows is mostly about what a team lead still cannot
+ * do. Two invariants carry it: membership is proven from reporting lines in the database (not a header,
+ * not an unverified Zoho profile string), and the gate does not decide what is returned — the scoping
+ * does.
+ */
+describe('team lead attendance access', () => {
+  /** A sales team lead: no `hr` department, one direct report. */
+  const LEAD = { id: 'hre_lead', firstName: 'Lead', lastName: 'Person' };
+  const REPORT = { id: 'hre_report', firstName: 'Their', lastName: 'Report' };
+  const OUTSIDER = { id: 'hre_outsider', firstName: 'Someone', lastName: 'Else' };
+
+  function beALead(): void {
+    employees.findByZohoUserId.mockResolvedValue(LEAD as never);
+    employees.getById.mockImplementation((async (_ctx: unknown, id: string) =>
+      [LEAD, REPORT, OUTSIDER].find((e) => e.id === id)) as never);
+    employees.listByReportingTo.mockResolvedValue([REPORT] as never);
+    employees.listByDepartmentIds.mockResolvedValue([] as never);
+    depts.listIdsLedBy.mockResolvedValue([] as never);
+  }
+
+  function beNobodysManager(): void {
+    beALead();
+    employees.listByReportingTo.mockResolvedValue([] as never);
+  }
+
+  it('lets a team lead open the attendance roster', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/team?scope=all',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  /** The gate's whole point: managing someone is a fact about the data, not a claim. */
+  it('refuses a worker who manages nobody', async () => {
+    beNobodysManager();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/attendance/team?scope=all',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('lets a team lead read their own report’s week', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/hr/attendance/summary?from=2026-08-03&to=2026-08-09&employeeId=${REPORT.id}`,
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses a team lead reading someone outside their team', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/hr/attendance/summary?from=2026-08-03&to=2026-08-09&employeeId=${OUTSIDER.id}`,
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  /** A CSV is the same data as the panel, so it must answer to the same rule, not a coarser one. */
+  it('scopes the CSV export to their team', async () => {
+    beALead();
+    const ok = await app.inject({
+      method: 'GET',
+      url: `/v1/hr/attendance/export?from=2026-08-03&to=2026-08-09&employeeId=${REPORT.id}`,
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(ok.statusCode).toBe(200);
+
+    const denied = await app.inject({
+      method: 'GET',
+      url: `/v1/hr/attendance/export?from=2026-08-03&to=2026-08-09&employeeId=${OUTSIDER.id}`,
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it('refuses a team lead syncing someone outside their team', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/sync',
+      headers: bearer(await workerToken('Sales Rep')),
+      payload: { from: '2026-08-03', to: '2026-08-09', employeeId: OUTSIDER.id },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  /**
+   * "Attendance tab only". The employee directory, departments and org structure keep
+   * `requireHrInternal`, so a team lead who reaches the HR workspace can open Attendance and nothing
+   * else — the hidden nav is a courtesy, this is the boundary.
+   */
+  it('still refuses a team lead the employee directory', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/hr/employees',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('still refuses a team lead the shift admin writes', async () => {
+    beALead();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/hr/attendance/shifts',
+      headers: bearer(await workerToken('Sales Rep')),
+      payload: { name: 'Sneaky', startLocal: '09:00', endLocal: '18:00' },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

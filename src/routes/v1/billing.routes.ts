@@ -239,11 +239,14 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Last-365-day invoices for a carrier (the mapping picker) — CMP read via servercrm. Replaces the
-   *  last billing Deluge touchpoint (mytrionSearchInvoices). */
+   *  last billing Deluge touchpoint (mytrionSearchInvoices). `withPaymentDates` is Data Center's
+   *  detail-modal opt-in — the mapping picker never sets it. */
   app.get('/billing/invoices/search', guard, async (request) => {
     requireBillingAccess(request);
-    const q = z.object({ carrierId: z.string().min(1) }).parse(request.query);
-    return searchCarrierInvoices(q.carrierId);
+    const q = z
+      .object({ carrierId: z.string().min(1), withPaymentDates: z.enum(['0', '1']).optional() })
+      .parse(request.query);
+    return searchCarrierInvoices(q.carrierId, { withPaymentDates: q.withPaymentDates === '1' });
   });
 
   // ─── Writes (PG row-of-record + CMP money movement via servercrm) ────────────────────────

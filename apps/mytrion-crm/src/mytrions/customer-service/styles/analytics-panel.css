@@ -764,3 +764,23 @@
     gap: 0.5rem;
     margin-top: 0.75rem;
 }
+
+/*
+ * Tab and chip strips below the structure line.
+ *
+ * These are single-row groups whose children are deliberately incompressible (a tab must show its
+ * whole label). Wrapping them makes the row two or three lines tall and moves the active tab under
+ * the user's thumb unpredictably, so they SCROLL instead — with `overscroll-behavior-x: contain`,
+ * because without it a flick past the last chip chains to the page and on iOS that gesture is Back.
+ */
+@media (width < 640px) {
+  .cs-root .cs-an-datatabs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .cs-root .cs-an-datatabs::-webkit-scrollbar {
+    display: none;
+  }
+}

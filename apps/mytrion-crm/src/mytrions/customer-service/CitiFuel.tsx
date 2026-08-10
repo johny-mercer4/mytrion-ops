@@ -4,8 +4,9 @@
  * headers / cs-app-pagination / cs-toast) over the DONE live-data layer: debounced server
  * search, live status-filter tabs + per-status stats, single view+edit modal, inline delete.
  */
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { DataTable, type DataColumn } from '@/ds';
 import { CitiModal } from './CitiModal';
 import { Toast, type ToastState } from './Toast';
 import { fmtDate, localYmd, rangeDays } from './live';
@@ -90,16 +91,6 @@ interface Col {
   badge?: boolean;
   date?: boolean;
 }
-const COLS: Col[] = [
-  { key: 'name', label: 'Client Name' },
-  { key: 'appId', label: 'App ID' },
-  { key: 'status', label: 'Status', badge: true },
-  { key: 'request', label: 'Request', badge: true },
-  { key: 'decision', label: 'Final Decision', badge: true },
-  { key: 'date', label: 'Date', date: true },
-  { key: 'phone', label: 'Phone' },
-  { key: 'email', label: 'Email' },
-];
 
 function cellValue(row: CitiRow, col: Col): string {
   const v = row[col.key];
@@ -108,63 +99,116 @@ function cellValue(row: CitiRow, col: Col): string {
 }
 
 /**
- * One table row, memoised — same reasoning as Applications' AppRow. Search state lives in the
- * panel, so without this every keystroke re-rendered all ~450 cells AND rebuilt three inline style
- * objects per row for React to diff. The per-cell styles are plain classes now (see
- * citi-fuel-panel.css), so a row renders no throwaway objects at all.
+ * The columns, in one definition for both renderings.
  *
- * COLS is a module constant and `onOpen` is useCallback'd in the panel, so an untouched row bails.
+ * ROW MEMOISATION is no longer this file's problem: DataTable memoises its rows on `columns`
+ * identity, which is why this stays a module constant. The reason still holds — search state lives
+ * in the panel, so without a bail-out every keystroke re-rendered all ~450 cells.
+ *
+ * MOBILE ROLES — the client names the row; App ID and date identify it; Status is the one value an
+ * agent triages on. Request, Final Decision, phone and email are what you read once you have picked
+ * a record, so they stay off a 375px card and open with it.
  */
-const CitiTableRow = memo(function CitiTableRow({
-  row,
-  onOpen,
-}: {
-  row: CitiRow;
-  onOpen: (row: CitiRow) => void;
-}) {
-  return (
-    <tr tabIndex={0} onClick={() => onOpen(row)} onKeyDown={(e) => e.key === 'Enter' && onOpen(row)}>
-      {COLS.map((col) => (
-        <td key={col.key}>
-          {col.badge ? (
-            row[col.key] ? (
-              <span className={`cs-badge ${citiBadge(String(row[col.key]))}`}>{String(row[col.key])}</span>
-            ) : (
-              <span className="cs-badge cs-badge-muted">—</span>
-            )
-          ) : col.date ? (
-            <span className="cs-citi-cell-date">{cellValue(row, col)}</span>
-          ) : col.key === 'name' ? (
-            /* Company above, contact beneath — QA feedback: a row was hard to identify from a
-               contact name alone. Unlinked records still just show the contact. */
-            <div className="cs-citi-cell-client">
-              {row.company ? <div className="cs-citi-cell-company">{row.company}</div> : null}
-              <div className={row.company ? 'cs-citi-cell-contact' : 'cs-citi-cell-name'}>
-                {row.name || '—'}
-              </div>
-            </div>
-          ) : (
-            <span className="cs-citi-cell-text">{cellValue(row, col)}</span>
-          )}
-        </td>
-      ))}
-      <td onClick={(e) => e.stopPropagation()}>
-        <button
-          className="cs-citi-action-btn cs-citi-delete-btn"
-          title="Delete record"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(row);
-          }}
-        >
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
-          </svg>
-        </button>
-      </td>
-    </tr>
+const CITI_COLUMNS: DataColumn<CitiRow>[] = [
+  {
+    id: 'name',
+    header: 'Client Name',
+    sortable: true,
+    rowHeader: true,
+    mobile: 'primary',
+    /* Company above, contact beneath — QA feedback: a row was hard to identify from a contact name
+       alone. Unlinked records still just show the contact. */
+    cell: (row) => (
+      <div className="cs-citi-cell-client">
+        {row.company ? <div className="cs-citi-cell-company">{row.company}</div> : null}
+        <div className={row.company ? 'cs-citi-cell-contact' : 'cs-citi-cell-name'}>
+          {row.name || '—'}
+        </div>
+      </div>
+    ),
+    // The card's primary line is one line by construction; the two-line block belongs to the table.
+    mobileCell: (row) => row.company || row.name || '—',
+  },
+  {
+    id: 'appId',
+    header: 'App ID',
+    sortable: true,
+    mobile: 'secondary',
+    cell: (row) => <span className="cs-citi-cell-text">{cellValue(row, { key: 'appId', label: '' })}</span>,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    sortable: true,
+    mobile: 'value',
+    cell: (row) => citiBadgeCell(row.status),
+  },
+  {
+    id: 'request',
+    header: 'Request',
+    sortable: true,
+    priority: 2,
+    cell: (row) => citiBadgeCell(row.request),
+  },
+  {
+    id: 'decision',
+    header: 'Final Decision',
+    sortable: true,
+    priority: 2,
+    cell: (row) => citiBadgeCell(row.decision),
+  },
+  {
+    id: 'date',
+    header: 'Date',
+    sortable: true,
+    mobile: 'secondary',
+    cell: (row) => (
+      <span className="cs-citi-cell-date">{cellValue(row, { key: 'date', label: '', date: true })}</span>
+    ),
+  },
+  {
+    id: 'phone',
+    header: 'Phone',
+    sortable: true,
+    priority: 3,
+    cell: (row) => <span className="cs-citi-cell-text">{cellValue(row, { key: 'phone', label: '' })}</span>,
+  },
+  {
+    id: 'email',
+    header: 'Email',
+    sortable: true,
+    priority: 3,
+    truncate: true,
+    cell: (row) => <span className="cs-citi-cell-text">{cellValue(row, { key: 'email', label: '' })}</span>,
+  },
+  {
+    id: 'actions',
+    header: '',
+    width: '60px',
+    align: 'center',
+    /* Off the card AND off the record sheet. It opens the same modal the row already opens, so on
+       a phone it would be a second target inside the first; and a control in a key-value list is
+       not data. The desktop table keeps it because that is where people learned it. */
+    mobileCell: () => null,
+    detail: false,
+    cell: () => (
+      <span className="cs-citi-action-btn cs-citi-delete-btn" title="Delete record" aria-hidden>
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
+        </svg>
+      </span>
+    ),
+  },
+];
+
+/** A badge, or the muted em-dash placeholder when the field is empty. */
+function citiBadgeCell(value: string | number | null | undefined) {
+  return value ? (
+    <span className={`cs-badge ${citiBadge(String(value))}`}>{String(value)}</span>
+  ) : (
+    <span className="cs-badge cs-badge-muted">—</span>
   );
-});
+}
 
 /** Widget summary-card accent per status label. */
 const STAT_COLOR: Record<string, string> = {
@@ -479,35 +523,23 @@ export function CitiFuel() {
       {loading && rows.length === 0 ? (
         <div className="cs-skeleton" style={{ height: 220, borderRadius: 4 }} />
       ) : (
-        <div className="cs-table-wrap cs-citi-table-wrap">
-          <table className="cs-table">
-            <thead>
-              <tr>
-                {COLS.map((col) => (
-                  <th key={col.key} className="cs-citi-th-sortable" onClick={() => toggleSort(col.key)}>
-                    {col.label}
-                    {sortField === col.key ? (
-                      <span className="cs-sort-indicator">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                    ) : null}
-                  </th>
-                ))}
-                <th style={{ width: 60 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row) => (
-                <CitiTableRow key={row.id} row={row} onOpen={openClient} />
-              ))}
-              {!loading && sortedRows.length === 0 ? (
-                <tr>
-                  <td colSpan={COLS.length + 1} className="cs-empty">
-                    No records found
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Citifuel clients"
+          rows={sortedRows}
+          rowKey={(row) => row.id}
+          columns={CITI_COLUMNS}
+          scrollerClassName="cs-table-wrap cs-citi-table-wrap"
+          className="cs-table"
+          empty="No records found"
+          /* The panel owns CitiModal, which is the record — DataTable must not offer a second,
+             thinner one behind the same tap. */
+          onRowActivate={openClient}
+          sort={{
+            by: sortField || null,
+            direction: sortDir === 'asc' ? 'ascending' : 'descending',
+            onSort: (columnId) => toggleSort(columnId as ColKey),
+          }}
+        />
       )}
 
       {/* ── Pagination ── */}

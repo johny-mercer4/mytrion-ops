@@ -149,6 +149,9 @@ function mapAppRow(r: CsApplicationRow): Application {
     trucks: num(r.Number_of_Trucks) ?? 0,
     cards: num(pick(r, 'Cards_Requested', 'Cards_Ordered')) ?? 0,
     date: fmtDate(r.Date_Filled),
+    /** Raw value for sort/filter — `date` above is display-formatted and must never be sorted on
+     *  directly (lexicographic order on 'Aug 6, 2026' strings isn't chronological order). */
+    dateFilledRaw: str(r.Date_Filled),
     agent: dealAgentName(r),
     notes: str(r.Customer_Service_Notes),
     cycle: str(r.Billing_Cycle),
@@ -363,7 +366,7 @@ export interface CustomRange {
 
 /** `YYYY-MM-DD` → local midnight. `new Date('2026-07-01')` is parsed as UTC, which lands on
  *  Jun 30 in every western timezone — the wrong day for an `<input type="date">` value. */
-function parseYmd(ymd: string): Date | null {
+export function parseYmd(ymd: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
   if (!m) return null;
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

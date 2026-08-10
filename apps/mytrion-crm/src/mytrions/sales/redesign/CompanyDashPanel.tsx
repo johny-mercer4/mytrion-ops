@@ -140,7 +140,7 @@ export function CompanyDashPanel() {
           </span>
           <span style={s('font-size:14px;font-weight:800')}>Applications</span>
         </div>
-        <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+        <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px')}>
           <Gauge label="Today" value={data.fillsToday} target={COMPANY_TARGETS.fills_today} stroke="var(--orange)" />
           <Gauge label="This Week" value={data.fillsWeek} target={COMPANY_TARGETS.fills_this_week} stroke="var(--orange)" />
           <Gauge label="This Month" value={data.fillsMonth} target={COMPANY_TARGETS.fills_this_month} stroke="var(--orange)" />
@@ -154,7 +154,7 @@ export function CompanyDashPanel() {
           </span>
           <span style={s('font-size:14px;font-weight:800')}>Gallon Volume</span>
         </div>
-        <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+        <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px')}>
           <Gauge label="Today" value={data.gallonsToday} target={COMPANY_TARGETS.gallons_today} stroke="var(--accent)" />
           <Gauge label="This Week" value={data.gallonsWeek} target={COMPANY_TARGETS.gallons_this_week} stroke="var(--accent)" />
           <Gauge label="This Month" value={data.gallonsMonth} target={COMPANY_TARGETS.gallons_this_month} stroke="var(--accent)" />

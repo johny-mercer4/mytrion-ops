@@ -32,6 +32,7 @@ import {
   departmentTone,
 } from './departmentAppearance';
 import { HrBusy } from './HrBits';
+import { HrSelect } from './HrSelect';
 import { HrDepartmentMembers } from './HrDepartmentMembers';
 import { HrRichText } from './HrRichText';
 import { isActiveStatus } from './hrData';
@@ -401,42 +402,48 @@ export function HrDepartmentModal({
                 </label>
                 <label>
                   Lead
-                  <select
+                  <HrSelect
+                    label="Lead"
                     value={unresolvedLead ? UNLINKED_LEAD : (form.leadEmployeeId ?? '')}
-                    onChange={(e) => {
-                      set('leadEmployeeId', e.target.value || null);
-                      setLeadCleared(!e.target.value);
+                    onChange={(next) => {
+                      set('leadEmployeeId', next || null);
+                      setLeadCleared(!next);
                     }}
-                  >
-                    <option value="">—</option>
-                    {unresolvedLead ? (
-                      // A disabled option still DISPLAYS when the controlled value matches it, which is
-                      // the whole point: the field has to name the lead it is about to keep or replace.
-                      <option value={UNLINKED_LEAD} disabled>
-                        {`${mode.kind === 'edit' ? mode.department.leadName : ''} (not linked)`}
-                      </option>
-                    ) : null}
-                    {leadOptions.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {displayName(e)}
-                        {e.designation ? ` · ${e.designation}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: '—' },
+                      // A `disabled` entry still DISPLAYS as the current value, which is the whole
+                      // point: the field has to name the lead it is about to keep or replace, even
+                      // though that person has no employee row to select.
+                      ...(unresolvedLead
+                        ? [
+                            {
+                              value: UNLINKED_LEAD,
+                              label: `${mode.kind === 'edit' ? mode.department.leadName : ''} (not linked)`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                      ...leadOptions.map((e) => ({
+                        value: e.id,
+                        label: `${displayName(e)}${e.designation ? ` · ${e.designation}` : ''}`,
+                      })),
+                    ]}
+                  />
                 </label>
                 <label>
                   Parent department
-                  <select
+                  <HrSelect
+                    label="Parent department"
                     value={form.parentName ?? ''}
-                    onChange={(e) => set('parentName', e.target.value)}
-                  >
-                    <option value="">— (top level)</option>
-                    {parentOptions.map((d) => (
-                      <option key={d.id} value={d.name}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(next) => set('parentName', next)}
+                    options={[
+                      { value: '', label: '— (top level)' },
+                      // The value is the NAME, not the id: `parentName` is what the form submits and
+                      // what `patch.parentName` diffs against. Keying it on `d.id` would write an id
+                      // into a name column and silently re-parent nothing.
+                      ...parentOptions.map((d) => ({ value: d.name, label: d.name })),
+                    ]}
+                  />
                 </label>
               </div>
 

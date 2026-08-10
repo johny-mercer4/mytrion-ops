@@ -19,6 +19,7 @@ import {
   type HrEmployeeWriteInput,
 } from '../../api/hr';
 import { HrBusy } from './HrBits';
+import { HrSelect } from './HrSelect';
 import { useModalFocus } from './useModalFocus';
 
 /**
@@ -313,41 +314,37 @@ export function HrEmployeeForm({
               </label>
               <label>
                 Department
-                <select
+                <HrSelect
+                  label="Department"
                   value={form.departmentId ?? ''}
-                  onChange={(e) => set('departmentId', e.target.value)}
-                >
-                  <option value="">—</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => set('departmentId', next)}
+                  options={[
+                    { value: '', label: '—' },
+                    ...departments.map((d) => ({ value: d.id, label: d.name })),
+                  ]}
+                />
               </label>
               <label>
                 Designation
                 {/*
-                  A real <select>, not the <datalist> this used to be. A datalist renders as native
-                  browser chrome that CSS cannot touch, which is why this one field looked nothing
-                  like the inputs around it. The picklist is DISTINCT designations already in the
-                  directory, so a plain select is complete; a new title is added by typing it into
-                  the "Other designation" field below.
+                  `HrSelect`, not a native select and not the `<datalist>` before that. Both render
+                  browser chrome CSS cannot touch — the datalist did not match the inputs around it,
+                  and the native popup in this modal was an opaque OS list that spilled outside the
+                  dialog. The picklist is DISTINCT designations already in the directory, so a closed
+                  list is complete; a new title goes in "Other designation" below.
                 */}
-                <select
+                <HrSelect
+                  label="Designation"
                   value={customTitle ? '' : (form.designation ?? '')}
-                  onChange={(e) => {
-                    set('designation', e.target.value);
+                  onChange={(next) => {
+                    set('designation', next);
                     setCustomTitle('');
                   }}
-                >
-                  <option value="">—</option>
-                  {designations.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: '—' },
+                    ...designations.map((d) => ({ value: d, label: d })),
+                  ]}
+                />
               </label>
               <label>
                 Other designation
@@ -382,13 +379,15 @@ export function HrEmployeeForm({
               </label>
               <label>
                 Status
-                <select
+                <HrSelect
+                  label="Status"
                   value={form.status ?? 'Active'}
-                  onChange={(e) => set('status', e.target.value)}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Terminated">Terminated</option>
-                </select>
+                  onChange={(next) => set('status', next)}
+                  options={[
+                    { value: 'Active', label: 'Active' },
+                    { value: 'Terminated', label: 'Terminated' },
+                  ]}
+                />
               </label>
               <label>
                 Role
@@ -425,18 +424,20 @@ export function HrEmployeeForm({
                   different column and the two views would have disagreed about the same person's
                   manager. The backend derives the display name from the chosen row.
                 */}
-                <select
+                <HrSelect
+                  label="Reporting to"
                   value={form.reportingToEmployeeId ?? ''}
-                  onChange={(e) => set('reportingToEmployeeId', e.target.value || null)}
-                >
-                  <option value="">—</option>
-                  {managerOptions.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {`${m.firstName} ${m.lastName}`.trim()}
-                      {m.designation ? ` · ${m.designation}` : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => set('reportingToEmployeeId', next || null)}
+                  options={[
+                    { value: '', label: '—' },
+                    ...managerOptions.map((m) => ({
+                      value: m.id,
+                      label: `${`${m.firstName} ${m.lastName}`.trim()}${
+                        m.designation ? ` · ${m.designation}` : ''
+                      }`,
+                    })),
+                  ]}
+                />
                 {/*
                   Helper text, not an <option>. An unlinked manager used to be a disabled option with
                   value="" — the same value as the "—" placeholder above it, so a controlled select

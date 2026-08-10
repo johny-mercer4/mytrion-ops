@@ -511,7 +511,7 @@ export function RecordsTab() {
           >
           {/* .dc-lty scopes the tier palette; each card carries its bucket class so the shell (edge,
               wash, rail, glow) reads as the tier while the figures below keep their own semantics. */}
-          <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px')}>
+          <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(auto-fill, minmax(min(100%, 360px), 1fr));gap:14px')}>
             {clients.map((c) => (
               <div key={c.id} onClick={c.onClick} className={`dc-lty-c is-${tierBucketOf(c.tier)}`}>
                 <div style={s('display:flex;align-items:center;gap:12px')}>

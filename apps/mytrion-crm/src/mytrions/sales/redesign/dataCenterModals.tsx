@@ -481,7 +481,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               </div>
               <div style={s('font-size:12px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
             </div>
-            <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+            <div style={s('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px')}>
               <StatCard label="Cards" value={String(deal.cards)} mono />
               <StatCard label="Application" value={deal.app} />
               <StatCard label="Carrier" value={deal.carrier} />

@@ -13393,3 +13393,680 @@ was verified by build + hand, and this test is the only thing that will catch a 
 `pnpm test` (88 files / 570 tests) and a production build are green, but none of them can see a
 colour.
 
+
+## 2026-08-10 — The warehouse pull moved from page-load to the click
+
+Now on `feature/hr`, branched off `build` (the earlier HR work is in build via PR #151).
+
+**Nothing is pulled from the DWH on page load any more.** It used to sync the whole week for everyone
+— ~4.4k rows, slow enough to hit the request timeout, producing a warning banner on every visit for
+work the visit did not need. Opening one person pulls only that person. Measured against the real
+warehouse: **165 rows in 268ms for one employee, against 6442 rows in 935ms for everybody.** The page
+is now one database read and never waits on the warehouse; Refresh still pulls the whole window, which
+is what refreshes the roster's presence and the tiles.
+
+`syncAttendanceFromDwh(ctx, from, to, { employeeId })` adds `and emp_code = $4`. Verified on both sides
+that `hr_employees.face_id` and `acs_event.emp_code` are the same zero-padded string, so this is
+equality and not a normalisation problem. The cooldown key includes the employee — a one-person pull
+and a whole-window pull fetch different sets, so neither may satisfy the other. The rebucket is scoped
+to the employee; `reconcileUnmapped` deliberately is NOT, because it attaches punches TO employees and
+must stay free to consider every unmapped row in the window.
+
+**"Not enrolled on the door readers."** Only **94 of 222 employees have a Face ID**, so an empty week
+is the normal case for most of the directory, not a fault. It used to render as a week of absences —
+a payroll conversation nobody should have to start over a missing setting. The sync returns `noFaceId`
+without a warehouse round trip and the panel says so.
+
+### Correction to yesterday's note
+
+I wrote that `resolveAttendanceTeam` is 3.3s and "now the whole cost of the roster". That was wrong: it
+is **604ms warm**. The 3.2s was cold-connection setup to Render, which the first query of any kind pays
+— `hrEmployeeRepo.list` measures 3182ms cold and 604ms warm too. So switching the list to the plain
+employee directory would have gained nothing, and I did not do it. The list already IS the Mytrion
+directory; what needed moving was the warehouse pull.
+
+### The "N…" chip
+
+`No shift` rendered as `NO S…` / `N…`. The chip lived inside the truncating meta line, so a long role
+plus department consumed the width and the ellipsis ate a status label into nonsense. The line is now a
+flex row where only `.hr-att-row-text` gives way. `min-width: 0` on that span is the load-bearing part —
+a flex item will not shrink below its content width without it, so the line overflowed and the row grew
+a second line, losing the uniform 59px height. Verified in the harness: rows 59–61px, `scrollWidth <=
+clientWidth` on every chip.
+
+### Two process notes
+
+- **My python string-replacements silently no-op'd** on `hr-attendance.css` because a linter had
+  rewritten `11px` → `var(--text-2xs)` between my writing the target and running it. I only noticed
+  because the browser reported `metaDisplay: "block"` when the rule said `flex`. It had also left a
+  duplicated `.hr-att-row-name` block. Assert on every replacement, or read the file first.
+- **Rebuilt `apps/mytrion-crm/app`** (`pnpm -C apps/mytrion-crm build`; the `build:widget` script needs
+  corepack, which is not on PATH here). Production serves the committed bundle — Render never runs Vite
+  — so a `src`-only change ships nothing, and CI fails the PR. 69 assets rotated; confirmed the bundle
+  contains `hr-att-row-text` and the not-enrolled copy.
+
+### Baselines on this branch (all pre-existing, verified by stashing)
+
+- CRM: **591/615**. Six failing files — the three `api` ones from before, plus `useChat.cache`,
+  `testAs`, and `turnInspectionStorage`, which arrived with `build` and fail identically without my
+  changes.
+- Backend HR suites: 48/48.
+
+### Same day — the attendance roster is the directory's table, plus a presence filter
+
+I had read "make List not card" as a compact two-line row list. Wrong: the reference was the
+**Employees tab table** — Name / Employee ID / Designation / Department / Shift / Status, avatar in the
+name cell, department as a tinted chip. `HrAttendanceRoster.tsx` is now that same treatment, sharing
+`.hr-listwrap` / `.hr-list` and `HrEmployeeList`'s structure, so the two tabs read as one product.
+
+- A real `<table>`, so a screen reader gets "Department, column 4" rather than unlabelled text. The
+  NAME is the button and the row is clickable as a convenience — a focusable `<tr>` would put a tab
+  stop on each of 145 rows.
+- **Drill-down, not a split.** The table is full width, so there is no room beside it for a week — and
+  a week squeezed into a 320px pane was why the columns had nowhere to go. Opening someone replaces the
+  list; the old `X` became a labelled "All employees" back button, because an unlabelled X on a
+  full-width view reads as "discard". The now-dead detail placeholder is gone.
+- The Shift column shows the **window** (`19:00–03:00`), not the name. Nearly everyone is on one shift,
+  so the name carries nothing and "late" is meaningless without the hours.
+- `photoFileId` added to the attendance roster DTO so the faces match the directory.
+- Presence in a cell is a dot + word, not the directory's `Pill` — a pill reads as a badge you could
+  act on, and this is a live reading that changes on its own.
+
+**Presence filter** (`All / In office / Out of office / Needs review / No activity / No shift`), the
+same `.hr-chips` + `aria-pressed` control the Employees tab uses for Active/Terminated. Client-side over
+the already-fetched roster: presence is derived from the last punch, so asking the server for a subset
+of rows it just sent would add latency and a second source for numbers the tiles already show. The
+caption reads "12 of 145 people" when filtered, and a filter matching nobody says "Nobody in this
+state" rather than "No people found", which would send someone hunting a data problem that isn't there.
+
+### Two of my own tests were weak, and the mutation run is what exposed it
+
+Mutating the code and finding tests still green is the point of doing it. Both failures were mine:
+
+1. **`no_shift` filtered on presence instead of shift absence — not caught.** The fixture had one idle
+   person who was *also* unscheduled, so both predicates returned the same row. Added a second idle
+   person who *is* scheduled; the two filters now return different sets and the mutation fails.
+2. **Tiles fed the filtered list — not caught.** Here the code was fine: `onSummary`'s deps are
+   `[data, onSummary]`, so swapping the source is dead-code-equivalent and nothing *should* catch it. I
+   only proved the test bites by mutating the deps too. The assertion now states the relationship
+   (tiles describe 5, table shows 1) instead of just "the value did not change".
+
+Same lesson as the `11px` no-op earlier: a mutation run only means something if you confirm the file
+actually changed. Both of those python replacements DID apply — I checked before blaming the tests.
+
+Bundle rebuilt (`pnpm -C apps/mytrion-crm build`); confirmed it carries `hr-att-state-dot`, "Nobody in
+this state", and "All employees".
+
+Gate: lint 0 errors, both typechecks clean, backend HR 46/46, CRM **601/625** — the 24 failures are the
+six files that already fail on `build`.
+
+### Same day — roster ordered by first name
+
+`teamScope.ts` sorted by `lastName` then `firstName`. In this directory that buries every `Abdu*`
+surname together at the top, so the first screenful was one indistinguishable block — and you scan an
+attendance roster for "Shohruh", not "Bekmurodov". Now first name, then surname, then id. Applied to the
+direct-reports pane too, which had no sort of its own. Verified against the live directory: correctly
+ordered across all 146 rows.
+
+**A claim I had to walk back.** I wrote `localeCompare(y, undefined, { sensitivity: 'base' })` and a
+comment crediting it with interleaving the upper-cased Zoho names among the Title-Case ones. Measured:
+plain `localeCompare` already does that (`Alina Bekzod UMIDJON ZAFAR`) and already handles accents. All
+`sensitivity: 'base'` adds is making `'a'` vs `'A'` compare EQUAL — i.e. folding, which would make two
+spellings of one name tie. Dropped it; the comment now says the real failure mode is *codepoint* order
+(`'Z' < 'a'`), which is what an uncollated compare or a raw SQL `order by` would give.
+
+### Three weak tests, all found by mutation, all mine
+
+Mutation testing earned its keep this session. In each case I confirmed the mutation actually applied
+before blaming the test — after being burned earlier by a silent no-op replacement.
+
+1. **`no_shift` filter** — the fixture's only idle person was also the only unscheduled one, so both
+   predicates returned the same row. Added an idle-but-scheduled person.
+2. **Id tiebreaker** — `Array.prototype.sort` is stable and the fixture already listed the ids in
+   ascending order, so removing the tiebreaker changed nothing. Feed them reversed.
+3. **Collation vs codepoint** — every fixture name had a distinct capitalised initial, so both orders
+   agreed. The two only diverge from the second character: codepoint gives `UMIDJON Ulugbek Umar`
+   ('M' 77 < 'l' 108), collation gives `Ulugbek Umar UMIDJON`. Fixture now shares a first letter.
+
+A fourth mutation (tiles fed the filtered list) survives legitimately: `onSummary`'s deps are
+`[data, onSummary]`, so swapping the source is dead-code-equivalent. Proved the test bites by mutating
+the deps as well.
+
+### Same day — two reported bugs: page width in card view, and the modal's dropdowns
+
+**1. Card view was capped to the reading measure.** `HrDepartments` and `HrEmployees` were
+``hr-page${view === 'list' ? ' hr-page-wide' : ''}`` — full width in list view only. `--hr-measure` is
+a READING width and a directory of cards is not prose; the grids are `repeat(auto-fill, minmax(N, 1fr))`
+so extra width becomes extra COLUMNS, not absurd cards. Worse, the cap shrank the summary tiles and the
+search bar along with the grid, which is what read as broken. It was already inconsistent — collapsing
+the sidebar removed it via `[data-sidebar-collapsed='true']`. Both tabs are now unconditionally wide.
+
+**2. The Add-employee modal still had four native `<select>`s** — Department, Designation, Status,
+Reporting to. Native selects render their list as OS chrome (the white/blue popup in the screenshot,
+spilling outside the dialog) and no CSS reaches inside. All four now use `HrSelect`.
+
+**But swapping them in would have shipped a different bug.** `HrSelect` decided its open direction from
+`window.innerHeight`, which is the clipping box only when nothing between the control and the viewport
+scrolls. `.hr-modal` is `max-height: min(720px, 100%); overflow: auto` — so in a dialog the real bottom
+edge is the dialog's, and the LAST field of a 720px modal centred in a tall window still has hundreds of
+pixels of viewport beneath it. The old logic would have said "room below", opened downward, and let the
+modal clip the list. Now it walks up to the nearest scrollable ancestor (`clippingBox`) and measures
+that. The decision is extracted as a pure `shouldDropUp({...rects})` because **jsdom has no layout** —
+every `getBoundingClientRect()` is zeroes, so a rendered component cannot exercise geometry at all.
+
+Six geometry tests. Mutations caught: measuring the viewport again, and dropping the "more room above"
+guard.
+
+### A fourth weak fixture, same root cause as the other three
+
+My first `shouldDropUp` fixture used a 1080px window, where the viewport left 188px below the control —
+under the 288px the popup wants, so the OLD viewport-based logic flipped up too and the test passed
+against the very bug it was written to pin. Rebuilt it at 1400px: 10px of modal below, 350px of
+viewport, so the two boxes genuinely disagree.
+
+Four times this session a fixture was too weak to distinguish right from wrong, and every time the
+mutation run is what found it. The pattern is always the same — the fixture satisfies both the correct
+and the broken implementation. Choosing test data is not the easy part of writing a test.
+
+Bundle rebuilt. CRM 607/631; the 24 failures are the six files already failing on `build`.
+
+## 2026-08-10 — Team leads can see their own team's attendance
+
+New capability. A team lead has no `hr` department access, so every `/hr/attendance/*` route 403'd them
+— while `resolveAttendanceTeam` had **always** computed a manager's team correctly (reportees ∪
+departments they lead). The gate was the only thing missing.
+
+### Who counts as a team lead
+
+`managesAnyone(ctx, selfId)` in `teamScope.ts`: has an Active direct report, or leads a department. Two
+small parallel queries, not a full team resolve, because it runs on every attendance request a non-HR
+caller makes.
+
+**Deliberately a database question, not a profile-name one.** `mytrions.config.ts` still carries
+`allowedProfiles: ['HR']` with a comment saying the real Zoho profile names are unconfirmed — gating on
+a title like "Team Lead" would gate on a string nobody has verified, and would silently grant or revoke
+access whenever Zoho is retitled. Reporting lines are a fact we own.
+
+### What makes the widening safe
+
+1. **Membership is proven, not claimed.** No header and no profile string can make someone a manager.
+2. **The gate does not decide what they see — the scoping does.** `resolveAttendanceTeam` returns only
+   their team for a non-`canViewAll` caller, and `assertCanViewEmployeeAttendance` re-checks every
+   single-employee read (summary, export, per-person sync).
+3. **The blast radius is one route file.** `hr.routes.ts`, `hrPeople.routes.ts` and the department / org
+   routes keep `requireHrInternal`, so a team lead who reaches the HR workspace can open Attendance and
+   nothing else. Shift CREATE/UPDATE/DELETE stay `requireHrAdmin`.
+
+Granted per the decision: view the roster and each person's week, **assign shifts to their own team**
+(`assertCanAssignEmployeeShift` already scoped this and already refuses a manager assigning their OWN
+shift), and **export their team to CSV**.
+
+### A policy test I had to rewrite rather than satisfy
+
+`GET export refuses a non-admin HR reader` asserted 403 — export was Mytrion-Admin only. That was
+incoherent rather than strict: an HR Manager can already read any employee's week on screen via
+`/summary`, so refusing them the CSV of the same data protected nothing and only invited screenshots.
+Export now answers to the same per-employee rule as the panel, which is also what scopes a team lead to
+their own team. Rewrote the test to pin the new rule and to say what it used to claim.
+
+Its old form also passed no `employeeId`, so once the gate opened it failed on validation (400) rather
+than permission — it could not have told the two apart. Added a second test for the 400 explicitly,
+because "export is never a company-wide dump" is worth pinning separately.
+
+### The UI half
+
+`/auth/me` and the login response now carry `leadsTeam` — a HINT, never a grant; the routes re-derive it.
+`leadsTeamFor` is fail-closed-to-`false` and never throws, because `/auth/me` is on the critical path for
+every page load and an optional UI hint must not be able to take a session down.
+
+`resolveAccess` adds `hr` to a lead's accessible Mytrions and exposes `isHrAttendanceOnly`, which keys off
+the ABSENCE of real HR access — so HR staff who happen to manage someone are not narrowed. Every HR tab
+except Attendance now returns `false` from its `access(user)`, and `HrShell` lands on the first tab the
+person can actually open instead of hard-defaulting to Home (whose own reads would 403 a lead).
+
+7 mutations verified across both halves: dropping the manager check, skipping export's per-employee
+check, `managesAnyone` returning true unconditionally, sync skipping its check, attendance-only ignoring
+existing HR access, opening the HR door to everyone, and restoring the Employees tab for a lead.
+
+Backend HR/auth/RBAC 90/90. CRM 614/638 — the 24 are the six files already failing on `build`. Bundle
+rebuilt.
+
+### Same day — the last native `<select>`s are gone from HR
+
+The department modal's Lead and Parent were still native, so the same OS popup bug as the employee form.
+Rather than fix one modal and wait for the next report, converted every remaining one: `HrDepartmentModal`
+(2), `HrLeaveSettings` (3), `HrZohoUserLink` (1), `HrDepartmentMembers` (1). `grep '<select'` across
+`mytrions/hr` now returns only prose inside `HrSelect`'s own comments.
+
+Two capabilities had to be added to `HrSelect` first, because the natives were relying on them:
+
+- **`disabled` on an option** — shown, shown as the current value, not choosable. Three fields depend on
+  it: a department whose lead has no employee row must still NAME that lead (otherwise the field falls
+  back to its placeholder and silently loses the person), and the leave-approver list keeps ineligible
+  colleagues visible so their records do not look missing. Arrow movement steps over them in the
+  direction of travel, type-ahead ignores them, and opening on an inert current value starts at the
+  first choosable entry — otherwise `aria-activedescendant` points at something Enter would ignore.
+- **`disabled` on the control** — the Zoho-user picker must not be operable while its options load, and
+  the member picker not mid-save.
+
+### A bug I introduced and caught in the same minute
+
+Converting Parent department, I wrote `{ value: d.id, label: d.name }`. The native was
+`value={d.name}` — the form field is `parentName`, a NAME, and `patch.parentName` diffs against it. An id
+in a name column would have re-parented nothing while looking like it saved. Typecheck could not see it:
+both are `string`. Only re-reading the original markup did.
+
+Worth naming as a category: every one of these conversions is retyping a `value=` by hand, and a `string`
+that means the wrong thing is exactly what the compiler waves through.
+
+9 new tests (28 in the file). Mutations caught: commit ignoring the flag, arrows not skipping, and the
+control-level disabled being dropped.
+
+CRM 622/646 — the 24 are the six files already failing on `build`. Bundle rebuilt.
+
+### Same day — the sidebar was dead inside a person record, and a lead's route to team attendance
+
+**The bug.** `HrShell` rendered `HrPersonView` INSTEAD of the tab content whenever `actingAs` was set —
+the whole `view` switch was in the `else` branch. So every sidebar click updated the highlight and
+changed nothing; "Time Off" looked selected while a person's record stayed on screen, and the only exit
+was the "Back to HR" button. Choosing a nav destination now leaves the record: a record is scoped to one
+employee, a nav item is a different subject.
+
+That fix had NO test until the mutation run pointed it out — the one-line change I had just made to
+answer a reported bug was the least-covered thing in the diff. `HrShell.nav.test.tsx` mocks
+`MytrionShell` down to buttons and pins it. (First attempt missed Settings: it lives in `footerNav`, not
+`navSections`, and my mock only rendered one of the two.)
+
+**A lead's team attendance from the record.** Team rows are now buttons that open that member's own
+record, where their week already lives. Needed `zohoUserId` on the team-member DTO —
+`hrPersonOverview.ts` had every other identifier but not the one that keys the record view. Members with
+no linked Zoho sign-in stay plain text: a control that leads nowhere is worse than no control.
+
+**A test fixture mistake worth recording.** `overview` in `HrPersonView.test.tsx` is a FACTORY taking
+overrides, and I spread it (`...overview`) as if it were an object. The payload came out with no team at
+all, so the rows were missing rather than wrong — three tests failed for a reason that had nothing to do
+with the code under test.
+
+### Not done: creating time off from the record
+
+Asked for, and deliberately not invented. `submitLeaveRequest(ctx, …)` derives the employee from the
+SIGNED-IN caller — there is no on-behalf path anywhere in `hrLeave.routes.ts`. Adding one is a new
+capability with policy decisions I should not guess:
+
+- **Who may file for whom** — HR only, or a lead for their own team?
+- **Whose balance is spent**, and does it check the target's entitlement or bypass it?
+- **Does it need approval?** A request HR filed still routing to HR for approval is a loop; one that
+  auto-approves is a write with no second pair of eyes.
+- **What the audit says** — the request has one employee but two actors, and the record has to name both.
+
+The screen for it is ready (the record already shows the person and their balances); it is the policy
+that needs a decision.
+
+---
+
+## 2026-08-10 — Mobile responsiveness, Phase 0 (foundation)
+
+Branch `hotfix/Responsiveness`. Goal: make `apps/mytrion-crm` usable on a phone. Phase 0 is
+foundation only — **nothing a user sees changes**; desktop output is unchanged except for the
+document-level additions below.
+
+### On Capacitor (the framing question)
+
+Capacitor was proposed as an alternative to "rewriting the code". It is not one. Capacitor is a
+native WebView wrapper: it ships the identical DOM and CSS inside an app icon, so a 1180px-wide
+layout with 430px of fixed grid track renders exactly as badly at 390px inside Capacitor as it does
+in mobile Safari. The layout work is unavoidable either way. Capacitor is scoped as a later,
+separate phase; its three real blockers are recorded in the plan (`resolveApiConfig()` returns a
+same-origin base for any PROD build, the WS URL falls back to `window.location.host`, and
+`portalUrlWithParams` cannot emit a custom-scheme OAuth deep link). The good news found while
+checking: there are **zero cookies in the stack** — auth is a Bearer token in `localStorage` — so
+the entire SameSite/third-party-cookie class of native-auth failure does not apply here.
+
+### The ladder — 480 / 640 / 900 / 1200, range syntax
+
+Measured starting point: **127 width-based `@media` rules across 32 distinct breakpoint values**,
+against a ladder FOUNDATIONS.md has documented (560/768/1024) since Phase 2 and which ~8% of rules
+honour. The two biggest clusters (720px ×16, 900px ×15) were undocumented.
+
+Two lines, not one:
+- **640 = STRUCTURE.** Rail → tab bar, modal → sheet, table → cards. The page changes shape.
+- **900 = DENSITY.** Rail forced to its (already shipped) collapsed 68px form, compact gutters,
+  16px inputs. Nothing moves.
+
+A single switch is wrong in both directions: at 900 it forces the phone shell onto every iPad in
+portrait (810–834px) and every split-screen laptop; at 768 it leaves tablets behind a 248px rail
+with 572px of content and leaves the 15 existing 900px rules as permanent strays.
+
+**Range syntax (`(width < 640px)`), never `max-width`.** Verified in the built bundle that esbuild
+downlevels it to `@media not all and (min-width:640px)` — CSS2-era syntax, exclusive boundary
+preserved exactly — so there is no browser-support cost. This also kills a live bug by
+construction: `ds/*` guarded inputs at `max-width: 767px` while the shell switched at 768/769, so a
+viewport of exactly 768px got the mobile shell *and* 13px fields, which iOS answers by zooming the
+whole page.
+
+### Enforcement is a test, because it has to be
+
+`apps/mytrion-crm` is in `.eslintrc.cjs` `ignorePatterns` with the comment "It lints itself" — it
+does not; there is no lint script and no eslint dependency. **Vitest is the only mechanism this app
+has.** So `src/styles/breakpoints.test.ts` (sibling to `tokens.test.ts`) holds the line with
+budgets seeded at today's measured values, which only ever ratchet down:
+
+| Budget | Seeded |
+| --- | ---: |
+| off-ladder breakpoint values | 92 |
+| legacy `max-width`/`min-width` conditions | 124 |
+| CSS `min-width: Npx` | 75 |
+| inline `minWidth: N` in TSX | 64 |
+| px track in `grid-template-columns` | 89 |
+| bare `vh` / `vw` | 27 / 37 |
+| reveal-on-hover rules | 149 |
+| `font-size` on an input outside `styles/` and `ds/` | 43 |
+
+Plus two positive assertions: the hook's `BREAKPOINT` and FOUNDATIONS.md must state the same four
+numbers *and* agree on which is structure and which is density; and `.body` in
+`MytrionShell.module.css` must declare no `z-index`/`transform`/`filter`/`contain`/`isolation` —
+the stacking-context trap that file's own comment documents, now enforceable. Verified non-vacuous
+by injecting an off-ladder rule and watching it fail.
+
+### Test harness (landed alone, first — it unblocks everything)
+
+jsdom implements no CSSOM view module: **no `matchMedia`, no `visualViewport`**. `MytrionShell.test.tsx`
+had grown a local `vi.fn()` returning a constant `matches`, which is enough while one component asks
+one question and stops being enough the moment the shell, a table and a field each ask a *different*
+question of the same render. `src/test/viewport.ts` parses the query and evaluates it against a
+settable width; `setViewport(375)` now means one thing to every consumer. Defaults to desktop so all
+94 pre-existing suites keep their rendering. Note it deliberately does **not** clear its subscriber
+set between tests — `useMediaQuery` caches its `MediaQueryList` at module scope, so a dropped list
+would freeze `matches` for the rest of the file.
+
+### Also landed
+
+- `useMediaQuery` / `useBelow` / `useIsPhone` / `useIsCompact` / `useHasHover`, on
+  `useSyncExternalStore` rather than `useState`+`useEffect` — the effect shape renders once with a
+  guess and again with the truth, which is a visible flash of the desktop layout on a phone.
+- `useViewportInset` publishes `--kb-inset` by **writing a CSS custom property, never `setState`** —
+  `visualViewport` `resize` fires every frame of the keyboard animation, and routing that through
+  React re-renders a 400-row table ~20× per keypress.
+- `index.html`: `viewport-fit=cover` (without it every `env(safe-area-inset-*)` in the app silently
+  resolves to 0) + a pre-paint theme script. Deliberately **not** `user-scalable=no` — apps/mini-app
+  uses it, but Safari has ignored it since iOS 10 and it is a WCAG 1.4.4 failure; 16px fields are
+  the real fix and `--text-input-mobile` already ships them.
+- `theme.css`: `--layout-bottombar-h` / `--layout-safe-b` / `--layout-bottom-inset` on `:root`
+  (not on `.shell` — `RingCentralPhone` mounts in `WorkerLayout`, outside it).
+- `global.css`: the two media blocks, `.hscroll` (its `overscroll-behavior-x: contain` is what stops
+  a swipe past the last chip back-navigating out of the app), scoped `touch-action: manipulation`,
+  and a `(hover: none)` reset keyed on `[data-hover-reveal]`.
+
+**Why not wrap all 581 `:hover` rules in `@media (hover: hover)`:** many pair `:hover` with a
+non-hover selector in the same list (`.navActive, .navActive:hover`), so a mechanical wrap takes the
+*active* state down with it on touch. Only reveal-on-hover (opacity/visibility/display/
+pointer-events/transform) actually breaks a finger — 149 rules, now counted.
+
+### Dead code removed (executes MIGRATION.md §13)
+
+`--bottom-nav-height` ×3 and `--header-height` ×4, all declared, none read · three empty rule bodies
+in `billing/styles/shared-responsive.css` · `.bm-table-desktop-only`/`.bm-list-mobile-only`, styled
+but never written by any `.tsx` · `_shared/table.module.css`, a fourth table implementation with
+zero importers · and Sales' orphan `padding: 16px 12px 132px !important`, which reserved clearance
+for a bottom nav that never shipped.
+
+That 132px is the argument for the Phase 1 design: a `position: fixed` bar makes every workspace
+responsible for a number it cannot see, and exactly one workspace ever remembered. The mobile tab
+bar will be a **`flex: none` sibling of `.body`**, which also makes it structurally incapable of
+creating the stacking context that would trap every legacy `position: fixed` modal behind the
+header. MIGRATION.md §13's entry was amended rather than deleted: the three orphan tokens still go,
+but the reason changed (a bottom bar *is* being built), and the single replacement is
+`--layout-bottombar-h` on `:root`.
+
+### Verification
+
+`pnpm typecheck` clean · `pnpm vitest run` **96 files / 647 tests green** (was 94/627) ·
+`pnpm build:widget` succeeds and `apps/mytrion-crm/app/` is rebuilt and committed. Confirmed in the
+hashed bundle: `100dvh`, `--layout-bottombar-h:56px`, `overscroll-behavior-x:contain`,
+`touch-action:manipulation`, and `viewport-fit=cover` + the theme script in `app/index.html`.
+
+### 2026-08-10 — Phases 2 and 3 (partial)
+
+**Phase 2 — `ds/DataTable`.** New component rather than a prop on `ds/Table`: Table is a
+children-composition API and never sees a column definition, so it cannot restructure a caller's JSX
+into a card. Three bands — all columns ≥900, `priority: 1` only between 640 and 900 (CSS-only via
+`data-priority`), card list + detail sheet below 640 (a JS branch, because no CSS selector joins the
+text of sibling cells and `display: block` on table/tr/td destroys the native table reading mode).
+The detail sheet is a `ds/Drawer`, which was already a finished bottom sheet — the table half of
+this project needed zero new modal CSS.
+
+Fixed `stickyFirstColumn` while there: the pin was `:first-child`, and `display: none` does not
+change which element is first, so the moment any column could hide the pin landed on an invisible
+cell. Cells now carry `data-pin`.
+
+**Phase 3 — the floor, plus one reference migration.**
+
+`src/styles/responsive-tables.css` is the usable-not-broken floor. The rule that matters is
+`overscroll-behavior-x: contain`, which nobody had: an over-scrolled table chains its scroll to the
+page, and on iOS that gesture is Back — so flicking to the last column of a wide table navigated out
+of the workspace.
+
+**My first draft of that file targeted eleven classes that do not exist** (`.hr-table-wrap`,
+`.cs-stats-grid`, `.mg-panel`, …). Caught by checking, not by review. `breakpoints.test.ts` now
+fails on any selector in that file that no component renders — the same failure mode as
+`.bm-table-desktop-only`, which sat dead through two phases because a stylesheet naming a class
+nobody writes reads as covered.
+
+**The reference migration** (`OpenPoolReadonlyPanel`) is where the parity helper paid for itself. It
+failed on Gallons/Cycle/Window being unreachable on a phone, and chasing that surfaced a worse bug I
+had just written: `onRowActivate` was documented as card-mode-only, so migrating a table whose whole
+desktop interaction is row-click-to-select silently dropped that interaction. It would have looked
+right in a screenshot and been useless in the hand.
+
+The precedence is now **per mode**: table mode prefers `onRowActivate` (on a desktop the detail is
+usually already beside the table, and a modal covers what it describes); card mode prefers `detail`
+(there is no "beside" on a phone, and the dropped columns have nowhere else to be).
+
+Rows are memoised in both modes, with a test that proves the bail-out — the largest table this
+replaces is 200×28 with its search box in the same component, measured at ~105ms per keystroke
+before its row was memoised. Writing that test found two props (`secondaries`, `activate`) rebuilt
+inline that defeated the card memo entirely.
+
+**ConfirmDialog dedup.** Two identical implementations deleted (MIGRATION.md §13), seven call sites
+on `ds/ConfirmDialog`, which brings the sheet treatment with it. The first pass used a file-wide
+regex on `busy=` / `onCancel=` and renamed props on unrelated components that shared the names —
+reverted and redone scoped to the element. Coverage was ported rather than dropped, with one
+deliberate divergence recorded: ds keeps Cancel and Escape live while the action is in flight,
+because a hung request would otherwise leave a modal with no way out.
+
+### Still open
+
+Roughly 23 tables and 28 modals across Sales, Manager, Billing, and the rest of CS. The mechanics
+are now proven end to end, but each remaining table needs a product judgment — *which two or three
+columns does an agent need to triage this row on a phone?* — that should not be guessed. The floor
+means none of them is broken in the meantime.
+
+No browser verification has been done in these sessions: Tier 2 of the plan (the
+`scrollWidth > innerWidth` check, iOS input zoom, rotation, and the stacking-context check on a
+legacy modal) still needs a device or DevTools.
+
+### 2026-08-10 — Phase 3 continued: eleven tables migrated
+
+Customer Service 5/7, Manager 4/4, HR 2/2. ~500 lines of hand-written table
+markup replaced by column definitions; each surface gains a card list and, where
+it does not already own a detail modal, a record sheet below 640px.
+
+**Mobile roles are a judgment per table**, written down at each definition rather
+than inferred. The recurring shape: who the row is (primary), enough to identify
+it (secondary), and the one thing it is triaged on (value). Everything else opens
+with the record instead of competing for a 375px row. Two tables did something
+more specific — the KPI leaderboard takes its value from the ACTIVE SORT (you
+sorted by gallons because gallons is the question), and the EFS dossier's generic
+RowTable assigns roles by POSITION because its shape is whatever the vendor
+returned.
+
+**Four capabilities the migrations forced into `ds/DataTable`**, each from a real
+surface rather than speculation:
+
+- `rowActivation: 'row' | 'cell'`. HR's lists put a real button in the name cell
+  and treat the row click as a mouse convenience — their own comment says making
+  every row focusable "would put a tab stop on every one of 222 rows and leave
+  the admin actions inside it unreachable". DataTable was adding tabIndex to
+  every activatable row, which would have quietly undone that.
+- `rowState`. A terminated employee greyed out, a row with a delete in flight
+  aria-busy. Two named fields, not a prop spread — behaviour belongs in the
+  typed props, and a table that can inject arbitrary handlers per row stops
+  being describable as data.
+- `mobile: 'leading'` + un-hiding the leading slot. It was hard-coded
+  `aria-hidden`, which is right for a decorative avatar and an accessibility
+  violation for CITI Folder's bulk-select checkbox — hidden from assistive tech
+  but still in the tab order.
+- `rowKey` receives the index, for a generic dump over a vendor payload with no
+  natural id.
+
+**A recurring trap worth knowing:** an identity cell that renders a `<button>`
+needs a `mobileCell` returning plain text, because the card is itself a button
+and a button inside a button is invalid HTML. Now documented on the prop.
+
+**Two bugs of my own, both caught by looking rather than by review:**
+
+1. The budget helper asserted `count === min(count, budget)`, which passes
+   whenever the count goes DOWN — so a budget could go stale silently and let
+   regressions land later under the same green test. Exact equality now, in both
+   directions, which is what makes it a ratchet. Turning it on immediately showed
+   four stale budgets; they are locked at the real numbers (off-ladder 92→83,
+   legacy syntax 124→108).
+2. `responsive-tables.css` was giving `.fi-tablewrap` `overflow-x: auto`. That
+   class is the rounded FRAME — it carries `overflow: hidden` deliberately, to
+   clip the table to its radius — and `.fi-tablescroll` inside it is the real
+   scroller. The rule both broke the clipping and nested two horizontal
+   scrollers. **The class existing is not evidence that the rule belongs on it**,
+   which the dead-selector test cannot tell you; each one has to be read against
+   its own workspace's CSS.
+
+### Deliberately not migrated
+
+`finance/efsPanels.tsx`'s movements table groups rows under day headers using
+multiple `<tbody>` elements. DataTable renders one, and grouping is a real
+feature — this is exactly the case its docblock reserves for `ds/Table` directly.
+Left alone rather than flattened.
+
+### Still open
+
+Billing (10 tables, including the one virtualised surface), Sales' dash panel and
+`DetailSheet` cluster, Admin's KpiData, CS Applications (28 columns, per-cell
+click handlers) and Analytics. All covered by the floor in the meantime.
+
+Sales' `DetailSheet` → `ds/Dialog` is scoped but not done: its four call sites
+pass `avatar` and `badges`, which `ModalChrome` has no slots for, so the
+conversion is a header redesign rather than a swap — and its accessible name
+currently comes from a separate `ariaLabel` prop that `aria-labelledby` would
+override. Worth doing with a browser open.
+
+Still no browser verification. The `scrollWidth > innerWidth` check, iOS input
+zoom, rotation, and whether a legacy `position: fixed` modal still paints above
+the header all need a device.
+
+### 2026-08-11 — All 45 audited defects fixed
+
+A 10-agent audit read every Mytrion for the causes of the failures in the user's
+screenshots; a second pass adversarially verified each claim against the file.
+100 raw findings → 77 structural → **45 confirmed**, all now fixed.
+
+**The two that mattered most were both cases of a guard that did not guard.**
+
+`.left` in AppHeader was already shrinkable, but its CONTENTS were not — the
+workspace chip is `flex: none` through four nested layers, so the header's whole
+shrink budget was spent on the left and the acting-as banner paid. Fixing `.left`
+alone (which I did first) achieved nothing.
+
+The iOS 16px input guard was decorative: a bare element selector is (0,0,1) and
+lost to all 43 module rules that size their own fields. Every field in CS, HR and
+Recruit was still 12–15px. It now carries `!important`, scoped below the density
+line.
+
+**Three mechanical sweeps, each desktop-identical by construction:**
+
+- `repeat(N, 1fr)` → `repeat(N, minmax(0, 1fr))`, 29 sites. A bare `1fr` floors
+  at min-content, so a track holding a wide number refuses to shrink and the
+  PAGE scrolls sideways. Now banned outright by breakpoints.test.ts.
+- `minmax(Npx, 1fr)` → `minmax(min(100%, Npx), 1fr)` for the 15 floors above
+  290px. `auto-fill` reduces the column COUNT to one but never the track below
+  its floor, so a 360px grid stayed 360px inside a 280px box.
+- Non-wrapping rows split by kind: tab and chip strips SCROLL (wrapping moves
+  the active tab under the thumb), action clusters WRAP (a horizontally scrolled
+  action hides itself with no affordance saying it is there).
+
+**Dead CSS found twice more.** Billing's mobile KPI rule targeted
+`.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` — three classes styled
+throughout the module that no `.tsx` renders; the real class is `.db-kpi-grid`.
+Same failure as `.bm-table-desktop-only`. My first check said they were live: the
+`-g` flag had silently failed and rg was matching the stylesheets themselves.
+**Always verify a "this is dead" claim with a correctly-scoped search.**
+
+**The `vw` budget flagged a legitimate overlay clamp**, so it was narrowed rather
+than worked around. `width: 100vw` is the defect it was written for;
+`min(300px, calc(100vw - 1rem))` is the correct way to say "never wider than the
+screen". Counting only direct sizing dropped the real number 37 → 5. A heuristic
+that fires on the right answer needs fixing, not a workaround.
+
+**Budgets after this pass:** off-ladder breakpoints 92 → 78, legacy max-width
+124 → 99, bare `vh` 27 → 26, bare `vw` 37 → 5, bare `1fr` repeats → 0 (banned).
+
+### Two mistakes of mine, recorded
+
+1. I **overwrote** `components/DropdownMenu.test.tsx` instead of extending it,
+   destroying nine keyboard tests for shared chrome. Restored and merged — and
+   they immediately caught a regression the portal fix had introduced (focus-on-
+   open ran before the panel mounted, because I had gated its render on the
+   measurement). The tests earned their keep within a minute of being restored.
+2. I let a JSX `{/* */}` comment sit before a returned element, making two root
+   children. Caught by typecheck.
+
+### Still open
+
+Nothing from the audit. What remains is structural: **Sales is ~19k lines of
+inline style strings**, and every responsive rule for it has to be a class hook
+plus `!important` because an inline style outranks any selector. That is a
+conversion job, not a styling job, and it is why Sales needed the most hooks.
+
+**No browser verification.** Everything here is code-reading plus 697 jsdom
+tests. jsdom does no layout, so nothing above proves geometry — re-shooting the
+three screenshots is the only thing that does.
+
+### 2026-08-11 — Verified in a real browser, and it found things
+
+Built a headless-Chrome harness driven over the DevTools Protocol. **No new dependencies** — Chrome
+is already on the machine and Node 24 ships a native WebSocket.
+
+  pnpm audit:serve    dev server on :5175, VITE_DEV_MOCK_AUTH=1, /v1 proxied to the API
+  pnpm audit:mobile   every route x 320/375/430/639/640/820/1280, names the offenders
+  pnpm audit:shots    PNGs at a given width
+
+`vite.audit.config.ts` exists for one reason worth writing down: the API's CORS allowlist is an
+exact origin match and does not include :5175, so a cross-origin client there fails every fetch —
+and **an audit against empty tables is worthless, because an empty grid never overflows.** Proxying
+`/v1` makes the calls same-origin so the pages render with real data. It also keeps the audit off
+:5173, which is `strictPort` precisely so a developer's own server cannot be disturbed.
+
+**Result: 91 route x viewport combinations, 0 overflowing, 0 fields under 16px.** All twelve
+workspaces render at all seven widths.
+
+### Two defects only the browser could find
+
+1. **The RingCentral fix had never worked.** I targeted `#rc-widget-adapter-frame` and every
+   `iframe[id*=rc-widget]`. The docked pill is a positioned **DIV** — `#rc-widget.Adapter_root` —
+   so nothing moved and it went on covering "Maintenance", "Retention" and "More". Found by probing
+   the live DOM for fixed elements near the bottom edge; `--layout-bottom-inset` had been resolving
+   correctly (`calc(56px + 0px)`) the whole time, at a selector that matched nothing.
+
+2. **Billing's KPI banner was the grid the "dead selector" finding was really about.** The audit
+   correctly said `.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` are styled and never
+   rendered — but the class Billing actually writes is `.bm-summary-banner`, which nobody had a
+   mobile rule for. It sat at `repeat(4, …)` on a 375px screen: ~80px per tile, labels wrapping,
+   figures in a column narrower than they are.
+
+Both are the same lesson: **a fix aimed at the wrong selector is indistinguishable from no fix, and
+only the rendered page can tell you which you have.**
+
+Also tuned from looking rather than reasoning: KPI tiles stay **2-up** down to 320px instead of
+going 1-up at 480. Four full-width tiles put the actual content four screens down, and a 145px tile
+still holds these labels.
+
+The harness is now documented in the modern-web-guidance skill, with the caveat that matters: if a
+page renders empty, say so rather than counting the pass.

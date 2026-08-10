@@ -5,6 +5,8 @@
  * The headcount column keeps the card's THREE states: `undefined` means the directory has not landed
  * (a second, slower fetch), which is not the same as a department with nobody in it.
  */
+import { useMemo } from 'react';
+import { DataTable, type DataColumn } from '@/ds';
 import type { HrDepartmentDto } from '../../api/hr';
 import { departmentIcon, departmentTone } from './departmentAppearance';
 
@@ -32,82 +34,135 @@ export function HrDepartmentList({
   busyId: string | null;
   onOpen: (d: HrDepartmentDto) => void;
 }) {
-  return (
-    <div className="hr-listwrap">
-      <table className="hr-list">
-        <thead>
-          <tr>
-            <th scope="col">Department</th>
-            <th scope="col">Code</th>
-            <th scope="col">Lead</th>
-            <th scope="col">Under</th>
-            <th scope="col">People</th>
-            <th scope="col">Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {departments.map((department) => {
-            const Icon = departmentIcon(department.icon);
-            const staff = headcountFor(department.id);
-            const busy = busyId === department.id;
-            const blurb = summarize(department.description);
-            return (
-              <tr
-                key={department.id}
-                className={busy ? 'is-busy' : undefined}
-                aria-busy={busy}
-                style={{
-                  ['--dc' as string]: departmentTone(department.iconColor, department.id),
-                }}
-                onClick={() => {
-                  if (!busy) onOpen(department);
+  /**
+   * Built in-component: the headcount cell reads `headcountFor` and the busy state reads `busyId`,
+   * both of which are props that change.
+   *
+   * MOBILE ROLES — a department is its name (primary), its code and lead (secondary) and its
+   * headcount (the one value). "Under" and the description are context you read once you have
+   * picked one, so they open with it.
+   */
+  const columns = useMemo<DataColumn<HrDepartmentDto>[]>(
+    () => [
+      {
+        id: 'name',
+        header: 'Department',
+        rowHeader: true,
+        mobile: 'primary',
+        cell: (department) => {
+          const Icon = departmentIcon(department.icon);
+          const busy = busyId === department.id;
+          return (
+            <div
+              className="hr-list-person"
+              /* --dc lives here rather than on the row: it is only ever read by .hr-list-glyph and
+                 .hr-list-name:hover, both inside this cell, so this is the same paint with no
+                 per-row style hook. */
+              style={{ ['--dc' as string]: departmentTone(department.iconColor, department.id) }}
+            >
+              <span className="hr-list-glyph" aria-hidden="true">
+                <Icon size={14} />
+              </span>
+              {/* The row's real affordance: a keyboard user tabs to this, not to 222 focusable
+                  table rows — which is why the table uses rowActivation="cell". */}
+              <button
+                type="button"
+                className="hr-list-name"
+                disabled={busy}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onOpen(department);
                 }}
               >
-                <td>
-                  <div className="hr-list-person">
-                    <span className="hr-list-glyph" aria-hidden="true">
-                      <Icon size={14} />
-                    </span>
-                    <button
-                      type="button"
-                      className="hr-list-name"
-                      disabled={busy}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        onOpen(department);
-                      }}
-                    >
-                      {department.name}
-                    </button>
-                  </div>
-                </td>
-                <td className="hr-mono hr-list-dim">{department.code || '—'}</td>
-                <td>{department.leadName || '—'}</td>
-                <td>{department.parentName || <span className="hr-list-dim">Top level</span>}</td>
-                <td className="hr-list-count">
-                  {staff === undefined ? (
-                    <span className="hr-list-dim" title="Headcount still loading">
-                      —
-                    </span>
-                  ) : staff.total === 0 ? (
-                    <span className="hr-list-dim">No one</span>
-                  ) : (
-                    <>
-                      <strong>{staff.active}</strong>
-                      {staff.total !== staff.active ? (
-                        <span className="hr-list-dim"> / {staff.total}</span>
-                      ) : null}
-                    </>
-                  )}
-                </td>
-                <td className="hr-list-blurb">
-                  {blurb || <span className="hr-list-dim">No description yet.</span>}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                {department.name}
+              </button>
+            </div>
+          );
+        },
+        // Plain text on the card: the card is already a button, and a button inside a button is
+        // invalid HTML.
+        mobileCell: (department) => department.name,
+      },
+      {
+        id: 'code',
+        header: 'Code',
+        mobile: 'secondary',
+        cell: (department) => (
+          <span className="hr-mono hr-list-dim">{department.code || '—'}</span>
+        ),
+      },
+      {
+        id: 'lead',
+        header: 'Lead',
+        mobile: 'secondary',
+        cell: (department) => department.leadName || '—',
+      },
+      {
+        id: 'parent',
+        header: 'Under',
+        priority: 2,
+        cell: (department) =>
+          department.parentName || <span className="hr-list-dim">Top level</span>,
+      },
+      {
+        id: 'people',
+        header: 'People',
+        mobile: 'value',
+        cell: (department) => {
+          const staff = headcountFor(department.id);
+          return (
+            <span className="hr-list-count">
+              {/* THREE states, not two: `undefined` means the directory has not landed (a second,
+                  slower fetch), which is not the same as a department with nobody in it. */}
+              {staff === undefined ? (
+                <span className="hr-list-dim" title="Headcount still loading">
+                  —
+                </span>
+              ) : staff.total === 0 ? (
+                <span className="hr-list-dim">No one</span>
+              ) : (
+                <>
+                  <strong>{staff.active}</strong>
+                  {staff.total !== staff.active ? (
+                    <span className="hr-list-dim"> / {staff.total}</span>
+                  ) : null}
+                </>
+              )}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'description',
+        header: 'Description',
+        priority: 3,
+        cell: (department) => {
+          const blurb = summarize(department.description);
+          return (
+            <span className="hr-list-blurb">
+              {blurb || <span className="hr-list-dim">No description yet.</span>}
+            </span>
+          );
+        },
+      },
+    ],
+    [busyId, headcountFor, onOpen],
+  );
+
+  return (
+    <DataTable
+      caption="Departments"
+      rows={departments}
+      rowKey={(department) => department.id}
+      columns={columns}
+      className="hr-list"
+      scrollerClassName="hr-listwrap"
+      /* Click is a mouse convenience; the name button is the keyboard path. See the component
+         docblock — a directory this long must not put a tab stop on every row. */
+      rowActivation="cell"
+      onRowActivate={(department) => {
+        if (busyId !== department.id) onOpen(department);
+      }}
+    />
   );
 }

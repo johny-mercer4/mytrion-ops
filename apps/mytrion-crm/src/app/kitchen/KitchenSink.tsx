@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
   AgentBadge, AgentStatus, ApprovalBar, Avatar, AvatarGroup, Badge, Button, Checkbox,
-  CitationChip, ConfidenceMeter, ConfirmDialog, Dialog, Drawer, DropdownMenu, ElicitationPicker,
+  CitationChip, ConfidenceMeter, ConfirmDialog, DataTable, Dialog, Drawer, DropdownMenu, ElicitationPicker,
   Icon, InlineDiff, Input, Pagination, Provenance, Radio, RadioGroup, RetryButton, Select,
   Skeleton, SourceList, StoppedNote, StopButton, StreamingText, StructuredOutput, Switch, Table,
   TableBody, TableCell, TableHead, TableHeaderCell, TableRow, TabPanel, Tabs, Textarea, ToolCallCard,
   ToolCallList, Tooltip, TurnError,
 } from '@/ds';
+import type { DataColumn } from '@/ds';
 import { KitchenShell, Row, Section, Specimen, ThemePair } from './KitchenShell';
 
 /**
@@ -18,10 +19,47 @@ import { KitchenShell, Row, Section, Specimen, ThemePair } from './KitchenShell'
 
 const SECTIONS = [
   'Icon', 'Button', 'Input', 'Textarea', 'Select', 'Checkbox', 'Radio', 'Switch',
-  'Badge', 'Avatar', 'Table', 'Tabs', 'Pagination', 'Skeleton',
+  'Badge', 'Avatar', 'Table', 'DataTable', 'Tabs', 'Pagination', 'Skeleton',
   'Tooltip', 'DropdownMenu', 'Dialog', 'Drawer',
   'Streaming text', 'Agent status', 'Tool calls', 'Citations', 'Confidence',
   'Inline diff', 'Approval', 'Stop and retry', 'Turn error', 'Structured output', 'Elicitation',
+];
+
+/**
+ * DataTable's specimen data. Deliberately a shape with more columns than a card can hold, because
+ * the interesting behaviour is what happens to columns 4..N — they move to the detail sheet rather
+ * than being squeezed into the row.
+ */
+interface DemoRow {
+  id: string;
+  carrier: string;
+  unit: string;
+  date: string;
+  driver: string;
+  status: 'Settled' | 'Pending' | 'Disputed';
+  amount: string;
+}
+
+const DEMO_ROWS: DemoRow[] = [
+  { id: '1', carrier: 'Northwind Freight', unit: 'Unit 302', date: 'Mar 14', driver: 'D. Carter', status: 'Settled', amount: '4,912.08' },
+  { id: '2', carrier: 'Cascade Logistics', unit: 'Unit 117', date: 'Mar 14', driver: 'M. Ortiz', status: 'Pending', amount: '3,447.11' },
+  { id: '3', carrier: 'Redline Haulage', unit: 'Unit 88', date: 'Mar 13', driver: 'A. Whitfield', status: 'Disputed', amount: '1,208.40' },
+];
+
+const DEMO_INTENT = { Settled: 'success', Pending: 'warning', Disputed: 'danger' } as const;
+
+const DEMO_COLUMNS: DataColumn<DemoRow>[] = [
+  { id: 'carrier', header: 'Carrier', cell: (r) => r.carrier, mobile: 'primary', rowHeader: true },
+  { id: 'unit', header: 'Unit', cell: (r) => r.unit, mobile: 'secondary' },
+  { id: 'date', header: 'Date', cell: (r) => r.date, mobile: 'secondary', priority: 2 },
+  { id: 'driver', header: 'Driver', cell: (r) => r.driver, priority: 3 },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (r) => <Badge intent={DEMO_INTENT[r.status]} size="sm">{r.status}</Badge>,
+    mobile: 'value',
+  },
+  { id: 'amount', header: 'Amount', cell: (r) => r.amount, numeric: true, align: 'end' },
 ];
 
 export default function KitchenSink() {
@@ -243,6 +281,34 @@ export default function KitchenSink() {
             </TableBody>
           </Table>
         </ThemePair>
+      </Section>
+
+      <Section
+        title="DataTable"
+        subtitle="One column definition, two renderings. Narrow the window past 900px to watch columns drop by priority, and past 640px to watch it become a tap-to-detail card list."
+      >
+        <Specimen label="Six columns · tap a card below 640px to open the record">
+          <DataTable
+            caption="Recent transactions"
+            rows={DEMO_ROWS}
+            rowKey={(r) => r.id}
+            columns={DEMO_COLUMNS}
+            density="compact"
+            detail={{
+              title: (r) => r.carrier,
+              subtitle: (r) => `${r.unit} · ${r.date}`,
+            }}
+          />
+        </Specimen>
+        <Specimen label="Empty">
+          <DataTable
+            caption="Recent transactions"
+            rows={[]}
+            rowKey={(r: DemoRow) => r.id}
+            columns={DEMO_COLUMNS}
+            empty="No transactions in this period. Try widening the date range."
+          />
+        </Specimen>
       </Section>
 
       <Section title="Tabs" subtitle="Manual activation — arrows move focus, Enter activates. These panels fetch.">

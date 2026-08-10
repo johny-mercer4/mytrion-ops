@@ -137,12 +137,16 @@
   }
 }
 
-/* ── Narrow viewport: a block-end sheet ──────────────────────────────────────
-   560px is the app's small breakpoint (FOUNDATIONS.md). Below it a 440px panel would be the whole
-   screen anyway, so it stops pretending to be a side panel and becomes a bottom sheet: reachable
-   by thumb, and honest about covering the page.
+/* ── Below the structure line: a block-end sheet ──────────────────────────────
+   640px is the STRUCTURE line (FOUNDATIONS.md §5) — the width at which the page changes shape
+   rather than just getting tighter. Below it a 440px panel would be the whole screen anyway, so it
+   stops pretending to be a side panel and becomes a bottom sheet: reachable by thumb, and honest
+   about covering the page.
+   Was 560px, which predated the ladder. Moving it up matters because Billing's own modal-to-sheet
+   rule already sat at 640: at 600px wide the app used to show a Billing modal as a sheet and a
+   ds/Drawer as a side panel simultaneously.
    Breakpoints cannot be tokens — a custom property is not valid in an @media condition. */
-@media (max-width: 560px) {
+@media (width < 640px) {
   .dialog[open] {
     flex-direction: column;
     align-items: stretch;
@@ -158,9 +162,17 @@
 
     border-inline-start-width: 0;
     border-block-start: 1px solid var(--border-default);
-    /* Only the leading corners round — the trailing pair are against the viewport edge. */
+    /* Only the leading corners round — the trailing pair meet the viewport edge, where a rounded
+       corner would show two crescents of scrim at the very bottom of the screen. */
     border-start-start-radius: var(--radius-panel);
     border-start-end-radius: var(--radius-panel);
+    border-end-start-radius: var(--radius-none);
+    border-end-end-radius: var(--radius-none);
+
+    /* The home indicator sits over the last ~34px of the screen, and --kb-inset is however much of
+       the viewport the software keyboard is currently covering (see hooks/useViewportInset.ts).
+       Without both, a sheet's footer action is under the user's own hardware. */
+    padding-block-end: calc(env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
   }
 
   .dialog[data-state='open'] .panel {

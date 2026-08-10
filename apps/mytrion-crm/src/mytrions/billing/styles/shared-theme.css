@@ -95,8 +95,6 @@
     /* ── Layout ── */
     --sidebar-width:      216px;
     --sidebar-collapsed:  64px;
-    --header-height:      56px;
-    --bottom-nav-height:  62px;
 
     /* ── Surfaces — translucent panes; the blur lives in bm-horizon.css ── */
     --surface-raised: var(--hz-glass-hover);

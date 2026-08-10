@@ -328,7 +328,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
           animation — two nested ones read as a stutter. */}
       <div
         className="ss-pool"
-        style={s('display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:480px')}
+        style={s('display:flex;flex-direction:column;height:calc(100svh - 150px);min-height:min(480px, 60svh)')}
       >
         <div style={s('margin-bottom:14px')}>
           <RetentionHero

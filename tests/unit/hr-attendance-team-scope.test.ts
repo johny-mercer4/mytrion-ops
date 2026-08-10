@@ -152,3 +152,77 @@ describe('assertCanViewEmployeeAttendance', () => {
     );
   });
 });
+
+/**
+ * Roster order is by FIRST name.
+ *
+ * It was last name, which reads as a phone book: you scan the attendance roster looking for "Shohruh",
+ * not "Bekmurodov", and in this directory surname order buries every `Abdu*` prefix together at the top
+ * so the first screen is one indistinguishable block.
+ */
+describe('roster ordering', () => {
+  beforeEach(() => {
+    employees.listByReportingTo.mockResolvedValue([]);
+    employees.listByDepartmentIds.mockResolvedValue([]);
+    depts.listIdsLedBy.mockResolvedValue([]);
+  });
+
+  const admin = () => ctx({ role: 'admin', allDepartmentAccess: true });
+
+  it('sorts by first name, not surname', async () => {
+    employees.list.mockResolvedValue([
+      emp('e1', 'Zafar Abdug`apporov'),
+      emp('e2', 'Abbos Yusupov'),
+      emp('e3', 'Malika Karimova'),
+    ]);
+    const team = await resolveAttendanceTeam(admin(), '', 'all', '');
+    expect(team.items.map((m) => m.employee.firstName)).toEqual(['Abbos', 'Malika', 'Zafar']);
+  });
+
+  /**
+   * The directory really does hold both — Zoho imports arrive upper-cased, manual rows do not.
+   *
+   * What this pins is that the comparison is COLLATED, not codepoint order: `'Z' < 'a'` by codepoint,
+   * so a raw `<` (or an uncollated SQL `order by`) bunches every shouting name ahead of the rest and
+   * the list reads as unsorted. `localeCompare` is what prevents that.
+   */
+  it('interleaves UPPER-CASE names instead of clumping them first', async () => {
+    /**
+     * These three SHARE a first letter, which is what makes the test discriminate.
+     *
+     * My first attempt used `Alina / Bekzod / UMIDJON / ZAFAR` — all distinct initials, all capitalised,
+     * so codepoint and collated order agree and the assertion held either way. The two only disagree
+     * from the second character on: codepoint gives `UMIDJON Ulugbek Umar` ('M' 77 < 'l' 108), collation
+     * gives `Ulugbek Umar UMIDJON`.
+     */
+    employees.list.mockResolvedValue([
+      emp('e1', 'Umar Aliyev'),
+      emp('e2', 'UMIDJON ABDUGAPPOROV'),
+      emp('e3', 'Ulugbek Kravtsov'),
+    ]);
+    const team = await resolveAttendanceTeam(admin(), '', 'all', '');
+    expect(team.items.map((m) => m.employee.firstName)).toEqual(['Ulugbek', 'Umar', 'UMIDJON']);
+  });
+
+  it('breaks a first-name tie on surname, then on id for stability', async () => {
+    employees.list.mockResolvedValue([
+      emp('e2', 'Abdulaziz Raximov'),
+      // e3 BEFORE e1 on purpose. Array.prototype.sort is stable, so with the ids fed in ascending
+      // order the tiebreaker makes no difference and the test would pass without it.
+      emp('e3', 'Abdulaziz Abdurasulov'),
+      emp('e1', 'Abdulaziz Abdurasulov'),
+    ]);
+    const team = await resolveAttendanceTeam(admin(), '', 'all', '');
+    // Same name twice must not swap places between fetches, or the roster shuffles on every refresh.
+    expect(team.items.map((m) => m.employee.id)).toEqual(['e1', 'e3', 'e2']);
+  });
+
+  it('orders the direct-reports pane the same way', async () => {
+    employees.listByReportingTo.mockResolvedValue([
+      emp('e1', 'Zafar Aliyev'),
+      emp('e2', 'Abbos Yusupov'),
+    ]);
+    const team = await resolveAttendanceTeam(ctx(), 'self_1', 'direct', '');
+    expect(team.items.map((m) => m.employee.firstName)).toEqual(['Abbos', 'Zafar']);
+  });
+});

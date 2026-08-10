@@ -181,6 +181,11 @@
   --radius-control: 4px;
   --radius-panel: 8px;
   --radius-pill: 999px;
+  /* Square, named. A full-bleed surface — a bottom sheet's trailing corners, a fullscreen dialog —
+     genuinely has no corner, and that is part of the corner language rather than an exception to
+     it. Named so ds/purity.test.ts's "no number on a radius" rule stays absolute: declining a
+     radius should not have to look like inventing one. */
+  --radius-none: 0;
 
   --radius-xs: var(--radius-control);
   --radius-sm: var(--radius-control);
@@ -215,8 +220,12 @@
      as 44/48/56/56px) and --sidebar-width (238px and 216px) had ZERO consumers app-wide — eleven
      dead declarations describing numbers nothing read, while the real values sat as literals in
      the two shell files. Those are deleted, not reconciled.
-     Breakpoints (560 / 768 / 1024) are NOT tokens: a custom property cannot be used in an @media
-     condition. They live in FOUNDATIONS.md and nowhere else. */
+     Breakpoints (480 / 640 / 900 / 1200) are NOT tokens: a custom property cannot be used in an
+     @media condition. They live in FOUNDATIONS.md, and src/styles/breakpoints.test.ts is what
+     actually holds the line — the ladder was documented for two phases while the tree grew to 32
+     distinct values, so prose alone has already been tried and has already failed.
+     640 is the STRUCTURE line (rail becomes a tab bar, modals become sheets, tables become cards).
+     900 is the DENSITY line (rail forced to its collapsed form, compact gutters, 16px inputs). */
   --layout-header-h: 64px;
   --layout-rail-w: 248px;
   --layout-rail-w-collapsed: 68px;
@@ -225,6 +234,19 @@
   --layout-gutter: var(--space-6);
   --layout-gutter-compact: var(--space-4);
   --layout-section-gap: var(--space-6);
+
+  /* Bottom chrome. 0 by default; global.css re-declares the bar height below the structure line.
+     Anything pinned to the bottom of the viewport — the RingCentral dock, the CS copilot FAB, the
+     toaster — offsets by --layout-bottom-inset rather than hand-maintaining its own clearance.
+     That is the mistake the orphaned `padding-bottom: 132px !important` in sales/redesign/theme.css
+     records: a fixed bar makes every workspace responsible for a number it cannot see, and exactly
+     one workspace ever remembered. The mobile tab bar is a flow sibling for the same reason, so on
+     the shell itself this inset is belt-and-braces; it is load-bearing only for the fixed chrome
+     that lives OUTSIDE the shell (RingCentralPhone mounts in WorkerLayout), which is why it is
+     declared on :root and not on .shell. */
+  --layout-bottombar-h: 0px;
+  --layout-safe-b: env(safe-area-inset-bottom, 0px);
+  --layout-bottom-inset: calc(var(--layout-bottombar-h) + var(--layout-safe-b));
 
   /* ── Icon ───────────────────────────────────────────────────────────────────
      ONE family: Material Symbols Sharp. Two sizes, no exceptions.

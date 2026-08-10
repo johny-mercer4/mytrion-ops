@@ -725,6 +725,13 @@
     color: var(--text-primary);
 }
 
+/* Data Center's invoice card — when the invoice's payment date came back (Paid/Partially Paid only). */
+.bm-root .tx-invoice-payment-date {
+    font-size: 0.5875rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+}
+
 /* ── Action hints ── */
 .bm-root .tx-invoice-click-hint {
     font-size: 0.5625rem;
@@ -989,7 +996,7 @@
    ================================================= */
 @media (max-width: 860px) {
     .bm-root .tx-summary-banner {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -999,7 +1006,7 @@
     }
 
     .bm-root .tx-summary-banner {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.5rem;
     }
 

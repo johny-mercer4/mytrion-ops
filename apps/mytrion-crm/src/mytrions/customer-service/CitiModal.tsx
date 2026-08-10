@@ -17,10 +17,10 @@ import {
   type CitiWriteValue,
 } from '@/api/cs';
 import { useUserContext } from '@/context/UserContextProvider';
-import { ConfirmDialog } from './ConfirmDialog';
 import type { CitiRow } from './live';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { useScrollLock } from './useScrollLock';
+import { ConfirmDialog } from '@/ds';
 
 const CANONICAL = {
   Request: ['Outbound', 'Incoming'],
@@ -434,12 +434,14 @@ export function CitiModal({
 
       {confirmDelete && client ? (
         <ConfirmDialog
+          open
+          tone="danger"
           title="Delete this client?"
           body={`“${client.name}” will be removed from Citifuel Clients. This cannot be undone.`}
           confirmLabel="Delete"
-          busy={deleting}
+          confirming={deleting}
           onConfirm={remove}
-          onCancel={() => setConfirmDelete(false)}
+          onClose={() => setConfirmDelete(false)}
         />
       ) : null}
     </div>

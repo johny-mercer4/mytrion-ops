@@ -40,13 +40,30 @@ import './hr-attendance-v2.css';
 export function HrShell() {
   const user = useUserContext();
   const { actingAs, setActingAs } = useImpersonation();
-  const [view, setView] = useState<HrTabId>('home');
   const tabs = accessibleHrTabs(user);
+  /**
+   * The first tab this person can actually open, not always Home.
+   *
+   * A team lead reaches HR for Attendance alone, so Home is not in their nav — and Home reads the
+   * employee directory, which their session is refused. Landing them there showed an error page in a
+   * workspace whose only working screen was one click away and unmarked.
+   */
+  const [view, setView] = useState<HrTabId>(() => tabs[0]?.id ?? 'attendance');
   const settingsTab = tabs.find((tab) => tab.id === 'settings');
   const mainTabs = tabs.filter((tab) => tab.id !== 'settings');
 
   const open = (id: HrTabId): void => {
-    if (canOpenHrTab(user, id)) setView(id);
+    if (!canOpenHrTab(user, id)) return;
+    /**
+     * Leave the person record when a nav item is chosen.
+     *
+     * The record view took over the whole content area whenever `actingAs` was set, so every sidebar
+     * click moved the highlight and changed nothing — the nav looked broken, and the only way out was
+     * the "Back to HR" button at the top. A record is scoped to one employee; a nav item is a different
+     * subject, so choosing one means leaving.
+     */
+    setActingAs(null);
+    setView(id);
   };
 
   const navSections: NavSection[] = [
@@ -92,6 +109,14 @@ export function HrShell() {
             name={actingAs.name}
             subtitle={[actingAs.profile, actingAs.role].filter(Boolean).join(' · ')}
             onExit={() => setActingAs(null)}
+            onOpenPerson={(person) =>
+              setActingAs({
+                zohoUserId: person.zohoUserId,
+                name: person.name,
+                profile: person.subtitle ?? '',
+                role: '',
+              })
+            }
           />
         ) : (
           <>

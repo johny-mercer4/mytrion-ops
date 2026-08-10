@@ -7,6 +7,9 @@ export type { DialogCloseReason, FocusTargetRef };
 
 export type DialogSize = 'sm' | 'md' | 'lg';
 
+/** How the surface behaves below the STRUCTURE line (640px). */
+export type DialogMobileMode = 'sheet' | 'fullscreen' | 'centered';
+
 export interface DialogProps
   extends Omit<DialogHTMLAttributes<HTMLDialogElement>, 'title' | 'onClose' | 'open' | 'children'> {
   /** Controlled. The parent owns this; the component never closes itself. */
@@ -30,6 +33,19 @@ export interface DialogProps
    * `lg` (800px) — a table, a diff, a preview. Above this, use a page.
    */
   size?: DialogSize;
+  /**
+   * Below the structure line, where a 560px panel is wider than the screen and a centred box with
+   * 24px of gutter is a full-screen modal pretending otherwise.
+   *
+   * `sheet` (default) rises from the bottom edge and caps at 88%, leaving a strip of backdrop that
+   *   is both the only remaining dismiss target and the only signal the page is still there. Right
+   *   for a record, a short form, a confirmation.
+   * `fullscreen` takes the whole viewport with no radius and no backdrop. For a wizard or a form
+   *   longer than a screen — those in an 88% sheet are a scroll region inside a scroll region.
+   *   A fullscreen dialog has no backdrop to tap, so it MUST render its own way out.
+   * `centered` opts out entirely. Rare; a tiny dialog that genuinely reads better centred.
+   */
+  mobile?: DialogMobileMode;
   /**
    * Default true. Set false ONLY when leaving mid-flow would lose work or corrupt state — it
    * removes Escape, backdrop dismissal AND the close button at once, so a dialog that is not
@@ -88,6 +104,7 @@ export function Dialog({
   title,
   subtitle,
   size = 'md',
+  mobile = 'sheet',
   dismissible = true,
   closeLabel = 'Close',
   footer,
@@ -112,6 +129,7 @@ export function Dialog({
       ref={dialogRef}
       className={[styles.dialog, className].filter(Boolean).join(' ')}
       data-size={size}
+      data-mobile={mobile}
       data-state={phase}
       // Programmatically focusable so the hook can put initial focus HERE rather than on the first
       // control inside. -1 keeps it out of the tab order, where a focusable backdrop would be noise.

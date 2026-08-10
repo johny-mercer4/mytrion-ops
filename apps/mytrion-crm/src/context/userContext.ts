@@ -33,6 +33,8 @@ export interface UserContext {
   mytrionAccessModes?: MytrionAccessModes;
   /** Users this worker may "View as" (targeted impersonation grant) — drives the picker for non-admins. */
   viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
+  /** Leads a team (direct reports or a led department). Opens HR → Attendance, and only that. */
+  leadsTeam?: boolean;
 }
 
 /** Mirrors the old MOCK_USER so `vite dev` works standalone (admin, sees everything). */
@@ -61,6 +63,7 @@ export function contextFromWorker(worker: SessionWorker): UserContext {
   if (worker.allDepartmentAccess !== undefined) ctx.allDepartmentAccess = worker.allDepartmentAccess;
   if (worker.mytrionAccessModes) ctx.mytrionAccessModes = worker.mytrionAccessModes;
   if (worker.viewAsTargets) ctx.viewAsTargets = worker.viewAsTargets;
+  if (worker.leadsTeam !== undefined) ctx.leadsTeam = worker.leadsTeam;
   return ctx;
 }
 

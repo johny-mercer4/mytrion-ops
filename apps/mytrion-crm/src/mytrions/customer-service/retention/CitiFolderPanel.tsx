@@ -10,6 +10,7 @@ import { Toast, type ToastState } from '../Toast';
 import { useLoad } from '../live';
 import { subscribeCsRetentionLive } from './retentionLiveBus';
 import { CaseBadge, statusLabel, statusTone } from './casesUi';
+import { DataTable, type DataColumn } from '@/ds';
 
 function toastMsg(kind: ToastState['kind'], message: string): ToastState {
   return { id: Date.now(), kind, message };
@@ -57,6 +58,86 @@ export function CitiFolderPanel() {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const toggleAll = (): void => setSelected(allChecked ? [] : allIds.slice());
+
+  /**
+   * Memoised on the two things it closes over — DataTable memoises its rows on `columns` identity,
+   * so an array rebuilt every render would re-render every row on every keystroke elsewhere.
+   *
+   * MOBILE ROLES — this desk is a bulk queue, not a browser: the checkbox takes the card's leading
+   * slot, the company names the row, carrier and entry date identify it, and status is the one
+   * value. Hold-until and cycle count are review detail and stay in the table.
+   */
+  const COLUMNS = useMemo<DataColumn<RetentionCaseRow>[]>(
+    () => [
+      {
+        id: 'select',
+        header: (
+          <input
+            type="checkbox"
+            checked={allChecked}
+            onChange={toggleAll}
+            aria-label={allChecked ? 'Deselect all deals' : 'Select all deals'}
+            disabled={rows.length === 0}
+          />
+        ),
+        width: '2.5rem',
+        align: 'center',
+        mobile: 'leading',
+        // Off the record sheet: a checkbox in a key-value list is a control pretending to be data.
+        detail: false,
+        cell: (c) => (
+          <input
+            type="checkbox"
+            checked={selected.includes(c.id)}
+            onChange={() => toggle(c.id)}
+            aria-label={`Select ${c.companyName || c.carrierId}`}
+          />
+        ),
+      },
+      {
+        id: 'company',
+        header: 'Company',
+        rowHeader: true,
+        mobile: 'primary',
+        cell: (c) => <span className="cs-citi-company">{c.companyName || '—'}</span>,
+      },
+      {
+        id: 'carrier',
+        header: 'Carrier',
+        mobile: 'secondary',
+        cell: (c) => <span className="cs-pool-mono">{c.carrierId}</span>,
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        mobile: 'value',
+        // Was `{c.statusCode}` — the raw enum (e.g. "p3_hold") leaked into the UI.
+        cell: (c) => <CaseBadge tone={statusTone(c.statusCode)}>{statusLabel(c.statusCode)}</CaseBadge>,
+      },
+      {
+        id: 'entered',
+        header: 'Entered',
+        mobile: 'secondary',
+        cell: (c) =>
+          c.citiFolderEnteredAt ? new Date(c.citiFolderEnteredAt).toLocaleDateString() : '—',
+      },
+      {
+        id: 'hold',
+        header: 'Hold until',
+        priority: 2,
+        cell: (c) =>
+          c.citiFolderHoldUntil ? new Date(c.citiFolderHoldUntil).toLocaleDateString() : '—',
+      },
+      {
+        id: 'cycle',
+        header: 'Cycle',
+        priority: 2,
+        numeric: true,
+        cell: (c) => <span className="cs-pool-mono">{c.assignmentCount}/3</span>,
+      },
+    ],
+    [allChecked, rows.length, selected],
+  );
 
   /**
    * `fn` may return its own toast (e.g. the export's partial-failure warning); when it does we show
@@ -165,75 +246,20 @@ export function CitiFolderPanel() {
 
       {feed.error ? <div className="cs-banner-danger">{feed.error}</div> : null}
 
-      <div className="cs-table-wrap">
-        <table className="cs-table">
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  onChange={toggleAll}
-                  aria-label={allChecked ? 'Deselect all deals' : 'Select all deals'}
-                  disabled={rows.length === 0}
-                />
-              </th>
-              <th>Company</th>
-              <th>Carrier</th>
-              <th>Status</th>
-              <th>Entered</th>
-              <th>Hold until</th>
-              <th>Cycle</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.id} className={selected.includes(c.id) ? 'cs-citi-row-sel' : undefined}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(c.id)}
-                    onChange={() => toggle(c.id)}
-                    aria-label={`Select ${c.companyName || c.carrierId}`}
-                  />
-                </td>
-                <td className="cs-citi-company">{c.companyName || '—'}</td>
-                <td className="cs-pool-mono">{c.carrierId}</td>
-                <td>
-                  {/* Was `{c.statusCode}` — the raw enum (e.g. "p3_hold") leaked into the UI. */}
-                  <CaseBadge tone={statusTone(c.statusCode)}>{statusLabel(c.statusCode)}</CaseBadge>
-                </td>
-                <td>
-                  {c.citiFolderEnteredAt
-                    ? new Date(c.citiFolderEnteredAt).toLocaleDateString()
-                    : '—'}
-                </td>
-                <td>
-                  {c.citiFolderHoldUntil
-                    ? new Date(c.citiFolderHoldUntil).toLocaleDateString()
-                    : '—'}
-                </td>
-                <td className="cs-pool-mono">{c.assignmentCount}/3</td>
-              </tr>
-            ))}
-            {/* The initial load previously rendered an empty <tbody> with no indication at all. */}
-            {rows.length === 0 && feed.loading ? (
-              <tr>
-                <td colSpan={7} className="cs-empty">
-                  Loading CITI Folder…
-                </td>
-              </tr>
-            ) : null}
-            {rows.length === 0 && !feed.loading ? (
-              <tr>
-                <td colSpan={7} className="cs-empty">
-                  CITI Folder is empty
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        caption="Deals in the CITI Folder"
+        rows={rows}
+        rowKey={(c) => c.id}
+        columns={COLUMNS}
+        scrollerClassName="cs-table-wrap"
+        className="cs-table"
+        selected={(c) => selected.includes(c.id)}
+        loading={rows.length === 0 && feed.loading}
+        empty="CITI Folder is empty"
+        /* No row activation: this table's whole job is bulk selection for "Mark sent". A row that
+           also opened something would put two targets under one thumb. */
+      />
+
       {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
     </div>
   );

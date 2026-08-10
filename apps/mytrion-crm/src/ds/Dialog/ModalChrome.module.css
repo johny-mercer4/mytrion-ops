@@ -81,3 +81,30 @@
   padding: var(--space-4) var(--space-5);
   border-block-start: 1px solid var(--border-subtle);
 }
+
+/* ── Below the structure line ────────────────────────────────────────────────
+   The chrome, not the panel, is where a modal is actually usable or not on a phone. */
+@media (width < 640px) {
+  .header,
+  .footer {
+    padding: var(--space-4);
+  }
+  .body {
+    padding: var(--space-4);
+  }
+
+  .footer {
+    /* DOM order is cancel-then-confirm, which is correct for a desktop row reading left to right.
+       Stacked, that would put the primary action furthest from the thumb — so the axis is reversed
+       rather than the markup, and the confirm lands at the bottom where the thumb already rests. */
+    flex-direction: column-reverse;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    /* Clears the home indicator, and the software keyboard when a field in the body has focus —
+       without which the confirm button sits under the user's own hardware. */
+    padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+  }
+  .footer > * {
+    inline-size: 100%;
+  }
+}

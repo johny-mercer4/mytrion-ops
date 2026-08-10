@@ -545,7 +545,7 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
   const inv = useLoad<BillingInvoicesResult>(
     () =>
       deal.carrierId
-        ? searchCarrierInvoices(deal.carrierId)
+        ? searchCarrierInvoices(deal.carrierId, { withPaymentDates: true })
         : Promise.resolve<BillingInvoicesResult>({}),
     [deal.carrierId],
   );
@@ -662,6 +662,15 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
 }
 
 /** One invoice card — field names read defensively (see report: verify against real payloads). */
+/** 'YYYY-MM-DD' -> 'dd MMM yyyy' (matches the `period` string's own day format). '' if unparseable. */
+function fmtPaymentDate(v: unknown): string {
+  const s = str(v);
+  if (!s) return '';
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
   const number = str(pick(inv, ['invoiceNumber', 'invoice_number', 'number', 'name'])) || '—';
   const period = str(pick(inv, ['period', 'date_range', 'dateRange']));
@@ -669,6 +678,10 @@ function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
   const total = toNum(pick(inv, ['totalAmount', 'total', 'amount', 'grand_total']));
   const paid = toNum(pick(inv, ['totalPaid', 'paid', 'amount_paid']));
   const remaining = toNum(pick(inv, ['remainingAmount', 'remaining', 'balance', 'due']));
+  // Only present for PAID/PARTIALLY_PAID invoices, and only when the caller asked for it
+  // (searchCarrierInvoices(..., { withPaymentDates: true })) — see cmpReads.ts / avgPaymentDays.js
+  // for the same "which payment counts as THE paid date" rule Avg Days to Pay already uses.
+  const paymentDate = fmtPaymentDate(pick(inv, ['paymentDate', 'payment_date']));
   return (
     <div className="dc-detail-invoice-card">
       <div className="tx-invoice-top-row">
@@ -694,6 +707,11 @@ function InvoiceCard({ inv }: { inv: Record<string, unknown> }) {
           </div>
         ) : null}
       </div>
+      {paymentDate ? (
+        <div className="tx-invoice-payment-date">
+          Paid on <span style={{ color: 'var(--success-text)' }}>{paymentDate}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

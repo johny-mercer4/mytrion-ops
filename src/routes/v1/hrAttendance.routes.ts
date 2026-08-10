@@ -15,6 +15,7 @@ import {
   assertCanAssignEmployeeShift,
   assertCanViewEmployeeAttendance,
   canViewAllAttendance,
+  managesAnyone,
 } from '../../modules/hr/attendance/teamScope.js';
 import { buildAttendanceTeamList } from '../../modules/hr/attendance/teamSummary.js';
 import {
@@ -30,12 +31,56 @@ import { hrAttendancePunchRepo } from '../../repos/hrAttendancePunchRepo.js';
 import { hrAttendanceShiftRepo } from '../../repos/hrAttendanceShiftRepo.js';
 import { hrEmployeeRepo, type HrEmployeeRow } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment } from './helpers.js';
+import { requireDepartment, requireInternal } from './helpers.js';
 
 const SECRET_HEADER = 'x-attendance-webhook-secret';
 
 function requireHrInternal(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'hr', 'HR directory');
+}
+
+/** HR department access (or the elevations that stand in for it). */
+function hasHrAccess(ctx: TenantContext): boolean {
+  return (
+    ctx.role === 'admin' ||
+    ctx.bypassRbac === true ||
+    ctx.allDepartmentAccess === true ||
+    ctx.departments.includes('hr')
+  );
+}
+
+/**
+ * Who may read attendance: HR, **and any team lead, for their own team only.**
+ *
+ * A team lead has no `hr` department access, so every route here used to 403 them — while
+ * `resolveAttendanceTeam` had always computed a manager's team correctly (reportees ∪ departments they
+ * lead). The gate was the only thing missing.
+ *
+ * Two properties make widening this safe:
+ *
+ *  1. **Membership is proven against the database, not asserted.** `managesAnyone` reads reporting lines
+ *     and department leads. A caller cannot claim to be a manager with a header, and no unverified Zoho
+ *     profile string decides it.
+ *  2. **The gate does not decide what they see; the scoping does.** `resolveAttendanceTeam` returns only
+ *     their team for a non-`canViewAll` caller, and `assertCanViewEmployeeAttendance` re-checks every
+ *     single-employee read. This route file deliberately does NOT relax the employee directory,
+ *     departments or org-structure routes — those keep `requireHrInternal`, so a team lead who reaches
+ *     the HR workspace can open Attendance and nothing else.
+ *
+ * Returns `selfId` because every scoped call needs it and it has already been resolved here.
+ */
+async function requireAttendanceAccess(
+  request: FastifyRequest,
+): Promise<{ ctx: TenantContext; selfId: string }> {
+  const ctx = requireInternal(request, 'Attendance');
+  if (hasHrAccess(ctx)) return { ctx, selfId: await resolveSelfEmployeeId(ctx, true) };
+  // Not HR: they must be linked to an employee row AND actually manage someone. `false` here on
+  // purpose — an unlinked non-HR caller has no team to scope to, so there is nothing to show them.
+  const selfId = await resolveSelfEmployeeId(ctx, false);
+  if (!(await managesAnyone(ctx, selfId))) {
+    throw new RBACError('Attendance is available to HR, and to managers for their own team');
+  }
+  return { ctx, selfId };
 }
 
 function requireHrAdmin(request: FastifyRequest): TenantContext {
@@ -144,7 +189,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/me', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const { ctx } = await requireAttendanceAccess(request);
     const q = z
       .object({
         from: dateStr.optional(),
@@ -166,7 +211,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/summary', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const { ctx, selfId } = await requireAttendanceAccess(request);
     const q = z
       .object({
         from: dateStr,
@@ -175,7 +220,6 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
       })
       .parse(request.query);
     if (q.from > q.to) throw new ValidationError('from must be on or before to');
-    const selfId = await resolveSelfEmployeeId(ctx, true);
     const employeeId = q.employeeId?.trim() || selfId;
     if (!employeeId) {
       throw new NotFoundError('Choose an employee to view attendance');
@@ -200,7 +244,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
    * showing; a blank screen because an analytics database was busy is not.
    */
   app.post('/hr/attendance/sync', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const { ctx, selfId } = await requireAttendanceAccess(request);
     const body = z
       .object({
         from: dateStr.optional(),
@@ -209,6 +253,12 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
         // The server holds a completed sync for a minute so page views are cheap. An explicit Refresh
         // is the user saying they do not believe what is on screen, so it must bypass that.
         force: z.boolean().optional(),
+        /**
+         * Pull ONE person's punches instead of the whole window. This is what opening someone in the
+         * roster does: a week for one employee is tens of rows, against ~4.4k for everybody, so the
+         * page itself never has to wait on the warehouse.
+         */
+        employeeId: z.string().max(80).optional(),
       })
       .parse(request.body ?? {});
     const range = weekRangeContaining(body.weekOf ?? uzbDateString(new Date()));
@@ -218,7 +268,20 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     if (daysInclusive(from, to) > MAX_SYNC_DAYS) {
       throw new ValidationError(`Sync window may not exceed ${MAX_SYNC_DAYS} days`);
     }
-    return syncAttendanceFromDwh(ctx, from, to, { force: body.force ?? false });
+    const target = body.employeeId?.trim();
+    if (target) {
+      // Reading someone else's attendance is gated exactly as the direct summary route gates it —
+      // a cheaper door to the same data must not be a wider one.
+      if (target !== selfId) {
+        const emp = await hrEmployeeRepo.getById(ctx, target);
+        if (!emp) throw new NotFoundError('Employee not found');
+        await assertCanViewEmployeeAttendance(ctx, selfId, target);
+      }
+    }
+    return syncAttendanceFromDwh(ctx, from, to, {
+      force: body.force ?? false,
+      ...(target ? { employeeId: target } : {}),
+    });
   });
 
   /**
@@ -227,7 +290,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
    * HR Manager / Admin: Direct = their reportees; All = every Active employee.
    */
   app.get('/hr/attendance/team', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const { ctx, selfId } = await requireAttendanceAccess(request);
     const q = z
       .object({
         from: dateStr.optional(),
@@ -252,7 +315,6 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
       to = to ?? range.to;
     }
     if (from > to) throw new ValidationError('from must be on or before to');
-    const selfId = await resolveSelfEmployeeId(ctx, true);
     // Transient database failures become a retryable 503 in the error handler, for every route rather
     // than only this one — see plugins/errorHandler.ts.
     return buildAttendanceTeamList(ctx, selfId, from, to, q.scope, q.q ?? '', {
@@ -261,7 +323,7 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/export', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const { ctx, selfId } = await requireAttendanceAccess(request);
     const q = z
       .object({
         from: dateStr,
@@ -272,6 +334,12 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     if (q.from > q.to) throw new ValidationError('from must be on or before to');
     const emp = await hrEmployeeRepo.getById(ctx, q.employeeId);
     if (!emp) throw new NotFoundError('Employee not found');
+    /**
+     * The same per-employee check the on-screen summary uses. Was Mytrion-Admin only, which is why it
+     * needs stating: a CSV is the SAME data as the panel, so it must answer to the same rule rather than
+     * to a coarser one — otherwise the export becomes the wider door.
+     */
+    if (emp.id !== selfId) await assertCanViewEmployeeAttendance(ctx, selfId, emp.id);
     const summary = await buildAttendanceSummary(ctx, emp.id, q.from, q.to);
     const label = `${emp.firstName} ${emp.lastName}`.trim();
     const csv = summaryToCsv(summary, label);
@@ -288,7 +356,8 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/hr/attendance/shifts', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    // Read-only list of shift definitions — a manager needs it to assign one to their own team.
+    const { ctx } = await requireAttendanceAccess(request);
     const items = await hrAttendanceShiftRepo.list(ctx);
     return { items: items.map((r) => shiftDto(r)) };
   });
@@ -351,11 +420,16 @@ export async function hrAttendanceRoutes(app: FastifyInstance): Promise<void> {
     '/hr/attendance/shifts/:id/assign',
     auth,
     async (request) => {
-      const ctx = requireHrInternal(request);
+      /**
+       * The one WRITE a team lead gets, and it was already scoped before the gate allowed them in:
+       * `assertCanAssignEmployeeShift` admits only their reportees and led-department members, and
+       * explicitly refuses a manager assigning their OWN shift. Every target is checked before the
+       * first write, so a mixed batch cannot half-apply.
+       */
+      const { ctx, selfId: selfEmployeeId } = await requireAttendanceAccess(request);
       const shift = await hrAttendanceShiftRepo.getById(ctx, request.params.id);
       if (!shift) throw new NotFoundError('Shift not found');
       const body = assignBody.parse(request.body);
-      const selfEmployeeId = await resolveSelfEmployeeId(ctx, true);
       const targets: HrEmployeeRow[] = [];
       for (const employeeId of body.employeeIds) {
         const emp = await hrEmployeeRepo.getById(ctx, employeeId);

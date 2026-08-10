@@ -113,7 +113,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
-@media (max-width: 960px) {
+@media (width < 900px) {
   .ss-root .ss-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -412,7 +412,7 @@
 }
 .ss-root .ss-skel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 14px;
 }
 /* A grid, not a fixed-width flex row: the Tasks board is a 4-up responsive grid and the Retention
@@ -462,10 +462,110 @@
   .ss-root .ss-skel { animation: none !important; }
 }
 
-@media (max-width: 720px) {
+@media (width < 640px) {
   .ss-root .ss-page-head-row { flex-direction: column; align-items: stretch; }
   .ss-root .ss-page-actions { justify-content: flex-start; }
   .ss-root .ss-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ss-root .ss-pager { flex-direction: column; align-items: stretch; }
   .ss-root .ss-pager-controls { justify-content: space-between; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Home — responsive hooks
+ *
+ * Sales' Home tab is built from inline style STRINGS (`s('display:grid;…')`), which no media query
+ * can reach. These classes exist purely so the ladder can get at the four layouts that broke on a
+ * phone; the inline styles still own the desktop rendering, and every rule below is inside a media
+ * query so the desktop is byte-identical.
+ *
+ * Confirmed at 320px and 375px in the running app: the page scrolled sideways, the greeting
+ * overflowed its card, "WORKDAY PROGRESS" and "1:45 PM" interleaved into one another, and the stat
+ * row was cut off at the viewport edge.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+@media (width < 900px) {
+  /* Two cards side by side leaves each ~40% of a tablet; the hero is the page's headline and gets
+     the width back first. */
+  .ss-root .ss-home-hero {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (width < 640px) {
+  /* 26px/28px of padding is 56px of a 320px screen before any content. */
+  .ss-root .ss-home-card {
+    padding: var(--space-4) !important;
+  }
+
+  /* 32px of display type in a 264px card is what pushed "Good afternoon" past its own edge. */
+  .ss-root .ss-home-greeting {
+    font-size: var(--text-2xl) !important;
+  }
+
+  /*
+   * THE COLLISION. `justify-content: space-between` on a row too narrow for both children does not
+   * wrap — the items overlap, which is how "WORKDAY PROGRESS" and "1:45 PM" rendered interleaved as
+   * "WORKDAY 1:45 PROGRESSPM". Wrapping is what a label/value pair should do when it runs out of
+   * room, and `align-items: baseline` has to go with it or the wrapped line sits off the baseline.
+   */
+  .ss-root .ss-home-labelrow {
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    gap: var(--space-1) var(--space-2) !important;
+  }
+
+  /* Four stat tiles at 320px is 68px each — narrower than the numbers they hold. */
+  .ss-root .ss-home-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Start · status · end. The middle label is the one that can go; the two endpoints are the axis. */
+  .ss-root .ss-home-endpoints {
+    font-size: var(--text-2xs) !important;
+  }
+}
+
+@media (width < 480px) {
+  /* The stat tiles stay 2-up here too — see the note in billing/styles/shared-base.css. Only the
+     greeting, which is display type, needs another step down. */
+  .ss-root .ss-home-greeting {
+    font-size: var(--text-xl) !important;
+  }
+}
+
+
+/* ── Create-a-Ticket wizard ────────────────────────────────────────────────
+ * Both layouts are inline style strings, so every rule here needs `!important` to reach them.
+ *
+ * The stepper is three `flex: 1` groups, each an incompressible 34px circle plus a `nowrap` label
+ * plus a connector — ~330px of minimum inside a 296px pane. The department picker is a hard two-up
+ * grid whose cards hold a 46px icon, two lines of text and a 24px tick.
+ */
+@media (width < 640px) {
+  .ss-root .ss-create-stepper {
+    flex-wrap: wrap !important;
+    row-gap: var(--space-2) !important;
+  }
+  .ss-root .ss-create-step {
+    /* Not `flex: 1` any more: three equal thirds of 296px cannot hold a label. Each step takes the
+       width it needs and the row wraps. */
+    flex: 0 1 auto !important;
+    min-inline-size: 0 !important;
+  }
+  /* The connectors are decoration, and a wrapped connector points at nothing. */
+  .ss-root .ss-create-step > div:last-child:not(:first-child) {
+    display: none !important;
+  }
+  .ss-root .ss-create-depts {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Automations modal form rows. A three-up grid of text inputs: a form control's intrinsic minimum
+   is ~150px, so `1fr 1fr 1fr` is ~470px of minimum inside a 296px sheet and the modal scrolled
+   sideways. Inline styles, hence !important. */
+@media (width < 640px) {
+  .ss-root .ss-auto-formrow {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }

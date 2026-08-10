@@ -21,6 +21,7 @@ import {
 } from '../../../../api/efsConsole';
 import { EFS_TABS, clientState, count, daysAgoIso, money, nowIso, shortDate, type EfsTabId } from './efsModel';
 import { EfsPanelSkeleton } from './EfsSkeletons';
+import { DataTable, type DataColumn } from '@/ds';
 
 interface PanelState {
   loading: boolean;
@@ -214,24 +215,14 @@ function OverviewBody({ payload, emptyLabel }: { payload: EfsCarrierSnapshot; em
         </div>
       </div>
       {contracts.length ? (
-        <table className="mg-efs-table">
-          <thead>
-            <tr>
-              <th>Contract</th>
-              <th>Description</th>
-              <th className="is-num">Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.map((c) => (
-              <tr key={String(c.contractId)}>
-                <td className="mg-efs-mono">{c.contractId ?? '—'}</td>
-                <td>{c.description ?? '—'}</td>
-                <td className="is-num">{money(c.balance)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          caption="Contracts"
+          rows={contracts}
+          rowKey={(c) => String(c.contractId)}
+          columns={CONTRACT_COLUMNS}
+          className="mg-efs-table"
+          scrollerClassName="mg-efs-tablewrap"
+        />
       ) : null}
     </div>
   );
@@ -244,33 +235,77 @@ function OverviewBody({ payload, emptyLabel }: { payload: EfsCarrierSnapshot; em
  * hand-typed per endpoint would break silently the day the vendor adds a column. Columns come from
  * the union of the first rows' keys, so a new field appears rather than disappearing.
  */
+/**
+ * MOBILE ROLES — a contract row is an id, a description and a balance. The id names it, the
+ * description identifies it, the balance is the one number. Nothing to demote.
+ */
+type DossierContract = { contractId?: string; description?: string; balance?: number };
+
+const CONTRACT_COLUMNS: DataColumn<DossierContract>[] = [
+  {
+    id: 'contract',
+    header: 'Contract',
+    rowHeader: true,
+    mobile: 'primary',
+    cell: (c) => <span className="mg-efs-mono">{c.contractId ?? '—'}</span>,
+  },
+  {
+    id: 'description',
+    header: 'Description',
+    mobile: 'secondary',
+    cell: (c) => c.description ?? '—',
+  },
+  {
+    id: 'balance',
+    header: 'Balance',
+    numeric: true,
+    align: 'end',
+    mobile: 'value',
+    cell: (c) => money(c.balance),
+  },
+];
+
 function RowTable({ rows }: { rows: Array<Record<string, unknown>> }) {
-  const columns = useMemo(() => {
+  const columns = useMemo<DataColumn<Record<string, unknown>>[]>(() => {
     const seen = new Set<string>();
     for (const row of rows.slice(0, 25)) for (const key of Object.keys(row)) seen.add(key);
-    return [...seen].slice(0, 12);
+    const keys = [...seen].slice(0, 12);
+
+    /*
+     * Mobile roles cannot be chosen by meaning here — the shape is whatever EFS returned. So they
+     * are chosen by POSITION, which for these payloads is a decent proxy: endpoints put the
+     * identifier first. First key names the row, the next two identify it, and the rest open with
+     * the record. That is strictly better than a twelve-column sideways scroll on a phone, and it
+     * degrades honestly when the guess is wrong: the card is thin, the sheet is complete.
+     */
+    return keys.map((key, i) => ({
+      id: key,
+      header: key,
+      cell: (row: Record<string, unknown>) => renderCell(row[key]),
+      ...(i === 0
+        ? { rowHeader: true, mobile: 'primary' as const }
+        : i <= 2
+          ? { mobile: 'secondary' as const }
+          : { priority: (i <= 5 ? 2 : 3) as 2 | 3 }),
+    }));
   }, [rows]);
 
+  const visible = useMemo(() => rows.slice(0, 200), [rows]);
+  const firstKey = columns[0]?.id;
+
   return (
-    <div className="mg-efs-tablewrap">
-      <table className="mg-efs-table">
-        <thead>
-          <tr>
-            {columns.map((c) => (
-              <th key={c}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 200).map((row, index) => (
-            <tr key={index}>
-              {columns.map((c) => (
-                <td key={c}>{renderCell(row[c])}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <DataTable
+        caption="EFS response rows"
+        rows={visible}
+        rowKey={(_row, index) => String(index)}
+        columns={columns}
+        className="mg-efs-table"
+        scrollerClassName="mg-efs-tablewrap"
+        detail={{
+          title: (row) => (firstKey ? renderCell(row[firstKey]) : 'Row'),
+        }}
+      />
       {rows.length > 200 ? (
         <p className="mg-empty-sm">Showing the first 200 of {count(rows.length)} rows.</p>
       ) : null}

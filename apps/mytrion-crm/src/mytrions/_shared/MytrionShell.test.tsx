@@ -5,6 +5,7 @@
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setViewport } from '../../test/viewport';
 
 vi.mock('../../context/UserContextProvider', () => ({
   useUserContext: () => ({
@@ -21,7 +22,14 @@ vi.mock('../../context/UserContextProvider', () => ({
 // NOTE: vi.mock on a path nothing imports fails SILENTLY — it simply stops applying and the real
 // component mounts. If these eight cases start failing together after a rename, check this line
 // before anything else.
-vi.mock('../../components/AppHeader', () => ({ AppHeader: () => <div /> }));
+// `| undefined` explicitly: the project runs exactOptionalPropertyTypes.
+const headerProps: { identity?: string | undefined } = {};
+vi.mock('../../components/AppHeader', () => ({
+  AppHeader: (props: { identity?: string }) => {
+    headerProps.identity = props.identity;
+    return <div />;
+  },
+}));
 // The sidebar's user row is an AccountMenu, which reads the theme. No ThemeProvider in this harness —
 // the shell's own behaviour is what is under test, not the account menu's.
 vi.mock('../../hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
@@ -75,13 +83,8 @@ function installStorage(impl?: Partial<Storage>): Map<string, string> {
 
 beforeEach(() => {
   installStorage();
-  // jsdom has no matchMedia; the shell asks it whether the viewport is a narrow strip.
-  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  })) as never;
+  // The viewport itself comes from src/test/setup.ts, which installs a query-evaluating matchMedia
+  // and resets it to a desktop width after every test. A narrow case says setViewport(375).
 });
 
 describe('MytrionShell — sidebar collapse', () => {
@@ -161,17 +164,31 @@ describe('MytrionShell — sidebar collapse', () => {
     expect(screen.getByText('Employees')).toBeInTheDocument();
   });
 
-  it('forces itself open on a narrow viewport, whatever the stored preference says', () => {
-    installStorage().set(KEY, '1');
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: true, // (max-width: 768px)
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })) as never;
-
+  /**
+   * Between the two lines the 248px rail would leave a tablet 572px of content, so the collapsed
+   * form is the DEFAULT there — but it is only a default. "My screen is 820px" is not the same
+   * statement as "I want this narrow", so a stored preference still wins.
+   */
+  it('defaults to collapsed below the density line', () => {
+    setViewport(820);
     renderShell();
-    // Under 768px the sidebar is a horizontal strip; a rail of unlabelled icons is not a thing there.
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('lets a stored preference override that default', () => {
+    installStorage().set(KEY, '0');
+    setViewport(820);
+    renderShell();
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('toggles against what is on screen, not against the stored value', () => {
+    // On a tablet with no preference the rail is already collapsed, so the first click must EXPAND
+    // it. Toggling `!stored` would collapse something that is not open and look like a dead button.
+    setViewport(820);
+    renderShell();
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle());
     expect(toggle()).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -221,5 +238,123 @@ describe('MytrionShell — sidebar collapse', () => {
     expect(soon).toHaveTextContent('Soon');
     // The accessible name stays the destination, so a screen reader is not told "Tickets Soon".
     expect(screen.getByRole('button', { name: 'Inbox' })).toHaveTextContent('7');
+  });
+});
+
+/**
+ * Below the STRUCTURE line the rail is gone and MobileTabBar is the navigation. These pin the two
+ * things that would otherwise be silently lost on a phone: every destination staying reachable, and
+ * the account menu (Profile, Sign out) which lives at the foot of the rail on a desktop.
+ */
+describe('MytrionShell — below the structure line', () => {
+  const wide: NavSection[] = [
+    {
+      id: 'daily',
+      label: 'Daily',
+      items: [
+        { key: 'home', label: 'Home', icon: <i />, active: true },
+        { key: 'inbox', label: 'Inbox', icon: <i />, trailing: 3 },
+        { key: 'dc', label: 'Data Center', icon: <i /> },
+        { key: 'create', label: 'Create', icon: <i /> },
+      ],
+    },
+    {
+      id: 'more',
+      label: 'More',
+      items: [
+        { key: 'tickets', label: 'Tickets', icon: <i />, soon: true },
+        { key: 'tasks', label: 'My Tasks', icon: <i /> },
+        { key: 'calls', label: 'Call Hub', icon: <i /> },
+      ],
+    },
+  ];
+
+  const renderPhone = (sections = wide, extra: Record<string, unknown> = {}) => {
+    setViewport(375);
+    return render(
+      <MytrionShell id="hr" navSections={sections} enableNavSearch {...extra}>
+        <div>content</div>
+      </MytrionShell>,
+    );
+  };
+
+  it('replaces the rail with a tab bar', () => {
+    renderPhone();
+    expect(document.getElementById('mytrion-sidebar')).toBeNull();
+    expect(screen.getByRole('navigation', { name: /navigation/ })).toBeInTheDocument();
+  });
+
+  it('fills the bar with the first four reachable destinations and a More slot', () => {
+    renderPhone();
+    const bar = screen.getByRole('navigation', { name: /navigation/ });
+    const labels = [...bar.querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels).toEqual(['Home', 'Inbox3', 'Data Center', 'Create', 'More']);
+  });
+
+  it('honours `primary` when a workspace declares it', () => {
+    renderPhone([
+      {
+        id: 'x',
+        label: '',
+        items: [
+          { key: 'a', label: 'Alpha', icon: <i /> },
+          { key: 'b', label: 'Bravo', icon: <i />, primary: true },
+          { key: 'c', label: 'Charlie', icon: <i />, primary: true },
+        ],
+      },
+    ]);
+    const bar = screen.getByRole('navigation', { name: /navigation/ });
+    expect([...bar.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'Bravo',
+      'Charlie',
+      'More',
+    ]);
+  });
+
+  it('keeps an unbuilt destination out of the bar but in the sheet', () => {
+    renderPhone();
+    const bar = screen.getByRole('navigation', { name: /navigation/ });
+    expect(bar.textContent).not.toContain('Tickets');
+
+    fireEvent.click(screen.getByRole('button', { name: /More/ }));
+    const soon = screen.getByRole('button', { name: 'Tickets' });
+    expect(soon).toBeDisabled();
+    expect(soon).toHaveTextContent('Soon');
+  });
+
+  it('reaches every destination through More', () => {
+    const onTasks = vi.fn();
+    renderPhone([
+      wide[0]!,
+      { ...wide[1]!, items: [{ key: 'tasks', label: 'My Tasks', icon: <i />, onClick: onTasks }] },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: /More/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'My Tasks' }));
+    expect(onTasks).toHaveBeenCalledTimes(1);
+    // Choosing a destination closes the sheet — otherwise it covers the page you just navigated to.
+    // `data-state`, not `.open`: a ds/Drawer stays in the top layer through its exit animation, on
+    // purpose, so `open` is still true for one more frame and asserting on it would be asserting
+    // the animation away.
+    expect(document.querySelector('dialog')).toHaveAttribute('data-state', 'closing');
+  });
+
+  it('keeps footer destinations reachable, which the rail owned on a desktop', () => {
+    renderPhone(wide, {
+      footerNav: [{ key: 'settings', label: 'Settings', icon: <i /> }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /More/ }));
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  /** The account menu lives at the foot of the rail. No rail, no sign-out — unless the header takes it. */
+  it('moves the account menu into the header', () => {
+    renderPhone();
+    expect(headerProps.identity).toBe('menu');
+  });
+
+  it('leaves it in the rail on a desktop, so there is only ever one', () => {
+    renderShell();
+    expect(headerProps.identity).toBe('none');
   });
 });

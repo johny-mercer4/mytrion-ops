@@ -16,7 +16,13 @@ export default function App() {
       <ErrorBoundary>
         <ThemeProvider>
           <AppRouter />
-          <Toaster position="bottom-right" richColors />
+          {/* sonner renders its own position:fixed container, so its `offset` prop is the only
+              way to clear the mobile tab bar. 0 on a desktop. */}
+          <Toaster
+            position="bottom-right"
+            richColors
+            offset="calc(16px + var(--layout-bottom-inset, 0px))"
+          />
         </ThemeProvider>
       </ErrorBoundary>
     </div>

@@ -8,9 +8,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 
 /** Table-header grid: name | type | rows | write frequency | last updated | columns. */
-const TABLE_COLS = { gridTemplateColumns: '1.8fr 0.65fr 0.75fr 1.25fr 0.95fr 0.55fr' } as const;
+/*
+ * Six and seven `fr` tracks. An `fr` floors at min-content, so these grids are as wide as the sum
+ * of their unbreakable contents (table names, row counts, types) and clip inside `.panel`, which
+ * does not scroll. `minmax(0, …fr)` lets each track collapse so the row fits and its cells
+ * truncate — the alternative was a horizontal scroller the panel has no room for.
+ */
+const TABLE_COLS = {
+  gridTemplateColumns:
+    'minmax(0, 1.8fr) minmax(0, 0.65fr) minmax(0, 0.75fr) minmax(0, 1.25fr) minmax(0, 0.95fr) minmax(0, 0.55fr)',
+} as const;
 /** Column-row grid: name | type | null | key | default | comment. */
-const COL_COLS = { gridTemplateColumns: '1.4fr 1.7fr 0.5fr 0.6fr 1fr 1.3fr' } as const;
+const COL_COLS = {
+  gridTemplateColumns:
+    'minmax(0, 1.4fr) minmax(0, 1.7fr) minmax(0, 0.5fr) minmax(0, 0.6fr) minmax(0, 1fr) minmax(0, 1.3fr)',
+} as const;
 
 type KindFilter = 'all' | 'tables' | 'views';
 

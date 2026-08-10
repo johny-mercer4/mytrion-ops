@@ -26,6 +26,7 @@ import {
   type EfsClientStatus,
   type EfsParentSnapshot,
 } from '../../../api/efsConsole';
+import { DataTable, type DataColumn } from '@/ds';
 import { EfsCarrierDossier } from './efs/EfsCarrierDossier';
 import { EfsParentStripSkeleton, EfsRosterSkeleton } from './efs/EfsSkeletons';
 import { clientState, count, money, shortDate, type EfsTabId } from './efs/efsModel';
@@ -39,6 +40,52 @@ const STATUSES: Array<{ id: EfsClientStatus; label: string }> = [
   { id: 'debtor', label: 'Debtors' },
   { id: 'suspended', label: 'Suspended' },
   { id: 'inactive', label: 'Inactive' },
+];
+
+/**
+ * MOBILE ROLES — a manager scanning the roster asks "which carrier, whose, and is it healthy?":
+ * company (primary), carrier id and agent (secondary), state (the one value). Active-card count and
+ * last-transaction date are the numbers you read once you have picked a carrier, so they open with
+ * it rather than shrinking the name.
+ */
+const ROSTER_COLUMNS: DataColumn<EfsClient>[] = [
+  {
+    id: 'company',
+    header: 'Company',
+    rowHeader: true,
+    mobile: 'primary',
+    cell: (c) => c.companyName,
+  },
+  {
+    id: 'carrier',
+    header: 'Carrier',
+    mobile: 'secondary',
+    cell: (c) => <span className="mg-efs-mono">{c.carrierId}</span>,
+  },
+  {
+    id: 'cards',
+    header: 'Active cards',
+    numeric: true,
+    align: 'end',
+    priority: 2,
+    cell: (c) => count(c.activeCards),
+  },
+  { id: 'agent', header: 'Agent', mobile: 'secondary', cell: (c) => c.agent ?? '—' },
+  {
+    id: 'lastTx',
+    header: 'Last transaction',
+    priority: 2,
+    cell: (c) => shortDate(c.lastTransactionDate),
+  },
+  {
+    id: 'state',
+    header: 'Status',
+    mobile: 'value',
+    cell: (c) => {
+      const state = clientState(c);
+      return <span className={`mg-efs-badge is-${state.tone}`}>{state.label}</span>;
+    },
+  },
 ];
 
 export function EfsConsoleCard({
@@ -275,39 +322,18 @@ export function EfsConsoleCard({
 
       {!loading && !error && clients.length > 0 ? (
         <div className="mg-efs-tablewrap">
-          <table className="mg-efs-table is-roster">
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Carrier</th>
-                <th className="is-num">Active cards</th>
-                <th>Agent</th>
-                <th>Last transaction</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map((c) => {
-                const state = clientState(c);
-                return (
-                  <tr key={c.carrierId}>
-                    <td>
-                      <button type="button" className="mg-efs-rowlink" onClick={() => onSelect(c.carrierId)}>
-                        {c.companyName}
-                      </button>
-                    </td>
-                    <td className="mg-efs-mono">{c.carrierId}</td>
-                    <td className="is-num">{count(c.activeCards)}</td>
-                    <td>{c.agent ?? '—'}</td>
-                    <td>{shortDate(c.lastTransactionDate)}</td>
-                    <td>
-                      <span className={`mg-efs-badge is-${state.tone}`}>{state.label}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable
+            caption="EFS carrier roster"
+            rows={clients}
+            rowKey={(c) => c.carrierId}
+            columns={ROSTER_COLUMNS}
+            className="mg-efs-table is-roster"
+            scrollerClassName="mg-efs-tablewrap"
+            /* The company name is a real button in the cell rather than a row handler: the roster's
+               job is to lead into one carrier's dossier, and a row-wide target would swallow the
+               text selection people use to copy a carrier id out of the next column. */
+            onRowActivate={(c) => onSelect(c.carrierId)}
+          />
           {total > clients.length ? (
             <p className="mg-empty-sm">
               Showing {count(clients.length)} of {count(total)}. Narrow with the search above.
