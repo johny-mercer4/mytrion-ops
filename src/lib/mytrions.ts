@@ -64,6 +64,26 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   'customer-service': 'customer-service',
 };
 
+/**
+ * Mytrions whose write paths are gated on `mytrionAccessModes` today.
+ *
+ * Every call site of `requireMytrionWrite` (plus Marketing's, which uses it directly). Documentation
+ * and admin hint copy only — it is deliberately NOT consulted by any gate, so adding a Mytrion here
+ * grants nothing and forgetting one refuses nothing. The frontend mirrors it in
+ * `admin/MytrionAccessModeField.tsx` to say whether a Read-only grant bites yet.
+ *
+ * The read/full pair has been storable for all 12 Mytrions since migration 0057, but until now the
+ * Admin UI only exposed it for Billing — so `hr: 'read'` was enforceable by the server and
+ * unreachable from the product.
+ */
+export const MYTRION_WRITE_ENFORCED: readonly MytrionId[] = [
+  'billing',
+  'hr',
+  'recruit',
+  'sales',
+  'marketing',
+];
+
 export function isMytrionId(value: unknown): value is MytrionId {
   return typeof value === 'string' && (MYTRION_IDS as readonly string[]).includes(value);
 }
