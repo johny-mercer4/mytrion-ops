@@ -1,0 +1,225 @@
+/*
+ * The mobile tab bar.
+ *
+ * Rendered only below the structure line, and only ever as a `flex: none` sibling of `.body` — see
+ * the component docblock for why it is in flow rather than fixed. Nothing here declares `z-index`,
+ * `transform`, `filter` or `contain`: the bar must not create a stacking context on any ancestor of
+ * the page content, or every legacy `position: fixed` modal in the app paints behind the header.
+ */
+
+.bar {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+
+  block-size: var(--layout-bottombar-h);
+  /* The home indicator overlaps the last ~34px of the screen on a notched device. Padding rather
+     than a taller bar, so the touch targets stay where the thumb expects them. */
+  padding-block-end: env(safe-area-inset-bottom, 0px);
+  box-sizing: content-box;
+
+  /* OPAQUE, not glass — and this is the point of being in flow. --header-bg is var(--glass) at 40%
+     opacity precisely because the header floats over scrolling content and needs a backdrop-filter
+     to stay legible. Nothing ever passes behind this bar, so a blur here would buy no legibility
+     and cost a permanently composited layer on the least powerful device class the app runs on.
+     (tokens.test.ts caps the app's backdrop-filter count monotonically and rejected the blurred
+     version of this rule, which is the guard working as intended.) */
+  background: var(--surface);
+  border-block-start: 1px solid var(--border);
+}
+
+.slot {
+  flex: 1;
+  /* Equal thirds/fifths regardless of label length — a long destination name must not steal width
+     from its neighbours' touch targets. */
+  min-inline-size: 0;
+  position: relative;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-0_5);
+
+  padding: var(--space-1) var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  cursor: pointer;
+
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.slot[data-active='true'] {
+  color: var(--accent);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  inline-size: var(--icon-size);
+  block-size: var(--icon-size);
+}
+.icon svg {
+  inline-size: var(--icon-size);
+  block-size: var(--icon-size);
+}
+
+.label {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-2xs);
+  font-weight: var(--fw-medium);
+}
+.slot[data-active='true'] .label {
+  font-weight: var(--fw-semibold);
+}
+
+/* Sits over the icon's trailing corner rather than after the label, which has no room for it. */
+.count {
+  position: absolute;
+  inset-block-start: var(--space-0_5);
+  inset-inline-start: 50%;
+  margin-inline-start: var(--space-1);
+
+  min-inline-size: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+
+  background: var(--ramp-d);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+
+  /* Knocked out of the icon so a two-digit count reads as a badge, not as part of the glyph. */
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/*
+ * One indicator for the whole bar, positioned by `translate` in slot-widths. `translate` (not
+ * `transform`) per ds/CONVENTIONS §3, and because it composites without touching layout.
+ */
+.indicator {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 20%;
+  block-size: 2px;
+
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+
+  transition: translate var(--dur-slow) var(--ease-spring);
+}
+.indicator::after {
+  content: '';
+  inline-size: 28px;
+  block-size: 2px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+
+/* ── The More sheet ────────────────────────────────────────────────────────── */
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sheetSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+}
+
+.sheetLabel {
+  padding: 0 var(--space-1) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+}
+
+.sheetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+
+  /* 48px: a comfortable thumb target in a list, not a desktop 32px menu row. */
+  min-block-size: 48px;
+  padding: var(--space-2) var(--space-3);
+
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  text-align: start;
+  cursor: pointer;
+}
+
+.sheetRow[data-active='true'] {
+  background: var(--row-hover);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+
+.sheetRow:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.sheetIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: var(--icon-size);
+  block-size: var(--icon-size);
+  color: var(--text-muted);
+}
+.sheetIcon svg {
+  inline-size: var(--icon-size);
+  block-size: var(--icon-size);
+}
+.sheetRow[data-active='true'] .sheetIcon {
+  color: var(--accent);
+}
+
+.sheetName {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheetSoon {
+  flex: none;
+  padding: 1px var(--space-1_5);
+  border: 1px solid var(--row-line);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* The sheet's own count is inline at the end of the row, not a badge over an icon. */
+.sheetRow .count {
+  position: static;
+  margin-inline-start: 0;
+  box-shadow: none;
+}

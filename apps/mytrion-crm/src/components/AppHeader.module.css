@@ -163,7 +163,7 @@
 
 /* Below 880px the name/role block is the first thing to go — the avatar still answers "who am I
    signed in as", and the chip stays a 34px square like its neighbours. */
-@media (max-width: 880px) {
+@media (width < 900px) {
   .who {
     display: none;
   }
@@ -173,7 +173,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (width < 640px) {
   .bar {
     padding: 0 var(--space-4);
     gap: var(--space-3);
@@ -185,7 +185,7 @@
   }
 }
 
-@media (max-width: 560px) {
+@media (width < 480px) {
   /* At this width the wordmark and the workspace chip are competing for the same 200px. The chip
      wins: it says where you are and is the control that moves you. */
   .wordmark {
