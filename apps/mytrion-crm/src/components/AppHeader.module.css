@@ -32,7 +32,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3_5);
-  flex: none;
+  /* Shrinks before the right cluster does: where you ARE is re-derivable from the page, who you are
+     ACTING AS is not. */
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -67,7 +69,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex: none;
+  /* `flex: none` here was the header's overflow: the actions slot holds the "Acting as <name>"
+     banner, which is as wide as the name, and a cluster that cannot shrink pushes it straight off
+     the end of a 320px viewport. It still never GROWS — 0 1 auto shrinks only. */
+  flex: 0 1 auto;
+  min-inline-size: 0;
 }
 
 /* ONE treatment for every control in the right cluster. Exported from the file that owns the

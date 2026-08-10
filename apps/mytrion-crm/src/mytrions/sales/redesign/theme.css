@@ -249,7 +249,7 @@ html,body{height:100%;margin:0}
   .ss-wex-card-subject{font-size:14px;font-weight:700;color:var(--text);line-height:1.35}
   .ss-wex-card-date{font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap}
   .ss-wex-card-body{margin-top:10px;font-size:14px;color:var(--text2);line-height:1.55;white-space:pre-wrap}
-  .ss-pay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .ss-pay-grid{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px}
   .ss-pay-stat{padding:12px;border-radius:var(--radius-md);background:var(--surface-2);border:1px solid var(--border2)}
   .ss-pay-stat-value{font-size:16px;font-weight:700;color:var(--text);margin-top:4px}
   .ss-btn-p{transition:filter .15s,transform .1s}

@@ -30,3 +30,22 @@ iframe#rc-widget-adapter-frame:hover {
 body[data-cs-modal-open] .rc-phone-stack {
   display: none !important;
 }
+
+/*
+ * Keep the vendor's docked pill off the mobile tab bar.
+ *
+ * Embeddable positions `#rc-widget-adapter-frame` itself, bottom-right, with an INLINE style — so
+ * the wrapper offset in RingCentralPhone.tsx never reached it and the pill sat directly on top of
+ * the bottom navigation, covering "Data Center", "Create" and "More". `!important` is the only
+ * thing that outranks an inline declaration on an element we do not render.
+ *
+ * --layout-bottom-inset is 0 above the structure line, so this is inert on a desktop.
+ */
+@media (width < 640px) {
+  #rc-widget-adapter-frame,
+  iframe#rc-widget-adapter-frame,
+  iframe[id*='rc-widget'],
+  iframe[src*='ringcentral-embeddable'] {
+    bottom: calc(var(--layout-bottom-inset, 0px) + var(--space-2)) !important;
+  }
+}

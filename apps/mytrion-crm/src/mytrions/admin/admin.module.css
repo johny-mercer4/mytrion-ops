@@ -918,7 +918,7 @@
 
 .skelGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
 }
 /* One loader, one sheen: a frosted pane with a single accent-tinted highlight sliding across it.
@@ -1516,7 +1516,7 @@
 }
 @media (max-width: 768px) {
   .statGrid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .grid2 {
     grid-template-columns: 1fr;
@@ -1679,7 +1679,7 @@
 
 .metaGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
 }
 

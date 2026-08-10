@@ -50,6 +50,10 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  /* A flex item's minimum is min-content, so without this the banner refuses to shrink below the
+     full width of "Acting as <longest name> Exit" and pushes the whole header off a 320px screen.
+     This is the single most common cause of horizontal overflow in the app. */
+  min-inline-size: 0;
   padding: 6px 10px;
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
@@ -59,6 +63,27 @@
 }
 .who {
   font-weight: 700;
+  /* The name is the part that gives way. Everything else in the banner is fixed-size chrome. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The prose either side of the name. Below the structure line the dot, the accent tint and the ✕
+   already carry the whole message, so the words go and the name stays. */
+@media (width < 640px) {
+  .bannerWord {
+    display: none;
+  }
+  .banner {
+    gap: var(--space-1);
+    padding: 6px var(--space-2);
+  }
+  .exit {
+    margin-left: 0;
+    padding: 3px var(--space-1_5);
+  }
 }
 .dot {
   width: 7px;

@@ -167,6 +167,29 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
     expectBudget('inline `minWidth: N`', census(TS_FILES, /minWidth\s*:\s*\d+\b/g), 64);
   });
 
+  /**
+   * `repeat(3, 1fr)` is not the same as `repeat(3, minmax(0, 1fr))`, and the difference is the whole
+   * bug. A bare `1fr` is `minmax(auto, 1fr)`, whose MINIMUM is min-content — so a track holding a
+   * wide number refuses to shrink, the grid grows past its container, and the PAGE scrolls sideways.
+   * `minmax(0, 1fr)` lets the track shrink and the content truncate instead.
+   *
+   * Identical on a desktop where the content fits, which is why all 29 were converted mechanically
+   * and why this is a flat ban rather than a budget: there is no legitimate bare `1fr` repeat.
+   */
+  it('never uses a bare 1fr repeat', () => {
+    const offenders: string[] = [];
+    for (const file of [...CSS_FILES, ...TS_FILES]) {
+      const text = code(file);
+      for (const m of text.matchAll(/repeat\(\s*\d+\s*,\s*1fr\s*\)/g)) {
+        offenders.push(at(file, m.index, text));
+      }
+    }
+    expect(
+      offenders,
+      'Use repeat(N, minmax(0, 1fr)). A bare 1fr floors at min-content and overflows the page.',
+    ).toEqual([]);
+  });
+
   it('does not add a px track to a grid template', () => {
     // `minmax(280px, 1fr)` and `repeat(auto-fit, ...)` are fine and are the majority here; the ones
     // that hurt are fixed tracks summing past the viewport, e.g. the nine-track pool row in
