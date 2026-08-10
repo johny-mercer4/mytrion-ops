@@ -87,15 +87,23 @@ function census(files: readonly string[], re: RegExp): { count: number; sample: 
   return { count, sample };
 }
 
-/** `expected <= budget`, and the message says which file to open. */
+/**
+ * EXACT equality, in both directions, and that is the whole mechanism.
+ *
+ * `<=` would let a budget go stale: someone fixes twenty sites, the number stays at the old value,
+ * and twenty regressions can now land silently under the same green test. Requiring the count to
+ * MATCH means fixing something forces you to lower the number in the same commit, which is what
+ * turns a budget into a ratchet rather than a ceiling.
+ */
 function expectBudget(label: string, actual: { count: number; sample: string[] }, budget: number): void {
   expect(
     actual.count,
-    `${label}: ${actual.count} found, budget ${budget}.\n` +
-      (actual.count > budget
-        ? `This budget only goes DOWN. First offenders:\n  ${actual.sample.join('\n  ')}`
-        : `Budget is stale — lower it to ${actual.count} in this commit.`),
-  ).toBe(Math.min(actual.count, budget));
+    actual.count > budget
+      ? `${label}: ${actual.count} found, budget ${budget}. This number only goes DOWN.\n` +
+        `First offenders:\n  ${actual.sample.join('\n  ')}`
+      : `${label}: ${actual.count} found, budget ${budget} — you fixed some. Lower the budget to ` +
+        `${actual.count} in this commit so the ground you gained cannot be given back.`,
+  ).toBe(budget);
 }
 
 describe('breakpoint ladder', () => {
@@ -126,7 +134,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      92,
+      83,
     );
   });
 
@@ -141,7 +149,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      124,
+      108,
     );
   });
 });
@@ -150,7 +158,7 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
   // A width the layout cannot go below is what actually produces a horizontal page scrollbar. These
   // three budgets are the whole "make it fit" backlog, counted rather than listed.
   it('does not add a CSS min-width in px', () => {
-    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 75);
+    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 74);
   });
 
   it('does not add an inline minWidth in TSX', () => {
@@ -203,7 +211,7 @@ describe('touch', () => {
         if (sample.length < 8) sample.push(at(file, m.index, text));
       }
     }
-    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 149);
+    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 148);
   });
 
   it('does not add a font-size to an input outside the style layer', () => {

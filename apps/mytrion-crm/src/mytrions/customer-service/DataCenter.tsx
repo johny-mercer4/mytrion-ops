@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { updateDealBilling } from '@/api/cs';
 import type { CsDataCenterDeal } from '@/api/touchpointTypes';
+import { DataTable, type DataColumn } from '@/ds';
 import { Toast, type ToastState } from './Toast';
 import { stageMeta } from './data';
 import { invalidateDealsCache, loadDeals, useLoad } from './live';
@@ -29,6 +30,81 @@ const FILTERS: Array<{ id: string; label: string }> = [
 const MAX_ROWS = 300;
 
 const MONO = "var(--font-mono)";
+
+/**
+ * Module scope: DataTable memoises its rows on `columns` identity, and this panel re-renders on
+ * every search keystroke.
+ *
+ * MOBILE ROLES — a CS agent scanning deals on a phone asks "which deal, whose carrier, and where is
+ * it?": deal name (primary), carrier id (secondary), stage (the one value). Amount and payment type
+ * are what you check once you have found the deal, so they open with it rather than shrinking the
+ * name that identifies it.
+ */
+const DEAL_COLUMNS: DataColumn<CsDataCenterDeal>[] = [
+  {
+    id: 'name',
+    header: 'Deal Name',
+    rowHeader: true,
+    mobile: 'primary',
+    cell: (deal) => (
+      <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
+        {s(deal.Deal_Name) || '—'}
+      </div>
+    ),
+  },
+  {
+    id: 'carrierId',
+    header: 'Carrier ID',
+    mobile: 'secondary',
+    cell: (deal) => (
+      <span style={{ fontFamily: MONO, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+        {deal.Carrier_ID != null ? String(deal.Carrier_ID) : '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'stage',
+    header: 'Stage',
+    mobile: 'value',
+    cell: (deal) => <span className={`cs-badge ${stageBadge(s(deal.Stage))}`}>{s(deal.Stage) || '—'}</span>,
+  },
+  {
+    id: 'paymentType',
+    header: 'Payment Type',
+    priority: 2,
+    cell: (deal) => (
+      <span className={`cs-badge ${paymentTypeBadge(deal.Payment_Type_Billing)}`}>
+        {s(deal.Payment_Type_Billing) || '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'amount',
+    header: 'Amount',
+    numeric: true,
+    align: 'end',
+    cell: (deal) => (
+      <span style={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
+        {deal.Amount ? csCurrency(deal.Amount, 'R ') : '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'edit',
+    header: '',
+    width: '4.5rem',
+    /* The row already opens the deal; on a phone this would be a second target inside the first,
+       and in a key-value record sheet a button is not data. Desktop keeps it because that is the
+       affordance people learned. */
+    mobileCell: () => null,
+    detail: false,
+    cell: () => (
+      <span className="cs-btn cs-btn-ghost" style={{ padding: '0.2rem 0.5rem', fontSize: '0.625rem' }} aria-hidden>
+        Edit
+      </span>
+    ),
+  },
+];
 
 const s = (v: unknown): string => (v == null ? '' : String(v));
 
@@ -289,109 +365,20 @@ export function DataCenter() {
       ) : null}
 
       {/* ── Deals Table (skeleton on initial / View-as load — no centered ring) ── */}
-      <div className="cs-table-wrap cs-dc-table-wrap">
-          <table className="cs-table" aria-busy={deals.loading && rows.length === 0}>
-            <thead>
-              <tr>
-                <th>Deal Name</th>
-                <th>Carrier ID</th>
-                <th>Stage</th>
-                <th>Payment Type</th>
-                <th>Amount</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {deals.loading && rows.length === 0
-                ? Array.from({ length: 8 }, (_, i) => (
-                    <tr key={`skel-${i}`} aria-hidden>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 12, width: i % 2 === 0 ? '62%' : '48%' }} />
-                      </td>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 11, width: 64 }} />
-                      </td>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 22, width: 96, borderRadius: 999 }} />
-                      </td>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 22, width: 78, borderRadius: 999 }} />
-                      </td>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 11, width: 56 }} />
-                      </td>
-                      <td>
-                        <div className="cs-skeleton" style={{ height: 22, width: 40 }} />
-                      </td>
-                    </tr>
-                  ))
-                : null}
-              {visible.length === 0 && !deals.loading ? (
-                <tr>
-                  <td colSpan={6}>
-                    <div className="cs-empty">No deals found</div>
-                  </td>
-                </tr>
-              ) : null}
-              {visible.map((deal) => (
-                <tr
-                  key={s(deal.id)}
-                  className="cs-dc-deal-row"
-                  tabIndex={0}
-                  aria-label={s(deal.Deal_Name)}
-                  onClick={() => setOpenDeal(deal)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      setOpenDeal(deal);
-                    }
-                  }}
-                >
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
-                      {s(deal.Deal_Name) || '—'}
-                    </div>
-                  </td>
-                  <td style={{ fontFamily: MONO, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {deal.Carrier_ID != null ? String(deal.Carrier_ID) : '—'}
-                  </td>
-                  <td>
-                    <span className={`cs-badge ${stageBadge(s(deal.Stage))}`}>{s(deal.Stage) || '—'}</span>
-                  </td>
-                  <td>
-                    <span className={`cs-badge ${paymentTypeBadge(deal.Payment_Type_Billing)}`}>
-                      {s(deal.Payment_Type_Billing) || '—'}
-                    </span>
-                  </td>
-                  <td style={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
-                    {deal.Amount ? csCurrency(deal.Amount, 'R ') : '—'}
-                  </td>
-                  <td>
-                    <button
-                      className="cs-btn cs-btn-ghost"
-                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.625rem' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenDeal(deal);
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {deals.loading && rows.length > 0
-                ? [1, 2, 3].map((i) => (
-                    <tr key={`sk${i}`}>
-                      <td colSpan={6}>
-                        <div className="cs-skeleton" style={{ height: '32px', borderRadius: '2px' }} />
-                      </td>
-                    </tr>
-                  ))
-                : null}
-            </tbody>
-          </table>
-        </div>
+      <DataTable
+        caption="Deals"
+        rows={visible}
+        rowKey={(deal) => s(deal.id)}
+        columns={DEAL_COLUMNS}
+        scrollerClassName="cs-table-wrap cs-dc-table-wrap"
+        className="cs-table"
+        loading={deals.loading && rows.length === 0}
+        skeletonRows={8}
+        empty="No deals found"
+        /* The panel owns the deal modal, which is the record — DataTable must not offer a second,
+           thinner one behind the same tap. */
+        onRowActivate={setOpenDeal}
+      />
 
       {filtered.length > MAX_ROWS ? (
         <div style={{ marginTop: '0.5rem', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
