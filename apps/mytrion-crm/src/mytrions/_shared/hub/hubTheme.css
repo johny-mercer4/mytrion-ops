@@ -1,0 +1,117 @@
+/*
+ * Manager's THEME layer — loaded last, so Overview, department desks, Referrals, Loyalty, the shared
+ * sidebar and the portal modals all resolve one surface system in both themes.
+ *
+ * Rules for this file:
+ *   1. It declares TOKENS, not component rules. A component rule here is a rule that fights the file
+ *      that owns the component. It used to hold a second, contradictory copy of the loyalty tier
+ *      palette and of the tier tint/sheen ramp, both of which silently beat managerLoyalty.css by
+ *      load order — so the carefully differentiated Silver-vs-Idle work in that file was dead code.
+ *      That palette now lives once, in managerLoyalty.css.
+ *   2. Light is derived, never hand-mixed. The light panes used to be fixed
+ *      `rgba(255,255,255,.82)` literals rather than the token-derived `color-mix` the rest of the
+ *      app uses, so Manager drifted off the shared light surface every time theme.css moved.
+ *   3. No font overrides. Manager inherits Satoshi / Space Grotesk / Space Mono like every other
+ *      module — see the TYPOGRAPHY note in manager.css.
+ */
+
+/* Both hub workspaces. Under `data-mytrion='marketing'` every --mg-* / --hz-page / --hz-pane*
+   / --hz-shadow-* below would otherwise resolve to nothing: borders vanish and the light theme
+   loses its whole derived surface system. */
+[data-mytrion='manager'],
+[data-mytrion='marketing'] {
+  --mg-border: color-mix(in srgb, var(--border) 92%, transparent);
+  --mg-border-strong: color-mix(in srgb, var(--text-muted) 25%, var(--border));
+
+  /* Manager's ambience is the shared Horizon mesh, pulled a touch quieter — this is a records-and-
+     tables module, not a landing page. Everything derives from --hz-page so the two themes stay in
+     step. */
+  --hz-page: #090d18;
+  --hz-mesh:
+    radial-gradient(ellipse 70% 45% at 10% 0%, rgba(56, 189, 248, 0.07), transparent 62%),
+    radial-gradient(ellipse 54% 44% at 92% 8%, rgba(167, 139, 250, 0.045), transparent 58%),
+    radial-gradient(ellipse 60% 58% at 50% 108%, rgba(56, 189, 248, 0.035), transparent 62%);
+  --hz-grid:
+    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  --hz-vignette: radial-gradient(
+    ellipse 125% 125% at 50% 48%,
+    transparent 42%,
+    rgba(3, 6, 14, 0.55) 100%
+  );
+
+  --hz-pane: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 90%, transparent),
+    color-mix(in srgb, var(--surface-alt) 76%, transparent)
+  );
+  --hz-pane-lift: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 96%, transparent),
+    color-mix(in srgb, var(--surface-alt) 84%, transparent)
+  );
+  --hz-pane-bd: var(--mg-border);
+  --mg-scrim: rgba(3, 7, 18, 0.68);
+}
+
+[data-theme='light'] :is([data-mytrion='manager'], [data-mytrion='marketing']) {
+  /* A shade below the panels that sit on it. A page lighter than its own cards gives them nothing to
+     stand on, which is the single biggest reason a light theme reads as "washed out". */
+  --hz-page: #e9edf6;
+  --hz-mesh:
+    radial-gradient(ellipse 72% 48% at 8% 0%, rgba(51, 104, 145, 0.045), transparent 64%),
+    radial-gradient(ellipse 52% 42% at 92% 8%, rgba(114, 91, 150, 0.025), transparent 60%);
+  /* Neutral slate, not saturated sky — a coloured hairline on a pale field reads as ruling. */
+  --hz-grid:
+    linear-gradient(rgba(100, 116, 139, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.04) 1px, transparent 1px);
+  /* Settles the edges DOWN. A vignette fading toward something brighter than the page lights the
+     corners and adds to the glare instead of containing it. */
+  --hz-vignette: radial-gradient(
+    ellipse 125% 125% at 50% 50%,
+    transparent 48%,
+    rgba(191, 203, 226, 0.28) 100%
+  );
+
+  /* Derived from --surface / --surface-alt exactly as the dark block above is, so the two themes
+     cannot drift apart. Panes are nearly opaque here: a translucent white card over a pale mesh has
+     no edge, and the mesh bleeding through is what made light Manager look muddy. */
+  --hz-pane: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 97%, transparent),
+    color-mix(in srgb, var(--surface-alt) 92%, transparent)
+  );
+  --hz-pane-lift: linear-gradient(
+    150deg,
+    var(--surface),
+    color-mix(in srgb, var(--surface-alt) 97%, transparent)
+  );
+  --hz-pane-alt: color-mix(in srgb, var(--surface-alt) 94%, transparent);
+
+  --mg-border: rgba(43, 55, 74, 0.13);
+  --mg-border-strong: rgba(43, 55, 74, 0.22);
+  --hz-pane-bd: var(--mg-border);
+
+  /* Slate-tinted and shallow. A dark-theme drop shadow transplanted onto a pale field reads as
+     dirt, and is the other half of why light mode felt sharp. */
+  --hz-shadow-rest: 0 1px 2px rgba(30, 41, 59, 0.05);
+  --hz-shadow-lift:
+    0 12px 30px -16px color-mix(in srgb, var(--accent) 26%, transparent),
+    0 2px 8px -4px rgba(30, 41, 59, 0.08);
+  --hz-shadow-pop:
+    0 24px 56px -20px rgba(30, 41, 59, 0.22),
+    0 0 0 1px rgba(43, 55, 74, 0.08);
+
+  /* The skeleton sheen inverts with the theme — a white band on a white pane is nothing to see. */
+  --mg-sk-sheen: rgba(24, 32, 46, 0.055);
+
+  /* A near-black veil over a pale page is a hole in the screen, not a dimmer. Light gets a cool,
+     lighter scrim and leans on the dialog's own elevation to separate it. */
+  --mg-scrim: rgba(76, 88, 112, 0.34);
+}
+
+/* .mg-root carries the same two, because the module root is where --mg-sk-sheen is declared and a
+   [data-theme] ancestor selector cannot reach a child's own declaration otherwise. */
+[data-theme='light'] .mg-root {
+  --mg-sk-sheen: rgba(24, 32, 46, 0.055);
+}

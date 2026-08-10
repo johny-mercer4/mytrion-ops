@@ -7,7 +7,7 @@ import {
   type UserAccessPatch,
 } from '../../api/mytrionAccess';
 import { XIcon } from '../../components/icons';
-import { useModalFocus } from '../hr/useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 import { BillingAccessModeField } from './BillingAccessModeField';
 import { RadioToggleGroup, type RadioOption } from './RadioToggleGroup';
 import s from './admin.module.css';

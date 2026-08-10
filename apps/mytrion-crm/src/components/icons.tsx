@@ -44,6 +44,7 @@ import {
   Wallet,
   LineChart,
   Timer,
+  Megaphone,
 } from 'lucide-react';
 
 /**
@@ -138,6 +139,7 @@ const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   retention: Heart,
   verification: BadgeCheck,
   manager: Users,
+  marketing: Megaphone,
   analyst: LineChart,
   hr: Briefcase,
   recruit: UserSearch,

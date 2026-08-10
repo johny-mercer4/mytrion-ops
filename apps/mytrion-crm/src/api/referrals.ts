@@ -1,6 +1,6 @@
 /**
  * Manager Mytrion → Referrals card API. Reads the two Zoho referral modules (full field set) via the
- * manager-gated backend (`/v1/manager/referrals/:module`). Read-only. Rows are raw Zoho records
+ * marketing-gated backend (`/v1/marketing/referrals/:module`). Read-only. Rows are raw Zoho records
  * (field API names as-is); lookup fields (Parent_Referrer, Owner, …) arrive as `{ name, id }`.
  */
 import { request } from './transport';
@@ -25,12 +25,12 @@ export interface ReferralRecords {
 
 // LEGACY department assertion — ignored for verified sessions (the server derives access from the
 // session), kept only for the API-key / rollback path. Mirrors api/dataCenter.ts's DC_HEADERS.
-const MGR_HEADERS = { 'x-department-access': 'management' } as const;
+const MKT_HEADERS = { 'x-department-access': 'marketing' } as const;
 
 function getRecords(moduleKey: 'parents' | 'children', limit?: number): Promise<ReferralRecords> {
-  return request('GET', `/manager/referrals/${moduleKey}`, {
+  return request('GET', `/marketing/referrals/${moduleKey}`, {
     query: limit != null ? { limit } : {},
-    headers: MGR_HEADERS,
+    headers: MKT_HEADERS,
   }) as Promise<ReferralRecords>;
 }
 
@@ -56,9 +56,9 @@ export interface ReferralAssociations {
 
 /** Leads + Deals that reference any referral, for grouping under each parent/child. */
 export const listReferralAssociations = (limit?: number): Promise<ReferralAssociations> =>
-  request('GET', '/manager/referral-links', {
+  request('GET', '/marketing/referral-links', {
     query: limit != null ? { limit } : {},
-    headers: MGR_HEADERS,
+    headers: MKT_HEADERS,
   }) as Promise<ReferralAssociations>;
 
 export type ReferralBonusType =
@@ -125,10 +125,10 @@ export const getReferralWorkspace = (
   periodMonth?: string,
   options: { refresh?: boolean } = {},
 ): Promise<ReferralWorkspace> =>
-  request('GET', '/manager/referrals/workspace', {
+  request('GET', '/marketing/referrals/workspace', {
     query: {
       ...(periodMonth ? { period_month: periodMonth } : {}),
       ...(options.refresh ? { refresh: '1' } : {}),
     },
-    headers: MGR_HEADERS,
+    headers: MKT_HEADERS,
   }) as Promise<ReferralWorkspace>;

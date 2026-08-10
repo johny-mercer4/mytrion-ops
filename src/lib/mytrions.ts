@@ -17,6 +17,7 @@ export const MYTRION_IDS = [
   'finance',
   'verification',
   'manager',
+  'marketing',
   'analyst',
   'hr',
   'recruit',
@@ -54,6 +55,8 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   finance: 'finance',
   verification: 'verification',
   manager: 'management',
+  // Equal to the id — which is what lets `requireMytrionWrite('marketing')` work directly.
+  marketing: 'marketing',
   analyst: 'analytics',
   hr: 'hr',
   recruit: 'recruit',

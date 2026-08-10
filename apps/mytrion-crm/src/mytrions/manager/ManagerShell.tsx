@@ -14,16 +14,27 @@ import {
 import { readManagerUrlState, writeManagerUrlState } from './managerUrlState';
 import { DepartmentDesk } from './DepartmentDesk';
 import { ManagerHome } from './ManagerHome';
-import { LoyaltyCard } from './cards/LoyaltyCard';
-import { ReferralsCard } from './cards/ReferralsCard';
 import { EfsConsoleCard } from './cards/EfsConsoleCard';
 import { isEfsTab, type EfsTabId } from './cards/efs/efsModel';
-import './manager.css';
-import './managerWorkspace.css';
-import './managerLoyalty.css';
-import './managerPolish.css';
+import { MYTRION_URL_SLUG } from '../../access/mytrions.config';
+import { canAccess } from '../../access/resolveAccess';
+// Shared with the Marketing Mytrion, which renders the same `.mg-root` chrome. hubTheme declares the
+// --mg-* / --hz-* token layer and is documented as loading last.
+import '../_shared/hub/hubChrome.css';
+import '../_shared/hub/hubWorkspace.css';
+import '../_shared/hub/hubChips.css';
+import '../_shared/hub/hubDialog.css';
+import '../_shared/hub/hubTheme.css';
 
-const CARD_IDS: readonly ManagerCardId[] = ['referrals', 'loyalty', 'efs'];
+const CARD_IDS: readonly ManagerCardId[] = ['efs'];
+
+/**
+ * Referrals and Loyalty moved to the Marketing Mytrion. Their `?card=` links were pasted into
+ * tickets and chats for months, and ManagerShell's unknown-view fallback would land every one of
+ * them silently on Overview. Redirect instead — for the population that holds those links, the
+ * workspace they want is one they can almost certainly still reach.
+ */
+const MOVED_TO_MARKETING: Record<string, string> = { referrals: 'referrals', loyalty: 'loyalty' };
 
 /**
  * Manager hub shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell, chat dock disabled.
@@ -61,6 +72,19 @@ export function ManagerShell() {
     const { tab } = readManagerUrlState();
     return tab && isEfsTab(tab) ? tab : 'overview';
   });
+
+  /**
+   * Forward an old `?card=referrals` / `?card=loyalty` link to the Marketing Mytrion.
+   *
+   * `replace`, not `push`, so Back does not bounce the visitor straight into the redirect again.
+   * A user who cannot enter Marketing falls through to the existing unknown-view fallback and lands
+   * on Overview — the same place they would have landed without this, just without the detour.
+   */
+  useEffect(() => {
+    const moved = MOVED_TO_MARKETING[readManagerUrlState().view ?? ''];
+    if (!moved || !canAccess(user, 'marketing')) return;
+    window.location.replace(`/main/${MYTRION_URL_SLUG.marketing}?tab=${moved}`);
+  }, [user]);
 
   /** A view change is a new page (Back returns here); a tab or carrier change is not. */
   const sync = useCallback(
@@ -148,7 +172,7 @@ export function ManagerShell() {
           tone: 'var(--tone-pink)',
           active: view === 'overview' || CARD_IDS.includes(view as ManagerCardId),
           onClick: () => go('overview'),
-          keywords: ['home', 'hub', 'referrals', 'loyalty', 'tiers', 'efs', 'fuel', 'cards'],
+          keywords: ['home', 'hub', 'efs', 'fuel', 'cards'],
         },
       ],
     },
@@ -175,8 +199,6 @@ export function ManagerShell() {
         {view === 'overview' ? (
           <ManagerHome onOpenCard={openCard} onOpenDepartment={openDept} />
         ) : null}
-        {view === 'referrals' ? <ReferralsCard onBack={() => go('overview')} /> : null}
-        {view === 'loyalty' ? <LoyaltyCard onBack={() => go('overview')} /> : null}
         {view === 'efs' ? (
           <EfsConsoleCard
             onBack={() => go('overview')}

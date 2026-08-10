@@ -6,10 +6,11 @@
  *
  * RBAC is layered. Layer 1 is entering the Manager Mytrion at all (`canAccess` in resolveAccess).
  * Layer 2 is `access(user)` per card/department here. Both only shape the UI — the endpoint behind
- * each surface is the real security boundary (Referrals → `management`-gated /v1/manager/referrals/*,
- * Loyalty Program → /v1/manager/loyalty/clients, which is NOT owner-scoped and so manager-only).
+ * each surface is the real security boundary (EFS Console → the `management`-gated /v1/manager/efs/*).
  * Departments are UI-only today, so their gate is open; when per-department RBAC lands, narrow the
  * `access` predicate rather than hiding items in the shell.
+ *
+ * Referrals and Loyalty moved to the Marketing Mytrion; their routes moved with them.
  */
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -19,15 +20,13 @@ import {
   Fuel,
   Headphones,
   LineChart,
-  Share2,
   Smartphone,
   TrendingUp,
-  Trophy,
 } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
 
 /** Cards on the Overview hub. Add an id here as new hub blocks land (payouts, approvals, KPIs, …). */
-export type ManagerCardId = 'referrals' | 'loyalty' | 'efs';
+export type ManagerCardId = 'efs';
 
 export type ManagerDepartmentId =
   | 'sales'
@@ -69,29 +68,6 @@ export interface ManagerDepartment {
 }
 
 export const MANAGER_CARDS: ManagerCard[] = [
-  {
-    id: 'referrals',
-    label: 'Referrals',
-    tag: 'CRM',
-    description:
-      'Parent and child referral records from Zoho — every field, with the Leads and Deals that reference each one.',
-    icon: Share2,
-    tone: 'var(--tone-pink)',
-    // Open to anyone who can enter Manager. To restrict later: access: (u) => isAdmin(u).
-    access: () => true,
-  },
-  {
-    id: 'loyalty',
-    label: 'Loyalty Program',
-    tag: 'Tiers',
-    description:
-      "Every carrier's loyalty status — last month's transacting cards and ULSR + ULSD gallons, with this month's progress.",
-    icon: Trophy,
-    // Amber reads as the program's own signal (Gold/Bronze live on this scale) without colliding
-    // with Referrals' pink or any department hue.
-    tone: 'var(--tone-amber)',
-    access: () => true,
-  },
   {
     id: 'efs',
     label: 'EFS Console',
