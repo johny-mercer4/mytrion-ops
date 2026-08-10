@@ -690,3 +690,19 @@
     opacity: 0.6;
     cursor: default;
 }
+
+/*
+ * Header action clusters below the structure line.
+ *
+ * Unlike a tab strip these are unordered controls, so wrapping is right: a second line of buttons
+ * reads fine, where a horizontally scrolled action cluster hides actions with no affordance saying
+ * they are there. `min-inline-size: 0` because a flex item floors at min-content without it, which
+ * is what let these rows drag the whole document sideways.
+ */
+@media (width < 640px) {
+  .bm-root .bm-header-row {
+    flex-wrap: wrap;
+    min-inline-size: 0;
+    row-gap: var(--space-2);
+  }
+}

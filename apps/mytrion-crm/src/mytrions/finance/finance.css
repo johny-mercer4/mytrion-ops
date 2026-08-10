@@ -708,7 +708,7 @@
 /* Two columns on wide modals, one when narrow — rows never split across the fold. */
 .fi-sect-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
   gap: 0 30px;
   padding: 4px 15px 8px;
 }

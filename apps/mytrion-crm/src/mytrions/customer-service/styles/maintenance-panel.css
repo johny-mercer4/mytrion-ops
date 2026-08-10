@@ -192,7 +192,7 @@
    correct inside the collapsed-sidebar layout where the content pane is wider. */
 .cs-root .cs-mt-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
     gap: 16px;
     margin-top: 1rem;
 }
@@ -590,6 +590,10 @@
     gap: 12px;
     margin-top: 1rem;
     overflow-x: auto;
+    /* Without `contain`, an over-scroll past the last column chains to the page — and on iOS that
+       gesture is Back, so reaching any other status on a phone exited the workspace. */
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
     padding-bottom: 4px;
 }
 

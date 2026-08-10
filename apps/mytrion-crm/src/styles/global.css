@@ -411,10 +411,25 @@ html.theme-vt::view-transition-new(root) {
    * not sufficient — breakpoints.test.ts budgets `font-size` on an input outside styles/ and ds/
    * precisely so those 43 sites get counted down rather than silently re-breaking it.
    */
+  /*
+   * `!important`, and it is load-bearing rather than lazy.
+   *
+   * A bare element selector is (0,0,1) and loses to every module rule that sizes its own fields —
+   * `.cs-root .cs-app-search input` (0,2,1), `.cs-root .cs-an-rc-field input[type='date']` (0,3,1),
+   * and 41 more across CS, HR, Recruit, Billing and Sales. Without this the guard was decorative:
+   * an audit of the running app found every field in three workspaces still rendering at 12-15px,
+   * so focusing any of them zoomed the document and left the user panned sideways with no way back.
+   *
+   * Scoped to below the DENSITY line, so no desktop control changes size. Between 640 and 900 this
+   * does make tablet fields 16px — which is the point: an iPad is exactly where the zoom fires.
+   *
+   * The per-module declarations are still counted by breakpoints.test.ts and still worth removing;
+   * this stops them being a live accessibility defect in the meantime.
+   */
   input,
   textarea,
   select {
-    font-size: var(--text-input-mobile);
+    font-size: var(--text-input-mobile) !important;
   }
 }
 

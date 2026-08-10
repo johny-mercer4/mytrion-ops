@@ -171,7 +171,7 @@
    from the stored value). Everything tinted below reads it, so one department = one colour. */
 .hr-root .hr-deptc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 292px), 1fr));
   gap: 14px;
 }
 .hr-root .hr-deptc {

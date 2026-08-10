@@ -211,8 +211,27 @@ describe('viewport units', () => {
     expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 27);
   });
 
+  /**
+   * A CLAMP is not the defect. `width: 100vw` is — it ignores the scrollbar and overflows by its
+   * width — but `min(300px, calc(100vw - 1rem))` on an overlay is the correct way to say "never
+   * wider than the screen", and there is no viewport-free way to express it.
+   *
+   * So this counts vw only where it sizes something directly. Narrowed after the budget flagged a
+   * legitimate clamp on the view-as panel: a heuristic that fires on the right answer needs fixing,
+   * not working around.
+   */
   it('does not add a bare vw', () => {
-    expectBudget('bare `vw`', census(CSS_FILES, /\b\d+(?:\.\d+)?vw\b/g), 37);
+    let count = 0;
+    const sample: string[] = [];
+    for (const file of CSS_FILES) {
+      const text = code(file);
+      for (const m of text.matchAll(/[^;{}]*\b\d+(?:\.\d+)?vw\b[^;{}]*/g)) {
+        if (/\b(?:min|max|clamp)\(/.test(m[0])) continue;
+        count += 1;
+        if (sample.length < 8) sample.push(at(file, m.index, text));
+      }
+    }
+    expectBudget('bare `vw` (clamps excluded)', { count, sample }, 5);
   });
 });
 
@@ -238,10 +257,12 @@ describe('touch', () => {
   });
 
   it('does not add a font-size to an input outside the style layer', () => {
-    // iOS zooms the whole page when a focused input renders below 16px. `--text-input-mobile` and
-    // the global rule in styles/global.css solve that once — but a module rule like
-    // `.cs-app-search input { font-size: 13px }` out-specifies a bare element selector and puts the
-    // zoom back. ds/ is exempt: it already guards every field with --text-input-mobile.
+    // iOS zooms the whole page when a focused input renders below 16px, and does not zoom back.
+    // The guard in styles/global.css now carries `!important` precisely BECAUSE these 43 rules
+    // out-specify it — an audit found every field in three workspaces still at 12-15px. So this is
+    // no longer counting a live defect; it is counting how much specificity the guard is having to
+    // fight, and every one removed is a rule that no longer has to be beaten.
+    // ds/ is exempt: it already guards every field with --text-input-mobile.
     const scoped = CSS_FILES.filter((f) => {
       const rel = relative(SRC, f);
       return !rel.startsWith('styles/') && !rel.startsWith('ds/');

@@ -18,10 +18,11 @@
         font-size: 0.9375rem;
     }
 
-    /* Stats grids — 2 columns on mobile */
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
+    /* The KPI row. `.bm-stats-grid` / `.dc-stats-grid` / `.tx-summary-banner` used to be listed
+       here and are styled all over this module, but NO .tsx renders any of the three — the class
+       Billing actually writes is `.db-kpi-grid`. Same failure as `.bm-table-desktop-only`: a rule
+       that reads as covered in review and has never once applied. */
+    .bm-root .db-kpi-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.625rem;
     }
@@ -58,11 +59,6 @@
     }
 
     /* Stats — keep 2 columns but tighter */
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
-        gap: 0.5rem;
-    }
 
     .bm-root .bm-stat-card {
         padding: 0.75rem;
@@ -70,11 +66,6 @@
 }
 
 @media (width < 480px) {
-    .bm-root .bm-stats-grid,
-    .bm-root .dc-stats-grid,
-    .bm-root .tx-summary-banner {
-        grid-template-columns: 1fr 1fr;
-    }
 
 }
 

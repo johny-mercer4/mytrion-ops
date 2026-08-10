@@ -412,7 +412,7 @@
 }
 .ss-root .ss-skel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 14px;
 }
 /* A grid, not a fixed-width flex row: the Tasks board is a 4-up responsive grid and the Retention

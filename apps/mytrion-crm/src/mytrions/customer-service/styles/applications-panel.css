@@ -619,7 +619,9 @@
    ───────────────────────────────────────────────────────────── */
 .cs-root .cs-toast {
     position: fixed;
-    bottom: 1.5rem;
+    /* Clears the mobile tab bar + home indicator. --layout-bottom-inset is 0 above the structure
+       line, so desktop keeps the same 24px. */
+    bottom: calc(1.5rem + var(--layout-bottom-inset, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 10000;

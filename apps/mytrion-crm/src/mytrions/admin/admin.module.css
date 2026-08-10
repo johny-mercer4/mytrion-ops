@@ -19,6 +19,22 @@
   max-width: var(--admin-measure);
 }
 
+/* The panel is the only gutter on an admin tab — .center supplies none, and --layout-gutter's
+   compact swap is not a token this module consumes. 40px each side is a quarter of a 320px screen.
+   Module-hashed, so responsive-tables.css's global .cs-panel/.bm-panel rule can never reach it. */
+@media (width < 900px) {
+  .panel,
+  .panelWide {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+@media (width < 640px) {
+  .panel,
+  .panelWide {
+    padding: var(--space-4) var(--space-3);
+  }
+}
+
 @keyframes panelIn {
   from {
     opacity: 0;

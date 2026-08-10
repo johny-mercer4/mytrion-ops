@@ -435,7 +435,7 @@ export function SalesRedesign() {
             <div
               role="status"
               style={s(
-                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:var(--z-toast);display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
+                `position:fixed;bottom:calc(24px + var(--layout-bottom-inset, 0px));left:50%;transform:translateX(-50%);z-index:var(--z-toast);display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
               )}
             >
               <span

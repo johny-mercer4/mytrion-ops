@@ -331,7 +331,7 @@
 /* ── Referral cards ────────────────────────────────────────────────────────── */
 .mg-root .mg-rf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: 14px;
 }
 .mg-root .mg-rf-card {
@@ -684,4 +684,11 @@
   .mg-root .mg-rf-card:hover {
     transform: none;
   }
+}
+
+/* The strip already scrolls; without `contain` a flick past the last filter chains to the page,
+   and on iOS that gesture is Back. */
+.mg-root .mg-rf-filters {
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }

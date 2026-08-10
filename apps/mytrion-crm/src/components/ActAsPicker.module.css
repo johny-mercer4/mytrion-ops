@@ -76,6 +76,16 @@
   .bannerWord {
     display: none;
   }
+  /* With the word gone the ✕ is a ~26x20 target. 44px is the floor, taken as an overhanging hit
+     area so the banner itself does not grow. */
+  .exit {
+    position: relative;
+  }
+  .exit::before {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((44px - 100%) / -2));
+  }
   .banner {
     gap: var(--space-1);
     padding: 6px var(--space-2);
@@ -121,7 +131,9 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 300px;
+  /* A hard 300px panel anchored to a chip near the right edge of a 320px screen hangs off the
+     left. This keeps the desktop width and clamps it to the viewport below that. */
+  width: min(300px, calc(100vw - var(--space-4)));
   max-height: 380px;
   display: flex;
   flex-direction: column;
