@@ -24,6 +24,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
+import { canSeeTab } from '../../access/resolveAccess';
 
 /** Cards on the Overview hub. Add an id here as new hub blocks land (payouts, approvals, KPIs, …). */
 export type ManagerCardId = 'efs';
@@ -158,12 +159,12 @@ export const MANAGER_DEPARTMENTS: ManagerDepartment[] = [
 
 /** Cards this user may open (Layer-2 filtered) — drives the Overview grid. */
 export function accessibleManagerCards(user: UserContext): ManagerCard[] {
-  return MANAGER_CARDS.filter((card) => card.access(user));
+  return MANAGER_CARDS.filter((card) => card.access(user) && canSeeTab(user, 'manager', card.id));
 }
 
 /** Departments this user may open (Layer-2 filtered) — drives the Departments nav group. */
 export function accessibleManagerDepartments(user: UserContext): ManagerDepartment[] {
-  return MANAGER_DEPARTMENTS.filter((dept) => dept.access(user));
+  return MANAGER_DEPARTMENTS.filter((dept) => dept.access(user) && canSeeTab(user, 'manager', dept.id));
 }
 
 /** Layer-2 check for a single card — guards the view switch so a stale state can't bypass the grid. */

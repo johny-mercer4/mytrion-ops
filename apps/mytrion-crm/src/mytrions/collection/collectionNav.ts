@@ -12,6 +12,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Home, LayoutGrid, Sheet } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
+import { canSeeTab } from '../../access/resolveAccess';
 
 export type CollectionTabId = 'home' | 'array' | 'cases';
 
@@ -64,13 +65,13 @@ export const COLLECTION_TABS: CollectionTab[] = [
 
 /** Tabs this user may open (Layer-2 filtered) — drives the sidebar. */
 export function accessibleCollectionTabs(user: UserContext): CollectionTab[] {
-  return COLLECTION_TABS.filter((t) => t.access(user));
+  return COLLECTION_TABS.filter((t) => t.access(user) && canSeeTab(user, 'collection', t.id));
 }
 
 /** Layer-2 check for a single tab — guards the view switch so stale state can't bypass the sidebar. */
 export function canOpenCollectionTab(user: UserContext, id: CollectionTabId): boolean {
   const tab = COLLECTION_TABS.find((t) => t.id === id);
-  return tab ? tab.access(user) : false;
+  return tab ? tab.access(user) && canSeeTab(user, 'collection', id) : false;
 }
 
 export function findCollectionTab(id: CollectionTabId): CollectionTab {

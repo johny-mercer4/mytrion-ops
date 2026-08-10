@@ -222,6 +222,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           homeMytrion: access.homeMytrion,
           allDepartmentAccess: access.allDepartmentAccess,
           mytrionAccessModes: access.mytrionAccessModes,
+        mytrionTabGrants: access.mytrionTabGrants,
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
           /**
@@ -277,6 +278,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           accessibleMytrions: access.accessibleMytrions,
           homeMytrion: access.homeMytrion,
           mytrionAccessModes: access.mytrionAccessModes,
+        mytrionTabGrants: access.mytrionTabGrants,
           viewAsUserIds: access.viewAsUserIds,
           viewAsTargets: await viewAsTargets(access.viewAsUserIds),
           leadsTeam: await leadsTeamFor(zohoUserId),

@@ -1,5 +1,6 @@
 import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { tabsFor } from '../../access/tabRegistry';
+import { canSeeTab } from '../../access/resolveAccess';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useIsCompact, useIsPhone } from '../../hooks/useMediaQuery';
@@ -319,8 +320,25 @@ export function MytrionShell({
     }
   }
 
+  /**
+   * Permission-set tab gating for EVERY workspace, in one place.
+   *
+   * Every Mytrion renders through this shell — the seven "sub-shells" all just call it with their
+   * own navSections — so this single filter gates all thirteen sidebars. Children are NOT gated
+   * independently: Admin's carriers → registered / invitations is one destination to an admin
+   * granting access, not two, and the registry declares it as one.
+   *
+   * `NavItem` deliberately does not gain an `access` predicate. The shell already knows the Mytrion
+   * and the key, so a per-item callback would be ceremony, and NavItem stays a presentation type.
+   */
+  const gatedSections: NavSection[] = sections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canSeeTab(user, id, item.key)),
+  }));
+  const gatedFooter = footerNav.filter((item) => canSeeTab(user, id, item.key));
+
   const q = navQuery.trim().toLowerCase();
-  const visibleSections = filterSections(sections, q);
+  const visibleSections = filterSections(gatedSections, q);
   const showSearch = enableNavSearch || Boolean(navSections?.length);
   const displayName = user.userName.trim() || 'Account';
   const roleLine = [user.profile, user.role].filter(Boolean).join(' · ');
@@ -339,13 +357,13 @@ export function MytrionShell({
   const mobileSections: NavSection[] = phone
     ? [
         ...sections,
-        ...(footerNav.length > 0 || enableDockChat
+        ...(gatedFooter.length > 0 || enableDockChat
           ? [
               {
                 id: '_footer',
                 label: '',
                 items: [
-                  ...footerNav,
+                  ...gatedFooter,
                   ...(enableDockChat
                     ? [
                         {
@@ -452,7 +470,7 @@ export function MytrionShell({
           </div>
 
           <div className={styles.navFooter}>
-            {footerNav.map((item) => (
+            {gatedFooter.map((item) => (
               <NavItemButton
                 key={item.key}
                 item={item}

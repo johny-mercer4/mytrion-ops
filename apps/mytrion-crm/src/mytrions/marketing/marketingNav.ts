@@ -10,6 +10,7 @@
  * than hiding items in the shell (same contract as hrNav / collectionNav / managerNav).
  */
 import type { UserContext } from '../../context/userContext';
+import { canSeeTab } from '../../access/resolveAccess';
 
 export type MarketingTabId = 'referrals' | 'loyalty';
 
@@ -47,11 +48,11 @@ export function isMarketingTabId(value: string | null | undefined): value is Mar
 }
 
 export function accessibleMarketingTabs(user: UserContext): MarketingTab[] {
-  return MARKETING_TABS.filter((tab) => tab.access(user));
+  return MARKETING_TABS.filter((tab) => tab.access(user) && canSeeTab(user, 'marketing', tab.id));
 }
 
 /** Guards the view switch, so stale state or a deep link cannot bypass the Layer-2 gate. */
 export function canOpenMarketingTab(user: UserContext, id: MarketingTabId): boolean {
   const tab = MARKETING_TABS.find((t) => t.id === id);
-  return tab ? tab.access(user) : false;
+  return tab ? tab.access(user) && canSeeTab(user, 'marketing', id) : false;
 }

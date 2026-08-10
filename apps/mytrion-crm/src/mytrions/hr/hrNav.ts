@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { isAdmin, isHrAttendanceOnly } from '../../access/resolveAccess';
 import type { UserContext } from '../../context/userContext';
+import { canSeeTab } from '../../access/resolveAccess';
 
 export type HrTabId =
   | 'home'
@@ -122,13 +123,13 @@ export const HR_TABS: HrTab[] = [
 
 /** Tabs this user may open (Layer-2 filtered) — drives the sidebar. */
 export function accessibleHrTabs(user: UserContext): HrTab[] {
-  return HR_TABS.filter((tab) => tab.access(user));
+  return HR_TABS.filter((tab) => tab.access(user) && canSeeTab(user, 'hr', tab.id));
 }
 
 /** Layer-2 check for a single tab — guards the view switch so stale state can't bypass the sidebar. */
 export function canOpenHrTab(user: UserContext, id: HrTabId): boolean {
   const tab = HR_TABS.find((t) => t.id === id);
-  return tab ? tab.access(user) : false;
+  return tab ? tab.access(user) && canSeeTab(user, 'hr', id) : false;
 }
 
 export function findHrTab(id: HrTabId): HrTab {
