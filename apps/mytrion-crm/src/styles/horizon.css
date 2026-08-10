@@ -246,44 +246,67 @@
   /* Only the glass set, the elevation shadows and the band are restated. The accent ramp, every
      --hz-* alias and all four motion aliases re-derive from theme.css, which is why this block is a
      third of the size it used to be — and why light can no longer silently drift from dark. */
-  --glass: rgba(255, 255, 255, 0.44);
-  --glass-hi: rgba(255, 255, 255, 0.86);
-  --glass-bd: rgba(20, 30, 50, 0.07);
-  --glass-bd-hi: rgba(0, 67, 200, 0.3);
-  --field: rgba(255, 255, 255, 0.55);
-  --row-line: rgba(20, 30, 50, 0.07);
-  --row-hover: rgba(20, 30, 50, 0.035);
-  --menu-bg: rgba(255, 255, 255, 0.94);
+  /* Edges carry roughly twice the ink they used to. --glass-bd (= --border, 637 sites) composited to
+     1.14:1 against its own card, which is not a visible line — it is the reason the light theme was
+     reported as having no structure. 1.35:1 now.
+     Deliberately NOT 3:1: a 3:1 hairline on every card edge in the app is a drawn box, which is the
+     OTHER half of the same complaint. The 3:1 job belongs to --border-strong (see --outline-variant
+     in theme.css), which is used where a real line is meant. */
+  --glass: rgba(250, 251, 255, 0.6);
+  --glass-hi: rgba(255, 255, 255, 0.72);
+  --glass-bd: rgba(31, 41, 68, 0.16);
+  --glass-bd-hi: rgba(43, 87, 196, 0.38);
+  --field: rgba(255, 255, 255, 0.62);
+  --row-line: rgba(31, 41, 68, 0.11);
+  --row-hover: rgba(31, 41, 68, 0.055);
+  /* Tinted, not pure white: a floating panel whiter than every surface beneath it is a glare source. */
+  --menu-bg: rgba(248, 250, 253, 0.96);
 
-  /* Light elevates with shadow. Every term is slate-tinted — a neutral-black shadow on a cool pale
-     field reads as dirt. The inset glare survives but is no longer load-bearing: on a light ground
-     it is the 1px slate hairline that separates an #f8f9fa card from an #e9edf3 page, which is why
-     --elev-1 gains a second item here. That is the one behavioural (not purely aliasing) change in
-     this block, and it reaches 245 sites through --hz-glass-inset. */
-  --elev-1:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
-    0 1px 2px -1px rgb(30 41 59 / 0.08);
+  /* Light elevates with shadow, and until now it mostly did not.
+     --elev-0 is TRANSPARENT in the dark block (a resting dark card is separated by its glare and its
+     border), and light inherited that — so `--hz-shadow-rest`, read by 69 sites, resolved to nothing
+     and a resting light card had only a 1.14:1 hairline holding it up. That is the literal answer to
+     "shadows are not visible". Light gets a real resting shadow.
+
+     The drop term MOVES out of --elev-1 and into --elev-0, where it belongs: it was put on the glare
+     because that was the only hook available, but "rest" and "glare" are different jobs, and the
+     ~180 sites that ask only for --hz-glass-inset were getting a shadow by accident while the
+     rest-only sites got none. This also makes light structurally parallel to dark, where --elev-1 is
+     purely an inset.
+
+     Ink is rgb(23 32 58) — the page's own hue (~225) rather than a foreign neutral grey, so it reads
+     as the surface's shade instead of as dirt. --elev-2's ambient roughly doubles, closing most of
+     the 3x gap against dark on a field 20x brighter. */
+  --elev-0:
+    0 1px 2px -1px rgb(23 32 58 / 0.1),
+    0 2px 5px -2px rgb(23 32 58 / 0.05);
+  --elev-1: inset 0 1px 0 0 rgb(255 255 255 / 0.7);
   --elev-2:
-    0 3px 10px -4px rgb(30 41 59 / 0.09),
-    0 14px 34px -14px var(--accent-glow, var(--hz-glow));
+    0 2px 6px -2px rgb(23 32 58 / 0.1),
+    0 10px 24px -8px rgb(23 32 58 / 0.12),
+    0 18px 44px -18px var(--accent-glow, var(--hz-glow));
   --elev-3:
-    0 1px 3px -1px rgb(30 41 59 / 0.1),
-    0 20px 52px -18px rgb(30 41 59 / 0.28);
+    0 2px 6px -2px rgb(23 32 58 / 0.12),
+    0 12px 28px -8px rgb(23 32 58 / 0.16),
+    0 28px 64px -20px rgb(23 32 58 / 0.3);
 
   /* 0.98 white was a hard specular line against near-white panels — barely a highlight, mostly a
      seam. Pulled back so it reads as sheen. */
-  --hz-shimmer: linear-gradient(90deg, transparent 8%, rgba(255, 255, 255, 0.82) 50%, transparent 92%);
+  --hz-shimmer: linear-gradient(90deg, transparent 8%, rgba(255, 255, 255, 0.9) 50%, transparent 92%);
 
   /* Dawn: pale cool sky above, warmer light gathering at the band. Same geometry, same single hue
      transition, stops re-derived from the light palette. */
-  --hz-band-zenith: color-mix(in srgb, var(--tint) 9%, var(--page));
-  --hz-band-sky: color-mix(in srgb, var(--tint) 4%, var(--page));
+  /* Mix percentages come DOWN because the page they mix into is deeper now — holding 9/4/11 would
+     push the zenith stop below the 4.5:1 floor --outline has to clear as --text-muted. */
+  --hz-band-zenith: color-mix(in srgb, var(--tint) 5%, var(--page));
+  --hz-band-sky: color-mix(in srgb, var(--tint) 2.5%, var(--page));
   --hz-band-haze: var(--page);
-  --hz-band-halo: color-mix(in srgb, var(--ember) 4%, var(--page));
-  --hz-band-ember: color-mix(in srgb, var(--ember) 11%, var(--page));
-  /* The old light vignette colour rgb(191,203,226), resolved opaque. Not pure white. */
-  --hz-band-sea: #e1e7f0;
-  --hz-band-deep: #dee4ef;
+  --hz-band-halo: color-mix(in srgb, var(--ember) 3%, var(--page));
+  --hz-band-ember: color-mix(in srgb, var(--ember) 7.5%, var(--page));
+  /* Derived, not pinned. These were literals (#e1e7f0 / #dee4ef) chosen against the old --page, so
+     they fell out of step the moment the ground moved — exactly the drift this pass exists to end. */
+  --hz-band-sea: color-mix(in srgb, var(--container-highest) 25%, var(--page));
+  --hz-band-deep: color-mix(in srgb, var(--container-highest) 50%, var(--page));
 
   /* A light field needs more dither: the eye resolves steps better at high luminance, and the light
      runs are ~22px per band. 0.02 -> 2.55 LSB peak-to-peak. */
@@ -292,8 +315,8 @@
   /* Neutral slate rather than saturated sky — cyan hairlines on a light field read as sharp ruling
      rather than texture. */
   --hz-grid:
-    linear-gradient(rgba(100, 116, 139, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(100, 116, 139, 0.045) 1px, transparent 1px);
+    linear-gradient(rgba(71, 85, 116, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 116, 0.05) 1px, transparent 1px);
 }
 
 /* ── oklab interpolation, GUARDED. Do not remove the @supports. ────────────────────────────────
