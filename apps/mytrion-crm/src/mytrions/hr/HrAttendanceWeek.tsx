@@ -72,6 +72,14 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
   const todayRow = data.days.find((day) => day.date === today);
   const weeklyMs = data.days.reduce((total, day) => total + dayDurationMs(day, nowMs), 0);
   const activeMs = activeVisit ? sessionDurationMs(activeVisit.session, nowMs) : 0;
+  /**
+   * Which day's running total to show beside the visit.
+   *
+   * The open visit's own day wins over the calendar day, because those differ exactly when it matters:
+   * a 19:00–03:00 shift is bucketed on the day it started, so after midnight the calendar row is a
+   * fresh empty day while the shift the person is actually working sits on yesterday's.
+   */
+  const dayClock = activeVisit?.day ?? todayRow;
   // `currentState` / `lastPunch` come from the employee's latest punch overall, not from
   // `from..to`, so they may only decorate this card while the range still touches now: today is
   // in it, or a session inside it is still open (a visit that ran past Tashkent midnight).
@@ -119,21 +127,35 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
                   : 'A Ganga entry scan will start the tracker automatically.'}
           </p>
         </div>
-        {activeVisit || todayRow ? (
-          <div className="hr-att-live-clock">
-            <span>{activeVisit ? 'This visit' : 'Today in office'}</span>
-            <strong>
-              {durationLabel(
-                activeVisit ? activeMs : todayRow ? dayDurationMs(todayRow, nowMs) : 0,
-                true,
-              )}
-            </strong>
-            <small>{activeVisit ? 'Counting live' : 'Completed visits'}</small>
+        {/*
+          Three readings, not two. "This visit" used to REPLACE the day total while a visit was open, so
+          the moment someone clocked in they lost sight of how long they had already been in today —
+          which for a split shift, or anyone who stepped out and came back, is the number that matters.
+        */}
+        <div className="hr-att-clocks">
+          {activeVisit ? (
+            <div className="hr-att-live-clock">
+              <span>This visit</span>
+              <strong>{durationLabel(activeMs, true)}</strong>
+              <small>Counting live</small>
+            </div>
+          ) : null}
+          {dayClock ? (
+            <div className="hr-att-live-clock">
+              {/*
+                Named for the day the total actually belongs to. An overnight shift is bucketed on the
+                day it STARTED, so at 01:00 a night worker's running day is yesterday's row — calling
+                that "Today" would be a plain lie, and this page is used to check payroll.
+              */}
+              <span>{dayClock.date === today ? 'Today' : dayClock.date}</span>
+              <strong>{durationLabel(dayDurationMs(dayClock, nowMs))}</strong>
+              <small>{activeVisit ? 'Including this visit' : 'Completed visits'}</small>
+            </div>
+          ) : null}
+          <div className="hr-att-week-clock">
+            <span>This week</span>
+            <strong>{durationLabel(weeklyMs)}</strong>
           </div>
-        ) : null}
-        <div className="hr-att-week-clock">
-          <span>This week</span>
-          <strong>{durationLabel(weeklyMs)}</strong>
         </div>
       </section>
 

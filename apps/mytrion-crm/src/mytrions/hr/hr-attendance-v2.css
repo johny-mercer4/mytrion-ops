@@ -6,7 +6,10 @@
 }
 .hr-root .hr-att-presence {
   display: grid;
-  grid-template-columns: auto minmax(260px, 1fr) auto auto;
+  /* Three columns: icon, copy, and ONE stats group. The stats used to be two grid tracks, so a third
+     reading needed a fifth track — and an absent one still contributes its `gap`, leaving dead space on
+     the right whenever there was no open visit. A flex group sizes to however many are shown. */
+  grid-template-columns: auto minmax(240px, 1fr) auto;
   align-items: center;
   gap: 18px;
   margin: 0 0 16px;
@@ -68,6 +71,11 @@
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+.hr-root .hr-att-clocks {
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 .hr-root .hr-att-live-clock,
 .hr-root .hr-att-week-clock {
@@ -221,6 +229,12 @@
 .hr-root .hr-att-totals strong { font-variant-numeric: tabular-nums; }
 @media (max-width: 920px) {
   .hr-root .hr-att-presence { grid-template-columns: auto 1fr; }
+  /* The stats group drops to its own full-width row and wraps, rather than being squeezed into the
+     narrow first column by auto-placement. */
+  .hr-root .hr-att-clocks {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
   .hr-root .hr-att-live-clock,
   .hr-root .hr-att-week-clock {
     padding: 10px 0 0;
