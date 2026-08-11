@@ -1,0 +1,540 @@
+/* =====================================================
+   Loyalty Program card — the single owner of the tier palette and the tier surface ramp.
+
+   Both used to be declared twice: once here and once again in managerPolish.css, which loads later
+   and therefore won. That made this file's light palette and its Silver-vs-Idle differentiation dead
+   code, and the surviving copy flattened every tier to one tint with no sheen. There is now exactly
+   one declaration of each, here.
+
+   Tier palette. The shared --tier-* scale (sales/redesign/theme.css) renders BRONZE as #fb923c —
+   which is orange, so bronze and the not-yet-qualified state were indistinguishable. Here bronze is
+   a real bronze/copper and the not-reached state ("Building") takes the orange, which is what the
+   program actually wants to signal: amber = working toward Bronze, copper = Bronze earned.
+
+   Scoped to --lty-* rather than overriding --tier-* so Sales' Clients tab is untouched.
+   ===================================================== */
+.mg-root .mg-lty {
+  --lty-enterprise: #38bdf8;
+  --lty-gold: #eaa32c;
+  /* Cool and bright — a real silver. Kept well away from --lty-idle's neutral grey, because at low
+     tint a slate-blue silver and a slate-blue "no cards" were indistinguishable. */
+  --lty-silver: #c3cfdd;
+  /* True copper, deliberately browner than --lty-building so the two never read as one hue. */
+  --lty-bronze: #b87333;
+  --lty-building: #f97316;
+  /* Not in the program at all (zero active cards) — a flat, hueless grey that recedes. */
+  --lty-idle: #6e7681;
+  /* Text variants — the fills above are tuned for dark; these keep labels AA-legible. */
+  --lty-enterprise-text: #67d2ff;
+  --lty-gold-text: #eaa32c;
+  --lty-silver-text: #cbd6e3;
+  --lty-bronze-text: #d69356;
+  --lty-building-text: #fb9245;
+  --lty-idle-text: #868d98;
+}
+[data-theme='light'] .mg-root .mg-lty {
+  /* Light needs darker FILLS too, not just text — a #c3cfdd border vanishes on white. These are the
+     desaturated values the polish layer had been applying on top; folded in so there is one set. */
+  --lty-enterprise: #47788f;
+  --lty-gold: #a87a2f;
+  --lty-silver: #7b8797;
+  --lty-bronze: #9a6842;
+  --lty-building: #a76635;
+  --lty-idle: #8a9099;
+  --lty-enterprise-text: #315f75;
+  --lty-gold-text: #79561e;
+  --lty-silver-text: #515d6d;
+  --lty-bronze-text: #704827;
+  --lty-building-text: #7e4720;
+  --lty-idle-text: #626873;
+}
+
+/* ── One background recipe, six tunings ───────────────────────────────────────
+   Every tinted surface (client card + distribution tile) reads the same two custom properties, so
+   the buckets stay a single system rather than six bespoke treatments:
+
+     --tint   how strongly the bucket hue washes the surface
+     --sheen  a metallic highlight band — set ONLY for the three medal tiers
+
+   The tints are deliberately restrained: colour carries the tier in the badge, the top rule and the
+   border, and a card washed at 18% competed with its own content at grid scale. The sheen stays,
+   because it is what separates the three metals from the two flat states without adding saturation —
+   which leaves hue, tint strength, sheen AND the dashed border below as four independent separators
+   between Silver and "no cards", so they never collapse in either theme or in greyscale. */
+.mg-root .mg-lty .is-gold {
+  --tint: 11%;
+  --sheen: color-mix(in srgb, var(--lty-gold) 16%, transparent);
+}
+.mg-root .mg-lty .is-enterprise {
+  --tint: 10%;
+  --sheen: color-mix(in srgb, #ffffff 14%, transparent);
+}
+.mg-root .mg-lty .is-silver {
+  --tint: 10%;
+  /* White, not silver — a specular highlight is what makes a surface read as polished metal. */
+  --sheen: color-mix(in srgb, #ffffff 13%, transparent);
+}
+.mg-root .mg-lty .is-bronze {
+  --tint: 10%;
+  --sheen: color-mix(in srgb, var(--lty-bronze) 15%, transparent);
+}
+/* Aspirational, not a metal — flat wash, no sheen. */
+.mg-root .mg-lty .is-building {
+  --tint: 8%;
+  --sheen: transparent;
+}
+/* Barely painted at all: the card looks unfinished on purpose. */
+.mg-root .mg-lty .is-idle {
+  --tint: 3%;
+  --sheen: transparent;
+}
+[data-theme='light'] .mg-root .mg-lty .is-silver {
+  --sheen: color-mix(in srgb, #ffffff 55%, transparent);
+}
+
+/* ── Distribution: stacked bar + one tinted tile per tier ─────────────────────── */
+.mg-root .mg-lty-dist {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--mg-r-md);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.mg-root .mg-lty-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--mg-r-pill);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-lty-bar span {
+  height: 100%;
+  transition: width var(--hz-dur-lift) var(--hz-ease);
+}
+.mg-root .mg-lty-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+/* Each tile carries its tier hue via --t, set inline from the tier palette. */
+.mg-root .mg-lty-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--mg-r-sm);
+  border: 1px solid color-mix(in srgb, var(--t) 24%, var(--hz-pane-bd));
+  /* Same recipe as the client card: sheen band over the bucket wash. --hz-pane-alt is a colour, so
+     it is legal in the final layer; --hz-pane is a gradient and would not be. */
+  background:
+    linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--t) var(--tint, 10%), transparent),
+      transparent 62%
+    ),
+    var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.mg-root .mg-lty-tile:hover {
+  border-color: color-mix(in srgb, var(--t) 45%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+/* Selected filter — the tier wash deepened plus an inset rule, so "which tile is on" survives at a
+   glance without the tile turning into a saturated block. */
+.mg-root .mg-lty-tile[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--t) 55%, var(--hz-pane-bd));
+  background:
+    linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--t) calc(var(--tint, 10%) + 10%), transparent),
+      transparent 70%
+    ),
+    var(--hz-pane-lift);
+  box-shadow:
+    inset 3px 0 0 var(--t),
+    var(--hz-glass-inset);
+}
+.mg-root .mg-lty-tile-n {
+  font-family: var(--font-head);
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tt);
+}
+.mg-root .mg-lty-tile-l {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mg-root .mg-lty-tile-l::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--t);
+}
+.mg-root .mg-lty-tile-pct {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+/* ── Client grid: the card IS the tier ───────────────────────────────────────── */
+.mg-root .mg-lty-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 12px;
+}
+.mg-root .mg-lty-c {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  width: 100%;
+  padding: 15px 16px;
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-primary);
+  border-radius: var(--mg-r-md);
+  /* The tier hue drives the border, the wash and the top rule — a Gold card reads gold. Three
+     layers: specular sheen (metals only) → bucket wash → the shared glass pane. All COMMA-separated;
+     --hz-pane is a gradient, so it can only occupy an <image> slot. */
+  border: 1px solid color-mix(in srgb, var(--t) 26%, var(--hz-pane-bd));
+  background:
+    linear-gradient(115deg, transparent 26%, var(--sheen, transparent) 46%, transparent 68%),
+    linear-gradient(
+      157deg,
+      color-mix(in srgb, var(--t) var(--tint, 10%), transparent),
+      transparent 58%
+    ),
+    var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+  transition:
+    border-color var(--hz-dur-tone) var(--hz-ease),
+    box-shadow var(--hz-dur-tone) var(--hz-ease),
+    transform var(--hz-dur-lift) var(--hz-ease);
+}
+.mg-root .mg-lty-c::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--t), color-mix(in srgb, var(--t) 12%, transparent));
+}
+.mg-root .mg-lty-c:hover {
+  border-color: color-mix(in srgb, var(--t) 45%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
+  transform: var(--hz-hover-lift-sm);
+}
+/* Not in the program (no active cards) — dashed, so the state is legible without relying on hue
+   alone (colour-blind users, greyscale printouts). Shape carries the meaning too, which is the
+   separator that survives even when Silver's cool grey and this neutral grey sit side by side. */
+.mg-root .mg-lty-c.is-idle {
+  border-style: dashed;
+}
+.mg-root .mg-lty-c.is-idle::before {
+  opacity: 0.3;
+}
+.mg-root .mg-lty-tile.is-idle {
+  border-style: dashed;
+}
+
+.mg-root .mg-lty-c-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mg-root .mg-lty-c-name {
+  min-width: 0;
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-md);
+  line-height: 1.35;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.mg-root .mg-lty-c-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+.mg-root .mg-lty-c-meta em {
+  font-style: normal;
+  color: var(--text-secondary);
+}
+/* The card's own call to action. Quiet until you hover the card, then it takes the tier hue. */
+.mg-root .mg-lty-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-semibold);
+  transition: color var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-lty-c:hover .mg-lty-manage {
+  color: var(--tt);
+}
+
+/* Tier badge — filled with the tier hue, medal glyph inside. */
+.mg-root .mg-lty-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 10px;
+  border-radius: var(--mg-r-pill);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--t) 17%, transparent);
+  border: 1px solid color-mix(in srgb, var(--t) 42%, transparent);
+  color: var(--tt);
+}
+
+/* Closed month determines the active tier; current month is a separate progress panel. */
+.mg-root .mg-lty-periods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.mg-root .mg-lty-period {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: color-mix(in srgb, var(--t) 4%, var(--hz-pane-alt));
+}
+.mg-root .mg-lty-period.is-closed {
+  border-color: color-mix(in srgb, var(--t) 30%, var(--hz-pane-bd));
+}
+.mg-root .mg-lty-period header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mg-root .mg-lty-period header span {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--fw-bold);
+}
+.mg-root .mg-lty-period header strong {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mg-root .mg-lty-period-main > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.mg-root .mg-lty-period-main > strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-primary);
+  font-family: var(--font-head);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-lty-period dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--hz-pane-bd);
+}
+.mg-root .mg-lty-period dt {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-root .mg-lty-period dd {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-lty-account {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+.mg-root .mg-lty-account strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Per-card figures ───────────────────────────────────────────────────────── */
+.mg-root .mg-lty-figs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border-radius: var(--mg-r-sm);
+  overflow: hidden;
+  background: var(--hz-pane-bd);
+  border: 1px solid var(--hz-pane-bd);
+}
+.mg-root .mg-lty-fig {
+  padding: 8px 10px;
+  background: var(--hz-pane-alt);
+}
+.mg-root .mg-lty-fig dt {
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mg-root .mg-lty-fig dd {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.mg-root .mg-lty-trend-up {
+  color: var(--success);
+}
+.mg-root .mg-lty-trend-down {
+  color: var(--danger);
+}
+
+/* ── Progress to the next tier ──────────────────────────────────────────────── */
+.mg-root .mg-lty-prog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mg-root .mg-lty-prog-track {
+  position: relative;
+  height: 5px;
+  border-radius: var(--mg-r-pill);
+  background: var(--hz-pane-alt);
+  overflow: hidden;
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-lty-prog-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--mg-r-pill);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--t) 55%, transparent), var(--t));
+  transition: width var(--hz-dur-lift) var(--hz-ease);
+}
+.mg-root .mg-lty-prog-lbl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+.mg-root .mg-lty-prog-lbl strong {
+  color: var(--tt);
+  font-weight: var(--fw-semibold);
+}
+
+/* ── Load-more ──────────────────────────────────────────────────────────────── */
+.mg-root .mg-lty-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+@media (max-width: 520px) {
+  .mg-root .mg-lty-grid {
+    grid-template-columns: 1fr;
+  }
+  .mg-root .mg-lty-periods {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-root .mg-lty-c:hover,
+  .mg-root .mg-lty-tile:hover {
+    transform: none;
+  }
+}

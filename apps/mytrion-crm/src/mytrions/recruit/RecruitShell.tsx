@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { RecruitTabKey } from './recruitTabs';
 import { BriefcaseBusiness, Home, Settings, UserRoundSearch } from 'lucide-react';
 import { isAdmin } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
@@ -10,7 +11,8 @@ import { RecruitSettings } from './RecruitSettings';
 import './recruit.css';
 import './recruitPolish.css';
 
-export type RecruitView = 'home' | 'jobs' | 'candidates' | 'settings';
+/** Derived — see the note in billing/Shell.tsx and access/tabRegistry.ts. */
+export type RecruitView = RecruitTabKey;
 
 export function RecruitShell() {
   const user = useUserContext();

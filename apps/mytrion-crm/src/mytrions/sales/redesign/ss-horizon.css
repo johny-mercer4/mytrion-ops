@@ -53,20 +53,33 @@
   line-height: 1.55;
 }
 
+/*
+   Light Sales tracks the global palette rather than pinning its own.
+
+   These four names — `--surface`, `--border`, `--shadow-sm`, `--shadow` — are GLOBAL semantic tokens,
+   and `.ss-root.light` out-specifies `[data-theme='light']`, so pinning them here made Sales the one
+   workspace a global light-theme change could not reach. That is how it came to be the module people
+   pointed at when the light theme was reported as flat: the borders were 0.1 alpha and the resting
+   shadow was 0.06, and no amount of fixing theme.css moved either.
+
+   The Sales-PRIVATE names below (`--surface-2`, `--alt`, `--raised`, `--border2`, `--hz-modal-surface`)
+   stay declared here — they are the glass bridge this file exists for, and nothing global defines
+   them — but they are now expressed against the global tokens so they move together too.
+*/
 .ss-root.light {
-  --surface: rgba(255, 255, 255, 0.82);
-  --surface-2: rgba(255, 255, 255, 0.92);
-  --hz-modal-surface: rgba(255, 255, 255, 0.96);
-  --alt: rgba(241, 244, 249, 0.72);
-  --raised: rgba(15, 23, 42, 0.045);
+  --surface: var(--glass-hi);
+  --surface-2: color-mix(in srgb, var(--glass-hi) 70%, #fff);
+  --hz-modal-surface: var(--menu-bg);
+  --alt: var(--surface-alt);
+  --raised: var(--row-hover);
 
-  --border: rgba(15, 23, 42, 0.1);
-  --border2: rgba(15, 23, 42, 0.06);
+  --border: var(--glass-bd);
+  --border2: var(--row-line);
 
-  /* Slate-tinted, never pure black — a dark-theme shadow on a pale field reads as dirt. */
-  --shadow-sm: 0 1px 3px rgba(30, 41, 59, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --shadow: 0 16px 44px -18px rgba(30, 41, 59, 0.18), 0 2px 8px rgba(30, 41, 59, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  /* Slate-tinted, never pure black — a dark-theme shadow on a pale field reads as dirt. That is what
+     the shared light elevation ladder already encodes, so read it rather than restating it. */
+  --shadow-sm: var(--elev-1);
+  --shadow: var(--elev-3);
 }
 
 /* ── Ambient field ───────────────────────────────────────────────────────── */

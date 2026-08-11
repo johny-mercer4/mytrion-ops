@@ -19,7 +19,7 @@ import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
 import { HrBusy, Pill, toneFor } from './HrBits';
 import { HrZohoUserLink } from './HrZohoUserLink';
-import { useModalFocus } from './useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 
 /**
  * Avatars render up to 64px here and on the org canvas, so 512 leaves room for a retina card without

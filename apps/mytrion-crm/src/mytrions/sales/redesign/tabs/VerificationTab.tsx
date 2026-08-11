@@ -17,15 +17,20 @@ import { Icon, type IconName } from '../icons';
 import { badge, NAV_DESC } from '../salesData';
 import { useCachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
+import { useUserContext } from '@/context/UserContextProvider';
+import { isAdmin } from '@/access/resolveAccess';
 import {
   getVerificationClients,
   getPipeline,
+  downloadVerificationAttachment,
   type VerificationClient,
   type VerificationClientPage,
+  type VerificationStateFilter,
   type PipelineStageStatus,
   type PipelineDecision,
 } from '@/api/verification';
 import { VerificationActionRequest } from '../VerificationActionRequest';
+import { EditApplicantPanel, BankStatementUpload, PlaidLinkShare } from '../VerificationWriteActions';
 import { VerificationDetailSkeleton } from '../DataCenterSkeletons';
 import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, SalesPager } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
@@ -43,7 +48,6 @@ import {
   TONE_COLOR,
 } from '../verificationFields';
 
-// ---- status → visual ----
 const STAGE_VIS: Record<PipelineStageStatus, { color: string; icon: IconName; label: string }> = {
   done: { color: 'var(--ok)', icon: 'check', label: 'Passed' },
   failed: { color: 'var(--danger)', icon: 'close', label: 'Failed' },
@@ -58,6 +62,13 @@ const CLASS_VIS: Record<VerificationClient['classification'], { label: string; c
   closed: { label: 'Closed', color: 'var(--muted)' },
 };
 
+const CP_STATE: Record<'queued' | 'in_progress' | 'approved' | 'rejected', { label: string; tone: 'ok' | 'warn' | 'danger' }> = {
+  queued: { label: 'Queued', tone: 'warn' },
+  in_progress: { label: 'In progress', tone: 'warn' },
+  approved: { label: 'Approved', tone: 'ok' },
+  rejected: { label: 'Rejected', tone: 'danger' },
+};
+
 function decisionBadge(d: PipelineDecision): { text: string; color: string } {
   switch (d.outcome) {
     case 'loc':
@@ -65,20 +76,29 @@ function decisionBadge(d: PipelineDecision): { text: string; color: string } {
     case 'prepaid':
       return { text: 'Prepaid', color: 'var(--accent)' };
     case 'rejected':
-      return { text: 'Not Accepted', color: 'var(--danger)' };
+      return /^\s*prepay/i.test(d.reason ?? '')
+        ? { text: 'Prepay', color: 'var(--warn)' }
+        : { text: 'Not Accepted', color: 'var(--danger)' };
     default:
       return { text: 'Undecided', color: 'var(--warn)' };
   }
 }
 
 const PAGE_SIZE = 9;
+const STATE_FILTERS: ReadonlyArray<{ id: VerificationStateFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'in_progress', label: 'In progress' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'rejected', label: 'Rejected (prepay)' },
+];
 const PENDING_STAGES = [
   'Pre Stop Factors',
+  'Black List Match',
   'FMCSA',
   'Plaid / Bank Statement',
   'Highway',
+  'CreditSafe',
   'iSoft Pull — Credit Score',
-  'Black List Match',
   'AntiFraud',
   'CrossCheck',
   'Post Stop Factors',
@@ -122,7 +142,6 @@ function PendingPipeline() {
   );
 }
 
-// ---- 9-stage vertical timeline + decision (credit_platform provider, NOT Zoho) ----
 function PipelineTimeline({ client }: { client: VerificationClient }) {
   const pipe = useCachedLoad(
     `sales:verification:detail:${client.dealId ?? ''}:${client.carrierId ?? ''}:${client.applicationId ?? ''}`,
@@ -140,8 +159,8 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
     return <PendingPipeline />;
   }
 
-  const { stages, decision, requirements, attachments, events } = pipe.data;
-  const dec = decisionBadge(decision);
+  const { stages, requirements, attachments } = pipe.data;
+  const shownStages = stages.filter((st) => st.used !== false);
   const openRequirements = requirements.filter((item) => !item.response).length;
 
   return (
@@ -175,72 +194,70 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
         </div>
       ) : null}
 
-      <div style={s('display:flex;flex-direction:column;gap:2px')}>{stages.map((st, i) => {
+      <div style={s('display:flex;flex-direction:column;gap:2px')}>{shownStages.map((st, i) => {
         const vis = STAGE_VIS[st.status];
-        const last = i === stages.length - 1;
+        const last = i === shownStages.length - 1;
         return (
           <div key={st.id} style={s('display:flex;gap:12px')}>
-            {/* rail: dot + connector */}
             <div style={s('display:flex;flex-direction:column;align-items:center;width:22px;flex-shrink:0')}>
               <span style={s(`width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${vis.color} 16%,transparent);color:${vis.color};flex-shrink:0`)}>
                 <Icon name={vis.icon} size={12} strokeWidth={2.6} />
               </span>
               {!last && <span style={s('flex:1;width:2px;min-height:14px;background:var(--border2)')} />}
             </div>
-            {/* body */}
             <div style={s('flex:1;min-width:0;padding-bottom:14px')}>
               <div style={s('display:flex;align-items:center;gap:8px')}>
                 <span style={s('font-size:12px;color:var(--muted);font-family:var(--font-mono)')}>{st.order}</span>
                 <span style={s('font-size:14px;font-weight:700')}>{st.label}</span>
                 <span style={s(badge(vis.label, vis.color).style)}>{vis.label}</span>
               </div>
-              {st.detail && <div style={s('font-size:12px;color:var(--text2);margin-top:3px')}>{st.detail}</div>}
+              {st.stoppedBy ? (
+                <div style={s('font-size:12px;color:var(--danger);font-weight:600;margin-top:3px')}>⛔ {st.stoppedBy}</div>
+              ) : st.detail && !st.related?.length ? (
+                <div style={s('font-size:12px;color:var(--text2);margin-top:3px')}>{st.detail}</div>
+              ) : null}
+              {st.related?.length ? (
+                <div className="ss-vf-stage-facts">
+                  {st.related.map((f) => (
+                    <span key={f.label} className="ss-vf-stage-fact">
+                      <b>{f.label}</b> {f.value}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         );
       })}</div>
 
-      <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-        <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
-          <span style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>Platform decision</span>
-          <span style={s(`${badge(dec.text, dec.color).style};font-size:13px`)}>{dec.text}</span>
-        </div>
-        {decision.outcome === 'loc' && (
-          <div className="ss-vf-grid" style={{ marginTop: 12 }}>
-            <FactTile label="Credit Score" value={decision.creditScore ?? null} tone={creditScoreTone(decision.creditScore ?? null)} />
-            <FactTile label="Approved Limit" value={decision.approvedLimit != null ? money(decision.approvedLimit) : null} tone="ok" />
-            <FactTile label="Billing Cycle" value={decision.billingCycle ?? null} />
-          </div>
-        )}
-        {decision.reason && decision.outcome !== 'loc' && (
-          <div style={s('font-size:13px;color:var(--text2);margin-top:8px')}>{decision.reason}</div>
-        )}
-      </div>
+      {shownStages.some((st) => st.id === 'plaid') ? (
+        <>
+          <PlaidLinkShare url={client.plaidLinkUrl} />
+          <BankStatementUpload requestId={pipe.data.requestId} dealId={client.dealId} onUploaded={pipe.reload} />
+        </>
+      ) : null}
 
-      {attachments.length || events.length ? (
-        <div style={s('display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px')}>
-          <div style={s('padding:14px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt)')}>
-            <div style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)')}>Files received</div>
-            <div style={s('display:flex;flex-direction:column;gap:8px;margin-top:10px')}>
-              {attachments.length ? attachments.slice(0, 6).map((file) => (
-                <div key={file.id} style={s('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)')}>
-                  <Icon name="file" size={14} />
-                  <span style={s('min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{file.fileName}</span>
-                  <span style={s('margin-left:auto;color:var(--muted);white-space:nowrap')}>{Math.max(1, Math.round(file.byteSize / 1024))} KB</span>
-                </div>
-              )) : <span style={s('font-size:12px;color:var(--muted)')}>No files received.</span>}
-            </div>
-          </div>
-          <div style={s('padding:14px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt)')}>
-            <div style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)')}>Recent activity</div>
-            <div style={s('display:flex;flex-direction:column;gap:8px;margin-top:10px')}>
-              {events.slice(0, 5).map((event) => (
-                <div key={event.id} style={s('display:flex;gap:8px;font-size:12px;color:var(--text2)')}>
-                  <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);margin-top:5px;flex:0 0 auto')} />
-                  <span>{event.title}</span>
-                </div>
-              ))}
-            </div>
+      {attachments.length ? (
+        <div style={s('padding:14px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt)')}>
+          <div style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)')}>Uploaded files</div>
+          <div style={s('display:flex;flex-direction:column;gap:6px;margin-top:10px')}>
+            {attachments.map((file) => (
+              <div key={file.id} style={s('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:6px 8px;border:1px solid var(--border2);border-radius:8px;background:var(--surface)')}>
+                <Icon name="file" size={14} />
+                <span style={s('min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{file.fileName}</span>
+                <span style={s(`font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;white-space:nowrap;background:${file.scope === 'sales_bank_statement' ? 'color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)' : 'var(--alt);color:var(--muted)'}`)}>
+                  {file.scope === 'sales_bank_statement' ? 'Sales' : file.scope === 'analyst_note' ? 'Analyst' : 'File'}
+                </span>
+                <span style={s('color:var(--muted);white-space:nowrap')}>{Math.max(1, Math.round(file.byteSize / 1024))} KB</span>
+                <button
+                  type="button"
+                  onClick={() => { void downloadVerificationAttachment(file.id, file.fileName); }}
+                  style={s('margin-left:auto;height:28px;padding:0 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0')}
+                >
+                  <Icon name="download" size={13} /> Download
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
@@ -249,24 +266,36 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
 }
 
 /** The Zoho-sourced verification record: decision, checkpoints, application facts, narrative. */
-function CrmVerificationRecord({ client }: { client: VerificationClient }) {
-  const hasNarrative = Boolean(client.rejectReason || client.verificationNotes);
+function CrmVerificationRecord({ client, decision }: { client: VerificationClient; decision: PipelineDecision | null }) {
+  const isRejected = client.verificationState === 'rejected';
+  const platformBadge = decision ? decisionBadge(decision) : null;
+  const creditDecisionText =
+    platformBadge?.text ||
+    client.creditDecision ||
+    (isRejected ? 'Rejected' : client.verificationState === 'approved' ? 'Approved' : null);
+  const creditDecisionColor =
+    platformBadge?.color ||
+    (creditDecisionText ? TONE_COLOR[creditDecisionTone(creditDecisionText)] : undefined);
+  const platformReason = decision && decision.outcome === 'rejected' ? decision.reason : null;
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <section className="ss-vf-section">
         <div className="ss-vf-section-head">
           <span>Credit decision</span>
-          {client.creditDecision ? (
-            <span
-              className="ss-vf-verdict"
-              style={{ color: TONE_COLOR[creditDecisionTone(client.creditDecision)] }}
-            >
-              {client.creditDecision}
+          {creditDecisionText ? (
+            <span className="ss-vf-verdict" style={{ color: creditDecisionColor }}>
+              {creditDecisionText}
             </span>
           ) : (
             <span className="ss-vf-verdict is-empty">Not decided yet</span>
           )}
         </div>
+        {platformReason ? (
+          <div style={s('margin-top:8px')}>
+            <div className="ss-vf-note-lbl">Requirements / notes</div>
+            <p style={s('font-size:13px;color:var(--text2);margin:0;white-space:pre-line')}>{platformReason}</p>
+          </div>
+        ) : null}
         <div className="ss-vf-grid">
           <FactTile
             label="Credit score"
@@ -291,10 +320,10 @@ function CrmVerificationRecord({ client }: { client: VerificationClient }) {
           {client.applicationId ? <span className="ss-vf-verdict is-mono">#{client.applicationId}</span> : null}
         </div>
         <div className="ss-vf-grid">
-          <FactTile label="Deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
-          <FactTile label="Application stage" value={client.applicationStage} tone="accent" />
+          <FactTile label="Zoho deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
+          <FactTile label="WEX application stage" value={client.applicationStage} tone="accent" />
           <FactTile
-            label="Application status"
+            label="Zoho application status"
             value={client.applicationStatus}
             tone={applicationStatusTone(client.applicationStatus)}
           />
@@ -307,36 +336,30 @@ function CrmVerificationRecord({ client }: { client: VerificationClient }) {
         </div>
       </section>
 
-      {hasNarrative ? (
+      {client.verificationNotes ? (
         <section className="ss-vf-section">
           <div className="ss-vf-section-head">
             <span>From Verification</span>
           </div>
-          {client.rejectReason ? (
-            <div className="ss-vf-note is-danger">
-              <div className="ss-vf-note-lbl">Reject reason</div>
-              <p>{client.rejectReason}</p>
-            </div>
-          ) : null}
-          {client.verificationNotes ? (
-            <div className="ss-vf-note">
-              <div className="ss-vf-note-lbl">Notes</div>
-              <p>{client.verificationNotes}</p>
-            </div>
-          ) : null}
+          <div className="ss-vf-note">
+            <div className="ss-vf-note-lbl">Notes</div>
+            <p>{client.verificationNotes}</p>
+          </div>
         </section>
       ) : null}
     </div>
   );
 }
 
-// ---- in-page detail (replaces the list; the page scrolls naturally — no modal, no inner scrollbox) ----
 function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBack: () => void }) {
   const cls = CLASS_VIS[client.classification];
+  const pipe = useCachedLoad(
+    `sales:verification:detail:${client.dealId ?? ''}:${client.carrierId ?? ''}:${client.applicationId ?? ''}`,
+    () => getPipeline({ dealId: client.dealId, carrierId: client.carrierId, applicationId: client.applicationId, dot: client.dot }),
+    { staleMs: 90_000 },
+  );
   return (
     <SalesPage className="ss-verification-page">
-      {/* A record title IS allowed to be a page title — it names the thing being inspected, which the
-          top bar (still "Verification") cannot. */}
       <SalesPageHead
         title={client.companyName}
         description={
@@ -350,6 +373,9 @@ function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBa
         actions={
           <>
             <span style={s(`${badge(cls.label, cls.color).style};font-size:12px;flex-shrink:0`)}>{cls.label}</span>
+            {pipe.data?.requestId ? (
+              <EditApplicantPanel requestId={pipe.data.requestId} dealId={client.dealId} initial={pipe.data.applicant} />
+            ) : null}
             <button type="button" onClick={onBack} className="ss-pager-btn" style={s('display:inline-flex;align-items:center;gap:6px;padding:0 15px 0 11px')}>
               <Icon name="chevronLeft" size={15} strokeWidth={2.4} /> Back to pipeline
             </button>
@@ -357,11 +383,12 @@ function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBa
         }
       />
 
-      <CrmVerificationRecord client={client} />
+      <CrmVerificationRecord client={client} decision={pipe.data?.decision ?? null} />
 
       <section className="ss-vf-section">
         <div className="ss-vf-section-head">
           <span>Compliance pipeline</span>
+          {client.workingOn ? <span className="ss-vf-verdict">Verificator: {client.workingOn}</span> : null}
         </div>
         <PipelineTimeline client={client} />
       </section>
@@ -369,13 +396,15 @@ function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBa
   );
 }
 
-/** One roster card — company, where the application sits, and the decision so far. */
+/** One roster card — company, where the application sits, and the verification state so far. */
 function VerificationCard({
   client,
   onOpen,
+  showAgent,
 }: {
   client: VerificationClient;
   onOpen: () => void;
+  showAgent: boolean;
 }) {
   const cls = CLASS_VIS[client.classification];
   const tone = client.attentionCount ? 'var(--danger)' : cls.color;
@@ -393,36 +422,66 @@ function VerificationCard({
       </div>
 
       <div className="ss-vf-chips">
-        <FactChip label="Stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
+        <FactChip label="Deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
         {client.applicationStage ? (
-          <FactChip label="App" value={client.applicationStage} tone="accent" />
+          <FactChip label="WEX app stage" value={client.applicationStage} tone="accent" />
         ) : null}
         {client.applicationStatus ? (
           <FactChip
-            label="Status"
+            label="App status"
             value={client.applicationStatus}
             tone={applicationStatusTone(client.applicationStatus)}
           />
         ) : null}
       </div>
 
-      {/* The decision line is the reason an agent opens this tab, so it gets its own row rather than
-          being one chip among many. */}
-      <div className="ss-vf-card-decision">
-        {client.creditDecision ? (
-          <span style={{ color: TONE_COLOR[creditDecisionTone(client.creditDecision)] }}>
-            {client.creditDecision}
-          </span>
-        ) : (
-          <span className="is-empty">Awaiting credit decision</span>
-        )}
-        {client.creditScore != null ? (
-          <em style={{ color: TONE_COLOR[creditScoreTone(client.creditScore)] }}>
-            Score {client.creditScore}
-          </em>
+      <div className="ss-vf-cp">
+        <div
+          className="ss-vf-cp-state"
+          style={{ color: client.verificationState ? TONE_COLOR[CP_STATE[client.verificationState].tone] : 'var(--faint)' }}
+        >
+          <Icon
+            name={client.verificationState === 'rejected' ? 'close' : client.verificationState === 'approved' ? 'check' : 'clock'}
+            size={14}
+            strokeWidth={2.6}
+          />
+          Verification: {client.verificationState ? CP_STATE[client.verificationState].label : 'Not in verification'}
+        </div>
+        {client.verificationState === 'approved' && (client.cpLimit != null || client.cpPaymentType || client.cpBillingCycle) ? (
+          <div className="ss-vf-chips">
+            {client.cpLimit != null ? <FactChip label="Limit" value={money(client.cpLimit)} tone="ok" /> : null}
+            {client.cpPaymentType ? <FactChip label="Type" value={client.cpPaymentType} /> : null}
+            {client.cpBillingCycle ? <FactChip label="Cycle" value={client.cpBillingCycle} /> : null}
+          </div>
         ) : null}
-        {client.creditLineApproved ? <em>{money(client.creditLineApproved)} line</em> : null}
+        {client.verificationState === 'in_progress' ? (
+          <>
+            {client.missingFields.length ? (
+              <div className="ss-vf-card-missing">
+                <Icon name="warn" size={13} /> Missing: {client.missingFields.slice(0, 4).join(', ')}
+                {client.missingFields.length > 4 ? '…' : ''}
+              </div>
+            ) : null}
+            {client.plaidLinkUrl || client.docsUploaded > 0 ? (
+              <div className="ss-vf-chips">
+                {client.plaidLinkUrl ? <FactChip label="Plaid" value="Link ready" tone="accent" icon="link" /> : null}
+                {client.docsUploaded > 0 ? <FactChip label="Docs" value={String(client.docsUploaded)} tone="accent" icon="doc" /> : null}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        {client.workingOn ? (
+          <div className="ss-vf-card-verificator">
+            <Icon name="user" size={14} /> Verificator: {client.workingOn}
+          </div>
+        ) : null}
       </div>
+
+      {showAgent && client.agentName ? (
+        <div className="ss-vf-card-agent">
+          <Icon name="user" size={13} /> Agent: {client.agentName}
+        </div>
+      ) : null}
 
       {client.attentionCount ? (
         <div className="ss-vf-card-attention">
@@ -440,23 +499,26 @@ function VerificationCard({
 }
 
 export function VerificationTab() {
+  const admin = isAdmin(useUserContext());
   const viewAsUserId = getImpersonation()?.zohoUserId;
   const actAs = viewAsUserId ?? 'self';
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [stateFilter, setStateFilter] = useState<VerificationStateFilter>('all');
   const [selected, setSelected] = useState<VerificationClient | null>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [query]);
   const load = useCachedLoad<VerificationClientPage>(
-    `sales:verification:${actAs}:${page}:${encodeURIComponent(debouncedQuery)}`,
+    `sales:verification:${actAs}:${stateFilter}:${page}:${encodeURIComponent(debouncedQuery)}`,
     () => getVerificationClients({
       ...(viewAsUserId ? { zohoUserId: viewAsUserId } : {}),
       page,
       pageSize: PAGE_SIZE,
       query: debouncedQuery,
+      state: stateFilter,
     }),
   );
   const clients = load.data?.clients ?? [];
@@ -474,7 +536,11 @@ export function VerificationTab() {
     return <ClientDetailPage client={selected} onBack={() => setSelected(null)} />;
   }
 
-  const emptyMsg = debouncedQuery ? 'No applications match your search.' : 'No verification applications yet.';
+  const emptyMsg = debouncedQuery
+    ? 'No applications match your search.'
+    : stateFilter !== 'all'
+      ? 'No applications in this state.'
+      : 'No verification applications yet.';
 
   return (
     <SalesPage
@@ -490,7 +556,7 @@ export function VerificationTab() {
             value={query}
             onChange={(e) => { setQuery(e.currentTarget.value); setPage(1); }}
             aria-label="Search verification applications"
-            placeholder="Search by company, stage, decision, carrier ID or application #…"
+            placeholder="Search by company, deal name, stage, decision, carrier ID or application #…"
           />
           {query ? (
             <button
@@ -503,10 +569,21 @@ export function VerificationTab() {
             </button>
           ) : null}
         </div>
+        <div className="ss-vf-filters" role="group" aria-label="Filter by verification state">
+          {STATE_FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={`ss-vf-filter${stateFilter === filter.id ? ' is-active' : ''}`}
+              aria-pressed={stateFilter === filter.id}
+              onClick={() => { setStateFilter(filter.id); setPage(1); }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Degraded-source notice only when there IS data to qualify — with no data the error state
-          below already says the page could not load, and printing both read as contradictory. */}
       {showingFallback && load.data ? (
         <div className="ss-source-health" role="status">
           <Icon name="warn" size={16} color="var(--warn)" />
@@ -517,7 +594,6 @@ export function VerificationTab() {
         </div>
       ) : null}
 
-      {/* content */}
       {load.loading && !load.data ? (
         <SalesBodySkeleton variant="grid" rows={9} label="verification applications" />
       ) : load.error && !load.data ? (
@@ -536,6 +612,7 @@ export function VerificationTab() {
               key={client.dealId ?? client.carrierId ?? `application-${index}`}
               client={client}
               onOpen={() => setSelected(client)}
+              showAgent={admin}
             />
           ))}
         </div>

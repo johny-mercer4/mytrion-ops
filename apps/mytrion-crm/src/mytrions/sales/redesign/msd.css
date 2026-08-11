@@ -578,6 +578,9 @@
 }
 .ss-root .msd-activity-scroller { overflow-x: auto; }
 .ss-root .msd-activity-wrap {
+  /* Containing block for `.msd-activity-card`. Without this, the absolute hover card walks up to a
+     page-level positioned ancestor and paints under the header search instead of over the chart. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -825,12 +828,14 @@
 
 /* ── Card Activity hover card ──────────────────────────────────────────────────
    Anchored to the hovered column and translated back by half its own width, so it stays centred on
-   the dot without needing a measured position. `pointer-events: none` is load-bearing: the card
-   tracks the column under the cursor, so if it could take the pointer it would replace its own
+   the dot without needing a measured position. `top` (not `bottom: calc(100% - N)`) keeps the card
+   inside `.msd-activity-wrap` — the scroller's `overflow-x: auto` forces overflow-y to clip, so a
+   card that extends above the wrap would be cut off. `pointer-events: none` is load-bearing: the
+   card tracks the column under the cursor, so if it could take the pointer it would replace its own
    hover target and flicker between two days at the boundary. */
 .ss-root .msd-activity-card {
   position: absolute;
-  bottom: calc(100% - 78px);
+  top: 4px;
   transform: translateX(-50%);
   z-index: 4;
   min-width: 168px;

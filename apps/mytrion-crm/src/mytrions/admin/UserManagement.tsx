@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { EffectiveAccessDrawer } from './EffectiveAccessDrawer';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { MYTRIONS, type MytrionId } from '../../access/mytrions.config';
 import { listAccessUsers, type AccessUserRow } from '../../api/mytrionAccess';
@@ -22,6 +23,7 @@ export function UserManagement() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<AccessUserRow | null>(null);
+  const [explaining, setExplaining] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,6 +172,16 @@ export function UserManagement() {
                     {r.effective.homeMytrion ? mytrionLabel(r.effective.homeMytrion) : '—'}
                   </span>
                   <span className={s.right}>
+                    {/* Additive grants across four layers are undebuggable without provenance —
+                        especially a permission set's tab scope, which any unscoped grant defeats. */}
+                    <button
+                      type="button"
+                      className={s.miniBtn}
+                      onClick={() => setExplaining(r.zohoUserId)}
+                      title="Why can this person see what they see?"
+                    >
+                      Why?
+                    </button>
                     <button type="button" className={s.miniBtn} onClick={() => setEditing(r)}>
                       Edit
                     </button>
@@ -179,6 +191,10 @@ export function UserManagement() {
             {!loading && visible.length === 0 && <div className={s.none}>No users match.</div>}
           </div>
         </>
+      )}
+
+      {explaining && (
+        <EffectiveAccessDrawer zohoUserId={explaining} onClose={() => setExplaining(null)} />
       )}
 
       {editing && (

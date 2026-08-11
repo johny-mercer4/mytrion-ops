@@ -145,34 +145,39 @@ export function mapOwnerLogRow(row: Record<string, unknown>): AdminOwnerLogDto {
   };
 }
 
-/** Default list: 200 newest Application_Date deals. */
-export async function listAdminDeals(limit = 200): Promise<AdminDealDto[]> {
+/** Owner-scoped list: the caller's 200 newest Application_Date deals. */
+export async function listAdminDeals(callerUserId: string, limit = 200): Promise<AdminDealDto[]> {
+  const owner = zohoUserIdFromCtx(callerUserId);
+  if (!owner || !/^\d+$/.test(owner)) return [];
   const n = Math.min(200, Math.max(1, Math.trunc(limit) || 200));
-  // Zoho COQL requires a WHERE clause (bare `from Deals order by …` → SYNTAX_ERROR).
-  const q = `select ${DEAL_LIST_FIELDS} from Deals where Application_Date is not null order by Application_Date desc limit 0, ${n}`;
+  const q = `select ${DEAL_LIST_FIELDS} from Deals where Application_Date is not null and Owner = '${owner}' order by Application_Date desc limit 0, ${n}`;
   const { rows } = await runCoql(q);
   return rows.map(mapDealRow).filter((d) => d.id);
 }
 
-export async function searchAdminDeals(qRaw: string): Promise<AdminDealDto[]> {
+export async function searchAdminDeals(qRaw: string, callerUserId: string): Promise<AdminDealDto[]> {
+  const owner = zohoUserIdFromCtx(callerUserId);
+  if (!owner || !/^\d+$/.test(owner)) return [];
   const q = qRaw.trim();
-  if (!q) return listAdminDeals(200);
+  if (!q) return listAdminDeals(callerUserId, 200);
 
   if (/^\d+$/.test(q)) {
-    // Deal id, or Carrier/Application id criteria.
     try {
       const deal = await zohoCrmRecords.getRecord('Deals', q);
-      if (deal) return [mapDealRow(deal)];
+      if (deal) {
+        const mapped = mapDealRow(deal);
+        return mapped.ownerZohoUserId === owner ? [mapped] : [];
+      }
     } catch {
       // fall through to criteria / word search
     }
-    const criteria = `((Carrier_ID:equals:${q})or(Application_ID:equals:${q}))`;
+    const criteria = `(((Carrier_ID:equals:${q})or(Application_ID:equals:${q}))and(Owner:equals:${owner}))`;
     const page = await zohoCrmRecords.searchRecords('Deals', {
       criteria,
       perPage: 50,
       fields: DEAL_SEARCH_FIELDS,
     });
-    if (page.rows.length > 0) return page.rows.map(mapDealRow).filter((d) => d.id);
+    if (page.rows.length > 0) return page.rows.map(mapDealRow).filter((d) => d.id && d.ownerZohoUserId === owner);
   }
 
   const page = await zohoCrmRecords.searchRecords('Deals', {
@@ -180,13 +185,21 @@ export async function searchAdminDeals(qRaw: string): Promise<AdminDealDto[]> {
     perPage: 50,
     fields: DEAL_SEARCH_FIELDS,
   });
-  return page.rows.map(mapDealRow).filter((d) => d.id);
+  return page.rows.map(mapDealRow).filter((d) => d.id && d.ownerZohoUserId === owner);
 }
 
-export async function getAdminDeal(dealId: string): Promise<AdminDealDto | null> {
+async function fetchAdminDealById(dealId: string): Promise<AdminDealDto | null> {
   const id = assertZohoNumericId(dealId, 'deal id');
   const deal = await zohoCrmRecords.getRecord('Deals', id);
   return deal ? mapDealRow(deal) : null;
+}
+
+export async function getAdminDeal(dealId: string, callerUserId: string): Promise<AdminDealDto | null> {
+  const owner = zohoUserIdFromCtx(callerUserId);
+  const mapped = await fetchAdminDealById(dealId);
+  if (!mapped) return null;
+  if (!owner || mapped.ownerZohoUserId !== owner) return null;
+  return mapped;
 }
 
 export interface ListOwnerLogsOpts {
@@ -537,7 +550,7 @@ export async function transferAdminDealOwnership(
 ): Promise<{ deal: AdminDealDto; transfer: OwnershipTransferResult }> {
   const id = assertZohoNumericId(dealId, 'deal id');
   const to = assertZohoNumericId(toZohoUserId, 'toZohoUserId');
-  const before = await getAdminDeal(id);
+  const before = await fetchAdminDealById(id);
   if (!before) {
     throw new AppError('Deal not found', {
       statusCode: 404,
@@ -562,7 +575,7 @@ export async function transferAdminDealOwnership(
     toOwnerName: opts.toOwnerName ?? null,
   });
 
-  const after = (await getAdminDeal(id)) ?? {
+  const after = (await fetchAdminDealById(id)) ?? {
     ...before,
     ownerZohoUserId: to,
     ownerName: opts.toOwnerName ?? before.ownerName,

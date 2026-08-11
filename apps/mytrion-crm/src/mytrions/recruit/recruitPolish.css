@@ -67,8 +67,10 @@
 }
 
 [data-theme='light'] [data-mytrion='recruit'] {
-  --recruit-border: rgb(71 85 105 / 0.17);
-  --recruit-surface: rgb(255 255 255 / 0.76);
+  /* The shared values. Pinned before, so Recruit kept its own edge weight and surface tint no matter
+     what the light theme did. */
+  --recruit-border: var(--border);
+  --recruit-surface: var(--glass-hi);
 }
 
 [data-theme='light'] .recruit-root {
@@ -83,9 +85,9 @@
 [data-theme='light'] .recruit-filterbar,
 [data-theme='light'] .recruit-candidate,
 [data-theme='light'] .recruit-modal {
-  box-shadow:
-    0 12px 34px rgb(15 23 42 / 0.055),
-    inset 0 1px rgb(255 255 255 / 0.72);
+  /* Was a private six-selector shadow. The shared light ladder now carries a real resting shadow,
+     so this only has to say WHICH step these surfaces sit on. */
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
 
 @media (prefers-reduced-motion: reduce) {

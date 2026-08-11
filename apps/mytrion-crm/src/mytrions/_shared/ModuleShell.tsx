@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { canSeeTab } from '../../access/resolveAccess';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowRight } from 'lucide-react';
 import { MytrionShell, type NavSection } from './MytrionShell';
@@ -71,7 +72,9 @@ export function ModuleShell({
   tabs,
 }: ModuleShellProps) {
   const user = useUserContext();
-  const visible = tabs.filter((t) => t.access?.(user) ?? true);
+  // Layer-2 access predicate AND the permission-set tab grant. One line covers Verification and
+  // Trailhead entirely — nav, launcher grid and the open() re-check all read `visible`.
+  const visible = tabs.filter((t) => (t.access?.(user) ?? true) && canSeeTab(user, id, t.id));
   const [view, setView] = useState<string>(visible[0]?.id ?? tabs[0]!.id);
 
   const open = (tabId: string): void => {

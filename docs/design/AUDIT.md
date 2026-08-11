@@ -389,10 +389,10 @@ Plus **168 hex literals in 18 `.tsx`/`.ts` files** (inline styles and chart conf
 | --- | --- | --- | --- |
 | `--tint` | `#47d6ff` | `#004ee7` | Ramp start ("sky") |
 | `--primary` | `#a5e7ff` | `#0043c8` | Accent — **1,204 `var(--accent*)` call sites** |
-| `--primary-container` | `#00d2ff` | `#0057ff` | Accent fill |
+| `--primary-container` | `#00d2ff` | `#2f5fd0` | Accent fill |
 | `--secondary` | `#ffaede` | `#00677f` | Ramp end ("sunset") |
 | `--secondary-container` | `#ff34cd` | `#00ccf9` | |
-| `--page` | `#0a0e1a` | `#e9edf3` | |
+| `--page` | `#0a0e1a` | `#e0e4f0` | |
 | `--container` | `#1b1f2c` | — | Card surface (377 sites) |
 
 The `--hz-*` compatibility layer has **2,796 call sites** — the largest token family in the app by a

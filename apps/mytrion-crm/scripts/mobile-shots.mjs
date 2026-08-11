@@ -5,6 +5,18 @@
  * usable". Same CDP-over-native-WebSocket approach, no dependencies.
  *
  *   node scripts/mobile-shots.mjs --url http://localhost:5175 --out /tmp/shots [--width 375]
+ *                                 [--theme light|dark|both]
+ *
+ * THEME is set by seeding localStorage in a document-start script, BEFORE the page's own inline
+ * pre-paint script reads it (index.html). That is what makes the theme correct on first paint with
+ * no reload race and no dependency on the React theme context having mounted.
+ *
+ * The before/after workflow this exists for:
+ *   pnpm audit:shots -- --out /tmp/before --theme both     # on the base commit
+ *   <apply the change>
+ *   pnpm audit:shots -- --out /tmp/after  --theme both
+ * then compare the pairs. For a refactor that is meant to change nothing, the pairs must be
+ * byte-identical — which is a real assertion, not just eyeballing.
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,14 +30,26 @@ const BASE = arg('--url', 'http://localhost:5175');
 const OUT = arg('--out', '/tmp/shots');
 const WIDTH = Number(arg('--width', '375'));
 const HEIGHT = Number(arg('--height', '780'));
+const THEME = arg('--theme', 'dark');
+const THEMES = THEME === 'both' ? ['light', 'dark'] : [THEME];
 
+// Every workspace, plus the launcher. `/main` was missing and is the one screen every user sees —
+// it is <Landing> / WorkspaceLauncher, and "the main page" in any bug report about theming.
 const ROUTES = [
+  ['/main', 'launcher'],
   ['/main/salesmytrion', 'sales'],
   ['/main/billingmytrion', 'billing'],
   ['/main/csmytrion', 'cs'],
+  ['/main/collectionmytrion', 'collection'],
+  ['/main/financemytrion', 'finance'],
+  ['/main/verificationmytrion', 'verification'],
   ['/main/hrmytrion', 'hr'],
+  ['/main/recruitmytrion', 'recruit'],
   ['/main/adminmytrion', 'admin'],
+  ['/main/managermytrion', 'manager'],
+  ['/main/marketingmytrion', 'marketing'],
   ['/main/analystmytrion', 'analyst'],
+  ['/main/trailhead', 'trailhead'],
   ['/kitchen', 'kitchen'],
 ];
 
@@ -99,6 +123,15 @@ await cdp.send('Emulation.setDeviceMetricsOverride', {
   mobile: WIDTH < 640,
 });
 
+let shotCount = 0;
+for (const theme of THEMES) {
+  // Runs before any document script on every navigation, so index.html's pre-paint block reads the
+  // value we want and stamps data-theme before the first frame.
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try { localStorage.setItem('mytrion-theme', ${JSON.stringify(theme)}); } catch {}`,
+  });
+  console.log(`\n── ${theme} ──`);
+
 for (const [route, slug] of ROUTES) {
   await cdp.send('Page.navigate', { url: BASE + route });
   await sleep(3000);
@@ -110,13 +143,15 @@ for (const [route, slug] of ROUTES) {
     }))()`,
     returnByValue: true,
   });
-  problems.set(slug, result.value);
+  problems.set(`${slug}-${theme}`, result.value);
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-  writeFileSync(join(OUT, `${slug}-${WIDTH}.png`), Buffer.from(shot.data, 'base64'));
+  writeFileSync(join(OUT, `${slug}-${theme}-${WIDTH}.png`), Buffer.from(shot.data, 'base64'));
+  shotCount += 1;
   console.log(
-    `${slug.padEnd(9)} ${result.value.nodes} nodes  ${result.value.err.length ? 'ERR: ' + result.value.err[0] : ''}`,
+    `${slug.padEnd(13)} ${String(result.value.nodes).padStart(5)} nodes  ${result.value.err.length ? 'ERR: ' + result.value.err[0] : ''}`,
   );
-  console.log(`          ${(result.value.text || '(empty)').replace(/\s+/g, ' ').slice(0, 120)}`);
+  console.log(`              ${(result.value.text || '(empty)').replace(/\s+/g, ' ').slice(0, 120)}`);
+}
 }
 
 cdp.close();
@@ -126,4 +161,4 @@ try {
 } catch {
   /* best effort */
 }
-console.log(`\nwrote ${ROUTES.length} shots at ${WIDTH}px to ${OUT}`);
+console.log(`\nwrote ${shotCount} shots at ${WIDTH}px to ${OUT}`);

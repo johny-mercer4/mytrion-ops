@@ -1,6 +1,6 @@
 /**
  * Manager Mytrion → Loyalty Program API. Reads every carrier's tier inputs and persists the
- * manager-gated per-client reward controls exposed by the Loyalty workspace.
+ * marketing-gated per-client reward controls exposed by the Loyalty workspace.
  *
  * Same DWH roster query as Sales' Data Center → Clients, minus the per-agent owner filter, so the two
  * surfaces resolve identical tiers. Tier math itself is client-side, in mytrions/_shared/loyalty.ts.
@@ -63,13 +63,13 @@ export interface LoyaltyRoster {
 }
 
 // LEGACY department assertion — ignored for verified sessions (the server derives access from the
-// session), kept only for the API-key / rollback path. Mirrors api/referrals.ts's MGR_HEADERS.
-const MGR_HEADERS = { 'x-department-access': 'management' } as const;
+// session), kept only for the API-key / rollback path. Mirrors api/referrals.ts's MKT_HEADERS.
+const MKT_HEADERS = { 'x-department-access': 'marketing' } as const;
 
 /** Every carrier's tier inputs, heaviest this-month volume first (server-ordered). */
 export function listLoyaltyClients(options: { refresh?: boolean } = {}): Promise<LoyaltyRoster> {
-  return request('GET', '/manager/loyalty/clients', {
-    headers: MGR_HEADERS,
+  return request('GET', '/marketing/loyalty/clients', {
+    headers: MKT_HEADERS,
     query: options.refresh ? { refresh: '1' } : {},
   }) as Promise<LoyaltyRoster>;
 }
@@ -86,15 +86,15 @@ export function saveLoyaltyOverride(
   carrierId: string,
   input: SaveLoyaltyOverrideInput,
 ): Promise<{ override: LoyaltyClientOverride }> {
-  return request('PATCH', `/manager/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
+  return request('PATCH', `/marketing/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
     body: input,
-    headers: MGR_HEADERS,
+    headers: MKT_HEADERS,
   }) as Promise<{ override: LoyaltyClientOverride }>;
 }
 
 export function resetLoyaltyOverride(carrierId: string): Promise<{ removed: boolean }> {
-  return request('DELETE', `/manager/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
-    headers: MGR_HEADERS,
+  return request('DELETE', `/marketing/loyalty/clients/${encodeURIComponent(carrierId)}/rewards`, {
+    headers: MKT_HEADERS,
   }) as Promise<{ removed: boolean }>;
 }
 

@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   paymentTransactions,
@@ -117,6 +117,21 @@ function dayStartBefore(day: string, days: number): string {
 
 const NEWEST_FIRST = sql`${paymentTransactions.occurredAt} DESC NULLS LAST, ${paymentTransactions.id} DESC`;
 
+/**
+ * MX's own dead-attempt statuses — a Declined charge or a card auth that got Voided same-day never
+ * captured any money, so it can't be mapped, returned, or reported on. mxMerchantSync.js's status
+ * transition to one of these lands in Postgres via the normal upsert (a payment can be Approved on
+ * one tick and Voided on a later one); this is the single place every read path hides it once it
+ * does. Stripe's own status vocabulary (succeeded/requires_payment_method/…) never collides with
+ * these exact strings, so this is safe across every source, not just MX.
+ *
+ * Zelle/Chase rows always have `status IS NULL` (per the schema's own comment) — plain SQL
+ * `status NOT IN (...)` treats a NULL comparison as unknown/false, which would silently drop every
+ * Zelle/Chase row too. `OR status IS NULL` is required, not decorative.
+ */
+const DEAD_STATUSES = ['Declined', 'Voided'];
+const NOT_DEAD = or(isNull(paymentTransactions.status), notInArray(paymentTransactions.status, DEAD_STATUSES));
+
 function buildFilters(f: ListTxFilters): SQL[] {
   const conds: SQL[] = [];
   if (f.source) conds.push(eq(paymentTransactions.source, f.source));
@@ -135,7 +150,7 @@ export const paymentTransactionRepo = {
     const limit = Math.min(2000, Math.max(1, opts.limit || 200));
     const offset = (page - 1) * limit;
     const conds = buildFilters(opts);
-    const where = conds.length ? and(...conds) : undefined;
+    const where = and(NOT_DEAD, ...conds);
 
     // Page + total run concurrently — they're independent, so this is one round-trip's wall time,
     // not two (matters most from a dev laptop where every query crosses to the remote DB).
@@ -159,6 +174,7 @@ export const paymentTransactionRepo = {
         amt: sql<string>`coalesce(sum(${paymentTransactions.amount}), 0)::text`,
       })
       .from(paymentTransactions)
+      .where(NOT_DEAD)
       .groupBy(paymentTransactions.source, paymentTransactions.isInvoiceMapped);
 
     const out: TxStats = { total: 0, mapped: 0, unmapped: 0, totalAmount: 0, bySource: {} };
@@ -199,7 +215,7 @@ export const paymentTransactionRepo = {
     return db
       .select()
       .from(paymentTransactions)
-      .where(or(...conds))
+      .where(and(NOT_DEAD, or(...conds)))
       .orderBy(NEWEST_FIRST)
       .limit(Math.min(2000, Math.max(1, limit)));
   },

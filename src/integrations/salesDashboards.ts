@@ -293,8 +293,9 @@ export async function fetchHomeSnapshot(userId: string, agentName: string): Prom
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 // 2. AGENT SALES DASHBOARD  (was standalone.mytrionAgentSalesDashboard)
-//    Pure passthrough of servercrm /api/agent/salesdata (KPI, cardsByCompany, transactions, cycle…).
-//    The Deluge returned the servercrm response verbatim; the frontend reads { success, data }.
+//    Passthrough of servercrm /api/agent/salesdata (KPI, cardsByCompany, transactions, cycle…).
+//    Cards by Company Active stays on DWH (warehouse) — live EFS fan-out is too slow for agent books
+//    (~18s cold). Per-carrier EFS lives on client drilldown / credentials / card lookup instead.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function fetchAgentSalesDashboard(agentName: string): Promise<unknown> {
   if (!agentName) return { success: false, error: 'Could not resolve agent name' };

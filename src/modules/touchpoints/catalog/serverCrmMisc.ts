@@ -143,7 +143,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
   {
     kind: 'servercrm',
     key: 'sales_mytrion.fetch_invoices',
-    title: 'Sales invoices (DWH)',
+    title: 'Sales invoices (DWH cmp_invoice; range/status filters)',
     riskClass: 'read',
     departments: SALES,
     carrierParam: 'carrierId',

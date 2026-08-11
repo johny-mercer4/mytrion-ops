@@ -39,6 +39,7 @@ export * from './retention_ownership_transfers.js';
 export * from './retention_rr_cursors.js';
 export * from './inbox_events.js';
 export * from './mytrion_profile_defaults.js';
+export * from './mytrion_permission_sets.js';
 export * from './mytrion_role_defaults.js';
 export * from './worker_mytrion_access.js';
 export * from './worker_profiles.js';

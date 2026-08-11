@@ -1,7 +1,6 @@
 /**
- * Client modal drilldowns — DWH cards + fuel activity (all_time, Load-more via growing limit).
- * Card *status* prefers live EFS (same source C-1/C-3 write); DWH still supplies type +
- * unit/driver from the latest transaction.
+ * Client modal drilldowns — cards from live EFS; fuel activity still from DWH marts
+ * (all_time, Load-more via growing limit).
  */
 import { callTouchpoint } from '@/api/touchpoints';
 import { getClientCards, getClientBilling, type ClientBilling, type ClientCardDetail } from '@/api/dataCenter';
@@ -46,17 +45,25 @@ function displayStatus(raw: unknown): string {
   return up || 'UNKNOWN';
 }
 
-/** Match a DWH/EFS card number against an EFS digit→status map (exact, then last-6). */
-function lookupEfsStatus(efsByDigits: Map<string, string>, digits: string): string | undefined {
+/** Match a DWH card against an EFS digit key (exact, then last-6). */
+function lookupDwhCard(
+  dwhByDigits: Map<string, ClientCardDetail>,
+  digits: string,
+): ClientCardDetail | undefined {
   if (!digits) return undefined;
-  const exact = efsByDigits.get(digits);
+  const exact = dwhByDigits.get(digits);
   if (exact) return exact;
   if (digits.length < 6) return undefined;
   const tail = digits.slice(-6);
-  for (const [key, status] of efsByDigits) {
-    if (key.length >= 6 && key.slice(-6) === tail) return status;
+  for (const [key, card] of dwhByDigits) {
+    if (key.length >= 6 && key.slice(-6) === tail) return card;
   }
   return undefined;
+}
+
+function strOrNull(raw: unknown): string | null {
+  const v = String(raw ?? '').trim();
+  return v || null;
 }
 
 function toVm(
@@ -84,9 +91,9 @@ export interface ClientCardVM {
 }
 
 /**
- * Carrier cards for the Sales client modal. Live EFS status wins when available (so a C-1
- * activation shows ACTIVE immediately); DWH supplies card type + unit/driver enrichment.
- * EFS failure falls back to DWH-only; EFS-only rows appear when DWH is empty/missing a card.
+ * Carrier cards for the Sales client modal — same ground truth as Automations / mini-app fleet.
+ * Live EFS owns the roster + status/unit/driver (so C-1 / C-26 show immediately). DWH only
+ * contributes `cardType` and is the fallback when EFS is down or returns no rows.
  */
 export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]> {
   if (!carrierId) return [];
@@ -103,44 +110,35 @@ export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]
     ? ((efsResult.value.data ?? []) as Array<Record<string, unknown>>)
     : [];
 
-  const efsByDigits = new Map<string, string>();
-  for (const row of efsRows) {
-    const digits = cardDigits(row.card_number ?? row.cardNumber);
-    if (!digits) continue;
-    efsByDigits.set(digits, displayStatus(row.status));
-  }
-
-  const seen = new Set<string>();
-  const out: ClientCardVM[] = [];
-
+  const dwhByDigits = new Map<string, ClientCardDetail>();
   for (const c of dwhCards) {
     const digits = cardDigits(c.cardNumber);
-    if (digits) seen.add(digits.length >= 6 ? digits.slice(-6) : digits);
-    const live = lookupEfsStatus(efsByDigits, digits);
-    out.push(toVm(c.cardNumber, live ?? c.status, {
-      cardType: c.cardType,
-      unit: c.unit,
-      driverId: c.driverId,
-      driverName: c.driverName,
-    }));
+    if (digits) dwhByDigits.set(digits, c);
   }
 
-  for (const row of efsRows) {
-    const rawNum = row.card_number ?? row.cardNumber;
-    const digits = cardDigits(rawNum);
-    if (!digits) continue;
-    const key = digits.length >= 6 ? digits.slice(-6) : digits;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(toVm(rawNum, row.status, {
-      cardType: null,
-      unit: null,
-      driverId: null,
-      driverName: null,
-    }));
+  if (efsRows.length > 0) {
+    return efsRows
+      .map((row) => {
+        const rawNum = row.card_number ?? row.cardNumber;
+        const digits = cardDigits(rawNum);
+        if (!digits) return null;
+        const dwh = lookupDwhCard(dwhByDigits, digits);
+        return toVm(rawNum, row.status, {
+          cardType: dwh?.cardType ?? null,
+          unit: strOrNull(row.unit_number ?? row.unitNumber) ?? dwh?.unit ?? null,
+          driverId: strOrNull(row.driver_id ?? row.driverId) ?? dwh?.driverId ?? null,
+          driverName: strOrNull(row.driver_name ?? row.driverName) ?? dwh?.driverName ?? null,
+        });
+      })
+      .filter((row): row is ClientCardVM => row != null);
   }
 
-  return out;
+  return dwhCards.map((c) => toVm(c.cardNumber, c.status, {
+    cardType: c.cardType,
+    unit: c.unit,
+    driverId: c.driverId,
+    driverName: c.driverName,
+  }));
 }
 
 export type ClientBillingVM = ClientBilling;

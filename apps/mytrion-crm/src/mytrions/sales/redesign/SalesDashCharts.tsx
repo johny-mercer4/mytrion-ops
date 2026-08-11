@@ -77,7 +77,9 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                 </button>
               </span>
             ) : (
-              <span className="msd-chart-sub">{p.bars.length} companies</span>
+              <span className="msd-chart-sub">
+                {p.bars.length} companies · Active from warehouse
+              </span>
             )}
           </div>
           <div className="msd-legend">
@@ -222,6 +224,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                 {p.activityRange === 'recent'
                   ? `${cycleLabel}${len ? ` · ${len} day${len === 1 ? '' : 's'} with activity` : ''}`
                   : `${len} ${len === 1 ? 'day' : 'days'}`}
+                {' · '}warehouse txn activity (~3h)
               </span>
             </div>
             <div className="msd-activity-controls">

@@ -99,11 +99,16 @@
     border-color: var(--hz-pane-bd);
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
+/* This rule (not shared-base.css's, despite the identical selector) is the one that actually wins
+   in the cascade — later in load order, same specificity. It was still painting the OLD glass/blur
+   treatment (--hz-pane-alt, ~72% opaque) on a header that's sticky over a SCROLLING data table, so
+   fixing shared-base.css alone left this one silently overriding it. A sticky header needs an
+   opaque background (--ui-table-head-bg) — glass+blur is for chrome floating over other chrome
+   (panels, modals), not a header floating over scrolling rows; blur is also wasted paint cost once
+   the background is fully opaque underneath it. */
 .bm-root .bm-table thead tr,
 .bm-root .bm-table thead th {
-    background: var(--hz-pane-alt);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
+    background: var(--ui-table-head-bg);
     border-bottom: 1px solid var(--hz-pane-bd);
 }
 /* One hairline of the ramp under the header row, not a heavy divider. */
