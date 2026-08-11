@@ -233,7 +233,7 @@ async function buildTurnMessages(
 const MAX_TOOL_ARG_LEN = 64_000;
 
 /**
- * Some Groq-hosted models (gpt-oss/Llama) wrap tool-call JSON in a python tag, an XML-ish
+ * Some models wrap tool-call JSON in a python tag, an XML-ish
  * `<function>…</function>` block, or a markdown fence. Strip those so we can recover the JSON.
  *
  * Only called as a *fallback* after a direct JSON.parse fails (see parseToolArgs) — clean JSON never

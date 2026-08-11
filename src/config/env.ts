@@ -76,14 +76,22 @@ const EnvSchema = z.object({
 
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
-  // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
-  // EMBEDDING_SMALL = embeddings. Wired in modules/llm/openaiClient.ts (`models`).
-  OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
+  // Model IDs by role. Wired in modules/llm/openaiClient.ts (`models`):
+  //   FIVE_O_NANO  → router / grader / casual / tool-free utility calls
+  //   FIVE_O_MINI  → grounded answers + department specialists (reasoning WITH tools)
+  //   HARD_MODEL   → escalation. MUST differ from FIVE_O_MINI or "escalate" is a no-op.
+  //
+  // Every id here must support reasoning AND function tools on /v1/chat/completions. Verified
+  // 2026-08-11 against the live API: gpt-5.4 / gpt-5.4-mini / gpt-5.4-nano / gpt-5.5 all pass;
+  // gpt-5.4-pro is not a chat model (404); and the whole GPT-5.6 family (sol/terra/luna) rejects
+  // tools unless reasoning_effort is 'none' — i.e. adopting 5.6 here costs reasoning on every
+  // tool call, which is why the agent tier stays on 5.4. See WORKING_NOTES 2026-08-11.
   OPEN_AI_FIVE_O_NANO: z.string().default('gpt-5.4-nano'),
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
-  OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4-mini-2026-03-17'),
+  // Was gpt-5.4-mini — identical to the grounded tier, so escalation changed nothing.
+  OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
-  // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
+  // Client-level deadline for every raw OpenAI SDK call (chat, RAG planner/judge,
   // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.
   OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   // Output cap for the chat pipeline's main completions (max_tokens / max_completion_tokens).
@@ -91,21 +99,9 @@ const EnvSchema = z.object({
   // Embedding batch cap: embeddings.create is called with at most this many inputs per request.
   EMBED_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(128),
 
-  // --- Groq (fast/cheap worker via the OpenAI-compatible API). Off unless FF_GROQ_ENABLED. ---
-  GROQ_API_KEY: z.string().default(''),
-  GROQ_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
-  // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
-  GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
-
-  // --- Zhipu AI / GLM (via OpenAI-compatible API). ---
-  GLM_API_KEY: z.string().default(''),
-  GLM_BASE_URL: z.string().default('https://open.bigmodel.cn/api/paas/v4/'),
-  // Worker model for GLM. glm-4-flash is the primary free model.
-  GLM_MODEL_WORKER: z.string().default('glm-4-flash'),
-
   // --- DeepAgents (LangChain/LangGraph orchestrator + RAG / web-search / tool-caller subagents). ---
   // Off by default (FF_DEEP_AGENTS_ENABLED). Reuses OPENAI_API_KEY; no new provider.
-  // Empty DEEP_AGENTS_MODEL falls back to OPEN_AI_FOUR_O_MINI. The web-search subagent calls the
+  // Empty DEEP_AGENTS_MODEL falls back to the default chat model. The web-search subagent calls the
   // OpenAI Responses `web_search` built-in tool with DEEP_WEB_SEARCH_MODEL (must be a web-search-capable
   // model alias, e.g. gpt-4o-mini / gpt-4o; dated snapshots may not support it).
   DEEP_AGENTS_MODEL: z.string().default(''),
@@ -126,6 +122,15 @@ const EnvSchema = z.object({
   // Per-call deadline for agent-path ChatOpenAI requests (ms). Distinct from the wall-clock
   // budget: this bounds ONE model call, the budget bounds the whole run.
   AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
+  /**
+   * Provider retries per model call. The OpenAI SDK honours the `retry-after` a 429 carries, so each
+   * retry is a short, server-directed wait rather than a blind hammer.
+   *
+   * Was hard-coded to 2, which is thin for a shared 200k tokens-per-minute pool: at ~28,700 input
+   * tokens per turn, ~7 turns/minute saturate the org, and a burst outlasts two backoffs. A failed
+   * turn costs the user their whole question; a third and fourth retry costs a second.
+   */
+  AGENT_MODEL_MAX_RETRIES: z.coerce.number().int().min(0).max(8).default(4),
   // Output cap for agent-path model calls (maxTokens / maxCompletionTokens on ChatOpenAI).
   AGENT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
   // Deadline for outbound integration HTTP calls (serverCrm, Zoho) via fetchWithTimeout.
@@ -145,6 +150,12 @@ const EnvSchema = z.object({
   AGENT_BLACKBOARD_MAX_CHARS: z.coerce.number().int().positive().default(16_384),
   // Procedural skill cache (winning tool trajectories).
   FF_AGENT_SKILL_CACHE: flag('1'),
+  /**
+   * Authored skills (src/modules/agents/skills/**): the whenToUse index in the system prompt and the
+   * skill_read tool. On by default. Exists so the library can be A/B'd on the bench — a capability
+   * whose cost is measured (+41% wall) but whose benefit is not is exactly what this repo turns off.
+   */
+  FF_AGENT_SKILLS: flag('1'),
   AGENT_SKILL_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
   AGENT_SKILL_MAX_PER_KEY: z.coerce.number().int().positive().default(200),
   // Plan-and-Execute JSON DAG (orchestrator path).
@@ -170,6 +181,16 @@ const EnvSchema = z.object({
   RAG_ANN_MIN_ELIGIBLE_CHUNKS: z.coerce.number().int().positive().default(10_000),
   RAG_HNSW_EF_SEARCH: z.coerce.number().int().min(10).max(1_000).default(100),
   RAG_MIN_COSINE_SCORE: z.coerce.number().min(-1).max(1).default(0.5),
+  /**
+   * Server-side cap on passages returned to an agent, regardless of the `limit` the model asks for.
+   *
+   * This is the single biggest lever on tokens-per-minute. Measured 2026-08-12: an answer-role call
+   * averages 12,744 input tokens of which only ~3,600 is the cached static prefix (system prompt +
+   * tool schemas); the rest is dominated by the grounding block, and it is REPLAYED on every model
+   * call in the turn (2.24 of them on average, so ~28,700 input tokens per turn). At a 200,000
+   * tokens-per-minute organisation limit that is roughly seven turns per minute for the whole org.
+   */
+  RAG_MAX_PASSAGES: z.coerce.number().int().min(1).max(25).default(6),
   RAG_NO_MATCH_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   // Release controls are deliberately opt-in until the governed schema migration has run.
   FF_RAG_V2_CONTEXT: flag('0'),
@@ -596,8 +617,6 @@ const EnvSchema = z.object({
   FF_AGENTIC_RAG: flag('1'),
   // Optional LLM rerank of fused candidates (adds a model call per retrieval).
   FF_RAG_RERANK: flag('0'),
-  // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
-  FF_GROQ_ENABLED: flag('0'),
   // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).

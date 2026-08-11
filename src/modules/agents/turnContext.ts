@@ -55,6 +55,12 @@ export interface TurnContextV1 {
   };
   task: {
     resolvedAsk: string;
+    /**
+     * True only when `resolvedAsk` carries something the raw message did not — i.e. history was
+     * spliced in to resolve a pronoun. When false, `resolvedAsk` IS the raw message and must not
+     * be used to override a caller's own (better) query. See `resolveAsk`.
+     */
+    anaphoraResolved: boolean;
     language: 'en' | 'ru' | 'uz' | 'unknown';
     constraints: string[];
     clauses: ContextClause[];
@@ -124,15 +130,27 @@ export function scopeFingerprintFor(ctx: TenantContext): string {
   return createHash('sha256').update(input).digest('hex').slice(0, 20);
 }
 
-function resolvedAsk(message: string, historySummary?: string): string {
+/**
+ * Expand a pronoun-bearing follow-up ("what about that one?") with recent history so it can stand
+ * alone. Returns `anaphoraResolved: false` — and the message verbatim — whenever there was nothing
+ * to resolve, which is the common single-turn case.
+ */
+function resolveAsk(
+  message: string,
+  historySummary?: string,
+): { text: string; anaphoraResolved: boolean } {
   const ask = message.trim();
   const anaphoric = /\b(it|that|those|them|there|he|she|they|bu|shu|ular|это|тот|они)\b/i.test(ask);
-  if (!anaphoric || !historySummary) return ask;
-  return `Conversation context: ${historySummary.slice(-1_200)}\nCurrent request: ${ask}`;
+  if (!anaphoric || !historySummary) return { text: ask, anaphoraResolved: false };
+  return {
+    text: `Conversation context: ${historySummary.slice(-1_200)}\nCurrent request: ${ask}`,
+    anaphoraResolved: true,
+  };
 }
 
 export function createTurnContext(input: CreateTurnContextInput): TurnContextV1 {
   const scopeFingerprint = scopeFingerprintFor(input.ctx);
+  const ask = resolveAsk(input.message, input.historySummary);
   return {
     version: '1',
     server: {
@@ -149,7 +167,8 @@ export function createTurnContext(input: CreateTurnContextInput): TurnContextV1 
       ...(input.client ? { client: input.client } : {}),
     },
     task: {
-      resolvedAsk: resolvedAsk(input.message, input.historySummary),
+      resolvedAsk: ask.text,
+      anaphoraResolved: ask.anaphoraResolved,
       language: languageOf(input.message),
       constraints: [],
       clauses: clausesOf(input.message),

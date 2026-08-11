@@ -1,14 +1,17 @@
 /**
- * LLM completion plumbing for the chat loop: per-turn provider/model resolution (Groq worker when
- * enabled, OpenAI otherwise) with a one-shot Groq→OpenAI fallback, for both non-streaming and
+ * LLM completion plumbing for the chat loop: per-turn model resolution for both non-streaming and
  * streaming turns. Kept separate from chatService so that file stays under the size cap.
+ *
+ * This carried a cross-provider Groq→OpenAI fallback until 2026-08-12, including the subtle rule
+ * that a mid-stream failure may only be retried while nothing has reached the wire (re-running after
+ * tokens are visible duplicates output). With Groq removed, every branch of it was unreachable —
+ * `turn.provider` is always `'openai'`, so the guard clause fired first every time. If a second
+ * provider is ever added, that rule is the part worth restoring; see git history for the shape.
  */
 import type OpenAI from 'openai';
 import { env } from '../../config/env.js';
-import { errorMessage } from '../../lib/errors.js';
-import { logger } from '../../lib/logger.js';
 import { completionParams } from '../llm/modelParams.js';
-import { getClient, models, type Provider } from '../llm/openaiClient.js';
+import { getClient, type Provider } from '../llm/openaiClient.js';
 import { resolveModel } from '../llm/modelRouter.js';
 import type { SSEStream } from './streaming.js';
 
@@ -17,7 +20,11 @@ type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
 type ToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
 type Usage = OpenAI.Completions.CompletionUsage;
 
-/** The provider+model for a turn, plus whether we fell back to OpenAI mid-turn. */
+/**
+ * The provider+model for a turn. `fellBack` is retained and always false: it is written into the
+ * turn's audit detail, and dropping the field would silently change the shape of historical audit
+ * rows rather than just removing a code path.
+ */
 export interface TurnModel {
   provider: Provider;
   model: string;
@@ -30,21 +37,10 @@ export interface StreamResult {
   usage: Usage | null;
 }
 
-/** Resolve the worker model for a turn (Groq when enabled; OpenAI otherwise / on override). */
+/** Resolve the worker model for a turn (an override selects a different OpenAI model). */
 export function newTurnModel(modelOverride?: string): TurnModel {
   const resolved = resolveModel('worker', { model: modelOverride });
   return { provider: resolved.provider, model: resolved.model, fellBack: false };
-}
-
-/** Mutate the turn to fall back to OpenAI (used after a Groq failure). */
-function fallBackToOpenAI(turn: TurnModel, err: unknown): void {
-  logger.warn(
-    { err: errorMessage(err), model: turn.model },
-    'completion failed on groq; falling back to OpenAI for the rest of the turn',
-  );
-  turn.provider = 'openai';
-  turn.model = models.default;
-  turn.fellBack = true;
 }
 
 /** Base params for the turn's current model: output cap + model-aware sampling params. */
@@ -57,22 +53,16 @@ function turnParams(turn: TurnModel, messages: ChatMessage[], tools: ChatTool[])
   };
 }
 
-/** Non-streaming completion with one-shot fallback to OpenAI on a Groq error. */
-export async function createCompletion(
+/** Non-streaming completion for the turn's model. */
+export function createCompletion(
   turn: TurnModel,
   messages: ChatMessage[],
   tools: ChatTool[],
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-  try {
-    return await getClient(turn.provider).chat.completions.create(turnParams(turn, messages, tools));
-  } catch (err) {
-    if (turn.provider === 'openai') throw err;
-    fallBackToOpenAI(turn, err);
-    return getClient('openai').chat.completions.create(turnParams(turn, messages, tools));
-  }
+  return getClient(turn.provider).chat.completions.create(turnParams(turn, messages, tools));
 }
 
-/** Open a streaming completion for the turn's current provider. No fallback here — see streamTurn. */
+/** Open a streaming completion for the turn's model. */
 function openStream(
   turn: TurnModel,
   messages: ChatMessage[],
@@ -86,36 +76,19 @@ function openStream(
   return getClient(turn.provider).chat.completions.create(params);
 }
 
-/** Tracks whether any token has reached the client, so a mid-stream fallback can't duplicate output. */
-interface StreamProgress {
-  emitted: boolean;
-}
-
-/**
- * Stream a turn with Groq→OpenAI fallback that covers BOTH a failed stream open and a failure
- * mid-iteration. We only fall back while nothing has been streamed yet — once tokens are on the
- * wire, re-running on OpenAI would duplicate visible output, so we surface the error instead.
- */
+/** Stream a turn. Errors surface to the caller — there is no second provider to retry on. */
 export async function streamTurn(
   turn: TurnModel,
   messages: ChatMessage[],
   tools: ChatTool[],
   sse: SSEStream,
 ): Promise<StreamResult> {
-  const progress: StreamProgress = { emitted: false };
-  try {
-    return await consumeStream(await openStream(turn, messages, tools), sse, progress);
-  } catch (err) {
-    if (turn.provider === 'openai' || progress.emitted) throw err;
-    fallBackToOpenAI(turn, err);
-    return consumeStream(await openStream(turn, messages, tools), sse, progress);
-  }
+  return consumeStream(await openStream(turn, messages, tools), sse);
 }
 
 async function consumeStream(
   stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
   sse: SSEStream,
-  progress: StreamProgress,
 ): Promise<StreamResult> {
   let content = '';
   let usage: Usage | null = null;
@@ -127,7 +100,6 @@ async function consumeStream(
     if (!delta) continue;
     if (delta.content) {
       content += delta.content;
-      progress.emitted = true;
       sse.send('token', { text: delta.content });
     }
     for (const tcd of delta.tool_calls ?? []) {

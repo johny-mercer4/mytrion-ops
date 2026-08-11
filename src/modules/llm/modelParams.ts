@@ -2,8 +2,8 @@
  * Model-aware LLM parameter shaping — the one place that knows gpt-5-class / o-series
  * ("reasoning tier") models reject a non-default `temperature` and take
  * `max_completion_tokens` instead of `max_tokens`. Both pipelines build their params here:
- * the chat loop via completionParams (raw OpenAI SDK, also valid for Groq's
- * OpenAI-compatible API) and the agent stack via chatOpenAIFields (LangChain ChatOpenAI).
+ * the chat loop via completionParams (raw OpenAI SDK) and the agent stack via chatOpenAIFields
+ * (LangChain ChatOpenAI).
  */
 import { baseModel } from './costTracker.js';
 

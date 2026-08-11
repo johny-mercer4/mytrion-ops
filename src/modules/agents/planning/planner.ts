@@ -36,7 +36,7 @@ export async function maybeBuildPlan(opts: {
 
   const startedAt = Date.now();
   const modelId = resolveAgentModelId();
-  const provider = modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai';
+  const provider = 'openai';
   const inspect = getAgentContext()?.inspect;
   inspect?.({ stage: 'model', status: 'running', label: `Calling ${modelId}`, model: modelId, modelRole: 'planner', provider });
   try {

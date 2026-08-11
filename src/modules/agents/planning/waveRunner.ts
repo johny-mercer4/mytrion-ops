@@ -17,6 +17,7 @@ import { childSystemPrompt } from '../prompts.js';
 import { agentResultSchema, type AgentResult } from '../resultSchema.js';
 import { buildAgentTools } from '../tools/agentTools.js';
 import { buildScopedRagTool } from '../tools/scopedRag.js';
+import { buildSkillTool } from '../tools/skillTool.js';
 import { webSearchTool } from '../tools/webSearch.js';
 import { isAgentKey, type AgentManifest } from '../types.js';
 import { xmlAttr, xmlElement, xmlText } from '../contextXml.js';
@@ -54,7 +55,12 @@ export interface HardDagResult {
 
 async function childToolsFor(manifest: AgentManifest, callerCtx: TenantContext) {
   const narrowed = narrowContext(callerCtx, manifest);
-  const tools = [buildScopedRagTool(manifest, callerCtx), ...buildAgentTools(manifest, narrowed)];
+  const skillTool = buildSkillTool(manifest.skills);
+  const tools = [
+    buildScopedRagTool(manifest, callerCtx),
+    ...(skillTool ? [skillTool] : []),
+    ...buildAgentTools(manifest, narrowed),
+  ];
   if (manifest.webSearch) tools.push(webSearchTool);
   return tools;
 }
@@ -68,7 +74,7 @@ export async function runSubAgentTask(opts: {
 }): Promise<AgentResult> {
   const narrowedCtx = narrowContext(opts.callerCtx, opts.manifest);
   const modelId = resolveAgentModelId(opts.manifest);
-  const provider = modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai';
+  const provider = 'openai';
   const startedAt = Date.now();
   const inspect = getAgentContext()?.inspect;
   inspect?.({

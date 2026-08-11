@@ -106,7 +106,7 @@ export class RunTracker extends BaseCallbackHandler {
       label: `Calling ${model}`,
       model,
       modelRole: this.telemetry.role,
-      provider: model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai',
+      provider: 'openai',
     });
   }
 
@@ -177,7 +177,7 @@ export class RunTracker extends BaseCallbackHandler {
     /** Time to first token — what a cached prefix actually improves. */
     const ttftMs = started && firstToken ? firstToken - started.at : undefined;
     const model = started?.model ?? this.modelId;
-    const provider: Provider = model.includes('/') ? 'groq' : model.startsWith('glm-') ? 'glm' : 'openai';
+    const provider: Provider = 'openai';
     this.telemetry?.inspect?.({
       stage: 'model',
       status: 'complete',

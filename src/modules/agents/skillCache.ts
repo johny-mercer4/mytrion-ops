@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger.js';
 import { agentSkillRepo } from '../../repos/agentSkillRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { embedQuery, embedTexts } from '../knowledge/embedder.js';
+import { completionParams } from '../llm/modelParams.js';
 import { getOpenAI, models } from '../llm/openaiClient.js';
 import { wrapUntrusted } from '../security/untrusted.js';
 import { toolRegistry } from '../tools/index.js';
@@ -106,10 +107,11 @@ export async function captureSkill(
     const steps = skeletonFromToolCalls(okTools);
     if (steps.length < 2) return;
 
+    const model = env.RAG_PLANNER_MODEL || models.default;
     const res = await getOpenAI().chat.completions.create({
-      model: env.RAG_PLANNER_MODEL || models.default,
-      temperature: 0,
-      max_tokens: 200,
+      model,
+      // Reasoning-tier ids reject temperature / max_tokens (models.default since 2026-08-11).
+      ...completionParams(model, 200),
       response_format: { type: 'json_object' },
       messages: [
         {

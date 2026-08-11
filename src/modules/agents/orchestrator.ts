@@ -16,12 +16,13 @@ import { getAgentContext } from './context.js';
 import { getCheckpointer } from './checkpointer.js';
 import { getCachedAgent, identitySignature } from './graphCache.js';
 import { resolveAgentModel, resolveOrchestratorModel } from './models.js';
-import { childSystemPrompt, ORCHESTRATOR_PROMPT } from './prompts.js';
+import { childSystemPrompt, ORCHESTRATOR_SKILLS, ORCHESTRATOR_SYSTEM_PROMPT } from './prompts.js';
 import { agentResultSchema } from './resultSchema.js';
 import { buildAgentTools } from './tools/agentTools.js';
 import { buildBrowserTools } from './tools/browserTools.js';
 import { buildComposioToolsFor } from './tools/composio.js';
 import { buildScopedRagTool } from './tools/scopedRag.js';
+import { buildSkillTool } from './tools/skillTool.js';
 import { webSearchTool } from './tools/webSearch.js';
 import { buildOrchestratorPlanTools } from './planning/planTools.js';
 import type { AgentManifest } from './types.js';
@@ -29,8 +30,10 @@ import type { AgentManifest } from './types.js';
 /** All tools one child agent gets: scoped RAG + (RBAC ∩ allowlist) registry tools + extras. */
 async function childTools(manifest: AgentManifest, callerCtx: TenantContext): Promise<StructuredTool[]> {
   const narrowed = narrowContext(callerCtx, manifest);
+  const skillTool = buildSkillTool(manifest.skills);
   const tools: StructuredTool[] = [
     buildScopedRagTool(manifest, callerCtx),
+    ...(skillTool ? [skillTool] : []),
     ...buildAgentTools(manifest, narrowed),
   ];
   if (manifest.webSearch) tools.push(webSearchTool);
@@ -96,11 +99,14 @@ export async function buildOrchestrator(
     const subagents = await Promise.all(manifests.map((m) => compileSubAgent(m, callerCtx)));
     const checkpointer = getCheckpointer();
     const planTools = buildOrchestratorPlanTools();
+    // The orchestrator reads its own skills (fleet / routing / context propagation).
+    const orchestratorSkillTool = buildSkillTool(ORCHESTRATOR_SKILLS);
+    const parentTools = [...planTools, ...(orchestratorSkillTool ? [orchestratorSkillTool] : [])];
     const agent = createDeepAgent({
       model: resolveOrchestratorModel(modelRole),
-      systemPrompt: ORCHESTRATOR_PROMPT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       subagents,
-      ...(planTools.length > 0 ? { tools: planTools } : {}),
+      ...(parentTools.length > 0 ? { tools: parentTools } : {}),
       ...(checkpointer ? { checkpointer } : {}),
       middleware: [],
     });

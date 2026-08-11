@@ -19,15 +19,10 @@
  * "Cycle" is Octane's billing cycle — the 26th through the 25th — matching dwhClientRoster.
  */
 import { dwh } from '../../integrations/dwh.js';
+import { cycleCte } from '../../lib/salesCycle.js';
 
-/** The 26th→25th billing cycle, stated once and reused by both queries. */
-const CYCLE_CTE = `
-  cyc as (
-    select case when extract(day from current_date) >= 26
-                then date_trunc('month', current_date) + interval '25 days'
-                else date_trunc('month', current_date) - interval '1 month' + interval '25 days'
-           end as cycle_start
-  )`;
+/** The 26th→25th cycle. Definition lives in lib/salesCycle.ts — it had drifted into four copies. */
+const CYCLE_CTE = cycleCte('cyc');
 
 export interface SalesAgentKpi {
   agent: string;

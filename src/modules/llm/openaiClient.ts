@@ -1,11 +1,18 @@
 import OpenAI from 'openai';
 import { env } from '../../config/env.js';
 
-export type Provider = 'openai' | 'groq' | 'glm';
+/**
+ * OpenAI is the only provider. Groq and Zhipu/GLM clients used to live here and were removed
+ * 2026-08-12: neither was reachable. `modelRouter` never emitted `'glm'` at all, and every Groq
+ * path was gated on a `sanitizedBenchmark` option that nothing in `src/` or `scripts/` ever passed —
+ * so `FF_GROQ_ENABLED=1` and two live API keys bought exactly nothing.
+ *
+ * Kept as a one-member union rather than deleted outright: it is the seam a future provider plugs
+ * into, and it keeps `llm_calls.provider` telemetry honest about what served a call.
+ */
+export type Provider = 'openai';
 
 let openaiClient: OpenAI | null = null;
-let groqClient: OpenAI | null = null;
-let glmClient: OpenAI | null = null;
 
 /**
  * Lazily construct a single OpenAI client. Lazy so importing this module never
@@ -23,42 +30,9 @@ export function getOpenAI(): OpenAI {
   return openaiClient;
 }
 
-/**
- * Groq via its OpenAI-compatible endpoint — same `OpenAI` client, different baseURL.
- * Lazy + placeholder key, same as getOpenAI.
- */
-export function getGroq(): OpenAI {
-  if (!groqClient) {
-    groqClient = new OpenAI({
-      apiKey: env.GROQ_API_KEY || 'gsk-not-configured',
-      baseURL: env.GROQ_BASE_URL,
-      maxRetries: 2,
-      timeout: env.OPENAI_TIMEOUT_MS,
-    });
-  }
-  return groqClient;
-}
-
-/**
- * Zhipu AI / GLM via its OpenAI-compatible endpoint.
- * Lazy + placeholder key.
- */
-export function getGLM(): OpenAI {
-  if (!glmClient) {
-    glmClient = new OpenAI({
-      apiKey: env.GLM_API_KEY || 'glm-not-configured',
-      baseURL: env.GLM_BASE_URL,
-      maxRetries: 2,
-      timeout: env.OPENAI_TIMEOUT_MS,
-    });
-  }
-  return glmClient;
-}
-
-/** Resolve the client for a provider (all are OpenAI-SDK clients). */
-export function getClient(provider: Provider): OpenAI {
-  if (provider === 'glm') return getGLM();
-  return provider === 'groq' ? getGroq() : getOpenAI();
+/** Resolve the client for a provider. One provider today; the signature is the extension seam. */
+export function getClient(_provider: Provider): OpenAI {
+  return getOpenAI();
 }
 
 /** For tests: inject a stub OpenAI client. */
@@ -66,21 +40,22 @@ export function setOpenAIClient(stub: OpenAI): void {
   openaiClient = stub;
 }
 
-/** For tests: inject a stub Groq client. */
-export function setGroqClient(stub: OpenAI): void {
-  groqClient = stub;
-}
-
-/** For tests: inject a stub GLM client. */
-export function setGLMClient(stub: OpenAI): void {
-  glmClient = stub;
-}
-
 export const models = {
-  default: env.OPEN_AI_FOUR_O_MINI,
+  /**
+   * Cheap utility tier: tool-free helper calls (memory distillation, skill distillation, file Q&A,
+   * rerank) and the fallback every role resolves to when FF_RAG_MODEL_POLICY is off.
+   *
+   * Was `gpt-4o-mini` — retired 2026-08-11. It is a legacy non-reasoning model and the one model
+   * whose cached-input discount is 50% rather than the 90% the 5.x family gets, so it was the most
+   * expensive possible choice for the calls that repeat a stable prefix most often.
+   * Callers must build params via `completionParams()`; a reasoning-tier id rejects
+   * `temperature`/`max_tokens`.
+   */
+  default: env.OPEN_AI_FIVE_O_NANO,
   nano: env.OPEN_AI_FIVE_O_NANO,
   grounded: env.OPEN_AI_FIVE_O_MINI,
   reasoning: env.OPEN_AI_FIVE_O_MINI,
+  /** Escalation only. Deliberately a different, stronger model than `grounded`. */
   hard: env.OPEN_AI_HARD_MODEL,
   embedding: env.OPEN_AI_EMBEDDING_SMALL,
 } as const;

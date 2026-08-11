@@ -75,6 +75,43 @@ describe('secure context contract', () => {
     expect(xml.endsWith('</TurnContext>')).toBe(true);
   });
 
+  /**
+   * `resolvedAsk` is fed to `agenticRetrieve`, where it drives BOTH planQueries and judgeEvidence.
+   * It may therefore override a tool caller's own query ONLY when it carries something the raw
+   * message did not. Passing it unconditionally cost 3/42 expected-doc coverage and +13% wall time
+   * on the Sales bench, because a compound ask retrieved a generic overview doc.
+   */
+  describe('resolvedAsk only overrides a caller query when it resolved anaphora', () => {
+    const ctx = () => makeContext({ role: 'worker', departments: ['sales'], allDepartmentAccess: false });
+
+    it('is the verbatim message, and NOT authoritative, with no pronoun', () => {
+      const message = "How do I check a client's balance and see their card list?";
+      const turn = createTurnContext({ ctx: ctx(), message, historySummary: 'Earlier: discussed carrier ACME.' });
+
+      expect(turn.task.anaphoraResolved).toBe(false);
+      expect(turn.task.resolvedAsk).toBe(message);
+    });
+
+    it('is not authoritative when a pronoun appears but there is no history to resolve it with', () => {
+      const turn = createTurnContext({ ctx: ctx(), message: 'What about that one?' });
+
+      expect(turn.task.anaphoraResolved).toBe(false);
+      expect(turn.task.resolvedAsk).toBe('What about that one?');
+    });
+
+    it('splices history in and marks itself authoritative for a pronoun follow-up', () => {
+      const turn = createTurnContext({
+        ctx: ctx(),
+        message: 'What about that one?',
+        historySummary: 'Earlier: discussed carrier ACME card C-24.',
+      });
+
+      expect(turn.task.anaphoraResolved).toBe(true);
+      expect(turn.task.resolvedAsk).toContain('carrier ACME card C-24');
+      expect(turn.task.resolvedAsk).toContain('What about that one?');
+    });
+  });
+
   it('escapes blackboard and execution-plan values at every child boundary', () => {
     const blackboard = formatBlackboardXml({
       goal: FORGED,

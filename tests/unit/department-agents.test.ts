@@ -110,6 +110,7 @@ describe('tool gating through the live registry (widget path)', () => {
       'crm.payment_info',
       'crm.pick_my_client',
       'crm.transactions',
+      'hr.my_time_off',
       'knowledge.search',
       'zoho_crm.query',
     ]);
@@ -124,6 +125,7 @@ describe('tool gating through the live registry (widget path)', () => {
       'agent.debtors',
       'blackboard.read',
       'blackboard.write',
+      'hr.my_time_off',
       'knowledge.search',
       'zoho_crm.query',
     ]);
@@ -141,14 +143,18 @@ describe('tool gating through the live registry (widget path)', () => {
       'crm.payment_info',
       'crm.pick_my_client',
       'crm.transactions',
+      'hr.my_time_off',
       'knowledge.search',
       'zoho_crm.query',
       'zoho_desk.search_tickets',
     ]);
   });
 
-  it('no-department caller sees only the universal RAG tool', () => {
-    expect(names(dept([]))).toEqual(['knowledge.search']);
+  it('no-department caller sees only the universal tools', () => {
+    // hr.my_time_off is universal on purpose: owner-scoping happens inside the service (it resolves
+    // the CALLER'S own employee row), so every internal worker may ask about their own leave even
+    // with no department grant at all. Department-gating it would lock ~200 people out.
+    expect(names(dept([]))).toEqual(['hr.my_time_off', 'knowledge.search']);
   });
 
   it('admin (allDepartmentAccess) sees every native tool', () => {
