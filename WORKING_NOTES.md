@@ -14923,3 +14923,42 @@ says so plainly; `isRateLimitError` excludes it, so metrics cannot report an unp
 congestion.
 
 Balance has been topped up. The k=4 A/B has been re-run — see below.
+
+### k=4 re-run on a funded account: quality-neutral, token-neutral → REJECTED
+
+With credit restored the A/B completed cleanly (0 failures, 2 stray 429s absorbed by the retry
+budget):
+
+| | k=6 | k=4 |
+| --- | --- | --- |
+| expected-doc coverage | 59/63 | **59/63** |
+| answer facts | 41/42 | **42/42** |
+| failures | 4 (billing) | **0** |
+| cost | $0.3496 | $0.3356 |
+| **input tokens / turn** | **27,957** | **33,853** |
+| answer calls / turn | 2.20 | **2.58** |
+| **input tokens / answer call** | **12,629** | **13,068** |
+
+Quality is neutral — same coverage, every case stable. But the optimisation **does not save tokens.
+It costs them.**
+
+Per-CALL prompt size barely moved (12,629 → 13,068), and per-TURN went UP 21%. The reason is
+structural and I had the model wrong: **each `knowledge_search` result stays in the turn's message
+history.** Retrieving fewer passages per search does not shrink the prompt, it makes the agentic loop
+search MORE (answer calls 2.20 → 2.58), and every extra hop appends another grounding block to a
+history that is replayed on every subsequent call. The loop compensates for thinner evidence, and
+compensation is more expensive than the evidence was.
+
+So `RAG_MAX_PASSAGES` stays at **6**. The cap itself is kept — it is a real server-side ceiling on
+what a model can request, and it is now a measured knob rather than a hypothesis.
+
+**What this rules out, and what it points at.** The grounding block is not a lever that can be pulled
+by shrinking `k`. Per answer call the static cached prefix is ~3,620 tok of ~12,700, so ~9,100 is
+accumulated conversation — retrieved passages, tool results, prior turns. The lever is therefore
+**the number of answer calls per turn and what accumulates between them**, not the size of any single
+retrieval. Trimming tool results and pruning superseded grounding blocks from history are the next
+candidates; both are real work and neither should be attempted without this same A/B rig.
+
+Four optimisations measured this session, three rejected on evidence (rerank, gpt-5.6-luna,
+FF_RAG_V2_CONTEXT, and now k=4). The one that survived — the skill library at 1/15 → 15/15 — is the
+only one that was ever argued for on a number rather than on a story.
