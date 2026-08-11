@@ -143,8 +143,9 @@ export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]
 
 export type ClientBillingVM = ClientBilling;
 
-/** A client's billing terms from octane.dim_company (billing cycle, payment terms/day, credit
- *  limit, minimum balance). Null when the carrier has no dim_company row. */
+/** A client's billing terms — Credit Limit / Payment Terms prefer live CMP
+ *  (server overlays via /data-center/client-billing); min balance stays DWH.
+ *  Null when the carrier has no dim_company row. */
 export async function loadClientBilling(carrierId: string): Promise<ClientBillingVM | null> {
   if (!carrierId) return null;
   return getClientBilling(carrierId);

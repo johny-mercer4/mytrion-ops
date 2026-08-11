@@ -47,14 +47,19 @@ export interface CarrierTransactions {
   [k: string]: unknown;
 }
 
-/** carrier-balance payload (servercrm agentDwh.getCarrierBalance). `efs_balance` is the carrier's
- *  live available funds for BOTH account types — LOC: room on the line; prepay: prepaid balance —
- *  and is null (with `efs_error` set) when EFS is unreachable. */
+/** carrier-balance payload (servercrm agentDwh.getCarrierBalance).
+ *  credit_limit / payment_terms prefer live CMP; credit_remaining is
+ *  CMP-limit − DWH week spend when limit is CMP (see `sources`).
+ *  `efs_balance` is live EFS (null + efs_error when unreachable). */
 export interface CarrierBalance {
   is_active?: boolean;
   account_type?: string | null;
+  credit_limit?: number | null;
+  credit_remaining?: number | null;
+  payment_terms?: string | null;
   efs_balance?: number | null;
   efs_error?: string | null;
+  sources?: Record<string, unknown>;
   [k: string]: unknown;
 }
 
@@ -97,7 +102,8 @@ export const serverCrmWrapper = {
     return crmGet(`/api/agent/dwh/payment-info/${encodeURIComponent(carrierId)}`, { days: 90 });
   },
 
-  /** Invoice list (DWH's `public.cmp_invoice` replica). `carrierId` is a query param here, not a path segment. */
+  /** Invoice list — live CMP via servercrm `/api/salesMytrion/fetchInvoices`
+   * (DWH `public.cmp_invoice` only when CMP is down). `carrierId` is a query param. */
   getInvoices(carrierId: string, opts: InvoicesRangeOpts = {}) {
     return crmGet<CarrierInvoices>('/api/salesMytrion/fetchInvoices', {
       carrierId,
@@ -106,6 +112,11 @@ export const serverCrmWrapper = {
       ...(opts.from ? { from: opts.from } : {}),
       ...(opts.to ? { to: opts.to } : {}),
     });
+  },
+
+  /** Live CMP company creditLimit + LOC/Prepay tags (DWH fallback inside servercrm). */
+  getCarrierCredit(carrierId: string) {
+    return crmGet(`/api/clients/${encodeURIComponent(carrierId)}/credit`);
   },
 
   /** A time-limited signed URL for one invoice document. Not itself carrier-scoped upstream —

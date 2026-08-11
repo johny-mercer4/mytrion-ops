@@ -48,7 +48,7 @@ describe('catalog shape', () => {
     // API directly, and those two had no callers even before the removal.
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(15);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
     // BOCA and Close Application are guarded local handlers around Playwright.
     expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(0);
     expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);

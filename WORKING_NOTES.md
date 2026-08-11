@@ -14289,3 +14289,63 @@ Refresh toast copy: `Latest numbers loaded (Active cards from warehouse).` (was 
 - Client modal account Active from `efs.cards` (no dashboard fan-out)
 
 **Vendored `app/` not rebuilt** — run `pnpm build:widget` before a UI PR (subtitle string changed).
+
+## 2026-08-11 — Sales invoices + credit from live CMP (audit + flip)
+
+### Goal
+Wire Sales invoice lists and Credit Limit / Remaining / LOC Terms to **live CMP**
+(with DWH fallback only when CMP is down). Screenshot panel = Zoho `SsClientModal`.
+
+### Live CMP company fields (probed carrier 5834146 ULANERGE 08 INC)
+- `creditLimit: 2500` ✓
+- SYSTEM tag `LOC` (also BILLING_CYCLE / PAYMENT_DAY tags)
+- `balance: 1000` — **NOT** credit remaining (TOP_UP pocket / other metric)
+- No `creditRemaining` / `availableCredit` on CMP company
+
+### Credit Remaining formula (documented hybrid)
+`credit_remaining = CMP.creditLimit − DWH current-week funded spend`
+(`sources.credit_remaining = cmp_limit_minus_dwh_week_spend`). Do **not** use
+`company.balance` as remaining. Pure-CMP remaining is unavailable today.
+
+### Full audit (Sales invoice / credit surfaces)
+
+| Surface | Before | After | Status |
+| --- | --- | --- | --- |
+| Zoho SsClientModal invoices | Live CMP Deluge `mytrionSearchInvoices` (DWH `/api/clients/:id/invoices` fallback) | unchanged | already OK |
+| Zoho SsClientModal Credit Limit / Remaining | DWH via `/api/agent/dwh/carrier-balance` | CMP limit+terms via same route overlay; Remaining = hybrid; Terms prefer `acctInfo.payment_terms` | flipped (servercrm + zoho widget) |
+| Zoho / Horizon C-20 Request Invoices | DWH `salesMytrion/fetchInvoices` → `public.cmp_invoice` | Live CMP first, DWH fallback (`meta.source`) | flipped (servercrm) |
+| Horizon C-18 Check Payment Information | Hybrid: DWH `payment_info` summary + Deluge `check_payment` CMP rows | unchanged (rows already live CMP) | already OK / intentional hybrid summary |
+| Horizon ClientModal Billing (credit/terms) | DWH `dim_company` via `/data-center/client-billing` | Overlay CMP `/api/clients/:id/credit` | flipped (mytrion) |
+| `/api/clients/:id/invoices` | CMP → DWH fallback | unchanged | already OK |
+| `/api/billing/cmp/carrier-invoices` | Live CMP | unchanged | already OK |
+| Agent `sales_mytrion.fetch_invoices` | DWH | Live CMP (servercrm flip) | flipped |
+| Agent `dwh.payment_info` | DWH intentional (totals + Zoho payments) | unchanged | intentional DWH |
+| Agent `carrier.check_payment` | Live CMP Deluge | unchanged | already OK |
+| Agent `dwh.carrier_balance` | DWH limit/terms + EFS | CMP limit/terms overlay + hybrid remaining + EFS | flipped (servercrm) |
+| Mini-app balance tiles | `carrier_balance` | inherits CMP overlay | flipped via servercrm |
+| Finance / Verification / Ledger credit | DWH dim_company | unchanged (out of Sales invoice scope) | intentional DWH |
+| Fuel tab / Payments tab (SsClientModal) | DWH mart / Zoho payment modules | unchanged | intentional non-CMP |
+
+### Implemented
+**servercrm** (`feature/sales-invoices-live-cmp`):
+- `services/cmpCarrierCredit.js` + `GET /api/clients/:carrierId/credit`
+- `fetchSalesInvoicesByCarrierCmp` + `fetchInvoices` CMP-first
+- `getCarrierBalance` CMP overlay + `sources{}`
+- `test/cmpCarrierCredit.test.js`
+
+**mytrion** (`feature/sales-invoices-live-cmp`):
+- `/data-center/client-billing` CMP overlay (`cmpClientBilling.ts`)
+- touchpoint title + `clients.credit`; wrapper comment/API
+- unit test `cmp-client-billing.test.ts`
+
+**zoho-octane** (`feature/sales-invoices-live-cmp`):
+- SsClientModal Terms from `acctInfo.payment_terms` (CMP-preferred)
+
+### Deploy order
+1. servercrm first (producer)
+2. mytrion + zoho widget (tolerant readers)
+
+### Risks
+- CMP auth latency on every carrier-balance / credit / invoice list open
+- Credit Remaining still depends on DWH week spend (hybrid)
+- `dateFrom/dateTo` on CMP is createDate window; DWH fallback uses invoice_date

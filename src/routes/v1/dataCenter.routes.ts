@@ -20,6 +20,7 @@ import {
 import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
 import { loyaltyOverrides } from '../../modules/manager/loyaltyOverrides.js';
 import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
+import { applyLiveCmpCredit } from '../../modules/sales/cmpClientBilling.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import {
@@ -356,16 +357,17 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * One client's billing terms (octane.dim_company: billing cycle, payment terms/day, credit limit,
-   * minimum balance) for the client modal's Billing tab. Owner-scoped like /client-cards.
+   * One client's billing terms for the client modal's Billing tab.
+   * Base row from octane.dim_company; Credit Limit / Payment Terms prefer live
+   * CMP (DWH when CMP is down). Owner-scoped like /client-cards.
    */
   app.get('/data-center/client-billing', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const { carrierId } = carrierCardsQuery.parse(request.query);
     await assertCarrierOwned(ctx, carrierId);
     try {
-      const billing = await getClientBilling(carrierId);
-      return { billing };
+      const dwhBilling = await getClientBilling(carrierId);
+      return await applyLiveCmpCredit(carrierId, dwhBilling);
     } catch (err) {
       throw dwhError(err);
     }

@@ -90,9 +90,10 @@ function BillingSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
-/** Per-client billing/account view. DWH-backed fields (billing cycle, terms, credit limit, min
- *  balance, debt, status) render live; fields not yet in the DWH (fees, payment method, discounts,
- *  bonus, notes, scheduled dates) show a "Coming soon" chip until Accounting/CMP wires them in. */
+/** Per-client billing/account view. Credit limit / payment terms / billing cycle prefer live CMP
+ *  (via /data-center/client-billing → servercrm /api/clients/:id/credit); min balance + debt stay
+ *  DWH/roster. Fields not yet wired (fees, payment method, discounts, bonus, notes, scheduled
+ *  dates) show a "Coming soon" chip. */
 function BillingPanel({ data, loading, error, statusLabel, owed }: {
   data: ClientBillingVM | null;
   loading: boolean;

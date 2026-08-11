@@ -143,7 +143,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
   {
     kind: 'servercrm',
     key: 'sales_mytrion.fetch_invoices',
-    title: 'Sales invoices (DWH)',
+    title: 'Sales invoices (live CMP, DWH fallback)',
     riskClass: 'read',
     departments: SALES,
     carrierParam: 'carrierId',
@@ -182,6 +182,17 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     method: 'GET',
     pathTemplate: '/api/clients/{carrierId}/invoices',
     paramsSchema: z.object({ carrierId, limit: limit(500, 100).optional() }),
+  },
+  {
+    kind: 'servercrm',
+    key: 'clients.credit',
+    title: 'Client credit limit / LOC terms (live CMP)',
+    riskClass: 'read',
+    departments: SALES,
+    carrierParam: 'carrierId',
+    method: 'GET',
+    pathTemplate: '/api/clients/{carrierId}/credit',
+    paramsSchema: z.object({ carrierId }),
   },
   {
     kind: 'servercrm',
