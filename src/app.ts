@@ -251,6 +251,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-act-as-user-name',
       'x-act-as-profile',
       'x-act-as-role',
+      // Admin force-refresh for touchpoint / bootstrap / verification caches (CRM sends when force=true).
+      'x-cache-refresh',
       'x-webhook-key-id',
       'x-webhook-timestamp',
       // Free ngrok interstitial bypass for Telegram mini-app / local tunnel clients.

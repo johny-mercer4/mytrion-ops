@@ -599,7 +599,7 @@ export interface TouchpointMap {
     result: LeaderboardResult;
   };
   'dashboard.agent_sales': {
-    params: { startDate?: string; endDate?: string };
+    params: { startDate?: string; endDate?: string; force?: boolean };
     result: SalesDashboardResult;
   };
   'dashboard.company': { params: Record<string, never>; result: CompanyDashboardResult };

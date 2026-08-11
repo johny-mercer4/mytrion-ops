@@ -248,7 +248,7 @@ function ClientCard({ row, onOpen }: { row: Scored; onOpen: () => void }) {
             <strong>{n0(client.inNetworkGallonsPrevMonth)} gal</strong>
           </div>
           <dl>
-            <div>
+            <div title="Warehouse period metric (~3h sync) — distinct cards with transactions, not live EFS Active">
               <dt>Transacting cards</dt>
               <dd>{client.activeCardsPrevMonth}</dd>
             </div>
@@ -270,7 +270,7 @@ function ClientCard({ row, onOpen }: { row: Scored; onOpen: () => void }) {
             <strong>{n0(client.inNetworkGallonsThisMonth)} gal</strong>
           </div>
           <dl>
-            <div>
+            <div title="Warehouse period metric (~3h sync) — distinct cards with transactions, not live EFS Active">
               <dt>Transacting cards</dt>
               <dd>{client.activeCardsThisMonth}</dd>
             </div>
@@ -288,7 +288,9 @@ function ClientCard({ row, onOpen }: { row: Scored; onOpen: () => void }) {
       </div>
 
       <div className="mg-lty-account">
-        <span>Account active cards</span>
+        <span title="dim_card Active count from the warehouse (~3h). Live EFS is used on Sales card drilldowns, not the company-wide loyalty roster (rate limits).">
+          Account active cards
+        </span>
         <strong>{client.activeCards}</strong>
         <span>Declared trucks</span>
         <strong>{client.trucks ?? '—'}</strong>

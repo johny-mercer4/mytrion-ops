@@ -14190,3 +14190,102 @@ written assuming the wrap's height — placed the day detail under the global se
 wrap + `top: 4px` so the card stays over the SVG inside the wrap (the scroller's `overflow-x: auto`
 forces y-clipping, so a card that extends above the wrap would still vanish). Vendored `app/` rebuilt.
 Regression: `SalesDashCharts.test.tsx`.
+
+### Sales + mini-app card roster: EFS is the source of truth
+
+Owner ask: cards-related automations (and the mini-app) must read card info from live EFS, not the
+lagged DWH mart. Much of this was already EFS-first (`loadCards`, Card Lookup, mini-app fleet,
+`listLiveCardRows`); remaining gaps closed:
+
+- **Sales client modal Cards** — roster + status/unit/driver now from `efs.cards`; DWH only for
+  `cardType` and as fallback when EFS is down/empty.
+- **Automations credential panel** (C-1 / C-3 / C-26) — reads the same `efs.cards` roster instead of
+  the misnamed `dwh.card_efs` agent path.
+- **Agent tool `crm.list_cards`** — uses `listLiveCardRows` (EFS → DWH fallback), not
+  `/api/agent/dwh/cards/...`.
+
+Intentionally still DWH: last-used / transactions history, invite `cardId` binding, and EFS-down
+fallbacks. Mini-app fleet was already EFS-primary (DWH only for stable `cardId`).
+
+## 2026-08-11 — Sales dashboard: live EFS Active for Cards by Company
+
+**Ask:** Dashboard Cards by Company / Card Activity need EFS; Loyalty “active cards this month”
+should be real-time because DWH syncs ~every 3 hours.
+
+**Semantics (verified in servercrm `agentDwh.js` + EFS routes):**
+- Cards by Company `active_cards` = `dim_card` status Active → **current** status → EFS
+  `getCardSummaries` is the correct live source.
+- Card Activity `active_cards` = distinct cards that **transacted that day** (mart) → period
+  metric. EFS card summaries cannot power this. Live replacement would mean N×carrier
+  `getMCTransExtLocV2` calls (or a new ServerCRM batch) — out of scope; keep DWH + UI note.
+- Loyalty `activeCardsThisMonth` / gallons / prev-month track = distinct cards with ≥1 txn in
+  the calendar month — **not** current Active status. Do **not** fake from EFS Active.
+
+**Implemented:**
+- `liveActiveCardCounts` — 5m process cache, concurrency 4, **max 30 fresh EFS calls/request**.
+- `enrichAgentSalesLiveActive` overlays `cardsByCompany.active_cards` (+ KPI active/total when
+  fully live); leaves `cardActivity` / daily-by-carrier untouched.
+- `dashboard.agent_sales` touchpoint enables live overlay; KPI collector keeps
+  `fetchAgentSalesDashboard(name)` without live (no SOAP fan-out on ingestion).
+- UI: Cards by Company subtitle shows EFS/mixed/DWH source; Card Activity subtitle says
+  warehouse txn activity (~3h). Client modal account Active uses already-loaded `efs.cards`;
+  loyalty month “transacting cards” get honest warehouse copy.
+
+**Still DWH / decisions for user:**
+- Card Activity chart + Unique/New bars + cycle TX volume.
+- Loyalty month aggregates + company-wide Manager loyalty `activeCards` (roster-wide EFS
+  would blow rate limits).
+- Optional later: ServerCRM batch Active counts, or live txn feed for Card Activity.
+
+**Tests:** `live-active-card-counts`, `enrich-agent-sales-live-active`, CRM `dashSalesData` +
+`SalesDashCharts`. Typecheck green. **Vendored `app/` not rebuilt** — run `pnpm build:widget`
+before a UI PR.
+
+## 2026-08-11 — CORS: allow `x-cache-refresh` for CRM Vite → API
+
+Live-dashboard force refresh sends `x-cache-refresh: 1` from `apps/mytrion-crm/src/api/touchpoints.ts`
+(when `force=true`). Firefox blocked the preflight because `@fastify/cors` `allowedHeaders` in
+`src/app.ts` listed act-as / idempotency / api-key but not `x-cache-refresh`.
+
+**Fix:** add `x-cache-refresh` to Allow-Headers. Regression in `tests/integration/api.test.ts`
+(OPTIONS `/v1/touchpoints/dashboard.agent_sales`). Restart the API after pull.
+
+**Note:** `GET /v1/ringcentral/embed-config` → 404 is intentional when RC is off
+(`FF_RINGCENTRAL_ENABLED` / `RINGCENTRAL_CLIENT_ID` unset) — not a missing stub.
+
+## 2026-08-11 — Latency: DWH vs EFS overlay (Daniel Brown local bench)
+
+Wall-clock vs `fetchAgentSalesDashboard` / touchpoints (no commit). Agent book ≈ **218**
+companies; overlay budget **30 fresh EFS calls/request**, 5m process cache.
+
+| Surface | DWH | EFS/hybrid | Takeaway |
+| --- | --- | --- | --- |
+| `agent_sales` | ~2.0–2.3s | cold ~18s (mixed/30); **true warm ~2.2s** (218 cacheHits) | Cold ≈ **+8×**; warm ≈ **DWH + ~0.2s** once cache full (~8 fills) |
+| `efs.cards` vs `dwh.cards` (one carrier) | ~0.5s | ~2.1s | EFS roster ≈ **+1.6s** |
+| `listLiveCardRows` vs `getCards` | ~0.7s | ~1.7s | Same order |
+| Card Activity / loyalty month / last-used | DWH | N/A | Not migrated |
+
+Partial “warm” (still `freshCalls=30` while filling remaining carriers) stays slow — only
+`freshCalls=0` is true warm. UI page timing skipped: Vite session was mock Dev User without
+Zoho id (`DEV_MOCK_ZOHO_USER_ID` unset).
+
+## 2026-08-11 — Decision: Dashboard Active stays DWH (no live EFS overlay)
+
+**User decision:** Keep **Dashboard Cards by Company Active (cold)** on **DWH**. Do **not** use live EFS overlay for `dashboard.agent_sales` — cold ~18s fan-out is unacceptable. Keep **everything else** on EFS live; ~1s slower per-carrier is OK.
+
+**Removed:**
+- `enrichAgentSalesLiveActive` + `liveActiveCardCounts` modules and unit tests
+- Wiring in `fetchAgentSalesDashboard` / `dashboard.agent_sales` (`liveActiveCards`)
+- FE overlay metadata + copy ("Active live for X/Y", "Active from live EFS")
+
+**Dashboard Active is DWH-only again.** Cards by Company subtitle: "Active from warehouse".
+Refresh toast copy: `Latest numbers loaded (Active cards from warehouse).` (was live-EFS claim).
+
+**Still EFS-primary (unchanged):**
+- Client drilldown Cards (`loadClientCards` / `efs.cards`)
+- AutoCardCredentials / C-1–C-26
+- `crm.list_cards` / `listLiveCardRows`
+- Card Lookup live roster
+- Client modal account Active from `efs.cards` (no dashboard fan-out)
+
+**Vendored `app/` not rebuilt** — run `pnpm build:widget` before a UI PR (subtitle string changed).

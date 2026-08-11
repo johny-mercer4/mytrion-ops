@@ -66,5 +66,15 @@ describe('Card Activity hover card positioning', () => {
     expect(card!.textContent).toContain('112');
     expect(card!.textContent).toContain('10k');
   });
+
+  it('labels Card Activity as warehouse txn data (not live EFS status)', () => {
+    renderChart(null);
+    expect(screen.getByText(/warehouse txn activity/i)).toBeInTheDocument();
+  });
+
+  it('labels Cards by Company Active as warehouse (not live EFS)', () => {
+    renderChart(null);
+    expect(screen.getByText(/Active from warehouse/i)).toBeInTheDocument();
+  });
 });
 
