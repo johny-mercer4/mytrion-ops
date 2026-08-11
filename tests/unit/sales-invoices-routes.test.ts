@@ -145,8 +145,8 @@ describe('GET /v1/sales/invoices/:invoiceId/:type — authorization', () => {
     expect(res.statusCode).toBe(200);
     expect(serverCrmGetMock).toHaveBeenNthCalledWith(
       2,
-      '/api/salesMytrion/fetchInvoices',
-      expect.objectContaining({ carrierId: CARRIER, page: 2, limit: 5000 }),
+      `/api/clients/${CARRIER}/invoices`,
+      expect.objectContaining({ page: 2, limit: 5000 }),
     );
   });
 

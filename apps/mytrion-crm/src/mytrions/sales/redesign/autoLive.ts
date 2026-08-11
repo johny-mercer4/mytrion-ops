@@ -106,7 +106,8 @@ export interface CmpInvoiceRow {
   remaining: string;
 }
 export type DonePayload =
-  | { kind: 'invoices' }
+  /** `source` from servercrm `meta.source`: `cmp` | `dwh_fallback` (absent on older producers). */
+  | { kind: 'invoices'; source?: 'cmp' | 'dwh_fallback' | string }
   | { kind: 'transactions' }
   | { kind: 'card-lookup'; carrierId: string; companyName: string; rows: CardLookupRow[] }
   | { kind: 'message'; message: string }
@@ -257,12 +258,17 @@ export const fmtDate = (v: unknown): string => {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? raw.slice(0, 10) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
+/** CMP/DWH invoice status → short UI label. Order matters: PARTIALLY_PAID contains "paid". */
 export const titleStatus = (v: unknown): string => {
-  const x = str(v).toLowerCase();
-  if (!x) return '—';
-  if (x.includes('paid')) return 'Paid';
-  if (x.includes('overdue') || x.includes('past')) return 'Overdue';
-  return x.charAt(0).toUpperCase() + x.slice(1);
+  const raw = str(v).trim();
+  if (!raw) return '—';
+  const x = raw.toUpperCase().replace(/\s+/g, '_');
+  if (x === 'PARTIALLY_PAID' || x === 'PARTIAL' || x.includes('PARTIAL')) return 'Partially Paid';
+  if (x === 'PAID') return 'Paid';
+  if (x === 'PENDING' || x === 'OPEN') return 'Pending';
+  if (x === 'CANCELLED' || x === 'CANCELED' || x === 'VOID') return 'Cancelled';
+  if (x.includes('OVERDUE') || x.includes('PAST')) return 'Overdue';
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase().replace(/_/g, ' ');
 };
 const normCardStatus = (raw: string): string => {
   const x = raw.toLowerCase();
@@ -271,7 +277,7 @@ const normCardStatus = (raw: string): string => {
   if (/active|ok|good/.test(x)) return 'active';
   return 'inactive';
 };
-/** Map invoice UI preset → sales_mytrion.fetch_invoices range (last_7|last_30|last_90|custom). */
+/** Map invoice UI preset → range key (last_7|last_30|last_90|custom). */
 export const mapInvRange = (label: string): string => {
   const x = label.toLowerCase();
   if (x.includes('7')) return 'last_7';
@@ -289,11 +295,64 @@ export const daysWindow = (sel: string): { from: string; to: string } => {
   return { from: iso(new Date(to.getTime() - days * 86_400_000)), to: iso(to) };
 };
 
+/** Map invoice UI filter → CMP status code (PENDING | PARTIALLY_PAID | PAID). */
 export const mapInvStatus = (value: string): string | undefined => {
-  if (value === 'paid' || value === 'PAID') return 'PAID';
-  if (value === 'PENDING' || value === 'pending' || value === 'overdue') return 'PENDING';
+  const x = value.trim().toUpperCase().replace(/\s+/g, '_');
+  if (x === 'PAID') return 'PAID';
+  if (x === 'PENDING' || x === 'OVERDUE') return 'PENDING';
+  if (x === 'PARTIALLY_PAID' || x === 'PARTIAL') return 'PARTIALLY_PAID';
   return undefined; // ALL
 };
+
+const invDay = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** Inclusive YMD bounds for C-20 client-side filter. `null` = no date filter. */
+export function invRangeBounds(
+  range: string,
+  from?: string,
+  to?: string,
+): { from: string; to: string } | null {
+  if (range === 'all_time') return null;
+  if (range === 'custom') {
+    if (!from || !to) return null;
+    return { from, to };
+  }
+  const days = range === 'last_7' ? 7 : range === 'last_90' ? 90 : range === 'last_365' ? 365 : 30;
+  const end = new Date();
+  return { from: invDay(new Date(end.getTime() - days * 86_400_000)), to: invDay(end) };
+}
+
+function invRowTimeMs(row: Record<string, unknown>): number | null {
+  const raw =
+    row.invoice_date ?? row.invoiceDate ?? row.create_date ?? row.createDate ?? row.createdDate ?? row.issueDate;
+  if (raw == null || raw === '') return null;
+  const t = new Date(String(raw)).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Filter live `clients.invoices` rows (CMP has no range/status query on success path). */
+export function filterClientInvoices(
+  rows: Array<Record<string, unknown>>,
+  opts: { status?: string; from?: string; to?: string },
+): Array<Record<string, unknown>> {
+  let out = rows;
+  if (opts.status) {
+    const want = opts.status.toUpperCase().replace(/\s+/g, '_');
+    out = out.filter((r) => String(r.status ?? '').toUpperCase().replace(/\s+/g, '_') === want);
+  }
+  if (opts.from && opts.to) {
+    const fromMs = Date.parse(`${opts.from}T00:00:00`);
+    const toMs = Date.parse(`${opts.to}T23:59:59.999`);
+    if (!Number.isNaN(fromMs) && !Number.isNaN(toMs)) {
+      out = out.filter((r) => {
+        const t = invRowTimeMs(r);
+        if (t == null) return false;
+        return t >= fromMs && t <= toMs;
+      });
+    }
+  }
+  return out;
+}
 
 // ---------- live loaders ----------
 

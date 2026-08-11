@@ -87,13 +87,12 @@ async function assertInvoiceOwned(
   await assertCarrierOwned(ctx, carrierId);
 
   try {
+    // Same live-CMP list C-20 uses — DWH fetchInvoices can lag and deny PDF for fresh CMP ids.
     for (let page = 1; page <= MEMBERSHIP_MAX_PAGES; page++) {
-      const list = await serverCrm.get<InvoiceListResponse>('/api/salesMytrion/fetchInvoices', {
-        carrierId,
-        range: 'all_time',
-        page,
-        limit: MEMBERSHIP_LIMIT,
-      });
+      const list = await serverCrm.get<InvoiceListResponse>(
+        `/api/clients/${encodeURIComponent(carrierId)}/invoices`,
+        { page, limit: MEMBERSHIP_LIMIT },
+      );
       const rows = Array.isArray(list?.data) ? list.data : [];
       if (invoiceIdsOf(rows).has(invoiceId)) return;
       if (list?.more_records !== true) break;

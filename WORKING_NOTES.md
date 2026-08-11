@@ -14289,3 +14289,27 @@ Refresh toast copy: `Latest numbers loaded (Active cards from warehouse).` (was 
 - Client modal account Active from `efs.cards` (no dashboard fan-out)
 
 **Vendored `app/` not rebuilt** — run `pnpm build:widget` before a UI PR (subtitle string changed).
+
+## 2026-08-12 — C-20 Request Invoices → live CMP via clients.invoices
+
+### Goal
+Horizon Automations **C-20** live CMP invoice list/status **without** changing ServerCRM
+`fetchInvoices` (still DWH on `build`).
+
+### Approach (mytrion-only)
+```
+C-20 → callTouchpoint('clients.invoices')
+     → GET /api/clients/:carrierId/invoices   (already CMP-first + DWH fallback)
+     → client-side range + status filter
+```
+PDF membership check also uses `/api/clients/:id/invoices` so fresh CMP ids are not
+denied by lagging DWH `fetchInvoices`.
+
+### UI
+- `titleStatus`: PARTIALLY_PAID → "Partially Paid" (not "Paid")
+- Badge: **LIVE CMP** (`source: 'cmp'` — route has no `meta.source`)
+- Filter Partially Paid
+
+### Out of scope
+- ServerCRM `fetchInvoices` CMP-first (PR #186 — not required; close if opened)
+- zoho-octane C-20 (still on DWH fetchInvoices by design today)

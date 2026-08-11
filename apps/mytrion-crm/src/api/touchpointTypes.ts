@@ -71,6 +71,8 @@ export interface SalesInvoicesResult {
   data?: Array<Record<string, unknown>>;
   count?: number;
   summary?: Record<string, unknown>;
+  /** Present when servercrm returns live CMP (`cmp`) or DWH fallback (`dwh_fallback`). */
+  meta?: { source?: string; generated_at?: string; cmp_error?: string };
 }
 
 export interface WexTasksResult {
@@ -580,6 +582,11 @@ export interface TouchpointMap {
   };
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
+    result: SalesInvoicesResult;
+  };
+  /** Live CMP invoices (DWH fallback upstream). Used by Sales C-20. */
+  'clients.invoices': {
+    params: { carrierId: string; limit?: number; status?: string };
     result: SalesInvoicesResult;
   };
   // ---- panel touchpoints (identity server-injected; params are empty or filters only) ----
