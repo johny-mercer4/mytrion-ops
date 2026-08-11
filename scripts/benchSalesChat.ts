@@ -70,7 +70,34 @@ interface BenchCase extends BenchTurn {
   followUps?: readonly BenchTurn[];
 }
 
-const NO_LIVE_DATA = ['zoho_crm.query', 'zoho_crm.search', 'warehouse.my_gallons'];
+/**
+ * Tools a documented how-to must never call. The `crm.*` entries were added 2026-08-12 after the
+ * skill library shipped: `sales-client-book` sent a how-to question to `crm.pick_my_client` instead
+ * of `knowledge_search`, and the bench reported "forbidden tool calls 0" while scoring it 0/2,
+ * because the list only covered CRM/warehouse tools. A forbid list that misses the tool actually
+ * being misused is worse than none — it reads as a clean bill of health.
+ *
+ * Names are as the model sees them: LangChain binds dotted registry names with '.' mapped to '__'.
+ */
+const NO_LIVE_DATA = [
+  'zoho_crm.query',
+  'zoho_crm.search',
+  'warehouse.my_gallons',
+  'crm.pick_my_client',
+  'crm__pick_my_client',
+  'crm.list_my_clients',
+  'crm__list_my_clients',
+  'crm.carrier_balance',
+  'crm__carrier_balance',
+  'crm.list_cards',
+  'crm__list_cards',
+  'crm.transactions',
+  'crm__transactions',
+  'crm.carrier_overview',
+  'crm__carrier_overview',
+  'crm.payment_info',
+  'crm__payment_info',
+];
 
 const CASES: readonly BenchCase[] = [
   // --- single-document: clean vector hits, the latency/regression baseline ---
@@ -158,6 +185,64 @@ const CASES: readonly BenchCase[] = [
     expectDocs: ['Retention'],
     forbidTools: NO_LIVE_DATA,
     expectPhrases: ['14', '2 business day'],
+  },
+  // --- skill-benefit: facts carried ONLY by the authored skills, not by the RAG corpus ---
+  //
+  // The rest of this bench is documentation lookup, which the corpus answers with or without skills
+  // — so it measures the skill library's COST (+41% wall) and never its benefit. These five ask for
+  // facts that exist in `src/modules/agents/skills/**` and nowhere a retrieval can reach, each
+  // anchored on a distinctive token so the assertion is not prose-matching:
+  //   26/25   the cycle rule            (sales-cycle)
+  //   Monday  ISO week start            (sales-cycle / sales-progress)
+  //   Closed Lost  Ops vacation denial  (sales-retention-invoices)
+  //   500     crm.transactions page cap (sales-client-book)
+  // Run with FF_AGENT_SKILLS=0 vs 1 to measure what the library actually buys.
+  {
+    id: 'skill-cycle-dates',
+    question:
+      'What rule defines the start and end of the current sales cycle at Octane? Give me the day-of-month boundaries.',
+    expectDocs: [],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['26', '25'],
+  },
+  {
+    id: 'skill-week-start',
+    question: "When I ask for my swipes 'this week', which day of the week does that period start on?",
+    expectDocs: [],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['Monday'],
+  },
+  {
+    id: 'skill-vacation-denial',
+    question:
+      'A retention case of mine was marked Vacation and Ops denied it. What happens to my Zoho deal as a result?',
+    expectDocs: [],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['Closed Lost'],
+  },
+  {
+    id: 'skill-transactions-cap',
+    question:
+      "If I pull a busy client's transactions over six months, am I seeing every row? Is there a limit I should know about?",
+    expectDocs: [],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['500'],
+  },
+  {
+    /**
+     * CONTROL, not a skill probe — and it is here precisely because it is NOT discriminating.
+     *
+     * The anchor `2 business day` is documented in the retention corpus, so it scored 3/3 with
+     * FF_AGENT_SKILLS=0 as well. That makes it worthless for measuring the skill library and
+     * valuable for the opposite purpose: it proves the skills did not BREAK ordinary corpus recall.
+     * A skill-benefit suite where every case improves is a suite that cannot detect a regression.
+     */
+    id: 'control-sla-corpus-recall',
+    question:
+      'The 2 business day action deadline on my retention case came and went and nothing happened at all. Is the automation broken?',
+    expectDocs: [],
+    forbidTools: NO_LIVE_DATA,
+    expectPhrases: ['2 business day'],
   },
   // --- multi-turn: the only cases where the turn-context contract can show a benefit ---
   // Each follow-up's subject is a pronoun with no antecedent in its own text, so answering it at all

@@ -12,11 +12,24 @@ export const SALES_CLIENT_BOOK_SKILL: AgentSkill = {
     'payments, account status — or about "my clients" as a group.',
   body: `# Serving the rep's own clients
 
-Most of a sales rep's day is about a named client. You serve **only the caller's own book**: every
-carrier lookup is owner-scoped server-side, so a carrier outside their book returns an access error.
-That error is a fact to report plainly, never something to retry with a different id.
+## FIRST: is this a how-to, or a lookup?
 
-## Always resolve WHICH client first
+**Before anything else, decide whether the rep is asking how something WORKS or asking for a client's
+actual DATA.** Everything below applies only to the second.
+
+- *"How do I check a client's balance?"*, *"where do I see their cards?"*, *"what does C-8 do?"* →
+  **documentation.** Answer from \`knowledge_search\` ALONE. Do **not** resolve a client, and do not
+  call any \`crm.*\` tool — there is no client to look up, and reaching for one produces an answer with
+  no citations to the click path the rep actually needs.
+- *"What's ACME's balance?"*, *"pull their transactions"* → **data.** Continue with this skill.
+
+This gate is first because it is the one this skill gets wrong most easily: the resolution procedure
+below reads as unconditional, and a how-to question that triggers it comes back uncited and useless.
+Measured on the Sales bench: with this skill loaded and no gate, "how do I check a client's balance
+and see their card list?" called \`crm.pick_my_client\` instead of \`knowledge_search\` and scored 0/2
+on cited documents, where the same question without the skill scored 2/2 every time.
+
+## For a DATA request: always resolve WHICH client first
 
 Requests almost never carry a carrier_id. They carry a company name, a fragment, or nothing at all
 ("check my client's balance").

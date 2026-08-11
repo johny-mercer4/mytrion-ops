@@ -13,11 +13,13 @@
 import { tool, type StructuredTool } from '@langchain/core/tools';
 // zod v4 entrypoint — matches scopedRag.ts; classic v3 clashes with exactOptionalPropertyTypes.
 import * as z from 'zod/v4';
+import { env } from '../../../config/env.js';
 import { getAgentContext } from '../context.js';
 import { assignedSkillNames, getSkill, skillsFor } from '../skills/registry.js';
 import type { SkillName } from '../skills/types.js';
 
 export function buildSkillTool(assigned: readonly SkillName[] | undefined): StructuredTool | null {
+  if (!env.FF_AGENT_SKILLS) return null;
   const allowed = assignedSkillNames(assigned);
   if (allowed.size === 0) return null;
   const names = [...allowed];

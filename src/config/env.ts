@@ -141,6 +141,12 @@ const EnvSchema = z.object({
   AGENT_BLACKBOARD_MAX_CHARS: z.coerce.number().int().positive().default(16_384),
   // Procedural skill cache (winning tool trajectories).
   FF_AGENT_SKILL_CACHE: flag('1'),
+  /**
+   * Authored skills (src/modules/agents/skills/**): the whenToUse index in the system prompt and the
+   * skill_read tool. On by default. Exists so the library can be A/B'd on the bench — a capability
+   * whose cost is measured (+41% wall) but whose benefit is not is exactly what this repo turns off.
+   */
+  FF_AGENT_SKILLS: flag('1'),
   AGENT_SKILL_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
   AGENT_SKILL_MAX_PER_KEY: z.coerce.number().int().positive().default(200),
   // Plan-and-Execute JSON DAG (orchestrator path).

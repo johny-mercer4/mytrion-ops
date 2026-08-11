@@ -5,6 +5,7 @@
  * Assignment is by manifest (`AgentManifest.skills`), so which skills an agent can read is a
  * reviewed, static decision rather than anything the model or the caller can influence at runtime.
  */
+import { env } from '../../../config/env.js';
 import type { AgentSkill, SkillName } from './types.js';
 
 import { ORCHESTRATOR_FLEET_SKILL } from './orchestrator/fleet.js';
@@ -60,6 +61,7 @@ export function skillsFor(names: readonly SkillName[] | undefined): AgentSkill[]
  * Returns '' when the agent has no skills, so the prompt gains no empty scaffolding.
  */
 export function formatSkillIndex(names: readonly SkillName[] | undefined): string {
+  if (!env.FF_AGENT_SKILLS) return '';
   const skills = skillsFor(names);
   if (skills.length === 0) return '';
   const lines = skills.map((s) => `- ${s.name}: ${s.whenToUse}`).join('\n');

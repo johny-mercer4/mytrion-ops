@@ -14733,3 +14733,70 @@ not to disable them. Until those exist, +41% wall is a measured cost against an 
 and should be treated as such.
 
 Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — Skills measured against what they are FOR: 1/15 → 15/15
+
+The skill library shipped with a measured cost (+41% wall) and an unmeasured benefit, which is the
+same position `FF_RAG_V2_CONTEXT` was in before it got turned back off. The difference is that skills
+carry facts that exist nowhere a retrieval can reach, so the fix was to build cases that test that.
+
+Two pieces of new equipment:
+
+- **`FF_AGENT_SKILLS`** (default 1), gating both the whenToUse index and `skill_read`. A capability
+  that cannot be switched off cannot be A/B'd, and this repo turns off what it cannot justify.
+- **Five bench cases anchored on distinctive skill-only tokens** rather than prose: `26`/`25` (the
+  cycle rule), `Monday` (ISO week start), `Closed Lost` (Ops vacation denial), `500`
+  (`crm.transactions` page cap). Verified the control is real: **0 `skill_read` calls with the flag
+  off, 42 with it on.**
+
+### The result
+
+| | skills OFF | skills ON | ON + how-to gate |
+| --- | --- | --- | --- |
+| **skill-only facts** | **1/15** | **15/15** | 14/15 |
+| answer facts (all) | 28/42 | **42/42** | 41/42 |
+| expected-doc coverage | 56/63 | 51/63 | **59/63** |
+| mean wall | **6,323ms** | 9,672ms | 8,991ms |
+| cost | **$0.3004** | $0.3726 | $0.3496 |
+
+**1/15 → 15/15, stable across three runs.** Without skills the agent cannot state the cycle rule, the
+week start, what an Ops denial does to the deal, or that transactions are capped — because none of it
+is in the corpus. With them it gets all of it, every run.
+
+### But the first ON run REGRESSED citations, and it was my skill's fault
+
+Coverage fell 56 → 51, concentrated entirely in `balance-and-cards` (2/2 stable → **0/2, 0/2, 2/2**)
+and `mt-balance-then-cards`. The trace shows why: `tools: skill_read, crm__pick_my_client` — for a
+**how-to** question. It never called `knowledge_search`, so it cited nothing.
+
+`sales-client-book` led with "**Call `crm.pick_my_client` before any per-client tool**", stated
+unconditionally. That fires on "how do I check a client's balance?", and it directly contradicts the
+Sales persona's own rule that a how-to answer comes from `knowledge_search` ALONE. **My skill
+overrode the manifest.** A skill is prompt text with the authority of instructions; one written
+without a scope gate will happily out-argue the persona it was meant to support.
+
+Fixed by putting the gate FIRST — decide how-to vs data before anything else — with the measured
+numbers in the skill so nobody re-orders it back. Re-measured: `balance-and-cards` **2/2 stable**,
+tools `skill_read, knowledge_search`, coverage **59/63**.
+
+Second finding from the same trace: the bench reported **"forbidden tool calls 0"** while the agent
+was calling `crm.pick_my_client` on a how-to, because `NO_LIVE_DATA` only listed CRM/warehouse tools.
+A forbid list that misses the tool actually being misused is worse than no list — it reads as a clean
+bill of health. Now covers every `crm.*` tool in both dotted and `__` bound forms, and it immediately
+caught 2 remaining calls on `skill-transactions-cap` (a hypothetical phrasing the gate does not fully
+catch; the answer was still right).
+
+### Verdict
+
+**`FF_AGENT_SKILLS` stays ON.** Benefit is decisive and reproducible (1/15 → 15/15) on facts available
+nowhere else; after the gate, citation coverage is at or above the skills-off control; the cost is
++42% wall and +16% money. That is the first capability this session to earn its keep on measurement
+rather than on argument.
+
+Also worth recording: 4 of the failures in the gated run were **429 TPM rate limits** (`Limit 200000,
+Used 196383`) from my own back-to-back benching — the third time today. 59/63 was scored *despite*
+losing 4 turns to it. One developer can saturate the quota ~50 people are about to share.
+
+Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.
