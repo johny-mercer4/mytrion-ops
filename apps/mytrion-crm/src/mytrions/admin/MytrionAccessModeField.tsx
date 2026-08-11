@@ -53,7 +53,7 @@ export function MytrionAccessModeField({
       : 'No write-gated actions in this workspace yet — a Read-only grant here starts enforcing when the first one lands.');
 
   return (
-    <div className={s.field}>
+    <div className={s.psField}>
       <span className={s.fieldLabel}>{title} permission</span>
       <div className={s.profileModeRow}>
         {(
@@ -73,7 +73,9 @@ export function MytrionAccessModeField({
           </button>
         ))}
       </div>
-      <p className={s.noticeNote} style={{ marginTop: 6 }}>
+      {/* Body copy, not `.noticeNote` — that class is a bordered, accent-tinted callout, and one
+          per granted Mytrion turns the editor into a stack of banners. */}
+      <p className={s.sub} style={{ margin: 'var(--space-1_5) 0 0' }}>
         {hint}
       </p>
     </div>

@@ -90,66 +90,82 @@ export function EffectiveAccessDrawer({
             description={`${error} — nothing has changed; this view only reads.`}
           />
         )}
-        {!data && !error && <p className={s.noticeNote}>Resolving…</p>}
+        {!data && !error && <p className={s.sub} style={{ margin: 0 }}>Resolving…</p>}
 
         {data && (
           <div className={s.profileCardBody}>
             {data.access.allDepartmentAccess && (
-              <p className={s.noticeNote}>
+              <p className={s.sub} style={{ margin: 0 }}>
                 All-department access — every Mytrion and every tab. Tab scopes are not applied to
                 an all-access grant.
               </p>
             )}
             {trace?.allDeptDowngraded && (
-              <p className={s.noticeNote}>
+              <p className={s.sub} style={{ margin: 0 }}>
                 An all-access grant was downgraded to explicit departments because a deny list
                 exists — all-access is a full bypass and cannot express “everything except X”.
               </p>
             )}
 
-            {trace?.mytrions.map((entry) => {
-              const title = MYTRIONS[entry.mytrion]?.title ?? entry.mytrion;
-              const total = tabsFor(entry.mytrion).length;
-              return (
-                <div key={entry.mytrion} className={s.permissionSetRow}>
-                  <strong>
-                    {title} — {entry.mode === 'read' ? 'Read-only' : 'Full'}
-                  </strong>
-                  <p className={s.noticeNote}>
-                    Granted by {entry.grantedBy.map((g) => g.label).join(' and ') || 'a default'}.
-                    {' '}Mode from {entry.modeFrom.label}.
-                  </p>
+            {/*
+              An all-access grant makes the per-Mytrion list pure repetition — thirteen blocks each
+              saying "granted by Profile Default 'Administrator', mode full, all tabs". The summary
+              above already carries that, so the list collapses to WHICH workspaces and stops. The
+              per-Mytrion detail is only informative when the layers actually differ.
+            */}
+            {data.access.allDepartmentAccess ? (
+              <div className={s.profileChipGrid}>
+                {trace?.mytrions.map((entry) => (
+                  <span key={entry.mytrion} className={`${s.pill} ${s.pillNeutral}`}>
+                    {MYTRIONS[entry.mytrion]?.tag ?? entry.mytrion}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              trace?.mytrions.map((entry) => {
+                const title = MYTRIONS[entry.mytrion]?.title ?? entry.mytrion;
+                const total = tabsFor(entry.mytrion).length;
+                return (
+                  <div key={entry.mytrion} className={s.permissionSetRow}>
+                    <strong>
+                      {title} — {entry.mode === 'read' ? 'Read-only' : 'Full'}
+                    </strong>
+                    <p className={s.sub} style={{ margin: 0 }}>
+                      Granted by {entry.grantedBy.map((g) => g.label).join(' and ') || 'a default'}.
+                      {' '}Mode from {entry.modeFrom.label}.
+                    </p>
 
-                  {entry.tabs.scoped ? (
-                    <p className={s.noticeNote}>
-                      {entry.tabs.keys.length} of {total} tabs:{' '}
-                      {entry.tabs.keys
-                        .map((k) => findTab(entry.mytrion, k)?.label ?? k)
-                        .join(', ') || 'none'}
-                    </p>
-                  ) : entry.tabs.unscopedBy ? (
-                    /* The whole reason this drawer exists. */
-                    <p className={s.noticeNote}>
-                      <strong>All tabs</strong> — {entry.tabs.unscopedBy.label} grants {title}{' '}
-                      without a tab scope, so the permission set’s narrower scope has no effect. To
-                      make it apply, remove {title} from that layer so the set is the only source.
-                    </p>
-                  ) : (
-                    <p className={s.noticeNote}>All {total} tabs.</p>
-                  )}
-                </div>
-              );
-            })}
+                    {entry.tabs.scoped ? (
+                      <p className={s.sub} style={{ margin: 0 }}>
+                        {entry.tabs.keys.length} of {total} tabs:{' '}
+                        {entry.tabs.keys
+                          .map((k) => findTab(entry.mytrion, k)?.label ?? k)
+                          .join(', ') || 'none'}
+                      </p>
+                    ) : entry.tabs.unscopedBy ? (
+                      /* The whole reason this drawer exists. */
+                      <p className={s.sub} style={{ margin: 0 }}>
+                        <strong>All tabs</strong> — {entry.tabs.unscopedBy.label} grants {title}{' '}
+                        without a tab scope, so the permission set’s narrower scope has no effect. To
+                        make it apply, remove {title} from that layer so the set is the only source.
+                      </p>
+                    ) : (
+                      <p className={s.sub} style={{ margin: 0 }}>All {total} tabs.</p>
+                    )}
+                    </div>
+                  );
+              })
+            )}
 
             {trace && trace.mytrions.length === 0 && (
-              <p className={s.noticeNote}>No Mytrions — this worker cannot enter the portal.</p>
+              <p className={s.sub} style={{ margin: 0 }}>No Mytrions — this worker cannot enter the portal.</p>
             )}
             {trace && trace.denied.length > 0 && (
-              <p className={s.noticeNote}>
+              <p className={s.sub} style={{ margin: 0 }}>
                 Denied by the per-user override: {trace.denied.join(', ')}.
               </p>
             )}
-            {!trace && <p className={s.noticeNote}>Access resolved, but provenance was unavailable.</p>}
+            {!trace && <p className={s.sub} style={{ margin: 0 }}>Access resolved, but provenance was unavailable.</p>}
           </div>
         )}
       </div>

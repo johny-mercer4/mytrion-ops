@@ -70,7 +70,7 @@ export function TabScopePicker({
   const missing = tabs.length - grantedCount;
 
   return (
-    <div className={s.field}>
+    <div className={s.psField}>
       <span className={s.fieldLabel}>{title} tabs</span>
 
       <div className={s.profileModeRow}>
@@ -97,7 +97,7 @@ export function TabScopePicker({
       </div>
 
       {scope === null ? (
-        <p className={s.noticeNote} style={{ marginTop: 6 }}>
+        <p className={s.sub} style={{ margin: 0 }}>
           Every tab in {title}, including any added later. This is the default and needs no
           maintenance when the workspace grows.
         </p>
@@ -121,7 +121,7 @@ export function TabScopePicker({
               >
                 Clear
               </button>
-              <span className={s.noticeNote} style={{ alignSelf: 'center' }}>
+              <span className={s.deptText} style={{ alignSelf: 'center', fontSize: 'var(--text-xs)' }}>
                 {grantedCount} of {tabs.length}
               </span>
             </div>
@@ -142,12 +142,9 @@ export function TabScopePicker({
             const shown = groupTabs.filter((t) => filtered.includes(t));
             if (shown.length === 0) return null;
             return (
-              <fieldset
-                key={group || 'ungrouped'}
-                style={{ border: 0, margin: 0, padding: '6px 0 0' }}
-              >
+              <fieldset key={group || 'ungrouped'} className={s.psGroup}>
                 {group && (
-                  <legend className={s.fieldLabel} style={{ padding: 0 }}>
+                  <legend className={s.fieldLabel} style={{ padding: 0, marginBottom: 0 }}>
                     {group}
                   </legend>
                 )}
@@ -177,7 +174,7 @@ export function TabScopePicker({
           })}
 
           {missing > 0 && (
-            <p className={s.noticeNote} style={{ marginTop: 6 }}>
+            <p className={s.sub} style={{ margin: 0 }}>
               {missing} tab{missing === 1 ? '' : 's'} in {title} not granted by this set.{' '}
               <button
                 type="button"
@@ -192,7 +189,7 @@ export function TabScopePicker({
 
           {orphans.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <p className={s.noticeNote}>
+              <p className={s.sub} style={{ margin: 0 }}>
                 Stored for tabs that no longer exist. Kept rather than dropped — a rename must not
                 silently discard a grant.
               </p>

@@ -21,9 +21,17 @@ import s from './admin.module.css';
  * layers were missing. "These forty agents get the same narrowed Billing" used to mean forty
  * per-user rows that drift apart.
  *
- * ONE snapshot GET holds the whole screen; every mutation PATCHes its own row and folds the returned
- * set back into state, so nothing here re-fetches on a keystroke and no control can be left showing
- * a value the server rejected.
+ * THE LAYOUT IS THE MODULE'S, NOT THIS SCREEN'S. Every Admin page is
+ * `.panel .panelWide` → `.head` (eyebrow / h2 / sub) → content. The first version of this screen
+ * skipped the wrapper entirely, so it rendered with no heading, no page padding, and a card grid
+ * squeezed to whatever width the bare content happened to take.
+ *
+ * `.sub` is body copy. `.noticeNote` is a bordered, accent-tinted CALLOUT — using it for captions
+ * turns a page into a stack of banners, which is exactly what happened here.
+ *
+ * ONE snapshot GET holds the screen; every mutation PATCHes its own row and folds the returned set
+ * back into state, so nothing re-fetches on a keystroke and no control can be left showing a value
+ * the server rejected.
  */
 export function PermissionSets() {
   const [snapshot, setSnapshot] = useState<PermissionSetSnapshot | null>(null);
@@ -53,7 +61,7 @@ export function PermissionSets() {
   const merge = useCallback((next: PermissionSet) => {
     setSnapshot((prev) =>
       prev
-        ? { ...prev, sets: prev.sets.map((s2) => (s2.id === next.id ? { ...s2, ...next } : s2)) }
+        ? { ...prev, sets: prev.sets.map((row) => (row.id === next.id ? { ...row, ...next } : row)) }
         : prev,
     );
   }, []);
@@ -119,115 +127,166 @@ export function PermissionSets() {
     }
   }
 
+  const header = (
+    <div className={s.head}>
+      <div>
+        <div className={s.eyebrow}>Access &amp; RBAC</div>
+        <h2 className={s.h2}>Permission Sets</h2>
+        <p className={s.sub}>
+          A named grant, authored once and assigned to many people. Sets are additive — they union
+          with the profile, role and per-user layers and can only widen access, never narrow it.
+        </p>
+      </div>
+    </div>
+  );
+
   if (error) {
     /**
-     * WHAT HAPPENED and WHAT TO DO, not a bare sentence in a full-bleed strip.
-     *
-     * The realistic failure is code reaching an environment ahead of its migration, and the server
-     * now says so by name — so the description is the operator's actual next move rather than an
-     * apology. Retry stays available because the fix happens outside the browser: run the migration,
-     * press Retry, no reload.
+     * WHAT HAPPENED and WHAT TO DO. The realistic failure is code reaching an environment ahead of
+     * its migration, and the server names that case, so the description is the operator's next move
+     * rather than an apology. Retry stays available because the fix happens outside the browser.
      */
     const notMigrated = error.code === 'PERMISSION_SETS_NOT_MIGRATED';
     return (
-      <ErrorState
-        headingLevel={2}
-        title={notMigrated ? 'Permission sets are not set up on this environment' : 'Could not load permission sets'}
-        description={
-          notMigrated
-            ? error.message
-            : `${error.message} — this screen only reads; nothing has changed.`
-        }
-        primaryAction={
-          <Button variant="primary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
-      />
+      <div className={`${s.panel} ${s.panelWide}`}>
+        {header}
+        <ErrorState
+          title={
+            notMigrated
+              ? 'Permission sets are not set up on this environment'
+              : 'Could not load permission sets'
+          }
+          description={
+            notMigrated
+              ? error.message
+              : `${error.message} — this screen only reads; nothing has changed.`
+          }
+          primaryAction={
+            <Button variant="primary" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
     );
   }
-  if (!snapshot) return <p className={s.noticeNote}>Loading permission sets…</p>;
+
+  if (!snapshot) {
+    return (
+      <div className={`${s.panel} ${s.panelWide}`}>
+        {header}
+        {/* One loading affordance for this region — the skeleton owns the first paint, nothing else. */}
+        <div className={s.profileGrid} aria-busy="true">
+          <span className={s.srOnly} role="status">
+            Loading permission sets…
+          </span>
+          <div className={s.skelCard} />
+          <div className={s.skelCard} />
+        </div>
+      </div>
+    );
+  }
 
   if (open) {
     const assignees = snapshot.assignments.filter((a) => a.permissionSetId === open.id);
     const assignedIds = new Set(assignees.map((a) => a.zohoUserId));
+
     return (
-      <div>
-        <button type="button" className={s.linkBtn} onClick={() => setOpenId(null)}>
-          ← All permission sets
-        </button>
-        <h3 style={{ marginTop: 'var(--space-3)' }}>{open.name}</h3>
-        <p className={s.noticeNote}>
-          {open.active ? 'Active' : 'Inactive — grants nothing while off'} ·{' '}
-          {open.allowedMytrions.length} Mytrion(s) · {assignees.length} assignee(s)
-        </p>
-
-        <PermissionSetEditor set={open} onChanged={merge} />
-
-        <div className={s.field}>
-          <span className={s.fieldLabel}>Assigned to</span>
-          {assignees.length === 0 && (
-            <p className={s.noticeNote}>Nobody yet — this set has no effect until it is assigned.</p>
-          )}
-          <div className={s.profileChipGrid}>
-            {assignees.map((a) => (
-              <button
-                key={a.zohoUserId}
-                type="button"
-                className={`${s.filterChip} ${s.filterChipOn}`}
-                title="Remove"
-                onClick={() => void unassign(open.id, a.zohoUserId)}
-              >
-                <span aria-hidden="true" style={{ display: 'inline-block', width: '1.05em' }}>
-                  ✕
-                </span>
-                {a.userName ?? a.zohoUserId}
-              </button>
-            ))}
+      <div className={`${s.panel} ${s.panelWide}`}>
+        <div className={s.head}>
+          <div>
+            <button type="button" className={s.linkBtn} onClick={() => setOpenId(null)}>
+              ← All permission sets
+            </button>
+            <h2 className={s.h2} style={{ marginTop: 'var(--space-2)' }}>
+              {open.name}
+            </h2>
+            <p className={s.sub}>
+              {open.active ? 'Active' : 'Inactive — grants nothing while switched off'} ·{' '}
+              {countLabel(open.allowedMytrions.length, 'Mytrion')} ·{' '}
+              {countLabel(assignees.length, 'assignee')}
+            </p>
           </div>
-
-          <span className={s.fieldLabel} style={{ marginTop: 'var(--space-3)' }}>
-            Add someone
-          </span>
-          {/* Straight from the roster, which carries every ACTIVE Zoho worker — so an admin can
-              assign someone who has never had an access row of any kind. */}
-          <div className={s.profileChipGrid}>
-            {snapshot.roster
-              .filter((r) => !assignedIds.has(r.zohoUserId))
-              .slice(0, 60)
-              .map((r) => (
-                <button
-                  key={r.zohoUserId}
-                  type="button"
-                  className={s.filterChip}
-                  onClick={() => void assign(open.id, r.zohoUserId, r.name)}
-                >
-                  + {r.name ?? r.zohoUserId}
-                </button>
-              ))}
+          <div className={s.profileActions}>
+            <button type="button" className={s.ghostBtn} onClick={() => void toggleActive(open)}>
+              {open.active ? 'Deactivate' : 'Activate'}
+            </button>
+            <button type="button" className={s.dangerBtn} onClick={() => void remove(open)}>
+              Delete
+            </button>
           </div>
         </div>
 
-        <div className={s.profileModeRow} style={{ marginTop: 'var(--space-4)' }}>
-          <button type="button" className={s.filterChip} onClick={() => void toggleActive(open)}>
-            {open.active ? 'Deactivate' : 'Activate'}
-          </button>
-          <button type="button" className={s.filterChip} onClick={() => void remove(open)}>
-            Delete
-          </button>
+        <div className={s.card}>
+          <div className={s.cardHead}>
+            <span className={s.cardTitle}>Grants</span>
+          </div>
+          <div className={s.profileCardBody}>
+            <PermissionSetEditor set={open} onChanged={merge} />
+          </div>
+        </div>
+
+        <div className={s.card}>
+          <div className={s.cardHead}>
+            <span className={s.cardTitle}>
+              Assigned to <span className={s.count}>{assignees.length}</span>
+            </span>
+          </div>
+          <div className={s.profileCardBody}>
+            {assignees.length === 0 ? (
+              <p className={s.sub} style={{ margin: 0 }}>
+                Nobody yet — a set has no effect until it is assigned to someone.
+              </p>
+            ) : (
+              <div className={s.profileChipGrid}>
+                {assignees.map((a) => (
+                  <button
+                    key={a.zohoUserId}
+                    type="button"
+                    className={`${s.filterChip} ${s.filterChipOn}`}
+                    title={`Remove ${a.userName ?? a.zohoUserId}`}
+                    onClick={() => void unassign(open.id, a.zohoUserId)}
+                  >
+                    <span aria-hidden="true" style={{ display: 'inline-block', width: '1.05em' }}>
+                      ✕
+                    </span>
+                    {a.userName ?? a.zohoUserId}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Add someone</span>
+              {/* The roster carries every ACTIVE Zoho worker, so an admin can assign someone who has
+                  never had an access row of any kind. */}
+              <div className={s.profileChipGrid}>
+                {snapshot.roster
+                  .filter((r) => !assignedIds.has(r.zohoUserId))
+                  .slice(0, 60)
+                  .map((r) => (
+                    <button
+                      key={r.zohoUserId}
+                      type="button"
+                      className={s.filterChip}
+                      onClick={() => void assign(open.id, r.zohoUserId, r.name)}
+                    >
+                      + {r.name ?? r.zohoUserId}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <p className={s.noticeNote}>
-        A permission set is granted once and assigned to many people. Sets are ADDITIVE: they union
-        with the profile, role and per-user layers and can only widen access, never narrow it.
-      </p>
+    <div className={`${s.panel} ${s.panelWide}`}>
+      {header}
 
-      <div className={s.profileModeRow}>
+      <div className={s.chipRow}>
         <label className={s.search}>
           <input
             className={s.searchInput}
@@ -239,36 +298,58 @@ export function PermissionSets() {
             }}
           />
         </label>
-        <button type="button" className={s.filterChip} disabled={busy || !newName.trim()} onClick={() => void create()}>
-          Create
+        <button
+          type="button"
+          className={s.primaryBtn}
+          disabled={busy || !newName.trim()}
+          onClick={() => void create()}
+        >
+          {busy ? 'Creating…' : 'Create set'}
         </button>
       </div>
 
-      <div className={s.profileGrid} style={{ marginTop: 'var(--space-3)' }}>
-        {snapshot.sets.map((set) => {
-          const scoped = Object.keys(set.tabGrants).length;
-          return (
-            <div key={set.id} className={s.card}>
-              <div className={s.cardHead}>
-                <span className={s.cardTitle}>{set.name}</span>
+      {snapshot.sets.length === 0 ? (
+        <div className={s.none}>
+          <strong>No permission sets yet</strong>
+          <span>
+            Name one above — “Billing — Read Only”, “Manager — Sales desk only” — then choose the
+            Mytrions and tabs it grants and assign it to people.
+          </span>
+        </div>
+      ) : (
+        <div className={s.profileGrid}>
+          {snapshot.sets.map((set) => {
+            const scoped = Object.keys(set.tabGrants).length;
+            return (
+              <div key={set.id} className={s.card}>
+                <div className={s.cardHead}>
+                  <span className={s.cardTitle}>{set.name}</span>
+                  {!set.active && <span className={`${s.pill} ${s.pillNeutral}`}>Inactive</span>}
+                </div>
+                <div className={s.profileCardBody}>
+                  <p className={s.sub} style={{ margin: 0 }}>
+                    {set.allowedMytrions.length === 0
+                      ? 'No Mytrions yet'
+                      : countLabel(set.allowedMytrions.length, 'Mytrion')}
+                    {scoped > 0 ? `, ${scoped} tab-scoped` : ''} ·{' '}
+                    {countLabel(set.assigneeCount, 'assignee')}
+                  </p>
+                  <div className={s.profileActions}>
+                    <button type="button" className={s.miniBtn} onClick={() => setOpenId(set.id)}>
+                      Edit
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className={s.profileCardBody}>
-                <p className={s.noticeNote}>
-                  {set.allowedMytrions.length} Mytrion(s) · {scoped} tab-scoped ·{' '}
-                  {set.assigneeCount} assignee(s)
-                  {set.active ? '' : ' · inactive'}
-                </p>
-                <button type="button" className={s.filterChip} onClick={() => setOpenId(set.id)}>
-                  Edit
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        {snapshot.sets.length === 0 && (
-          <p className={s.noticeNote}>No permission sets yet. Create one above.</p>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
+}
+
+/** "1 Mytrion" / "3 Mytrions" — never the "1 Mytrion(s)" that shipped in the first version. */
+function countLabel(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
 }

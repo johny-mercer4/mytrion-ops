@@ -60,9 +60,9 @@ export function PermissionSetEditor({
     );
 
   return (
-    <div className={s.field}>
+    <div className={s.psField}>
       <span className={s.fieldLabel}>Mytrions this set grants</span>
-      <p className={s.noticeNote}>
+      <p className={s.sub} style={{ margin: 0 }}>
         Additive — this set can only ADD access on top of whatever the profile, role and per-user
         layers already give someone. It can never take access away.
       </p>
@@ -102,7 +102,7 @@ export function PermissionSetEditor({
       ))}
 
       {granted.size === 0 && (
-        <p className={s.noticeNote}>
+        <p className={s.sub} style={{ margin: 0 }}>
           No Mytrions yet — pick one above. A set with no grants is harmless but does nothing.
         </p>
       )}

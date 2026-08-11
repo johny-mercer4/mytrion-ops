@@ -2111,3 +2111,36 @@
   padding-left: var(--space-3);
   border-left: 2px solid var(--border);
 }
+
+/* ── Permission sets ───────────────────────────────────────────────────────── */
+/*
+ * `.field` is a bare flex column with no gap — fine for a label above one control, cramped for the
+ * stacked label / segmented-control / hint / chip-grid these screens build. Scoped here rather than
+ * added to `.field`, which a dozen other admin forms already lay out around.
+ */
+.psField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* One granted Mytrion's controls: its read/full mode and its tab scope. Indented against a rule so
+   the chip grid above reads as the parent and these as its detail, without nesting another card. */
+.permissionSetRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 2px solid var(--border);
+}
+
+/* A tab group inside the scope picker — `Money`, `Recovery`, `Comms`. */
+.psGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
