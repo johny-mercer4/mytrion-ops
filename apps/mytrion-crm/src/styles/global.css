@@ -88,6 +88,7 @@
 [data-mytrion='recruit'] { --badge-tone: var(--tone-violet); }
 [data-mytrion='hr'] { --badge-tone: var(--tone-pink); }
 [data-mytrion='manager'] { --badge-tone: var(--tone-rose); }
+[data-mytrion='marketing'] { --badge-tone: var(--tone-fuchsia); }
 [data-mytrion='trailhead'] { --badge-tone: var(--tone-blue); }
 [data-mytrion='analyst'] { --badge-tone: var(--tone-amber); }
 

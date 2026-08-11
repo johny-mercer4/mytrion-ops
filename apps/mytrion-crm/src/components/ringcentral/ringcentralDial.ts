@@ -9,7 +9,15 @@ declare global {
       clickToCall?: (phoneNumber: string, toCall?: boolean) => void;
       setMinimized?: (minimized: boolean) => void;
       setClosed?: (closed: boolean) => void;
+      /** Vendor teardown. Removes the container and its mousemove/resize listeners. */
+      dispose?: () => void;
     };
+    /**
+     * The vendor's own supported teardown: `if (!window.RCAdapter) return; RCAdapter.dispose();
+     * RCAdapter = null;`. It short-circuits on a missing global, so it MUST be called before the
+     * handle is dropped.
+     */
+    RCAdapterDispose?: () => void;
   }
 }
 
@@ -61,6 +69,18 @@ export function dockRingCentralWidget(): void {
 export function clickToDial(phone: string, toCall = true): boolean {
   const phoneNumber = normalizeDialNumber(phone);
   if (!phoneNumber) return false;
+
+  /**
+   * The iframe is the truth, not the global.
+   *
+   * `window.RCAdapter` is installed by the vendor script and can outlive the widget — a persisted
+   * session probe restores it before the iframe exists, and teardown could not reach it at all until
+   * it started deleting it. Checking `clickToCall` first therefore let this call `revealRingCentralWidget()`
+   * on a torn-down widget: the softphone "popped open" on a Mytrion it was not mounted on and the
+   * call went nowhere. Both branches below already required the frame, so this early return costs no
+   * working call path.
+   */
+  if (!isRingCentralReady()) return false;
 
   if (typeof window.RCAdapter?.clickToCall === 'function') {
     revealRingCentralWidget();

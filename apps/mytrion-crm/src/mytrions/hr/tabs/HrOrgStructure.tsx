@@ -28,7 +28,7 @@ import {
   useHrOrgStructure,
 } from '../hrData';
 import { HrEmpty, HrPageLoader, HrPageHead, HrSummaryTiles } from '../HrBits';
-import { useModalFocus } from '../useModalFocus';
+import { useModalFocus } from '../../_shared/useModalFocus';
 
 /**
  * Why a node can have nothing to open: the canvas paints as soon as the GRAPH lands, while the record a

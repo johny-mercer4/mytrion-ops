@@ -91,10 +91,13 @@
     --accent-soft:   var(--cs-accent-soft);
     --accent-strong: var(--cs-accent-hover);
 
-    /* ── Borders (neutral slate — not cool blue) ── */
-    --border-2: rgba(15, 23, 42, 0.06);
-    --color-border: rgba(15, 23, 42, 0.10);
-    --border-hover: rgba(15, 23, 42, 0.18);
+    /* ── Borders — the shared values, so a global change reaches CS.
+       These were pinned slate alphas (0.06 / 0.10 / 0.18); the global light border is what the
+       rest of the app draws its edges with, and CS diverging from it is why its light mode read
+       as a different product. ── */
+    --border-2: var(--border-subtle);
+    --color-border: var(--border);
+    --border-hover: var(--border-strong);
 
     /* ── Controls ── */
     --check-border: rgba(15, 23, 42, 0.18);
@@ -110,7 +113,8 @@
 
     /* ── Modal / toast ── */
     --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 62%, transparent);
-    --modal-box-bg: #FFFFFF;
+    /* Not pure #fff — a dialog whiter than every surface under it is the sharpest edge on the page. */
+    --modal-box-bg: var(--menu-bg);
     --toast-bg: #0F172A;
     --toast-fg: #FFFFFF;
 
@@ -122,8 +126,8 @@
     --table-head-bg: transparent;
     --table-head-shadow: none;
     --table-row-zebra: transparent;
-    --table-row-divider: rgba(15, 23, 42, 0.06);
-    --table-hover: rgba(15, 23, 42, 0.03);
+    --table-row-divider: var(--border-subtle);
+    --table-hover: var(--row-hover);
 }
 
 /* =====================================================

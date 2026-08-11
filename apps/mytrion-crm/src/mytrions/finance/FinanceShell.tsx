@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { FinanceTabKey } from './financeTabs';
 import { Home, Users } from 'lucide-react';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { FinanceClients } from './tabs/FinanceClients';
@@ -13,7 +14,8 @@ import './finance.css';
  * on mock data; all of it was removed rather than carried forward, because a convincing fake
  * dashboard in a finance tool is worse than no dashboard.
  */
-type ViewId = 'home' | 'clients';
+/** Derived — see the note in billing/Shell.tsx and access/tabRegistry.ts. */
+type ViewId = FinanceTabKey;
 
 const TABS: { id: ViewId; label: string; icon: typeof Home; tone: string; keywords: string[] }[] = [
   { id: 'home', label: 'Home', icon: Home, tone: 'var(--tone-emerald)', keywords: ['balance', 'efs', 'parent', 'treasury'] },

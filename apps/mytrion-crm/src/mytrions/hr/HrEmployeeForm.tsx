@@ -20,7 +20,7 @@ import {
 } from '../../api/hr';
 import { HrBusy } from './HrBits';
 import { HrSelect } from './HrSelect';
-import { useModalFocus } from './useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 
 /**
  * `create` carries optional presets so the org canvas's "+" opens a form that is already in the right

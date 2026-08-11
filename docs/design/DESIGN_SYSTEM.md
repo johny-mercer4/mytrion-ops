@@ -35,18 +35,18 @@ first-class primitives with their own token group and their own components.
 
 | Token | Dark | Light |
 | --- | --- | --- |
-| `--page` | `#0a0e1a` | `#e9edf3` |
-| `--surface-base` | `#0f131f` | `#f8f9fa` |
+| `--page` | `#0a0e1a` | `#e0e4f0` |
+| `--surface-base` | `#0f131f` | `#f6f8fc` |
 | `--container-low` | `#171b28` | `#f3f4f5` |
 | `--container` | `#1b1f2c` | `#edeeef` |
 | `--container-high` | `#262a37` | `#e7e8e9` |
 | `--container-highest` | `#313442` | `#e1e3e4` |
-| `--on-surface` | `#dfe2f3` | `#191c1d` |
+| `--on-surface` | `#dfe2f3` | `#2b3141` |
 | `--on-surface-variant` | `#bbc9cf` | `#434656` |
 | `--outline` | `#859399` | `#5c5f70` |
-| `--outline-variant` | `#3c494e` | `#c3c5d9` |
+| `--outline-variant` | `#3c494e` | `#8590ae` |
 | `--primary` | `#a5e7ff` | `#0043c8` |
-| `--primary-container` | `#00d2ff` | `#0057ff` |
+| `--primary-container` | `#00d2ff` | `#2f5fd0` |
 | `--tint` | `#47d6ff` | `#004ee7` |
 | `--secondary` | `#ffaede` | `#00677f` |
 | `--secondary-container` | `#ff34cd` | `#00ccf9` |
@@ -355,8 +355,13 @@ Focus returns to the trigger on close. The body scrolls; header and footer stay 
 - Full keyboard operability; visible focus via the global `:focus-visible` ring.
 - Every icon-only control needs an accessible name; disclosures need `aria-expanded`.
 - Never meaning by colour alone.
-- **Known limit:** `--border` alone composites below 3:1 against its own card (1.23:1 dark,
-  1.14:1 light). Fine for decorating a panel; **not** sufficient as the only thing identifying an
+- **By design:** `--border` alone composites below 3:1 against its own card (1.23:1 dark,
+  1.35:1 light). A 3:1 hairline on all ~637 card edges reads as a drawn box, which is the "too sharp"
+  complaint from the other direction — so the 3:1 non-text obligation is carried by `--border-strong`
+  (`--outline-variant`, 2.99:1 light), used where a real line is meant. Both floors are asserted by
+  the contrast test in `tokens.test.ts`, which also caps `--on-surface` so the theme cannot drift
+  back to near-black-on-near-white. `--border` is fine for decorating a panel; **not** sufficient as
+  the only thing identifying an
   interactive control.
 
 ---

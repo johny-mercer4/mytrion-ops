@@ -7,8 +7,8 @@ import {
   type UserAccessPatch,
 } from '../../api/mytrionAccess';
 import { XIcon } from '../../components/icons';
-import { useModalFocus } from '../hr/useModalFocus';
-import { BillingAccessModeField } from './BillingAccessModeField';
+import { useModalFocus } from '../_shared/useModalFocus';
+import { MytrionAccessModeField } from './MytrionAccessModeField';
 import { RadioToggleGroup, type RadioOption } from './RadioToggleGroup';
 import s from './admin.module.css';
 
@@ -58,9 +58,18 @@ export function UserAccessForm({
     new Set((ov?.allowedMytrions ?? row.effective.accessibleMytrions).filter((id) => !deniedSet.has(id))),
   );
   const [home, setHome] = useState<MytrionId | ''>(ov?.homeMytrion ?? row.effective.homeMytrion ?? '');
-  const [billingMode, setBillingMode] = useState<MytrionAccessMode>(
-    ov?.mytrionAccessModes?.billing ?? row.effective.mytrionAccessModes?.billing ?? 'full',
-  );
+  /**
+   * One mode per Mytrion, not just Billing. Seeded from the override, then the effective grant, then
+   * 'full' — because an OMITTED key means full in the resolver, so defaulting to anything else here
+   * would silently demote every existing grant the first time someone opened this form.
+   */
+  const [modes, setModes] = useState<Partial<Record<MytrionId, MytrionAccessMode>>>(() => ({
+    ...row.effective.mytrionAccessModes,
+    ...ov?.mytrionAccessModes,
+  }));
+  const modeFor = (id: MytrionId): MytrionAccessMode => modes[id] ?? 'full';
+  const setModeFor = (id: MytrionId, next: MytrionAccessMode): void =>
+    setModes((prev) => ({ ...prev, [id]: next }));
   const [active, setActive] = useState<boolean>(ov?.active ?? true);
 
   const [busy, setBusy] = useState(false);
@@ -94,7 +103,8 @@ export function UserAccessForm({
   };
 
   const homeOptions = mode === 'all' ? MYTRION_ORDER : MYTRION_ORDER.filter((id) => allowed.has(id));
-  const showBillingMode = mode === 'custom' && allowed.has('billing');
+  /** Every granted Mytrion gets a mode control; 'all' hides them (see the save note below). */
+  const modeTargets = mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : [];
   /**
    * An inherited all-access grant can be MASKED in `effective`: the resolver downgrades a
    * non-break-glass all-dept grant to an explicit department grant whenever a deny list exists
@@ -118,12 +128,15 @@ export function UserAccessForm({
       const nextAllowed = mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : null;
       const mytrionAccessModes =
         mode === 'all'
-          ? // 'all' hides the Billing read/full control, so there is no edit to send — clearing it
-            // would silently promote a stored Read-only Billing grant to Full.
+          ? // 'all' hides the read/full controls, so there is no edit to send — clearing it would
+            // silently promote every stored Read-only grant to Full.
             (ov?.mytrionAccessModes ?? {})
-          : (nextAllowed?.includes('billing') ?? false)
-            ? { billing: billingMode }
-            : {};
+          : // A mode for a Mytrion that is no longer granted must be DROPPED, not carried: it would
+            // sit in the row describing access the worker does not have, and re-granting that
+            // Mytrion later would silently restore a restriction nobody set this time.
+            Object.fromEntries(
+              (nextAllowed ?? []).map((id) => [id, modeFor(id)]),
+            );
       const patch: UserAccessPatch = {
         userName: row.name,
         email: row.email,
@@ -242,7 +255,14 @@ export function UserAccessForm({
             <p className={s.noticeNote}>Full Mytrions — this worker will see every workspace.</p>
           )}
 
-          {showBillingMode ? <BillingAccessModeField value={billingMode} onChange={setBillingMode} /> : null}
+          {modeTargets.map((id) => (
+            <MytrionAccessModeField
+              key={id}
+              mytrionId={id}
+              value={modeFor(id)}
+              onChange={(next) => setModeFor(id, next)}
+            />
+          ))}
 
           <label className={s.field}>
             <span className={s.fieldLabel}>Home Mytrion (auto-route on sign-in)</span>
