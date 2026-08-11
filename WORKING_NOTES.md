@@ -14070,3 +14070,37 @@ still holds these labels.
 
 The harness is now documented in the modern-web-guidance skill, with the caveat that matters: if a
 page renders empty, say so rather than counting the pass.
+
+### Same day — "Today" beside the live visit
+
+The presence strip showed EITHER "This visit" or "Today in office", never both — so the moment someone
+clocked in they lost sight of how long they had already been in that day. For a split shift, or anyone
+who stepped out and came back, that is the number that answers "have I done my hours". Three readings
+now: This visit · Today · This week.
+
+Two details that took a decision rather than a line of markup:
+
+- **Which day the middle reading belongs to.** `activeVisit?.day ?? todayRow`, not the calendar row. A
+  19:00–03:00 shift is bucketed on the day it STARTED, so at 01:00 the calendar row is a fresh empty day
+  while the shift being worked sits on yesterday's — reading the calendar row would show 0h to someone
+  six hours into a shift.
+- **The label is computed, not hardcoded.** When that day is not the calendar today it prints the date
+  instead of the word "Today". Calling yesterday "Today" on a screen people check payroll against is a
+  plain lie, and it is exactly what a hardcoded label would have done every night after midnight.
+
+Layout: the two stat blocks were two GRID tracks, so a third needed a fifth track — and an absent track
+still contributes its `gap`, leaving dead space on the right whenever no visit was open. They are now one
+flex group in a single track, which sizes to however many are shown and spans full width on narrow.
+
+Verified all three states in a harness against the real stylesheets before writing tests: same-day,
+past-midnight (date shown, not "Today"), and idle (two readings, unchanged).
+
+**A fixture too weak, twice, in the same test.** First the assertions were unscoped, so `30m 00s` matched
+the session row below and would have passed with the strip gone — fixed by scoping to the presence
+region. Then `1h 30m` was BOTH the day and the week total in my one-day fixture, so the query could not
+tell which element it found; added an earlier 2h day so the week is 3h 30m. That is now five times this
+session, always the same shape: data that satisfies the correct and the broken implementation equally.
+
+3 tests. Mutations caught: reverting to either/or, reading the calendar row instead of the visit's day,
+and hardcoding the "Today" label. CRM 632/656 — the 24 are the six files already failing on `build`.
+Bundle rebuilt.
