@@ -14871,3 +14871,23 @@ a higher tier. That is an account action, and it should happen before rollout ra
 first support ticket.
 
 Backend 2559 passed / 1 skipped, typecheck clean.
+
+### The k=4 experiment is INCONCLUSIVE — it was killed by the thing it was measuring
+
+The 4-vs-6 passage A/B returned coverage 14/63 and **49 failures**. That is not a result about `k`.
+
+`server-k4.log` carries **101 rate-limit hits and zero non-429 errors**. The shape gives it away:
+every case scored 1/1 in run 1 and then 0 in runs 2 and 3, with mean wall dropping to 2,628ms — the
+signature of failing fast, not of answering with fewer passages. My earlier runs today took 4
+failures; this one took 49, because the quota degrades progressively under sustained load.
+
+**Nothing about `k` may be concluded from it, and no default was changed on it.** `RAG_MAX_PASSAGES`
+stays at 6, which is exactly today's behaviour. Reading 14/63 as "k=4 destroys quality" would have
+been a serious misdiagnosis, and it is the kind that ships.
+
+Worth stating for its own sake: **I could not measure the optimisation because I had saturated the
+very quota the optimisation exists to relieve.** That is the capacity finding demonstrated on a
+single developer. Fifty people will not get a quieter window than I had.
+
+The experiment needs either a genuinely idle period or — better — the higher tier. Re-run it before
+touching `k`.
