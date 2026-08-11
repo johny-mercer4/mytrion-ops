@@ -14800,3 +14800,74 @@ Used 196383`) from my own back-to-back benching — the third time today. 59/63 
 losing 4 turns to it. One developer can saturate the quota ~50 people are about to share.
 
 Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — Capacity: the ceiling is ~7 turns per minute, org-wide
+
+Rate limiting stopped being a hypothesis today — a single developer running the bench tripped a 429
+**three times**, so I measured where the tokens actually go using the `llm_calls` telemetry the runs
+already write.
+
+### Where the budget goes
+
+| role | calls | avg input | cached | avg output |
+| --- | --- | --- | --- | --- |
+| **answer** | 862 | **12,744** | **89.8%** | 83 |
+| router | 357 | 187 | 0% | 60 |
+| grader | 20 | 1,075 | 0% | 81 |
+
+Per turn: **28,741 input tokens average, 53,559 worst case, 2.24 answer calls.**
+
+**At a 200,000 TPM organisation limit that is ≈7 turns per minute for the entire company.** With ~50
+people, seven or eight asking a question in the same minute saturates it. That is the capacity
+ceiling, and it is nothing to do with answer quality.
+
+**Prompt caching is already working and is not the lever.** 89.8% of input is served from cache — but
+the 429 body reads `Limit 200000, Used 196383`, i.e. **cached tokens still count against TPM**.
+Caching buys ~90% off the *bill*; it buys nothing on the *quota*.
+
+Decomposing one answer call (measured, ~4 chars/token):
+- Sales system prompt **2,469 tok** (persona 1,640 · shared rules 534 · skill index 295)
+- 18 registered tool schemas **1,151 tok**
+- → static, cached prefix ≈ **3,620 tok**
+- → the remaining **~9,100 tok is dynamic**, dominated by the grounding block
+
+And the grounding block is **replayed on every model call for the rest of the turn**. Six passages
+retrieved once are charged 2.24 times. That is the structural driver, not the prompt.
+
+Caveat on the measurement: dbt MCP and Zoho MCP were unreachable locally, so their tool schemas are
+ABSENT from these numbers. Production binds `dbt_mcp.*` (a wildcard) plus 4 named Zoho tools, so real
+prompt weight is **higher** than 12,744.
+
+### A 429 was being reported to users as a broken system
+
+`presentAgentError` had no rate-limit branch, so throttling fell through to *"The AI service failed
+to complete this request. Please retry."* — indistinguishable from a broken model, and it tells the
+user to do the single thing that worsens contention, while the provider was saying *"try again in
+1.083s"*.
+
+Now its own branch, checked BEFORE the model-unavailable one (a 429 body names the model, and
+"unavailable" would send someone to an administrator over something that clears in seconds):
+*"The assistant is at capacity right now — too many requests are in flight across the team. Please
+wait a few seconds and send that again. Nothing is broken and nothing was lost."* Tests assert it
+never leaks the org id, the limit or the raw provider text.
+
+`AGENT_MODEL_MAX_RETRIES` (default **4**, was hard-coded 2). The OpenAI SDK honours the `retry-after`
+a 429 carries, so each retry is a short server-directed wait. Two backoffs is thin for a shared pool;
+a failed turn costs the user their whole question, a third retry costs a second.
+
+### The lever, made measurable
+
+`RAG_MAX_PASSAGES` (default 6 — today's behaviour) caps passages server-side in `scopedRag`,
+regardless of the `limit` the model asks for. It is the biggest single lever on TPM because each
+passage is charged on every subsequent model call in the turn. A/B of 4 vs 6 is running.
+
+### Not code, but the real fix
+
+**200,000 TPM is a low tier.** Every token optimisation below is worth doing and none of them changes
+the order of magnitude: cutting turn cost by a third takes ~7 turns/minute to ~10. Fifty people need
+a higher tier. That is an account action, and it should happen before rollout rather than after the
+first support ticket.
+
+Backend 2559 passed / 1 skipped, typecheck clean.

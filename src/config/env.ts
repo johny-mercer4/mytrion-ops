@@ -122,6 +122,15 @@ const EnvSchema = z.object({
   // Per-call deadline for agent-path ChatOpenAI requests (ms). Distinct from the wall-clock
   // budget: this bounds ONE model call, the budget bounds the whole run.
   AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
+  /**
+   * Provider retries per model call. The OpenAI SDK honours the `retry-after` a 429 carries, so each
+   * retry is a short, server-directed wait rather than a blind hammer.
+   *
+   * Was hard-coded to 2, which is thin for a shared 200k tokens-per-minute pool: at ~28,700 input
+   * tokens per turn, ~7 turns/minute saturate the org, and a burst outlasts two backoffs. A failed
+   * turn costs the user their whole question; a third and fourth retry costs a second.
+   */
+  AGENT_MODEL_MAX_RETRIES: z.coerce.number().int().min(0).max(8).default(4),
   // Output cap for agent-path model calls (maxTokens / maxCompletionTokens on ChatOpenAI).
   AGENT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
   // Deadline for outbound integration HTTP calls (serverCrm, Zoho) via fetchWithTimeout.
@@ -172,6 +181,16 @@ const EnvSchema = z.object({
   RAG_ANN_MIN_ELIGIBLE_CHUNKS: z.coerce.number().int().positive().default(10_000),
   RAG_HNSW_EF_SEARCH: z.coerce.number().int().min(10).max(1_000).default(100),
   RAG_MIN_COSINE_SCORE: z.coerce.number().min(-1).max(1).default(0.5),
+  /**
+   * Server-side cap on passages returned to an agent, regardless of the `limit` the model asks for.
+   *
+   * This is the single biggest lever on tokens-per-minute. Measured 2026-08-12: an answer-role call
+   * averages 12,744 input tokens of which only ~3,600 is the cached static prefix (system prompt +
+   * tool schemas); the rest is dominated by the grounding block, and it is REPLAYED on every model
+   * call in the turn (2.24 of them on average, so ~28,700 input tokens per turn). At a 200,000
+   * tokens-per-minute organisation limit that is roughly seven turns per minute for the whole org.
+   */
+  RAG_MAX_PASSAGES: z.coerce.number().int().min(1).max(25).default(6),
   RAG_NO_MATCH_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   // Release controls are deliberately opt-in until the governed schema migration has run.
   FF_RAG_V2_CONTEXT: flag('0'),

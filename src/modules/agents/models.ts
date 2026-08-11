@@ -18,7 +18,7 @@ function makeChatModel(policy: ModelPolicy): ChatOpenAI {
   return new ChatOpenAI({
     model,
     apiKey: env.OPENAI_API_KEY || 'sk-not-configured',
-    maxRetries: 2,
+    maxRetries: env.AGENT_MODEL_MAX_RETRIES,
     timeout: env.AGENT_MODEL_TIMEOUT_MS,
     ...chatOpenAIFields(model, env.AGENT_MAX_OUTPUT_TOKENS),
   });
