@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   assignPermissionSet,
   createPermissionSet,
@@ -9,7 +9,7 @@ import {
   type PermissionSet,
   type PermissionSetSnapshot,
 } from '../../api/permissionSets';
-import { Button, ErrorState } from '@/ds';
+import { Button, EmptyState, ErrorState } from '@/ds';
 import { PermissionSetEditor } from './PermissionSetEditor';
 import { adminToast } from './toast';
 import s from './admin.module.css';
@@ -39,6 +39,8 @@ export function PermissionSets() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [nameError, setNameError] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,7 +75,13 @@ export function PermissionSets() {
 
   async function create(): Promise<void> {
     const name = newName.trim();
-    if (!name) return;
+    if (!name) {
+      // Answer the click rather than swallowing it.
+      setNameError('Give the set a name first — this is what admins pick it by when assigning.');
+      nameRef.current?.focus();
+      return;
+    }
+    setNameError('');
     setBusy(true);
     try {
       const set = await createPermissionSet({ name });
@@ -286,36 +294,64 @@ export function PermissionSets() {
     <div className={`${s.panel} ${s.panelWide}`}>
       {header}
 
-      <div className={s.chipRow}>
-        <label className={s.search}>
-          <input
-            className={s.searchInput}
-            placeholder="New permission set name…"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void create();
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          className={s.primaryBtn}
-          disabled={busy || !newName.trim()}
-          onClick={() => void create()}
-        >
-          {busy ? 'Creating…' : 'Create set'}
-        </button>
-      </div>
+      {/*
+        A real form, not a bare input beside a button that silently disables itself.
+        The first version disabled Create until the field had text and said nothing about why, so an
+        empty field plus a dim button reads as "this screen is broken" — which is exactly how it was
+        reported. The button now always submits; an empty name focuses the field and says what it
+        wants, so the failure is answerable instead of silent.
+      */}
+      <form
+        className={s.createRow}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void create();
+        }}
+      >
+        {/* The controls align on the INPUT's baseline; the message sits below the whole row. Putting
+            it inside the field made the field taller and pushed Create out of line with the box it
+            submits — the validation itself broke the layout it was complaining about. */}
+        <div className={s.createRowControls}>
+          <label className={s.psField} htmlFor="ps-name">
+            <span className={s.fieldLabel}>New permission set</span>
+            <input
+              id="ps-name"
+              ref={nameRef}
+              className={s.input}
+              placeholder="e.g. Billing — Read Only"
+              value={newName}
+              aria-describedby={nameError ? 'ps-name-error' : undefined}
+              aria-invalid={nameError ? true : undefined}
+              onChange={(e) => {
+                setNewName(e.target.value);
+                if (nameError) setNameError('');
+              }}
+            />
+          </label>
+          <button type="submit" className={s.primaryBtn} disabled={busy}>
+            {busy ? 'Creating…' : 'Create set'}
+          </button>
+        </div>
+        {nameError && (
+          <span id="ps-name-error" className={s.inlineError} role="alert">
+            {nameError}
+          </span>
+        )}
+      </form>
 
       {snapshot.sets.length === 0 ? (
-        <div className={s.none}>
-          <strong>No permission sets yet</strong>
-          <span>
-            Name one above — “Billing — Read Only”, “Manager — Sales desk only” — then choose the
-            Mytrions and tabs it grants and assign it to people.
-          </span>
-        </div>
+        /* The design system's empty state: says what happened AND what to try next, with the one
+           move that fixes it. `.none` was a bare centred paragraph stretched to the full page. */
+        <EmptyState
+          icon="shield"
+          title="No permission sets yet"
+          description="Name one above — “Billing — Read Only”, “Manager — Sales desk only” — then choose the Mytrions and tabs it grants and assign it to people."
+          primaryAction={
+            <Button variant="primary" onClick={() => nameRef.current?.focus()}>
+              Name your first set
+            </Button>
+          }
+        />
       ) : (
         <div className={s.profileGrid}>
           {snapshot.sets.map((set) => {
