@@ -260,6 +260,57 @@ describe('live EFS card state', () => {
   });
 });
 
+describe('C-20 request invoices', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('maps CMP statuses and surfaces meta.source=cmp', async () => {
+    const setInvRows = vi.fn();
+    callTouchpointMock.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          invoice_number: '177728',
+          invoice_date: '2026-08-01',
+          total_amount: 200,
+          status: 'PARTIALLY_PAID',
+        },
+        {
+          id: 2,
+          invoice_number: '177729',
+          invoice_date: '2026-08-02',
+          total_amount: 100,
+          status: 'PAID',
+        },
+        {
+          id: 3,
+          invoice_number: '177730',
+          invoice_date: '2026-08-03',
+          total_amount: 80,
+          status: 'PENDING',
+        },
+      ],
+      meta: { source: 'cmp' },
+    });
+
+    await expect(
+      runAutomation(input(action('invoices'), { setInvRows, invStatus: 'PARTIALLY_PAID' })),
+    ).resolves.toEqual({ kind: 'invoices', source: 'cmp' });
+
+    expect(callTouchpointMock).toHaveBeenCalledWith('sales_mytrion.fetch_invoices', {
+      carrierId: deal.carrier,
+      range: 'last_30',
+      status: 'PARTIALLY_PAID',
+    });
+    expect(setInvRows).toHaveBeenCalledWith([
+      expect.objectContaining({ inv: '177728', status: 'Partially Paid' }),
+      expect.objectContaining({ inv: '177729', status: 'Paid' }),
+      expect.objectContaining({ inv: '177730', status: 'Pending' }),
+    ]);
+  });
+});
+
 describe('invoice download', () => {
   const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 

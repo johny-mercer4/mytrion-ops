@@ -161,7 +161,8 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
           status: titleStatus(r.status ?? r.invoiceStatus ?? r.invoice_status),
         };
       }));
-      return { kind: 'invoices' };
+      const source = typeof res.meta?.source === 'string' ? res.meta.source : undefined;
+      return { kind: 'invoices', ...(source ? { source } : {}) };
     }
     case 'transactions': {
       const cid = requireCarrier(deal);

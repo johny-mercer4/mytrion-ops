@@ -106,7 +106,8 @@ export interface CmpInvoiceRow {
   remaining: string;
 }
 export type DonePayload =
-  | { kind: 'invoices' }
+  /** `source` from servercrm `meta.source`: `cmp` | `dwh_fallback` (absent on older producers). */
+  | { kind: 'invoices'; source?: 'cmp' | 'dwh_fallback' | string }
   | { kind: 'transactions' }
   | { kind: 'card-lookup'; carrierId: string; companyName: string; rows: CardLookupRow[] }
   | { kind: 'message'; message: string }
@@ -257,12 +258,17 @@ export const fmtDate = (v: unknown): string => {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? raw.slice(0, 10) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
+/** CMP/DWH invoice status → short UI label. Order matters: PARTIALLY_PAID contains "paid". */
 export const titleStatus = (v: unknown): string => {
-  const x = str(v).toLowerCase();
-  if (!x) return '—';
-  if (x.includes('paid')) return 'Paid';
-  if (x.includes('overdue') || x.includes('past')) return 'Overdue';
-  return x.charAt(0).toUpperCase() + x.slice(1);
+  const raw = str(v).trim();
+  if (!raw) return '—';
+  const x = raw.toUpperCase().replace(/\s+/g, '_');
+  if (x === 'PARTIALLY_PAID' || x === 'PARTIAL' || x.includes('PARTIAL')) return 'Partially Paid';
+  if (x === 'PAID') return 'Paid';
+  if (x === 'PENDING' || x === 'OPEN') return 'Pending';
+  if (x === 'CANCELLED' || x === 'CANCELED' || x === 'VOID') return 'Cancelled';
+  if (x.includes('OVERDUE') || x.includes('PAST')) return 'Overdue';
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase().replace(/_/g, ' ');
 };
 const normCardStatus = (raw: string): string => {
   const x = raw.toLowerCase();
@@ -289,9 +295,12 @@ export const daysWindow = (sel: string): { from: string; to: string } => {
   return { from: iso(new Date(to.getTime() - days * 86_400_000)), to: iso(to) };
 };
 
+/** Map invoice UI filter → CMP status query (PENDING | PARTIALLY_PAID | PAID). */
 export const mapInvStatus = (value: string): string | undefined => {
-  if (value === 'paid' || value === 'PAID') return 'PAID';
-  if (value === 'PENDING' || value === 'pending' || value === 'overdue') return 'PENDING';
+  const x = value.trim().toUpperCase().replace(/\s+/g, '_');
+  if (x === 'PAID') return 'PAID';
+  if (x === 'PENDING' || x === 'OVERDUE') return 'PENDING';
+  if (x === 'PARTIALLY_PAID' || x === 'PARTIAL') return 'PARTIALLY_PAID';
   return undefined; // ALL
 };
 

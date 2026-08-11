@@ -14289,3 +14289,56 @@ Refresh toast copy: `Latest numbers loaded (Active cards from warehouse).` (was 
 - Client modal account Active from `efs.cards` (no dashboard fan-out)
 
 **Vendored `app/` not rebuilt** — run `pnpm build:widget` before a UI PR (subtitle string changed).
+
+## 2026-08-12 — C-20 Request Invoices → live CMP status
+
+### Goal
+Horizon Automations **C-20 / Q-1 Request Invoices** must show **live CMP** invoice
+list + status (PENDING / PARTIALLY_PAID / PAID), not stale DWH `public.cmp_invoice`.
+
+### Current state (before this branch)
+- ServerCRM `build`: `GET /api/salesMytrion/fetchInvoices` → **DWH only**
+- Mytrion already proxies via touchpoint `sales_mytrion.fetch_invoices` → that route
+- Closed PR pair (#185 servercrm / #175 mytrion) had a broader CMP credit flip; user
+  now wants **C-20 invoices only** (no credit-limit / zoho Terms in this branch)
+
+### Implemented (`feature/c20-invoices-live-cmp`)
+
+**servercrm (required producer):**
+- `fetchSalesInvoicesByCarrierCmp` in `services/cmpClients.js`
+- `GET /api/salesMytrion/fetchInvoices` → CMP first, DWH fallback (`meta.source`)
+- `test/cmpSalesInvoices.test.js`
+
+**mytrion (consumer UI / typing):**
+- Touchpoint title: live CMP, DWH fallback
+- Fix `titleStatus` / badge: PARTIALLY_PAID no longer collapses to "Paid"
+- Filter option Partially Paid; `mapInvStatus` passes `PARTIALLY_PAID`
+- Surface `meta.source` as LIVE CMP / DWH FALLBACK badge on invoice results
+- Tests: `autoLive.invoiceStatus.test.ts`, C-20 case in `autoRunners.test.ts`
+
+### Status mapping (CMP → UI)
+| CMP `status` | UI label | Badge |
+| --- | --- | --- |
+| PENDING | Pending | warn |
+| PARTIALLY_PAID | Partially Paid | warn |
+| PAID | Paid | ok |
+| CANCELLED | Cancelled | muted |
+
+Row fields from CMP: `status` (uppercased), `total_amount`, `total_paid`,
+`open_balance = max(0, billed − paid)`.
+
+### Deploy order
+1. **Deploy servercrm first** (producer flip) — without it mytrion still gets DWH
+2. Deploy mytrion (status labels + source badge) — tolerant if `meta.source` absent
+
+### Verify (Horizon Automations C-20)
+1. Sales → Automations → Request Invoices (C-20)
+2. Pick a carrier with mixed open/partial/paid invoices in CMP
+3. Run Last 30 Days / All Statuses → badge **LIVE CMP**; statuses match CMP UI
+4. Filter Partially Paid → only PARTIALLY_PAID rows
+5. (Optional) kill CMP creds locally → badge **DWH FALLBACK**, still returns rows
+
+### Out of scope (intentionally)
+- ClientModal credit limit / LOC terms CMP overlay
+- zoho-octane widget Terms
+- `dwh.carrier_balance` CMP overlay

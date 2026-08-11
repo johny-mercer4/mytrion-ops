@@ -71,6 +71,8 @@ export interface SalesInvoicesResult {
   data?: Array<Record<string, unknown>>;
   count?: number;
   summary?: Record<string, unknown>;
+  /** Present when servercrm returns live CMP (`cmp`) or DWH fallback (`dwh_fallback`). */
+  meta?: { source?: string; generated_at?: string; cmp_error?: string };
 }
 
 export interface WexTasksResult {

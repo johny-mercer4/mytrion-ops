@@ -8,6 +8,7 @@ const invoiceRanges = ['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'Custom Ra
 const invoiceStatuses = [
   { value: 'all', label: 'All Statuses' },
   { value: 'PENDING', label: 'Pending' },
+  { value: 'PARTIALLY_PAID', label: 'Partially Paid' },
   { value: 'PAID', label: 'Paid' },
 ];
 
