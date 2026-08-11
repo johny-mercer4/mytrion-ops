@@ -6,7 +6,7 @@
  * live in git, and change by PR — the same review discipline as prompts and tool manifests.
  *
  * PROGRESSIVE DISCLOSURE is the whole design constraint. A skill's `whenToUse` is always in the
- * agent's system prompt; its `body` is only fetched when the agent calls `skill.read`. That split
+ * agent's system prompt; its `body` is only fetched when the agent calls `skill_read`. That split
  * exists because prompt weight is not free here: binding all 83 discovered Zoho MCP tools once cost
  * 71,130 input tokens per call and burned the org's per-minute quota in about 1.4 questions
  * (see mcpTools.ts). A skill library that injected every body would repeat that mistake with prose.
@@ -16,7 +16,7 @@
  */
 
 export interface AgentSkill {
-  /** Stable kebab-case id. Referenced from AgentManifest.skills and by the skill.read tool. */
+  /** Stable kebab-case id. Referenced from AgentManifest.skills and by the skill_read tool. */
   name: string;
   /**
    * ≤2 sentences, ALWAYS present in the agent's system prompt. This is the only thing the model

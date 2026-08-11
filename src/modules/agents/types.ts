@@ -90,7 +90,7 @@ export interface AgentManifest {
   maxIterations?: number;
   /**
    * Authored skills this agent may read (src/modules/agents/skills/**). Assignment is static and
-   * reviewed: the names' `whenToUse` lines enter the byte-stable system prompt, and `skill.read`
+   * reviewed: the names' `whenToUse` lines enter the byte-stable system prompt, and `skill_read`
    * can fetch ONLY these bodies. An unknown name fails `skillRegistry.test.ts` rather than the
    * request.
    */

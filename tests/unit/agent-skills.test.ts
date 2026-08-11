@@ -3,6 +3,7 @@ import { ALL_AGENT_MANIFESTS } from '../../src/modules/agents/manifests/index.js
 import { ORCHESTRATOR_SKILLS, ORCHESTRATOR_SYSTEM_PROMPT, childSystemPrompt } from '../../src/modules/agents/prompts.js';
 import { ALL_SKILLS, assignedSkillNames, formatSkillIndex, getSkill, skillsFor } from '../../src/modules/agents/skills/registry.js';
 import { formatAgentFleetXml } from '../../src/modules/agents/fleet.js';
+import { buildSkillTool } from '../../src/modules/agents/tools/skillTool.js';
 import { toolRegistry } from '../../src/modules/tools/index.js';
 
 /**
@@ -61,7 +62,7 @@ describe('authored skill registry', () => {
     const declaredByManifest = new Set(ALL_AGENT_MANIFESTS.flatMap((m) => m.tools));
     const registered = new Set(toolRegistry.all().map((t) => t.name));
     // Built per-agent as closures (scopedRag.ts / skillTool.ts), never registry entries.
-    const perAgentTools = new Set(['knowledge_search', 'skill.read']);
+    const perAgentTools = new Set(['knowledge_search', 'skill_read']);
 
     const missing: string[] = [];
     for (const skill of ALL_SKILLS) {
@@ -89,7 +90,7 @@ describe('progressive disclosure', () => {
     const index = formatSkillIndex(['sales-cycle', 'sales-client-book']);
     expect(index).toContain('sales-cycle');
     expect(index).toContain('sales-client-book');
-    expect(index).toContain('skill.read');
+    expect(index).toContain('skill_read');
     // The defining property: the expensive half stays out until asked for.
     const cycle = getSkill('sales-cycle');
     expect(cycle).toBeDefined();
@@ -127,7 +128,7 @@ describe('progressive disclosure', () => {
   });
 });
 
-describe('skill.read is confined to what the manifest assigned', () => {
+describe('skill_read is confined to what the manifest assigned', () => {
   it('exposes only the assigned names', () => {
     const sales = ALL_AGENT_MANIFESTS.find((m) => m.key === 'sales')!;
     const allowed = assignedSkillNames(sales.skills);
@@ -232,5 +233,40 @@ describe('orchestrator skills track the real fleet', () => {
     expect(fleet).toContain(`**${ALL_AGENT_MANIFESTS.length} department specialists**`);
     // A stale count elsewhere in the prose is exactly how this drifts.
     expect(fleet).not.toMatch(/\ball 11\b|number 11\b/);
+  });
+});
+
+/**
+ * The bug this exists to prevent: `skill_read` was originally named `skill.read`, matching the
+ * dotted convention of REGISTRY tools. Registry names survive because `agentTools.ts` maps
+ * `[^a-zA-Z0-9_-]` to `__` before binding; per-agent CLOSURE tools (scopedRag, skillTool) never pass
+ * through that, so the dot reached OpenAI verbatim and every turn for every agent died with
+ * `400 Invalid 'tools[1].function.name'` — before a single LLM call was made.
+ *
+ * 2551 unit tests passed while the agent was 100% broken, because nothing in the suite binds a real
+ * model. This asserts the constraint directly instead.
+ */
+describe('bound tool names satisfy the OpenAI function-name pattern', () => {
+  const OPENAI_FUNCTION_NAME = /^[a-zA-Z0-9_-]+$/;
+
+  it('accepts skill_read for every agent that has skills', () => {
+    for (const manifest of ALL_AGENT_MANIFESTS) {
+      const tool = buildSkillTool(manifest.skills);
+      if (!tool) continue;
+      expect(tool.name, `${manifest.key} skill tool`).toMatch(OPENAI_FUNCTION_NAME);
+    }
+    const orchestratorTool = buildSkillTool(ORCHESTRATOR_SKILLS);
+    expect(orchestratorTool?.name).toMatch(OPENAI_FUNCTION_NAME);
+  });
+
+  it('would reject a dotted name, which is what broke it', () => {
+    expect('skill.read').not.toMatch(OPENAI_FUNCTION_NAME);
+    expect('skill_read').toMatch(OPENAI_FUNCTION_NAME);
+  });
+
+  /** The prompt tells the model what to call; a stale name there sends it after a tool that isn't bound. */
+  it('advertises the same name in the skill index that it binds', () => {
+    const bound = buildSkillTool(['sales-cycle'])!.name;
+    expect(formatSkillIndex(['sales-cycle'])).toContain(bound);
   });
 });

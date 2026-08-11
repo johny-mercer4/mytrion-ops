@@ -14684,3 +14684,52 @@ tests exist to force a human to re-approve, so each was updated with the reason 
 number. The golden record for `hr` asserts its absences as much as its tools.
 
 Backend 2551 passed / 1 skipped, typecheck clean, lint unchanged.
+
+### The skill tool was named `skill.read`, and it broke every agent turn
+
+2551 unit tests passed, typecheck clean, lint clean — and the agent was **100% broken**. The first
+live bench run: **51 failures, 0 LLM calls, mean 429ms.**
+
+`400 Invalid 'tools[1].function.name': string does not match pattern '^[a-zA-Z0-9_-]+$'`.
+
+REGISTRY tool names are dotted (`crm.list_cards`, `blackboard.read`) and survive because
+`agentTools.ts` maps `[^a-zA-Z0-9_-]` → `__` before binding. A per-agent CLOSURE tool never passes
+through that mangling — which is exactly why the existing one is called `knowledge_search`, not
+`knowledge.search`. I copied the registry convention into a place where it does not apply, and the
+dot reached OpenAI verbatim, killing every turn for every agent before a single model call.
+
+Renamed to `skill_read`, with the reason recorded at the definition. The real fix is the guard: a
+test now asserts every per-agent bound tool name matches OpenAI's pattern, and that the skill index
+advertises the same name it binds. **Nothing in the suite binds a real model**, which is why 2551
+green tests said nothing about this — worth remembering before trusting a green suite about runtime
+behaviour again.
+
+### Skills measured: quality held, cost is real
+
+Sales bench, 3 runs, clean memory, direct-to-agent:
+
+| | before skills | with skills |
+| --- | --- | --- |
+| expected-doc coverage | 61/63 | 60/63 |
+| answer facts | **24/24** | **24/24** |
+| failures | 0 | 0 |
+| mean wall | **6,313ms** | 8,896ms (+41%) |
+| llm calls | **155** | 179 |
+| cost | **$0.2249** | $0.2962 (+32%) |
+
+The 61→60 is the `money-codes-view-and-draw` flip (the known two-document recall gap), not a skills
+regression: every case is stable and answer facts are unchanged.
+
+`skill_read` fired **26 times across 51 turns**, and on the right cases — retention questions, client
+lookups, the retention-timer arithmetic. Progressive disclosure is working as designed; the extra
+round trip per read is its cost.
+
+**Stated plainly, and it is the same shape as the FF_RAG_V2_CONTEXT problem:** this bench is
+documentation lookup, which the RAG corpus already answers, so it can show the skills' COST but not
+their BENEFIT. The difference is that skills carry information that exists nowhere else — the 26→25
+rule, which retention kill switches are off, that `crm.list_cards` has no last-used — so the answer
+is to build the cases that test that (cycle questions, period comparisons, a client-resolution flow),
+not to disable them. Until those exist, +41% wall is a measured cost against an unmeasured benefit,
+and should be treated as such.
+
+Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.

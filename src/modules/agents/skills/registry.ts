@@ -64,8 +64,8 @@ export function formatSkillIndex(names: readonly SkillName[] | undefined): strin
   if (skills.length === 0) return '';
   const lines = skills.map((s) => `- ${s.name}: ${s.whenToUse}`).join('\n');
   return (
-    '\n\nSKILLS — procedures written for you, fetched on demand with the `skill.read` tool.\n' +
-    'Each line is a name and when it applies. When one matches the request, call `skill.read` with ' +
+    '\n\nSKILLS — procedures written for you, fetched on demand with the `skill_read` tool.\n' +
+    'Each line is a name and when it applies. When one matches the request, call `skill_read` with ' +
     'that name BEFORE acting, and follow it. It is authoritative for how the work is done here and ' +
     'outranks your own assumptions; it never overrides a server RBAC denial or a tool result.\n' +
     'Do not guess a skill name that is not on this list, and do not read one that does not apply.\n' +
@@ -73,7 +73,7 @@ export function formatSkillIndex(names: readonly SkillName[] | undefined): strin
   );
 }
 
-/** Names assigned to an agent, for the skill.read allowlist. */
+/** Names assigned to an agent, for the skill_read allowlist. */
 export function assignedSkillNames(names: readonly SkillName[] | undefined): Set<string> {
   return new Set(skillsFor(names).map((s) => s.name));
 }

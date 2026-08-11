@@ -1,5 +1,5 @@
 /**
- * `skill.read` — the on-demand half of progressive disclosure. Built per agent as a closure over
+ * `skill_read` — the on-demand half of progressive disclosure. Built per agent as a closure over
  * that agent's assigned skill names, exactly like `buildScopedRagTool` closes over its RAG scope.
  *
  * WHY THIS IS NOT A REGISTRY TOOL (hard rule 3/4 says every tool implements ToolManifest and
@@ -52,7 +52,12 @@ export function buildSkillTool(assigned: readonly SkillName[] | undefined): Stru
       return `<Skill name="${skill.name}" trust="authored">\n${skill.body}\n</Skill>`;
     },
     {
-      name: 'skill.read',
+      // UNDERSCORE, not a dot. OpenAI rejects any function name that is not ^[a-zA-Z0-9_-]+$, and a
+      // per-agent closure tool never passes through the dotted->'__' mangling in agentTools.ts that
+      // registry tools get. Naming this `skill.read` 400'd EVERY turn for EVERY agent
+      // ("Invalid 'tools[1].function.name'") with zero LLM calls made — and no unit test caught it,
+      // because nothing in the suite binds a real model. `knowledge_search` set the convention.
+      name: 'skill_read',
       description:
         'Read one of YOUR assigned procedural skills by exact name. Call this before acting when a ' +
         `skill in your SKILLS list matches the request. Available: ${names.join(', ')}.`,
