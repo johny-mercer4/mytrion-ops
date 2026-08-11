@@ -97,9 +97,8 @@ export const serverCrmWrapper = {
     return crmGet(`/api/agent/dwh/payment-info/${encodeURIComponent(carrierId)}`, { days: 90 });
   },
 
-  /** Invoice list (DWH's `public.cmp_invoice` replica). `carrierId` is a query param here, not a path segment. */
-  /** Invoice list — live CMP via servercrm `/api/salesMytrion/fetchInvoices`
-   * (DWH `public.cmp_invoice` only when CMP is down). `carrierId` is a query param. */
+  /** Invoice list from DWH `public.cmp_invoice` (range/status filters). For live CMP
+   * prefer GET `/api/clients/:carrierId/invoices` (Sales C-20 / clients.invoices). */
   getInvoices(carrierId: string, opts: InvoicesRangeOpts = {}) {
     return crmGet<CarrierInvoices>('/api/salesMytrion/fetchInvoices', {
       carrierId,

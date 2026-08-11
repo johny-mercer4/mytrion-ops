@@ -277,7 +277,7 @@ const normCardStatus = (raw: string): string => {
   if (/active|ok|good/.test(x)) return 'active';
   return 'inactive';
 };
-/** Map invoice UI preset → sales_mytrion.fetch_invoices range (last_7|last_30|last_90|custom). */
+/** Map invoice UI preset → range key (last_7|last_30|last_90|custom). */
 export const mapInvRange = (label: string): string => {
   const x = label.toLowerCase();
   if (x.includes('7')) return 'last_7';
@@ -295,7 +295,7 @@ export const daysWindow = (sel: string): { from: string; to: string } => {
   return { from: iso(new Date(to.getTime() - days * 86_400_000)), to: iso(to) };
 };
 
-/** Map invoice UI filter → CMP status query (PENDING | PARTIALLY_PAID | PAID). */
+/** Map invoice UI filter → CMP status code (PENDING | PARTIALLY_PAID | PAID). */
 export const mapInvStatus = (value: string): string | undefined => {
   const x = value.trim().toUpperCase().replace(/\s+/g, '_');
   if (x === 'PAID') return 'PAID';
@@ -303,6 +303,56 @@ export const mapInvStatus = (value: string): string | undefined => {
   if (x === 'PARTIALLY_PAID' || x === 'PARTIAL') return 'PARTIALLY_PAID';
   return undefined; // ALL
 };
+
+const invDay = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** Inclusive YMD bounds for C-20 client-side filter. `null` = no date filter. */
+export function invRangeBounds(
+  range: string,
+  from?: string,
+  to?: string,
+): { from: string; to: string } | null {
+  if (range === 'all_time') return null;
+  if (range === 'custom') {
+    if (!from || !to) return null;
+    return { from, to };
+  }
+  const days = range === 'last_7' ? 7 : range === 'last_90' ? 90 : range === 'last_365' ? 365 : 30;
+  const end = new Date();
+  return { from: invDay(new Date(end.getTime() - days * 86_400_000)), to: invDay(end) };
+}
+
+function invRowTimeMs(row: Record<string, unknown>): number | null {
+  const raw =
+    row.invoice_date ?? row.invoiceDate ?? row.create_date ?? row.createDate ?? row.createdDate ?? row.issueDate;
+  if (raw == null || raw === '') return null;
+  const t = new Date(String(raw)).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Filter live `clients.invoices` rows (CMP has no range/status query on success path). */
+export function filterClientInvoices(
+  rows: Array<Record<string, unknown>>,
+  opts: { status?: string; from?: string; to?: string },
+): Array<Record<string, unknown>> {
+  let out = rows;
+  if (opts.status) {
+    const want = opts.status.toUpperCase().replace(/\s+/g, '_');
+    out = out.filter((r) => String(r.status ?? '').toUpperCase().replace(/\s+/g, '_') === want);
+  }
+  if (opts.from && opts.to) {
+    const fromMs = Date.parse(`${opts.from}T00:00:00`);
+    const toMs = Date.parse(`${opts.to}T23:59:59.999`);
+    if (!Number.isNaN(fromMs) && !Number.isNaN(toMs)) {
+      out = out.filter((r) => {
+        const t = invRowTimeMs(r);
+        if (t == null) return false;
+        return t >= fromMs && t <= toMs;
+      });
+    }
+  }
+  return out;
+}
 
 // ---------- live loaders ----------
 

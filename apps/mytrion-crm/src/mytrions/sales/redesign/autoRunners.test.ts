@@ -265,7 +265,7 @@ describe('C-20 request invoices', () => {
     callTouchpointMock.mockReset();
   });
 
-  it('maps CMP statuses and surfaces meta.source=cmp', async () => {
+  it('loads clients.invoices (CMP) and filters status client-side', async () => {
     const setInvRows = vi.fn();
     callTouchpointMock.mockResolvedValue({
       data: [
@@ -291,22 +291,18 @@ describe('C-20 request invoices', () => {
           status: 'PENDING',
         },
       ],
-      meta: { source: 'cmp' },
     });
 
     await expect(
       runAutomation(input(action('invoices'), { setInvRows, invStatus: 'PARTIALLY_PAID' })),
     ).resolves.toEqual({ kind: 'invoices', source: 'cmp' });
 
-    expect(callTouchpointMock).toHaveBeenCalledWith('sales_mytrion.fetch_invoices', {
+    expect(callTouchpointMock).toHaveBeenCalledWith('clients.invoices', {
       carrierId: deal.carrier,
-      range: 'last_30',
-      status: 'PARTIALLY_PAID',
+      limit: 500,
     });
     expect(setInvRows).toHaveBeenCalledWith([
       expect.objectContaining({ inv: '177728', status: 'Partially Paid' }),
-      expect.objectContaining({ inv: '177729', status: 'Paid' }),
-      expect.objectContaining({ inv: '177730', status: 'Pending' }),
     ]);
   });
 });

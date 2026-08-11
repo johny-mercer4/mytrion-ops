@@ -584,6 +584,11 @@ export interface TouchpointMap {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
     result: SalesInvoicesResult;
   };
+  /** Live CMP invoices (DWH fallback upstream). Used by Sales C-20. */
+  'clients.invoices': {
+    params: { carrierId: string; limit?: number; status?: string };
+    result: SalesInvoicesResult;
+  };
   // ---- panel touchpoints (identity server-injected; params are empty or filters only) ----
   'dashboard.home_snapshot': { params: Record<string, never>; result: HomeSnapshotResult };
   'inbox.announcements': { params: Record<string, never>; result: ZohoAnnouncement[] | ZohoAnnouncement };
