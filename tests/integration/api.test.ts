@@ -75,6 +75,28 @@ describe('HTTP API (no external services)', () => {
     expect(String(res.headers['access-control-allow-headers']).toLowerCase()).toContain('x-api-key');
   });
 
+  it('CORS preflight allows x-cache-refresh (CRM touchpoint force-refresh)', async () => {
+    // Default CORS_ORIGINS includes localhost:3000; Vite :5173 is the same header set once
+    // that origin is listed in the API .env.
+    const origin = 'http://localhost:3000';
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/touchpoints/dashboard.agent_sales',
+      headers: {
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers':
+          'content-type,authorization,x-api-key,x-act-as-zoho-user-id,x-cache-refresh,idempotency-key',
+      },
+    });
+    expect(res.statusCode).toBeLessThan(300);
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
+    const allow = String(res.headers['access-control-allow-headers']).toLowerCase();
+    expect(allow).toContain('x-cache-refresh');
+    expect(allow).toContain('x-act-as-zoho-user-id');
+    expect(allow).toContain('idempotency-key');
+  });
+
   it('CORS does not allow an unknown origin', async () => {
     const res = await app.inject({
       method: 'OPTIONS',

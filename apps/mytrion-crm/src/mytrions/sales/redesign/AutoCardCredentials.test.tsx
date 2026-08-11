@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mapCardCredentials } from './AutoCardCredentials';
 
 describe('current EFS card credential mapping', () => {
-  it('maps the direct getCard response without substituting cached values', () => {
+  it('maps a live efs.cards row without substituting cached values', () => {
     expect(mapCardCredentials({
       status: 'Active',
       unit_number: 'UNIT-12',
@@ -16,12 +16,12 @@ describe('current EFS card credential mapping', () => {
     });
   });
 
-  it('renders missing card-level prompts as empty values', () => {
+  it('accepts camelCase EFS fields and empty prompts', () => {
     expect(mapCardCredentials({
       status: 'Inactive',
-      unit_number: null,
-      driver_id: null,
-      driver_name: null,
+      unitNumber: null,
+      driverId: null,
+      driverName: null,
     })).toEqual({
       status: 'Inactive',
       unitNumber: '',
