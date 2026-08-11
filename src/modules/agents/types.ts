@@ -88,6 +88,13 @@ export interface AgentManifest {
   /** Child agent loop cap (LangGraph recursionLimit). Unset → AGENT_MAX_CHILD_ITERATIONS. */
   maxIterations?: number;
   /**
+   * Authored skills this agent may read (src/modules/agents/skills/**). Assignment is static and
+   * reviewed: the names' `whenToUse` lines enter the byte-stable system prompt, and `skill.read`
+   * can fetch ONLY these bodies. An unknown name fails `skillRegistry.test.ts` rather than the
+   * request.
+   */
+  skills?: string[];
+  /**
    * Agents this one may recommend escalating to (advisory routing metadata). Children never
    * call each other directly — they return `escalate` in their structured result and the
    * orchestrator re-delegates, only ever among the caller's RBAC-filtered agents.

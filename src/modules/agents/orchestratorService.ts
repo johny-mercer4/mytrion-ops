@@ -20,6 +20,7 @@ import { verifyAnswerFaithfulness } from '../knowledge/agentic/faithfulness.js';
 import { routeRetrievalIntent } from '../knowledge/agentic/router.js';
 import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
+import { formatAgentFleetXml } from './fleet.js';
 import { narrowContext } from './authority.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
 import { buildTurnBrief, recentHistorySummary, shouldReciteGoal } from './briefBuilder.js';
@@ -188,7 +189,11 @@ async function executeTurn(
     !checkpointing && opts.conversationId ? await recentHistorySummary(ctx, conv.id) : '';
 
   const isOrchestrator = !manifest;
-  const allowedAgentKeys = agentRegistry.listForContext(ctx).map((m) => m.key);
+  const allowedManifests = agentRegistry.listForContext(ctx);
+  const allowedAgentKeys = allowedManifests.map((m) => m.key);
+  // Only the orchestrator delegates, so only it needs the roster; a direct-to-child turn has no
+  // one to route to and the block would be pure prompt weight.
+  const agentFleetXml = isOrchestrator ? formatAgentFleetXml(allowedManifests) : '';
 
   // Shared blackboard snapshot for the brief (flag-gated).
   let blackboardXml: string | undefined;
@@ -329,6 +334,7 @@ async function executeTurn(
           ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
           ...(opts.role ?? ctx.role ? { role: opts.role ?? ctx.role } : {}),
           departments: ctx.departments,
+          ...(agentFleetXml ? { agentFleetXml } : {}),
           ...(historySummary ? { historySummary } : {}),
           ...(ctx.client ? { clientContext: ctx.client } : {}),
           ...(blackboardXml ? { blackboardXml } : {}),

@@ -14445,3 +14445,84 @@ The ON run recorded 1 failure: `429 ... tokens per min (TPM): Limit 200000`. Not
 flag — it was my own back-to-back bench runs exhausting the org quota. Worth writing down anyway: a
 single developer running a benchmark can saturate the shared per-minute limit that ~50 people are
 about to share. The capacity workstream is not theoretical.
+
+---
+
+## 2026-08-12 — BIG PHASE 1: the authored skill library (infrastructure + foundational skills)
+
+Two things named "skill" now exist and they are not the same thing. `skillCache.ts` distills tool
+trajectories automatically and offers them back as *untrusted suggestions*; nobody writes or reviews
+them. **Authored skills** live in `src/modules/agents/skills/**`, are assigned by manifest, and change
+by PR — the same review discipline as prompts and tool manifests. The new ones do not replace the
+cache; they answer a different question (how the work is done here) than RAG does (what is documented).
+
+### Progressive disclosure is the entire design constraint
+
+A skill has a `whenToUse` (≤260 chars, ALWAYS in the system prompt) and a `body` (≤12k chars, fetched
+only when the agent calls `skill.read`). That split is not tidiness. Binding all 83 discovered Zoho
+MCP tools once cost **71,130 input tokens per call** and burned the org's per-minute quota in ~1.4
+questions; a skill library that injected every body would repeat that mistake with prose instead of
+JSON schemas. The index is derived from manifest constants, so the cached prompt prefix still hits.
+
+`skill.read` is built per agent as a closure (`buildSkillTool`), the same pattern as
+`buildScopedRagTool`, and is deliberately NOT a registry tool. Hard rules 3/4 exist because tools
+reach DATA and the dispatcher is where tenant isolation is re-verified per call. This tool returns a
+string compiled into the binary; its only access decision — is this skill assigned to this agent — is
+a reviewed manifest constant enforced by construction, since the closure cannot name a skill the
+manifest did not assign. Unlike RAG passages or memory it is NOT wrapped as untrusted: it is authored
+in-repo, reviewed, and meant to be followed.
+
+### Orchestrator self-knowledge: static skill vs runtime roster
+
+The architect asked that the orchestrator know "how many agents does it have". That is deliberately
+**not** a skill. The roster is RBAC-filtered per caller — a sales rep's orchestrator genuinely
+contains fewer agents than an admin's — so baking a fleet list into the byte-stable system prompt
+would be a lie for most callers, and would advertise specialists the caller cannot reach, which is
+precisely how the model ends up naming a specialist absent from its tool list.
+
+So `fleet.ts` projects `<AgentFleet count=N>` into the turn BRIEF from the already-computed
+RBAC-filtered manifest list, orchestrator turns only (a direct-to-child turn has nobody to route to,
+so the block would be pure prompt weight). The *reasoning* about it lives in the
+`orchestrator-fleet` skill: answer "how many" from the block, never from the number 11.
+
+### The skills
+
+Orchestrator: `orchestrator-fleet` (what it is, roster is per-caller, what to do when nothing fits),
+`orchestrator-routing` (boundaries only — the seams where routing actually fails, not a restatement
+of each agent's description, which the task tool already carries), `orchestrator-context` (what the
+server supplies vs what the brief must carry; resolving "my" without converting a server-enforced
+scope into a free-text filter).
+
+Sales: `sales-client-book`, `sales-cycle`, `sales-progress`, `sales-retention-invoices`.
+
+### The 26→25 cycle does not exist in code
+
+Verified: `billing_cycle` is an unrelated per-carrier string ("Weekly"), and every metric tool —
+`agent.sales_snapshot`, `agent.activity`, `warehouse.my_gallons` — reports CALENDAR periods. A rep
+asking "how many gallons this month" and meaning the cycle gets a number silently missing the 26th–31st
+of the previous month and wrongly including the 1st–25th of this one.
+
+On the 12th of a month the calendar month is 39% elapsed and the cycle is 58% elapsed, so any "am I on
+pace" judgement built on the wrong one is wrong. Until a tool speaks cycles the agent is the only thing
+between that question and a plausible wrong answer, which is why `sales-cycle` teaches boundary
+computation and — more importantly — forbids labelling a calendar result as a cycle result.
+Making the tools cycle-aware is a separate engineering task.
+
+### Tests (16, all green)
+
+Name uniqueness/kebab-case; the `whenToUse`/`body` size caps; **every manifest-assigned name resolves**
+(a manifest naming a deleted skill degrades silently at runtime because `skillsFor` drops unknowns, so
+the build is where it must be caught); **every `usesTools` name exists**, validated against registered
+tools UNION every name a manifest declares — because `warehouse.my_gallons` (FF_DBT_MCP_ENABLED), the
+file tools and blackboard all register conditionally and are absent under test env, exactly the
+"inert until the flag flips" convention `shared.ts` documents; index carries no body; unknown/duplicate
+assignments are ignored; byte-stability; a sales agent cannot read the orchestrator's routing skill;
+and the fleet projection escapes manifest text so a description cannot forge context.
+
+Backend 2528 passed / 1 skipped, typecheck clean, lint clean.
+
+**Still open:** `orchestrator-routing` currently encodes the boundaries verifiable from code today
+(how-to vs do-it, sales/data-center, the billing/finance/collection seam, sales/retention, the missing
+HR agent). A 15-agent department review is running to extend it with per-department triggers,
+anti-triggers and real operational workflows, each verified adversarially before it becomes a rule —
+a wrong routing rule baked into a foundational skill is worse than no rule.

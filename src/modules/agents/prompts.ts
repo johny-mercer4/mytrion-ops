@@ -5,6 +5,7 @@
  * briefBuilder, never into these system prompts.
  */
 import { UNTRUSTED_RULE } from '../security/untrusted.js';
+import { formatSkillIndex } from './skills/registry.js';
 import type { AgentManifest } from './types.js';
 
 export const ORCHESTRATOR_PROMPT = `You are the Octane operations orchestrator. You coordinate department specialist agents and synthesize one accurate, complete answer for the user.
@@ -43,6 +44,22 @@ Delegate to a specialist (task tool) ONLY for real Octane data or domain work �
 
 Finish with one clear, concise answer for the user, carrying through the [Sn] markers the specialist reported.`;
 
+/**
+ * Skills assigned to the ORCHESTRATOR itself. It has no manifest — it is the parent — so its
+ * assignment lives here beside its prompt. Same progressive-disclosure contract as a child's.
+ */
+export const ORCHESTRATOR_SKILLS: readonly string[] = [
+  'orchestrator-fleet',
+  'orchestrator-routing',
+  'orchestrator-context',
+];
+
+/**
+ * The orchestrator's full system prompt. Computed once at module load from consts only, so it stays
+ * byte-identical across requests and the prompt-prefix cache keeps hitting.
+ */
+export const ORCHESTRATOR_SYSTEM_PROMPT = `${ORCHESTRATOR_PROMPT}${formatSkillIndex(ORCHESTRATOR_SKILLS)}`;
+
 const SHARED_AGENT_RULES = `Rules:
 - Use your tools to look up real data; never invent account numbers, card statuses, transactions, or balances.
 - Counts, totals, balances, rates, and other live aggregates must come from a typed tool/database result. Do not derive an authoritative total in the model.
@@ -63,5 +80,5 @@ export function childSystemPrompt(manifest: AgentManifest): string {
     manifest.delegatesTo.length > 0
       ? `\n\nEscalation targets you may name in escalate.toAgent: ${manifest.delegatesTo.join(', ')}.`
       : '';
-  return `${manifest.persona}\n\n${SHARED_AGENT_RULES}${escalation}`;
+  return `${manifest.persona}\n\n${SHARED_AGENT_RULES}${escalation}${formatSkillIndex(manifest.skills)}`;
 }
