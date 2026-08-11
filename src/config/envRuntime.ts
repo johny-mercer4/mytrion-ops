@@ -33,7 +33,6 @@ export function assertRuntimeSecrets(): void {
   if (isProduction && !env.FF_SUPPORT_BOT_IDEMPOTENCY) {
     missing.push('FF_SUPPORT_BOT_IDEMPOTENCY=1');
   }
-  if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   // dbt discovery is optional outside production; production requires its full credential set.
   if (env.FF_DBT_MCP_ENABLED && isProduction) {

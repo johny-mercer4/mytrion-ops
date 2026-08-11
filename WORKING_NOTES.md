@@ -14354,3 +14354,39 @@ The dead GLM and Groq provider paths. Both are provably unreachable — `modelRo
 passes — despite `FF_GROQ_ENABLED=1` and two live API keys in `.env`. Removing them touches 14 source
 files plus 4 test files including the chat pipeline's streaming fallback, has zero runtime effect, and
 should be reviewed as a refactor rather than buried in a model-tier change.
+
+### Groq + GLM removed (same day, separate commit)
+
+Both were dead, in different ways. `modelRouter` never emitted `'glm'` at all — the GLM branch in
+`agents/models.ts` and `getGLM()` were unreachable by construction. Groq was reachable only when a
+caller passed `sanitizedBenchmark`, and nothing in `src/` or `scripts/` ever did, so `FF_GROQ_ENABLED=1`
+plus two live API keys in `.env` bought precisely nothing.
+
+Removed: both clients, the router's provider branching, the GLM ChatOpenAI branch, `GROQ_*` / `GLM_*` /
+`FF_GROQ_ENABLED` env, Groq pricing rows, the `envRuntime` key assertion, and four
+`model.includes('/') ? 'groq' : …` provider-detection ternaries that were quietly labelling telemetry.
+`Provider` is now the one-member union `'openai'` — kept as a union rather than deleted because it is
+the seam a future provider plugs into and it keeps `llm_calls.provider` honest. That column stays
+`text`, so adding one back needs no migration.
+
+Two things deliberately kept:
+
+- **`TurnModel.fellBack`**, always false. It is written into audit detail; dropping the field would
+  change the shape of historical audit rows, which is a data change dressed up as a code cleanup.
+- **The mid-stream fallback RULE, in a comment.** `streamTurn` used to refuse to retry once any token
+  had reached the wire, because re-running duplicates visible output. That is the non-obvious part and
+  it is recorded for whoever adds provider two.
+
+`tests/unit/chat-groq.test.ts` deleted (12 tests). `modelRouter.test.ts` rewritten around the
+invariants that survive: each role maps to its tier, escalation resolves to something *different* from
+the answer tier, and no override — `openai/gpt-oss-20b`, `glm-4-flash`, a Llama id — can produce a
+non-OpenAI provider any more.
+
+**Out of scope, deliberately:** `apps/agent-gateway*` are separate deployables (own Dockerfile /
+compose) and still reference Groq; `apps/agent-gateway-groq/` is an empty scaffold. None of them has
+its own `.env`, so **the `GROQ_API_KEY` / `GLM_API_KEY` in the root `.env` were left in place** rather
+than deleted out from under an app I did not audit. They are unused by the backend now and should be
+rotated or removed once the gateway apps are checked.
+
+Backend 2512 passed / 1 skipped (−12: the deleted Groq suite), typecheck clean, lint unchanged.
+Bench after removal, clean memory: 39/42, 21/21, all 11 stable, mean 5,643ms — parity.

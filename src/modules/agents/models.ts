@@ -1,6 +1,7 @@
 /**
- * Model resolution for the multi-agent stack — the single seam a future provider plugs into
- * (per the OpenAI-only decision, everything resolves to ChatOpenAI today; Groq stays dormant).
+ * Model resolution for the multi-agent stack — the single seam a future provider plugs into.
+ * Per the OpenAI-only decision everything resolves to ChatOpenAI; the Groq and GLM branches that
+ * used to sit here were removed 2026-08-12 because neither was reachable.
  * A placeholder key keeps construction from throwing at import (real calls 401 instead).
  */
 import { ChatOpenAI } from '@langchain/openai';
@@ -11,20 +12,6 @@ import type { AgentManifest } from './types.js';
 
 function makeChatModel(policy: ModelPolicy): ChatOpenAI {
   const { model } = policy;
-  const isGLM = policy.provider === 'glm';
-
-  if (isGLM) {
-    return new ChatOpenAI({
-      model,
-      apiKey: env.GLM_API_KEY || 'glm-not-configured',
-      configuration: {
-        baseURL: env.GLM_BASE_URL,
-      },
-      maxRetries: 2,
-      timeout: env.AGENT_MODEL_TIMEOUT_MS,
-      ...chatOpenAIFields(model, env.AGENT_MAX_OUTPUT_TOKENS),
-    });
-  }
 
   // chatOpenAIFields: reasoning-tier models (Sales' gpt-5.4-mini) reject temperature and
   // take maxCompletionTokens; classic models get temperature:0 + maxTokens.

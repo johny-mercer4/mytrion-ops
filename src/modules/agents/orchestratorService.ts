@@ -165,7 +165,7 @@ async function executeTurn(
   inspect?.({
     stage: 'route', status: 'complete', label: fastReply ? 'Local greeting fast path' : `Routed to ${agentKey}`,
     agent: agentKey, model: modelId, modelRole: fastReply ? 'deterministic' : manifest ? 'answer' : orchestratorModelRole,
-    provider: fastReply ? 'local' : modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai',
+    provider: fastReply ? 'local' : 'openai',
     route: routeDecision.route, ragUsed: false,
     details: { contextV2: env.FF_RAG_V2_CONTEXT, retrievalV2: env.FF_RAG_V2_RETRIEVAL, claimVerification: env.FF_RAG_CLAIM_VERIFY },
   });

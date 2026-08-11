@@ -10,7 +10,9 @@ export const llmCalls = pgTable(
     conversationId: text('conversation_id'),
     agentRunId: text('agent_run_id'),
     role: text('role').notNull(),
-    provider: text('provider').$type<'openai' | 'groq' | 'glm'>().notNull(),
+    // Text, not an enum: OpenAI is the only provider since 2026-08-12, but keeping the column wide
+    // means adding one later needs no migration.
+    provider: text('provider').$type<'openai'>().notNull(),
     model: text('model').notNull(),
     status: text('status').$type<'ok' | 'error'>().notNull(),
     latencyMs: integer('latency_ms'),

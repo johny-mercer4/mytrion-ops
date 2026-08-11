@@ -91,7 +91,7 @@ const EnvSchema = z.object({
   // Was gpt-5.4-mini — identical to the grounded tier, so escalation changed nothing.
   OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
-  // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
+  // Client-level deadline for every raw OpenAI SDK call (chat, RAG planner/judge,
   // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.
   OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   // Output cap for the chat pipeline's main completions (max_tokens / max_completion_tokens).
@@ -99,21 +99,9 @@ const EnvSchema = z.object({
   // Embedding batch cap: embeddings.create is called with at most this many inputs per request.
   EMBED_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(128),
 
-  // --- Groq (fast/cheap worker via the OpenAI-compatible API). Off unless FF_GROQ_ENABLED. ---
-  GROQ_API_KEY: z.string().default(''),
-  GROQ_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
-  // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
-  GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
-
-  // --- Zhipu AI / GLM (via OpenAI-compatible API). ---
-  GLM_API_KEY: z.string().default(''),
-  GLM_BASE_URL: z.string().default('https://open.bigmodel.cn/api/paas/v4/'),
-  // Worker model for GLM. glm-4-flash is the primary free model.
-  GLM_MODEL_WORKER: z.string().default('glm-4-flash'),
-
   // --- DeepAgents (LangChain/LangGraph orchestrator + RAG / web-search / tool-caller subagents). ---
   // Off by default (FF_DEEP_AGENTS_ENABLED). Reuses OPENAI_API_KEY; no new provider.
-  // Empty DEEP_AGENTS_MODEL falls back to OPEN_AI_FOUR_O_MINI. The web-search subagent calls the
+  // Empty DEEP_AGENTS_MODEL falls back to the default chat model. The web-search subagent calls the
   // OpenAI Responses `web_search` built-in tool with DEEP_WEB_SEARCH_MODEL (must be a web-search-capable
   // model alias, e.g. gpt-4o-mini / gpt-4o; dated snapshots may not support it).
   DEEP_AGENTS_MODEL: z.string().default(''),
@@ -604,8 +592,6 @@ const EnvSchema = z.object({
   FF_AGENTIC_RAG: flag('1'),
   // Optional LLM rerank of fused candidates (adds a model call per retrieval).
   FF_RAG_RERANK: flag('0'),
-  // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
-  FF_GROQ_ENABLED: flag('0'),
   // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).

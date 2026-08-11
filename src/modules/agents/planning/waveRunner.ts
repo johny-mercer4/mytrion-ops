@@ -68,7 +68,7 @@ export async function runSubAgentTask(opts: {
 }): Promise<AgentResult> {
   const narrowedCtx = narrowContext(opts.callerCtx, opts.manifest);
   const modelId = resolveAgentModelId(opts.manifest);
-  const provider = modelId.includes('/') ? 'groq' : modelId.startsWith('glm-') ? 'glm' : 'openai';
+  const provider = 'openai';
   const startedAt = Date.now();
   const inspect = getAgentContext()?.inspect;
   inspect?.({
