@@ -12,6 +12,7 @@ import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
 import { analyticsSnapshotTool } from './definitions/analytics_snapshot.js';
 import { dagExecutorTool } from './definitions/dag_executor.js';
+import { hrFindEmployeeTool, hrMyTimeOffTool } from './definitions/hr_directory.js';
 import { warehouseMyGallonsTool } from './definitions/warehouse_gallons.js';
 import {
   crmCarrierBalanceTool,
@@ -49,6 +50,10 @@ export const allTools: RegisteredTool[] = [
   registerTool(knowledgeSearchTool),
   // Direct Zoho reads (auth via the Zoho wrapper; module/field names come from the knowledge base):
   registerTool(zohoPeopleSearchEmployeesTool),
+  // HR reads the LOCAL hr_employees mirror (what the HR Mytrion shows), unlike
+  // zoho_people.search_employees above which reads live Zoho People and can disagree with it.
+  registerTool(hrFindEmployeeTool),
+  registerTool(hrMyTimeOffTool),
   registerTool(zohoCrmQueryTool),
   registerTool(zohoCrmSearchTool),
   registerTool(zohoDeskSearchTicketsTool),

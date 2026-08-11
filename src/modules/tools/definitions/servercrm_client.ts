@@ -176,7 +176,11 @@ export const crmCarrierOverviewTool = carrierReadTool({
 export const crmListCardsTool = carrierReadTool({
   name: 'crm.list_cards',
   description:
-    "List a carrier's fuel cards with status and last-used info. Requires carrier_id. (Self-service block C-24.)",
+    // Was "...with status and last-used info". The endpoint behind this selects card_number and
+    // status only (servercrm agentDwh: SELECT card_number, status FROM octane.dim_card), so the
+    // description promised a field the tool has never returned — which is exactly how a model ends
+    // up asserting a last-used date it never saw.
+    "List a carrier's fuel card numbers and their current status. Does NOT return last-used, unit, driver or limits. Requires carrier_id. (Self-service block C-24.)",
   path: (i) => `/api/agent/dwh/cards/${encodeURIComponent(i.carrierId)}`,
 });
 

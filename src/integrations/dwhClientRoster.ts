@@ -44,6 +44,7 @@
  */
 import { dwhQuery } from './dwh.js';
 import { logger } from '../lib/logger.js';
+import { CYCLE_START_SQL, cycleCte } from '../lib/salesCycle.js';
 
 /** Active-window / debt thresholds — kept in sync with servercrm's dwhClients.js defaults. */
 const ACTIVE_DAYS = 10;
@@ -205,12 +206,7 @@ export function buildOwnedCte(
 async function runClientsQuery(ownedCteSql: string, binds: string[]): Promise<ClientDbRow[]> {
   return dwhQuery<ClientDbRow>(
     `with ${ownedCteSql},
-     cyc as (
-       select case when extract(day from current_date) >= 26
-                   then date_trunc('month', current_date) + interval '25 days'
-                   else date_trunc('month', current_date) - interval '1 month' + interval '25 days'
-              end as cycle_start
-     ),
+     ${cycleCte('cyc')},
      debt_cte as (
        select i.carrier_id,
               coalesce(sum(greatest(i.total_amount - coalesce(i.total_paid, 0), 0)), 0) as debt,
@@ -418,10 +414,7 @@ async function runAllLoyaltyClientsQuery(): Promise<ClientDbRow[]> {
        select date_trunc('month', current_date) as current_start,
               date_trunc('month', current_date - interval '1 month') as previous_start,
               date_trunc('month', current_date + interval '1 month') as next_start,
-              case when extract(day from current_date) >= 26
-                   then date_trunc('month', current_date) + interval '25 days'
-                   else date_trunc('month', current_date) - interval '1 month' + interval '25 days'
-              end as cycle_start
+              ${CYCLE_START_SQL} as cycle_start
      ),
      gallons_cte as (
        select t.carrier_id,

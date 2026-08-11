@@ -14612,3 +14612,75 @@ hours around the 25th/26th.
   link to a lead/deal/retention case, never to a carrier).
 
 Backend 2528 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — HR agent (tools first), cycle-aware tools, and a false tool description
+
+### HR: built tools-first, because the alternative is the trap we just documented
+
+The department review's sharpest finding was that several agents are named after departments whose
+work they cannot perform — no agent can touch a retention case, a money code or a rejection report.
+Creating an `hr` agent bound to nothing would have reproduced exactly that, so the tools came first.
+
+Two new read tools, both reading the **local `hr_employees` mirror — the same records the HR Mytrion
+renders**. That matters: the only pre-existing employee tool, `zoho_people.search_employees`, reads
+*live Zoho People* and is bound solely to the manager agent, so a chat answer about staff could
+contradict the screen the user was looking at.
+
+- `hr.find_employee` — directory search. Gated `allowedDepartments: ['hr']`, mirroring
+  `requireHrInternal`. Without that gate every internal caller could read all ~213 employee rows.
+- `hr.my_time_off` — the caller's OWN leave position. **Added to `UNIVERSAL_TOOLS`**, and that is the
+  load-bearing decision: the manifest-derived department policy would otherwise stamp it `['hr']` and
+  lock ~200 employees out of their own leave balance. It mirrors `requireTimeOffInternal`, which is
+  audience-only on purpose because owner-scoping happens *inside* `resolveTimeOffEmployee` — it
+  resolves the caller's own row from `zoho:<id>` and cannot return anyone else's. Audience gating
+  still applies, so a partner-audience caller (driver/fleet_manager) does not get it.
+
+The `hr` agent is `readOnly: true` and carries no `crm.*`, `agent.*` or `warehouse.*` tool at all —
+asserted in the golden record, because "HR is about employees, never carriers" is a property worth
+failing the build over.
+
+Its skill (`hr-people-data`) exists mostly to prevent three specific wrong answers, each verified:
+**"the system doesn't let me see salary"** (there is no salary/compensation/contract data anywhere —
+absent, not restricted, and implying otherwise sends someone hunting for a permission that cannot
+exist); **"they were absent on Tuesday"** (attendance covers one office and fewer than half of staff
+have a Face ID, so an empty record means *not enrolled*, and getting this wrong is an accusation
+about a colleague); and **"you've accrued 12 days"** (entitlement is a flat annual allocation with no
+accrual, carry-over or pro-rating, so a mid-year joiner shows a full year).
+
+Both orchestrator skills were corrected — they had said HR has no agent — and the fleet count moved
+11 → 12.
+
+### The cycle now has one definition, and the tools can use it
+
+`CYCLE_START_SQL` / `cycleCte()` / `cycleWindowSql()` / `salesCycleBounds()` live in
+`src/lib/salesCycle.ts`. The three SQL copies in `src/` (salesKpiBoard, and twice in
+dwhClientRoster) now import it; a test walks `src/` and fails if the raw expression reappears
+anywhere else. The CRM frontend's `currentBillingCycle()` is a fourth copy that is deliberately left
+alone — it is a separate bundle and cannot import from `src/`.
+
+`warehouse.my_gallons` gained **`this_cycle` (now the DEFAULT) and `last_cycle`**, so a rep's cycle
+figure and a true cycle-over-cycle comparison are one call each — the previous-cycle window did not
+exist anywhere before. It also returns a `periodLabel` naming the window it measured, so an answer
+cannot silently present a calendar month as a cycle.
+
+The window is half-open (`>= start`, `< start + 1 month`). Because the start is the 26th, the
+exclusive bound lands on the next 26th, which includes the whole 25th without any month-length
+arithmetic. Tests cover the 25th/26th flip, February, and the year boundary.
+
+### crm.list_cards was lying
+
+Its description promised "status and last-used info". The endpoint behind it is
+`SELECT card_number, status FROM octane.dim_card` — verified in servercrm. No last-used, no unit, no
+driver, no limits. A description that promises a field is how a model ends up asserting a date it
+never saw, so it now says exactly what the tool returns and explicitly what it does not.
+
+### Ten guard-test failures, all deliberate
+
+Adding an agent and two tools broke 10 assertions across four files — golden per-agent policy, the
+read-only set, department tool gating, file RBAC and the catalog count. Every one is a policy the
+tests exist to force a human to re-approve, so each was updated with the reason rather than the
+number. The golden record for `hr` asserts its absences as much as its tools.
+
+Backend 2551 passed / 1 skipped, typecheck clean, lint unchanged.

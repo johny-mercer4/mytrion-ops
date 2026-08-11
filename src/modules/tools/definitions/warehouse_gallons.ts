@@ -3,6 +3,7 @@ import { WILDCARD_SCOPE } from '../../../config/constants.js';
 import { callDbtTool } from '../../../integrations/dbtMcp.js';
 import { ToolError } from '../../../lib/errors.js';
 import { dbtIdentityFromContext } from '../dbtMcpTools.js';
+import { cycleWindowSql } from '../../../lib/salesCycle.js';
 import type { ToolContext, ToolManifest } from '../types.js';
 
 /**
@@ -20,11 +21,19 @@ import type { ToolContext, ToolManifest } from '../types.js';
  * The Zoho id is matched on its last 12 digits (`right(...,12)`) because the session id and the
  * warehouse id can carry different org prefixes while sharing the same record suffix.
  */
-const PERIODS = ['today', 'this_week', 'this_month'] as const;
+/**
+ * `this_cycle` / `last_cycle` are the 26th→25th SALES cycle — the period a rep is measured on and
+ * the one their dashboard renders, so it is what they mean by "this month". The calendar periods are
+ * kept because they are what the warehouse natively reports and what some questions genuinely want.
+ *
+ * Note `this_week` is an ISO week: it starts MONDAY. That is Postgres `date_trunc('week', …)`, not a
+ * configurable choice.
+ */
+const PERIODS = ['today', 'this_week', 'this_month', 'this_cycle', 'last_cycle'] as const;
 
 const inputSchema = z.object({
-  /** Time window for the totals. Defaults to the current month. */
-  period: z.enum(PERIODS).default('this_month'),
+  /** Time window for the totals. Defaults to the current SALES cycle, not the calendar month. */
+  period: z.enum(PERIODS).default('this_cycle'),
   /** ADMINS ONLY: target another agent's book by their Zoho user id. Ignored for non-admins. */
   agentZohoUserId: z.string().min(1).max(120).optional(),
 });
@@ -33,6 +42,8 @@ const inputSchema = z.object({
 const outputSchema = z.object({
   scope: z.enum(['self', 'agent', 'company']),
   period: z.enum(PERIODS),
+  /** Spelled-out window. Returned so an answer states the period it actually measured. */
+  periodLabel: z.string(),
   agentZohoUserId: z.string().nullable(),
   result: z.unknown(),
 });
@@ -41,6 +52,17 @@ const PERIOD_WHERE: Record<(typeof PERIODS)[number], string> = {
   today: `t.transaction_date::date = current_date`,
   this_week: `date_trunc('week', t.transaction_date) = date_trunc('week', current_date)`,
   this_month: `date_trunc('month', t.transaction_date) = date_trunc('month', current_date)`,
+  this_cycle: cycleWindowSql('t.transaction_date', 'current'),
+  last_cycle: cycleWindowSql('t.transaction_date', 'previous'),
+};
+
+/** Human label for the window, so an answer can never silently mislabel which period it measured. */
+const PERIOD_LABEL: Record<(typeof PERIODS)[number], string> = {
+  today: 'today (calendar day)',
+  this_week: 'this week (ISO week, starts Monday)',
+  this_month: 'this calendar month (1st to today) — NOT the 26->25 sales cycle',
+  this_cycle: 'the current sales cycle (26th to 25th)',
+  last_cycle: 'the previous sales cycle (26th to 25th)',
 };
 
 const GALLONS_SELECT = [
@@ -95,7 +117,11 @@ export const warehouseMyGallonsTool: ToolManifest<
   description:
     "Total fuel gallons and swipes for the calling agent's BOOK (the carriers/clients they own), " +
     'from the data warehouse. Scoped automatically to the CALLER via their Zoho session id — use for ' +
-    "'my gallons', 'how many gallons did my clients pump', 'my swipes this week/month'. Admins may " +
+    "'my gallons', 'how many gallons did my clients pump', 'my swipes this week/month'. Periods: " +
+    'this_cycle (DEFAULT — the 26th-to-25th sales cycle a rep is measured on) and last_cycle, plus ' +
+    'calendar today / this_week (ISO, starts Monday) / this_month. Prefer the cycle periods when the ' +
+    'user says "this month" about their own performance; the response echoes periodLabel so the ' +
+    'answer can state which window it measured. Admins may ' +
     'pass agentZohoUserId to target one agent, or omit it for the company-wide total. Never ask the ' +
     'user for their name or id — identity comes from the session.',
   inputSchema,
@@ -117,7 +143,7 @@ export const warehouseMyGallonsTool: ToolManifest<
         { sql, question: `company gallons and swipes ${input.period}` },
         identity,
       );
-      return { scope: 'company', period: input.period, agentZohoUserId: null, result };
+      return { scope: 'company', period: input.period, periodLabel: PERIOD_LABEL[input.period], agentZohoUserId: null, result };
     }
 
     // Owner-scoped. Non-admins are LOCKED to their own id; admins may target another agent's book.
@@ -136,6 +162,6 @@ export const warehouseMyGallonsTool: ToolManifest<
       `where ${periodWhere}\nand right(c.agent_zoho_user_id::text, 12) = '${suffix}'`;
     const question = `gallons and swipes for zoho ${targetId} ${input.period}`;
     const result = await callDbtTool('query', { sql, question }, identity);
-    return { scope, period: input.period, agentZohoUserId: targetId, result };
+    return { scope, period: input.period, periodLabel: PERIOD_LABEL[input.period], agentZohoUserId: targetId, result };
   },
 };

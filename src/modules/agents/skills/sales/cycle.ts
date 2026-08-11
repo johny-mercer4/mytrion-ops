@@ -40,29 +40,32 @@ Note the pace difference on the 12th: the calendar month is 39% elapsed, the cyc
 
 So when a rep quotes a number off their dashboard, that number is a **cycle** number.
 
-## Where it is NOT — and this is the trap
+## Which of your tools speak cycles
 
-**Every metric tool you can call reports CALENDAR periods.**
+**\`warehouse.my_gallons\` does.** It takes \`this_cycle\` (the default) and \`last_cycle\` alongside the
+calendar \`today\` / \`this_week\` / \`this_month\`, and it echoes a \`periodLabel\` naming the window it
+measured. For gallons and swipes, a true cycle figure and a true cycle-over-cycle comparison are one
+call each. Use the cycle periods unless the rep explicitly asked for a calendar month.
 
-- \`warehouse.my_gallons\` takes only \`today\` / \`this_week\` / \`this_month\`. \`this_month\` is the 1st
-  to now. \`this_week\` is an ISO week, so it starts **Monday**. There is no date-range input and no
-  previous-period arm.
-- \`agent.sales_snapshot\` and \`agent.activity\` do not define periods here at all — they forward to
-  the sales service. The snapshot's built-in comparison is **this week vs last week**, not cycles.
-- \`crm.transactions\` is the **only** tool that takes an explicit \`from\`/\`to\`, which makes it the
-  only way to measure a true cycle window per client.
-- **Nothing anywhere computes a previous cycle.** Prior-calendar-month figures exist; a 26→25 window
-  shifted back one month does not. A "last cycle vs this cycle" total has to be assembled, not
-  fetched.
+**The others do not:**
+
+- \`agent.sales_snapshot\` and \`agent.activity\` forward to the sales service and define no periods
+  here. The snapshot's built-in comparison is **this week vs last week**, never cycles.
+- \`this_week\` anywhere is an ISO week: it starts **Monday**.
+- \`crm.transactions\` takes an explicit \`from\`/\`to\`, which makes it the way to get a true cycle
+  window **per client**. Compute the boundaries with the rule above and pass them.
+
+So a cycle question about the rep's own gallons is now cheap and exact; a cycle question about their
+activity funnel or one client's spend still needs you to supply the window.
 
 ### What that means you must do
 
 1. **Decide which period the rep means before fetching.** In sales conversation "this month" usually
    means the cycle. If the difference is material and it is ambiguous, ask — one short question
    beats a confidently wrong number.
-2. **Always name the period you actually measured.** Not a caveat, a correctness requirement:
-   *"1–12 Aug (calendar month, which is what this tool returns) — the cycle 26 Jul–25 Aug isn't
-   directly available from it."*
+2. **Always name the period you actually measured.** Not a caveat, a correctness requirement. Where
+   a tool returns \`periodLabel\`, use it verbatim; where one does not, state the window yourself:
+   *"1–12 Aug (calendar month, which is what this tool returns)."*
 3. **When a rep's dashboard disagrees with your number, the period is almost always why.** Say that
    plainly instead of implying one of you is wrong. The dashboard is cycle-framed; your tool is not.
 4. **Use \`crm.transactions\` with computed cycle boundaries** when the question is per-client and a

@@ -16,10 +16,10 @@ fact about Octane reaches the user through a specialist you delegated to.
 
 ## The roster is per-caller, not global
 
-Octane defines **11 department specialists**: customer-service, billing, verification, retention,
-sales, data-center, marketing, finance, analyst, manager, collection.
+Octane defines **12 department specialists**: customer-service, billing, verification, retention,
+sales, data-center, marketing, finance, analyst, manager, collection, hr.
 
-You will almost never have all 11. Each turn's brief carries an <AgentFleet> block listing the
+You will almost never have all 12. Each turn's brief carries an <AgentFleet> block listing the
 specialists **this caller** may reach, already filtered by their department access. A sales rep's
 fleet is small; an administrator's is large.
 
@@ -28,8 +28,8 @@ Rules that follow from that:
 - **<AgentFleet> is the complete and only list.** Never name a specialist absent from it, even one
   named in this skill. A name you invent is not a routing mistake, it is a failed turn: the task tool
   rejects unknown names and the user gets nothing.
-- **"How many agents do you have" is answered from <AgentFleet>, not from the number 11.** Answer
-  with what this caller can actually reach. Saying "11" to someone who can reach three is wrong.
+- **"How many agents do you have" is answered from <AgentFleet>, not from the number 12.** Answer
+  with what this caller can actually reach. Saying "12" to someone who can reach three is wrong.
 - **A missing specialist is an access fact, not a capability gap.** If billing is absent, the right
   answer is "that needs Billing access, which you don't have here" — never "Octane cannot do that".
 
@@ -50,10 +50,8 @@ Rules that follow from that:
 - **marketing** — referral and loyalty programs.
 - **manager** — cross-department reporting for management and C-level. Read-only.
 - **analyst** — cross-department data analysis over the warehouse. Read-only.
-
-**There is no HR specialist.** HR data (employees, attendance, leave) exists in the platform but has
-no agent. An HR question has nowhere to go: say so plainly and point the user at the HR Mytrion
-rather than routing it to a specialist that will refuse.
+- **hr** — Octane's own EMPLOYEES: the directory, roles, departments, reporting lines, leave
+  balances and company holidays. Never carriers or their money. Read-only.
 
 ## When nothing fits
 

@@ -10,6 +10,7 @@ import type { AgentSkill, SkillName } from './types.js';
 import { ORCHESTRATOR_FLEET_SKILL } from './orchestrator/fleet.js';
 import { ORCHESTRATOR_ROUTING_SKILL } from './orchestrator/routing.js';
 import { ORCHESTRATOR_CONTEXT_SKILL } from './orchestrator/context.js';
+import { HR_PEOPLE_DATA_SKILL } from './hr/peopleData.js';
 import { SALES_CLIENT_BOOK_SKILL } from './sales/clientBook.js';
 import { SALES_CYCLE_SKILL } from './sales/cycle.js';
 import { SALES_PROGRESS_SKILL } from './sales/progress.js';
@@ -20,6 +21,7 @@ export const ALL_SKILLS: readonly AgentSkill[] = [
   ORCHESTRATOR_FLEET_SKILL,
   ORCHESTRATOR_ROUTING_SKILL,
   ORCHESTRATOR_CONTEXT_SKILL,
+  HR_PEOPLE_DATA_SKILL,
   SALES_CLIENT_BOOK_SKILL,
   SALES_CYCLE_SKILL,
   SALES_PROGRESS_SKILL,

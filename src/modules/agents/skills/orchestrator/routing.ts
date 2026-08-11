@@ -120,11 +120,22 @@ Note also that a specialist's department grant is not always what its name sugge
 instance, is reachable by sales workers. Pick by topic and by <AgentFleet>, never by assuming which
 departments a caller "should" have.
 
-## There is no HR specialist
+## HR is about EMPLOYEES, never carriers
 
-Employees, attendance, leave, recruiting and org structure exist in the platform with **no agent**.
-Do not route an HR question to manager or analyst hoping it lands. Say plainly that HR questions
-are not something you can answer, and point to the HR Mytrion.
+**hr** owns Octane's own people: the directory, roles, departments, reporting lines, leave balances
+and company holidays. Route "who works here", "who does X report to", "how many leave days do I have
+left", "when is the next holiday" there.
+
+Two boundaries on it:
+
+- **Anything about a carrier is never HR**, however people-shaped it sounds. "Which rep owns this
+  carrier" is sales; "who approved this application" is verification.
+- **Recruiting is NOT hr.** Candidates and job openings live in a separate Recruit area under its own
+  access grant, with no agent. Do not send hiring questions to hr — say they are handled in the
+  Recruit Mytrion.
+
+hr is read-only and has no attendance tool. It cannot approve leave, edit a record or assign a
+shift; those are HR Mytrion actions needing HR admin rights.
 
 ## When two departments both genuinely apply
 

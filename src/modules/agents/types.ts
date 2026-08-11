@@ -20,6 +20,7 @@ export const AGENT_KEYS = [
   'analyst',
   'manager',
   'collection',
+  'hr',
 ] as const;
 
 export type AgentKey = (typeof AGENT_KEYS)[number];

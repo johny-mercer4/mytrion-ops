@@ -46,6 +46,19 @@ const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] 
     tools: [...BLACKBOARD, 'zoho_crm.query'].sort(),
     rag: ['marketing'],
   },
+  /**
+   * HR is the only agent whose data is entirely INTERNAL — employees, never carriers. This record
+   * asserts an absence as much as a presence: no crm.*, no agent.*, no warehouse.*.
+   *
+   * `hr.my_time_off` binds here because the manifest lists it. It is ALSO a universal tool, so every
+   * internal caller can reach it regardless of department — the two are independent, and it is the
+   * universal listing (not this one) that lets a non-HR employee ask about their own leave.
+   */
+  hr: {
+    caller: ['hr'],
+    tools: ['hr.find_employee', 'hr.my_time_off', ...BLACKBOARD].sort(),
+    rag: ['hr'],
+  },
   billing: {
     caller: ['billing'],
     tools: ['agent.debtors', ...BLACKBOARD, 'zoho_crm.query'].sort(),
@@ -144,9 +157,11 @@ describe('golden per-agent policy', () => {
     });
   }
 
-  it('read-only agents are exactly analyst + manager', () => {
+  it('read-only agents are exactly analyst + manager + hr', () => {
     const readOnly = ALL_AGENT_MANIFESTS.filter((m) => m.readOnly).map((m) => m.key).sort();
-    expect(readOnly).toEqual(['analyst', 'manager']);
+    // hr joined 2026-08-12: it reads the employee directory and leave balances and has no write
+    // path at all — editing a record, approving leave and assigning shifts are HR Mytrion actions.
+    expect(readOnly).toEqual(['analyst', 'hr', 'manager']);
   });
 
   it('every AGENT_KEY has a golden record (adding an agent forces a policy review)', () => {

@@ -169,3 +169,68 @@ describe('agent fleet projection', () => {
     expect(xml).toContain('&lt;/AgentFleet&gt;');
   });
 });
+
+/**
+ * The HR agent was added 2026-08-12. It is the one department whose data is entirely internal
+ * (employees, never carriers), and it was built tools-first: an agent whose department's work it has
+ * no tool for is precisely the dead end the routing skill exists to prevent.
+ */
+describe('HR agent', () => {
+  const hr = ALL_AGENT_MANIFESTS.find((m) => m.key === 'hr');
+
+  it('exists, is read-only, and is scoped to the hr department', () => {
+    expect(hr).toBeDefined();
+    expect(hr!.readOnly).toBe(true);
+    expect(hr!.departments).toEqual(['hr']);
+    expect(hr!.ragScope.allowAllDepartments).toBe(false);
+  });
+
+  it('actually has HR tools — not a department agent with nothing to call', () => {
+    expect(hr!.tools).toContain('hr.find_employee');
+    expect(hr!.tools).toContain('hr.my_time_off');
+  });
+
+  it('carries no carrier-facing tools, so it cannot answer about clients or money', () => {
+    const carrierTools = hr!.tools.filter(
+      (t) => t.startsWith('crm.') || t.startsWith('agent.') || t.startsWith('warehouse.'),
+    );
+    expect(carrierTools).toEqual([]);
+  });
+
+  it('gates the directory on the hr department but leaves own-leave open to any internal caller', () => {
+    const directory = toolRegistry.all().find((t) => t.name === 'hr.find_employee');
+    const timeOff = toolRegistry.all().find((t) => t.name === 'hr.my_time_off');
+    expect(directory?.allowedDepartments).toEqual(['hr']);
+    // Mirrors requireTimeOffInternal: owner-scoping happens inside the service, not at the gate, so
+    // every internal worker may ask about their OWN leave. An empty list is "open to all
+    // departments" per hasDepartmentAccess — the manifest-derived policy would otherwise stamp this
+    // ['hr'] and lock every non-HR employee out of their own balance.
+    expect(timeOff?.allowedDepartments ?? []).toEqual([]);
+    expect(directory?.riskClass).toBe('read');
+    expect(timeOff?.riskClass).toBe('read');
+  });
+
+  it('has its people-data skill assigned', () => {
+    expect(assignedSkillNames(hr!.skills).has('hr-people-data')).toBe(true);
+  });
+});
+
+describe('orchestrator skills track the real fleet', () => {
+  it('no longer claims HR has no agent', () => {
+    for (const name of ['orchestrator-fleet', 'orchestrator-routing']) {
+      const body = getSkill(name)!.body;
+      expect(body).not.toContain('no HR specialist');
+      expect(body).not.toMatch(/HR (question|data)[^.]*\bno agent\b/i);
+    }
+    // "no agent" is still a TRUE and load-bearing statement elsewhere — e.g. no agent has a
+    // rejections tool, and Recruit has no agent — so it must not be blanket-banned.
+    expect(getSkill('orchestrator-routing')!.body).toContain('no agent');
+  });
+
+  it('states the fleet size that matches the registry', () => {
+    const fleet = getSkill('orchestrator-fleet')!.body;
+    expect(fleet).toContain(`**${ALL_AGENT_MANIFESTS.length} department specialists**`);
+    // A stale count elsewhere in the prose is exactly how this drifts.
+    expect(fleet).not.toMatch(/\ball 11\b|number 11\b/);
+  });
+});
