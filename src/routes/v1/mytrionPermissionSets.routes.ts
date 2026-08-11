@@ -119,6 +119,33 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
     };
   });
 
+  /**
+   * Why can this worker reach what they reach?
+   *
+   * The trace comes out of `combineAccess` itself, not a second explain function — a parallel
+   * implementation would drift from the resolver, and an access explainer that disagrees with the
+   * gate is worse than none. Identity comes from the live Zoho roster so the answer is about the
+   * person, not about a stale denormalized snapshot.
+   */
+  app.get('/admin/mytrion-access/users/:zohoUserId/effective', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const { zohoUserId } = z.object({ zohoUserId: z.string().min(1) }).parse(request.params);
+    const roster = await listActiveUsersCached().catch(() => []);
+    const who = roster.find((u) => u.zohoUserId === zohoUserId);
+    const { access, trace } = await mytrionAccessService.explain({
+      tenantId: ctx.tenantId,
+      zohoUserId,
+      profileName: who?.profile ?? null,
+      zohoRole: who?.role ?? null,
+      userName: who?.name ?? null,
+    });
+    return {
+      worker: { zohoUserId, name: who?.name ?? null, profile: who?.profile ?? null },
+      access,
+      trace,
+    };
+  });
+
   app.post('/admin/permission-sets', guard, async (request, reply) => {
     const ctx = requireAdmin(request);
     const body = createBody.parse(request.body ?? {});

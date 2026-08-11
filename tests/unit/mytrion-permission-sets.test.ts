@@ -356,3 +356,53 @@ describe('permission-set reads fail soft', () => {
     expect(r.mytrionTabGrants).toEqual({});
   });
 });
+
+describe('explain() provenance', () => {
+  it('names the layer whose unscoped grant DEFEATED a set scope', async () => {
+    /**
+     * The reason the trace exists.
+     *
+     * "I scoped them to Ledger and they still see everything" is unanswerable without this: profile
+     * defaults have no tab column, so there is nothing for an admin to look at that would explain it.
+     */
+    profileGrants('billing');
+    holds(set({ id: 's1', name: 'Billing — Ledger only', allowedMytrions: ['billing'], tabGrants: { billing: ['ledger'] } }));
+    const { trace } = await mytrionAccessService.explain(principal({ profileName: 'Standard' }));
+    const billing = trace?.mytrions.find((m) => m.mytrion === 'billing');
+    expect(billing?.tabs.scoped).toBe(false);
+    expect(billing?.tabs.unscopedBy?.layer).toBe('profile');
+    expect(billing?.tabs.unscopedBy?.label).toContain('Standard');
+  });
+
+  it('lists every layer that granted a Mytrion', async () => {
+    profileGrants('billing');
+    holds(set({ id: 's1', name: 'Billing Ops', allowedMytrions: ['billing'] }));
+    const { trace } = await mytrionAccessService.explain(principal({ profileName: 'Standard' }));
+    const layers = trace?.mytrions.find((m) => m.mytrion === 'billing')?.grantedBy.map((g) => g.layer);
+    expect(layers).toContain('profile');
+    expect(layers).toContain('permission_set');
+  });
+
+  it('attributes the MODE to the layer resolveModes actually used', async () => {
+    holds(set({ id: 's1', name: 'Billing Full Ops', allowedMytrions: ['billing'], mytrionAccessModes: { billing: 'full' } }));
+    wa.findByZohoUserId.mockResolvedValue({
+      allowedMytrions: ['billing'], deniedMytrions: [], allDepartmentAccess: null, homeMytrion: null,
+      viewAsUserIds: [], mytrionAccessModes: { billing: 'read' }, active: true,
+    } as never);
+    const { access, trace } = await mytrionAccessService.explain(principal());
+    const billing = trace?.mytrions.find((m) => m.mytrion === 'billing');
+    // The gate and the explanation must never disagree — they read the same computed value.
+    expect(billing?.mode).toBe(access.mytrionAccessModes.billing);
+    expect(billing?.mode).toBe('full');
+    expect(billing?.modeFrom.layer).toBe('permission_set');
+  });
+
+  it('reports a scope that DID survive', async () => {
+    holds(set({ id: 's1', allowedMytrions: ['billing'], tabGrants: { billing: ['ledger'] } }));
+    const { trace } = await mytrionAccessService.explain(principal());
+    const billing = trace?.mytrions.find((m) => m.mytrion === 'billing');
+    expect(billing?.tabs.scoped).toBe(true);
+    expect(billing?.tabs.keys).toEqual(['ledger']);
+    expect(billing?.tabs.unscopedBy).toBeUndefined();
+  });
+});

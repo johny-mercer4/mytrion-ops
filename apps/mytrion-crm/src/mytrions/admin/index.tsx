@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PermissionSets } from './PermissionSets';
 import type { AdminTabKey } from './adminTabs';
 import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
@@ -97,6 +98,15 @@ export default function AdminMytrion() {
           active: tab === 'access',
           onClick: () => setTab('access'),
           keywords: ['rbac', 'workers', 'permissions'],
+        },
+        {
+          key: 'permission-sets',
+          tone: 'var(--tone-violet)',
+          label: 'Permission Sets',
+          icon: <AccessIcon />,
+          active: tab === 'permission-sets',
+          onClick: () => setTab('permission-sets'),
+          keywords: ['rbac', 'sets', 'salesforce', 'grants', 'tabs', 'assign'],
         },
         {
           key: 'carriers',
@@ -278,6 +288,7 @@ export default function AdminMytrion() {
       {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
       {tab === 'browser' && <KnowledgeBrowser />}
       {tab === 'access' && <UserManagement />}
+      {tab === 'permission-sets' && <PermissionSets />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'news' && <ClientNews />}

@@ -2102,3 +2102,12 @@
    positioned ring scrolls away with the content. Same reason as ever for not using `border-image`:
    it takes a gradient but ignores border-radius, and a background layer clipped to the border box
    respects the radius. */
+
+/* ── Permission sets ───────────────────────────────────────────────────────── */
+/* One granted Mytrion's controls: its read/full mode and its tab scope. Indented against a rule so
+   the grid of chips above reads as the parent and these as its detail, without a nested card. */
+.permissionSetRow {
+  margin-top: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border);
+}

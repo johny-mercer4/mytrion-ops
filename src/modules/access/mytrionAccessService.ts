@@ -204,6 +204,53 @@ interface ComputeResult {
   value: ResolvedAccess;
   /** true when the value is a DB-error fallback (not a confident resolution). */
   degraded: boolean;
+  /** Provenance, only when `opts.trace` was requested. Never allocated on the hot path. */
+  trace?: AccessTrace;
+}
+
+/** Which layer granted a thing. Ordered the way `combineAccess` applies them. */
+export type AccessLayer =
+  | 'legacy'
+  | 'profile'
+  | 'role'
+  | 'marker_admin'
+  | 'override'
+  | 'permission_set'
+  | 'break_glass';
+
+export interface AccessTraceEntry {
+  mytrion: MytrionId;
+  /** Every layer that granted it, in application order. */
+  grantedBy: { layer: AccessLayer; label: string }[];
+  mode: MytrionAccessMode;
+  modeFrom: { layer: AccessLayer; label: string };
+  tabs: {
+    scoped: boolean;
+    keys: string[];
+    /**
+     * Set when a scope was DEFEATED — some layer granted this Mytrion without a tab list, so the
+     * union is unscoped and every tab renders. This is the field the whole trace exists for: it is
+     * the one behaviour that looks like a bug and is not.
+     */
+    unscopedBy?: { layer: AccessLayer; label: string };
+  };
+}
+
+/**
+ * Why a worker can reach what they can reach.
+ *
+ * Computed BY `combineAccess` itself rather than by a second explain function, deliberately. A
+ * parallel implementation would drift from the resolver — which is precisely the failure the
+ * LAST_ADMIN comment in mytrionAccess.routes.ts narrates for a different pair of divergent paths —
+ * and an access explainer that disagrees with the gate is worse than none.
+ *
+ * It is plain data, so `combineAccess` stays pure and the hot path (no `opts`) allocates nothing.
+ */
+export interface AccessTrace {
+  mytrions: AccessTraceEntry[];
+  denied: MytrionId[];
+  /** `enforceableAllDept` fired: an all-access grant was downgraded because a deny list exists. */
+  allDeptDowngraded: boolean;
 }
 
 /**
@@ -287,6 +334,8 @@ function combineAccess(
   ov: WorkerMytrionAccessDto | undefined,
   /** ALREADY filtered to this worker's active assignments — keeps this function pure. */
   sets: readonly MytrionPermissionSetDto[] = [],
+  /** Provenance is opt-in: the per-request path passes nothing and allocates nothing. */
+  opts?: { trace?: boolean },
 ): ComputeResult {
   // Marker admin = all-access by DEFAULT (a baseline the DB may lower).
   const markerAdmin = resolveAllDepartmentAccess({
@@ -366,7 +415,37 @@ function combineAccess(
    * from someone who holds it through a set.
    */
   const legacyGranted = [...allowed];
-  for (const set of sets) allowed = unionMytrions(allowed, set.allowedMytrions);
+
+  /**
+   * Provenance, recorded as we go rather than reconstructed afterwards.
+   *
+   * `grantedBy` is append-only and in application order, so the drawer can say "granted by Profile
+   * Default 'Standard' AND by set 'Billing Full Ops'" — which is the question an admin actually has
+   * when someone can reach something unexpected.
+   */
+  const grantedBy = new Map<MytrionId, { layer: AccessLayer; label: string }[]>();
+  const note = (id: MytrionId, layer: AccessLayer, label: string): void => {
+    if (opts?.trace !== true) return;
+    grantedBy.set(id, [...(grantedBy.get(id) ?? []), { layer, label }]);
+  };
+  if (opts?.trace === true) {
+    for (const id of legacyGranted) {
+      note(
+        id,
+        havePd && pd ? 'profile' : haveRd && rd ? 'role' : 'legacy',
+        havePd && pd ? `Profile Default "${pd.profileName}"` : haveRd && rd ? `Role Default "${rd.roleName}"` : 'Legacy profile match',
+      );
+    }
+    if (haveOv && ov && ov.allowedMytrions != null) {
+      for (const id of ov.allowedMytrions) note(id, 'override', 'Per-user override');
+    }
+    if (markerAdmin) for (const id of MYTRION_IDS) note(id, 'marker_admin', 'Administrator profile/role');
+  }
+
+  for (const set of sets) {
+    allowed = unionMytrions(allowed, set.allowedMytrions);
+    for (const id of set.allowedMytrions) note(id, 'permission_set', `Permission set "${set.name}"`);
+  }
 
   // Step 4 — BREAK-GLASS FLOOR: only an env-named user's all-access is immovable by the DB. A
   // profile/role marker admin is NOT pinned here any more — see the header.
@@ -381,6 +460,10 @@ function combineAccess(
   // explicit department grant so the deny actually enforces (not just hidden in the UI list).
   const enforceableAllDept = allDept && (breakGlass || denied.length === 0);
   const roleModes = haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
+  // Computed once and shared with the trace, so the drawer can never disagree with the gate.
+  const modes = resolveModes(accessible, enforceableAllDept || breakGlass, roleModes, userModes, sets);
+  const tabGrants: TabGrants =
+    enforceableAllDept || breakGlass ? {} : resolveTabGrants(accessible, legacyGranted, sets);
   return {
     value: {
       accessibleMytrions: accessible,
@@ -388,18 +471,101 @@ function combineAccess(
       allDepartmentAccess: enforceableAllDept,
       departments: enforceableAllDept ? [] : departmentsForMytrions(accessible),
       viewAsUserIds,
-      mytrionAccessModes: resolveModes(
-        accessible,
-        enforceableAllDept || breakGlass,
-        roleModes,
-        userModes,
-        sets,
-      ),
+      mytrionAccessModes: modes,
       // An all-access grant means all tabs. Leaving stale scoping on an admin is a support ticket.
-      mytrionTabGrants:
-        enforceableAllDept || breakGlass ? {} : resolveTabGrants(accessible, legacyGranted, sets),
+      mytrionTabGrants: tabGrants,
     },
     degraded: false,
+    ...(opts?.trace === true
+      ? {
+          trace: buildTrace({
+            accessible,
+            denied,
+            allDeptDowngraded: allDept && !enforceableAllDept,
+            grantedBy,
+            modes,
+            tabGrants,
+            legacyGranted,
+            sets,
+            userModes,
+            roleModes,
+            roleLabel: haveRd && rd ? `Role Default "${rd.roleName}"` : null,
+            profileLabel: havePd && pd ? `Profile Default "${pd.profileName}"` : null,
+          }),
+        }
+      : {}),
+  };
+}
+
+/**
+ * Turn the recorded layers into the drawer's shape.
+ *
+ * The only genuinely interesting output is `unscopedBy`: it names the layer whose UNSCOPED grant
+ * defeated a set's tab scope. Without it, "I scoped them to Ledger and they still see everything"
+ * is an unanswerable support question — the admin has no way to see that a profile default is the
+ * reason, because profile defaults have no tab column to look at.
+ */
+function buildTrace(input: {
+  accessible: MytrionId[];
+  denied: MytrionId[];
+  allDeptDowngraded: boolean;
+  grantedBy: Map<MytrionId, { layer: AccessLayer; label: string }[]>;
+  modes: MytrionAccessModes;
+  tabGrants: TabGrants;
+  legacyGranted: readonly MytrionId[];
+  sets: readonly MytrionPermissionSetDto[];
+  userModes: MytrionAccessModes;
+  roleModes: MytrionAccessModes;
+  roleLabel: string | null;
+  profileLabel: string | null;
+}): AccessTrace {
+  const legacySet = new Set(input.legacyGranted);
+  return {
+    denied: input.denied,
+    allDeptDowngraded: input.allDeptDowngraded,
+    mytrions: input.accessible.map((id) => {
+      const mode = input.modes[id] ?? 'full';
+
+      // Which layer decided the MODE — mirroring resolveModes' own precedence exactly.
+      const setFull = input.sets.find((s) => s.allowedMytrions.includes(id) && s.mytrionAccessModes[id] === 'full');
+      let modeFrom: { layer: AccessLayer; label: string };
+      if (setFull) modeFrom = { layer: 'permission_set', label: `Permission set "${setFull.name}"` };
+      else if (input.userModes[id] !== undefined) modeFrom = { layer: 'override', label: 'Per-user override' };
+      else if (input.roleModes[id] !== undefined) modeFrom = { layer: 'role', label: input.roleLabel ?? 'Role default' };
+      else {
+        const setRead = input.sets.find((s) => s.allowedMytrions.includes(id));
+        modeFrom = setRead
+          ? { layer: 'permission_set', label: `Permission set "${setRead.name}"` }
+          : { layer: 'legacy', label: 'Default (full)' };
+      }
+
+      const keys = input.tabGrants[id];
+      const scoped = keys !== undefined;
+      // A set that scoped this Mytrion, but only matters when the scope did NOT survive.
+      const scopingSet = input.sets.find((s) => s.tabGrants[id] !== undefined);
+      let unscopedBy: { layer: AccessLayer; label: string } | undefined;
+      if (!scoped && scopingSet) {
+        if (legacySet.has(id)) {
+          unscopedBy = input.profileLabel
+            ? { layer: 'profile', label: input.profileLabel }
+            : input.roleLabel
+              ? { layer: 'role', label: input.roleLabel }
+              : { layer: 'legacy', label: 'Legacy profile match' };
+        } else {
+          const openSet = input.sets.find((s) => s.allowedMytrions.includes(id) && s.tabGrants[id] === undefined);
+          if (openSet) unscopedBy = { layer: 'permission_set', label: `Permission set "${openSet.name}"` };
+          else unscopedBy = { layer: 'override', label: 'Per-user override' };
+        }
+      }
+
+      return {
+        mytrion: id,
+        grantedBy: input.grantedBy.get(id) ?? [],
+        mode,
+        modeFrom,
+        tabs: { scoped, keys: keys ?? [], ...(unscopedBy ? { unscopedBy } : {}) },
+      };
+    }),
   };
 }
 
@@ -507,6 +673,43 @@ function legacyAccess(input: ResolveWorkerAccessInput, envAdmin: boolean): Resol
 }
 
 export const mytrionAccessService = {
+  /**
+   * Resolve WITH provenance, for the admin "why can they see this?" drawer.
+   *
+   * Deliberately UNCACHED: it is an admin-initiated, one-user-at-a-time read, and serving a 10s-old
+   * explanation for a grant someone just edited is exactly the confusion this exists to remove.
+   */
+  async explain(input: ResolveWorkerAccessInput): Promise<{ access: ResolvedAccess; trace: AccessTrace | null }> {
+    const ctx = internalCtx(input.tenantId);
+    try {
+      const [pd, rd, ov, assignments, allSets] = await Promise.all([
+        input.profileName != null
+          ? mytrionProfileDefaultsRepo.findByKey(ctx, profileKeyOf(input.profileName))
+          : Promise.resolve(undefined),
+        input.zohoRole != null && input.zohoRole.trim() !== ''
+          ? mytrionRoleDefaultsRepo.findByKey(ctx, roleKeyOf(input.zohoRole))
+          : Promise.resolve(undefined),
+        input.zohoUserId
+          ? workerMytrionAccessRepo.findByZohoUserId(ctx, input.zohoUserId)
+          : Promise.resolve(undefined),
+        input.zohoUserId
+          ? mytrionPermissionSetAssignmentsRepo.listByZohoUserId(ctx, input.zohoUserId).catch(setsUnavailable('assignments'))
+          : Promise.resolve([]),
+        mytrionPermissionSetsRepo.listActive(ctx).catch(setsUnavailable('sets')),
+      ]);
+      const result = combineAccess(input, pd, rd, ov, filterAssignedSets(allSets, assignments), {
+        trace: true,
+      });
+      return { access: result.value, trace: result.trace ?? null };
+    } catch (err) {
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err), zohoUserId: input.zohoUserId },
+        'access explain failed',
+      );
+      return { access: legacyAccess(input, false), trace: null };
+    }
+  },
+
   /** Resolve (TTL-cached) a worker's effective Mytrion access. Never throws — degrades to legacy. */
   async resolveWorkerAccess(input: ResolveWorkerAccessInput): Promise<ResolvedAccess> {
     const key = cacheKey(input);
