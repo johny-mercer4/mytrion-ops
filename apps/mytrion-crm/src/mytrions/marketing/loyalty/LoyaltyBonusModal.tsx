@@ -132,7 +132,7 @@ export function LoyaltyBonusModal({ client, tier, onClose, onSaved }: Props) {
   };
 
   return createPortal(
-    <div className="mg-root mg-lty mg-lty-modal-scope" data-mytrion="manager">
+    <div className="mg-root mg-lty mg-lty-modal-scope" data-mytrion="marketing">
       <div
         className="mg-lty-modal-scrim"
         onMouseDown={(event) => {

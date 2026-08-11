@@ -88,6 +88,8 @@ function resolveModes(
   roleModes: MytrionAccessModes,
   userModes: MytrionAccessModes,
   sets: readonly MytrionPermissionSetDto[] = [],
+  /** Mytrions granted by the NON-set layers. A set's `read` may not lower any of these. */
+  otherLayerGranted: ReadonlySet<MytrionId> = new Set(),
 ): MytrionAccessModes {
   if (allDept) {
     const out: MytrionAccessModes = {};
@@ -119,7 +121,22 @@ function resolveModes(
     }
     const fromUser = userModes[id];
     const fromRole = roleModes[id];
-    const fromSet: MytrionAccessMode | undefined = setRead.has(id) ? 'read' : undefined;
+    /**
+     * A set's `read` counts ONLY when the set is the sole source of the grant.
+     *
+     * Sets are additive: they may raise a mode, never lower one. Profile defaults have no mode
+     * column, so a Mytrion they grant is implicitly FULL — and consulting `fromSet` unconditionally
+     * meant assigning a read-only set to someone who already had that Mytrion REVOKED their write
+     * access, which is the exact opposite of what an additive grant is allowed to do.
+     *
+     * It also removed a real hazard in the other direction: when the permission-set read fails soft,
+     * a `read` that HAD been lowering something would spring back to `full`, so a transient database
+     * problem escalated a user. With this rule the failure is strictly narrowing in every case —
+     * either the set was the only source (and the Mytrion disappears entirely) or it was never
+     * setting the mode at all.
+     */
+    const fromSet: MytrionAccessMode | undefined =
+      setRead.has(id) && !otherLayerGranted.has(id) ? 'read' : undefined;
     const mode: MytrionAccessMode = fromUser ?? fromRole ?? fromSet ?? 'full';
     out[id] = mode;
   }
@@ -461,9 +478,25 @@ function combineAccess(
   const enforceableAllDept = allDept && (breakGlass || denied.length === 0);
   const roleModes = haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
   // Computed once and shared with the trace, so the drawer can never disagree with the gate.
-  const modes = resolveModes(accessible, enforceableAllDept || breakGlass, roleModes, userModes, sets);
+  const modes = resolveModes(
+    accessible,
+    enforceableAllDept || breakGlass,
+    roleModes,
+    userModes,
+    sets,
+    new Set(legacyGranted),
+  );
+  /**
+   * `allDept`, NOT `enforceableAllDept`.
+   *
+   * An all-department grant IS an unscoped grant of everything, so it defeats a set's tab scope the
+   * same way a profile default does. `enforceableAllDept` is false whenever a deny list exists —
+   * that downgrade exists so the Mytrion-level DENY actually enforces, and reusing it here meant an
+   * admin who is denied one workspace suddenly had the rest of their nav scoped by any set they
+   * happen to hold. Over-restriction rather than escalation, but wrong either way.
+   */
   const tabGrants: TabGrants =
-    enforceableAllDept || breakGlass ? {} : resolveTabGrants(accessible, legacyGranted, sets);
+    allDept || breakGlass ? {} : resolveTabGrants(accessible, legacyGranted, sets);
   return {
     value: {
       accessibleMytrions: accessible,
@@ -533,7 +566,12 @@ function buildTrace(input: {
       else if (input.userModes[id] !== undefined) modeFrom = { layer: 'override', label: 'Per-user override' };
       else if (input.roleModes[id] !== undefined) modeFrom = { layer: 'role', label: input.roleLabel ?? 'Role default' };
       else {
-        const setRead = input.sets.find((s) => s.allowedMytrions.includes(id));
+        // Mirrors resolveModes exactly: a set's `read` only decides the mode when the set is the
+        // SOLE source. If another layer granted this Mytrion the mode is the implicit full, and
+        // saying "mode from permission set X" would be a lie the admin then acts on.
+        const setRead = legacySet.has(id)
+          ? undefined
+          : input.sets.find((s) => s.allowedMytrions.includes(id));
         modeFrom = setRead
           ? { layer: 'permission_set', label: `Permission set "${setRead.name}"` }
           : { layer: 'legacy', label: 'Default (full)' };

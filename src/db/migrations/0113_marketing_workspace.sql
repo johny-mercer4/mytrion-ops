@@ -55,3 +55,20 @@ SET mytrion_access_modes =
     updated_at = now()
 WHERE mytrion_access_modes ? 'manager'
   AND NOT (mytrion_access_modes ? 'marketing');
+
+-- Carry the DENY across too.
+--
+-- `denied_mytrions` is the only way an admin can say "all access EXCEPT Manager" — UserAccessForm
+-- writes exactly that shape (allowed_mytrions NULL + all_department_access true + a deny). The
+-- grant/mode statements above would hand such a worker the Referral and Loyalty programs they were
+-- specifically refused, with FULL write on the loyalty overrides, because `marketing` is a new id
+-- that their existing deny list cannot name.
+--
+-- Deliberately NOT symmetric with the grants: a deny is a decision about these two programs, so it
+-- follows them. A grant is a decision about the Manager workspace, which is why the grant statements
+-- above are the widened-predicate ones.
+UPDATE worker_mytrion_access
+SET denied_mytrions = denied_mytrions || '["marketing"]'::jsonb,
+    updated_at = now()
+WHERE denied_mytrions ? 'manager'
+  AND NOT (denied_mytrions ? 'marketing');

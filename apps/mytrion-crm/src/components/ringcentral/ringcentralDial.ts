@@ -9,7 +9,15 @@ declare global {
       clickToCall?: (phoneNumber: string, toCall?: boolean) => void;
       setMinimized?: (minimized: boolean) => void;
       setClosed?: (closed: boolean) => void;
+      /** Vendor teardown. Removes the container and its mousemove/resize listeners. */
+      dispose?: () => void;
     };
+    /**
+     * The vendor's own supported teardown: `if (!window.RCAdapter) return; RCAdapter.dispose();
+     * RCAdapter = null;`. It short-circuits on a missing global, so it MUST be called before the
+     * handle is dropped.
+     */
+    RCAdapterDispose?: () => void;
   }
 }
 

@@ -23,10 +23,12 @@
   --mg-border: color-mix(in srgb, var(--border) 92%, transparent);
   --mg-border-strong: color-mix(in srgb, var(--text-muted) 25%, var(--border));
 
-  /* Manager's ambience is the shared Horizon mesh, pulled a touch quieter — this is a records-and-
-     tables module, not a landing page. Everything derives from --hz-page so the two themes stay in
-     step. */
-  --hz-page: #090d18;
+  /* Ambience is the shared Horizon mesh, pulled a touch quieter — this is a records-and-tables
+     module, not a landing page. Everything below derives from --hz-page, which is `var(--page)`
+     globally (horizon.css) and therefore already theme-aware.
+     This block is UNSCOPED — it applies in both themes — so pinning a dark literal here painted the
+     shell near-black in LIGHT mode the moment the light override that used to correct it was
+     removed. Never restate --hz-page here; scope any theme-specific value to [data-theme='…']. */
   --hz-mesh:
     radial-gradient(ellipse 70% 45% at 10% 0%, rgba(56, 189, 248, 0.07), transparent 62%),
     radial-gradient(ellipse 54% 44% at 92% 8%, rgba(167, 139, 250, 0.045), transparent 58%),

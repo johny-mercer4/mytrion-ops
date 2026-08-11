@@ -305,7 +305,7 @@ export function ReferralDetailModal({
   }, [onClose]);
 
   return createPortal(
-    <div className={`mg-root mg-rf-modal-scope ${tone}`} data-mytrion="manager">
+    <div className={`mg-root mg-rf-modal-scope ${tone}`} data-mytrion="marketing">
       <div className="mg-rf-scrim" role="presentation" onMouseDown={onClose}>
         <div
           ref={dialogRef}

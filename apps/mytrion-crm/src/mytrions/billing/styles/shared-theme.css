@@ -204,7 +204,11 @@
        kept flat 0.13-alpha edges and a 0.05-alpha lift no matter what the light theme did. */
     --color-border: var(--border);
 
-    --track:        var(--border-strong);
+    /* A background FILL, not an edge — four consumers set `background: var(--track)`, and one of
+       them is `.lg-aging-seg--empty`. --border-strong is opaque #8590ae, which renders an EMPTY
+       aging segment as a solid mid-grey bar that reads as filled. Faint and translucent, matching
+       dark's rgba(200,204,218,0.08) intent. */
+    --track:        var(--border);
     --card-shadow:  var(--hz-shadow-rest);
     --dim:          var(--text-disabled);
     /* Design muted-chip sem tokens (chip('muted')). */

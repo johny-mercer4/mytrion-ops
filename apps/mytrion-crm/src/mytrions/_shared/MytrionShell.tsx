@@ -356,7 +356,10 @@ export function MytrionShell({
    */
   const mobileSections: NavSection[] = phone
     ? [
-        ...sections,
+        // gatedSections, NOT sections. Below 640px there is no rail, so the tab bar and its More
+        // sheet are the ONLY navigation — reading the ungated list here meant the permission-set
+        // tab gate applied on a desktop and silently did nothing on a phone.
+        ...gatedSections,
         ...(gatedFooter.length > 0 || enableDockChat
           ? [
               {

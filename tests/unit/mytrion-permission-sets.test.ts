@@ -213,6 +213,48 @@ describe('read/full — most permissive wins', () => {
     expect(r.mytrionAccessModes.billing).toBe('full');
   });
 
+  it('does NOT let a set read LOWER a mode another layer already implies', async () => {
+    /**
+     * Additive means a set may raise a mode and never lower one.
+     *
+     * Profile defaults have no mode column, so a Mytrion they grant is implicitly FULL. Consulting
+     * the set's `read` unconditionally meant assigning a read-only set to someone who already had
+     * Billing REVOKED their write access — the exact opposite of what an additive grant may do.
+     */
+    profileGrants('billing');
+    holds(set({ id: 's1', allowedMytrions: ['billing'], mytrionAccessModes: { billing: 'read' } }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.mytrionAccessModes.billing).toBe('full');
+  });
+
+  it('DOES apply a set read when the set is the only source of the grant', async () => {
+    // The set granted it, so the set gets to say how. Nothing is being lowered.
+    holds(set({ id: 's1', allowedMytrions: ['billing'], mytrionAccessModes: { billing: 'read' } }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal());
+    expect(r.mytrionAccessModes.billing).toBe('read');
+  });
+
+  it('degrades strictly NARROWER when the permission-set read fails', async () => {
+    /**
+     * The hazard the rule above also closes.
+     *
+     * When a set's `read` had been lowering an implicit full, a fail-soft read would spring the mode
+     * back to `full` — so a transient database problem ESCALATED a read-only user to write. Now the
+     * healthy and failed answers agree, because the set was never setting the mode to begin with.
+     */
+    profileGrants('billing');
+    holds(set({ id: 's1', allowedMytrions: ['billing'], mytrionAccessModes: { billing: 'read' } }));
+    const healthy = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+
+    mytrionAccessService.invalidateAll();
+    ps.listActive.mockRejectedValue(new Error('relation does not exist'));
+    psa.listByZohoUserId.mockRejectedValue(new Error('relation does not exist'));
+    const failed = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+
+    expect(failed.mytrionAccessModes.billing).toBe(healthy.mytrionAccessModes.billing);
+    expect(failed.mytrionAccessModes.billing).toBe('full');
+  });
+
   it("keeps a per-user read when the set only says read", async () => {
     wa.findByZohoUserId.mockResolvedValue({
       allowedMytrions: [],
@@ -289,6 +331,19 @@ describe('tab grants', () => {
     const r = await mytrionAccessService.resolveWorkerAccess(principal());
     expect(r.mytrionTabGrants.billing).toBeUndefined();
     expect(r.mytrionTabGrants.hr).toEqual(['home']);
+  });
+
+  it('clears every scope for an all-access admin even when one Mytrion is DENIED', async () => {
+    // The deny downgrades `enforceableAllDept` so the Mytrion deny enforces — it must not also turn
+    // on tab scoping for someone who was granted everything.
+    wa.findByZohoUserId.mockResolvedValue({
+      allowedMytrions: null, deniedMytrions: ['hr'], allDepartmentAccess: null, homeMytrion: null,
+      viewAsUserIds: [], mytrionAccessModes: {}, active: true,
+    } as never);
+    holds(set({ id: 's1', allowedMytrions: ['billing'], tabGrants: { billing: ['ledger'] } }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Administrator' }));
+    expect(r.accessibleMytrions).not.toContain('hr');
+    expect(r.mytrionTabGrants).toEqual({});
   });
 
   it('clears every scope for an all-access admin', async () => {

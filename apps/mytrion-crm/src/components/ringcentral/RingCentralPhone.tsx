@@ -126,9 +126,27 @@ function teardownAdapter(): void {
   document.getElementById(RC_ADAPTER_SCRIPT_ID)?.remove();
   rcWidgetRoot()?.remove(); // takes the iframe with it
   rcFrame()?.remove(); // fallback if the vendor ever reparents the frame
-  // The vendor assigns this on every boot, and we always re-inject adapter.js after a teardown, so
-  // dropping it is safe. Leaving it meant `clickToDial` could find a live-looking API on a widget
-  // whose iframe no longer exists.
+  /**
+   * Ask the vendor to dispose BEFORE dropping the handle.
+   *
+   * `window.RCAdapter` is also the vendor's own re-init guard — `init()` opens with
+   * `if (window.RCAdapter) return;` — so deleting it without disposing means the next visit to a
+   * desk-phone Mytrion constructs a SECOND Adapter while the first stays alive. Ten Sales↔Billing
+   * hops in a shift leaves eleven instances, each still running its message handler for every
+   * widget postMessage against a detached subtree, and each holding a beforeunload handler. Dropping
+   * the handle first also makes `window.RCAdapterDispose()` a permanent no-op, so nothing can ever
+   * reclaim them.
+   *
+   * dispose() does not remove the constructor's own message/click/beforeunload listeners, so this
+   * bounds the leak rather than eliminating it — the complete fix is to stop re-constructing per
+   * navigation, which is a larger change than this scope. Guarded because it is a vendor API that
+   * may not exist on every adapter build.
+   */
+  try {
+    window.RCAdapterDispose?.();
+  } catch {
+    /* vendor teardown is best-effort — never let it block removing the DOM below */
+  }
   delete window.RCAdapter;
 }
 
