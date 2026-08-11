@@ -1,103 +1,135 @@
 import type { AgentSkill } from '../types.js';
 
 /**
- * Department boundaries. Every rule here is a boundary that has actually caused, or would obviously
- * cause, a misroute — not a restatement of what each agent's description already says.
+ * Department boundaries — rewritten 2026-08-12 after a department review verified each proposed rule
+ * adversarially. Of 24 candidate boundaries, **6 survived and 18 were refuted**, and nearly every
+ * refutation had the same cause: the rule reasoned from HTTP route RBAC while the orchestrator
+ * delegates to AGENTS, whose capability is `AgentManifest.tools`. Those are different planes, and a
+ * rule that confuses them sends work to a specialist with no tool to do it.
  *
- * The orchestrator already sees each specialist's one-line description via the task tool, so listing
- * departments again would be prompt weight for nothing. What it cannot infer from a description is
- * where two adjacent departments meet, which is where routing actually fails.
+ * So this file leads with that principle and with what NO agent can do, because a confident dead end
+ * costs a user more than an honest "we can't".
  */
 export const ORCHESTRATOR_ROUTING_SKILL: AgentSkill = {
   name: 'orchestrator-routing',
   whenToUse:
     'Before delegating anything that touches two departments, or when the obvious specialist is not ' +
-    'clearly right — money, cards, at-risk clients, applications, or "my numbers" questions.',
+    'clearly right — money, cards, tickets, retention, applications, or "my numbers" questions.',
   body: `# Where the boundaries are
 
-Routing fails at the seams between departments, not in the middle of one. These are the seams.
+## The rule that governs all the others
 
-## How-to versus do-it — the seam that matters most
+**A department owning a job in the product does not mean its specialist can do that job here.**
+
+The Sales Mytrion UI can do far more than any agent can. Much of the platform's real work runs
+through HTTP routes and UI touchpoints that **no agent binds as a tool**. A specialist's capability
+is exactly its tool list — nothing else.
+
+So before routing, ask: *does the destination actually have a tool for this?* If it does not, routing
+there produces a confident refusal that reads like a bug. Say plainly that it is not something the
+assistant can do, and name where in the product it happens instead.
+
+## What NO agent can do (check here first)
+
+No specialist in the fleet has a tool for any of these. Do not route them — answer the how-to from
+the owning department if one is documented, and otherwise say it must be done in the product:
+
+- **Retention case data** — creating, reassigning, updating, or listing cases. Not even the retention
+  specialist; its whole toolset is a CRM query plus blackboard/file/warehouse access.
+- **Money codes** — listing or voiding them. They exist only as Sales Mytrion touchpoints.
+- **Rejection reports** — no manifest carries a rejections tool at all.
+- **Prospect search by MC/DOT** — no agent reaches the broker/prospect source.
+- **Marketing spend** — cost-per-lead, campaign performance, channel ROI. There is no cost source in
+  the platform, for anyone.
+- **KPI targets and task assignment** — setting targets or assigning work to a rep.
+
+For all of these, the honest answer names the screen. "That's done in the Retention tab of Sales
+Mytrion — I can walk you through it" beats a routed refusal.
+
+## The seam that matters most: how-to versus do-it
 
 **A question about how to do something is documentation. A request to change data is an action.**
 They route differently even when they name the same thing.
 
-- "How do I activate a card?" → **sales**. It is a documented Sales Mytrion click path, answered from
-  the knowledge base. It stays with sales even though the underlying automation touches Customer
-  Service, Billing, EFS or WEX — the rep is asking how to drive the screen in front of them.
-- "Activate this card for my client" / "the activation failed" → **customer-service**. Something must
-  actually change, or something went wrong that a rep cannot fix.
+- "How do I activate a card?" / "where is Automations?" / "what does C-8 do?" → **sales**. Documented
+  Sales Mytrion click paths, answered from the knowledge base. This stays with sales even when the
+  underlying automation reaches Customer Service, Billing, EFS or WEX — the rep is asking how to
+  drive the screen in front of them.
+- Something must actually change → the rep runs it themselves in Sales Mytrion (these are
+  self-service automations on their own carriers), or, if they are genuinely blocked, it escalates.
 
-The same split applies to limits, money codes, fraud holds, replacements, overrides, reactivation and
-closing applications. Do not escalate a how-to just because the documented workflow writes data.
+Do not escalate a how-to just because the documented workflow writes data.
 
-## sales versus data-center
+## Verified boundaries
 
-- **data-center** — record-level reads of the rep's own leads, deals and clients: "list my leads",
-  "which deals are in negotiation", "my book of business records".
-- **sales** — everything else the rep does: Sales Mytrion how-to and navigation, Automations and
-  service codes, Retention and Open Pool procedure, pipeline coaching, demos, their own performance,
-  and self-service on their own clients' balance, cards, transactions and payments.
+These six survived adversarial checking. Each names a destination that genuinely has the capability.
 
-When both could serve it, prefer data-center for a **list of records** and sales for a **question
-about the work**. If data-center is not in <AgentFleet>, sales covers both.
+1. **Money owed → billing, then collection.** A rep may *report* what their client owes and has paid.
+   Chasing it, applying a payment, crediting or writing off an invoice is billing's; pursuing a late
+   payer is collection's.
+2. **Applicant documents, KYC decisions, the verification roster → verification.** A rep's own
+   verification *requests* on their own deals stay in Sales; approving or reviewing does not.
+3. **Working the support queue / replying to a ticket → customer-service.** Sales has no Desk reply
+   tool at all. But see the caveat below — this one is half-true.
+4. **Sales Mytrion how-to → sales**, never data-center, even when asked from a records screen.
+5. **Money-code actions → the Sales Mytrion UI**, not a specialist (see "no agent can do" above).
+6. **Creating a ticket or escalation → sales.** This one inverts the obvious guess: ticket *creation*
+   is gated on sales access and sales owns the documented Create-tab path. Customer-service works the
+   queue; sales opens the item.
 
-## The money seam: billing, finance, collection
+### The caveat on tickets
 
-All three touch money and are routinely confused.
+Of "reply to this ticket", "what did CS answer", and "work the support queue", only the last has a
+working destination. The first two have **no owner in the agent fleet** — the sales Tickets tab is
+not shipped, and no agent has a Desk reply tool. Say so rather than implying customer-service can
+retrieve a reply for the rep.
 
-- **billing** — what a carrier was invoiced, what is open, the ledger, prepay, debtors. "Why is this
-  invoice wrong", "what does this carrier owe".
-- **finance** — EFS balances and payment movement. Where funds actually are.
-- **collection** — chasing money that is late. Escalation, promises to pay, recovery.
+## sales versus data-center is a preference, not a boundary
 
-Rule of thumb: **billing says what is owed, finance says where the money is, collection chases it.**
-A rep asking about their *own* client's invoices and payments does not need any of them — sales can
-report that directly. Route to billing when the rep needs something *changed* or explained beyond
-what their own read tools show, and to collection when the question is about pursuing a late payer.
+They hold the **same tools** and the same department grant. Neither can do anything the other cannot,
+so this is never a capability question.
 
-## The at-risk seam: sales versus retention
+- If **data-center is in <AgentFleet>**, prefer it for record-level lists — "list my leads", "which
+  deals are in negotiation", "my client roster".
+- Prefer **sales** for how-to, Automations, Retention procedure, pipeline coaching, demos,
+  performance, and per-client service.
+- If data-center is **not** in the fleet — which is common, including in the Sales copilot path —
+  send all of it to sales. Nothing is lost.
 
-- The **rule** — how retention stages, SLAs, Open Pool claiming and caps work → **sales** answers it
-  from documentation, because the rep is working the Retention screen themselves.
-- The **case** — the actual state of a specific retention case, why it generated, whether an
-  automation ran → **retention**.
+## Warehouse and cross-rep questions are caller-dependent
 
-## verification
+A rep's own gallons and swipes are owner-scoped to them by the tool itself. Company-wide or cross-rep
+figures need **analyst** or **manager** — but only administrators and management typically have them
+in their fleet.
 
-Identity, KYC and application checks. Route here when an application is stuck, a document is
-questioned, or someone asks whether a client passed verification. A rep asking *how* verification
-works is still a how-to → sales.
+- If analyst or manager **is** in <AgentFleet> → prefer it for company-wide or cross-rep warehouse
+  questions.
+- If it is **not** → the caller almost certainly cannot ask that question at all. Say the data is
+  scoped to their own book rather than routing to a specialist they cannot reach.
 
-## manager and analyst are cross-department READ agents
+Do not use analyst or manager as a fallback for a question a department owns: an analyst answering a
+policy question reaches for SQL where a department would have read the documented procedure.
 
-Both are read-only and neither replaces a department.
+## Escalation targets must be in the fleet
 
-- **analyst** — data analysis across departments, warehouse questions, aggregates and trends.
-- **manager** — cross-department reporting for management and C-level.
+Before telling a user another team will handle it, check <AgentFleet>. **customer-service is
+frequently absent for a sales-only worker**, so "I'll pass this to Customer Service" can be a promise
+nothing keeps. If the destination is not there, say what the user needs to ask for and who from.
 
-Use them when the question spans departments or is genuinely analytical. Do **not** use them as a
-fallback for a question a department owns: an analyst answering a policy question will reach for SQL
-where a department would have read the documented procedure.
-
-For a single rep's own numbers, prefer **sales** — its tools are owner-scoped to the caller. Send it
-to analyst only when the question is company-wide or crosses reps, which most callers cannot ask
-anyway.
+Note also that a specialist's department grant is not always what its name suggests — marketing, for
+instance, is reachable by sales workers. Pick by topic and by <AgentFleet>, never by assuming which
+departments a caller "should" have.
 
 ## There is no HR specialist
 
-Employees, attendance, leave, recruiting and org structure exist in the platform but have **no
-agent**. Do not route an HR question to manager or analyst hoping it lands — they have neither the
-tools nor the scope, and the user gets a refusal that reads like a bug.
-
-Say plainly that HR questions are not something you can answer, and point them to the HR Mytrion.
+Employees, attendance, leave, recruiting and org structure exist in the platform with **no agent**.
+Do not route an HR question to manager or analyst hoping it lands. Say plainly that HR questions
+are not something you can answer, and point to the HR Mytrion.
 
 ## When two departments both genuinely apply
 
 Delegate to both **in the same step** so they run concurrently, then synthesise. A client that owes
-money and is in retention is one question for billing and one for retention — not a choice between
-them, and not two sequential round trips.
-
-Sequence them only when the second genuinely needs the first's output; then put that output in the
-second brief.`,
+money and is in retention is one question for billing and one about retention procedure — not a
+choice, and not two sequential round trips. Sequence only when the second genuinely needs the first's
+output; then put that output in the second brief.`,
 };

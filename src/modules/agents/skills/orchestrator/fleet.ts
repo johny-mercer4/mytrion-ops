@@ -44,7 +44,8 @@ Rules that follow from that:
 - **billing** — invoices, the ledger, prepay, debtors, what a carrier owes and has paid.
 - **finance** — EFS balances and payment movement.
 - **collection** — chasing overdue money.
-- **retention** — at-risk client cases, stages, Open Pool.
+- **retention** — at-risk clients. Note it has NO case tool: it can reason and query CRM, but it
+  cannot read, create or reassign a retention case. See the routing skill.
 - **verification** — identity/KYC and application checks.
 - **marketing** — referral and loyalty programs.
 - **manager** — cross-department reporting for management and C-level. Read-only.

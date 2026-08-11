@@ -14526,3 +14526,89 @@ Backend 2528 passed / 1 skipped, typecheck clean, lint clean.
 HR agent). A 15-agent department review is running to extend it with per-department triggers,
 anti-triggers and real operational workflows, each verified adversarially before it becomes a rule —
 a wrong routing rule baked into a foundational skill is worse than no rule.
+
+---
+
+## 2026-08-12 — Department review: 18 of 24 routing rules refuted, and I had the cycle backwards
+
+A 15-agent review of every department, followed by an adversarial verify pass on each proposed
+routing boundary (default-refute, "uphold only if the destination genuinely has the tools and the
+named source genuinely does not"). **6 boundaries upheld, 18 refuted.** 39 agents, 4.58M tokens.
+
+Running the verify pass was the whole value. Every one of those 18 read plausibly.
+
+### The systematic error behind almost every refutation
+
+**The reviewers reasoned from HTTP route RBAC; the orchestrator delegates to AGENTS.** A
+`requireDepartment(request, 'billing', …)` guard on a Fastify route says nothing about whether the
+billing *agent* can do the thing — agent capability is exactly `AgentManifest.tools`. The two planes
+are routinely confused, and a rule that confuses them routes work to a specialist with no tool for it,
+producing a confident refusal that reads like a bug.
+
+Concretely, and verified: **no agent in the fleet can** read/create/reassign/list a retention case
+(not even the retention agent — its whole toolset is `zoho_crm.query` + blackboard/file/dbt), list or
+void a money code, read a rejection report (zero hits across all manifests), search a prospect by
+MC/DOT, or answer anything about marketing spend (no cost source exists anywhere). The Sales Mytrion
+UI does all of this through touchpoints and routes that no manifest binds.
+
+That list is now the FIRST section of the routing skill, because a confident dead end costs a user
+more than an honest "that's done in the Retention tab".
+
+Two more refutations worth keeping:
+- **sales vs data-center is a preference, not a boundary.** Identical tools, identical grant — and in
+  the live Sales copilot path data-center is not even reachable. I had written it as a boundary.
+- **Escalation targets are RBAC-filtered.** customer-service is frequently ABSENT from a sales-only
+  worker's fleet, so "I'll pass this to Customer Service" is often a promise nothing keeps.
+
+Of the 6 upheld, one inverts the obvious guess: **creating** a ticket or escalation is sales (gated on
+sales access, sales owns the Create tab); customer-service works the queue. And of the three ticket
+shapes bundled together, only "work the support queue" has any owner — "reply to this ticket" and
+"what did CS answer" have none, since no agent has a Desk reply tool.
+
+**One methodological contamination, noted for honesty:** I committed `routing.ts` before the verify
+phase ran, so some verifiers cited MY OWN skill file back as evidence. Where that happened I fell back
+to the independent pre-existing source (`ORCHESTRATOR_PROMPT`, which already routed Sales Mytrion
+how-to to sales). Verification agents reading a repo that the thing under test lives in is a trap
+worth remembering.
+
+### I was wrong about the 26→25 cycle, and the cause is embarrassing but instructive
+
+Yesterday I wrote that the cycle "is implemented NOWHERE in the codebase". It is implemented **three
+times in `src/`** — `CYCLE_CTE` in `manager/salesKpiBoard.ts:23` (commented "The 26th→25th billing
+cycle, stated once and reused by both queries"), duplicated verbatim in
+`integrations/dwhClientRoster.ts:208` and `:421` — plus a fourth TypeScript implementation,
+`currentBillingCycle()`, in the CRM frontend, which the rep's dashboard already renders as
+"Cycle <start> → <end>".
+
+**Why I missed it:** my grep piped to `head -20`, and unrelated `billing_cycle` matches filled all 20
+lines. The `cycle_start` hits were in the output I truncated. I then reported the absence as a finding
+and wrote a skill around it.
+
+The corrected picture is more useful than "missing" and worse for a copilot: the cycle is canonical in
+the **warehouse and on the rep's dashboard**, while every tool the agent can call is **calendar**-based
+(`warehouse.my_gallons` = today/this_week/this_month, ISO Monday weeks; `crm.transactions` is the only
+range-taking tool; nothing anywhere computes a *previous* cycle). So the agent and the screen the rep
+is looking at will disagree, and both are right. The skill now teaches exactly that, plus the
+server-date vs browser-local-date divergence that can make the two name different cycles for a few
+hours around the 25th/26th.
+
+### Other corrections the review forced
+
+- **`crm.list_cards` does not return last-used**, despite its own description promising "status and
+  last-used info". Verified in servercrm: `SELECT card_number, status FROM octane.dim_card`. The skill
+  had repeated the false promise.
+- **`crm.transactions` returns page 1 only**, capped at 500 rows.
+- **The zero-that-is-not-a-zero trap is confirmed and precise**: `warehouse.my_gallons` matches by
+  Zoho id suffix ONLY with no display-name fallback (and unit tests lock that in), so an identity
+  mismatch returns an empty set indistinguishable from a rep who sold nothing. Tools disagree on
+  identity too — snapshot/debtors key on display NAME, activity/gallons on Zoho id — which is exactly
+  what makes the cross-check work.
+- **Retention**: all three kill switches confirmed hard-coded false. The 2 BD action SLA and the 5 BD
+  post-contact watch have **no consequence today**. The one live escalation is vacation → Ops → CITI,
+  and an Ops **denial sets the rep's Zoho deal Stage to Closed Lost** — the highest-stakes automatic
+  consequence still switched on, and now stated in the skill.
+- **Sales has no debtor tool** (`agent.debtors` is billing/collection/finance/manager/analyst).
+- Per-client data the copilot cannot reach at all: retention state, tickets, and call history (calls
+  link to a lead/deal/retention case, never to a carrier).
+
+Backend 2528 passed / 1 skipped, typecheck clean, lint unchanged.

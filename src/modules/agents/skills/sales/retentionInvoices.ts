@@ -1,8 +1,10 @@
 import type { AgentSkill } from '../types.js';
 
 /**
- * Retention and money, from the REP's side of the desk. Both areas have a dedicated specialist, so
- * the value here is knowing exactly where the rep's own view ends and another team's begins.
+ * Retention and money from the REP's side. Corrected 2026-08-12 against the code: an earlier version
+ * said case state "belongs to the retention specialist". It does not — NO agent has a retention tool,
+ * including the retention agent, whose entire toolset is zoho_crm.query plus blackboard/file/dbt.
+ * Sending a rep there would have been a confident dead end.
  */
 export const SALES_RETENTION_INVOICES_SKILL: AgentSkill = {
   name: 'sales-retention-invoices',
@@ -11,60 +13,82 @@ export const SALES_RETENTION_INVOICES_SKILL: AgentSkill = {
     'of their own clients owes, has been invoiced, or has paid.',
   body: `# Retention and invoices, for the rep's own clients
 
-## Retention
+## Retention: you explain the rules, you cannot read a case
 
-Retention cases are how Octane catches a client going quiet before they leave. The rep's stake is
-direct: these are their clients.
+**No agent can read retention case data — including the retention specialist.** Case CRUD lives in
+HTTP routes and Sales Mytrion touchpoints that no agent manifest binds. So:
 
-What a rep typically needs:
-- why a client of theirs is in retention, and at what stage
-- what the next action and its deadline are
-- how claiming from the Open Pool works, and their own cap
-- what happens when a client is marked Vacation
+- **Rules, stages, SLAs, timers, Open Pool mechanics** → answer from \`knowledge_search\`. That is the
+  documented procedure the rep is working from on screen, and it is genuinely yours to explain.
+- **The state of a specific case** ("why is ACME in retention", "what stage is it at") → tell the rep
+  to open the Retention tab in Sales Mytrion. Do **not** escalate to the retention specialist for it;
+  that agent has no case tool either and the rep would simply lose a turn.
 
-Answer these from \`knowledge_search\` — the documented Retention procedure is the authority on
-stages, SLAs, caps and timers, and it is the same document the rep is working from on screen. Do not
-compute a deadline from memory; quote the documented rule and apply it to the dates you were given.
+### What actually runs today — this matters, because much of the documented flow does not
 
-**Not every part of the retention machine is running.** Some phases are disabled by kill switch, so
-a procedure being documented does not prove it is live today. If a rep reports that something did
-not happen — a case that never generated, a pool item that never appeared — do not insist the
-documented behaviour occurred. Report what the documentation says *should* happen, say plainly that
-you cannot confirm the automation ran, and escalate to the retention specialist rather than
-explaining away a discrepancy the rep is looking at.
+Three escalation paths are switched off in code:
+- **Open Pool escalation is off.** The 5× out-of-reach path, the post-contact timer and the
+  Retention→Pool timer do not fire.
+- **Phase 2 handoff is off.** A Dissatisfied outcome stays in Phase 1 with the rep, who keeps the
+  case and the Zoho owner. Nothing hands off to a Retention desk.
+- **Open Pool claim → Zoho owner transfer is off.**
 
-Case data itself belongs to the **retention** specialist. Escalate when the rep needs the actual
-state of a case rather than the rule.
+Consequences a rep will notice, and which you must not explain away:
+- The **2-business-day action SLA** on New/In-progress cards has **no consequence** today. The
+  sweeper stops before any transition. A missed deadline does nothing.
+- The **5-business-day post-contact watch** after "Reached" also has no consequence. A Reached case
+  just sits until fuel arrives or the rep acts.
+
+So if a rep says a case never escalated, never generated, or never appeared in the pool — **believe
+them.** Say the documented behaviour is currently disabled rather than insisting it should have
+happened.
+
+### The vacation chain IS live, and it can close a deal
+
+The one escalation still running is **vacation → Ops → CITI**:
+
+1. Outcome \`vacation\` → the case waits a **14 calendar-day** countdown.
+2. On expiry → a follow-up state with a **2 business-day** task.
+3. On expiry → awaiting Ops sign-off.
+4. **Only the configured Ops Manager (or an admin) may confirm or deny.** A rep cannot resolve their
+   own vacation case — do not tell them to.
+5. **Confirm** → back to in-progress with a fresh 2 BD deadline, out-of-reach attempts reset.
+   **Deny** → the case moves to CITI **and the Zoho deal Stage is set to Closed Lost.**
+
+That last step is worth stating plainly whenever a rep asks what happens next on a vacation case:
+an Ops denial closes their deal as lost. It is the highest-stakes automatic consequence in the flow
+that is still switched on.
 
 ## Invoices and what a client owes
 
-For the rep's **own** clients, \`crm.payment_info\` is the tool: invoices billed, paid and open, plus
-recent payments (automation Q-2). \`crm.carrier_overview\` adds EFS balance and outstanding debt, and
-\`crm.carrier_balance\` gives balance and LOC credit.
+For the rep's **own** clients: \`crm.payment_info\` (invoices billed / paid / open, plus recent
+payments), \`crm.carrier_overview\` (EFS balance, outstanding debt, card statuses) and
+\`crm.carrier_balance\` (balance, LOC credit). Resolve which client first — always — per the
+\`sales-client-book\` skill.
 
-Between them a rep can answer, without leaving Sales: *does my client owe anything, how much, how
-overdue, and did their last payment land.* That is usually the real question behind "can I get their
-limit raised" or "why is their card declining".
+Between them a rep can answer *does my client owe anything, how much, how overdue, and did their last
+payment land*, which is usually the real question behind "can I get their limit raised" or "why is
+their card declining".
 
-Resolve which client first — see the \`sales-client-book\` skill. Always.
+**You have no debtor tool.** The per-carrier debtor view — amount owed, days past due, hard-debtor
+flag — is bound to billing, collection, finance, manager and analyst, not to you. Do not describe a
+client as a debtor on the strength of a roster flag; those flags come from warehouse columns that lag.
 
 ### Where your boundary is
 
-You may **report** what a client owes and has paid. You may **not**:
-- adjust an invoice, apply a credit, or record a payment,
-- negotiate or promise terms, a payment plan, or a write-off,
-- speak for Collections about what will happen if the client does not pay.
+You may **report** what a client owes and has paid. You may **not** adjust an invoice, apply a credit,
+record a payment, negotiate terms or a payment plan, or speak for Collections about consequences.
 
-Those belong to **billing** (invoices, ledger, disputes) and **collection** (chasing overdue money).
-Escalate with a clear summary: which carrier, what you already looked up, and exactly what you need
-the next team to do. A rep should never have to re-explain the account to the next agent.
+Escalate to **billing** (invoices, ledger, disputes) or **collection** (chasing overdue money) with a
+summary: which carrier, what you already looked up, what the next team must do. Check they are in
+your fleet before promising a handoff — if neither is reachable for this caller, say what the rep
+needs to ask for and from whom, instead of routing into silence.
 
 ## Money numbers are quoted, never computed
 
-Balances, totals, ageing and overdue amounts come from a tool result and are reported as returned.
-Do not sum invoices yourself to produce "total outstanding", and do not net a payment against a
-balance — the tool already reflects what the system of record says, and a number you derived will
-eventually disagree with the invoice the client is holding.`,
+Balances, totals, ageing and overdue amounts are reported exactly as the tool returned them. Do not
+sum invoices into a "total outstanding" and do not net a payment against a balance — a number you
+derived will eventually disagree with the invoice the client is holding.`,
   usesTools: [
     'crm.pick_my_client',
     'crm.payment_info',

@@ -1,73 +1,91 @@
 import type { AgentSkill } from '../types.js';
 
 /**
- * The 26→25 cycle. This is domain truth from the system architect, and — verified 2026-08-12 — it
- * is implemented NOWHERE in the codebase: `billing_cycle` is an unrelated per-carrier string
- * ("Weekly"), and every metric tool reports on calendar periods.
+ * The 26→25 cycle.
  *
- * That gap is exactly why this skill exists. Until a tool speaks cycles, the agent is the only thing
- * standing between "how am I doing this cycle?" and a calendar-month answer that looks right and
- * is wrong.
+ * An earlier version of this file asserted the cycle was "implemented NOWHERE in the codebase".
+ * That was wrong, and the department review caught it: it is implemented three times in src/ plus
+ * once in the CRM frontend. The error came from a grep whose output was truncated at 20 lines by
+ * unrelated `billing_cycle` matches — the `cycle_start` hits were there and went unread.
+ *
+ * The real situation is more interesting than "missing", and worse for a copilot: the cycle is
+ * canonical in the WAREHOUSE and on the rep's DASHBOARD, while every tool the agent can call is
+ * calendar-based. So the agent and the screen the rep is looking at can disagree, and both are
+ * "right".
  */
 export const SALES_CYCLE_SKILL: AgentSkill = {
   name: 'sales-cycle',
   whenToUse:
     'Whenever a request involves a time period — this/last cycle, this month, month to date, ' +
-    '"so far", or any comparison between periods. Read this BEFORE calling a metric tool.',
+    '"so far", pace, or any comparison between periods. Read this BEFORE calling a metric tool.',
   body: `# The sales cycle: 26th → 25th
 
-Octane's sales cycle runs from the **26th of one month to the 25th of the next**. It is the period a
-rep is measured on, and it is what a rep means by "this month" in conversation.
+Octane's sales cycle runs from the **26th of one month through the 25th of the next**. It is what a
+rep means by "this month", and it is what their dashboard shows.
 
-**Current cycle** = from the most recent 26th up to today.
-**Previous cycle** = the 26th before that, through the 25th.
+The rule, exactly as the warehouse states it:
 
-Worked example, if today is 12 August 2026:
-- this cycle → **26 Jul 2026 – 25 Aug 2026** (in progress, 18 days elapsed of 31)
-- last cycle → **26 Jun 2026 – 25 Jul 2026** (complete)
+    cycle_start = if day-of-month >= 26 → the 26th of THIS month
+                  otherwise             → the 26th of LAST month
 
-Note what that means on the 12th: the calendar month is 39% done, the cycle is 58% done. Any
-"are we on pace" judgement built on the wrong one is wrong.
+If today is 12 August 2026: this cycle is **26 Jul – 25 Aug**; the previous is **26 Jun – 25 Jul**.
+Note the pace difference on the 12th: the calendar month is 39% elapsed, the cycle 58%. Judging
+"on track" against the wrong one is wrong by a third.
 
-## The trap: no tool knows about cycles
+## Where the cycle IS authoritative
 
-**Every metric tool available to you reports on CALENDAR periods, not cycles.**
-\`agent.sales_snapshot\`, \`agent.activity\`, \`warehouse.my_gallons\` (today / this_week / this_month)
-and the warehouse all treat "this month" as the 1st to today. A rep asking "how many gallons this
-month?" and meaning the cycle will get a number that is silently short by the 26th–31st of the
-previous month, and includes days 1–25 that belong to a different cycle.
+- The warehouse KPI board and the client roster compute it in SQL (a shared \`cycle_start\` CTE).
+- **The rep's Sales dashboard is already cycle-framed** — it renders "Cycle <start> → <end>" and a
+  new-cards-per-cycle KPI, from figures the sales-data service returns.
 
-So:
+So when a rep quotes a number off their dashboard, that number is a **cycle** number.
 
-1. **Decide which the user means before you fetch anything.** In sales conversation "this month"
-   usually means the cycle. If it is ambiguous and the difference is material, ask — one short
-   question beats a confidently wrong number.
-2. **Never label a calendar-period result as a cycle result.** If the only tool available returns a
-   calendar month, say so in the answer: *"26 Jul–25 Aug isn't directly available, so this is
-   1–12 Aug from the warehouse."* Naming the period you actually measured is not a caveat, it is the
-   difference between a true and a false statement.
-3. **When a tool accepts an explicit date range, compute the cycle boundaries and pass them.** That
-   is the only way to get a true cycle figure today. \`crm.transactions\` takes a range — use it.
-4. **Do not do the arithmetic to "correct" a calendar total into a cycle total.** You cannot: you
-   have a total, not the daily series. Fetch the right range or state the range you got.
+## Where it is NOT — and this is the trap
+
+**Every metric tool you can call reports CALENDAR periods.**
+
+- \`warehouse.my_gallons\` takes only \`today\` / \`this_week\` / \`this_month\`. \`this_month\` is the 1st
+  to now. \`this_week\` is an ISO week, so it starts **Monday**. There is no date-range input and no
+  previous-period arm.
+- \`agent.sales_snapshot\` and \`agent.activity\` do not define periods here at all — they forward to
+  the sales service. The snapshot's built-in comparison is **this week vs last week**, not cycles.
+- \`crm.transactions\` is the **only** tool that takes an explicit \`from\`/\`to\`, which makes it the
+  only way to measure a true cycle window per client.
+- **Nothing anywhere computes a previous cycle.** Prior-calendar-month figures exist; a 26→25 window
+  shifted back one month does not. A "last cycle vs this cycle" total has to be assembled, not
+  fetched.
+
+### What that means you must do
+
+1. **Decide which period the rep means before fetching.** In sales conversation "this month" usually
+   means the cycle. If the difference is material and it is ambiguous, ask — one short question
+   beats a confidently wrong number.
+2. **Always name the period you actually measured.** Not a caveat, a correctness requirement:
+   *"1–12 Aug (calendar month, which is what this tool returns) — the cycle 26 Jul–25 Aug isn't
+   directly available from it."*
+3. **When a rep's dashboard disagrees with your number, the period is almost always why.** Say that
+   plainly instead of implying one of you is wrong. The dashboard is cycle-framed; your tool is not.
+4. **Use \`crm.transactions\` with computed cycle boundaries** when the question is per-client and a
+   true cycle figure matters. That is the one place you can actually deliver one.
+5. **Do not arithmetic your way from a calendar total to a cycle total.** You have a total, not a
+   daily series. Fetch the right range or state the range you got.
 
 ## Computing the boundaries
 
-Given today's date from <TurnContext>:
-- if today's day-of-month **≥ 26** → this cycle started the **26th of this month**
-- if today's day-of-month **≤ 25** → this cycle started the **26th of last month**
-- the cycle ends on the **25th** of the month after it started
-- the previous cycle is the same window shifted back one month
+Take today's date from <TurnContext>, never a remembered one, then apply the rule above. The end is
+the 25th of the month after the start. Every month has a 26th, so the window always exists; short
+months change the length, not the boundaries (26 Jan → 25 Feb is a valid, shorter cycle).
 
-Watch the short months: a cycle starting 26 January ends 25 February regardless of length, and
-cycles starting the 26th always exist (no month lacks a 26th). Use the caller's date from
-<TurnContext>, never a remembered one.
+One subtlety worth knowing: the warehouse computes the cycle from the DATABASE server's date, while
+the rep's browser computes it from **local** time. Near midnight, or for a rep in a different
+timezone, the two can name different cycles for a few hours. If a rep insists the dashboard says
+something different on the 25th or 26th, that is a real possibility rather than an error.
 
 ## Pace, not just totals
 
-A rep asking about the current cycle is usually asking "am I on track", which needs three things,
-and you should offer them together: the figure so far, how far through the cycle we are, and the
-same point last cycle. Comparing a part-cycle to a whole cycle is the most common way to make a rep
-think they are failing when they are ahead — see the \`sales-progress\` skill.`,
+"Am I on track" needs three things together, and you should offer them without being asked: the
+figure so far, how far through the cycle we are, and the comparable point last period. Comparing a
+part-cycle against a whole one is the most common way to make a rep who is ahead believe they are
+behind — see the \`sales-progress\` skill.`,
   usesTools: ['agent.sales_snapshot', 'agent.activity', 'warehouse.my_gallons', 'crm.transactions'],
 };
