@@ -13,6 +13,7 @@
  */
 import {
   fetchAgentVerificationDeals,
+  fetchAllVerificationDeals,
   fetchVerificationDeal,
   type CrmDealRow,
 } from '../../integrations/salesVerificationDeals.js';
@@ -23,6 +24,8 @@ export interface VerificationClient {
   dealId: string | null;
   carrierId: string | null;
   companyName: string;
+  /** Zoho `Deal_Name` verbatim (companyName prefers Account_Name, so this keeps deal name searchable). */
+  dealName: string;
   /** yyyy-mm-dd `Application_Date` (freshest-first sort key; may be null on a filled application). */
   appFillDate: string | null;
   /** Zoho `Stage` — the deal's position in the sales pipeline. */
@@ -34,7 +37,6 @@ export interface VerificationClient {
   /** yyyy-mm-dd `Stage_Last_Updated`. */
   stageUpdatedAt: string | null;
   classification: VerificationClientStage;
-  // ---- credit decision ----
   /** `Credit_Decision` free text ("Approved-Requested", "Declined-Prepay/Secured Only", …). */
   creditDecision: string | null;
   /** `Credit_Score`. 0 is treated as "not scored" — the field is 0-filled on undecided applications. */
@@ -48,17 +50,14 @@ export interface VerificationClient {
   /** `CreditSafe_Grade` picklist: A–E. */
   creditSafeGrade: string | null;
   moneyCodeLimit: number | null;
-  // ---- billing terms ----
   billingCycle: string | null;
   /** `Payment_Type_Billing`: Line of Credit / Prepay / Deposit / Secured Line of Credit. */
   paymentTerms: string | null;
-  // ---- verification checkpoints ----
   companyVerification: string | null;
   billingVerification: string | null;
   lovesVerification: string | null;
   verified: boolean;
   limitsAdded: boolean;
-  // ---- narrative + identity ----
   rejectReason: string | null;
   verificationNotes: string | null;
   cardsRequested: number | null;
@@ -83,12 +82,10 @@ export interface VerificationClientPage {
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
 const strOrNull = (v: unknown): string | null => {
   const s = str(v);
-  // Zoho sends the literal "-None-" for an unset picklist; that is not a value.
   return !s || s === '-None-' ? null : s;
 };
 const numOrNull = (v: unknown): number | null => {
   if (v == null || v === '') return null;
-  // `Credit_Limit` is a TEXT field in CRM, so it can hold "15,000" or "$15000".
   const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : null;
 };
@@ -133,6 +130,7 @@ export function toVerificationClient(row: CrmDealRow): VerificationClient {
     dealId: strOrNull(row.id),
     carrierId: strOrNull(row.Carrier_ID),
     companyName: lookupName(row.Account_Name) ?? str(row.Deal_Name) ?? '',
+    dealName: str(row.Deal_Name),
     appFillDate: dateOrNull(row.Application_Date),
     dealStage: str(row.Stage) || '—',
     applicationStage: strOrNull(row.Application_Stage),
@@ -158,8 +156,6 @@ export function toVerificationClient(row: CrmDealRow): VerificationClient {
     cardsRequested: numOrNull(row.Cards_Requested),
     applicationId: strOrNull(row.Application_ID),
     dot: strOrNull(row.DOT1),
-    // `MC` is a free-text field agents also use for notes-to-self ("DOT", "No assigned number");
-    // keep it only when it looks like an identifier.
     mc: /^[A-Za-z]{0,3}[-\s]?\d{3,}$/.test(str(row.MC)) ? str(row.MC) : null,
     agentName: lookupName(row.Owner) ?? '',
     modifiedAt: strOrNull(row.Modified_Time),
@@ -173,6 +169,7 @@ export function toVerificationClient(row: CrmDealRow): VerificationClient {
 function haystack(client: VerificationClient): string {
   return [
     client.companyName,
+    client.dealName,
     client.dealStage,
     client.applicationStage,
     client.applicationStatus,
@@ -193,25 +190,58 @@ function haystack(client: VerificationClient): string {
  * Owner scoping is by Zoho user id — the caller resolves it, and an id that is not the session's own
  * is only reachable through the route's admin/act-as check.
  */
+function paginate(
+  clients: VerificationClient[],
+  truncated: boolean,
+  page?: number,
+  pageSize?: number,
+): VerificationClientPage {
+  const p = Math.max(page ?? 1, 1);
+  const ps = Math.min(Math.max(pageSize ?? 9, 1), 24);
+  const offset = (p - 1) * ps;
+  return { clients: clients.slice(offset, offset + ps), total: clients.length, truncated };
+}
+
+/** All matched applications for one agent (search-filtered, NOT paginated) — for state filtering. */
+export async function listAgentVerificationDeals(
+  ownerZohoUserId: string,
+  options: { search?: string } = {},
+): Promise<{ clients: VerificationClient[]; truncated: boolean }> {
+  const owner = ownerZohoUserId?.trim();
+  if (!owner) return { clients: [], truncated: false };
+  const search = options.search?.trim().toLowerCase() ?? '';
+  const { rows, truncated } = await fetchAgentVerificationDeals(owner);
+  const all = rows.map(toVerificationClient);
+  return { clients: search ? all.filter((client) => haystack(client).includes(search)) : all, truncated };
+}
+
 export async function getAgentVerificationClients(
   ownerZohoUserId: string,
   options: { page?: number; pageSize?: number; search?: string } = {},
 ): Promise<VerificationClientPage> {
-  const owner = ownerZohoUserId?.trim();
-  if (!owner) return { clients: [], total: 0, truncated: false };
-  const page = Math.max(options.page ?? 1, 1);
-  const pageSize = Math.min(Math.max(options.pageSize ?? 9, 1), 24);
-  const search = options.search?.trim().toLowerCase() ?? '';
+  const { clients, truncated } = await listAgentVerificationDeals(
+    ownerZohoUserId,
+    options.search ? { search: options.search } : {},
+  );
+  return paginate(clients, truncated, options.page, options.pageSize);
+}
 
-  const { rows, truncated } = await fetchAgentVerificationDeals(owner);
+/** All applications org-wide (admin), search-filtered, NOT paginated — for state filtering. */
+export async function listAllVerificationDeals(
+  options: { search?: string } = {},
+): Promise<{ clients: VerificationClient[]; truncated: boolean }> {
+  const search = options.search?.trim().toLowerCase() ?? '';
+  const { rows, truncated } = await fetchAllVerificationDeals();
   const all = rows.map(toVerificationClient);
-  const matched = search ? all.filter((client) => haystack(client).includes(search)) : all;
-  const offset = (page - 1) * pageSize;
-  return {
-    clients: matched.slice(offset, offset + pageSize),
-    total: matched.length,
-    truncated,
-  };
+  return { clients: search ? all.filter((client) => haystack(client).includes(search)) : all, truncated };
+}
+
+/** One page of ALL applications org-wide (admin roster); the route gates who may call it. */
+export async function getAllVerificationClients(
+  options: { page?: number; pageSize?: number; search?: string } = {},
+): Promise<VerificationClientPage> {
+  const { clients, truncated } = await listAllVerificationDeals(options.search ? { search: options.search } : {});
+  return paginate(clients, truncated, options.page, options.pageSize);
 }
 
 /** One application's verification slice, read fresh from Zoho (detail pane). */

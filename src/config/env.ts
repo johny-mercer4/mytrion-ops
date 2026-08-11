@@ -34,9 +34,13 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
-  // --- Verification DB (credit_platform — read-only metadata/reference target for the Sales
-  // Mytrion verification pipeline; surfaced in Mytrion Admin like the DWH). Render Postgres → SSL. ---
+  // --- Verification DB (the single credit_platform Postgres DSN; `johnmercer` credential, Render →
+  // SSL). Read pool (verificationDb.ts) opens it read-only; the write-back pool
+  // (creditPlatformWriteDb.ts) opens the SAME DSN in a writable session. ---
   VERIFICATION_DATABASE_URL: z.string().default(''),
+  // Write-back kill switch: when on, the Sales verification tab may INSERT into the credit_platform
+  // kxd.sales_agent_* inbox over VERIFICATION_DATABASE_URL. On by default; set 0 to disable.
+  VERIFICATION_WRITE_ENABLED: flag('1'),
 
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):

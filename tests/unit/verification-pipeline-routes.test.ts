@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const mocks = vi.hoisted(() => ({
   clients: vi.fn(),
+  clientsAll: vi.fn(),
   summaries: vi.fn(),
   responses: vi.fn(),
 }));
@@ -12,12 +13,16 @@ vi.hoisted(() => {
 });
 
 vi.mock('../../src/modules/verificationPipeline/service.js', () => ({
-  getAgentVerificationClients: mocks.clients,
+  listAgentVerificationDeals: mocks.clients,
+  listAllVerificationDeals: mocks.clientsAll,
 }));
 
 vi.mock('../../src/modules/verificationPipeline/provider.js', () => ({
-  getLiveVerificationSummaries: mocks.summaries,
   getPipelineProvider: () => ({ getPipeline: vi.fn(async () => null) }),
+}));
+
+vi.mock('../../src/modules/verificationPipeline/cardSummary.js', () => ({
+  getLiveVerificationSummaries: mocks.summaries,
 }));
 
 vi.mock('../../src/repos/verificationSalesResponseRepo.js', () => ({
@@ -75,7 +80,8 @@ afterAll(async () => app.close());
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.clients.mockResolvedValue({ clients: [client], total: 1 });
+  mocks.clients.mockResolvedValue({ clients: [client], truncated: false });
+  mocks.clientsAll.mockResolvedValue({ clients: [client], truncated: false });
   mocks.summaries.mockResolvedValue(new Map());
   mocks.responses.mockResolvedValue([]);
 });
@@ -142,12 +148,8 @@ describe('Sales Verification clients dependency isolation', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    // No display name: the Zoho source scopes on `Owner = '<id>'`. The old DWH source keyed on an
-    // agent NAME, so a rename or a warehouse mismatch silently emptied an agent's pipeline.
-    expect(mocks.clients).toHaveBeenCalledWith('42', {
-      page: 3,
-      pageSize: 9,
-      search: 'acme',
-    });
+    // No display name: the Zoho source scopes on `Owner = '<id>'`. Pagination happens in the route
+    // (after state filtering), so the list function receives only the search.
+    expect(mocks.clients).toHaveBeenCalledWith('42', { search: 'acme' });
   });
 });

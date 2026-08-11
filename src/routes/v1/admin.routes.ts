@@ -201,6 +201,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       };
     }
     const deals = await listAdminDeals(
+      ctx.userId,
       Number.isFinite(limit as number) ? (limit as number) : 200,
     );
     await auditFromContext(ctx, {
@@ -219,7 +220,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const ctx = requireContext(request);
       requireAllDepartmentAdmin(ctx);
       const q = (request.query.q ?? '').trim();
-      const deals = await searchAdminDeals(q);
+      const deals = await searchAdminDeals(q, ctx.userId);
       await auditFromContext(ctx, {
         action: 'admin.deals.search',
         status: 'ok',
@@ -236,7 +237,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const ctx = requireContext(request);
       requireAllDepartmentAdmin(ctx);
-      const deal = await getAdminDeal(request.params.dealId);
+      const deal = await getAdminDeal(request.params.dealId, ctx.userId);
       if (!deal) throw new NotFoundError('Deal not found');
       const transferrerId = request.query.transferrerId?.trim() || null;
       const priorOwner = await suggestPriorOwner(deal.id, transferrerId);
