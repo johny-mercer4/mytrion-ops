@@ -14190,3 +14190,77 @@ written assuming the wrap's height — placed the day detail under the global se
 wrap + `top: 4px` so the card stays over the SVG inside the wrap (the scroller's `overflow-x: auto`
 forces y-clipping, so a card that extends above the wrap would still vanish). Vendored `app/` rebuilt.
 Regression: `SalesDashCharts.test.tsx`.
+
+---
+
+## 2026-08-11 — Agentic core, milestone 1: the two dark RAG flags, measured
+
+Direction from the architect: harness the agentic AI across RAG, a per-agent skill library, and tool
+calling, for ~50 users. Chosen first move was deliberately unglamorous — **turn on what is already
+built but dark, and measure it** — because everything after it needs a scoreboard. Model stack
+decision: **OpenAI-only** (no Groq). Skill library will be **repo files, git-reviewed**.
+
+Rig: `benchSalesChat.ts --runs 3` (11 cases) against the LOCAL corpus (99 docs / 746 embedded
+chunks), API on :3011, one config per server restart. Every config below is 33 turns, ~$0.15.
+
+**The baseline is far healthier than the 2026-08-08 notes describe**: 39/42 expected-doc coverage,
+21/21 answer facts, 0 failures, 0 forbidden tool calls, mean 5,746ms — and *every case stable across
+3 runs*. The metric instability that made those notes hedge is gone, which is the only reason the
+A/B below is worth anything. Sole miss is `money-codes-view-and-draw` 1/2, stably: still the known
+recall gap across two document kinds, still not an ordering problem.
+
+### FF_RAG_V2_CONTEXT was a regression, and the cause was one unconditional argument
+
+Turning it on cost **coverage 39/42 → 36/42, mean wall +13%**, and took `balance-and-cards` from a
+stable 2/2 to `2/2 0/2 1/2`.
+
+`scopedRag.ts` passed `turnContext.task.resolvedAsk` into `agenticRetrieve` whenever it existed. In
+`loop.ts` that becomes `ask`, which drives **both** `planQueries` and `judgeEvidence` — so the flag
+silently replaced the model's crafted keyword query with the user's raw sentence. For the compound
+ask ("check a client's balance **and** see their card list") that retrieved the generic Agent
+Playbook over the specific C-8/C-24 docs, graded `partial/0.68` instead of `sufficient/0.91`, then
+burned an extra hop and two grader calls arriving somewhere worse.
+
+But `resolvedAsk` only *adds* anything when it spliced history in to resolve a pronoun — otherwise
+`resolveAsk()` returns the message verbatim. So the override is now gated on a new
+`task.anaphoraResolved`, and the flag measures **back at parity: 39/42, mean 5,537ms, 99 llm calls,
+`balance-and-cards` stable 2/2**. `FF_RAG_V2_CONTEXT=1`.
+
+Stated plainly: the bench shows the flag is now **cost-free**, not that it is valuable. Every case
+here is a single-turn documentation lookup, and the context contract's payload (tool facts, open
+questions, known-no-match, clause tracking) only pays off in multi-turn, multi-agent, tool-heavy
+work this bench does not contain. Proving the benefit needs those cases — same argument as the
+scratchpad in Phase C. That is the next piece of work, not a claim to make now.
+
+### FF_RAG_CLAIM_VERIFY stays OFF — the repair action is wrong, not its tuning
+
+On the fixed context path it took **answer facts 21/21 → 8/21**. Two real bugs found and fixed:
+
+1. **Marker/entailment conflation.** `verifyAnswerFaithfulness` skipped `if (!MARKER.test(claim))`
+   *before* consulting the grader, so an uncited sentence was deleted without ever being judged. The
+   grader is the authority on SUPPORT; the `[Sn]` marker is the authority on ATTRIBUTION. → 12/21.
+2. **The grader's contract forbade the answer.** Its prompt ended "Do not infer missing facts", but a
+   retention-timer answer is arithmetic *over* documented rules, not a quote from one — so correct
+   derivations were judged unsupported by instruction. Now explicitly: a conclusion COMPUTED from
+   rules and values stated in the evidence IS supported. → 14/21.
+
+Both fixes are kept — they strictly reduce destruction — but **the flag stays off**, and the reason
+is not the remaining 7. It is that the damage is *nondeterministic*: across three runs of identical
+questions and evidence, the calc cases scored 2/7, then a flawless **7/7**, then 5/7. A nano-tier
+sentence-level entailment call is a coin flip, and the consequence of a false negative is silent
+deletion of correct content the user asked for. Citations survived every run (docs 39/42), so
+nothing in the UI would show it happened. Delete-on-doubt is indefensible when the doubt is itself
+unrepeatable.
+
+Re-enable only after the pass is redesigned to **annotate** unsupported claims — turn inspector plus
+audit — and leave the prose alone. Abstention already has two owners that are deterministic:
+`citationCheck` marker stripping and the CRAG `not_documented` grade.
+
+### Untouched on purpose
+
+`FF_RAG_RERANK` stays 0. The 2026-08-08 entry rejected it on reproducible latency (+21% wall, +55%
+retrieval) for no measured gain, and `.env` records that framing specifically so it does not get
+flipped on hopefully later. Nothing measured today changes it.
+
+Backend 2524 passed / 1 skipped, typecheck clean, lint unchanged (4 pre-existing errors, all in
+vendored `ds-bundle/*.d.ts`).

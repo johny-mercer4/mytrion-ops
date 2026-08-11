@@ -67,7 +67,16 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
           // intent router must not answer "use a live tool instead" and abstain.
           explicitKnowledgeRequest: true,
           allowExternalSearch: Boolean(manifest.webSearch),
-          ...(run.turnContext?.task.resolvedAsk ? { resolvedAsk: run.turnContext.task.resolvedAsk } : {}),
+          // ONLY when history actually resolved a pronoun. `resolvedAsk` is otherwise the raw user
+          // utterance, and `agenticRetrieve` uses it for BOTH planQueries and judgeEvidence — so
+          // passing it unconditionally replaced the model's crafted keyword query with the user's
+          // sentence. Measured on the Sales bench (3 runs/config): expected-doc coverage 39/42 →
+          // 36/42 and mean wall +13%, because a compound ask ("check a client's balance AND see
+          // their card list") retrieved the generic Agent Playbook over the specific C-8/C-24 docs,
+          // graded `partial`, and burned an extra hop plus two grader calls to end up worse.
+          ...(run.turnContext?.task.anaphoraResolved && run.turnContext.task.resolvedAsk
+            ? { resolvedAsk: run.turnContext.task.resolvedAsk }
+            : {}),
         });
         if (run.collect) {
           run.collect.rag = {
