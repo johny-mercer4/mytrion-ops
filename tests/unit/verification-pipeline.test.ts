@@ -9,15 +9,16 @@ import { extractSalesRequirements } from '../../src/modules/verificationPipeline
 import { STAGE_CATALOG, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
 
 describe('STAGE_CATALOG', () => {
-  it('is the 9 business stages in order 1-9 with the credit_platform service ids', () => {
-    expect(STAGE_CATALOG.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  it('is the compliance stages in credit_platform order with the credit_platform service ids', () => {
+    expect(STAGE_CATALOG.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(STAGE_CATALOG.map((s) => s.id)).toEqual([
       'stop-factor-pre',
+      'blacklist',
       'fmcsa',
       'plaid',
       'highway',
+      'creditsafe',
       'isoftpull',
-      'blacklist',
       'antifraud',
       'crosscheck',
       'stop-factor-after',
@@ -54,10 +55,10 @@ describe('mockPipelineProvider', () => {
     expect(JSON.stringify(c)).not.toBe('null');
   });
 
-  it('always returns the 9 ordered stages and a mock source', async () => {
+  it('always returns the ordered stages and a mock source', async () => {
     const snap = await mockPipelineProvider.getPipeline({ carrierId: '5817599' });
     expect(snap).not.toBeNull();
-    expect(snap!.stages.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(snap!.stages.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(snap!.source).toBe('mock');
   });
 

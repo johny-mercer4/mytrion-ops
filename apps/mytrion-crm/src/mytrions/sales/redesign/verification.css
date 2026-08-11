@@ -49,6 +49,44 @@
 .ss-root .ss-vf-card-foot .is-mono,
 .ss-root .ss-vf-verdict.is-mono { font-family:var(--font-mono); }
 
+.ss-root .ss-vf-filters { display:flex;flex-wrap:wrap;gap:6px; }
+.ss-root .ss-vf-filter {
+  padding:6px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
+  color:var(--text2);font:inherit;font-size:var(--ss-text-2xs);font-weight:700;cursor:pointer;white-space:nowrap;
+  transition:background var(--hz-dur-wash) var(--hz-ease),border-color var(--hz-dur-wash) var(--hz-ease),color var(--hz-dur-wash) var(--hz-ease);
+}
+.ss-root .ss-vf-filter:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
+.ss-root .ss-vf-filter.is-active {
+  background:color-mix(in srgb,var(--accent) 16%,transparent);
+  border-color:color-mix(in srgb,var(--accent) 48%,var(--border));
+  color:var(--accent-text);
+}
+
+.ss-root .ss-vf-cp {
+  display:flex;flex-direction:column;gap:8px;margin-top:11px;padding-top:11px;
+  border-top:1px dashed var(--border2);
+}
+.ss-root .ss-vf-cp-state {
+  display:flex;align-items:center;gap:7px;font-size:var(--ss-text-sm);font-weight:800;letter-spacing:.01em;
+}
+.ss-root .ss-vf-card-missing {
+  display:flex;align-items:center;gap:6px;font-size:var(--ss-text-2xs);font-weight:700;color:var(--warn);
+}
+.ss-root .ss-vf-card-verificator {
+  display:flex;align-items:center;gap:7px;font-size:var(--ss-text-xs);font-weight:700;color:var(--text2);
+}
+.ss-root .ss-vf-card-agent {
+  display:flex;align-items:center;gap:6px;margin-top:9px;font-size:var(--ss-text-2xs);color:var(--muted);
+}
+
+.ss-root .ss-vf-stage-facts { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }
+.ss-root .ss-vf-stage-fact {
+  display:inline-flex;align-items:baseline;gap:5px;padding:2px 8px;border-radius:7px;
+  border:1px solid var(--border2);background:var(--alt);
+  font-size:var(--ss-text-2xs);color:var(--text2);white-space:nowrap;
+}
+.ss-root .ss-vf-stage-fact b { color:var(--faint);font-weight:700;letter-spacing:.04em;text-transform:uppercase; }
+
 .ss-root .ss-vf-section {
   display:flex;flex-direction:column;gap:12px;padding:18px;
   border:1px solid var(--border);border-radius:var(--radius-lg);

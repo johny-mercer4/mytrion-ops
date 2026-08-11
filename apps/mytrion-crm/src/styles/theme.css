@@ -606,31 +606,59 @@
 [data-theme='light'] {
   color-scheme: light;
 
-  /* ══ TIER 1 — Luminous Horizon. Only the palette is restated; every alias above re-derives. ══ */
-  --page: #e9edf3;
-  --surface-base: #f8f9fa;
-  --container-low: #f3f4f5;
-  --container: #edeeef;
-  --container-high: #e7e8e9;
-  --container-highest: #e1e3e4;
+  /* ══ TIER 1 — Luminous Horizon. Only the palette is restated; every alias above re-derives. ══
+     Re-baselined for eye comfort. The brief was "too sharp, and borders and shadows are not visible",
+     which reads as one complaint but is two, pulling opposite ways:
 
-  --on-surface: #191c1d;
-  --on-surface-variant: #434656;
+       SHARP is text-on-card. --on-surface was #191c1d on #f8f9fa = 16.26:1, roughly double the AAA
+       floor. Near-black on near-white is the single harshest edge a UI can present, and it is the one
+       the eye meets thousands of times per screen.
+
+       INVISIBLE is structure. --border composited to 1.14:1 against its own card, the card sat 1.11:1
+       against the page, and --hz-shadow-rest was a fully TRANSPARENT shadow, so a resting card was
+       held up by a hairline and nothing else. FOUNDATIONS.md §11 already admitted the border figure.
+
+     So the ink comes DOWN and the structure comes UP. Both are now asserted by the contrast test in
+     tokens.test.ts, which carries a CEILING on --on-surface as well as a floor — a floor-only test is
+     what let 16.26:1 ship and be documented as a feature.
+
+     The ramp also holds ONE hue now (~223-225, the dark theme's own). It used to drift from 216 at
+     --page to 200 at --container-highest with saturation collapsing 29% → 4%, so the page read as a
+     saturated cool blue while the cards read as near-neutral grey — cards looked faintly dingy
+     against their own ground, which no single token explained. */
+  --page: #e0e4f0;
+  --surface-base: #f6f8fc;
+  --container-low: #edf0f7;
+  --container: #e4e8f1;
+  --container-high: #dbdfea;
+  --container-highest: #d2d7e3;
+
+  /* 12.20:1 on --surface, 10.21:1 on --page. Was 16.26:1 / 14.59:1. Still comfortably clear of the
+     7:1 AAA floor with ~74% headroom — this buys comfort, it does not spend accessibility. */
+  --on-surface: #2b3141;
+  --on-surface-variant: #4b5162;
   /* WCAG FIX. Was #737688, which failed AA as --text-muted on every light surface that ships:
      3.82:1 on --page, 4.26:1 on --surface, 4.08:1 on --container-low — at full opacity, before any
      disabled dimming, on the micro-labels that make up 35% of all 11px rules. #5c5f70 is the first
      value that clears 4.5:1 everywhere INCLUDING the horizon band's worst stop (4.70:1). Hue is
      preserved: oklch(48.9% .027 277.4) against the old oklch(56.9% .028 279.1). */
   --outline: #5c5f70;
-  --outline-variant: #c3c5d9;
+  /* Feeds --border-strong, the ~21 rules that draw a real line rather than a hairline. 1.59:1 before,
+     which meant "strong" was indistinguishable from "subtle". 2.99:1 now — the 3:1 non-text floor.
+     That threshold is deliberately met HERE and not by --border: a 3:1 hairline on every one of 637
+     card edges is a drawn box, which IS the sharpness complaint. */
+  --outline-variant: #8590ae;
 
-  --primary: #0043c8;
-  --primary-container: #0057ff;
-  --tint: #004ee7;
-  --secondary: #00677f;
-  --secondary-container: #00ccf9;
+  /* Desaturated off the near-pure blues. --primary-container was #0057ff and --tint #004ee7, both
+     ~100% saturation — the hottest values in the light theme, and they drive accent fills, focus
+     rings and the --accent-glow inside --elev-2, so they set how "loud" the whole theme reads. */
+  --primary: #1f4fb0;
+  --primary-container: #2f5fd0;
+  --tint: #2b57c4;
+  --secondary: #146b80;
+  --secondary-container: #21b3d8;
   --on-primary: #ffffff;
-  --error: #ba1a1a;
+  --error: #b3261e;
 
   /* The --fuel second stop — the deeper of the two brand oranges, which is the one that reads on a
      pale field. Still no new colour. */
@@ -652,17 +680,19 @@
      them… no ground"). Do not "simplify" this asymmetry away. */
   --surface: var(--surface-base);
   --surface-data: var(--surface-base);
-  --surface-data-alt: var(--container-low);
 
-  /* Status. good/warn unchanged; danger takes the palette error tone. */
-  --success: #1f9d62;
-  --warning: #b9791a;
-  --danger: var(--error);
+  /* Status. --success was #1f9d62 (3.29:1) and --warning #b9791a (3.43:1) — both FAILING AA as text
+     on --surface, today, before this change. Fixed here rather than filed, because the contrast test
+     lands red on them otherwise.
+     --danger is not restated: it is var(--error) in the dark block already, and repeating an
+     identical value is how two themes quietly drift apart. */
+  --success: #0d6f43;
+  --warning: #805305;
 
   /* Categorical hues, stepped down for a pale field — the dark set is too light to read on white.
      --red/--green/--yellow/--light-blue/--rocket/--black inherit through their :root indirection. */
-  --purple: #5b34c4;
-  --orange: #b4531a;
-  --blue: #1854c9;
-  --dark-purple: #4c1d95;
+  --purple: #5733b8;
+  --orange: #9e4b18;
+  --blue: #1f56bd;
+  --dark-purple: #4a2b8c;
 }

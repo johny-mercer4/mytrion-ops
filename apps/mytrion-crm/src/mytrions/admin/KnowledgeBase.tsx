@@ -12,7 +12,7 @@ import {
 } from '../../api/knowledge';
 import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { DocIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
-import { useModalFocus } from '../hr/useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 import { Pager, PAGE_SIZE } from './Pager';
 import s from './admin.module.css';
 

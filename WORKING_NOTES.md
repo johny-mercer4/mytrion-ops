@@ -14071,36 +14071,245 @@ still holds these labels.
 The harness is now documented in the modern-web-guidance skill, with the caveat that matters: if a
 page renders empty, say so rather than counting the pass.
 
-### Same day — "Today" beside the live visit
+---
 
-The presence strip showed EITHER "This visit" or "Today in office", never both — so the moment someone
-clocked in they lost sight of how long they had already been in that day. For a split shift, or anyone
-who stepped out and came back, that is the number that answers "have I done my hours". Three readings
-now: This visit · Today · This week.
+## 2026-08-11 — Four directions: RingCentral scope, Marketing Mytrion, light theme, permission sets
 
-Two details that took a decision rather than a line of markup:
+### 1. RingCentral leaked onto every workspace (`816d9b8c`)
 
-- **Which day the middle reading belongs to.** `activeVisit?.day ?? todayRow`, not the calendar row. A
-  19:00–03:00 shift is bucketed on the day it STARTED, so at 01:00 the calendar row is a fresh empty day
-  while the shift being worked sits on yesterday's — reading the calendar row would show 0h to someone
-  six hours into a shift.
-- **The label is computed, not hardcoded.** When that day is not the calendar today it prints the date
-  instead of the word "Today". Calling yesterday "Today" on a screen people check payroll against is a
-  plain lie, and it is exactly what a hardcoded label would have done every night after midnight.
+The route gate was never wrong — `/^\/main\/([^/]+)/` cannot match a bare `/main`, so the launcher
+has always evaluated to "not allowed". **The leak was teardown.** Embeddable's docked pill is
+`#rc-widget`, a positioned DIV wrapper with the iframe INSIDE it; `teardownAdapter` removed the
+script and the iframe and left the wrapper behind on every navigation. `ringcentralHost.css:46-50`
+had already recorded this exact finding for the mobile offset rule ("targeting only the iframe moved
+nothing — verified against the running app"); the teardown path never learned it.
 
-Layout: the two stat blocks were two GRID tracks, so a third needed a fifth track — and an absent track
-still contributes its `gap`, leaving dead space on the right whenever no visit was open. They are now one
-flex group in a single track, which sizes to however many are shown and spans full width on narrow.
+Removed rather than hidden: no browser suspends a `display:none` iframe's JS, WebRTC session or
+audio, so hiding would have left the softphone registered and ringing on a Mytrion it is not mounted
+on. Script removed first so a mid-flight vendor bootstrap cannot re-append into a node dropped in the
+same tick.
 
-Verified all three states in a harness against the real stylesheets before writing tests: same-day,
-past-midnight (date shown, not "Today"), and idle (two readings, unchanged).
+Also: `collection` was in the CLIENT allowlist and not the server one, so Collection agents passed
+the route gate, booted, and got an RBAC refusal the caller swallows by design — a phone that silently
+did nothing with a clean console. The two lists now name each other in comments.
 
-**A fixture too weak, twice, in the same test.** First the assertions were unscoped, so `30m 00s` matched
-the session row below and would have passed with the strip gone — fixed by scoping to the presence
-region. Then `1h 30m` was BOTH the day and the week total in my one-day fixture, so the query could not
-tell which element it found; added an earlier 2h day so the week is 3h 30m. That is now five times this
-session, always the same shape: data that satisfies the correct and the broken implementation equally.
+The gate moved to `rcRouteGate.ts` because it could not be tested where it was (importing the
+component runs the console filter at module scope).
 
-3 tests. Mutations caught: reverting to either/or, reading the calendar row instead of the visit's day,
-and hardcoding the "Today" label. CRM 632/656 — the 24 are the six files already failing on `build`.
-Bundle rebuilt.
+### 2. Marketing Mytrion (`48e7b36b`)
+
+Referral + Loyalty moved out of the Manager hub, routes re-prefixed to `/v1/marketing/*` and re-gated
+on `marketing`. Not aliased: leaving `/v1/manager/*` alive would have kept `management` as a standing
+second key into Marketing data. `marketing`'s Mytrion id EQUALS its department slug, which is the
+only reason the generic `requireMytrionWrite` works without a bespoke guard (`manager` → `management`
+is exactly why it needed a hand-written one).
+
+**The CSS was the risk, not the code.** The two cards render ~15 classes owned by `manager.css` /
+`managerWorkspace.css`, which Manager still needs. Renaming the prefix would have meant duplicating
+~1,000 lines — and `tokens.test.ts`'s `backdrop-filter` budget is AT its ceiling of 147, so any copy
+fails CI outright. `mg-` is now documented as the HUB-CHROME prefix and the files moved to
+`_shared/hub/` unchanged. Two could not move wholesale and would have failed silently:
+`loyaltyBonusModal.css` is rendered by Manager's task modals, and `managerLoyalty.css`'s
+`.mg-lty-chip*` by EFS Console.
+
+Highest-impact single line: widening `hubTheme.css`'s `[data-mytrion='manager']` to include
+`marketing`. Without it every `--mg-*`, `--hz-page`, `--hz-pane*` and `--hz-shadow-*` resolves to
+nothing in the new workspace.
+
+Migration `0113` also carries the read/full MODE across (`manager` → `marketing`), which `0083` had
+no reason to: an omitted key means FULL, so copying only the grant would have promoted every
+read-only manager into someone who can rewrite a carrier's loyalty tier.
+
+### 3. Light theme — "too sharp, and borders/shadows are not visible" (`5ab26a14`)
+
+One complaint, two opposite causes.
+
+- **Sharp** was text-on-card: `--on-surface` `#191c1d` on `#f8f9fa` = **16.26:1**, ~2× the AAA floor.
+  Now `#2b3141` at **12.20:1**, still ~74% clear of 7:1.
+- **Invisible** was structure, and the root cause is blunt: `--hz-shadow-rest` resolves to `--elev-0`,
+  which is a **fully transparent** shadow in both themes. A resting light card was held up by
+  `--border` alone at **1.14:1**. Light now restates `--elev-0` as a real shadow, and `--elev-1`'s
+  drop term moves there where it belongs (~180 sites asking only for the glare were getting a shadow
+  by accident while rest-only sites got none). `--border` → **1.35:1**.
+
+`--border` is deliberately NOT 3:1 — a 3:1 hairline on all 637 card edges is a drawn box, which is
+the sharpness complaint from the other side. The 3:1 obligation moved to `--border-strong`
+(1.59 → 2.99).
+
+Five modules pinned their own light values and could not be reached by editing `theme.css` — Sales
+(`.ss-root.light` redeclared the GLOBAL `--surface`/`--border`/`--shadow-*` and out-specified
+`[data-theme='light']`), Billing, CS, Manager (pinned the `--hz-shadow-*` ALIASES, so this fix would
+have stopped at its door) and Recruit. All now track the shared tokens.
+
+Fixed in passing: `--success` (3.29:1) and `--warning` (3.43:1) were **failing AA** as text on a card.
+
+`tokens.test.ts` gains a contrast assertion with a **floor and a ceiling**. The ceiling is the point:
+a floor-only test is what let 16.26:1 ship and get written up in FOUNDATIONS.md as a strength.
+Verified it bites (restoring the old near-black fails at 16.12 > 13.5).
+
+### 4. Permission sets — Salesforce-style (`ba312d8e`, `3e69801c`, `afcbcc3a`, `81d73855`)
+
+Named, reusable, **additive** grants assigned to users, layered on profile → role → per-user.
+
+- **Step 0** closed a live gap on its own: `read|full` has been storable for all 12 Mytrions since
+  `0057` and five backends enforce it, but the Admin UI only exposed it for Billing. `hr: 'read'` was
+  enforceable by the server and unreachable from the product.
+- **Tab registry** (`access/tabRegistry.ts`): each Mytrion owns its declaration, the registry composes.
+  Types pin the vocabulary; a TEST catches phantom entries (a new descriptor is NOT a compile error —
+  the shells use `active === id` and a `Partial<Record>`, neither exhaustive — verified by adding a
+  fake tab and watching tsc stay silent). A dev-only warning covers the dangerous direction: a
+  rendered key nobody declared can never be granted, so it goes invisible for any scoped user.
+- **Resolution**: Step 3.5 sits AFTER the override's REPLACE (else assigning a set to anyone with an
+  override row is a silent no-op) and BEFORE the deny subtraction (so one Mytrion can still be
+  removed surgically). Mode union is most-permissive-wins.
+- **Tab grants**: a Mytrion ABSENT from a set's `tabGrants` is UNSCOPED — every tab, including future
+  ones. That asymmetry is what stops a newly shipped tab vanishing for every scoped user.
+
+**Two things worth remembering.**
+
+`drizzle-kit generate` is currently unusable in this repo: its meta snapshots have drifted, so it
+emitted 388 lines re-creating the comms/knowledge/ticketing tables that already exist — and none of
+the two I added. `0114` is hand-written and idempotent.
+
+And a real bug I introduced and then found: the permission-set reads are UNCONDITIONAL, unlike the
+other three in `computeAccess`. Sharing the outer catch meant an unreachable permission-set table
+degraded EVERY user to `legacyAccess` — which grants far less and by design never grants Customer
+Service. Two CS suites went red, but the actual exposure was production: deploying before running
+`0114` would have collapsed access org-wide while logging "resolve failed". They now fail soft on
+their own, with a test.
+
+**Scope, stated plainly:** tab permissions are UI gating. The backend still enforces at Mytrion +
+read/full and nothing finer, so hiding a tab removes the door, not the lock. A set's Mytrion grants
+and its read/full modes ARE enforced end to end.
+
+### Card Activity hover card floated under the header search
+
+`.msd-activity-card` is `position: absolute`, but `.msd-activity-wrap` never got `position: relative`.
+The absolute containing block walked up to a page-level ancestor, so `bottom: calc(100% - 78px)` —
+written assuming the wrap's height — placed the day detail under the global search. Fix: relative
+wrap + `top: 4px` so the card stays over the SVG inside the wrap (the scroller's `overflow-x: auto`
+forces y-clipping, so a card that extends above the wrap would still vanish). Vendored `app/` rebuilt.
+Regression: `SalesDashCharts.test.tsx`.
+
+### Sales + mini-app card roster: EFS is the source of truth
+
+Owner ask: cards-related automations (and the mini-app) must read card info from live EFS, not the
+lagged DWH mart. Much of this was already EFS-first (`loadCards`, Card Lookup, mini-app fleet,
+`listLiveCardRows`); remaining gaps closed:
+
+- **Sales client modal Cards** — roster + status/unit/driver now from `efs.cards`; DWH only for
+  `cardType` and as fallback when EFS is down/empty.
+- **Automations credential panel** (C-1 / C-3 / C-26) — reads the same `efs.cards` roster instead of
+  the misnamed `dwh.card_efs` agent path.
+- **Agent tool `crm.list_cards`** — uses `listLiveCardRows` (EFS → DWH fallback), not
+  `/api/agent/dwh/cards/...`.
+
+Intentionally still DWH: last-used / transactions history, invite `cardId` binding, and EFS-down
+fallbacks. Mini-app fleet was already EFS-primary (DWH only for stable `cardId`).
+
+## 2026-08-11 — Sales dashboard: live EFS Active for Cards by Company
+
+**Ask:** Dashboard Cards by Company / Card Activity need EFS; Loyalty “active cards this month”
+should be real-time because DWH syncs ~every 3 hours.
+
+**Semantics (verified in servercrm `agentDwh.js` + EFS routes):**
+- Cards by Company `active_cards` = `dim_card` status Active → **current** status → EFS
+  `getCardSummaries` is the correct live source.
+- Card Activity `active_cards` = distinct cards that **transacted that day** (mart) → period
+  metric. EFS card summaries cannot power this. Live replacement would mean N×carrier
+  `getMCTransExtLocV2` calls (or a new ServerCRM batch) — out of scope; keep DWH + UI note.
+- Loyalty `activeCardsThisMonth` / gallons / prev-month track = distinct cards with ≥1 txn in
+  the calendar month — **not** current Active status. Do **not** fake from EFS Active.
+
+**Implemented:**
+- `liveActiveCardCounts` — 5m process cache, concurrency 4, **max 30 fresh EFS calls/request**.
+- `enrichAgentSalesLiveActive` overlays `cardsByCompany.active_cards` (+ KPI active/total when
+  fully live); leaves `cardActivity` / daily-by-carrier untouched.
+- `dashboard.agent_sales` touchpoint enables live overlay; KPI collector keeps
+  `fetchAgentSalesDashboard(name)` without live (no SOAP fan-out on ingestion).
+- UI: Cards by Company subtitle shows EFS/mixed/DWH source; Card Activity subtitle says
+  warehouse txn activity (~3h). Client modal account Active uses already-loaded `efs.cards`;
+  loyalty month “transacting cards” get honest warehouse copy.
+
+**Still DWH / decisions for user:**
+- Card Activity chart + Unique/New bars + cycle TX volume.
+- Loyalty month aggregates + company-wide Manager loyalty `activeCards` (roster-wide EFS
+  would blow rate limits).
+- Optional later: ServerCRM batch Active counts, or live txn feed for Card Activity.
+
+**Tests:** `live-active-card-counts`, `enrich-agent-sales-live-active`, CRM `dashSalesData` +
+`SalesDashCharts`. Typecheck green. **Vendored `app/` not rebuilt** — run `pnpm build:widget`
+before a UI PR.
+
+## 2026-08-11 — CORS: allow `x-cache-refresh` for CRM Vite → API
+
+Live-dashboard force refresh sends `x-cache-refresh: 1` from `apps/mytrion-crm/src/api/touchpoints.ts`
+(when `force=true`). Firefox blocked the preflight because `@fastify/cors` `allowedHeaders` in
+`src/app.ts` listed act-as / idempotency / api-key but not `x-cache-refresh`.
+
+**Fix:** add `x-cache-refresh` to Allow-Headers. Regression in `tests/integration/api.test.ts`
+(OPTIONS `/v1/touchpoints/dashboard.agent_sales`). Restart the API after pull.
+
+**Note:** `GET /v1/ringcentral/embed-config` → 404 is intentional when RC is off
+(`FF_RINGCENTRAL_ENABLED` / `RINGCENTRAL_CLIENT_ID` unset) — not a missing stub.
+
+## 2026-08-11 — Latency: DWH vs EFS overlay (Daniel Brown local bench)
+
+Wall-clock vs `fetchAgentSalesDashboard` / touchpoints (no commit). Agent book ≈ **218**
+companies; overlay budget **30 fresh EFS calls/request**, 5m process cache.
+
+| Surface | DWH | EFS/hybrid | Takeaway |
+| --- | --- | --- | --- |
+| `agent_sales` | ~2.0–2.3s | cold ~18s (mixed/30); **true warm ~2.2s** (218 cacheHits) | Cold ≈ **+8×**; warm ≈ **DWH + ~0.2s** once cache full (~8 fills) |
+| `efs.cards` vs `dwh.cards` (one carrier) | ~0.5s | ~2.1s | EFS roster ≈ **+1.6s** |
+| `listLiveCardRows` vs `getCards` | ~0.7s | ~1.7s | Same order |
+| Card Activity / loyalty month / last-used | DWH | N/A | Not migrated |
+
+Partial “warm” (still `freshCalls=30` while filling remaining carriers) stays slow — only
+`freshCalls=0` is true warm. UI page timing skipped: Vite session was mock Dev User without
+Zoho id (`DEV_MOCK_ZOHO_USER_ID` unset).
+
+## 2026-08-11 — Decision: Dashboard Active stays DWH (no live EFS overlay)
+
+**User decision:** Keep **Dashboard Cards by Company Active (cold)** on **DWH**. Do **not** use live EFS overlay for `dashboard.agent_sales` — cold ~18s fan-out is unacceptable. Keep **everything else** on EFS live; ~1s slower per-carrier is OK.
+
+**Removed:**
+- `enrichAgentSalesLiveActive` + `liveActiveCardCounts` modules and unit tests
+- Wiring in `fetchAgentSalesDashboard` / `dashboard.agent_sales` (`liveActiveCards`)
+- FE overlay metadata + copy ("Active live for X/Y", "Active from live EFS")
+
+**Dashboard Active is DWH-only again.** Cards by Company subtitle: "Active from warehouse".
+Refresh toast copy: `Latest numbers loaded (Active cards from warehouse).` (was live-EFS claim).
+
+**Still EFS-primary (unchanged):**
+- Client drilldown Cards (`loadClientCards` / `efs.cards`)
+- AutoCardCredentials / C-1–C-26
+- `crm.list_cards` / `listLiveCardRows`
+- Card Lookup live roster
+- Client modal account Active from `efs.cards` (no dashboard fan-out)
+
+**Vendored `app/` not rebuilt** — run `pnpm build:widget` before a UI PR (subtitle string changed).
+
+## 2026-08-12 — C-20 Request Invoices → live CMP via clients.invoices
+
+### Goal
+Horizon Automations **C-20** live CMP invoice list/status **without** changing ServerCRM
+`fetchInvoices` (still DWH on `build`).
+
+### Approach (mytrion-only)
+```
+C-20 → callTouchpoint('clients.invoices')
+     → GET /api/clients/:carrierId/invoices   (already CMP-first + DWH fallback)
+     → client-side range + status filter
+```
+PDF membership check also uses `/api/clients/:id/invoices` so fresh CMP ids are not
+denied by lagging DWH `fetchInvoices`.
+
+### UI
+- `titleStatus`: PARTIALLY_PAID → "Partially Paid" (not "Paid")
+- Badge: **LIVE CMP** (`source: 'cmp'` — route has no `meta.source`)
+- Filter Partially Paid
+
+### Out of scope
+- ServerCRM `fetchInvoices` CMP-first (PR #186 — not required; close if opened)
+- zoho-octane C-20 (still on DWH fetchInvoices by design today)

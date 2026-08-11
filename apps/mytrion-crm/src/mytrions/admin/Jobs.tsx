@@ -9,7 +9,7 @@ import {
   type QueueStateCount,
 } from '../../api/jobs';
 import { RefreshIcon, XIcon } from '../../components/icons';
-import { useModalFocus } from '../hr/useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 import s from './admin.module.css';
 import { adminToast } from './toast';
 

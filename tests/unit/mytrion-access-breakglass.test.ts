@@ -23,6 +23,16 @@ vi.mock('../../src/repos/mytrionProfileDefaultsRepo.js', () => ({
 vi.mock('../../src/repos/mytrionRoleDefaultsRepo.js', () => ({
   mytrionRoleDefaultsRepo: { findByKey: vi.fn(), list: vi.fn(async () => []) },
 }));
+vi.mock('../../src/repos/mytrionPermissionSetsRepo.js', () => ({
+  // Added with permission sets. Without these the REAL repos reach `db`, computeAccess catches, and
+  // every case in this file silently degrades to `legacyAccess` — the assertions then fail with
+  // baffling wrong grants rather than a clear connection error.
+  mytrionPermissionSetsRepo: { listActive: vi.fn(async () => []), list: vi.fn(async () => []) },
+  mytrionPermissionSetAssignmentsRepo: {
+    listByZohoUserId: vi.fn(async () => []),
+    listAllActive: vi.fn(async () => []),
+  },
+}));
 vi.mock('../../src/repos/workerMytrionAccessRepo.js', () => ({
   workerMytrionAccessRepo: { findByZohoUserId: vi.fn(), list: vi.fn(async () => []) },
 }));

@@ -66,7 +66,7 @@ export function SalesDashPanel() {
       setData(await loadSalesDashRaw({ force }));
       // Confirm a user-initiated refresh so it's clear the numbers actually reloaded (toast tone is
       // derived from the title: "refreshed" → success/green, "Couldn't" → error/red).
-      if (force) pushToast('Dashboard refreshed', 'Latest numbers loaded from Zoho.');
+      if (force) pushToast('Dashboard refreshed', 'Latest numbers loaded (Active cards from warehouse).');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load sales data.';
       setError(msg);

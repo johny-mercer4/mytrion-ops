@@ -11,7 +11,9 @@ import { deliverBlob } from './txnExportLibs';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
+  filterClientInvoices,
   fmtDate,
+  invRangeBounds,
   mapInvRange,
   mapInvStatus,
   shortCard,
@@ -133,19 +135,21 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
   const { action: bm, deal, card } = input;
   switch (bm.id) {
     case 'invoices': {
+      // Live CMP via existing servercrm GET /api/clients/:id/invoices (DWH fallback
+      // upstream). Range/status are applied client-side — CMP success path ignores them.
       const cid = requireCarrier(deal);
       const status = mapInvStatus(input.invStatus);
       const range = mapInvRange(input.invRange);
       if (range === 'custom' && (!input.invFrom || !input.invTo)) {
         throw new Error('Pick a start and end date for the custom invoice range.');
       }
-      const res = await callTouchpoint('sales_mytrion.fetch_invoices', {
-        carrierId: cid,
-        range,
-        ...(range === 'custom' ? { from: input.invFrom, to: input.invTo } : {}),
+      const bounds = invRangeBounds(range, input.invFrom, input.invTo);
+      const res = await callTouchpoint('clients.invoices', { carrierId: cid, limit: 500 });
+      const raw = (res.data ?? []) as Array<Record<string, unknown>>;
+      const list = filterClientInvoices(raw, {
         ...(status ? { status } : {}),
+        ...(bounds ?? {}),
       });
-      const list = (res.data ?? []) as Array<Record<string, unknown>>;
       input.setInvRows(list.map((inv, i) => {
         const r = inv;
         const id = str(r.invoiceId ?? r.invoice_id ?? r.id);
@@ -161,7 +165,8 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
           status: titleStatus(r.status ?? r.invoiceStatus ?? r.invoice_status),
         };
       }));
-      return { kind: 'invoices' };
+      // Endpoint is CMP-first; upstream does not emit meta.source on this route.
+      return { kind: 'invoices', source: 'cmp' };
     }
     case 'transactions': {
       const cid = requireCarrier(deal);

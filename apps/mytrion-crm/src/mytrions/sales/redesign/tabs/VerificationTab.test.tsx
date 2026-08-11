@@ -20,6 +20,9 @@ vi.mock('../dcCache', () => ({
 }));
 
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
+vi.mock('@/context/UserContextProvider', () => ({
+  useUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
+}));
 vi.mock('../live', () => ({
   useLoad: () => state.pipeline,
 }));
@@ -29,6 +32,7 @@ function client(index: number, classification: VerificationClient['classificatio
     dealId: `deal-${index}`,
     carrierId: `carrier-${index}`,
     companyName: classification === 'active' ? 'Active account should be hidden' : `Pipeline application ${index}`,
+    dealName: `Deal ${index}`,
     appFillDate: `2026-07-${String(Math.max(1, 31 - index)).padStart(2, '0')}`,
     dealStage: 'Application Processing',
     applicationStage: 'Adjudication',
@@ -60,6 +64,15 @@ function client(index: number, classification: VerificationClient['classificatio
     attentionCount: 0,
     verificationStatus: null,
     verificationUpdatedAt: null,
+    verificationState: null,
+    plaidLinkUrl: null,
+    plaidStatus: null,
+    cpLimit: null,
+    cpPaymentType: null,
+    cpBillingCycle: null,
+    missingFields: [],
+    docsUploaded: 0,
+    workingOn: null,
   };
 }
 
@@ -106,7 +119,7 @@ describe('VerificationTab roster chrome', () => {
     expect(screen.getByTestId('verification-grid')).toHaveClass('ss-verification-grid');
   });
 
-  it('keeps the original nine-stage visual when Verification intake has not started', () => {
+  it('keeps the full stage visual when Verification intake has not started', () => {
     state.current = {
       data: page([client(1)]),
       loading: false,
@@ -121,7 +134,7 @@ describe('VerificationTab roster chrome', () => {
     expect(screen.getByText('Awaiting intake')).toBeInTheDocument();
     expect(screen.getByText('Pre Stop Factors')).toBeInTheDocument();
     expect(screen.getByText('Post Stop Factors')).toBeInTheDocument();
-    expect(screen.getAllByText('Not started')).toHaveLength(9);
+    expect(screen.getAllByText('Not started')).toHaveLength(10);
   });
 
   it('uses the standard detail skeleton while the live pipeline loads', () => {

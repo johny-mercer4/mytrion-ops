@@ -131,7 +131,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // desks assign into — so unparking this is what makes a manager's assignment reach the agent
       // it was assigned to. Parked while only half the loop existed.
       { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
-      { id: 'verification', label: 'Verification', icon: 'verification', comingSoon: true },
+      { id: 'verification', label: 'Verification', icon: 'verification' },
       // The group is a layout slot as much as a status. Call Hub stays live here; parked tabs use
       // the shared SOON chip + ComingSoonPanel and can be restored by dropping `comingSoon`.
       { id: 'callHub', label: 'Call Hub', icon: 'callHub' },

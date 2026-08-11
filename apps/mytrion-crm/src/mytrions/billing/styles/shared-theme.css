@@ -181,10 +181,11 @@
     /* Scrollbar */
     --scrollbar-thumb: #bbc0cc;
 
-    /* Text — deep navy, not harsh black */
-    --color-text-primary:  #1a1d38;
-    --color-text-muted:    #8890b0;
-    --text-on-dark:        #1a1d38;
+    /* Text — from the shared palette, so a global softening reaches Billing too. These were pinned
+       (#1a1d38 / #8890b0), which made Billing one of the modules a theme.css change could not move. */
+    --color-text-primary:  var(--text-primary);
+    --color-text-muted:    var(--text-muted);
+    --text-on-dark:        var(--text-primary);
 
     /* Aliases */
     --brand-blue:         #1a1d38;
@@ -199,13 +200,17 @@
     --sidebar-bg:     var(--hz-glass);
     --header-bg:      var(--hz-glass);
 
-    /* Borders — subtle navy tint, not flat black alpha */
-    --color-border: rgba(88, 95, 150, 0.13);
+    /* Borders and the resting card shadow — the shared values. Pinned before, which is why Billing
+       kept flat 0.13-alpha edges and a 0.05-alpha lift no matter what the light theme did. */
+    --color-border: var(--border);
 
-    /* Design parity: track + soft card shadow on white surfaces */
-    --track:        rgba(79, 88, 150, 0.13);
-    --card-shadow:  0 1px 2px rgba(20, 23, 49, 0.05), 0 6px 16px rgba(37, 99, 235, 0.07);
-    --dim:          #b4bad4;
+    /* A background FILL, not an edge — four consumers set `background: var(--track)`, and one of
+       them is `.lg-aging-seg--empty`. --border-strong is opaque #8590ae, which renders an EMPTY
+       aging segment as a solid mid-grey bar that reads as filled. Faint and translucent, matching
+       dark's rgba(200,204,218,0.08) intent. */
+    --track:        var(--border);
+    --card-shadow:  var(--hz-shadow-rest);
+    --dim:          var(--text-disabled);
     /* Design muted-chip sem tokens (chip('muted')). */
     --mutedc:       #565d85;
     --muted-bg:     rgba(79, 88, 150, 0.10);
@@ -218,7 +223,9 @@
 
     /* Modal */
     --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 62%, transparent);
-    --modal-box-bg:      #ffffff;
+    /* Not pure #fff — a dialog that is whiter than every surface under it is the single sharpest
+       edge in a light theme. --menu-bg is the shared floating-panel value. */
+    --modal-box-bg:      var(--menu-bg);
 
     /* Status — richer on white backgrounds */
 }

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { PermissionSets } from './PermissionSets';
+import type { AdminTabKey } from './adminTabs';
 import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
@@ -23,26 +25,14 @@ import { ChatPanel } from '../../features/chat/ChatPanel';
 import { useUserContext } from '../../context/UserContextProvider';
 import shellStyles from '../_shared/MytrionShell.module.css';
 
-type Tab =
-  | 'kb'
-  | 'train'
-  | 'browser'
-  | 'scope'
-  | 'carriers'
-  | 'carrier-invites'
-  | 'news'
-  | 'deals'
-  | 'audit'
-  | 'jobs'
-  | 'cmp'
-  | 'dwh'
-  | 'verification-db'
-  | 'mytrion-db'
-  | 'kpi-data'
-  | 'data-loader'
-  | 'access'
-  | 'escalation-routing'
-  | 'horizon';
+/**
+ * Derived from the registry — see the note in billing/Shell.tsx.
+ *
+ * `carrier-invites` is NOT a registry entry: it is a child row under `carriers`, and an admin
+ * granting "Carrier User Management" means the screen rather than one of its two panes. It stays in
+ * this union because the shell still routes to it.
+ */
+type Tab = AdminTabKey | 'carrier-invites';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
 
@@ -108,6 +98,15 @@ export default function AdminMytrion() {
           active: tab === 'access',
           onClick: () => setTab('access'),
           keywords: ['rbac', 'workers', 'permissions'],
+        },
+        {
+          key: 'permission-sets',
+          tone: 'var(--tone-violet)',
+          label: 'Permission Sets',
+          icon: <AccessIcon />,
+          active: tab === 'permission-sets',
+          onClick: () => setTab('permission-sets'),
+          keywords: ['rbac', 'sets', 'salesforce', 'grants', 'tabs', 'assign'],
         },
         {
           key: 'carriers',
@@ -289,6 +288,7 @@ export default function AdminMytrion() {
       {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
       {tab === 'browser' && <KnowledgeBrowser />}
       {tab === 'access' && <UserManagement />}
+      {tab === 'permission-sets' && <PermissionSets />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'news' && <ClientNews />}

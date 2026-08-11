@@ -23,7 +23,7 @@ import {
 } from '../../api/hrTimeOff';
 import { HrBusy, HrPageLoader } from './HrBits';
 import { isActiveStatus } from './hrData';
-import { useModalFocus } from './useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 
 function dayValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);

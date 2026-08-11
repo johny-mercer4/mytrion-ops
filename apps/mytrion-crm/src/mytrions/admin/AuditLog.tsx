@@ -7,7 +7,7 @@ import {
   type AuditStatus,
 } from '../../api/audit';
 import { SearchIcon, XIcon } from '../../components/icons';
-import { useModalFocus } from '../hr/useModalFocus';
+import { useModalFocus } from '../_shared/useModalFocus';
 import s from './admin.module.css';
 
 const PAGE = 50;

@@ -183,6 +183,13 @@ export function ClientModal({
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
   const billingL = useLoad(() => loadClientBilling(client.id), [client.id]);
   const balanceL = useLoad(() => loadClientEfsBalance(client.id), [client.id]);
+  /** Account Active/total from the same live EFS roster the Cards tab uses (not month txn counts). */
+  const liveAccountCards = (() => {
+    const rows = cardsL.data;
+    if (!rows || rows.length === 0) return null;
+    const active = rows.filter((c) => String(c.status ?? '').toLowerCase() === 'active').length;
+    return { active, total: rows.length };
+  })();
   const [actRows, setActRows] = useState<ClientActivityVM[]>([]);
   const [actLimit, setActLimit] = useState(CLIENT_ACTIVITY_PAGE);
   const [actHasMore, setActHasMore] = useState(false);
@@ -382,11 +389,18 @@ export function ClientModal({
                     </div>
                     <div style={s("font-family:var(--font-mono);font-size:25px;font-weight:700;margin-top:9px")}>{numFmt(period.gallons)}<span style={s('font-size:12px;color:var(--muted)')}> in-net gal</span></div>
                     <div style={s('display:flex;justify-content:space-between;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border2);font-size:11.5px;color:var(--muted)')}>
-                      <span>{period.cards} transacting cards</span>
+                      <span title="Distinct cards with ≥1 transaction in the period (warehouse, ~3h sync) — not live EFS Active status">
+                        {period.cards} transacting cards
+                      </span>
                       <span>{numFmt(period.total)} total gal</span>
                     </div>
                   </section>
                 ))}
+              </div>
+              <div style={s('font-size:11px;color:var(--faint);line-height:1.45')}>
+                Loyalty month cards &amp; gallons come from the warehouse (~every 3 hours). Live EFS
+                Active status is on the Cards tab / account tile below — it is not the same as
+                “transacting cards this month.”
               </div>
 
               {projectedTier.thresholds && projectedTier.nextLevel ? (
@@ -405,7 +419,15 @@ export function ClientModal({
               ) : null}
 
               <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                <div style={s(tile)}><div style={s(tLbl)}>Account active cards</div><div style={s(tVal)}>{client.active}<span style={s('color:var(--muted);font-size:15px')}>/{client.cards}</span></div></div>
+                <div style={s(tile)}>
+                  <div style={s(tLbl)}>Account active cards{liveAccountCards ? ' · live EFS' : ''}</div>
+                  <div style={s(tVal)}>
+                    {liveAccountCards ? liveAccountCards.active : client.active}
+                    <span style={s('color:var(--muted);font-size:15px')}>
+                      /{liveAccountCards ? liveAccountCards.total : client.cards}
+                    </span>
+                  </div>
+                </div>
                 <div style={s(tile)}><div style={s(tLbl)}>Gallons · Billing cycle</div><div style={s(tVal)}>{numFmt(client.cycleGallons)}</div></div>
               </div>
 

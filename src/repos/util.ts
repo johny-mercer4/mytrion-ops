@@ -24,6 +24,30 @@ export function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+/**
+ * True if the error is a Postgres undefined-table violation (SQLSTATE 42P01) for `table`.
+ *
+ * The realistic cause is code deployed ahead of its migration. Left as a raw failure the caller
+ * returns "Internal server error", which tells an admin nothing and sends them to the logs to find a
+ * one-line answer. `dataLoader.routes.ts` already did this by hand for its own table; this is the
+ * same check, named once.
+ */
+export function isMissingTable(err: unknown, table: string): boolean {
+  // Drizzle wraps the driver error, so 42P01 sits on the CAUSE while the table name is only in the
+  // outer "Failed query: …" message. Walk the chain and take the code from wherever it is.
+  let hasCode = false;
+  let mentionsTable = false;
+  let node: unknown = err;
+  for (let depth = 0; node !== null && node !== undefined && depth < 5; depth += 1) {
+    if (typeof node !== 'object') break;
+    if ((node as { code?: unknown }).code === '42P01') hasCode = true;
+    const message = (node as { message?: unknown }).message;
+    if (typeof message === 'string' && message.includes(table)) mentionsTable = true;
+    node = (node as { cause?: unknown }).cause;
+  }
+  return hasCode && mentionsTable;
+}
+
 /** Format a number[] as a pgvector text literal: [0.1,0.2,...]. */
 export function toVectorLiteral(embedding: number[]): string {
   return `[${embedding.join(',')}]`;

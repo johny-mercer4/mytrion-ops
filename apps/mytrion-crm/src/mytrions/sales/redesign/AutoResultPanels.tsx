@@ -33,18 +33,30 @@ const chipOff = 'padding:5px 10px;border-radius:var(--radius-full);border:1px so
 
 function statusBadge(status: string): BadgeVM {
   const x = status.toLowerCase();
-  if (x.includes('paid')) return badge('Paid', 'var(--ok)');
+  // "Partially Paid" contains "paid" — check partial first.
+  if (x.includes('partial')) return badge(status || 'Partially Paid', 'var(--warn)');
+  if (x === 'paid' || x.startsWith('paid')) return badge('Paid', 'var(--ok)');
   if (x.includes('overdue') || x.includes('pending')) return badge(status, 'var(--warn)');
+  if (x.includes('cancel') || x.includes('void')) return badge(status, 'var(--muted)');
   return badge(status || '—', 'var(--muted)');
+}
+
+function invoiceSourceLabel(source: string | undefined): { text: string; color: string } | null {
+  if (source === 'cmp') return { text: 'LIVE CMP', color: 'var(--ok)' };
+  if (source === 'dwh_fallback') return { text: 'DWH FALLBACK', color: 'var(--warn)' };
+  return null;
 }
 
 export function AutoInvoicesPanel({
   rows,
   carrierId,
+  source,
 }: {
   rows: InvRow[];
   /** Scope for the download routes — they verify the invoice belongs to this carrier. */
   carrierId: string;
+  /** servercrm `meta.source` — cmp | dwh_fallback */
+  source?: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dlBusy, setDlBusy] = useState<string | null>(null);
@@ -103,6 +115,8 @@ export function AutoInvoicesPanel({
     );
   }
 
+  const sourceBadge = invoiceSourceLabel(source);
+
   return (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       {panelMsg && (
@@ -118,6 +132,11 @@ export function AutoInvoicesPanel({
         <label style={s('display:flex;align-items:center;gap:8px;font-size:var(--ss-text-sm);color:var(--text2);cursor:pointer')}>
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
           Select all ({selected.size})
+          {sourceBadge ? (
+            <span style={s('margin-left:4px')}>
+              <Badge vm={badge(sourceBadge.text, sourceBadge.color)} />
+            </span>
+          ) : null}
         </label>
         <div style={s('display:flex;gap:8px')}>
           <button

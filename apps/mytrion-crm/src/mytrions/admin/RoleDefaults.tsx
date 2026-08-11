@@ -6,7 +6,7 @@ import {
   type MytrionAccessMode,
   type RoleDefault,
 } from '../../api/mytrionAccess';
-import { BillingAccessModeField } from './BillingAccessModeField';
+import { MytrionAccessModeField } from './MytrionAccessModeField';
 import s from './admin.module.css';
 
 const label = (id: MytrionId): string => MYTRIONS[id]?.title ?? id;
@@ -74,9 +74,12 @@ function RoleCard({ role, onSaved }: { role: RoleDefault; onSaved: () => void })
   const [mode, setMode] = useState<'custom' | 'all'>(role.allDepartmentAccess ? 'all' : 'custom');
   const [allowed, setAllowed] = useState<Set<MytrionId>>(new Set(role.allowedMytrions));
   const [home, setHome] = useState<MytrionId | ''>(role.homeMytrion ?? '');
-  const [billingMode, setBillingMode] = useState<MytrionAccessMode>(
-    role.mytrionAccessModes?.billing ?? 'full',
+  // One mode per Mytrion. An omitted key means FULL in the resolver, so 'full' is the only safe
+  // default here — anything else would demote existing grants on first open.
+  const [modes, setModes] = useState<Partial<Record<MytrionId, MytrionAccessMode>>>(
+    () => ({ ...role.mytrionAccessModes }),
   );
+  const modeFor = (id: MytrionId): MytrionAccessMode => modes[id] ?? 'full';
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -89,7 +92,7 @@ function RoleCard({ role, onSaved }: { role: RoleDefault; onSaved: () => void })
     });
 
   const homeOptions = mode === 'all' ? MYTRION_ORDER : MYTRION_ORDER.filter((id) => allowed.has(id));
-  const showBillingMode = mode === 'custom' && allowed.has('billing');
+  const modeTargets = mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : [];
 
   async function save() {
     setBusy(true);
@@ -97,8 +100,11 @@ function RoleCard({ role, onSaved }: { role: RoleDefault; onSaved: () => void })
     try {
       const nextAllowed =
         mode === 'all' ? [...MYTRION_ORDER] : MYTRION_ORDER.filter((id) => allowed.has(id));
+      // Only for granted Mytrions, and only in 'custom' — an all-access role has nothing to restrict.
       const mytrionAccessModes =
-        mode === 'custom' && nextAllowed.includes('billing') ? { billing: billingMode } : {};
+        mode === 'custom'
+          ? Object.fromEntries(nextAllowed.map((id) => [id, modeFor(id)]))
+          : {};
       await updateRoleDefault(role.roleKey, {
         roleName: role.roleName,
         allowedMytrions: nextAllowed,
@@ -157,7 +163,14 @@ function RoleCard({ role, onSaved }: { role: RoleDefault; onSaved: () => void })
         {mode === 'all' && (
           <p className={s.noticeNote}>Full Mytrions — every department workspace (write access).</p>
         )}
-        {showBillingMode ? <BillingAccessModeField value={billingMode} onChange={setBillingMode} /> : null}
+        {modeTargets.map((id) => (
+          <MytrionAccessModeField
+            key={id}
+            mytrionId={id}
+            value={modeFor(id)}
+            onChange={(next) => setModes((prev) => ({ ...prev, [id]: next }))}
+          />
+        ))}
         <label className={s.field}>
           <span className={s.fieldLabel}>Home Mytrion (auto-route)</span>
           <select className={s.select} value={home} onChange={(e) => setHome(e.target.value as MytrionId | '')}>

@@ -30,14 +30,12 @@ const VERIFICATION_DEAL_FIELDS = [
   'MC',
   'DOT1',
   'Owner',
-  // application + stage (the two keys the pipeline is organised around)
   'Stage',
   'Application_Stage',
   'Application_Status',
   'Application_ID',
   'Application_Date',
   'Stage_Last_Updated',
-  // credit decision
   'Credit_Score',
   'Credit_Limit',
   'Credit_Line_Approved',
@@ -45,16 +43,13 @@ const VERIFICATION_DEAL_FIELDS = [
   'Risk_Score',
   'CreditSafe_Grade',
   'Money_Code_Limit',
-  // billing terms
   'Billing_Cycle',
   'Payment_Type_Billing',
-  // verification checkpoints
   'Company_Verification',
   'Billing_Verification',
   'Loves_Verification',
   'Verified',
   'Limits_Added',
-  // narrative
   'Reject_reason',
   'Verification_Notes',
   'Cards_Requested',
@@ -105,6 +100,19 @@ export async function fetchAgentVerificationDeals(
   const base =
     `select ${VERIFICATION_DEAL_FIELDS} from Deals ` +
     `where Owner = '${uid}' and Application_ID > 0 ` +
+    'order by Application_Date desc, id desc';
+  const { rows, truncated, pages } = await zohoCrm.runCoqlAll(base, {
+    pageSize: VERIFICATION_COQL_PAGE_SIZE,
+    maxRows: VERIFICATION_MAX_ROWS,
+  });
+  return { rows, truncated, pages };
+}
+
+/** Every application Deal ORG-WIDE (no Owner filter), freshest first, capped at VERIFICATION_MAX_ROWS. */
+export async function fetchAllVerificationDeals(): Promise<VerificationDealsResult> {
+  const base =
+    `select ${VERIFICATION_DEAL_FIELDS} from Deals ` +
+    `where Application_ID > 0 ` +
     'order by Application_Date desc, id desc';
   const { rows, truncated, pages } = await zohoCrm.runCoqlAll(base, {
     pageSize: VERIFICATION_COQL_PAGE_SIZE,

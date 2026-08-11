@@ -50,18 +50,18 @@ brief's "never primitives" rule, and it is the honest reading of a 45,000-line c
 
 | Token | Dark | Light |
 | --- | --- | --- |
-| `--page` | `#0a0e1a` | `#e9edf3` |
-| `--surface-base` | `#0f131f` | `#f8f9fa` |
+| `--page` | `#0a0e1a` | `#e0e4f0` |
+| `--surface-base` | `#0f131f` | `#f6f8fc` |
 | `--container-low` | `#171b28` | `#f3f4f5` |
 | `--container` | `#1b1f2c` | `#edeeef` |
 | `--container-high` | `#262a37` | `#e7e8e9` |
 | `--container-highest` | `#313442` | `#e1e3e4` |
-| `--on-surface` | `#dfe2f3` | `#191c1d` |
+| `--on-surface` | `#dfe2f3` | `#2b3141` |
 | `--on-surface-variant` | `#bbc9cf` | `#434656` |
 | `--outline` | `#859399` | **`#5c5f70`** ← was `#737688`, a WCAG failure |
-| `--outline-variant` | `#3c494e` | `#c3c5d9` |
+| `--outline-variant` | `#3c494e` | `#8590ae` |
 | `--primary` | `#a5e7ff` | `#0043c8` |
-| `--primary-container` | `#00d2ff` | `#0057ff` |
+| `--primary-container` | `#00d2ff` | `#2f5fd0` |
 | `--tint` | `#47d6ff` | `#004ee7` |
 | `--secondary` | `#ffaede` | `#00677f` |
 | `--secondary-container` | `#ff34cd` | `#00ccf9` |
@@ -577,7 +577,7 @@ on the ember core at **5.07:1**.
 
 **UI boundaries (3:1)** — the flat-opaque-data decision keeps the band away from card fills, so
 borders are measured against the card, not the band. Note for Phase 3: `--border` composites to
-1.23:1 (dark) and 1.14:1 (light) against its card. **That is already below 3:1 today** — fine for
+1.23:1 (dark) and 1.35:1 (light) against its card. **That is deliberately below 3:1** — fine for
 decorating a panel, *not* fine anywhere a border is the only thing identifying an interactive
 control. Phase 3 must not use `--border` alone to delimit a control.
 
@@ -607,7 +607,10 @@ with a value; the FILL axis gives nav selection a shape change, not just a tint.
 1. **`CLAUDE.md` hard rule 10 still says "prioritize glassmorphism"** with no data/chrome split. The
    token layer and the contract test now encode the *new* rule. **The instruction file and the
    system disagree until it is amended.** One line; it is your file.
-2. **`--elev-1` light-mode visual check** — 245 sites, the one behavioural change.
+2. ~~`--elev-1` light-mode visual check~~ — **done.** Light's drop term moved out of `--elev-1`
+   into `--elev-0`, which now carries a real resting shadow (it was transparent, inherited from
+   dark, so a resting light card had only its hairline). `--elev-1` is a pure inset in both
+   themes now, matching dark's structure.
 3. **`--hz-dur-wash` 350→170ms** — every hover in the app. Worth one deliberate look.
 4. **Manager forks the ambient field** (`managerPolish.css`) with its own radial lobes. Until those
    six declarations are deleted, Manager keeps blobs while every other workspace has the band —
