@@ -9,6 +9,7 @@ import {
   type PermissionSet,
   type PermissionSetSnapshot,
 } from '../../api/permissionSets';
+import { Button, ErrorState } from '@/ds';
 import { PermissionSetEditor } from './PermissionSetEditor';
 import { adminToast } from './toast';
 import s from './admin.module.css';
@@ -26,7 +27,7 @@ import s from './admin.module.css';
  */
 export function PermissionSets() {
   const [snapshot, setSnapshot] = useState<PermissionSetSnapshot | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,9 +35,13 @@ export function PermissionSets() {
   const load = useCallback(async () => {
     try {
       setSnapshot(await getPermissionSets());
-      setError('');
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load permission sets');
+      const code = (err as { code?: string } | null)?.code;
+      setError({
+        message: err instanceof Error ? err.message : 'Could not load permission sets',
+        ...(code === undefined ? {} : { code }),
+      });
     }
   }, []);
 
@@ -114,7 +119,33 @@ export function PermissionSets() {
     }
   }
 
-  if (error) return <p className={s.noticeNote}>{error}</p>;
+  if (error) {
+    /**
+     * WHAT HAPPENED and WHAT TO DO, not a bare sentence in a full-bleed strip.
+     *
+     * The realistic failure is code reaching an environment ahead of its migration, and the server
+     * now says so by name — so the description is the operator's actual next move rather than an
+     * apology. Retry stays available because the fix happens outside the browser: run the migration,
+     * press Retry, no reload.
+     */
+    const notMigrated = error.code === 'PERMISSION_SETS_NOT_MIGRATED';
+    return (
+      <ErrorState
+        headingLevel={2}
+        title={notMigrated ? 'Permission sets are not set up on this environment' : 'Could not load permission sets'}
+        description={
+          notMigrated
+            ? error.message
+            : `${error.message} — this screen only reads; nothing has changed.`
+        }
+        primaryAction={
+          <Button variant="primary" onClick={() => void load()}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
   if (!snapshot) return <p className={s.noticeNote}>Loading permission sets…</p>;
 
   if (open) {

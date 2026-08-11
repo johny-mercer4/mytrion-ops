@@ -31,6 +31,7 @@ import {
 } from '../../repos/mytrionPermissionSetsRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
+import { isMissingTable } from '../../repos/util.js';
 
 const mytrionIdSchema = z.enum([...MYTRION_IDS] as [MytrionId, ...MytrionId[]]);
 
@@ -70,6 +71,42 @@ const assignBody = z.object({
   email: z.string().max(254).nullable().optional(),
 });
 
+/**
+ * Turn "relation does not exist" into an answer instead of a 500.
+ *
+ * Code reaches an environment before its migration does — that is the ordinary order of a deploy,
+ * not an edge case. Without this the whole screen returns `INTERNAL_ERROR` / "Internal server
+ * error", which names neither the cause nor the fix and sends an admin to the server logs to find a
+ * one-line answer. Mirrors what `dataLoader.routes.ts` already does for its own table.
+ *
+ * 503 rather than 500: this is a temporary, operator-fixable state, and the message says exactly
+ * which command fixes it.
+ */
+const MISSING_TABLE_MESSAGE =
+  'Permission sets need database migration 0114. Run `pnpm db:migrate` against this environment, ' +
+  'then reload.';
+
+async function withPermissionSetTables<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    if (
+      isMissingTable(err, 'mytrion_permission_sets') ||
+      isMissingTable(err, 'mytrion_permission_set_assignments')
+    ) {
+      throw new AppError(MISSING_TABLE_MESSAGE, {
+        statusCode: 503,
+        code: 'PERMISSION_SETS_NOT_MIGRATED',
+        // AppError hides messages on 5xx by default, which is right for anything that might carry
+        // internals. This one names a migration and a command and nothing else, so it is safe to
+        // show — and useless if it is not.
+        expose: true,
+      });
+    }
+    throw err;
+  }
+}
+
 export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise<void> {
   const guard: RouteShorthandOptions = { onRequest: [app.authenticate] };
 
@@ -83,7 +120,7 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
   }
 
   async function loadSet(ctx: TenantContext, id: string) {
-    const set = await mytrionPermissionSetsRepo.findById(ctx, id);
+    const set = await withPermissionSetTables(() => mytrionPermissionSetsRepo.findById(ctx, id));
     if (!set) throw new AppError('Permission set not found', { code: 'NOT_FOUND', statusCode: 404 });
     return set;
   }
@@ -97,15 +134,17 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
    */
   app.get('/admin/permission-sets', guard, async (request) => {
     const ctx = requireAdmin(request);
-    const sets = await mytrionPermissionSetsRepo.list(ctx);
-    const [counts, assignments, roster] = await Promise.all([
+    const sets = await withPermissionSetTables(() => mytrionPermissionSetsRepo.list(ctx));
+    const [counts, assignments, roster] = await withPermissionSetTables(() =>
+      Promise.all([
       mytrionPermissionSetAssignmentsRepo.countsBySetId(
         ctx,
         sets.map((s) => s.id),
       ),
       mytrionPermissionSetAssignmentsRepo.listAllActive(ctx),
       listActiveUsersCached().catch(() => []),
-    ]);
+      ]),
+    );
     const assignedIds = new Set(assignments.map((a) => a.zohoUserId));
     return {
       sets: sets.map((s) => ({ ...s, assigneeCount: counts[s.id] ?? 0 })),
@@ -149,15 +188,15 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
   app.post('/admin/permission-sets', guard, async (request, reply) => {
     const ctx = requireAdmin(request);
     const body = createBody.parse(request.body ?? {});
-    const existing = await mytrionPermissionSetsRepo.list(ctx);
+    const existing = await withPermissionSetTables(() => mytrionPermissionSetsRepo.list(ctx));
     if (existing.some((s) => s.key === body.name.trim().toLowerCase())) {
       throw new ValidationError('A permission set with that name already exists');
     }
-    const set = await mytrionPermissionSetsRepo.create(ctx, {
+    const set = await withPermissionSetTables(() => mytrionPermissionSetsRepo.create(ctx, {
       name: body.name,
       description: body.description ?? null,
       createdByZohoUserId: ctx.userId,
-    });
+    }));
     await auditFromContext(ctx, {
       action: 'admin.permission_set.create',
       status: 'ok',

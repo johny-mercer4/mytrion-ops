@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MYTRIONS } from '../../access/mytrions.config';
 import { findTab, tabsFor } from '../../access/tabRegistry';
 import { getEffectiveAccess, type EffectiveAccessResponse } from '../../api/permissionSets';
+import { ErrorState } from '@/ds';
 import { useModalFocus } from '../_shared/useModalFocus';
 import s from './admin.module.css';
 
@@ -81,7 +82,14 @@ export function EffectiveAccessDrawer({
           </button>
         </div>
 
-        {error && <p className={s.noticeNote}>{error}</p>}
+        {error && (
+          /* panel size: this fills a card inside an open dialog, not a whole route. */
+          <ErrorState
+            size="panel"
+            title="Could not resolve this person's access"
+            description={`${error} — nothing has changed; this view only reads.`}
+          />
+        )}
         {!data && !error && <p className={s.noticeNote}>Resolving…</p>}
 
         {data && (
