@@ -284,11 +284,13 @@
     background: var(--color-bg-secondary);
 }
 
+/* Sticky over a scrolling row list — needs the opaque data-table token, not the glass/chrome one
+   (see the matching comment on .tx-date-sep in transactions-panel.css for why). */
 .bm-root .db-list-header {
     display: flex;
     align-items: center;
     padding: 11px 14px;
-    background: var(--sidebar-bg);
+    background: var(--ui-table-head-bg);
     border-bottom: 1px solid var(--border);
     font-size: 0.625rem;
     font-weight: 700;
