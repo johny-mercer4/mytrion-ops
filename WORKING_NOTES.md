@@ -14390,3 +14390,58 @@ rotated or removed once the gateway apps are checked.
 
 Backend 2512 passed / 1 skipped (−12: the deleted Groq suite), typecheck clean, lint unchanged.
 Bench after removal, clean memory: 39/42, 21/21, all 11 stable, mean 5,643ms — parity.
+
+---
+
+## 2026-08-12 — Multi-turn bench cases, and a correction: FF_RAG_V2_CONTEXT goes back OFF
+
+Yesterday I enabled `FF_RAG_V2_CONTEXT` on the grounds that the regression was fixed and it now cost
+nothing — while stating plainly that the bench could not show a *benefit*, because every case was a
+single-turn documentation lookup. That was the right caveat, and the honest thing to do was build the
+cases that could settle it rather than leave the flag on for a benefit nobody had demonstrated.
+
+### The cases
+
+`benchSalesChat` now supports multi-TURN cases: a `followUps` array replayed against the SAME
+`conversationId`. Three added, each written so the follow-up is unanswerable on its own — the subject
+is a bare pronoun:
+
+- `mt-fraud-then-override` → "How long does **that one** last?"
+- `mt-openpool-then-cap` → "How many of **them** can I do in one day?"
+- `mt-balance-then-cards` → "And how do I see **their** card list?" (the old compound
+  `balance-and-cards` case, split across the turn boundary)
+
+Telemetry is keyed by conversation, so a follow-up would otherwise re-count its predecessor's
+`rag_runs` / `llm_calls`; each row id is attributed to the first turn that sees it.
+
+### The result: no benefit, and the reason is that something else already does the job
+
+| | contract OFF | contract ON |
+| --- | --- | --- |
+| expected-doc coverage | **61/63** | 60/63 |
+| answer facts | **24/24** | 23/24 |
+| every multi-turn follow-up | **1/1, stable ×3** | **1/1, stable ×3** |
+| mean wall | **6,313ms** | 6,899ms (+9%) |
+
+The follow-ups are answered correctly *with the contract off*. Conversation continuity does not come
+from `<TurnContext>` at all — it comes from the **LangGraph checkpointer** (`FF_AGENT_CHECKPOINTS=1`),
+which restores the thread by `thread_id` so the model simply sees the prior messages. The context
+contract's anaphora handling is redundant with a mechanism that was already on.
+
+So the flag adds XML to every brief — real input tokens on every call — for no measured gain. By the
+same standard that rejected rerank and gpt-5.6-luna, it goes back to **`FF_RAG_V2_CONTEXT=0`**.
+
+**What is kept:** the `resolvedAsk`/`anaphoraResolved` fix and its test. It is correct on its own
+terms and it protects anyone who enables the flag later from the retrieval regression.
+
+**What remains genuinely untested:** `knownNoMatch` retrieval suppression — skipping a repeat search
+when the same query and scope recently missed. It only engages with the contract on, and it needs a
+case shape the bench does not have (a documented miss, asked twice). That, not anaphora, is the
+argument for this flag; it should be enabled only with that evidence.
+
+### Incidental, but it matters for the 50-user rollout
+
+The ON run recorded 1 failure: `429 ... tokens per min (TPM): Limit 200000`. Nothing to do with the
+flag — it was my own back-to-back bench runs exhausting the org quota. Worth writing down anyway: a
+single developer running a benchmark can saturate the shared per-minute limit that ~50 people are
+about to share. The capacity workstream is not theoretical.

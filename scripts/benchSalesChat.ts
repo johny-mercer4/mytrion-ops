@@ -36,8 +36,8 @@ import { and, count, eq } from 'drizzle-orm';
 import { agentMemories } from '../src/db/schema/agent_memories.js';
 import { agentSkills } from '../src/db/schema/agent_skills.js';
 
-interface BenchCase {
-  id: string;
+/** One scored question. A case is a first turn plus zero or more follow-ups in the same conversation. */
+interface BenchTurn {
   question: string;
   /**
    * Title substrings the answer should cite. Multi-entry cases are deliberately AMBIGUOUS — they
@@ -56,6 +56,18 @@ interface BenchCase {
    * than scored on a guess.
    */
   expectPhrases?: string[];
+}
+
+interface BenchCase extends BenchTurn {
+  id: string;
+  /**
+   * Turns 2..n, replayed against the SAME conversationId. These are the only cases that can show
+   * whether the turn-context contract earns its keep: every single-turn case scores identically with
+   * FF_RAG_V2_CONTEXT on or off, because there is no prior turn to carry. Each follow-up is written
+   * so it is UNANSWERABLE on its own — its subject is a bare pronoun — so a correct answer is
+   * evidence that context survived the turn boundary, not that the retriever got lucky.
+   */
+  followUps?: readonly BenchTurn[];
 }
 
 const NO_LIVE_DATA = ['zoho_crm.query', 'zoho_crm.search', 'warehouse.my_gallons'];
@@ -147,6 +159,53 @@ const CASES: readonly BenchCase[] = [
     forbidTools: NO_LIVE_DATA,
     expectPhrases: ['14', '2 business day'],
   },
+  // --- multi-turn: the only cases where the turn-context contract can show a benefit ---
+  // Each follow-up's subject is a pronoun with no antecedent in its own text, so answering it at all
+  // requires the prior turn. Scored on the follow-up's OWN expected documents.
+  {
+    id: 'mt-fraud-then-override',
+    question: "A client's card is on fraud hold — what are my options in Sales Mytrion?",
+    expectDocs: ['Fraud Hold', 'Override'],
+    forbidTools: NO_LIVE_DATA,
+    followUps: [
+      {
+        // "that one" = the override option from turn 1. Alone this retrieves nothing useful.
+        question: 'How long does that one last?',
+        expectDocs: ['Override'],
+        forbidTools: NO_LIVE_DATA,
+      },
+    ],
+  },
+  {
+    id: 'mt-openpool-then-cap',
+    question: 'How do I claim a case from the Open Pool?',
+    expectDocs: ['Retention'],
+    forbidTools: NO_LIVE_DATA,
+    followUps: [
+      {
+        // "them" = Open Pool claims. Requires carrying the subject across the boundary.
+        question: 'How many of them can I do in one day?',
+        expectDocs: ['Retention'],
+        forbidTools: NO_LIVE_DATA,
+        expectPhrases: ['2'],
+      },
+    ],
+  },
+  {
+    id: 'mt-balance-then-cards',
+    question: "How do I check a client's balance?",
+    expectDocs: ['Balance Check'],
+    forbidTools: NO_LIVE_DATA,
+    followUps: [
+      {
+        // Splitting the old compound `balance-and-cards` case across two turns. Turn 2 names no
+        // subject at all, so the retriever must inherit "a client" from turn 1.
+        question: 'And how do I see their card list?',
+        expectDocs: ['Card Status'],
+        forbidTools: NO_LIVE_DATA,
+      },
+    ],
+  },
 ] as const;
 
 interface AgentResponse {
@@ -176,17 +235,23 @@ const RUNS = (() => {
   return Number.isInteger(n) && n > 0 ? n : 1;
 })();
 
-async function ask(bench: BenchCase): Promise<{ res: AgentResponse; wallMs: number }> {
+async function ask(
+  turn: BenchTurn,
+  conversationId?: string,
+): Promise<{ res: AgentResponse; wallMs: number }> {
   const startedAt = Date.now();
   const response = await fetch(`${API}/v1/agent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': env.API_KEY },
     body: JSON.stringify({
-      message: bench.question,
+      message: turn.question,
       agent: 'sales',
       zoho_user_id: '42',
       user_name: 'Bench Admin',
       profile: 'Administrator',
+      // Omitted on turn 1 so each case starts a fresh conversation; supplied on follow-ups, which is
+      // what makes them multi-TURN rather than three unrelated questions.
+      ...(conversationId ? { conversationId } : {}),
     }),
   });
   const res = (await response.json()) as AgentResponse;
@@ -275,35 +340,45 @@ async function main(): Promise<void> {
   const rows: Row[] = [];
   for (let run = 0; run < RUNS; run += 1)
   for (const bench of CASES) {
-    const { res, wallMs } = await ask(bench);
-    const conversationId = res.conversationId ?? '';
-    const { rag, llm } = conversationId
-      ? await telemetryFor(conversationId)
-      : { rag: [], llm: [] };
-    const toolCalls = (res.toolCalls ?? []).map((t) => t.name);
-    const citations = (res.citations ?? []).map((c) => c.title ?? c.id);
+    // Telemetry is keyed by conversation, so a follow-up would re-count its predecessor's rag/llm
+    // rows. Attribute each row to the first turn that sees it.
+    const seen = new Set<string>();
+    let conversationId = '';
 
-    rows.push({
-      id: bench.id,
-      wallMs,
-      failed: Boolean(res.error),
-      expected: bench.expectDocs.length,
-      matched: bench.expectDocs.filter((want) => citations.some((t) => t.includes(want))).length,
-      phrasesExpected: bench.expectPhrases?.length ?? 0,
-      phrasesMatched:
-        bench.expectPhrases?.filter((want) => loosely(res.message ?? '').includes(loosely(want))).length ?? 0,
-      citations: [...new Set(citations)],
-      toolCalls,
-      forbiddenCalled: toolCalls.filter((name) => bench.forbidTools.includes(name)),
-      ragRuns: rag.length,
-      grades: rag.map((r) => `${r.grade}/${Number(r.confidence).toFixed(2)}`),
-      hops: rag.reduce((sum, r) => sum + (r.hops ?? 0), 0),
-      ragMs: rag.reduce((sum, r) => sum + (r.durationMs ?? 0), 0),
-      llmCalls: llm.length,
-      llmByRole: llm.map((c) => `${c.role}:${c.model}:${c.latencyMs ?? 0}ms`),
-      llmMs: llm.reduce((sum, c) => sum + (c.latencyMs ?? 0), 0),
-      costUsd: llm.reduce((sum, c) => sum + Number(c.estimatedCost ?? 0), 0),
-    });
+    const turns: BenchTurn[] = [bench, ...(bench.followUps ?? [])];
+    for (const [index, turn] of turns.entries()) {
+      const { res, wallMs } = await ask(turn, conversationId || undefined);
+      conversationId = res.conversationId ?? conversationId;
+      const all = conversationId ? await telemetryFor(conversationId) : { rag: [], llm: [] };
+      const rag = all.rag.filter((r) => !seen.has(r.id));
+      const llm = all.llm.filter((c) => !seen.has(c.id));
+      for (const r of [...rag, ...llm]) seen.add(r.id);
+
+      const toolCalls = (res.toolCalls ?? []).map((t) => t.name);
+      const citations = (res.citations ?? []).map((c) => c.title ?? c.id);
+
+      rows.push({
+        id: index === 0 ? bench.id : `${bench.id}#${index + 1}`,
+        wallMs,
+        failed: Boolean(res.error),
+        expected: turn.expectDocs.length,
+        matched: turn.expectDocs.filter((want) => citations.some((t) => t.includes(want))).length,
+        phrasesExpected: turn.expectPhrases?.length ?? 0,
+        phrasesMatched:
+          turn.expectPhrases?.filter((want) => loosely(res.message ?? '').includes(loosely(want))).length ?? 0,
+        citations: [...new Set(citations)],
+        toolCalls,
+        forbiddenCalled: toolCalls.filter((name) => turn.forbidTools.includes(name)),
+        ragRuns: rag.length,
+        grades: rag.map((r) => `${r.grade}/${Number(r.confidence).toFixed(2)}`),
+        hops: rag.reduce((sum, r) => sum + (r.hops ?? 0), 0),
+        ragMs: rag.reduce((sum, r) => sum + (r.durationMs ?? 0), 0),
+        llmCalls: llm.length,
+        llmByRole: llm.map((c) => `${c.role}:${c.model}:${c.latencyMs ?? 0}ms`),
+        llmMs: llm.reduce((sum, c) => sum + (c.latencyMs ?? 0), 0),
+        costUsd: llm.reduce((sum, c) => sum + Number(c.estimatedCost ?? 0), 0),
+      });
+    }
   }
 
   if (AS_JSON) {
@@ -313,12 +388,12 @@ async function main(): Promise<void> {
 
   const pad = (s: string, n: number): string => s.padEnd(n);
   process.stdout.write(
-    `\n${pad('case', 22)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('docs', 8)}${pad('answer', 8)}bad\n`,
+    `\n${pad('case', 28)}${pad('wall', 9)}${pad('llm', 6)}${pad('llmMs', 8)}${pad('rag', 5)}${pad('ragMs', 8)}${pad('hops', 6)}${pad('tools', 7)}${pad('docs', 8)}${pad('answer', 8)}bad\n`,
   );
   process.stdout.write(`${'-'.repeat(96)}\n`);
   for (const r of rows) {
     process.stdout.write(
-      pad(r.id, 22) +
+      pad(r.id, 28) +
         pad(`${r.wallMs}ms`, 9) +
         pad(String(r.llmCalls), 6) +
         pad(`${r.llmMs}ms`, 8) +
@@ -344,13 +419,14 @@ async function main(): Promise<void> {
   );
   if (RUNS > 1) {
     process.stdout.write(`per-case stability over ${RUNS} runs:\n`);
-    for (const bench of CASES) {
-      const mine = rows.filter((r) => r.id === bench.id);
+    // Distinct row ids, not CASES — follow-up turns are scored as their own rows (`id#2`).
+    for (const id of [...new Set(rows.map((r) => r.id))]) {
+      const mine = rows.filter((r) => r.id === id);
       const cov = mine.map((r) => `${r.matched}/${r.expected}`);
       const stable = new Set(cov).size === 1;
       const meanMs = Math.round(mine.reduce((s2, r) => s2 + r.wallMs, 0) / (mine.length || 1));
       process.stdout.write(
-        `  ${bench.id.padEnd(26)} ${cov.join(' ')}  ${stable ? 'stable' : 'UNSTABLE'}  mean ${meanMs}ms\n`,
+        `  ${id.padEnd(28)} ${cov.join(' ')}  ${stable ? 'stable' : 'UNSTABLE'}  mean ${meanMs}ms\n`,
       );
     }
     process.stdout.write('\n');
