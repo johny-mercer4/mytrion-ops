@@ -14181,3 +14181,12 @@ their own, with a test.
 **Scope, stated plainly:** tab permissions are UI gating. The backend still enforces at Mytrion +
 read/full and nothing finer, so hiding a tab removes the door, not the lock. A set's Mytrion grants
 and its read/full modes ARE enforced end to end.
+
+### Card Activity hover card floated under the header search
+
+`.msd-activity-card` is `position: absolute`, but `.msd-activity-wrap` never got `position: relative`.
+The absolute containing block walked up to a page-level ancestor, so `bottom: calc(100% - 78px)` —
+written assuming the wrap's height — placed the day detail under the global search. Fix: relative
+wrap + `top: 4px` so the card stays over the SVG inside the wrap (the scroller's `overflow-x: auto`
+forces y-clipping, so a card that extends above the wrap would still vanish). Vendored `app/` rebuilt.
+Regression: `SalesDashCharts.test.tsx`.
