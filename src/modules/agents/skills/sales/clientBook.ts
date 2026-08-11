@@ -57,7 +57,7 @@ instead of re-resolving.
 | --- | --- | --- |
 | Balance / credit | \`crm.carrier_balance\` | balance and LOC credit (automation C-8) |
 | Account health | \`crm.carrier_overview\` | EFS balance, outstanding debt, card statuses (C-28) |
-| Cards | \`crm.list_cards\` | card number + status ONLY (C-24) |
+| Cards | \`crm.list_cards\` | LIVE EFS roster: status, unit, driver (no last-used) |
 | Fuel spend | \`crm.transactions\` | spend with totals and discounts **over a date range** |
 | Invoices & payments | \`crm.payment_info\` | invoices billed / paid / open, recent payments (Q-2) |
 
@@ -67,10 +67,11 @@ hint for sorting the list — not as an authoritative statement that a client is
 
 Two verified limits worth knowing before you promise anything:
 
-- **\`crm.list_cards\` does NOT return last-used**, whatever its own description says. The endpoint
-  behind it selects card number and status, nothing else — no last-used date, no unit or driver, no
-  limits. If a rep asks when a card was last used, say the tool does not carry it rather than
-  reaching for a field that will not be there.
+- **\`crm.list_cards\` reads LIVE EFS, and has no last-used.** It returns the current roster with
+  status, unit and driver — deliberately EFS rather than the lagged warehouse mart, so it is the
+  authoritative view of a card's state right now, with a DWH fallback if EFS is unreachable. It does
+  NOT carry a last-used date: for that, use \`crm.transactions\` over a date range, or point the rep
+  at the C-24 automation. Do not report a last-used date from this tool; it will not be there.
 - **\`crm.transactions\` returns only the first page**, capped at 500 rows. For a busy carrier over a
   long range that is a partial picture. Say so when the count hits the cap instead of presenting a
   truncated total as complete.

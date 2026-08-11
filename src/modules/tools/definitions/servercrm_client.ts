@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { serverCrmGet } from '../../../integrations/serverCrm.js';
+import { listLiveCardRows } from '../../carrier/liveCards.js';
 import type { ToolManifest } from '../types.js';
 import { assertCarrierOwned, fetchAgentRoster } from '../serverCrmScope.js';
 
@@ -173,16 +174,29 @@ export const crmCarrierOverviewTool = carrierReadTool({
   path: (i) => `/api/agent/dwh/carrier-overview/${encodeURIComponent(i.carrierId)}`,
 });
 
-export const crmListCardsTool = carrierReadTool({
+export const crmListCardsTool: ToolManifest<
+  { carrierId: string },
+  { count: number; data: Array<Record<string, unknown>> }
+> = {
   name: 'crm.list_cards',
   description:
-    // Was "...with status and last-used info". The endpoint behind this selects card_number and
-    // status only (servercrm agentDwh: SELECT card_number, status FROM octane.dim_card), so the
-    // description promised a field the tool has never returned — which is exactly how a model ends
-    // up asserting a last-used date it never saw.
-    "List a carrier's fuel card numbers and their current status. Does NOT return last-used, unit, driver or limits. Requires carrier_id. (Self-service block C-24.)",
-  path: (i) => `/api/agent/dwh/cards/${encodeURIComponent(i.carrierId)}`,
-});
+    "List a carrier's fuel cards with LIVE EFS status/unit/driver (not the lagged DWH mart). Requires carrier_id. For last-used history use crm.transactions / the C-24 automation. (Self-service card roster.)",
+  inputSchema: z.object({ carrierId }),
+  outputSchema: z.object({
+    count: z.number(),
+    data: z.array(z.record(z.unknown())),
+  }),
+  riskClass: 'read',
+  allowedAudiences: ['internal'],
+  requiredScopes: ['servercrm:read'],
+  rateLimit: { perMinute: 30 },
+  async handler(input, ctx) {
+    const id = String(input.carrierId);
+    await assertCarrierOwned(ctx, id);
+    const data = await listLiveCardRows(id);
+    return { count: data.length, data };
+  },
+};
 
 export const crmTransactionsTool = carrierReadTool({
   name: 'crm.transactions',

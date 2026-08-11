@@ -136,7 +136,13 @@ export function AutoDoneStep({
       ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px'
       : 'display:flex;flex-direction:column;gap:14px')}
     >
-      {invoices && <AutoInvoicesPanel rows={invoiceRows} carrierId={invoiceCarrierId} />}
+      {invoices && (
+        <AutoInvoicesPanel
+          rows={invoiceRows}
+          carrierId={invoiceCarrierId}
+          {...(result?.kind === 'invoices' && result.source ? { source: result.source } : {})}
+        />
+      )}
       {transactions && <AutoTransactionsPanel report={txnReport} splitLayout />}
       {cardLookup && (
         <AutoCardLookupPanel

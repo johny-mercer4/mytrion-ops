@@ -1,5 +1,4 @@
 import { callTouchpoint } from '@/api/touchpoints';
-import type { CardEfsInfoResult } from '@/api/touchpointTypes';
 import { Badge, s } from './dc';
 import { Icon, type IconName } from './icons';
 import { useLoad } from './live';
@@ -15,13 +14,34 @@ export interface CardCredentials {
   driverName: string;
 }
 
-export function mapCardCredentials(result: CardEfsInfoResult): CardCredentials {
+/** Map one live EFS card row (`efs.cards`) into the credential panel fields. */
+export function mapCardCredentials(row: Record<string, unknown>): CardCredentials {
   return {
-    status: String(result.status ?? '').trim(),
-    unitNumber: String(result.unit_number ?? '').trim(),
-    driverId: String(result.driver_id ?? '').trim(),
-    driverName: String(result.driver_name ?? '').trim(),
+    status: String(row.status ?? row.card_status ?? '').trim(),
+    unitNumber: String(row.unit_number ?? row.unitNumber ?? '').trim(),
+    driverId: String(row.driver_id ?? row.driverId ?? '').trim(),
+    driverName: String(row.driver_name ?? row.driverName ?? '').trim(),
   };
+}
+
+function cardDigits(raw: unknown): string {
+  return String(raw ?? '').replace(/\D/g, '');
+}
+
+function findEfsCardRow(
+  rows: Array<Record<string, unknown>>,
+  cardNumber: string,
+): Record<string, unknown> | undefined {
+  const want = cardDigits(cardNumber);
+  if (!want) return undefined;
+  const exact = rows.find((r) => cardDigits(r.card_number ?? r.cardNumber) === want);
+  if (exact) return exact;
+  if (want.length < 6) return undefined;
+  const tail = want.slice(-6);
+  return rows.find((r) => {
+    const digits = cardDigits(r.card_number ?? r.cardNumber);
+    return digits.length >= 6 && digits.slice(-6) === tail;
+  });
 }
 
 export function useCardCredentials(
@@ -35,14 +55,14 @@ export function useCardCredentials(
   const load = useLoad<CardCredentials | null>(
     async () => {
       if (!required || !normalizedCarrier || !normalizedCard) return null;
-      const result = await callTouchpoint('dwh.card_efs', {
-        carrierId: normalizedCarrier,
-        cardNumber: normalizedCard,
-      });
-      if (result.efs_error) {
-        throw new Error(`EFS could not verify this card: ${result.efs_error}`);
+      // Same live EFS roster as the Automations card picklist — not the lagged DWH mart.
+      const result = await callTouchpoint('efs.cards', { carrierId: normalizedCarrier });
+      const rows = (result.data ?? []) as Array<Record<string, unknown>>;
+      const row = findEfsCardRow(rows, normalizedCard);
+      if (!row) {
+        throw new Error('EFS could not verify this card on the live roster');
       }
-      return mapCardCredentials(result);
+      return mapCardCredentials(row);
     },
     [required, normalizedCarrier, normalizedCard],
   );

@@ -861,10 +861,10 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
-   * Owner's fleet — the carrier's active fuel cards (from the DWH) with each card's driver status:
+   * Owner's fleet — live EFS card roster (every status) with each card's driver invite status:
    * 'registered' (a driver signed in), 'pending' (an invite is out), or 'open' (no driver yet).
-   * Owner-authenticated (their verified Telegram identity must be a registered owner). This is the
-   * data the owner needs to hand out per-card driver links.
+   * DWH only contributes the stable `cardId` invites/ops key on (and is the fallback if EFS is
+   * down). Owner-authenticated. This is the data the owner needs to hand out per-card driver links.
    */
   app.post('/carrier/mini-app/fleet', async (request) => {
     const body = ownerFleetSchema.parse(request.body);
