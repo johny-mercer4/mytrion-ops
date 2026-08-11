@@ -6,13 +6,14 @@
  */
 import { verificationDb } from '../../integrations/verificationDb.js';
 import { extractSalesRequirements, type RequirementEventInput } from './requirements.js';
+import { mapStagesFromResult } from './stageData.js';
 import {
   STAGE_CATALOG,
+  type PipelineApplicant,
   type PipelineDecision,
   type PipelineSnapshot,
   type PipelineStage,
   type PipelineStageStatus,
-  normalizeStageStatus,
 } from './types.js';
 
 export interface PipelineKey {
@@ -33,6 +34,9 @@ interface RequestRow {
   result: Record<string, unknown> | null;
   manual_review_form: Record<string, unknown>;
   manual_review_resolution: Record<string, unknown>;
+  post_stop_factor: Record<string, unknown> | null;
+  payload: Record<string, unknown> | null;
+  applicant_profile: Record<string, unknown> | null;
   updated_at: Date | string | null;
 }
 
@@ -70,31 +74,6 @@ const iso = (value: Date | string | null): string | null => {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
-
-function canonicalStage(value: string | null): string {
-  const stage = txt(value).toLowerCase().replace(/_/g, '-');
-  if (stage.startsWith('isoftpull')) return 'isoftpull';
-  if (stage === 'stop-factor-pre' || stage === 'stop-factor-after') return stage;
-  return stage;
-}
-
-function eventStage(event: EventRow): string {
-  const service = canonicalStage(event.service_id);
-  if (service) return service;
-  return canonicalStage(event.stage);
-}
-
-function eventStatus(event: EventRow): PipelineStageStatus {
-  const payloadStatus = txt(event.payload?.step_status);
-  return normalizeStageStatus(payloadStatus || event.status);
-}
-
-function stageDetail(event: EventRow | undefined): string | undefined {
-  if (!event) return undefined;
-  const payload = event.payload ?? {};
-  const detail = txt(payload.detail) || txt(payload.reason) || txt(payload.step_status);
-  return detail ? detail.slice(0, 180) : undefined;
-}
 
 function resolveDecision(row: RequestRow): PipelineDecision {
   const resolution = rec(row.manual_review_resolution);
@@ -136,6 +115,35 @@ function resolveDecision(row: RequestRow): PipelineDecision {
   return { outcome: 'undecided', reason: txt(row.status) || 'Pipeline in progress' };
 }
 
+/** Current applicant values for the Sales edit-form prefill, from the PLAINTEXT payload.zoho_raw
+ * (+ the non-encrypted profile fields: city/state/dot/mc). firstName/lastName/email/phone/address/zip/
+ * dob are encrypted in applicant_profile and therefore unreadable here — zoho_raw is the source. */
+function buildApplicant(row: RequestRow): PipelineApplicant {
+  const payload = rec(row.payload);
+  const zoho = rec(payload.zoho_raw);
+  const profile = rec(row.applicant_profile);
+  const pick = (...vals: unknown[]): string => {
+    for (const v of vals) {
+      const t = txt(v);
+      if (t) return t;
+    }
+    return '';
+  };
+  return {
+    firstName: pick(zoho.First_Name),
+    lastName: pick(zoho.Last_Name),
+    dateOfBirth: pick(zoho.Birth_Of_Date).slice(0, 10),
+    email: pick(zoho.Email),
+    phone: pick(zoho.Phone),
+    address: pick(zoho.Address, zoho.Street),
+    city: pick(zoho.City, profile.city),
+    state: pick(zoho.State, profile.state),
+    zipCode: pick(zoho.Zip_Code),
+    dotNumber: pick(zoho.DOT, profile.dotNumber, payload.dot_number),
+    mcNumber: pick(zoho.emc, zoho.MC, profile.mcNumber),
+  };
+}
+
 async function findRequest(key: PipelineKey): Promise<RequestRow | null> {
   const dealId = txt(key.dealId) || null;
   const carrierId = txt(key.carrierId) || null;
@@ -143,9 +151,14 @@ async function findRequest(key: PipelineKey): Promise<RequestRow | null> {
   const dot = txt(key.dot) || null;
   if (!dealId && !carrierId && !applicationId && !dot) return null;
   const rows = await verificationDb.query<RequestRow>(
-    `select request_id, status, result, manual_review_form, manual_review_resolution, updated_at
+    `select request_id, status, result, manual_review_form, manual_review_resolution, post_stop_factor,
+            payload, applicant_profile, updated_at
        from requests
-      where ($1::text is not null and request_id = $1)
+      where ($1::text is not null and (
+               request_id = $1
+               or payload->>'zoho_lead_id' = $1
+               or payload->'zoho_raw'->>'id' = $1
+             ))
          or ($2::text is not null and carrier_id = $2)
          or ($3::text is not null and (
                payload->>'zoho_application_id' = $3
@@ -181,15 +194,9 @@ export const creditPlatformPipelineProvider: PipelineProvider = {
         [request.request_id],
       ),
     ]);
-    const stages: PipelineStage[] = STAGE_CATALOG.map((stage) => {
-      const event = events.find((candidate) => eventStage(candidate) === stage.id);
-      const detail = stageDetail(event);
-      return {
-        ...stage,
-        status: event ? eventStatus(event) : 'not_started',
-        ...(detail ? { detail } : {}),
-      };
-    });
+    const stages: PipelineStage[] =
+      mapStagesFromResult(rec(request.result), rec(request.post_stop_factor)) ??
+      STAGE_CATALOG.map((stage) => ({ ...stage, status: 'not_started' as const }));
     const requirementEvents: RequirementEventInput[] = events.map((event) => ({
       id: event.id,
       status: event.status,
@@ -219,61 +226,11 @@ export const creditPlatformPipelineProvider: PipelineProvider = {
         scope: attachment.scope,
         createdAt: iso(attachment.created_at) ?? '',
       })),
+      applicant: buildApplicant(request),
       source: 'credit_platform',
     };
   },
 };
-
-export interface LiveVerificationSummary {
-  status: string;
-  updatedAt: string | null;
-  requirementEventIds: string[];
-}
-
-/** One bulk read for card-level red flags; avoids an N+1 pipeline request per agent_deals card. */
-export async function getLiveVerificationSummaries(
-  dealIds: string[],
-): Promise<Map<string, LiveVerificationSummary>> {
-  const ids = [...new Set(dealIds.map(txt).filter(Boolean))].slice(0, 1000);
-  const summaries = new Map<string, LiveVerificationSummary>();
-  if (!verificationDb.isConfigured() || ids.length === 0) return summaries;
-  const [requests, events] = await Promise.all([
-    verificationDb.query<{ request_id: string; status: string | null; updated_at: Date | string | null }>(
-      `select request_id, status, updated_at from requests where request_id = any($1::text[])`,
-      [ids],
-    ),
-    verificationDb.query<EventRow>(
-      `select id, request_id, stage, service_id, status, title, payload, created_at
-         from request_tracker_events
-        where request_id = any($1::text[])
-        order by id desc limit 5000`,
-      [ids],
-    ),
-  ]);
-  const eventsByRequest = new Map<string, EventRow[]>();
-  for (const event of events) {
-    const list = eventsByRequest.get(event.request_id) ?? [];
-    list.push(event);
-    eventsByRequest.set(event.request_id, list);
-  }
-  for (const request of requests) {
-    const requirementEvents: RequirementEventInput[] = (eventsByRequest.get(request.request_id) ?? []).map(
-      (event) => ({
-        id: event.id,
-        status: event.status,
-        title: event.title,
-        payload: event.payload,
-        createdAt: iso(event.created_at) ?? '',
-      }),
-    );
-    summaries.set(request.request_id, {
-      status: txt(request.status) || 'UNKNOWN',
-      updatedAt: iso(request.updated_at),
-      requirementEventIds: extractSalesRequirements(requirementEvents).map((item) => item.eventId),
-    });
-  }
-  return summaries;
-}
 
 /** Small deterministic PRNG (mulberry32) seeded from the client key — stable state per client. */
 function seededRng(seedStr: string): () => number {
@@ -304,8 +261,7 @@ export const mockPipelineProvider: PipelineProvider = {
     if (!seed) return null;
     const rng = seededRng(`vp:${seed}`);
 
-    const total = STAGE_CATALOG.length; // 9
-    // progressIdx = how many stages are resolved (0..total). Bias toward mid/late so the UI is lively.
+    const total = STAGE_CATALOG.length;
     const progressIdx = Math.floor(rng() * (total + 1));
 
     const stages: PipelineStage[] = STAGE_CATALOG.map((def) => {
@@ -319,7 +275,6 @@ export const mockPipelineProvider: PipelineProvider = {
         status = 'not_started';
       }
       const stage: PipelineStage = { id: def.id, order: def.order, label: def.label, status };
-      // Illustrative per-stage detail for resolved stages (mock values).
       if (status !== 'not_started' && status !== 'pending') {
         if (def.id === 'isoftpull' && status === 'done') stage.detail = `Score ${580 + Math.floor(rng() * 240)}`;
         else if (def.id === 'blacklist') stage.detail = status === 'done' ? 'No match' : `${Math.floor(rng() * 3)} match(es)`;

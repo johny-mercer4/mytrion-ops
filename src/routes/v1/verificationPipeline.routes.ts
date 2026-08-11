@@ -14,12 +14,10 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
-import { getAgentVerificationClients } from '../../modules/verificationPipeline/service.js';
-import {
-  getLiveVerificationSummaries,
-  getPipelineProvider,
-  type LiveVerificationSummary,
-} from '../../modules/verificationPipeline/provider.js';
+import { listAgentVerificationDeals } from '../../modules/verificationPipeline/service.js';
+import { getPipelineProvider } from '../../modules/verificationPipeline/provider.js';
+import { getLiveVerificationSummaries } from '../../modules/verificationPipeline/cardSummary.js';
+import type { VerificationCardSummary } from '../../modules/verificationPipeline/types.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
@@ -50,6 +48,7 @@ const scopeQuery = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   page_size: z.coerce.number().int().min(1).max(24).default(9),
   q: z.string().trim().max(120).optional(),
+  state: z.enum(['all', 'in_progress', 'approved', 'rejected']).default('all'),
 });
 const pipelineQuery = z.object({
   dealId: z.string().max(64).optional(),
@@ -149,7 +148,6 @@ function noteContent(input: {
 export async function verificationPipelineRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
-  // The caller's applications, freshest application date first, classified + enriched (Zoho CRM).
   app.get('/verification/clients', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
@@ -158,6 +156,7 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
       'verification',
       ctx.tenantId,
       ownerId,
+      q.state,
       q.page,
       q.page_size,
       q.q?.toLowerCase() ?? '',
@@ -166,18 +165,17 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     const cached = await verificationPageCache.getOrLoad(
       cacheKey,
       async () => {
-        let page;
+        let matched;
+        let truncated;
         try {
-          page = await getAgentVerificationClients(ownerId, {
-            page: q.page,
-            pageSize: q.page_size,
-            ...(q.q ? { search: q.q } : {}),
-          });
+          const opts = q.q ? { search: q.q } : {};
+          const listed = await listAgentVerificationDeals(ownerId, opts);
+          matched = listed.clients;
+          truncated = listed.truncated;
         } catch (err) {
           throw crmError(err);
         }
-        const clients = page.clients;
-        const dealIds = clients.map((client) => client.dealId).filter((id): id is string => Boolean(id));
+        const dealIds = matched.map((client) => client.dealId).filter((id): id is string => Boolean(id));
         const [summaryResult, responseResult] = await Promise.allSettled([
           getLiveVerificationSummaries(dealIds),
           verificationSalesResponseRepo.listForRequests(ctx, dealIds),
@@ -190,7 +188,7 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
         }
         const summaries = summaryResult.status === 'fulfilled'
           ? summaryResult.value
-          : new Map<string, LiveVerificationSummary>();
+          : new Map<string, VerificationCardSummary>();
         const responses = responseResult.status === 'fulfilled' ? responseResult.value : [];
         const responded = new Set(responses.map((row) => `${row.requestId}:${row.externalEventId}`));
         const sourceHealth = {
@@ -198,26 +196,39 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
           verification: summaryResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
           responses: responseResult.status === 'fulfilled' ? ('ok' as const) : ('degraded' as const),
         };
+        let enriched = matched.map((client) => {
+          const summary = client.dealId ? summaries.get(client.dealId) : undefined;
+          return {
+            ...client,
+            attentionCount:
+              summary?.requirementEventIds.filter(
+                (eventId) => !responded.has(`${client.dealId}:${eventId}`),
+              ).length ?? 0,
+            verificationStatus: summary?.status ?? null,
+            verificationUpdatedAt: summary?.updatedAt ?? null,
+            verificationState: summary?.state ?? null,
+            plaidLinkUrl: summary?.plaidLinkUrl ?? null,
+            plaidStatus: summary?.plaidStatus ?? null,
+            cpLimit: summary?.approvedLimit ?? null,
+            cpPaymentType: summary?.paymentType ?? null,
+            cpBillingCycle: summary?.billingCycle ?? null,
+            missingFields: summary?.missingFields ?? [],
+            docsUploaded: summary?.docsUploaded ?? 0,
+            workingOn: summary?.workingOn ?? null,
+          };
+        });
+        if (q.state !== 'all') enriched = enriched.filter((client) => client.verificationState === q.state);
+        const total = enriched.length;
+        const offset = (q.page - 1) * q.page_size;
         return {
-          clients: clients.map((client) => {
-            const summary = client.dealId ? summaries.get(client.dealId) : undefined;
-            return {
-              ...client,
-              attentionCount:
-                summary?.requirementEventIds.filter(
-                  (eventId) => !responded.has(`${client.dealId}:${eventId}`),
-                ).length ?? 0,
-              verificationStatus: summary?.status ?? null,
-              verificationUpdatedAt: summary?.updatedAt ?? null,
-            };
-          }),
+          clients: enriched.slice(offset, offset + q.page_size),
           pagination: {
             page: q.page,
             pageSize: q.page_size,
-            total: page.total,
-            pageCount: Math.max(1, Math.ceil(page.total / q.page_size)),
+            total,
+            pageCount: Math.max(1, Math.ceil(total / q.page_size)),
             /** The owner's history exceeded the COQL drain cap, so `total` is a floor. */
-            truncated: page.truncated,
+            truncated,
           },
           sourceHealth,
           partial: sourceHealth.verification !== 'ok' || sourceHealth.responses !== 'ok',
@@ -233,7 +244,6 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
     };
   });
 
-  // One client's live 9-stage compliance pipeline, decision, events, and attachment metadata.
   app.get('/verification/pipeline', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = pipelineQuery.parse(request.query);
