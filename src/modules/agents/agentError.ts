@@ -11,10 +11,29 @@ const MODEL_UNAVAILABLE = /模型不存在|model(?:\s+code)?[^.]{0,40}(?:not fou
  */
 const RATE_LIMITED = /\b429\b|rate[_ -]?limit|tokens per min|requests per min|too many requests/i;
 
+/**
+ * Billing exhaustion, which the provider ALSO returns as a 429 — and the two demand opposite advice.
+ *
+ * Both were observed on 2026-08-12 and were initially conflated: one bench run took 4 genuine
+ * `Rate limit reached … tokens per min (TPM): Limit 200000` errors, while a later run took 77
+ * `You have no credits remaining`. Telling someone to "wait a few seconds" for an empty balance is
+ * advice that can never come true — no amount of waiting adds credit — and it hides an outage that
+ * only an administrator can end. Checked FIRST for that reason.
+ */
+const NO_CREDIT = /no credits remaining|insufficient[_ ]quota|exceeded your current quota|billing|payment/i;
+
 /** User-safe agent failure copy: never surface provider-localized diagnostics in the chat. */
 export function presentAgentError(errorMessage: string, budgetHit: boolean): string {
   if (budgetHit) {
     return `I had to stop early: ${errorMessage}. Here is what I have so far — please narrow the request.`;
+  }
+  // Before RATE_LIMITED: a credit-exhaustion body is also a 429 and would otherwise be reported as
+  // temporary congestion that clears on its own.
+  if (NO_CREDIT.test(errorMessage)) {
+    return (
+      'The assistant is unavailable because the AI service account needs attention from an ' +
+      'administrator — retrying will not help. Please report this; nothing you sent was lost.'
+    );
   }
   // Checked BEFORE model-unavailable: a rate-limit body can name the model, and "unavailable" would
   // send the user to an administrator for something that clears itself in seconds.
@@ -30,7 +49,16 @@ export function presentAgentError(errorMessage: string, budgetHit: boolean): str
   return 'The AI service failed to complete this request. Please retry.';
 }
 
-/** True when the failure is provider throttling — worth distinguishing in audit and metrics. */
+/**
+ * True when the failure is provider THROTTLING (retryable by waiting) — not credit exhaustion, which
+ * arrives as a 429 too but is an administrator problem. Kept distinct so metrics do not report an
+ * unpaid bill as congestion.
+ */
 export function isRateLimitError(errorMessage: string): boolean {
-  return RATE_LIMITED.test(errorMessage);
+  return !NO_CREDIT.test(errorMessage) && RATE_LIMITED.test(errorMessage);
+}
+
+/** True when the provider is refusing for billing reasons. Waiting cannot fix it. */
+export function isCreditExhaustedError(errorMessage: string): boolean {
+  return NO_CREDIT.test(errorMessage);
 }

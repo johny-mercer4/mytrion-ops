@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRateLimitError, presentAgentError } from '../../src/modules/agents/agentError.js';
+import { isCreditExhaustedError, isRateLimitError, presentAgentError } from '../../src/modules/agents/agentError.js';
 
 describe('agent error presentation', () => {
   it.each([
@@ -56,5 +56,37 @@ describe('agent error presentation', () => {
     const presented = presentAgentError(raw, false);
     expect(presented).toBe('The AI service failed to complete this request. Please retry.');
     expect(presented).not.toContain(raw);
+  });
+});
+
+/**
+ * Credit exhaustion arrives as a 429 as well, and the two demand OPPOSITE advice. Both were seen on
+ * 2026-08-12 and were initially conflated: one run took 4 genuine TPM rate limits, a later run took
+ * 77 "You have no credits remaining". Telling someone to wait a few seconds for an empty balance is
+ * advice that can never come true and hides an outage only an administrator can end.
+ */
+describe('billing exhaustion is not congestion', () => {
+  const noCredit =
+    '429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing';
+
+  it('tells the user an administrator is needed, not to wait', () => {
+    const presented = presentAgentError(noCredit, false);
+    expect(presented).toMatch(/administrator/i);
+    expect(presented).toMatch(/retrying will not help/i);
+    expect(presented).not.toMatch(/at capacity/i);
+    expect(presented).not.toMatch(/wait a few seconds/i);
+    // Never leak the billing URL or raw provider text into a worker's chat.
+    expect(presented).not.toContain('platform.openai.com');
+  });
+
+  it('classifies it as billing, not throttling, so metrics stay honest', () => {
+    expect(isCreditExhaustedError(noCredit)).toBe(true);
+    expect(isRateLimitError(noCredit)).toBe(false);
+  });
+
+  it('still classifies a real TPM limit as throttling', () => {
+    const tpm = '429 Rate limit reached for gpt-5.4-mini on tokens per min (TPM): Limit 200000';
+    expect(isRateLimitError(tpm)).toBe(true);
+    expect(isCreditExhaustedError(tpm)).toBe(false);
   });
 });

@@ -14891,3 +14891,35 @@ single developer. Fifty people will not get a quieter window than I had.
 
 The experiment needs either a genuinely idle period or — better — the higher tier. Re-run it before
 touching `k`.
+
+### CORRECTION: two different 429s, and I conflated them
+
+The entry above blamed the k=4 collapse on TPM saturation and claimed "the quota degrades
+progressively under sustained load" (4 failures in one run, 49 in the next). **That was wrong.**
+
+The provider returns 429 for two unrelated conditions, and the logs separate cleanly:
+
+- `server-skills-gated.log` — **4 ×** `Rate limit reached … tokens per min (TPM): Limit 200000, Used
+  196383`. Genuine throttling.
+- `server-k4.log` — **77 ×** `You have no credits remaining. Add credits to continue using the API`.
+  **Billing.** The account balance had gone to −0.09.
+
+So the k=4 run did not hit a rate limit at all; it hit an empty wallet. The escalation from 4 to 49
+failures was not load-dependent throttling, it was the balance running out mid-session. My own grep
+had already shown this — `rg "429 Rate limit"` returned nothing for that log while `grep -c 429`
+returned 101 — and I read past it.
+
+**What survives the correction:** the capacity arithmetic, which came from `llm_calls` telemetry and
+not from the failures — 28,741 input tokens per turn, 2.24 answer calls, 89.8% cached, and therefore
+≈7 turns/minute against a 200,000 TPM ceiling. The 4 genuine TPM 429s are real evidence that the
+ceiling is reachable in normal use. What does NOT survive is the claim that sustained load
+progressively degrades the quota.
+
+**And the correction exposed a bug in the fix from the same entry.** `RATE_LIMITED` matches `\b429\b`,
+so credit exhaustion — also a 429 — would have been reported to every user as *"The assistant is at
+capacity right now… please wait a few seconds."* For an empty balance that is advice that can never
+come true, and it hides an outage only an administrator can end. `NO_CREDIT` is now checked first and
+says so plainly; `isRateLimitError` excludes it, so metrics cannot report an unpaid bill as
+congestion.
+
+Balance has been topped up. The k=4 A/B has been re-run — see below.
