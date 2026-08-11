@@ -5,6 +5,7 @@
  */
 import { env } from '../../../config/env.js';
 import { logger } from '../../../lib/logger.js';
+import { completionParams } from '../../llm/modelParams.js';
 import { getOpenAI, models } from '../../llm/openaiClient.js';
 import type { RetrievedPassage } from './types.js';
 
@@ -19,10 +20,11 @@ export async function rerankPassages(
       .slice(0, 20)
       .map((p, i) => `[${i}] ${p.content.slice(0, 400)}`)
       .join('\n');
+    const model = env.RAG_PLANNER_MODEL || models.default;
     const res = await getOpenAI().chat.completions.create({
-      model: env.RAG_PLANNER_MODEL || models.default,
-      temperature: 0,
-      max_tokens: 100,
+      model,
+      // Reasoning-tier ids reject temperature / max_tokens (models.default since 2026-08-11).
+      ...completionParams(model, 100),
       response_format: { type: 'json_object' },
       messages: [
         {

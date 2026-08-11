@@ -9,12 +9,19 @@
  * Usage:
  *   BENCH_API=http://localhost:3011 \
  *   MYTRION_OPS_DATABASE_URL=postgresql://octane:octane@localhost:5433/octane_assistant \
- *   pnpm tsx scripts/benchSalesChat.ts [--json] [--runs N]
+ *   pnpm tsx scripts/benchSalesChat.ts [--json] [--runs N] [--reset-memory]
  *
- * Use `--runs 3` before making a decision on a flag. Expected-doc coverage is NOT stable across
- * identical runs — measured 8/10 then 9/10 back to back, with `balance-and-cards` flipping between
- * 1/2 and 2/2 — because which documents the model chooses to cite varies. A single run cannot
- * distinguish a real quality change from that noise; latency and call counts are far steadier.
+ * Use `--runs 3 --reset-memory` before making a decision on a flag.
+ *
+ * `--runs 3` because a single run cannot separate a real change from model variance. `--reset-memory`
+ * because distilled agent memory is recalled INTO every knowledge_search result and every bench turn
+ * writes more of it, so the corpus grows under you between configs — see `reportMemoryState`.
+ *
+ * The header note used to say expected-doc coverage is simply not stable run-to-run (8/10 then 9/10,
+ * `balance-and-cards` flipping 1/2 ↔ 2/2). From a CLEAN memory state that is no longer what happens:
+ * across seven 3-run configs on 2026-08-11 every case was stable except where a real regression was
+ * being measured, and the one dirty-state run reproduced exactly the old symptom. Treat instability
+ * as a signal to check the memory row count first, not as inherent noise to shrug at.
  *
  * Point it at a LOCAL database. The Render instance drops connections mid-run, which corrupts
  * exactly the timings this script exists to measure.
@@ -25,7 +32,9 @@ import { env } from '../src/config/env.js';
 import { db } from '../src/db/client.js';
 import { llmCalls } from '../src/db/schema/llm_calls.js';
 import { ragRuns } from '../src/db/schema/rag_runs.js';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
+import { agentMemories } from '../src/db/schema/agent_memories.js';
+import { agentSkills } from '../src/db/schema/agent_skills.js';
 
 interface BenchCase {
   id: string;
@@ -160,6 +169,7 @@ const loosely = (text: string): string => text.toLowerCase().replace(/[-\u2011\u
 
 const API = process.env['BENCH_API'] ?? 'http://localhost:3011';
 const AS_JSON = process.argv.includes('--json');
+const RESET_MEMORY = process.argv.includes('--reset-memory');
 const RUNS = (() => {
   const at = process.argv.indexOf('--runs');
   const n = at >= 0 ? Number(process.argv[at + 1]) : 1;
@@ -218,7 +228,50 @@ interface Row {
   costUsd: number;
 }
 
+/**
+ * Distilled agent memory is recalled INTO every `knowledge_search` result (scopedRag calls
+ * `recallMemories`), and every bench turn writes more of it. So the corpus the agent answers from
+ * grows monotonically across runs, and two "identical" configs measured an hour apart are not
+ * actually identical.
+ *
+ * Measured 2026-08-11: the same config scored 38/42 with 567 accumulated memory rows and 39/42 from
+ * a clean state, with `balance-and-cards` destabilising in the dirty run — which is the same size
+ * and shape as the run-to-run drift this script was written to warn about.
+ *
+ * So: always report the starting state, and offer `--reset-memory` to control it. The truncate is
+ * guarded to a local database because it is destructive and the app DB URL points at Render.
+ */
+async function reportMemoryState(): Promise<void> {
+  // Guard BEFORE any query: `.env` points at Render by default, and a remote host would otherwise
+  // be connected to (and hang on DNS/TCP) before the refusal is ever reached.
+  if (RESET_MEMORY && !/@(localhost|127\.0\.0\.1|host\.docker\.internal)[:/]/.test(env.MYTRION_OPS_DATABASE_URL)) {
+    process.stderr.write(
+      '--reset-memory refused: MYTRION_OPS_DATABASE_URL is not a local database. ' +
+        'Point it at the local bench DB before resetting.\n',
+    );
+    process.exit(1);
+  }
+
+  const [mem] = await db.select({ n: count() }).from(agentMemories);
+  const [skills] = await db.select({ n: count() }).from(agentSkills);
+  const dirty = (mem?.n ?? 0) + (skills?.n ?? 0);
+
+  if (RESET_MEMORY) {
+    await db.delete(agentMemories);
+    await db.delete(agentSkills);
+    process.stdout.write(`memory state: reset (cleared ${dirty} rows)\n\n`);
+    return;
+  }
+
+  process.stdout.write(
+    `memory state: ${mem?.n ?? 0} memories, ${skills?.n ?? 0} skills` +
+      (dirty > 0 ? '  ← carried into every answer; use --reset-memory to compare configs cleanly' : '') +
+      '\n\n',
+  );
+}
+
 async function main(): Promise<void> {
+  await reportMemoryState();
   const rows: Row[] = [];
   for (let run = 0; run < RUNS; run += 1)
   for (const bench of CASES) {

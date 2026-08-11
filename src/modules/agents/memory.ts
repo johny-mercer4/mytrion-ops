@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger.js';
 import { memoryRepo } from '../../repos/memoryRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { embedQuery, embedTexts } from '../knowledge/embedder.js';
+import { completionParams } from '../llm/modelParams.js';
 import { getOpenAI, models } from '../llm/openaiClient.js';
 import { wrapUntrusted } from '../security/untrusted.js';
 
@@ -20,10 +21,12 @@ export async function distillMemories(
 ): Promise<void> {
   if (!env.FF_AGENT_MEMORY) return;
   try {
+    const model = env.RAG_PLANNER_MODEL || models.default;
     const res = await getOpenAI().chat.completions.create({
-      model: env.RAG_PLANNER_MODEL || models.default,
-      temperature: 0,
-      max_tokens: 300,
+      model,
+      // models.default is a reasoning-tier id since gpt-4o-mini was retired; it rejects
+      // temperature and takes max_completion_tokens.
+      ...completionParams(model, 300),
       response_format: { type: 'json_object' },
       messages: [
         {

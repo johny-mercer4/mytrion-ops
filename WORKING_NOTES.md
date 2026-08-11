@@ -14264,3 +14264,93 @@ flipped on hopefully later. Nothing measured today changes it.
 
 Backend 2524 passed / 1 skipped, typecheck clean, lint unchanged (4 pre-existing errors, all in
 vendored `ds-bundle/*.d.ts`).
+
+---
+
+## 2026-08-12 — Model tiers: a real hard tier, gpt-4o-mini retired, and why NOT GPT-5.6
+
+### GPT-5.6 exists, and it cannot serve our agent tier
+
+`gpt-5.6-luna` / `-sol` / `-terra` shipped 2026-06-23 — one day after the `llm-providers` skill was
+compiled, which is why that skill has no row for them. Verified live against `/v1/models` and the
+pricing page (post-cut prices; OpenAI dropped Luna 80% and Terra 20% after launch, so any table
+quoting Luna at $1/$6 is stale):
+
+| model | in | cached | out | positioning |
+| --- | --- | --- | --- | --- |
+| gpt-5.6-luna | $0.20 | $0.02 | $1.20 | nano-tier successor |
+| gpt-5.6-terra | $2.00 | $0.20 | $12.00 | mini-tier successor |
+| gpt-5.6-sol | $5.00 | $0.50 | $30.00 | frontier / agentic |
+
+Luna is priced at parity with `gpt-5.4-nano` ($0.20/$1.25) while being a generation newer, so it
+looked like a free upgrade. It is not, for two independent reasons.
+
+**1. The whole 5.6 family refuses function tools on Chat Completions unless
+`reasoning_effort: 'none'`.** Probed directly:
+
+```
+luna  +tools, no effort    400   luna  +tools, effort=low   400   luna +tools, effort=none  200
+terra +tools, no effort    400   terra +tools, effort=none  200   sol  +tools, effort=none  200
+gpt-5.4 / 5.4-mini / 5.4-nano / 5.5  +tools                 200   (reasoning AND tools)
+gpt-5.4-pro                                                 404   (not a chat model at all)
+```
+
+Our entire agent stack is Chat Completions + function tools. Adopting 5.6 there means **no reasoning
+on any tool-bearing call** — precisely where we are weakest (committed tool-F1 is 0.5) — unless the
+stack migrates to `/v1/responses`. That migration is a real option and worth its own evaluation; it
+is not a model swap.
+
+**2. In the roles where 5.6 IS usable (tool-free router/grader), it lost on measurement.**
+`OPEN_AI_FIVE_O_NANO=gpt-5.6-luna`, 3 runs: coverage 39/42 and answer facts 21/21 — identical — but
+mean wall **6,223ms vs 5,537ms (+12%)** and cost **$0.1630 vs $0.1472 (+11%)**. Luna is a reasoning
+model, so it spends output tokens thinking about work (route this / grade that) that does not need
+it. No gain, slower, dearer → rejected, same as rerank.
+
+### What did change
+
+- **`OPEN_AI_HARD_MODEL` `gpt-5.4-mini` → `gpt-5.4`.** It was byte-identical to the grounded tier,
+  so every "escalate to reasoning" path resolved to the model that had just failed. Escalation is now
+  a real step up ($2.50/$15, 272K ctx, reasoning + tools confirmed). `gpt-5.5` is the next rung if
+  5.4 proves insufficient.
+- **`gpt-4o-mini` retired.** `models.default` → `gpt-5.4-nano`. It was legacy, non-reasoning, and the
+  one model still on a 50% cached-input discount rather than 90% — the worst possible choice for the
+  helper calls that repeat a stable prefix most often.
+- **Four call sites fixed as a prerequisite**: `memory.ts`, `skillCache.ts`, `rerank.ts` and
+  `file_analyze.ts` all hardcoded `temperature: 0` + `max_tokens`, which a reasoning-tier id rejects
+  outright. Two of them (memory + skill distillation) run fire-and-forget after every turn inside a
+  try/catch that only logs — so retiring 4o-mini without this would have silently killed memory and
+  skill capture with a 400 and left no visible symptom. Verified after the change: **zero 400s** across
+  a 33-turn run.
+- Pricing rows added for the 5.6 family, `gpt-5.4` and `gpt-5.5`. Unknown ids bill at `gpt-4o` rates,
+  so a missing row is a wrong number, not a zero.
+
+New tiers measured from a clean state: **39/42, 21/21, all 11 cases stable, mean 5,581ms, $0.1460** —
+parity with the reference, which is the expected result since the answer/nano roles did not move.
+
+### The bench was lying to us, and it explains the old "instability"
+
+The first tiers run scored 38/42 with `balance-and-cards` unstable. Nothing in the change touches the
+answer or nano roles, so that could not be causal — and it wasn't. **Distilled agent memory is
+recalled INTO every `knowledge_search` result** (`scopedRag` → `recallMemories`), and every bench turn
+writes more of it. The bench DB had accumulated **567 memory rows** across the day's runs, so each
+successive config answered from a slightly larger corpus than the one before it. Truncating and
+re-running the identical config restored **39/42, all stable**.
+
+That is almost certainly what the Phase C/D notes were describing when they concluded coverage is
+inherently unstable run-to-run and added `--runs N` to cope. From a clean memory state it is not:
+across seven 3-run configs today, every case was stable except where a real regression was being
+measured.
+
+`benchSalesChat.ts` now prints the memory/skill row count in its header and takes `--reset-memory`,
+guarded to a local database — checked BEFORE any query, since `.env` points at Render and the first
+version of the guard sat after two `select`s and hung on DNS instead of refusing.
+
+Backend 2524 passed / 1 skipped, typecheck clean.
+
+### Deliberately left for its own commit
+
+The dead GLM and Groq provider paths. Both are provably unreachable — `modelRouter` never emits
+`'glm'`, and Groq is gated on a `sanitizedBenchmark` flag that nothing in `src/` or `scripts/` ever
+passes — despite `FF_GROQ_ENABLED=1` and two live API keys in `.env`. Removing them touches 14 source
+files plus 4 test files including the chat pipeline's streaming fallback, has zero runtime effect, and
+should be reviewed as a refactor rather than buried in a model-tier change.

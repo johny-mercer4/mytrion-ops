@@ -76,12 +76,20 @@ const EnvSchema = z.object({
 
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
-  // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
-  // EMBEDDING_SMALL = embeddings. Wired in modules/llm/openaiClient.ts (`models`).
-  OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
+  // Model IDs by role. Wired in modules/llm/openaiClient.ts (`models`):
+  //   FIVE_O_NANO  → router / grader / casual / tool-free utility calls
+  //   FIVE_O_MINI  → grounded answers + department specialists (reasoning WITH tools)
+  //   HARD_MODEL   → escalation. MUST differ from FIVE_O_MINI or "escalate" is a no-op.
+  //
+  // Every id here must support reasoning AND function tools on /v1/chat/completions. Verified
+  // 2026-08-11 against the live API: gpt-5.4 / gpt-5.4-mini / gpt-5.4-nano / gpt-5.5 all pass;
+  // gpt-5.4-pro is not a chat model (404); and the whole GPT-5.6 family (sol/terra/luna) rejects
+  // tools unless reasoning_effort is 'none' — i.e. adopting 5.6 here costs reasoning on every
+  // tool call, which is why the agent tier stays on 5.4. See WORKING_NOTES 2026-08-11.
   OPEN_AI_FIVE_O_NANO: z.string().default('gpt-5.4-nano'),
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
-  OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4-mini-2026-03-17'),
+  // Was gpt-5.4-mini — identical to the grounded tier, so escalation changed nothing.
+  OPEN_AI_HARD_MODEL: z.string().default('gpt-5.4'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
   // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
   // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.

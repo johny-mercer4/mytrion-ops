@@ -10,6 +10,7 @@ import type { ToolManifest } from '../types.js';
 import { readFileBuffer } from '../../files/fileService.js';
 import { parseFile } from '../../files/parse/index.js';
 import { ingestDocument } from '../../knowledge/ingestService.js';
+import { completionParams } from '../../llm/modelParams.js';
 import { getOpenAI, models } from '../../llm/openaiClient.js';
 import { wrapUntrusted } from '../../security/untrusted.js';
 
@@ -46,8 +47,8 @@ export const fileAnalyzeTool: ToolManifest<z.infer<typeof analyzeInput>, z.infer
     if (input.question) {
       const res = await getOpenAI().chat.completions.create({
         model: models.default,
-        temperature: 0,
-        max_tokens: 700,
+        // Reasoning-tier ids reject temperature / max_tokens (models.default since 2026-08-11).
+        ...completionParams(models.default, 700),
         messages: [
           {
             role: 'system',

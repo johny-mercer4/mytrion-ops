@@ -77,10 +77,21 @@ export function setGLMClient(stub: OpenAI): void {
 }
 
 export const models = {
-  default: env.OPEN_AI_FOUR_O_MINI,
+  /**
+   * Cheap utility tier: tool-free helper calls (memory distillation, skill distillation, file Q&A,
+   * rerank) and the fallback every role resolves to when FF_RAG_MODEL_POLICY is off.
+   *
+   * Was `gpt-4o-mini` — retired 2026-08-11. It is a legacy non-reasoning model and the one model
+   * whose cached-input discount is 50% rather than the 90% the 5.x family gets, so it was the most
+   * expensive possible choice for the calls that repeat a stable prefix most often.
+   * Callers must build params via `completionParams()`; a reasoning-tier id rejects
+   * `temperature`/`max_tokens`.
+   */
+  default: env.OPEN_AI_FIVE_O_NANO,
   nano: env.OPEN_AI_FIVE_O_NANO,
   grounded: env.OPEN_AI_FIVE_O_MINI,
   reasoning: env.OPEN_AI_FIVE_O_MINI,
+  /** Escalation only. Deliberately a different, stronger model than `grounded`. */
   hard: env.OPEN_AI_HARD_MODEL,
   embedding: env.OPEN_AI_EMBEDDING_SMALL,
 } as const;
