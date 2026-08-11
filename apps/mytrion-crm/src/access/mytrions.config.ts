@@ -27,6 +27,7 @@ export type MytrionId =
   | 'hr'
   | 'recruit'
   | 'trailhead'
+  | 'marketing'
   | 'customer-service';
 
 export interface MytrionAccessRule {
@@ -201,7 +202,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     title: 'Manager Mytrion',
     tag: 'Manager',
     icon: 'manager',
-    blurb: 'Manager hub — referral records and team operations.',
+    blurb: 'Manager hub — EFS console, department desks and team operations.',
     hue: 'light-blue',
     department: 'management',
     // OPEN DECISION: are managers hierarchical (see across departments)? If yes, set true.
@@ -211,6 +212,25 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     allowedUsernames: [],
     adminBypass: true,
     status: 'new',
+  },
+  marketing: {
+    id: 'marketing',
+    title: 'Marketing Mytrion',
+    tag: 'Marketing',
+    icon: 'marketing',
+    blurb: 'Marketing hub — referral and loyalty programs.',
+    hue: 'purple',
+    // Equal to the id, which is the whole reason this Mytrion needs no bespoke write guard:
+    // `requireMytrionWrite` casts `mytrionId as KnownDepartment`. Manager maps to 'management',
+    // which is exactly why IT needed one.
+    department: 'marketing',
+    allDepartments: false,
+    allowedProfiles: ['Marketing'],
+    allowedRoles: ['Marketing'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'ported',
+    portedFrom: 'Manager Mytrion',
   },
   analyst: {
     id: 'analyst',
@@ -295,6 +315,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'customer-service',
   'verification',
   'manager',
+  'marketing',
   'analyst',
   'hr',
   'recruit',
@@ -351,6 +372,7 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   finance: 'financemytrion',
   verification: 'verificationmytrion',
   manager: 'managermytrion',
+  marketing: 'marketingmytrion',
   analyst: 'analystmytrion',
   hr: 'hrmytrion',
   recruit: 'recruitmytrion',
@@ -370,8 +392,7 @@ export function mytrionIdFromUrlSlug(slug: string): MytrionId | undefined {
 /**
  * Backend department agent keys (mirror of src/modules/agents/types.ts AGENT_KEYS). The chat UI sends
  * `agent:<key>` to POST /v1/agent for direct-to-child. Every non-admin MytrionId equals its agent key;
- * `admin` has no agent (→ orchestrator mode). `marketing` has no Mytrion but appears in an admin's
- * orchestrator run, so its label is still needed.
+ * `admin` has no agent (→ orchestrator mode).
  */
 export type AgentKey =
   | 'customer-service'

@@ -7,7 +7,7 @@ import { ScopeBlueprint } from './Blueprint';
 import { EngineDiagram } from './EngineDiagram';
 import { DetailsTab } from './DetailsTab';
 import { blueprintsOf, deptColor, hexA, hideLogoTile, ic, platVM, type DetailNode } from './model';
-import { useModalFocus } from '../../hr/useModalFocus';
+import { useModalFocus } from '../../_shared/useModalFocus';
 
 interface SubTab {
   id: 'blueprint' | 'departments' | 'automations' | 'details';

@@ -36,7 +36,7 @@ import { HrSelect } from './HrSelect';
 import { HrDepartmentMembers } from './HrDepartmentMembers';
 import { HrRichText } from './HrRichText';
 import { isActiveStatus } from './hrData';
-import { radioGroupKeyDown, rovingTabIndex, useModalFocus } from './useModalFocus';
+import { radioGroupKeyDown, rovingTabIndex, useModalFocus } from '../_shared/useModalFocus';
 
 export type DepartmentModalMode =
   | { kind: 'create'; parentName?: string | null }

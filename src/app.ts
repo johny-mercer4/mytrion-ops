@@ -40,6 +40,7 @@ import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.rou
 import { verificationWritebackRoutes } from './routes/v1/verificationWriteback.routes.js';
 import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
+import { mytrionPermissionSetsRoutes } from './routes/v1/mytrionPermissionSets.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppAuthRoutes } from './routes/v1/carrierMiniAppAuth.routes.js';
@@ -56,7 +57,7 @@ import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { salesInvoicesRoutes } from './routes/v1/salesInvoices.routes.js';
 import { salesCardReportsRoutes } from './routes/v1/salesCardReports.routes.js';
-import { managerRoutes } from './routes/v1/manager.routes.js';
+import { marketingRoutes } from './routes/v1/marketing.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csMaintenanceRoutes } from './routes/v1/csMaintenance.routes.js';
@@ -423,6 +424,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(mytrionSchemaRoutes);
       await v1.register(verificationSchemaRoutes);
       await v1.register(mytrionAccessRoutes);
+      await v1.register(mytrionPermissionSetsRoutes);
       await v1.register(clientNewsRoutes);
       await v1.register(supportBotRoutes);
       await v1.register(carrierMiniAppRoutes);
@@ -448,7 +450,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(dataCenterRoutes);
       await v1.register(salesInvoicesRoutes);
       await v1.register(salesCardReportsRoutes);
-      await v1.register(managerRoutes);
+      await v1.register(marketingRoutes);
       await v1.register(verificationPipelineRoutes);
       await v1.register(verificationWritebackRoutes);
       await v1.register(verificationClientsRoutes);

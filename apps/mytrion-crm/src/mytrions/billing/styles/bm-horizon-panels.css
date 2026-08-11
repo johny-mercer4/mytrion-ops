@@ -178,11 +178,14 @@
    PER-TAB SURFACES
    ===================================================== */
 
-/* Every readable pane across the five panels. */
+/* Every readable pane across the five panels. NOTE: .db-list-header is deliberately NOT here — it's
+   a sticky header over a scrolling row list (see its opaque --ui-table-head-bg rule in
+   debtors-panel.css), not a static chrome pane like its list-mates below. It used to be listed here
+   too, which — same specificity, later in load order — silently overrode that opaque fix with this
+   rule's glass/blur treatment, bleeding scrolled rows through the "fixed" header. */
 .bm-root .dc-deals-table,
 .bm-root .db-kpi-card,
 .bm-root .db-danger-card,
-.bm-root .db-list-header,
 .bm-root .rt-kpi,
 .bm-root .rt-toolbar,
 .bm-root .pp-toolbar,

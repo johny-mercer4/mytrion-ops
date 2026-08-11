@@ -146,7 +146,11 @@
     min-height: 0;
 }
 
-/* ── Date separator ── */
+/* ── Date separator ──
+   Sticky over a scrolling row list, so it needs an OPAQUE background (--ui-table-head-bg), not the
+   glass/chrome token (--sidebar-bg, ~40% alpha) — glass is for chrome that floats over OTHER chrome,
+   not for a header floating over dense data (see horizon.css's "GLASS IS FOR CHROME" rule). At 40%
+   alpha the row scrolling underneath bled straight through the sticky label. */
 .bm-root .tx-date-sep {
     display: flex;
     align-items: center;
@@ -157,7 +161,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-secondary);
-    background: var(--sidebar-bg);
+    background: var(--ui-table-head-bg);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;

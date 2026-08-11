@@ -382,8 +382,14 @@
     font-size: 0.8125rem;
 }
 
+/* Both the row AND the th set a background: the th is what's actually sticky (a sticky element
+   needs its OWN opaque background — the parent tr's doesn't travel with it), the tr covers the
+   sliver a th with padding/border doesn't. Both must be the opaque data-table token
+   (--ui-table-head-bg), not the glass/chrome one (--sidebar-bg, ~40% alpha) — glass is for chrome
+   floating over other chrome, not a header floating over a scrolling table body (horizon.css's
+   "GLASS IS FOR CHROME" rule). At 40% alpha, rows scrolling underneath bled through the header. */
 .bm-root .bm-table thead tr {
-    background: var(--sidebar-bg);
+    background: var(--ui-table-head-bg);
     border-bottom: 1px solid var(--border);
 }
 
@@ -399,7 +405,7 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     white-space: nowrap;
-    background: var(--sidebar-bg);
+    background: var(--ui-table-head-bg);
 }
 
 .bm-root .bm-table td {

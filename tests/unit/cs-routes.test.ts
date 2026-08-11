@@ -543,6 +543,7 @@ describe('analytics scope forcing', () => {
       departments: allDepartmentAccess ? [] : mytrions,
       viewAsUserIds: [],
       mytrionAccessModes: {},
+      mytrionTabGrants: {},
     });
     resolveBatch.mockResolvedValue(
       new Map([

@@ -1,0 +1,18 @@
+/**
+ * Referral-modal finishes — relationships between surfaces that no single component file owns.
+ * Split out of the shared hub theme when Referrals moved to Marketing; imported AFTER
+ * referralModal.css so load order (and therefore equal-specificity precedence) is preserved.
+ */
+
+/* Modals are clearly elevated without neon borders or stacked outline effects. */
+.mg-root .mg-rf-modal {
+  border-color: var(--mg-border-strong);
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg-primary));
+  box-shadow: var(--hz-shadow-pop);
+}
+.mg-root .mg-rf-calculation-hero,
+.mg-root .mg-rf-breakdown,
+.mg-root .mg-rf-related-record,
+.mg-root .mg-rf-crm-panel {
+  border-color: var(--hz-pane-bd);
+}

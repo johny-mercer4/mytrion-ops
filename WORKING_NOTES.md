@@ -14070,3 +14070,114 @@ still holds these labels.
 
 The harness is now documented in the modern-web-guidance skill, with the caveat that matters: if a
 page renders empty, say so rather than counting the pass.
+
+---
+
+## 2026-08-11 — Four directions: RingCentral scope, Marketing Mytrion, light theme, permission sets
+
+### 1. RingCentral leaked onto every workspace (`816d9b8c`)
+
+The route gate was never wrong — `/^\/main\/([^/]+)/` cannot match a bare `/main`, so the launcher
+has always evaluated to "not allowed". **The leak was teardown.** Embeddable's docked pill is
+`#rc-widget`, a positioned DIV wrapper with the iframe INSIDE it; `teardownAdapter` removed the
+script and the iframe and left the wrapper behind on every navigation. `ringcentralHost.css:46-50`
+had already recorded this exact finding for the mobile offset rule ("targeting only the iframe moved
+nothing — verified against the running app"); the teardown path never learned it.
+
+Removed rather than hidden: no browser suspends a `display:none` iframe's JS, WebRTC session or
+audio, so hiding would have left the softphone registered and ringing on a Mytrion it is not mounted
+on. Script removed first so a mid-flight vendor bootstrap cannot re-append into a node dropped in the
+same tick.
+
+Also: `collection` was in the CLIENT allowlist and not the server one, so Collection agents passed
+the route gate, booted, and got an RBAC refusal the caller swallows by design — a phone that silently
+did nothing with a clean console. The two lists now name each other in comments.
+
+The gate moved to `rcRouteGate.ts` because it could not be tested where it was (importing the
+component runs the console filter at module scope).
+
+### 2. Marketing Mytrion (`48e7b36b`)
+
+Referral + Loyalty moved out of the Manager hub, routes re-prefixed to `/v1/marketing/*` and re-gated
+on `marketing`. Not aliased: leaving `/v1/manager/*` alive would have kept `management` as a standing
+second key into Marketing data. `marketing`'s Mytrion id EQUALS its department slug, which is the
+only reason the generic `requireMytrionWrite` works without a bespoke guard (`manager` → `management`
+is exactly why it needed a hand-written one).
+
+**The CSS was the risk, not the code.** The two cards render ~15 classes owned by `manager.css` /
+`managerWorkspace.css`, which Manager still needs. Renaming the prefix would have meant duplicating
+~1,000 lines — and `tokens.test.ts`'s `backdrop-filter` budget is AT its ceiling of 147, so any copy
+fails CI outright. `mg-` is now documented as the HUB-CHROME prefix and the files moved to
+`_shared/hub/` unchanged. Two could not move wholesale and would have failed silently:
+`loyaltyBonusModal.css` is rendered by Manager's task modals, and `managerLoyalty.css`'s
+`.mg-lty-chip*` by EFS Console.
+
+Highest-impact single line: widening `hubTheme.css`'s `[data-mytrion='manager']` to include
+`marketing`. Without it every `--mg-*`, `--hz-page`, `--hz-pane*` and `--hz-shadow-*` resolves to
+nothing in the new workspace.
+
+Migration `0113` also carries the read/full MODE across (`manager` → `marketing`), which `0083` had
+no reason to: an omitted key means FULL, so copying only the grant would have promoted every
+read-only manager into someone who can rewrite a carrier's loyalty tier.
+
+### 3. Light theme — "too sharp, and borders/shadows are not visible" (`5ab26a14`)
+
+One complaint, two opposite causes.
+
+- **Sharp** was text-on-card: `--on-surface` `#191c1d` on `#f8f9fa` = **16.26:1**, ~2× the AAA floor.
+  Now `#2b3141` at **12.20:1**, still ~74% clear of 7:1.
+- **Invisible** was structure, and the root cause is blunt: `--hz-shadow-rest` resolves to `--elev-0`,
+  which is a **fully transparent** shadow in both themes. A resting light card was held up by
+  `--border` alone at **1.14:1**. Light now restates `--elev-0` as a real shadow, and `--elev-1`'s
+  drop term moves there where it belongs (~180 sites asking only for the glare were getting a shadow
+  by accident while rest-only sites got none). `--border` → **1.35:1**.
+
+`--border` is deliberately NOT 3:1 — a 3:1 hairline on all 637 card edges is a drawn box, which is
+the sharpness complaint from the other side. The 3:1 obligation moved to `--border-strong`
+(1.59 → 2.99).
+
+Five modules pinned their own light values and could not be reached by editing `theme.css` — Sales
+(`.ss-root.light` redeclared the GLOBAL `--surface`/`--border`/`--shadow-*` and out-specified
+`[data-theme='light']`), Billing, CS, Manager (pinned the `--hz-shadow-*` ALIASES, so this fix would
+have stopped at its door) and Recruit. All now track the shared tokens.
+
+Fixed in passing: `--success` (3.29:1) and `--warning` (3.43:1) were **failing AA** as text on a card.
+
+`tokens.test.ts` gains a contrast assertion with a **floor and a ceiling**. The ceiling is the point:
+a floor-only test is what let 16.26:1 ship and get written up in FOUNDATIONS.md as a strength.
+Verified it bites (restoring the old near-black fails at 16.12 > 13.5).
+
+### 4. Permission sets — Salesforce-style (`ba312d8e`, `3e69801c`, `afcbcc3a`, `81d73855`)
+
+Named, reusable, **additive** grants assigned to users, layered on profile → role → per-user.
+
+- **Step 0** closed a live gap on its own: `read|full` has been storable for all 12 Mytrions since
+  `0057` and five backends enforce it, but the Admin UI only exposed it for Billing. `hr: 'read'` was
+  enforceable by the server and unreachable from the product.
+- **Tab registry** (`access/tabRegistry.ts`): each Mytrion owns its declaration, the registry composes.
+  Types pin the vocabulary; a TEST catches phantom entries (a new descriptor is NOT a compile error —
+  the shells use `active === id` and a `Partial<Record>`, neither exhaustive — verified by adding a
+  fake tab and watching tsc stay silent). A dev-only warning covers the dangerous direction: a
+  rendered key nobody declared can never be granted, so it goes invisible for any scoped user.
+- **Resolution**: Step 3.5 sits AFTER the override's REPLACE (else assigning a set to anyone with an
+  override row is a silent no-op) and BEFORE the deny subtraction (so one Mytrion can still be
+  removed surgically). Mode union is most-permissive-wins.
+- **Tab grants**: a Mytrion ABSENT from a set's `tabGrants` is UNSCOPED — every tab, including future
+  ones. That asymmetry is what stops a newly shipped tab vanishing for every scoped user.
+
+**Two things worth remembering.**
+
+`drizzle-kit generate` is currently unusable in this repo: its meta snapshots have drifted, so it
+emitted 388 lines re-creating the comms/knowledge/ticketing tables that already exist — and none of
+the two I added. `0114` is hand-written and idempotent.
+
+And a real bug I introduced and then found: the permission-set reads are UNCONDITIONAL, unlike the
+other three in `computeAccess`. Sharing the outer catch meant an unreachable permission-set table
+degraded EVERY user to `legacyAccess` — which grants far less and by design never grants Customer
+Service. Two CS suites went red, but the actual exposure was production: deploying before running
+`0114` would have collapsed access org-wide while logging "resolve failed". They now fail soft on
+their own, with a test.
+
+**Scope, stated plainly:** tab permissions are UI gating. The backend still enforces at Mytrion +
+read/full and nothing finer, so hiding a tab removes the door, not the lock. A set's Mytrion grants
+and its read/full modes ARE enforced end to end.

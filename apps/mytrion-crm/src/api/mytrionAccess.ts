@@ -9,6 +9,16 @@ import { request } from './transport';
 export type MytrionAccessMode = 'read' | 'full';
 export type MytrionAccessModes = Partial<Record<MytrionId, MytrionAccessMode>>;
 
+/**
+ * Per-Mytrion visible tab whitelist, from permission sets.
+ *
+ * A Mytrion ABSENT is UNRESTRICTED — every tab, including ones added after the grant was written.
+ * That asymmetry is what stops a newly shipped tab from disappearing for everyone.
+ *
+ * UI GATING ONLY: the backend enforces at Mytrion + read/full and nothing finer.
+ */
+export type MytrionTabGrants = Partial<Record<MytrionId, string[]>>;
+
 export interface AccessEffective {
   accessibleMytrions: MytrionId[];
   homeMytrion: MytrionId | null;

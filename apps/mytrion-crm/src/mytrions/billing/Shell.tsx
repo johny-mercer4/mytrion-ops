@@ -16,6 +16,7 @@
  * horizontal strip, and shipping both would give a phone two navigation bars.
  */
 import { useMemo, useState, type ReactNode } from 'react';
+import type { BillingTabKey } from './billingTabs';
 import {
   CreditCard,
   Database,
@@ -37,14 +38,12 @@ import { Prepay } from './Prepay';
 import { Returns } from './Returns';
 import { Transactions } from './Transactions';
 
-type SectionId =
-  | 'datacenter'
-  | 'transactions'
-  | 'debtors'
-  | 'prepay'
-  | 'returns'
-  | 'ledger'
-  | 'tickets';
+/**
+ * Derived, not restated. This keeps the shell and the permission-set tab picker speaking the same
+ * vocabulary — rename a key at either end and the other stops compiling. (A brand-new descriptor is
+ * caught by tabRegistry.test.ts, not by the compiler; see the note in access/tabRegistry.ts.)
+ */
+type SectionId = BillingTabKey;
 
 /**
  * PARKED (2026-08-03). Sales files tickets into Zoho Desk again, so this queue would read empty

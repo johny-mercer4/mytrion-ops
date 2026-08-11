@@ -2102,3 +2102,81 @@
    positioned ring scrolls away with the content. Same reason as ever for not using `border-image`:
    it takes a gradient but ignores border-radius, and a background layer clipped to the border box
    respects the radius. */
+
+/* ── Permission sets ───────────────────────────────────────────────────────── */
+/* One granted Mytrion's controls: its read/full mode and its tab scope. Indented against a rule so
+   the grid of chips above reads as the parent and these as its detail, without a nested card. */
+.permissionSetRow {
+  margin-top: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border);
+}
+
+/* ── Permission sets ───────────────────────────────────────────────────────── */
+/*
+ * `.field` is a bare flex column with no gap — fine for a label above one control, cramped for the
+ * stacked label / segmented-control / hint / chip-grid these screens build. Scoped here rather than
+ * added to `.field`, which a dozen other admin forms already lay out around.
+ */
+.psField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* One granted Mytrion's controls: its read/full mode and its tab scope. Indented against a rule so
+   the chip grid above reads as the parent and these as its detail, without nesting another card. */
+.permissionSetRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 2px solid var(--border);
+}
+
+/* A tab group inside the scope picker — `Money`, `Recovery`, `Comms`. */
+.psGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Name + Create, laid out as a real form.
+ *
+ * `align-items: end` so the button's baseline sits on the input's, not on the label above it — the
+ * field is a label/input/error stack and a centred row would float the button against the label.
+ * The field is capped rather than fluid: a name box the width of the page invites a sentence, and
+ * the value is a short label an admin picks from a list.
+ */
+.createRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+.createRowControls {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/*
+ * A one-line field message. `.errorNote` is a bordered danger CALLOUT — right for a form-level
+ * failure, far too heavy for "you left this blank", where it doubles the row height and shoves the
+ * submit button out of alignment with the input it submits.
+ */
+.inlineError {
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+  color: var(--danger);
+}
+.createRowControls .psField {
+  flex: 1 1 320px;
+  max-width: 420px;
+  gap: var(--space-1_5);
+}

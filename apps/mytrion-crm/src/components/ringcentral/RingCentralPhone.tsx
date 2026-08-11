@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
-import {
-  isMytrionId,
-  mytrionIdFromUrlSlug,
-  type MytrionId,
-} from '@/access/mytrions.config';
 import { installRcConsoleFilter } from './rcConsoleFilter';
+import { isRingCentralRoute } from './rcRouteGate';
 import {
   RC_ADAPTER_SCRIPT_ID,
   dockRingCentralWidget,
@@ -26,9 +22,6 @@ import './ringcentralHost.css';
 // Install as soon as this module loads — Embeddable can emit AGW-401 before the mount effect
 // reaches script injection (persisted session restore / early probes).
 installRcConsoleFilter();
-
-/** Softphone is only for desk-phone Mytrions (expand later as needed). */
-const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service', 'collection']);
 
 /** Ignore brief logged-out blips while Embeddable restores a persisted session. */
 const LOGOUT_TOAST_GRACE_MS = 2500;
@@ -74,15 +67,6 @@ function clearPendingLogoutToast(): void {
   }
 }
 
-/** Resolve /main/:slug (or legacy /m/:id) to a MytrionId when on a Mytrion route. */
-function mytrionFromPath(pathname: string): MytrionId | undefined {
-  const main = /^\/main\/([^/]+)/.exec(pathname);
-  if (main?.[1]) return mytrionIdFromUrlSlug(main[1]);
-  const legacy = /^\/m\/([^/]+)/.exec(pathname);
-  if (legacy?.[1] && isMytrionId(legacy[1])) return legacy[1];
-  return undefined;
-}
-
 /** Attach cursor CSS as a data: URI — never fetch our origin (localhost is PNA-blocked). */
 function withStylesUri(adapterUrl: string): string {
   try {
@@ -103,11 +87,67 @@ function rcFrame(): HTMLElement | null {
   return document.getElementById('rc-widget-adapter-frame');
 }
 
+/**
+ * The vendor's docked pill, and the thing that actually has to go.
+ *
+ * Embeddable renders `#rc-widget.Adapter_root.Adapter_right` — a positioned DIV wrapper — and puts
+ * the iframe INSIDE it. `ringcentralHost.css` records the same finding for the mobile offset rule
+ * ("Targeting only the iframe … moved nothing. Verified against the running app"). Teardown used to
+ * remove only the script and the iframe, so the wrapper survived every navigation and the softphone
+ * stayed visible on Billing, HR and the launcher.
+ */
+function rcWidgetRoot(): HTMLElement | null {
+  return document.getElementById('rc-widget');
+}
+
+/** Any trace of the adapter — the predicate teardown and the late-arrival guard both key on. */
+function rcAdapterPresent(): boolean {
+  return (
+    document.getElementById(RC_ADAPTER_SCRIPT_ID) !== null ||
+    rcWidgetRoot() !== null ||
+    rcFrame() !== null
+  );
+}
+
+/**
+ * Remove, never hide.
+ *
+ * `display: none` would leave the iframe alive, and no browser suspends an iframe's JS, its WebRTC
+ * session or its audio for being hidden — the softphone would keep its SIP registration and keep
+ * ringing on a Mytrion it is not supposed to exist on. That is the reported symptom, not a cosmetic
+ * one.
+ *
+ * Script first, so a still-executing vendor bootstrap cannot re-append into a node we have already
+ * dropped in the same tick; the MutationObserver in the disallowed branch catches later arrivals.
+ */
 function teardownAdapter(): void {
   clearPendingLogoutToast();
   resetRingCentralLoginState();
   document.getElementById(RC_ADAPTER_SCRIPT_ID)?.remove();
-  rcFrame()?.remove();
+  rcWidgetRoot()?.remove(); // takes the iframe with it
+  rcFrame()?.remove(); // fallback if the vendor ever reparents the frame
+  /**
+   * Ask the vendor to dispose BEFORE dropping the handle.
+   *
+   * `window.RCAdapter` is also the vendor's own re-init guard — `init()` opens with
+   * `if (window.RCAdapter) return;` — so deleting it without disposing means the next visit to a
+   * desk-phone Mytrion constructs a SECOND Adapter while the first stays alive. Ten Sales↔Billing
+   * hops in a shift leaves eleven instances, each still running its message handler for every
+   * widget postMessage against a detached subtree, and each holding a beforeunload handler. Dropping
+   * the handle first also makes `window.RCAdapterDispose()` a permanent no-op, so nothing can ever
+   * reclaim them.
+   *
+   * dispose() does not remove the constructor's own message/click/beforeunload listeners, so this
+   * bounds the leak rather than eliminating it — the complete fix is to stop re-constructing per
+   * navigation, which is a larger change than this scope. Guarded because it is a vendor API that
+   * may not exist on every adapter build.
+   */
+  try {
+    window.RCAdapterDispose?.();
+  } catch {
+    /* vendor teardown is best-effort — never let it block removing the DOM below */
+  }
+  delete window.RCAdapter;
 }
 
 function waitForRcFrame(timeoutMs: number): Promise<HTMLElement | null> {
@@ -149,8 +189,8 @@ async function mountAdapter(
     return;
   }
 
-  // Script without iframe (or stale stylesUri) → tear down and inject fresh.
-  if (existing || frame) teardownAdapter();
+  // Script without iframe, wrapper without either, or a stale stylesUri → tear down and inject fresh.
+  if (rcAdapterPresent()) teardownAdapter();
   if (opts.cancelled()) return;
 
   installRcConsoleFilter();
@@ -188,10 +228,7 @@ async function mountAdapter(
  */
 export function RingCentralPhone() {
   const { pathname } = useLocation();
-  const allowed = (() => {
-    const id = mytrionFromPath(pathname);
-    return !!id && RC_ALLOWED_MYTRIONS.has(id);
-  })();
+  const allowed = isRingCentralRoute(pathname);
 
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   /**
@@ -241,7 +278,7 @@ export function RingCentralPhone() {
        * adapter script/frame the instant it appears.
        */
       const guard = new MutationObserver(() => {
-        if (document.getElementById(RC_ADAPTER_SCRIPT_ID) || rcFrame()) teardownAdapter();
+        if (rcAdapterPresent()) teardownAdapter();
       });
       guard.observe(document.body, { childList: true, subtree: true });
       return () => guard.disconnect();
@@ -413,6 +450,10 @@ export function RingCentralPhone() {
   // Full unmount (logout / leave worker portal) always tears down the vendor iframe.
   useEffect(() => () => teardownAdapter(), []);
 
+  // Nothing of ours renders off a desk-phone Mytrion. Already true via the effect above (which clears
+  // both pieces of state), but stating it makes the launcher case a guarantee rather than an inference.
+  if (!allowed) return null;
+
   // The host stack exists only for actionable UI. The vendor's own dock remains mounted separately.
   if (toasts.length === 0 && !showSignIn) return null;
 
@@ -460,16 +501,16 @@ export function RingCentralPhone() {
             maxWidth: '340px',
             borderRadius: 'var(--radius-md, 12px)',
             background: 'var(--hz-modal-surface, var(--surface))',
-            border: '1px solid color-mix(in srgb, var(--warn, #f59e0b) 40%, transparent)',
-            borderLeft: '4px solid var(--warn, #f59e0b)',
-            boxShadow: 'var(--shadow, 0 18px 48px -18px rgba(0,0,0,.6))',
-            color: 'var(--text)',
+            border: '1px solid var(--intent-warning-bd)',
+            borderLeft: '4px solid var(--warning)',
+            boxShadow: 'var(--hz-shadow-pop)',
+            color: 'var(--text-primary)',
           }}
         >
-          <Phone size={18} color="var(--warn, #f59e0b)" />
+          <Phone size={18} color="var(--warning)" />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <div style={{ fontWeight: 600, fontSize: '14px' }}>Phone not signed in</div>
-            <div style={{ fontSize: '12.5px', color: 'var(--muted)', lineHeight: 1.45 }}>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
               Calling, call logging and the post-call wizard stay off until you sign in.
             </div>
           </div>
@@ -517,7 +558,7 @@ export function RingCentralPhone() {
               alignItems: 'center',
               background: 'transparent',
               border: 'none',
-              color: 'var(--muted)',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
               padding: '2px',
             }}
@@ -534,19 +575,19 @@ export function RingCentralPhone() {
             borderLeft: '4px solid var(--danger)',
             padding: '12px 16px',
             borderRadius: '6px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            boxShadow: 'var(--hz-shadow-lift)',
             display: 'flex',
             alignItems: 'flex-start',
             gap: '12px',
             minWidth: '280px',
-            color: 'var(--text)',
+            color: 'var(--text-primary)',
           }}
         >
           <AlertCircle size={20} color="var(--danger)" />
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ fontWeight: 600, fontSize: '14px' }}>{t.title}</div>
-            <div style={{ fontSize: '13px', color: 'var(--muted)' }}>{t.message}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{t.message}</div>
           </div>
 
           <button
@@ -555,7 +596,7 @@ export function RingCentralPhone() {
             style={{
               background: 'transparent',
               border: 'none',
-              color: 'var(--muted)',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
               padding: '2px',
               display: 'flex',

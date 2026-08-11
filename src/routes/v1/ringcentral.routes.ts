@@ -1,5 +1,5 @@
 /**
- * RingCentral Embeddable bootstrap for Sales Mytrion.
+ * RingCentral Embeddable bootstrap for the desk-phone Mytrions.
  *
  * GET /v1/ringcentral/embed-config — returns the config needed to load the Embeddable adapter.
  * By default the shared client secret + org JWT are NOT included (the adapter loads; agents
@@ -22,7 +22,19 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { buildCallerContext } from './callerIdentity.js';
 
 /**
- * Softphone is used from Sales + Customer Service Mytrions.
+ * Departments whose agents get a softphone.
+ *
+ * KEEP IN STEP with `RC_ALLOWED_MYTRIONS` in
+ * `apps/mytrion-crm/src/components/ringcentral/rcRouteGate.ts` — these two lists are the client and
+ * server halves of one decision, and they drifted: `collection` was added to the client set but not
+ * here, so a Collection agent passed the route gate, booted the widget, and got an RBAC refusal on
+ * `/embed-config` that the caller swallows silently. The symptom was "the phone just doesn't work in
+ * Collection", with nothing in the console.
+ */
+const RC_SOFTPHONE_DEPARTMENTS = ['sales', 'customer-service', 'collection'] as const;
+
+/**
+ * Softphone is used from the Sales, Customer Service and Collection Mytrions.
  * Applies View-as (x-act-as-*) so call-log rows attribute to the desk agent, not the admin.
  */
 async function requireSoftphoneAccess(request: FastifyRequest): Promise<TenantContext> {
@@ -33,10 +45,11 @@ async function requireSoftphoneAccess(request: FastifyRequest): Promise<TenantCo
     ctx.role === 'admin' ||
     ctx.bypassRbac === true ||
     ctx.allDepartmentAccess ||
-    ctx.departments.includes('sales') ||
-    ctx.departments.includes('customer-service');
+    RC_SOFTPHONE_DEPARTMENTS.some((department) => ctx.departments.includes(department));
   if (!ok) {
-    throw new RBACError('RingCentral phone requires sales or customer-service department access');
+    throw new RBACError(
+      `RingCentral phone requires ${RC_SOFTPHONE_DEPARTMENTS.join(', ')} department access`,
+    );
   }
   return ctx;
 }
