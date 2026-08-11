@@ -35,9 +35,8 @@ describe('soonTabs', () => {
     expect(soonTabMeta('tickets').title).toBe('Tickets');
   });
 
-  it('parks Verification with shared coming-soon metadata', () => {
-    expect(parked).toContain('verification');
-    expect(soonTabMeta('verification').title).toBe('Verification Pipeline');
+  it('has Verification LIVE — unparked on the sales-agent-verification branch', () => {
+    expect(parked).not.toContain('verification');
   });
 
   it('has My Tasks LIVE — the agent half of the manager task loop', () => {
