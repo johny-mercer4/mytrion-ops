@@ -8,7 +8,7 @@ import { getImpersonation } from '@/api/impersonation';
 import { s } from './dc';
 import { Icon } from './icons';
 import { formatCachedAt } from './dashCache';
-import { currentBillingCycle, msdFmtNum } from './dashFormat';
+import { currentBillingCycle, msdFmtGallons, msdFmtNum } from './dashFormat';
 import { DashSkeleton } from './DashSkeleton';
 import { SalesEmpty, SalesErrorNote } from './SalesPage';
 import { SalesDashCharts } from './SalesDashCharts';
@@ -37,10 +37,6 @@ function donutDash(pct: number): string {
 }
 
 /** Volume cells — keep decimals when present (widget shows full gallons). */
-function fmtVol(v: number): string {
-  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-
 export function SalesDashPanel() {
   const actAsKey = getImpersonation()?.zohoUserId ?? 'self';
   const [data, setData] = useState<SalesDashRaw | null>(null);
@@ -475,7 +471,7 @@ export function SalesDashPanel() {
                       </td>
                       <td className="msd-tx-r msd-tx-gold">{r.newCards.toLocaleString()}</td>
                       <td className="msd-tx-r">{r.transactions.toLocaleString()}</td>
-                      <td className="msd-tx-r msd-tx-vol">{fmtVol(r.volume)}</td>
+                      <td className="msd-tx-r msd-tx-vol">{msdFmtGallons(r.volume)}</td>
                       <td className="msd-tx-r">{msdFmtNum(r.discount)}</td>
                       <td className="msd-tx-r">{msdFmtNum(r.total)}</td>
                     </tr>
@@ -495,7 +491,7 @@ export function SalesDashPanel() {
                       <strong>{totals.transactions.toLocaleString()}</strong>
                     </td>
                     <td className="msd-tx-r msd-tx-vol msd-tx-vol--total">
-                      <strong>{fmtVol(totals.volume)}</strong>
+                      <strong>{msdFmtGallons(totals.volume)}</strong>
                     </td>
                     <td className="msd-tx-r">
                       <strong>{msdFmtNum(totals.discount)}</strong>

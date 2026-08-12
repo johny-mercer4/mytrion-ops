@@ -4,7 +4,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './icons';
-import { currentBillingCycle, msdFmtK, msdFmtNum } from './dashFormat';
+import { currentBillingCycle, msdFmtGallonsK, msdFmtK, msdFmtNum } from './dashFormat';
 import {
   MSD_TOOLTIP_HEIGHT,
   msdActivityWidth,
@@ -384,7 +384,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                     <div><dt><i data-k="tx" />Transactions</dt><dd>{hoveredPoint.transactions.toLocaleString()}</dd></div>
                     <div><dt><i data-k="active" />Active Cards</dt><dd>{hoveredPoint.activeCards.toLocaleString()}</dd></div>
                     <div><dt><i data-k="new" />New Cards</dt><dd>{hoveredPoint.newCards.toLocaleString()}</dd></div>
-                    <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtK(hoveredPoint.volume)}</dd></div>
+                    <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtGallonsK(hoveredPoint.volume)}</dd></div>
                   </dl>
                 </div>
               ),
@@ -423,7 +423,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                   </div>
                   <div>
                     <div className="msd-activity-single__val" style={{ color: 'var(--accent)' }}>
-                      {msdFmtNum(p.actPoints[0].volume)}
+                      {msdFmtGallonsK(p.actPoints[0].volume)}
                     </div>
                     <div className="msd-activity-single__label">Gallons</div>
                   </div>

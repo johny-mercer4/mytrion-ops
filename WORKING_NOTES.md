@@ -15353,3 +15353,77 @@ Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-ho
 allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
 token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
 
+
+## 2026-08-13 — Card Activity gallons, in full
+
+The tooltip showed `Gallons 9k` for a day that moved 9,241.36 — via `msdFmtK`, which is a
+one-significant-figure abbreviation. Gallons are what the carrier is billed on, so that is the one
+number on this dashboard that cannot be read approximately, and the Transaction Details table
+directly below it has always shown the exact figure. The panel disagreed with itself.
+
+Two formatters, one rule — never one significant figure:
+
+- `msdFmtGallonsK` — `9.24k`, `0.74k`, `1.23M` — the Card Activity tooltip and the single-day tile.
+  Two decimals ALWAYS, never trimmed: these are tabular-mono columns, and a "10k" next to a "9.24k"
+  breaks the alignment the column exists for. Sub-thousand stays in k (`0.74k`) rather than switching
+  units mid-column. Two decimals is the smallest abbreviation that still resolves ~10 gallons here.
+- `msdFmtGallons` — `9,241.36` — the Transaction Details table and its total. This is the rule
+  `SalesDashPanel`'s local `fmtVol` already applied, so that duplicate is gone and both read from one
+  formatter.
+
+Compact where the number is scanned, exact where it is read off.
+
+Left abbreviated on purpose: the hero KPI strip (`msdFmtNum(hero.volume)`). It is a cycle total in
+the millions inside a two-up flex row of unbreakable mono figures that already does not fit a phone —
+"1.2M" is the point there, and an exact number would break the strip before it helped anyone. Worth
+revisiting only with a layout change.
+
+3 tests on the formatter, plus the chart test now pins 10,241.36 and asserts "10k" is absent.
+847 CRM tests green.
+
+## 2026-08-13 — Sales mini-app: pilot roster, and money code switched off in the catalog
+
+### The mini-app is one agent's for now
+
+Two Sales surfaces put a company into Telegram: "View mini-app" on a client card (the agent's own
+mini-app) and "Generate registration link" in client Manage (the carrier's). Rollout is one agent at
+a time, so both now answer only for a named roster — today just **Daniel Brown**
+(`6227679000031473048`).
+
+`src/modules/carrier/salesMiniAppPilot.ts` is the authority and both routes call it
+(`POST /carrier-invitations`, `POST /carrier/mini-app/sales-agent-invitations`). The CRM has a copy
+of the id list purely so a non-pilot agent is not shown a control that answers 403 — hiding a button
+is decoration; the route is the gate.
+
+**Ids, not names.** A Zoho display name is editable and duplicated in the directory; the id survives
+a rename. The name in the list is a comment for reviewers, never matched on — a test pins both halves
+of that (a renamed Daniel keeps access; someone else renamed to "Daniel Brown" does not gain it).
+
+**Admins keep their bypass, "View as" does not.** Admin Client Management onboards outside the pilot.
+But an admin viewing as an agent sees that agent's Sales, pilot membership included — that is what
+View-as is for, and `impersonatorUserId` is what distinguishes the two.
+
+**Not a disabled button.** Outside the pilot the control is absent, not greyed: "Mini-app unavailable"
+on an active client means *the client* is ineligible everywhere else on that card, and reusing it
+here would have read as a data problem. Manage shows one line of explanation instead, and the
+Registered users / password-reset sections stay — the pilot gates minting links, not managing the
+users a client already has.
+
+### Money code was advertised but switched off
+
+`FF_MINIAPP_MONEY_CODE_ENABLED` has been `0` since it shipped, and the draw/preview/void routes
+enforce it. The owner catalog still listed money code with a live `moneycode` action, so the #1
+most-asked service opened a sheet whose first call returned 503 "not enabled here yet".
+
+It is now a `soon` item (`action: null`), moved below the live rows per the catalog's own "soon items
+last" rule, and dropped from `defaultPinned` — a soon item is not pinnable, and its pin slot goes to
+Balance. Visible but disabled, so an owner reads "coming" rather than hunting for a service that
+vanished. The driver entry was already `soon`. The sheet implementation in `App.tsx` is untouched and
+comes back when the flag does.
+
+Not touched: the money-code REPORT (`/money-code-report`, `/money-code/history`) — reading the
+history of past draws is not drawing, and it is what accounting asks for.
+
+Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
+the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
+CRM 851 green. Both vendored bundles rebuilt.

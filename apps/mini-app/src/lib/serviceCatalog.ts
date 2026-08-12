@@ -84,11 +84,17 @@ const OWNER_CATALOG: CatalogGroup[] = [
     items: [
       // Demand-ranked (same analysis): money code is the #1 ask by 3×; balance also lives on the
       // home hero, so it does not need the top slot here.
-      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'banknote', action: 'moneycode' },
+      //
+      // Money code is `soon`, not live: the draw/preview/void routes are behind
+      // FF_MINIAPP_MONEY_CODE_ENABLED, which is off. While it carried `action: 'moneycode'` the
+      // sheet opened and the first call came back 503 "not enabled here yet" — a dead end dressed
+      // as a service. It moves to the soon block below ("soon items last" is this catalog's rule)
+      // and comes back up here when the flag goes on.
       { key: 'fin-balance', labelKey: 'cat.finBalance', icon: 'wallet', action: 'balance' },
       { key: 'fin-txn-reports', labelKey: 'cat.finTxnReports', icon: 'list', action: 'txns' },
       { key: 'fin-invoice-view', labelKey: 'cat.finInvoiceView', icon: 'doc', action: 'invoices' },
       { key: 'fin-payment-status', labelKey: 'cat.finPaymentStatus', icon: 'card', action: 'payment' },
+      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'banknote', action: null },
       { key: 'fin-credit-increase', labelKey: 'cat.finCreditIncrease', icon: 'dollar', action: null },
       { key: 'fin-update-payment-method', labelKey: 'cat.finUpdatePaymentMethod', icon: 'card', action: null },
       { key: 'fin-autopay', labelKey: 'cat.finAutopay', icon: 'refresh', action: null },
@@ -191,7 +197,8 @@ export function defaultPinned(isDriver: boolean, isSalesAgent = false): string[]
   if (isSalesAgent) return [...SALES_AGENT_DEFAULT_PINNED];
   return isDriver
     ? ['drv-funds', 'drv-override-card', 'drv-txns'] // not drv-money-code: it is a `soon` (owner-authorized) item for drivers, so it isn't pinnable
-    : ['fin-money-code', 'card-status', 'fin-txn-reports', 'fin-invoice-view'];
+    // not 'fin-money-code': it is `soon` while the flag is off, and a soon item is not pinnable.
+    : ['fin-balance', 'card-status', 'fin-txn-reports', 'fin-invoice-view'];
 }
 
 export function findCatalogItem(

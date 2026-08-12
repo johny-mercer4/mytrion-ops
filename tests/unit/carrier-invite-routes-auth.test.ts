@@ -85,14 +85,22 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   };
 });
 
+/**
+ * The Sales mini-app is pilot-gated (`salesMiniAppPilot.ts`): the routes below only answer for a
+ * roster member, so the agents in these fixtures are that member. `OUTSIDE_PILOT_ZOHO_USER_ID` is a
+ * second real Sales Agent used to prove the gate.
+ */
+const PILOT_ZOHO_USER_ID = '6227679000031473048'; // Daniel Brown
+const OUTSIDE_PILOT_ZOHO_USER_ID = '999';
+
 vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/auth/actAsDirectory.js')>();
   return {
     ...mod,
     resolveActAsTarget: vi.fn(async (id: string) =>
-      id === '999'
+      id === '999' || id === '6227679000031473048'
         ? {
-            zohoUserId: '999',
+            zohoUserId: id,
             name: 'Frank Harrison',
             email: null,
             profile: 'Sales Agent',
@@ -203,12 +211,12 @@ describe('carrier registration links — Sales write scope + View-as', () => {
       url: '/v1/carrier-invitations',
       headers: {
         ...bearer(await workerToken('Administrator', '1')),
-        'x-act-as-zoho-user-id': '999',
+        'x-act-as-zoho-user-id': PILOT_ZOHO_USER_ID,
       },
       payload: { profile: 'owner', carrier_id: '123' },
     });
     expect(res.statusCode).toBe(409);
-    expect(clientsMock).toHaveBeenCalledWith('999', 'Frank Harrison', {
+    expect(clientsMock).toHaveBeenCalledWith(PILOT_ZOHO_USER_ID, 'Frank Harrison', {
       force: true,
       allowStaleOnError: false,
     });
@@ -221,11 +229,11 @@ describe('carrier registration links — Sales write scope + View-as', () => {
       url: '/v1/carrier-users/dwh-cards?carrier_id=987',
       headers: {
         ...bearer(await workerToken('Administrator', '1')),
-        'x-act-as-zoho-user-id': '999',
+        'x-act-as-zoho-user-id': PILOT_ZOHO_USER_ID,
       },
     });
     expect(res.statusCode).toBe(403);
-    expect(carrierOwnedMock).toHaveBeenCalledWith('999', 'Frank Harrison', '987');
+    expect(carrierOwnedMock).toHaveBeenCalledWith(PILOT_ZOHO_USER_ID, 'Frank Harrison', '987');
     expect(listDwhCardsMock).not.toHaveBeenCalled();
   });
 
@@ -234,7 +242,7 @@ describe('carrier registration links — Sales write scope + View-as', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/carrier-invitations',
-      headers: bearer(await workerToken('Sales Rep')),
+      headers: bearer(await workerToken('Sales Rep', PILOT_ZOHO_USER_ID)),
       payload: {
         profile: 'owner',
         carrier_id: '123',
@@ -251,7 +259,7 @@ describe('carrier registration links — Sales write scope + View-as', () => {
         carrierId: '123',
         companyName: 'Acme Trucking',
         agentName: 'Robiya',
-        agentZohoUserId: '42',
+        agentZohoUserId: PILOT_ZOHO_USER_ID,
       }),
     );
     expect(createInviteMock.mock.calls.at(-1)?.[1]).not.toHaveProperty('ttlHours');
@@ -262,15 +270,15 @@ describe('carrier registration links — Sales write scope + View-as', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/carrier/mini-app/sales-agent-invitations',
-      headers: bearer(await workerToken('Sales Rep')),
+      headers: bearer(await workerToken('Sales Rep', PILOT_ZOHO_USER_ID)),
       payload: { carrier_id: '123' },
     });
 
     expect(res.statusCode, res.body).toBe(201);
     expect(createAgentInviteMock).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'zoho:42', userName: 'Robiya' }),
+      expect.objectContaining({ userId: `zoho:${PILOT_ZOHO_USER_ID}`, userName: 'Robiya' }),
       expect.objectContaining({
-        zohoUserId: '42',
+        zohoUserId: PILOT_ZOHO_USER_ID,
         agentName: 'Robiya',
         requestedCarrierId: '123',
       }),
@@ -284,12 +292,36 @@ describe('carrier registration links — Sales write scope + View-as', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/carrier/mini-app/sales-agent-invitations',
-      headers: bearer(await workerToken('Sales Rep')),
+      headers: bearer(await workerToken('Sales Rep', PILOT_ZOHO_USER_ID)),
       payload: { carrier_id: '123' },
     });
 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: { code: 'SALES_AGENT_COMPANY_DENIED' } });
+    expect(createAgentInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses both mini-app routes to a Sales agent outside the pilot roster', async () => {
+    clientsMock.mockResolvedValue([activeClient()]);
+    const headers = bearer(await workerToken('Sales Rep', OUTSIDE_PILOT_ZOHO_USER_ID));
+
+    const link = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-invitations',
+      headers,
+      payload: { profile: 'owner', carrier_id: '123' },
+    });
+    const launch = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/sales-agent-invitations',
+      headers,
+      payload: { carrier_id: '123' },
+    });
+
+    // Same agent, same active client, same Sales write scope — only the roster differs.
+    expect(link.statusCode).toBe(403);
+    expect(launch.statusCode).toBe(403);
+    expect(createInviteMock).not.toHaveBeenCalled();
     expect(createAgentInviteMock).not.toHaveBeenCalled();
   });
 
@@ -312,15 +344,15 @@ describe('carrier registration links — Sales write scope + View-as', () => {
       url: '/v1/carrier/mini-app/sales-agent-invitations',
       headers: {
         ...bearer(await workerToken('Administrator', '1')),
-        'x-act-as-zoho-user-id': '999',
+        'x-act-as-zoho-user-id': PILOT_ZOHO_USER_ID,
       },
       payload: { carrier_id: '123' },
     });
 
     expect(res.statusCode, res.body).toBe(201);
     expect(createAgentInviteMock).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'zoho:999', userName: 'Frank Harrison' }),
-      expect.objectContaining({ zohoUserId: '999', agentName: 'Frank Harrison' }),
+      expect.objectContaining({ userId: `zoho:${PILOT_ZOHO_USER_ID}`, userName: 'Frank Harrison' }),
+      expect.objectContaining({ zohoUserId: PILOT_ZOHO_USER_ID, agentName: 'Frank Harrison' }),
     );
   });
 });
