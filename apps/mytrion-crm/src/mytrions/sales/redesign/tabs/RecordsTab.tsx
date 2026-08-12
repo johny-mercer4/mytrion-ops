@@ -42,6 +42,7 @@ import {
 import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { compareClients } from '../clientSort';
 import { getImpersonation } from '@/api/impersonation';
+import { isMiniAppPilotAgent } from '../miniAppPilot';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { ClientLoyaltyComparison } from '../ClientLoyaltyComparison';
@@ -312,6 +313,9 @@ export function RecordsTab() {
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
+  // Rollout gate. Not a disabled button: outside the pilot there is nothing to enable, and a dead
+  // "Mini-app unavailable" on every card would read as "these clients are ineligible".
+  const miniAppPilot = isMiniAppPilotAgent();
   // SWR-cached: Clients loads eagerly; CRM tabs load lazily on first open, then paint instantly from
   // cache on re-entry while revalidating in the background (no blank loader on tab switch / refresh).
   const recsLoad = useCachedLoad(`sales:clients:${actAs}`, loadRecords);
@@ -554,6 +558,7 @@ export function RecordsTab() {
                   accountActiveCards={c.active}
                   owed={c.owed}
                 />
+                {miniAppPilot && (
                 <button
                   type="button"
                   disabled={!c.miniAppEligible || launchingCarrier === c.id}
@@ -568,6 +573,7 @@ export function RecordsTab() {
                   <Icon name={launchingCarrier === c.id ? 'refresh' : 'link'} size={14} />
                   {launchingCarrier === c.id ? 'Opening mini-app…' : c.miniAppEligible ? 'View mini-app' : 'Mini-app unavailable'}
                 </button>
+                )}
               </div>
             ))}
           </div>

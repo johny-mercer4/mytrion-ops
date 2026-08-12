@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClientManagePanel } from './ClientManagePanel';
 
+const pilot = vi.hoisted(() => ({ isMiniAppPilotAgent: vi.fn(() => true) }));
+vi.mock('./miniAppPilot', () => pilot);
+
 const carrierApi = vi.hoisted(() => ({
   createCarrierInvitation: vi.fn(),
   getCarrierRegistrations: vi.fn(),
@@ -19,6 +22,7 @@ vi.mock('./ctx', () => ({
 
 describe('ClientManagePanel registration eligibility', () => {
   beforeEach(() => {
+    pilot.isMiniAppPilotAgent.mockReset().mockReturnValue(true);
     carrierApi.createCarrierInvitation.mockReset();
     carrierApi.getCarrierRegistrations.mockReset().mockResolvedValue({
       owner: null,
@@ -62,5 +66,23 @@ describe('ClientManagePanel registration eligibility', () => {
     expect(screen.getByText('Registration link')).toBeInTheDocument();
     expect(screen.getByText('Registered users')).toBeInTheDocument();
     expect(screen.getByText('Pending password resets')).toBeInTheDocument();
+  });
+
+  it('hides the registration form from agents outside the mini-app pilot', async () => {
+    pilot.isMiniAppPilotAgent.mockReturnValue(false);
+    render(
+      <ClientManagePanel
+        carrierId="5813583"
+        companyName="TIGERS TEAM CORP"
+        clientStatus="active"
+      />,
+    );
+
+    await screen.findByText('No owner user yet');
+    expect(screen.queryByRole('button', { name: 'Generate registration link' })).not.toBeInTheDocument();
+    expect(screen.getByText(/mini-app pilot agents for now/i)).toBeInTheDocument();
+    // The client's own users are still managed from here — the pilot gates minting, not access.
+    expect(screen.getByText('Registered users')).toBeInTheDocument();
+    expect(screen.getByText('Support bot group')).toBeInTheDocument();
   });
 });

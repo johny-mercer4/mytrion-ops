@@ -79,6 +79,7 @@ import {
 import { buildCallerContext } from './callerIdentity.js';
 import { requireContext, requireDepartment, requireMytrionWrite } from './helpers.js';
 import { registerSalesAgentMiniAppScopeHook } from './salesAgentMiniAppScope.js';
+import { assertSalesMiniAppPilotAgent } from '../../modules/carrier/salesMiniAppPilot.js';
 
 function miniAuthOpts(request: { headers: { authorization?: unknown } }): { accessToken: string | undefined } {
   const raw = request.headers.authorization;
@@ -260,6 +261,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = await requireSalesCarrierAccess(request, true);
+    assertSalesMiniAppPilotAgent(ctx, 'Generating a client registration link');
     const body = createInviteSchema.parse(request.body);
     // A Sales Data Center worker may mint links only for their own ACTIVE, non-debtor clients.
     // The gate reads the same fresh DWH roster row that determines the Clients-tab status.
@@ -323,6 +325,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post('/carrier/mini-app/sales-agent-invitations', guard, async (request, reply) => {
     const ctx = await requireSalesCarrierAccess(request, true);
+    assertSalesMiniAppPilotAgent(ctx, 'Opening the Sales mini-app');
     const body = createSalesAgentInviteSchema.parse(request.body ?? {});
     const result = await createSalesAgentMiniAppInvitation(ctx, body.carrier_id);
     await auditFromContext(ctx, {
