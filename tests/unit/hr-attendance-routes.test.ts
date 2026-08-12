@@ -636,3 +636,38 @@ describe('team lead attendance access', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+/**
+ * A missing static asset must not answer with the JSON error envelope.
+ *
+ * Production symptom: a tab open across a deploy asks for the previous build's chunk, the file is gone,
+ * and the browser reported `MIME type ('application/json') is not a supported stylesheet MIME type`
+ * instead of a plain 404 — which reads as a broken server rather than a stale tab.
+ */
+describe('static asset 404s', () => {
+  it('returns text/plain, not the JSON envelope', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/index-DoesNotExist.css' });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.headers['content-type']).not.toContain('application/json');
+  });
+
+  it('does not answer a stylesheet request with the SPA shell either', async () => {
+    // HTML would trip the same strict-MIME check, just with a different type named in it.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/assets/index-DoesNotExist.css',
+      headers: { accept: 'text/html' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-type']).not.toContain('text/html');
+  });
+
+  /** API 404s keep their JSON envelope — clients parse it. */
+  it('leaves API 404s as JSON', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/does-not-exist' });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-type']).toContain('application/json');
+    expect(res.json().error.code).toBe('NOT_FOUND');
+  });
+});

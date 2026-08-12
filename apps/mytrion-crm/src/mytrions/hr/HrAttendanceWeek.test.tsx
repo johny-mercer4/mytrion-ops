@@ -220,3 +220,79 @@ describe('the presence readings', () => {
     expect(strip().getByText('This week')).toBeInTheDocument();
   });
 });
+
+/**
+ * Today sits at the top of the week.
+ *
+ * The server returns the week ascending, so today sat wherever it fell — three cards down on a
+ * Wednesday. The one card people open this screen to read was the one they had to hunt for.
+ */
+describe('day order', () => {
+  /** Mon–Sun, ascending, as the API returns it. */
+  function week(dates: string[]): AttendanceSummaryDto {
+    return {
+      ...summary,
+      from: dates[0]!,
+      to: dates[dates.length - 1]!,
+      days: dates.map((date) => ({ ...summary.days[0]!, date })),
+    };
+  }
+
+  /** Dates in DOM order, read off the day cards themselves. */
+  function renderedDates(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('li.hr-att-day .hr-att-date')].map(
+      (el) => el.textContent ?? '',
+    );
+  }
+
+  const MON_TO_SUN = [
+    '2026-08-10',
+    '2026-08-11',
+    '2026-08-12',
+    '2026-08-13',
+    '2026-08-14',
+    '2026-08-15',
+    '2026-08-16',
+  ];
+
+  it('puts today first and leaves the rest in calendar order', () => {
+    // Wednesday: today is the THIRD day of the range, so this fails if the order is untouched.
+    const { container } = render(<HrAttendanceWeek data={week(MON_TO_SUN)} today="2026-08-12" />);
+    expect(renderedDates(container)).toEqual([
+      '2026-08-12',
+      '2026-08-10',
+      '2026-08-11',
+      '2026-08-13',
+      '2026-08-14',
+      '2026-08-15',
+      '2026-08-16',
+    ]);
+  });
+
+  it('moves ONLY today — the week still reads as a week', () => {
+    const { container } = render(<HrAttendanceWeek data={week(MON_TO_SUN)} today="2026-08-12" />);
+    const [, ...rest] = renderedDates(container);
+    // Not reverse-sorted: pulling today out and reversing everything else would put the OLDEST day
+    // directly beneath it, which is a stranger reading order than the calendar one.
+    expect(rest).toEqual([...rest].sort());
+  });
+
+  it('leaves a past week untouched — there is no today to lift', () => {
+    const past = ['2026-08-03', '2026-08-04', '2026-08-05'];
+    const { container } = render(<HrAttendanceWeek data={week(past)} today="2026-08-12" />);
+    expect(renderedDates(container)).toEqual(past);
+  });
+
+  it('is a no-op when today is already first', () => {
+    const { container } = render(<HrAttendanceWeek data={week(MON_TO_SUN)} today="2026-08-10" />);
+    expect(renderedDates(container)).toEqual(MON_TO_SUN);
+  });
+
+  it('does not change the week total', () => {
+    // Reordering is presentational; the sum must not depend on it.
+    const { container } = render(<HrAttendanceWeek data={week(MON_TO_SUN)} today="2026-08-12" />);
+    const strip = within(container.querySelector('.hr-att-presence') as HTMLElement);
+    // Seven days x 2h30m of the fixture session = 17h 30m.
+    expect(strip.getByText('17h 30m')).toBeInTheDocument();
+  });
+});
