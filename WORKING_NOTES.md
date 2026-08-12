@@ -15141,3 +15141,70 @@ Two fixes, because the cause and the message were separate problems:
 **Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
 it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
 answer; worth revisiting only if tabs are routinely left open through deploys.
+
+## 2026-08-12 — Card Activity tooltip parity follow-up
+
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.
+
+### Review follow-up, same day
+
+Three things the first pass got wrong, found by reviewing the diff before opening the PR:
+
+**The tooltip could leave the card through the top.** It was anchored to `.msd-chart-activity-area`
+with only a horizontal clamp, and the plot is 110px tall while the card is ~128px — so the tallest
+day of a cycle had no room above its own point and `translateY(-100%)` pushed the card out over the
+page header. That is the same defect class as the July screenshot bug the previous comment described,
+reintroduced from the other direction. Fixed by moving the positioning boundary out to
+`.msd-chart-block` (which includes the header band) and clamping the card's bottom edge to
+`MSD_TOOLTIP_HEIGHT + gutter`. Days with room still track their point; tall days park at the top of
+the card, beside the column the horizontal clamp already tracks. `.msd-chart-activity-area` is
+deliberately no longer `position: relative` — a test asserts that, because making it relative silently
+caps the clamp at the plot's top edge again.
+
+`MSD_TOOLTIP_HEIGHT` is an over-estimate on purpose: too high parks the card a few pixels low, too
+low lets it clip out. Measuring the card instead would mean a second layout pass per hover.
+
+**Tokens had been replaced by raw hex.** `rgba(15,23,42,.92)` + a `.ss-root.light` twin + `#38bdf8`
+went back to `--hz-modal-surface` / `--glass-bd-hi` / `--accent`, which theme through the cascade and
+need no light override. The `backdrop-filter: blur(8px)` is gone too: the modal surface is already the
+glass primitive, and a second blurred layer that moves on every hover is exactly the composited-layer
+trap in `modern-web-guidance`.
+
+**The series colours disagreed with themselves.** The header legend said grey for Active/New; the
+tooltip said green and blue for the same two series. They are now one set of `--msd-series-*` vars on
+`.msd-chart-block`, consumed by the legend, the plot and the tooltip dots.
+
+Also: `min-width: Npx` budget in `breakpoints.test.ts` ratcheted 76 → 75, since the card now has a
+fixed `width` the clamp can reason about.
+
+### Then it was looked at, and the clamp was the wrong answer
+
+Screenshots of the running app killed the card-clamp above. Two things it got wrong:
+
+**The intended interaction is a tooltip that floats clear of the card**, over whatever is above it —
+not one held inside the chart. Clamping it to the card put it BELOW the point it described on a tall
+day, which is worse than the bug it fixed. The card is now `position: fixed` in viewport coordinates,
+clamped only to the window, so it cannot leave the screen and cannot be clipped by the page scroller.
+Every input is a client rect now, which also deleted the `scrollLeft` arithmetic: scrolling the chart
+sideways or scrolling the page both move `svgLeft`/`svgTop` on their own.
+
+**`position: fixed` does not mean the viewport here.** The chart sits in a glass card, and a
+`backdrop-filter` ancestor becomes the containing block for fixed descendants — so the card was
+resolving against that card's box and floated off by roughly the page's scroll offset. It is now
+portalled to the module root (`.ss-root`), which the repo's stacking rules keep free of
+transform/filter. `--msd-series-*` moved to `.ss-root` for the same reason: the portalled card is no
+longer inside `.msd-chart-block`, so vars declared there would not reach it.
+
+Worth remembering as a rule: **in this app, `position: fixed` inside a workspace card is not fixed to
+the window.** Portal to `.ss-root` (or use `ds/Dialog`, which is in the top layer) instead.
+
+**How it was verified.** 813 CRM tests pass and the geometry is unit-tested, but jsdom does no layout,
+so the placement was checked in the running app on `localhost:5173`. Not by automation: the Playwright
+browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
+no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
+signed-in browser — tooltip floating above the hovered day, clear of the chart card.
