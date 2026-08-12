@@ -166,6 +166,13 @@ export interface PipelineApplicant {
   dotNumber: string;
   mcNumber: string;
 }
+export interface PipelinePlaid {
+  status: string | null;
+  linkState: string | null;
+  linkUrl: string | null;
+  lastActionStatus: string | null;
+  lastActionError: string | null;
+}
 export interface PipelineSnapshot {
   requestId: string;
   status: string;
@@ -176,6 +183,7 @@ export interface PipelineSnapshot {
   events: PipelineTimelineEvent[];
   attachments: PipelineAttachment[];
   applicant?: PipelineApplicant;
+  plaid?: PipelinePlaid;
   source: 'mock' | 'credit_platform';
 }
 
@@ -267,6 +275,17 @@ export async function uploadBankStatements(input: {
   return (await requestMultipart('/verification/bank-statements', form, {
     headers: V_HEADERS,
   })) as { status: string; uploaded: number; inboxIds: number[] };
+}
+
+export async function generatePlaidLink(input: {
+  requestId: string;
+  dealId: string;
+  regenerate?: boolean;
+}): Promise<{ status: string; inboxId: number }> {
+  return (await request('POST', '/verification/plaid-link', {
+    body: { requestId: input.requestId, dealId: input.dealId, ...(input.regenerate ? { regenerate: true } : {}) },
+    headers: V_HEADERS,
+  })) as { status: string; inboxId: number };
 }
 
 export async function downloadVerificationAttachment(id: string, fileName: string): Promise<void> {

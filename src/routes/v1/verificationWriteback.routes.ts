@@ -16,6 +16,7 @@ import { verificationDb } from '../../integrations/verificationDb.js';
 import {
   insertApplicantUpdate,
   insertBankStatementFiles,
+  insertPlaidLinkAction,
   isWriteConfigured,
 } from '../../integrations/creditPlatformWriteDb.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -33,6 +34,12 @@ const applicantBody = z.object({
   requestId: z.string().min(1).max(120),
   dealId: z.string().regex(/^\d+$/),
   changes: z.record(z.string().max(300)),
+});
+
+const plaidLinkBody = z.object({
+  requestId: z.string().min(1).max(120),
+  dealId: z.string().regex(/^\d+$/),
+  regenerate: z.boolean().optional(),
 });
 
 interface UploadFile {
@@ -178,6 +185,22 @@ export async function verificationWritebackRoutes(app: FastifyInstance): Promise
       detail: { dealId, fileCount: files.length, inboxIds: ids },
     });
     return { status: 'queued', uploaded: ids.length, inboxIds: ids };
+  });
+
+  app.post('/verification/plaid-link', guard, async (request) => {
+    ensureWriteConfigured();
+    const ctx = requireSalesAccess(request);
+    const body = plaidLinkBody.parse(request.body);
+    const agent = await authorizeWrite(ctx, body.requestId, body.dealId);
+    const { id } = await insertPlaidLinkAction({ requestId: body.requestId, agent, ...(body.regenerate ? { regenerate: true } : {}) });
+    await auditFromContext(ctx, {
+      action: 'sales.verification.plaid_link_queued',
+      status: 'ok',
+      resourceType: 'verification_request',
+      resourceId: body.requestId,
+      detail: { dealId: body.dealId, regenerate: !!body.regenerate, inboxId: id },
+    });
+    return { status: 'queued', inboxId: id };
   });
 
   app.get('/verification/attachments/:id/download', guard, async (request, reply) => {

@@ -37,6 +37,9 @@ interface RequestRow {
   post_stop_factor: Record<string, unknown> | null;
   payload: Record<string, unknown> | null;
   applicant_profile: Record<string, unknown> | null;
+  plaid_status: string | null;
+  plaid_link_state: string | null;
+  plaid_link_url: string | null;
   updated_at: Date | string | null;
 }
 
@@ -152,7 +155,7 @@ async function findRequest(key: PipelineKey): Promise<RequestRow | null> {
   if (!dealId && !carrierId && !applicationId && !dot) return null;
   const rows = await verificationDb.query<RequestRow>(
     `select request_id, status, result, manual_review_form, manual_review_resolution, post_stop_factor,
-            payload, applicant_profile, updated_at
+            payload, applicant_profile, plaid_status, plaid_link_state, plaid_link_url, updated_at
        from requests
       where ($1::text is not null and (
                request_id = $1
@@ -180,7 +183,7 @@ export const creditPlatformPipelineProvider: PipelineProvider = {
   async getPipeline(key: PipelineKey): Promise<PipelineSnapshot | null> {
     const request = await findRequest(key);
     if (!request) return null;
-    const [events, attachments] = await Promise.all([
+    const [events, attachments, plaidActions] = await Promise.all([
       verificationDb.query<EventRow>(
         `select id, request_id, stage, service_id, status, title, payload, created_at
            from request_tracker_events where request_id = $1 order by id desc limit 200`,
@@ -191,6 +194,12 @@ export const creditPlatformPipelineProvider: PipelineProvider = {
            from file_attachments
           where request_id = $1 or linked_entity_id = $1
           order by id desc limit 50`,
+        [request.request_id],
+      ),
+      verificationDb.query<{ status: string | null; error: string | null }>(
+        `select status, error from kxd.sales_agent_updates
+          where request_id = $1 and kind in ('generate_plaid_link', 'regenerate_plaid_link')
+          order by id desc limit 1`,
         [request.request_id],
       ),
     ]);
@@ -227,6 +236,13 @@ export const creditPlatformPipelineProvider: PipelineProvider = {
         createdAt: iso(attachment.created_at) ?? '',
       })),
       applicant: buildApplicant(request),
+      plaid: {
+        status: txt(request.plaid_status) || null,
+        linkState: txt(request.plaid_link_state) || null,
+        linkUrl: txt(request.plaid_link_url) || null,
+        lastActionStatus: txt(plaidActions[0]?.status) || null,
+        lastActionError: txt(plaidActions[0]?.error) || null,
+      },
       source: 'credit_platform',
     };
   },
