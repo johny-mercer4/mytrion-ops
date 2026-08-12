@@ -4,6 +4,7 @@
  * shapes AutoTab renders. Run dispatch lives in autoRunners.ts.
  */
 import { callTouchpoint } from '@/api/touchpoints';
+import { moneyExact } from './live';
 import type { MoneyCodePreview, WexApplicationResult } from '@/api/touchpointTypes';
 import { loadDeals as loadCrmDeals } from './dataCenterLive';
 import type { IconName } from './icons';
@@ -95,7 +96,6 @@ export interface PaymentsSummary {
   totalPaid: string;
   openBalance: string;
   paymentCount: string;
-  paymentsTotal: string;
 }
 export interface CmpInvoiceRow {
   id: string;
@@ -270,6 +270,76 @@ export const titleStatus = (v: unknown): string => {
   if (x.includes('OVERDUE') || x.includes('PAST')) return 'Overdue';
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase().replace(/_/g, ' ');
 };
+/**
+ * Invoice status as CMP's own numbers tell it.
+ *
+ * CMP invoices carry both a status string and the money. When they disagree — the string says PAID
+ * while the invoice still has a balance — the money is the source of record and the string is what
+ * the carrier disputes (5815660: partially paid in CMP, "Paid" in Mytrion). Only that contradiction
+ * is corrected; every other status is passed through as CMP sent it, so a Cancelled or Overdue
+ * invoice keeps its own word.
+ */
+export function cmpInvoiceStatus(raw: unknown, paid: unknown, remaining: unknown): string {
+  const label = titleStatus(raw);
+  if (label !== 'Paid') return label;
+  const owed = Number(remaining ?? 0) || 0;
+  // A cent of float noise is not a debt.
+  if (owed <= 0.005) return label;
+  return (Number(paid ?? 0) || 0) > 0.005 ? 'Partially Paid' : 'Pending';
+}
+
+type Rec = Record<string, unknown>;
+const pick = (r: Rec, keys: readonly string[]): unknown => {
+  for (const k of keys) if (r[k] != null && r[k] !== '') return r[k];
+  return undefined;
+};
+const INV_NUMBER = ['invoiceNumber', 'invoice_number', 'invoice_ref', 'number', 'name'] as const;
+const INV_TOTAL = ['totalAmount', 'total_amount', 'amount', 'grandTotal'] as const;
+const INV_PAID = ['totalPaid', 'total_paid', 'paid', 'amount_paid'] as const;
+const INV_REMAINING = ['remainingAmount', 'remaining_amount', 'remaining', 'balance', 'due'] as const;
+const INV_STATUS = ['status', 'invoiceStatus', 'invoice_status'] as const;
+
+/**
+ * One invoice list for C-18, from the two sources that both claim to be CMP.
+ *
+ * `carrier.check_payment` (Deluge) is the only one that carries paid/remaining per invoice, but its
+ * status string is what shows a part-paid invoice as Paid. `clients.invoices` is the CMP-first route
+ * C-20 already trusts for status. So: match on invoice number, take every field CMP-first answers
+ * for, and fall back to the Deluge for the columns it alone provides. Either source may be empty —
+ * whichever answered is used on its own.
+ */
+export function mergeCmpInvoices(deluge: Rec[], live: Rec[]): CmpInvoiceRow[] {
+  const byNumber = new Map<string, Rec>();
+  for (const row of deluge) {
+    const key = str(pick(row, INV_NUMBER) ?? row.id);
+    if (key) byNumber.set(key, row);
+  }
+  const ordered: Array<{ key: string; live?: Rec; deluge?: Rec }> = live.map((row, i) => {
+    const key = str(pick(row, INV_NUMBER) ?? row.id) || `live-${i}`;
+    const match = byNumber.get(key);
+    byNumber.delete(key);
+    return match ? { key, live: row, deluge: match } : { key, live: row };
+  });
+  // Anything the CMP-first route did not return still deserves a row — it is what the panel showed
+  // before, and dropping it would read as "this invoice disappeared".
+  for (const [key, row] of byNumber) ordered.push({ key, deluge: row });
+
+  return ordered.map(({ key, live: l, deluge: d }, i) => {
+    const from = (keys: readonly string[]): unknown =>
+      (l ? pick(l, keys) : undefined) ?? (d ? pick(d, keys) : undefined);
+    const paid = from(INV_PAID);
+    const remaining = from(INV_REMAINING);
+    return {
+      id: str((l ?? d ?? {}).id) || key || `cmp-${i}`,
+      invoiceNumber: key || `#${i + 1}`,
+      status: cmpInvoiceStatus(from(INV_STATUS), paid, remaining),
+      total: moneyExact(from(INV_TOTAL)),
+      paid: moneyExact(paid),
+      remaining: moneyExact(remaining),
+    };
+  });
+}
+
 const normCardStatus = (raw: string): string => {
   const x = raw.toLowerCase();
   if (/fraud|hold/.test(x)) return 'fraud';
