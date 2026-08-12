@@ -24,6 +24,22 @@ export function msdFmtGallons(v: number): string {
   return (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
+/**
+ * Gallons, compact but not lossy — `9.24k`, `0.74k`, `1.23M`.
+ *
+ * `msdFmtK` keeps one significant figure ("9k"), which is where 241 gallons went missing. Two
+ * decimals is the smallest abbreviation that still resolves ~10 gallons at this scale. Always two,
+ * never trimmed: these sit in a tabular-mono column, and a "10k" beside a "9.24k" breaks the
+ * alignment the column is for. Sub-thousand reads `0.74k` rather than switching units mid-column.
+ */
+export function msdFmtGallonsK(v: number): string {
+  const n = Number(v) || 0;
+  if (n === 0) return '0';
+  const abs = Math.abs(n);
+  const [scaled, unit] = abs >= 1e6 ? [n / 1e6, 'M'] : [n / 1e3, 'k'];
+  return `${scaled.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`;
+}
+
 export function dbtFormatMoney(v: number): string {
   const n = Number(v) || 0;
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

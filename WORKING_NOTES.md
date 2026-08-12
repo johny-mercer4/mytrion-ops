@@ -15361,10 +15361,17 @@ one-significant-figure abbreviation. Gallons are what the carrier is billed on, 
 number on this dashboard that cannot be read approximately, and the Transaction Details table
 directly below it has always shown the exact figure. The panel disagreed with itself.
 
-`msdFmtGallons` (thousands separators, up to 2 decimals, trailing zeros dropped) now formats the
-Card Activity tooltip and the single-day Gallons tile. It is the same rule `SalesDashPanel`'s local
-`fmtVol` already applied to the transactions table, so that duplicate is gone and both read from one
-formatter.
+Two formatters, one rule — never one significant figure:
+
+- `msdFmtGallonsK` — `9.24k`, `0.74k`, `1.23M` — the Card Activity tooltip and the single-day tile.
+  Two decimals ALWAYS, never trimmed: these are tabular-mono columns, and a "10k" next to a "9.24k"
+  breaks the alignment the column exists for. Sub-thousand stays in k (`0.74k`) rather than switching
+  units mid-column. Two decimals is the smallest abbreviation that still resolves ~10 gallons here.
+- `msdFmtGallons` — `9,241.36` — the Transaction Details table and its total. This is the rule
+  `SalesDashPanel`'s local `fmtVol` already applied, so that duplicate is gone and both read from one
+  formatter.
+
+Compact where the number is scanned, exact where it is read off.
 
 Left abbreviated on purpose: the hero KPI strip (`msdFmtNum(hero.volume)`). It is a cycle total in
 the millions inside a two-up flex row of unbreakable mono figures that already does not fit a phone —

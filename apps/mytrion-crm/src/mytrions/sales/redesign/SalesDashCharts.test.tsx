@@ -89,9 +89,9 @@ describe('Card Activity hover card positioning', () => {
     expect(card!.querySelector('.msd-activity-card__day')?.textContent).toBe('Jul 30');
     expect(screen.getByText('Transactions')).toBeInTheDocument();
     expect(card!.textContent).toContain('112');
-    // Gallons in full: "10k" hid 241.36 gallons of what the carrier is billed on.
-    expect(card!.textContent).toContain('10,241.36');
-    expect(card!.textContent).not.toContain('10k');
+    // Two decimals on the abbreviation: plain "10k" hid 241.36 gallons of billable volume.
+    expect(card!.textContent).toContain('10.24k');
+    expect(card!.textContent).not.toContain('10k ');
     expect(screen.getByTestId('msd-activity-crosshair')).toBeInTheDocument();
     expect(screen.getByTestId('msd-activity-glow')).toBeInTheDocument();
   });
