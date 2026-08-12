@@ -32,7 +32,6 @@ export function AuthScreen({
     >
       <div className={`${styles.card} ${styles.authCard}`} role={busy ? 'status' : undefined} aria-busy={busy}>
 
-        <p className={styles.authEyebrow}>Mytrion</p>
         <h1 className={styles.title}>{title}</h1>
         <p className={styles.body}>{body}</p>
 

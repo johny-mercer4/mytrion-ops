@@ -206,6 +206,13 @@
   --dur-fast: 120ms;
   --dur-base: 170ms;
   --dur-slow: 220ms;
+  /* Named duration ladder for mobile sheets / lists (Horizon Telegram sprint).
+     --dur-* stays the 220ms ceiling for general UI; --duration-moderate is the sheet travel. */
+  --duration-instant: 50ms;
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-moderate: 300ms;
+  --duration-slow: 400ms;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);

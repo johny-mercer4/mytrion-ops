@@ -283,6 +283,10 @@ export function SalesRedesign() {
         ...(count ? { trailing: count } : {}),
         ...(NAV_TONE[n.id] ? { tone: NAV_TONE[n.id]! } : {}),
         ...(soon ? {} : { onClick: () => go(n.id) }),
+        ...((n.id === 'home' || n.id === 'inbox' || n.id === 'records' || n.id === 'verification')
+          ? { primary: true }
+          : {}),
+
       };
     }),
   }));

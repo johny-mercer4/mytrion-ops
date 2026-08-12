@@ -15427,3 +15427,151 @@ history of past draws is not drawing, and it is what accounting asks for.
 Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
 the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
 CRM 851 green. Both vendored bundles rebuilt.
+
+## 2026-08-13 — Sales Verification: card vs detail mapping, Horizon glass
+
+Sales → Verification roster cards and the pipeline detail were lying to each other.
+
+**Mapping bug.** The card printed Zoho `Credit_Decision` verbatim (`Declined-Prepay/Secured Only`).
+The detail pane preferred `pipeline.decision` and relabeled it `Prepay` / `Not Accepted` / `LOC
+Approved` as soon as the credit-platform snapshot loaded — same click, different credit line.
+WEX `Application_Status` was also rewritten on both surfaces (`Pending Decision` → `Review`), so
+operators never saw the real WEX value.
+
+Fix: card and detail share `ApplicationStatusFacts` / `VerificationStateLine` in
+`verificationFields.tsx`. Deal Pipeline = `dealStage`, WEX = raw `applicationStatus` (bucket is
+tone + tooltip only), Credit decision = raw Zoho. The platform snapshot is a separate
+"Verification desk" field. Declined-prepay + verification still in progress is explained, not
+collapsed. `deriveZohoState` no longer treats a bare "prepay"/"secured" substring as rejected
+(Declined-Prepay still maps via `startsWith('declined')` for the Zoho-only filter fallback; live
+`summary.state` still wins).
+
+**UI.** Roster cards and detail sections use incumbent `.ss-card-h` (blur, highlight, glare) instead
+of a flat custom card with a 3px tone bar and hover `transform`. Labels use `--muted` not `--faint`
+(border colour). Primary = who + verification next action + "Open pipeline"; secondary = WEX /
+credit / deal stage. Split `VerificationTab.tsx` (was over the 600-line cap) into
+`VerificationDetail.tsx`. Breakpoints on the ladder (`width < 900` / `640`). Nested copy-buttons
+removed from the card (the card is the button).
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md at repo root — incumbent Horizon left as authority, docs
+not repaired. Live a11y audit skipped (AccessLint MCP down; browser MCP dropped; Vite `:5173` needs
+auth). Source audit + unit tests only.
+
+Not committed. `pnpm build:widget` rebuilds `apps/mytrion-crm/app/`.
+
+## 2026-08-13 — Sales Verification: platform Credit, approved collapse, Data Center sheet
+
+Operators rejected the last pass: headline Credit was Zoho `Credit_Decision` (`Approved-Requested`)
+while the desk said Undecided, the numbered pipeline stayed up after a green result, and both the
+pipeline and Edit applicant sat in a generic centered overlay.
+
+**Credit.** Card and detail Credit is the verification-platform outcome again (`platformCreditLabel` /
+`deskDecisionLabel`: Prepay / Not Accepted / LOC Approved / Undecided). Zoho credit is a secondary
+tile in the sheet. Roster without a snapshot derives the same labels from `verificationState` +
+payment type.
+
+**Approved collapse.** `pipelineIsApproved` hides Pre Stop / Black List / FMCSA / … when
+`verificationState === 'approved'` or every used stage is done/skipped with a loc/prepaid decision.
+In-progress, failed, rejected, and awaiting-intake still show the step list.
+
+**Layout / modals.** Detail is the Data Center `DetailSheet` (portal, `--scrim`, 820px like Client
+detail, avatar header, tile grid, footer Close). Edit applicant uses the same sheet. One pipeline
+fetch, one skeleton in the sheet body; the roster stays under the scrim.
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md — incumbent Client detail is the layout authority.
+Not committed.
+
+## 2026-08-13 — Sales Verification: Credit Decision is Zoho again
+
+Operators reversed the previous mapping. Headline **Credit Decision** on the roster card and the
+detail sheet is Zoho `Credit_Decision` (`Approved-Requested`, `Declined-Prepay/Secured Only`, empty
+→ "Not decided yet"). The verification-platform outcome is a separate "Verification desk" line
+(Prepay / LOC Approved / Undecided) and the approved-result block — it is not labeled Credit
+Decision.
+
+**Layout.** 2-column fact grid (no leftover 3+2 row). Body type for dates; IDs are secondary
+tabular, not display mono. Header actions clustered like Client detail (In Pipeline pill, Edit
+applicant 32px, close). List-row facts paint immediately; pipeline skeleton is only the step
+region. List + pipeline `useCachedLoad` staleMs 90s so a reopen of the same client does not refetch
+while fresh.
+
+Approved step-list collapse and Data Center sheet placement kept.
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md.
+Not committed.
+
+## 2026-08-13 — Marketing Loyalty: month-scoped tier export (CSV + Excel)
+
+`hotfix/Mytrion`. Loyalty Program board gains an **Export** action: pick a month, get every loyalty
+tier client for it as a styled `.xlsx` or a flat `.csv`.
+
+**The month rule.** Export month M ⇒ the tier is what **M-1** earned; the activity reported alongside
+it is **M's own**. Pick July and you get July gallons/cards/transactions, tiered by June. That is the
+program (`_shared/loyalty.ts`: status is earned from the full previous calendar month), just with the
+months named explicitly instead of inherited from today.
+
+**Backend.** New `integrations/dwhLoyaltyMonth.ts` — one read-only query, month bound as `$1::date`,
+windows named by ROLE (`basis_*` = the month that earns the tier, `month_*` = the reported month)
+rather than prev/this, because those words only mean something relative to today. Cycle window is the
+26th of M-1 → 25th of M. `dwhClientRoster.allCarriersCte` is now exported so both loyalty reads share
+one carrier dedupe. `modules/manager/loyaltyMonthRoster.ts` resolves/bounds the month (refuses a
+future one and anything past 36 months — refuses, never clamps), attaches the override overlay, and
+makes the one judgement call: `dim_company.tier_name` is TODAY's tier, so it is forwarded only for a
+current-month export and withheld for every past month. Route `GET /v1/marketing/loyalty/export`,
+marketing-gated, **audit-logged** (`marketing.loyalty.export.read`) — the board read is a screen
+someone looked at; this is the whole company book leaving as a file.
+
+**Tier math is still client-side and still single-copy.** `loyaltyExportModel.toTierInput` maps the
+month-anchored row onto `resolveTierForRow`'s `prevMonth`/`thisMonth` inputs — four lines, one visible
+place, no second copy of the thresholds in SQL or on the server.
+
+**Design.** Picklist columns (Tier, Projected Next Tier, How It Was Earned, 6 perks, Perk Source,
+Enterprise Mode) carry a coloured fill AND a real Excel `dataValidation` list, so they behave like the
+Zoho picklists they mirror. Palette is a print-tuned light-tint/dark-ink pair per bucket
+(`loyaltyExportStyle.ts`) — NOT the board's `--lty-*`, which are tuned for dark glass and vanish on
+white. Workbook is three sheets: Overview (both months, partial-month banner, distribution), Clients
+(group band, frozen header + identity columns, autofilter, SUM totals with cached results), Legend
+(thresholds and perk matrix read out of `_shared/loyalty.ts`, never retyped).
+
+**UI.** Month picker lives in the export dialog, not the page header — a month control next to the
+board would read as filtering the board, and then "last month" would mean two things. Dialog previews
+the exact scored population it will write (same `buildExportPayload`), so the footer row count is the
+sheet row count. Scope: Active clients / Tier holders only / Every carrier.
+
+**Refactors forced by the 600-line cap.** `LoyaltyCard.tsx` was already at 615; its presentation moved
+to `LoyaltyBoardCards.tsx` (behaviour unchanged) and now uses the shared `TierBucket` /
+`TIER_BUCKET_ORDER` instead of a local duplicate. Marketing's population predicate moved to
+`loyaltyPopulation.ts` so the export shares it; `countsForMarketing` stays exported for its test.
+
+`pnpm lint` (4 pre-existing `ds-bundle/*.d.ts` errors only), both typechecks, 2631 backend + 901 CRM
+tests green. `app/` rebuilt via `pnpm build:widget`; `exceljs` and the workbook builder stay lazy
+chunks. Not committed.
+
+---
+
+## 2026-08-13 — Horizon Telegram mobile sprint (Sales core)
+
+**Challenge.** Make Horizon feel like a phone app inside Telegram for sales: sign in, work a deal,
+leave — without desktop chrome, a RingCentral pill, or a broken Zoho hop.
+
+**Test task.** Open today’s Verification applicant and say the Zoho Credit Decision out loud.
+Five agents, real Telegram, not DevTools-only. Script + CS/Billing/Admin roll-out live in
+`docs/design/HORIZON_MOBILE_PLAYBOOK.md`.
+
+**RC freeze.** Never mount Embeddable in Telegram. `inAppCallingSupported()` is false;
+`mountAdapter` returns after teardown; `RingCentralPhone` renders null. Deleted
+`TelegramCallingNotice` (the undismissable “popup”). Call Hub copy points at desktop / RC app.
+Desktop calling and the Embeddable OAuth redirect are unchanged.
+
+**OAuth freeze.** We cannot restyle `accounts.zoho.com`. Own chrome: theme-aware `LoginGate` /
+callback (`Screen.module.css` dropped the hardcoded dark glass + grid mesh). Stay in-WebView;
+dual-write OAuth state already in `auth.ts`.
+
+**Sales phone grammar.** Structure line 640: Data Center leads/deals/rejections are grouped list
+rows (`dataCenterPhoneList.tsx`); Client + Verification + Call detail use `phoneSheetLayout`
+(bottom sheet, grabber, 96dvh). Desktop kanban / 820–960 dialogs unchanged. Tab bar pins Home,
+Inbox, Data Center, Verification; More is `ds/Drawer`. Duration ladder `--duration-instant` …
+`--duration-slow`; reduced-motion zeros it. One skeleton per screen (`SalesBodySkeleton` rows on
+phone, not a kanban skeleton).
+
+**Out of sprint.** `initData` as identity; in-Telegram WebRTC; restyling Zoho’s page; `apps/mini-app`.
+Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget` before any UI PR. Not committed until asked.

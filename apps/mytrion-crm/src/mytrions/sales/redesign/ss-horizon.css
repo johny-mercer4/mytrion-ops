@@ -541,3 +541,14 @@
   min-height: 0;
   overflow-y: auto;
 }
+
+@keyframes ss-sheet-up {
+  from {
+    opacity: 0;
+    translate: 0 24%;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}

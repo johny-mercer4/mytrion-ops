@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockPipelineProvider } from '../../src/modules/verificationPipeline/provider.js';
 import { extractSalesRequirements } from '../../src/modules/verificationPipeline/requirements.js';
-import { STAGE_CATALOG, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
+import { STAGE_CATALOG, deriveZohoState, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
 
 describe('STAGE_CATALOG', () => {
   it('is the compliance stages in credit_platform order with the credit_platform service ids', () => {
@@ -23,6 +23,39 @@ describe('STAGE_CATALOG', () => {
       'crosscheck',
       'stop-factor-after',
     ]);
+  });
+});
+
+describe('deriveZohoState', () => {
+  it('maps Zoho credit into a filter bucket without treating "prepay" alone as rejected', () => {
+    expect(
+      deriveZohoState({
+        creditDecision: 'Declined-Prepay/Secured Only',
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('rejected');
+    expect(
+      deriveZohoState({
+        creditDecision: 'Approved-Requested',
+        applicationStatus: 'Pending Setup',
+        applicationId: '1',
+      }),
+    ).toBe('approved');
+    expect(
+      deriveZohoState({
+        creditDecision: null,
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('in_progress');
+    expect(
+      deriveZohoState({
+        creditDecision: 'Prepay',
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('in_progress');
   });
 });
 

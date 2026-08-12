@@ -140,7 +140,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      78,
+      77,
     );
   });
 
@@ -155,7 +155,7 @@ describe('breakpoint ladder', () => {
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      99,
+      97,
     );
   });
 });
@@ -263,7 +263,7 @@ describe('touch', () => {
         if (sample.length < 8) sample.push(at(file, m.index, text));
       }
     }
-    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 148);
+    expectBudget('reveal-on-hover rules without a `(hover: none)` reset', { count, sample }, 147);
   });
 
   it('does not add a font-size to an input outside the style layer', () => {

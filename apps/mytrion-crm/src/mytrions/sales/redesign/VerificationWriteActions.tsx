@@ -4,14 +4,15 @@
  * change into credit_platform's inbox for Verification to apply — nothing here mutates the case
  * directly, and uploads are attach-only (Verification runs the Plaid parse manually).
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { editApplicant, uploadBankStatements, type PipelineApplicant } from '@/api/verification';
 import { s } from './dc';
 import { Icon } from './icons';
+import { DetailSheet } from './dataCenterSheet';
 
 function inputStyle(disabled: boolean): React.CSSProperties {
   return s(
-    `width:100%;min-height:40px;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none;opacity:${disabled ? '.6' : '1'}`,
+    `width:100%;min-height:40px;padding:9px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none;opacity:${disabled ? '.6' : '1'}`,
   );
 }
 
@@ -29,6 +30,14 @@ const APPLICANT_FIELDS: ReadonlyArray<{ id: keyof PipelineApplicant; label: stri
   { id: 'mcNumber', label: 'MC number' },
 ];
 
+const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px';
+const PRIMARY_BTN = `${FOOT_BTN};border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent)`;
+const GHOST_BTN = `${FOOT_BTN};border:1px solid var(--border);background:var(--alt);color:var(--text)`;
+
+function SheetAvatar({ children }: { children: ReactNode }) {
+  return <div className="ss-vf-avatar">{children}</div>;
+}
+
 export function EditApplicantPanel({
   requestId,
   dealId,
@@ -44,6 +53,12 @@ export function EditApplicantPanel({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const close = (): void => {
+    if (saving) return;
+    setOpen(false);
+    setError(null);
+  };
 
   const submit = async (): Promise<void> => {
     if (!dealId) {
@@ -77,76 +92,50 @@ export function EditApplicantPanel({
         type="button"
         onClick={() => { setOpen(true); setError(null); }}
         disabled={!dealId}
-        style={s(
-          `height:34px;padding:0 14px;border:0;border-radius:9px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:800;display:inline-flex;align-items:center;gap:7px;cursor:${dealId ? 'pointer' : 'not-allowed'};opacity:${dealId ? '1' : '.5'};flex-shrink:0`,
-        )}
+        className="ss-vf-edit-btn"
       >
         <Icon name="edit" size={14} /> Edit applicant
       </button>
 
       {open ? (
-        <div
-          onClick={() => { if (!saving) { setOpen(false); setError(null); } }}
-          style={s('position:fixed;inset:0;z-index:1000;background:rgba(8,12,20,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto')}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={s('width:min(680px,100%);background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:20px;box-shadow:0 24px 64px rgba(8,12,20,.35)')}
-          >
-            <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
-              <div style={s('font-size:16px;font-weight:800')}>Edit applicant</div>
-              <button
-                type="button"
-                onClick={() => { if (!saving) { setOpen(false); setError(null); } }}
-                aria-label="Close"
-                style={s(`display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:0;border-radius:8px;background:var(--alt);color:var(--text2);cursor:${saving ? 'not-allowed' : 'pointer'}`)}
-              >
-                <Icon name="close" size={16} strokeWidth={2.4} />
-              </button>
-            </div>
-            <div style={s('font-size:12px;color:var(--muted);margin:4px 0 14px')}>
-              Only the fields you fill are updated. Verification applies the change.
-            </div>
-            <div style={s('display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px')}>
-              {APPLICANT_FIELDS.map((field) => (
-                <label key={field.id}>
-                  <span style={s('display:block;font-size:12px;font-weight:750;color:var(--text2);margin-bottom:6px')}>
-                    {field.label}
-                  </span>
-                  <input
-                    type={field.type ?? 'text'}
-                    value={values[field.id] ?? ''}
-                    disabled={saving}
-                    placeholder={`Enter ${field.label.toLowerCase()}`}
-                    onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
-                    style={inputStyle(saving)}
-                  />
-                </label>
-              ))}
-            </div>
-            {error ? <div role="alert" style={s('font-size:12px;color:var(--danger);margin-top:10px')}>{error}</div> : null}
-            <div style={s('display:flex;justify-content:flex-end;gap:10px;margin-top:16px')}>
-              <button
-                type="button"
-                onClick={() => { setOpen(false); setError(null); }}
-                disabled={saving}
-                style={s(`height:38px;padding:0 15px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;font-weight:750;cursor:${saving ? 'not-allowed' : 'pointer'};opacity:${saving ? '.6' : '1'}`)}
-              >
+        <DetailSheet
+          accent="var(--accent)"
+          title="Edit applicant"
+          subtitle="Only the fields you fill are updated. Verification applies the change."
+          avatar={<SheetAvatar><Icon name="edit" size={20} /></SheetAvatar>}
+          onClose={close}
+          saving={saving}
+          maxWidth={820}
+          ariaLabel="Edit applicant"
+          footer={
+            <div className="ss-vf-sheet-foot">
+              <button type="button" onClick={close} disabled={saving} style={s(`${GHOST_BTN};opacity:${saving ? '.6' : '1'}`)}>
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={submit}
-                disabled={saving}
-                style={s(
-                  `height:38px;padding:0 17px;border:0;border-radius:10px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${saving ? 'wait' : 'pointer'};opacity:${saving ? '.7' : '1'}`,
-                )}
-              >
-                <Icon name={saving ? 'spinner' : 'check'} size={15} /> {saving ? 'Saving…' : 'Save changes'}
+              <button type="button" onClick={() => { void submit(); }} disabled={saving} style={s(`${PRIMARY_BTN};opacity:${saving ? '.7' : '1'}`)}>
+                <Icon name={saving ? 'spinner' : 'check'} size={15} />
+                {saving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
+          }
+        >
+          <div className="ss-vf-edit-grid">
+            {APPLICANT_FIELDS.map((field) => (
+              <label key={field.id}>
+                <span className="ss-vf-tile-lbl">{field.label}</span>
+                <input
+                  type={field.type ?? 'text'}
+                  value={values[field.id] ?? ''}
+                  disabled={saving}
+                  placeholder={`Enter ${field.label.toLowerCase()}`}
+                  onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
+                  style={inputStyle(saving)}
+                />
+              </label>
+            ))}
           </div>
-        </div>
+          {error ? <div role="alert" className="ss-vf-edit-err">{error}</div> : null}
+        </DetailSheet>
       ) : null}
     </>
   );

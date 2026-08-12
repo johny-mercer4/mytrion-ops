@@ -176,10 +176,10 @@
   }
 
   .dialog[data-state='open'] .panel {
-    animation: sheetIn var(--dur-slow) var(--ease-decelerate);
+    animation: sheetIn var(--duration-moderate) var(--ease-decelerate);
   }
   .dialog[data-state='closing'] .panel {
-    animation: sheetOut var(--dur-fast) var(--ease-accelerate) forwards;
+    animation: sheetOut var(--duration-fast) var(--ease-accelerate) forwards;
   }
 }
 

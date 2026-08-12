@@ -10,6 +10,7 @@ import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth'
 import { getSession, SESSION_CHANGED_EVENT } from '../api/session';
 import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
+import { isTelegramWebView } from '../telegram/webApp';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
 const Ctx = createContext<UserContext | null>(null);
@@ -126,7 +127,11 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
       <AuthScreen
         phase="exchanging"
         title="Signing you in"
-        body="Zoho confirmed your account — finalizing identity."
+        body={
+          isTelegramWebView()
+            ? 'Stay in this window — Mytrion is finishing sign-in.'
+            : 'Zoho confirmed your account — finalizing identity.'
+        }
       />
     );
   }

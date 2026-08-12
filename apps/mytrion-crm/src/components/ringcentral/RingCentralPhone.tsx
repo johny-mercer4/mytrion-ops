@@ -18,7 +18,6 @@ import { nextSignInPrompt } from './signInPrompt';
 import { inAppCallingSupported } from './rcCapability';
 import { IncomingCallBanner } from './IncomingCallBanner';
 import { RcHostUi, type RcToastMsg } from './RcHostUi';
-import { TelegramCallingNotice } from './TelegramCallingNotice';
 import './ringcentralHost.css';
 
 const LOGOUT_TOAST_GRACE_MS = 2500;
@@ -199,8 +198,7 @@ export function RingCentralPhone() {
     teardownAdapter();
   }, []);
 
-  if (!allowed) return null;
-  if (!callingOk) return <TelegramCallingNotice />;
+  if (!allowed || !callingOk) return null;
 
   return (
     <>
