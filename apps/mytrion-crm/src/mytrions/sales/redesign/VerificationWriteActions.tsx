@@ -78,7 +78,7 @@ export function EditApplicantPanel({
         onClick={() => { setOpen(true); setError(null); }}
         disabled={!dealId}
         style={s(
-          `height:34px;padding:0 14px;border:0;border-radius:9px;background:var(--accent);color:white;font-size:13px;font-weight:800;display:inline-flex;align-items:center;gap:7px;cursor:${dealId ? 'pointer' : 'not-allowed'};opacity:${dealId ? '1' : '.5'};flex-shrink:0`,
+          `height:34px;padding:0 14px;border:0;border-radius:9px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:800;display:inline-flex;align-items:center;gap:7px;cursor:${dealId ? 'pointer' : 'not-allowed'};opacity:${dealId ? '1' : '.5'};flex-shrink:0`,
         )}
       >
         <Icon name="edit" size={14} /> Edit applicant
@@ -87,7 +87,7 @@ export function EditApplicantPanel({
       {open ? (
         <div
           onClick={() => { if (!saving) { setOpen(false); setError(null); } }}
-          style={s('position:fixed;inset:0;z-index:1000;background:rgba(8,12,20,.5);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto')}
+          style={s('position:fixed;inset:0;z-index:1000;background:rgba(8,12,20,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto')}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -139,7 +139,7 @@ export function EditApplicantPanel({
                 onClick={submit}
                 disabled={saving}
                 style={s(
-                  `height:38px;padding:0 17px;border:0;border-radius:10px;background:var(--accent);color:white;font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${saving ? 'wait' : 'pointer'};opacity:${saving ? '.7' : '1'}`,
+                  `height:38px;padding:0 17px;border:0;border-radius:10px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${saving ? 'wait' : 'pointer'};opacity:${saving ? '.7' : '1'}`,
                 )}
               >
                 <Icon name={saving ? 'spinner' : 'check'} size={15} /> {saving ? 'Saving…' : 'Save changes'}
@@ -253,6 +253,7 @@ export function BankStatementUpload({
   };
 
   const busy = saving || !files.length;
+  const idle = !saving && !files.length;
   return (
     <div style={s('padding:16px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt)')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap')}>
@@ -330,7 +331,7 @@ export function BankStatementUpload({
           onClick={submit}
           disabled={busy}
           style={s(
-            `height:38px;padding:0 17px;border:0;border-radius:10px;background:var(--accent);color:white;font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${busy ? 'not-allowed' : 'pointer'};opacity:${busy ? '.6' : '1'}`,
+            `height:38px;padding:0 17px;border:${idle ? '1px solid var(--border2)' : '0'};border-radius:10px;background:${idle ? 'var(--alt)' : 'var(--accent-strong)'};color:${idle ? 'var(--muted)' : 'var(--on-accent)'};font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${busy ? (saving ? 'wait' : 'not-allowed') : 'pointer'};opacity:${saving ? '.8' : '1'}`,
           )}
         >
           <Icon name={saving ? 'spinner' : 'upload'} size={15} /> {saving ? 'Uploading…' : 'Save & upload'}
