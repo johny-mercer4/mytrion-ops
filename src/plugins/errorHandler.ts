@@ -63,6 +63,26 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
       void reply.redirect(urlPath.slice(assetIdx), 308);
       return;
     }
+    /**
+     * A missing STATIC ASSET gets a plain 404, never the JSON error envelope.
+     *
+     * The envelope made a routine miss unreadable. A tab open across a deploy asks for the previous
+     * build's chunk, the file is gone, and the browser reported:
+     *
+     *   Refused to apply style from '…/assets/index-CLy9FzoA.css' because its MIME type
+     *   ('application/json') is not a supported stylesheet MIME type, and strict MIME checking is enabled
+     *
+     * — which reads as a server misconfiguration rather than "that file no longer exists". `nosniff`
+     * (set by helmet) is what turns a wrong content-type into that message. The redirect above only
+     * catches `/main/assets/…`, where `indexOf` is > 0; a root-level `/assets/…` miss lands here.
+     *
+     * Deliberately not the SPA shell either: answering a stylesheet request with HTML produces the same
+     * class of MIME error, just with a different type in it.
+     */
+    if (request.method === 'GET' && !isApi && urlPath.startsWith('/assets/')) {
+      void reply.status(404).type('text/plain').send('Asset not found');
+      return;
+    }
     if (spaIndex && request.method === 'GET' && !isApi && wantsHtml) {
       void reply.header('Cache-Control', 'no-cache').type('text/html').send(createReadStream(spaIndex));
       return;
