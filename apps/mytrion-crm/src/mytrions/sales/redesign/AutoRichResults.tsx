@@ -7,6 +7,7 @@ import { badge } from './salesData';
 import { AutoEmptyState } from './AutoActionResult';
 import {
   trackingStatusUrl,
+  titleStatus,
   type CmpInvoiceRow,
   type PaymentsSummary,
   type TrackingEntry,
@@ -142,10 +143,12 @@ export function AutoWexTasksPanel({
 }
 
 function cmpStatusBadge(status: string) {
-  const x = status.toLowerCase();
-  if (x.includes('paid')) return badge('Paid', 'var(--ok)');
-  if (x.includes('overdue') || x.includes('pending')) return badge(status, 'var(--warn)');
-  return badge(status || '—', 'var(--muted)');
+  const label = titleStatus(status);
+  const x = label.toLowerCase();
+  if (x.includes('partial')) return badge(label, 'var(--warn)');
+  if (x === 'paid') return badge(label, 'var(--ok)');
+  if (x.includes('overdue') || x.includes('pending')) return badge(label, 'var(--warn)');
+  return badge(label, 'var(--muted)');
 }
 
 /** Payments (C-18/Q-2) — DWH payment-info summary + live CMP invoices, fetched in parallel. */
@@ -169,7 +172,6 @@ export function AutoPaymentsPanel({
             ['Total paid', summary.totalPaid],
             ['Open balance', summary.openBalance],
             ['Payment count', summary.paymentCount],
-            ['Payments total', summary.paymentsTotal],
           ] as const).map(([label, value]) => (
             <div key={label} className="ss-pay-stat">
               <div className="ss-track-label">{label}</div>

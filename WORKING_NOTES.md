@@ -15208,3 +15208,17 @@ so the placement was checked in the running app on `localhost:5173`. Not by auto
 browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
 no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
 signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — Sales payment invoice fidelity
+
+- Routed Check Payment Information through the same CMP-first invoice touchpoint as Request Invoices;
+  the legacy Deluge result could disagree with CMP and used a different response shape.
+- Centralized the two automation mappings so invoice number, status, amount, paid amount, remaining
+  amount and date cannot drift between C-20 and C-18/Q-2.
+- Added an invoice-only currency formatter that retains cents. The shared Sales KPI formatter still
+  rounds intentionally, so changing it globally would have altered unrelated dashboards.
+- Removed the redundant Payments total KPI. Kept Total paid, and stopped the status badge from
+  classifying PARTIALLY_PAID as Paid merely because the string contains `paid`.
+- Verified the complete CRM suite (815 tests), CRM and root typechecks, root lint, the production
+  bundle, and the shared-browser result at 1440px and 720px. The repository-wide backend suite still
+  has unrelated pre-existing CS/comms/retention authorization failures; the Sales knowledge test passed.

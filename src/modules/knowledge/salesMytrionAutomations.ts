@@ -77,7 +77,7 @@ export const SALES_AUTOMATION_KNOWLEDGE: readonly SalesAutomationKnowledge[] = [
     prerequisites: ['A client'],
     steps: ['Select the client.', 'Click Check Payments.'],
     outcome: [
-      'Review billed, paid, open-balance and payment totals plus available CMP invoice rows for the last 90 days.',
+      'Review billed, paid and open-balance totals, the payment count, and exact CMP invoice statuses and amounts for the last 90 days.',
     ],
     cautions: [
       'The DWH summary and CMP invoice source load independently; one may be shown when the other is unavailable.',

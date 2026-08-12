@@ -95,7 +95,6 @@ export interface PaymentsSummary {
   totalPaid: string;
   openBalance: string;
   paymentCount: string;
-  paymentsTotal: string;
 }
 export interface CmpInvoiceRow {
   id: string;
@@ -253,6 +252,18 @@ export const PHASE_MAP: Record<string, string[]> = {
 export const str = (v: unknown): string => (v == null ? '' : String(v));
 export const gal = (v: unknown): string => { const nn = Number(v); return Number.isFinite(nn) ? nn.toFixed(1) : '—'; };
 export const shortCard = (v: unknown): string => { const c = str(v); return c ? `••${c.slice(-4)}` : '—'; };
+/** Invoice currency must retain CMP's cents; the general Sales formatter intentionally rounds KPIs. */
+export const invoiceMoney = (v: unknown): string => {
+  const raw = typeof v === 'string' ? v.replace(/[$,\s]/g, '') : v;
+  const amount = Number(raw);
+  if (!Number.isFinite(amount)) return '—';
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
 export const fmtDate = (v: unknown): string => {
   const raw = str(v); if (!raw) return '—';
   const d = new Date(raw);
@@ -352,6 +363,44 @@ export function filterClientInvoices(
     }
   }
   return out;
+}
+
+export interface MappedCmpInvoiceRow extends CmpInvoiceRow {
+  date: string;
+}
+
+/** One live-CMP row mapper shared by C-20 and C-18/Q-2 so their values cannot drift. */
+export function mapCmpInvoiceRow(
+  row: Record<string, unknown>,
+  index: number,
+): MappedCmpInvoiceRow {
+  const id = str(row.invoiceId ?? row.invoice_id ?? row.id) || `cmp-${index}`;
+  const invoiceNumber = str(
+    row.invoiceNumber ?? row.invoice_number ?? row.invoice_ref ?? row.number ?? row.name,
+  ) || `#${index + 1}`;
+  const totalRaw = row.total_amount ?? row.totalAmount ?? row.amount ?? row.grandTotal;
+  const paidRaw = row.total_paid ?? row.totalPaid;
+  const total = Number(totalRaw);
+  const paid = Number(paidRaw);
+  const calculatedRemaining = Number.isFinite(total) && Number.isFinite(paid)
+    ? Math.max(0, total - paid)
+    : undefined;
+  return {
+    id,
+    invoiceNumber,
+    status: titleStatus(row.status ?? row.invoiceStatus ?? row.invoice_status),
+    total: invoiceMoney(totalRaw),
+    paid: invoiceMoney(paidRaw),
+    remaining: invoiceMoney(
+      row.open_balance ?? row.remainingAmount ?? row.remaining_amount ?? calculatedRemaining,
+    ),
+    date: fmtDate(
+      row.issueDate ?? row.issue_date ?? row.invoice_date ?? row.period ?? row.created_date
+        ?? row.createdDate ?? (row.fromDate && row.toDate
+          ? `${String(row.fromDate)} — ${String(row.toDate)}`
+          : null),
+    ),
+  };
 }
 
 // ---------- live loaders ----------

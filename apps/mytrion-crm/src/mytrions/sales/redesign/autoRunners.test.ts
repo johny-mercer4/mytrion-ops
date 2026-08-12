@@ -273,7 +273,7 @@ describe('C-20 request invoices', () => {
           id: 1,
           invoice_number: '177728',
           invoice_date: '2026-08-01',
-          total_amount: 200,
+          total_amount: 200.49,
           status: 'PARTIALLY_PAID',
         },
         {
@@ -302,8 +302,69 @@ describe('C-20 request invoices', () => {
       limit: 500,
     });
     expect(setInvRows).toHaveBeenCalledWith([
-      expect.objectContaining({ inv: '177728', status: 'Partially Paid' }),
+      expect.objectContaining({ inv: '177728', amount: '$200.49', status: 'Partially Paid' }),
     ]);
+  });
+});
+
+describe('C-18/Q-2 check payment information', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('uses the Request Invoices CMP rows without rounding or collapsing partial status', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') {
+        return {
+          invoices: {
+            count: 13,
+            totals: { total_billed: 384817.39, total_paid: 341321.12, open_balance: 43496.27 },
+          },
+          payments: { count: 26, total_amount: 340174.91 },
+        };
+      }
+      if (key === 'clients.invoices') {
+        return {
+          data: [{
+            id: 77,
+            invoice_number: '178238',
+            invoice_date: '2026-08-01',
+            status: 'PARTIALLY_PAID',
+            total_amount: 43496.27,
+            total_paid: 12000.11,
+            open_balance: 31496.16,
+          }],
+        };
+      }
+      throw new Error(`unexpected touchpoint ${key}`);
+    });
+
+    await expect(runAutomation(input(action('payments')))).resolves.toEqual({
+      kind: 'payments',
+      carrierId: deal.carrier,
+      summary: {
+        invoiceCount: '13',
+        totalBilled: '$384,817.39',
+        totalPaid: '$341,321.12',
+        openBalance: '$43,496.27',
+        paymentCount: '26',
+      },
+      cmpInvoices: [{
+        id: '77',
+        invoiceNumber: '178238',
+        status: 'Partially Paid',
+        total: '$43,496.27',
+        paid: '$12,000.11',
+        remaining: '$31,496.16',
+        date: 'Aug 1, 2026',
+      }],
+      cmpError: undefined,
+    });
+    expect(callTouchpointMock).toHaveBeenCalledWith('clients.invoices', {
+      carrierId: deal.carrier,
+      limit: 500,
+    });
+    expect(callTouchpointMock).not.toHaveBeenCalledWith('carrier.check_payment', expect.anything());
   });
 });
 
