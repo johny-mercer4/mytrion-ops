@@ -657,12 +657,18 @@ function buildTrace(input: {
  * Unlike the other three, these two queries are unconditional — there is no "only if the worker has
  * a profile name" shortcut — so letting them share the outer catch would mean an unreachable
  * permission-set table degrades EVERY user to `legacyAccess`, which grants far less and (by design)
- * never grants Customer Service. The realistic way to hit that is deploying this code before running
- * migration 0114: access would quietly collapse org-wide, and the logs would say "resolve failed"
- * rather than "the new tables are missing".
+ * never grants Customer Service. The realistic way to hit that is deploying this code before its
+ * migration has run — a missing table on the release that adds one, a missing COLUMN on every
+ * release that adds one after. Access would quietly collapse org-wide, and the logs would say
+ * "resolve failed" rather than "the new schema is missing".
  *
- * Sets are purely ADDITIVE, so resolving without them is a correct, strictly-narrower answer. Losing
- * the whole grant chain instead is not.
+ * THE TRADEOFF IS NOT SYMMETRIC, and `override` changed which way it leans. For an additive set,
+ * resolving without it is strictly narrower and therefore safe. For an OVERRIDING set it is strictly
+ * WIDER: the set is what suppresses the profile and role defaults, so losing it hands the holder
+ * back everything those layers grant. Fail-soft is still the right call — the alternative collapses
+ * every user's access for the length of a deploy window, against a narrow window in which a few
+ * override holders are over-granted — but it is a deliberate fail-open, not a free one. The warning
+ * below is the only signal it happened, so it must stay loud.
  */
 function setsUnavailable(what: string): (err: unknown) => never[] {
   return (err) => {

@@ -31,7 +31,7 @@ import {
 } from '../../repos/mytrionPermissionSetsRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
-import { isMissingTable } from '../../repos/util.js';
+import { isMissingColumn, isMissingTable } from '../../repos/util.js';
 
 const mytrionIdSchema = z.enum([...MYTRION_IDS] as [MytrionId, ...MytrionId[]]);
 
@@ -81,29 +81,33 @@ const assignBody = z.object({
 });
 
 /**
- * Turn "relation does not exist" into an answer instead of a 500.
+ * Turn "relation does not exist" and "column does not exist" into an answer instead of a 500.
  *
  * Code reaches an environment before its migration does — that is the ordinary order of a deploy,
  * not an edge case. Without this the whole screen returns `INTERNAL_ERROR` / "Internal server
  * error", which names neither the cause nor the fix and sends an admin to the server logs to find a
  * one-line answer. Mirrors what `dataLoader.routes.ts` already does for its own table.
  *
+ * MISSING COLUMNS COUNT, and they are the case that recurs. A table is only absent on the single
+ * release that introduces it; a column is absent every time a later migration adds one. `override`
+ * (0115) proved it — the tables were there, the SELECT named a column that was not, 42P01 never
+ * fired, and this screen went back to returning a bare 500 it already knew how to explain.
+ *
  * 503 rather than 500: this is a temporary, operator-fixable state, and the message says exactly
- * which command fixes it.
+ * which command fixes it. No migration NUMBER in the message — naming one goes stale on the next
+ * migration and then actively misdirects, which is how it read when 0115 landed.
  */
-const MISSING_TABLE_MESSAGE =
-  'Permission sets need database migration 0114. Run `pnpm db:migrate` against this environment, ' +
-  'then reload.';
+const NOT_MIGRATED_MESSAGE =
+  'Permission sets need a database migration that has not run on this environment. Run ' +
+  '`pnpm db:migrate` against it, then reload.';
 
 async function withPermissionSetTables<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (err) {
-    if (
-      isMissingTable(err, 'mytrion_permission_sets') ||
-      isMissingTable(err, 'mytrion_permission_set_assignments')
-    ) {
-      throw new AppError(MISSING_TABLE_MESSAGE, {
+    const tables = ['mytrion_permission_sets', 'mytrion_permission_set_assignments'] as const;
+    if (tables.some((t) => isMissingTable(err, t) || isMissingColumn(err, t))) {
+      throw new AppError(NOT_MIGRATED_MESSAGE, {
         statusCode: 503,
         code: 'PERMISSION_SETS_NOT_MIGRATED',
         // AppError hides messages on 5xx by default, which is right for anything that might carry

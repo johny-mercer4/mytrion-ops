@@ -25,6 +25,27 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
+ * True if a Postgres error carrying SQLSTATE `sqlstate` was raised against `table`.
+ *
+ * Drizzle WRAPS the driver error, so the SQLSTATE sits on the cause while the table name appears
+ * only in the outer "Failed query: …" text. Neither is reliably on the same node, so the chain is
+ * walked once and each fact is taken from wherever it turns up.
+ */
+function isPgErrorFor(err: unknown, sqlstate: string, table: string): boolean {
+  let hasCode = false;
+  let mentionsTable = false;
+  let node: unknown = err;
+  for (let depth = 0; node !== null && node !== undefined && depth < 5; depth += 1) {
+    if (typeof node !== 'object') break;
+    if ((node as { code?: unknown }).code === sqlstate) hasCode = true;
+    const message = (node as { message?: unknown }).message;
+    if (typeof message === 'string' && message.includes(table)) mentionsTable = true;
+    node = (node as { cause?: unknown }).cause;
+  }
+  return hasCode && mentionsTable;
+}
+
+/**
  * True if the error is a Postgres undefined-table violation (SQLSTATE 42P01) for `table`.
  *
  * The realistic cause is code deployed ahead of its migration. Left as a raw failure the caller
@@ -33,19 +54,24 @@ export function isUniqueViolation(err: unknown): boolean {
  * same check, named once.
  */
 export function isMissingTable(err: unknown, table: string): boolean {
-  // Drizzle wraps the driver error, so 42P01 sits on the CAUSE while the table name is only in the
-  // outer "Failed query: …" message. Walk the chain and take the code from wherever it is.
-  let hasCode = false;
-  let mentionsTable = false;
-  let node: unknown = err;
-  for (let depth = 0; node !== null && node !== undefined && depth < 5; depth += 1) {
-    if (typeof node !== 'object') break;
-    if ((node as { code?: unknown }).code === '42P01') hasCode = true;
-    const message = (node as { message?: unknown }).message;
-    if (typeof message === 'string' && message.includes(table)) mentionsTable = true;
-    node = (node as { cause?: unknown }).cause;
-  }
-  return hasCode && mentionsTable;
+  return isPgErrorFor(err, '42P01', table);
+}
+
+/**
+ * True if the error is a Postgres undefined-COLUMN violation (SQLSTATE 42703) against `table`.
+ *
+ * The second half of the same deploy-order problem, and the half that actually bites: a table only
+ * goes missing on the very first release that introduces it, whereas every later migration that adds
+ * a column reopens the window — the table is there, the query names a column that is not, and 42P01
+ * never fires. `mytrion_permission_sets.override` did exactly this: an environment one migration
+ * behind returned a bare 500 on a screen that already knew how to explain the problem.
+ *
+ * Postgres does not name the table in an undefined-column message ("column X does not exist"), so
+ * the match relies on Drizzle's outer "Failed query" text, which contains the statement. That is why
+ * this is scoped per table rather than offered as a bare `isMissingColumn(err)`.
+ */
+export function isMissingColumn(err: unknown, table: string): boolean {
+  return isPgErrorFor(err, '42703', table);
 }
 
 /** Format a number[] as a pgvector text literal: [0.1,0.2,...]. */
