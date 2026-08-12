@@ -15208,3 +15208,39 @@ so the placement was checked in the running app on `localhost:5173`. Not by auto
 browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
 no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
 signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — C-18 Check Payment Information: CMP status and exact amounts
+
+Three reports from Sales, one root cause each.
+
+**"Payments total" removed.** It sat beside "Total paid" showing a different number ($340,174 vs
+$341,321) for what reads as the same thing — one is the 90-day payment ledger, the other the amount
+matched to invoices. Two totals that disagree is a support ticket, not a feature. Total paid stays.
+
+**A part-paid invoice was labelled Paid.** Two independent causes, both fixed:
+
+1. `cmpStatusBadge` relabelled anything containing "paid" as the literal string `Paid` — so
+   "Partially Paid" rendered as "Paid" no matter what CMP returned. The badge now shows CMP's own
+   label and derives only the tone, checking partial first.
+2. The invoice list came from `carrier.check_payment` (Deluge) alone, whose status string is the one
+   Sales says is wrong (carrier 5815660). C-18 now also reads `clients.invoices` — the CMP-first
+   route C-20 already trusts — and `mergeCmpInvoices` matches on invoice number, taking status and
+   total from CMP-first and paid/remaining from the Deluge, which is the only source that carries
+   them. Three calls in `Promise.allSettled`: either invoice source alone still renders the panel,
+   and `cmpError` is only raised when both fail.
+
+On top of that, `cmpInvoiceStatus` refuses to call an invoice Paid while CMP's own numbers say money
+is owed: remaining > 0 with something paid is Partially Paid, remaining > 0 with nothing paid is
+Pending. Every other status is passed through untouched, so Cancelled and Overdue keep their word.
+The money is the source of record; the string is what carriers dispute.
+
+**Amounts were rounded to whole dollars.** `money()` uses `maximumFractionDigits: 0`, so CMP's
+$43,495.62 displayed as $43,496 (carrier 5834146). Added `moneyExact` — always cents — and used it
+for every invoice amount in the automations: the C-18 invoice cards (total/paid/remaining), the C-18
+summary tiles, and the C-20 Request Invoices amount column. `money()` is untouched for dashboard
+aggregates, where cents are noise. Deliberately NOT changed: EFS balances, credit lines, money-code
+draws and fuel-transaction totals — none of those are an invoice quoted from a source of record.
+
+5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
+Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
+and 5834146 (cents) on the preview.

@@ -45,6 +45,18 @@ export const money = (v: unknown): string => {
     ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
     : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 };
+/**
+ * Invoice money — cents, always. `money` rounds to whole dollars, which turns a $43,495.62 CMP
+ * invoice into "$43,496" and reads as a different number than the one the carrier was billed. Use
+ * this anywhere an amount is quoted FROM a source of record (CMP invoices, payments against them);
+ * `money` stays for dashboard aggregates, where the cents are noise.
+ */
+export const moneyExact = (v: unknown): string => {
+  const x = n(v);
+  const abs = Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (x === 0 || Object.is(x, -0)) return '$0.00';
+  return x < 0 ? `-$${abs}` : `$${abs}`;
+};
 export function relTime(iso: string | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
