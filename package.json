@@ -17,6 +17,7 @@
     "start": "node dist/server.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/guardedMigrate.ts",
+    "db:pending": "tsx scripts/inspectPendingMigrations.ts",
     "db:migrate:raw": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed.ts",

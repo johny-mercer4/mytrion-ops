@@ -46,6 +46,7 @@ import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppAuthRoutes } from './routes/v1/carrierMiniAppAuth.routes.js';
 import { carrierMiniAppReportRoutes } from './routes/v1/carrierMiniAppReports.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
+import { horizonTelegramRoutes } from './routes/v1/horizonTelegram.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
 import { commsAttachmentsRoutes } from './routes/v1/commsAttachments.routes.js';
@@ -113,6 +114,7 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-inbox-secret"]',
   'req.headers["x-rejection-secret"]',
   'req.headers["x-webhook-signature"]',
+  'req.headers["x-telegram-bot-api-secret-token"]',
 ];
 
 function loggerOption() {
@@ -433,6 +435,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(carrierMiniAppAuthRoutes);
       await v1.register(carrierMiniAppReportRoutes);
       await v1.register(carrierMiniAppActionsRoutes);
+      await v1.register(horizonTelegramRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);

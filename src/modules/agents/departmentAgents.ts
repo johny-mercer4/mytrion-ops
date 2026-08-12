@@ -31,8 +31,18 @@ export interface DepartmentAgent {
   persona: string;
 }
 
-/** Tools open to EVERY caller (RAG search is internally department-scoped in the retriever). */
-export const UNIVERSAL_TOOLS = ['knowledge.search'] as const;
+/**
+ * Tools open to EVERY caller. Audience gating still applies (these are all `internal`); what is
+ * waived is the DEPARTMENT check, because each of these is either internally scoped or resolves the
+ * caller's own record server-side.
+ *
+ * - `knowledge.search` — department-scoped inside the retriever.
+ * - `hr.my_time_off` — resolves the CALLER'S OWN employee row from their session id and cannot
+ *   return anyone else's. Mirrors `requireTimeOffInternal`, which is audience-only on purpose: every
+ *   employee must be able to ask about their own leave, not just the HR department. Without this the
+ *   manifest-derived policy would stamp it `['hr']` and lock ~200 people out of their own balance.
+ */
+export const UNIVERSAL_TOOLS = ['knowledge.search', 'hr.my_time_off'] as const;
 
 /**
  * Sentinel for "admin-only" tools: a department value no real caller ever holds, so only

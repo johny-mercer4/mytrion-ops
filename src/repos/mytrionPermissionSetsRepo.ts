@@ -29,6 +29,8 @@ export interface MytrionPermissionSetDto {
   allowedMytrions: MytrionId[];
   mytrionAccessModes: MytrionAccessModes;
   tabGrants: TabGrants;
+  /** Replace the lower layers rather than union onto them. See the schema for the full contract. */
+  override: boolean;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -77,6 +79,7 @@ function toDto(row: MytrionPermissionSet): MytrionPermissionSetDto {
     allowedMytrions: toMytrionIds(row.allowedMytrions),
     mytrionAccessModes: toMytrionAccessModes(row.mytrionAccessModes),
     tabGrants: toTabGrants(row.tabGrants),
+    override: row.override,
     active: row.active,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -171,7 +174,7 @@ export const mytrionPermissionSetsRepo = {
   async updateMeta(
     ctx: TenantContext,
     id: string,
-    patch: { name?: string; description?: string | null; active?: boolean },
+    patch: { name?: string; description?: string | null; active?: boolean; override?: boolean },
   ): Promise<MytrionPermissionSetDto | undefined> {
     const set: Partial<NewMytrionPermissionSet> = { updatedAt: new Date() };
     if (patch.name !== undefined) {
@@ -180,6 +183,7 @@ export const mytrionPermissionSetsRepo = {
     }
     if (patch.description !== undefined) set.description = patch.description?.trim() || null;
     if (patch.active !== undefined) set.active = patch.active;
+    if (patch.override !== undefined) set.override = patch.override;
 
     const rows = await db
       .update(mytrionPermissionSets)
@@ -245,6 +249,49 @@ export const mytrionPermissionSetsRepo = {
         )`,
         mytrionAccessModes: sql`${mytrionPermissionSets.mytrionAccessModes} - ${mytrionId}`,
         tabGrants: sql`${mytrionPermissionSets.tabGrants} - ${mytrionId}`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(mytrionPermissionSets.tenantId, ctx.tenantId), eq(mytrionPermissionSets.id, id)))
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
+  /**
+   * Replace the WHOLE grant configuration in one statement.
+   *
+   * The per-Mytrion PATCH is right for a control that saves itself; it is wrong for a Save button,
+   * which promises that what is on screen is what gets stored. Applying a draft as N sequential
+   * PATCHes can half-succeed and leave the set in a state no admin chose — so the three columns move
+   * together or not at all.
+   */
+  async replaceGrants(
+    ctx: TenantContext,
+    id: string,
+    grants: {
+      allowedMytrions: MytrionId[];
+      mytrionAccessModes: MytrionAccessModes;
+      tabGrants: TabGrants;
+    },
+  ): Promise<MytrionPermissionSetDto | undefined> {
+    const allowed = toMytrionIds(grants.allowedMytrions);
+    const allowedSet = new Set<MytrionId>(allowed);
+    // A mode or a scope for a Mytrion this set no longer grants describes access it cannot give.
+    // Dropped here rather than stored, so the row never disagrees with itself.
+    const modes = Object.fromEntries(
+      Object.entries(toMytrionAccessModes(grants.mytrionAccessModes)).filter(([id]) =>
+        allowedSet.has(id as MytrionId),
+      ),
+    ) as MytrionAccessModes;
+    const tabs = Object.fromEntries(
+      Object.entries(toTabGrants(grants.tabGrants)).filter(([id]) => allowedSet.has(id as MytrionId)),
+    ) as TabGrants;
+
+    const rows = await db
+      .update(mytrionPermissionSets)
+      .set({
+        allowedMytrions: allowed,
+        mytrionAccessModes: modes,
+        tabGrants: tabs,
         updatedAt: new Date(),
       })
       .where(and(eq(mytrionPermissionSets.tenantId, ctx.tenantId), eq(mytrionPermissionSets.id, id)))

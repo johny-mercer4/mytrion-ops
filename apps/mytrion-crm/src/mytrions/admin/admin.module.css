@@ -2132,7 +2132,7 @@
   gap: var(--space-4);
   margin-top: var(--space-4);
   padding: var(--space-1) 0 var(--space-1) var(--space-4);
-  border-left: 2px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
 /* A tab group inside the scope picker — `Money`, `Recovery`, `Comms`. */
@@ -2179,4 +2179,277 @@
   flex: 1 1 320px;
   max-width: 420px;
   gap: var(--space-1_5);
+}
+
+/* ── Permission sets — levels ──────────────────────────────────────────────── */
+/*
+ * The three levels are a PRECEDENCE order, not decoration: level 1 chooses the workspaces, level 2
+ * the permission inside them, level 3 the tabs. Numbering them is earned because the sequence is the
+ * information — each level only has meaning once the one above it has been answered.
+ */
+.psLevel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--hz-pane-bd);
+}
+.psLevel:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+.psLevel:last-of-type {
+  padding-bottom: 0;
+}
+.psLevelHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+/* Not `.eyebrow` — that carries the page-level gradient and would compete with the page title three
+   times over. A quiet monospace-free label is enough to carry an ordinal. */
+/*
+ * The number is IN the heading, not a label above it.
+ *
+ * 1 → 2 → 3 is the dependency, not decoration: you cannot say what permission someone has in Billing
+ * before granting Billing, and you cannot scope its tabs before either. So the numeral stays and the
+ * kicker line that used to restate it goes — one heading, carrying its own position.
+ */
+.psLevelIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.psLevelTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+/* A level that cannot be answered yet — level 2 and 3 before any workspace is chosen. Dimmed and
+   inert rather than hidden, so the shape of the whole task is visible from the first screen. */
+.psLevelWaiting {
+  opacity: 0.55;
+}
+
+/* ── Permission sets — people list ─────────────────────────────────────────── */
+.psList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--hz-pane-alt);
+}
+.psListHead {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--hz-pane-bd);
+  background: color-mix(in srgb, var(--surface-alt) 42%, transparent);
+}
+.psListRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2_5) var(--space-3);
+}
+.psListRow + .psListRow {
+  border-top: 1px solid var(--row-line);
+}
+.psListRow:hover {
+  background: var(--row-hover);
+}
+/* Bounded so 120 candidates cannot push the save bar off screen; the search above is the real
+   navigation. `overscroll-behavior: contain` stops a flick here scrolling the page behind it. */
+.psListScroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Permission sets — save bar ────────────────────────────────────────────── */
+/*
+ * Appears only when the draft differs from what is stored. A permanently-visible Save on a screen
+ * that has nothing to save trains people to ignore it; appearing IS the signal that something is
+ * unsaved, which is why it is not merely disabled.
+ */
+/*
+ * STICKY. The form is taller than any viewport, so a save bar in document order sits below level 3 —
+ * toggle a workspace chip at the top and the button that commits it is a scroll away, off screen,
+ * which is indistinguishable from having no Save button at all. It rides the bottom of the viewport
+ * for as long as there is something to save.
+ */
+.psSaveBar {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--hz-pane-bd));
+  border-radius: var(--radius-md);
+  /* Opaque, not glass: it overlaps the form it is committing, and translucent chrome over live
+     controls makes both unreadable. */
+  background: var(--hz-pane-lift);
+  box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
+  animation: psSaveBarIn var(--hz-dur-tone) var(--hz-ease);
+}
+@keyframes psSaveBarIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .psSaveBar {
+    animation: none;
+  }
+}
+.psSaveBarNote {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* A Mytrion chip that carries its own department glyph, so the workspace is recognisable by the same
+   mark the launcher and the header badge use rather than by its label alone. */
+/*
+ * The workspace's own mark, in the workspace's own tone.
+ *
+ * `--badge-tone` is set per `[data-mytrion]` in global.css and is what the launcher and shell header
+ * already colour their badges with, so a set granting Sales looks like Sales here. It falls back to
+ * `--accent` for any Mytrion without a tone, so a new workspace is never invisible.
+ */
+.psChipIcon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-1_5);
+  color: var(--badge-tone, var(--accent));
+}
+
+/*
+ * Equal-height cards for THIS list only.
+ *
+ * `.profileGrid` is `align-items: start` because Profile/Role Defaults hold cards of genuinely
+ * different length, where stretching would open voids. Here every card is the same summary — name,
+ * workspaces, counts, Edit — so ragged bottoms read as a rendering fault instead of as content.
+ * The action row is pushed to the bottom so the Edit buttons line up across the row.
+ */
+.psGrid {
+  align-items: stretch;
+}
+.psGrid > .card {
+  display: flex;
+  flex-direction: column;
+}
+.psGrid .profileCardBody {
+  flex: 1 1 auto;
+}
+.psGrid .profileActions {
+  margin-top: auto;
+}
+
+/* Read-only twin of the picker chips, for the list cards. */
+.psGlyphRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+.psGlyphChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.psGlyphChip svg {
+  color: var(--badge-tone, var(--accent));
+}
+
+/* Header actions. `.head` is `align-items: flex-end`, so a bare button row sat on the meta line's
+   baseline with nothing between the two buttons. */
+.psHeadActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  flex-wrap: wrap;
+}
+
+/* Rows of placeholder bars for a list's first paint — `.skelCard` is a fixed 168px block and reads
+   as a card, which a list is not. */
+/*
+ * The base stop is tinted with `--text-muted`, not left at `--hz-pane-alt`.
+ *
+ * A placeholder that only becomes visible as the shimmer highlight passes over it is invisible for
+ * most of every 1.4s cycle — and completely invisible under `prefers-reduced-motion`, where nothing
+ * moves at all. The bar has to read as redacted text standing still.
+ */
+.psSkelRow {
+  display: block;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  --ps-skel-base: color-mix(in srgb, var(--text-muted) 16%, var(--hz-pane-alt));
+  background: linear-gradient(
+    90deg,
+    var(--ps-skel-base) 25%,
+    color-mix(in srgb, var(--accent) 14%, var(--ps-skel-base)) 37%,
+    var(--ps-skel-base) 63%
+  );
+  background-size: 900px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.psSkelRow + .psSkelRow {
+  margin-top: var(--space-2);
+}
+
+/*
+ * The loading state is the real card with its contents redacted, not a 168px slab where the card
+ * will be. The grid, the pane chrome and the line positions are already correct, so arrival swaps
+ * text in rather than replacing one shape with a different one.
+ */
+.psSkelTitle {
+  height: 15px;
+  /* clamp, not `min-width` — a fixed min-width is a track the phone layout cannot go below, and
+     `breakpoints.test.ts` budgets those deliberately. A placeholder must not spend one. */
+  width: clamp(96px, 42%, 220px);
+}
+.psSkelText {
+  height: 11px;
+  width: 68%;
+}
+.psSkelBtn {
+  height: 28px;
+  width: 74px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .psSkelRow {
+    animation: none;
+  }
 }

@@ -266,6 +266,8 @@ export interface AccessTraceEntry {
 export interface AccessTrace {
   mytrions: AccessTraceEntry[];
   denied: MytrionId[];
+  /** Names of the assigned sets that took the whole layer, if any. Empty when purely additive. */
+  overriddenBy: string[];
   /** `enforceableAllDept` fired: an all-access grant was downgraded because a deny list exists. */
   allDeptDowngraded: boolean;
 }
@@ -319,6 +321,21 @@ function filterAssignedSets(
   if (assignments.length === 0) return [];
   const held = new Set(assignments.map((a) => a.permissionSetId));
   return allSets.filter((s) => held.has(s.id) && s.active);
+}
+
+/**
+ * Where an override-scoped worker lands.
+ *
+ * The lower layers stopped granting, so a home they set may now name a workspace this worker cannot
+ * enter — which routes them straight into a 403 on sign-in. Keep it only if the sets still grant it;
+ * otherwise hand back null and let `pickHome` choose from what they can actually reach.
+ */
+function pickOverrideHome(
+  home: MytrionId | null,
+  sets: readonly MytrionPermissionSetDto[],
+): MytrionId | null {
+  if (home === null) return null;
+  return sets.some((set) => set.allowedMytrions.includes(home)) ? home : null;
 }
 
 function unionMytrions(a: MytrionId[], b: MytrionId[]): MytrionId[] {
@@ -431,7 +448,31 @@ function combineAccess(
    * BEFORE the deny subtraction in Step 5, so an admin keeps a surgical way to remove one Mytrion
    * from someone who holds it through a set.
    */
-  const legacyGranted = [...allowed];
+  /**
+   * Step 3.4 — OVERRIDE sets take the whole layer.
+   *
+   * `override` is the escape hatch from additivity. A union can only widen, so an additive set that
+   * scopes Billing to Ledger is defeated the moment any lower layer grants Billing unscoped — right
+   * for "a bit more access", useless for "EXACTLY this". When any assigned set declares override,
+   * the permission-set layer becomes authoritative and precedence reads
+   *   1. permission sets   2. per-user override   3. profile / role defaults
+   *
+   * The two exemptions are deliberate. Break-glass (env-named) users are untouched, because that is
+   * the recovery path if an admin scopes themselves out of the app — it is applied after this, in
+   * Step 4. And denies still subtract last in Step 5, so an override set can never re-grant
+   * something an admin explicitly took away.
+   */
+  const overriding = sets.some((set) => set.override);
+  if (overriding) {
+    allowed = [];
+    // The lower layers stop granting anything, so they also stop DEFEATING tab scopes — which is the
+    // whole reason someone reaches for this switch.
+    home = pickOverrideHome(home, sets);
+    allDept = false;
+    userModes = {};
+  }
+
+  const legacyGranted = overriding ? [] : [...allowed];
 
   /**
    * Provenance, recorded as we go rather than reconstructed afterwards.
@@ -476,7 +517,9 @@ function combineAccess(
   // "everything except X". A non-env-admin all-access grant WITH denies is downgraded to an
   // explicit department grant so the deny actually enforces (not just hidden in the UI list).
   const enforceableAllDept = allDept && (breakGlass || denied.length === 0);
-  const roleModes = haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
+  // An overriding set owns the mode too — a role default's read/full is a lower layer and stops
+  // applying with the grant it came from.
+  const roleModes = overriding ? {} : haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
   // Computed once and shared with the trace, so the drawer can never disagree with the gate.
   const modes = resolveModes(
     accessible,
@@ -556,6 +599,7 @@ function buildTrace(input: {
   return {
     denied: input.denied,
     allDeptDowngraded: input.allDeptDowngraded,
+    overriddenBy: input.sets.filter((set) => set.override).map((set) => set.name),
     mytrions: input.accessible.map((id) => {
       const mode = input.modes[id] ?? 'full';
 
@@ -613,12 +657,18 @@ function buildTrace(input: {
  * Unlike the other three, these two queries are unconditional — there is no "only if the worker has
  * a profile name" shortcut — so letting them share the outer catch would mean an unreachable
  * permission-set table degrades EVERY user to `legacyAccess`, which grants far less and (by design)
- * never grants Customer Service. The realistic way to hit that is deploying this code before running
- * migration 0114: access would quietly collapse org-wide, and the logs would say "resolve failed"
- * rather than "the new tables are missing".
+ * never grants Customer Service. The realistic way to hit that is deploying this code before its
+ * migration has run — a missing table on the release that adds one, a missing COLUMN on every
+ * release that adds one after. Access would quietly collapse org-wide, and the logs would say
+ * "resolve failed" rather than "the new schema is missing".
  *
- * Sets are purely ADDITIVE, so resolving without them is a correct, strictly-narrower answer. Losing
- * the whole grant chain instead is not.
+ * THE TRADEOFF IS NOT SYMMETRIC, and `override` changed which way it leans. For an additive set,
+ * resolving without it is strictly narrower and therefore safe. For an OVERRIDING set it is strictly
+ * WIDER: the set is what suppresses the profile and role defaults, so losing it hands the holder
+ * back everything those layers grant. Fail-soft is still the right call — the alternative collapses
+ * every user's access for the length of a deploy window, against a narrow window in which a few
+ * override holders are over-granted — but it is a deliberate fail-open, not a free one. The warning
+ * below is the only signal it happened, so it must stay loud.
  */
 function setsUnavailable(what: string): (err: unknown) => never[] {
   return (err) => {

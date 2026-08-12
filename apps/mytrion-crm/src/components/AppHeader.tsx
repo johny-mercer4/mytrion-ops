@@ -50,7 +50,14 @@ export function AppHeader({ context, search, actions, identity }: AppHeaderProps
   const roleLine = user.role || user.profile;
 
   return (
-    <header className={styles.bar}>
+    <header
+      className={styles.bar}
+      style={{
+        boxSizing: 'border-box',
+        height: 'calc(64px + var(--layout-safe-t, 0px))',
+        paddingTop: 'var(--layout-safe-t, 0px)',
+      }}
+    >
       {/* The brand signature on every screen: a 1px Horizon ramp under the bottom border. */}
       <span className={styles.hairline} aria-hidden />
 

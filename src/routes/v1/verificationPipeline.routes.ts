@@ -18,6 +18,7 @@ import { listAgentVerificationDeals } from '../../modules/verificationPipeline/s
 import { getPipelineProvider } from '../../modules/verificationPipeline/provider.js';
 import { getLiveVerificationSummaries } from '../../modules/verificationPipeline/cardSummary.js';
 import type { VerificationCardSummary } from '../../modules/verificationPipeline/types.js';
+import { deriveZohoState } from '../../modules/verificationPipeline/types.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
@@ -206,7 +207,7 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
               ).length ?? 0,
             verificationStatus: summary?.status ?? null,
             verificationUpdatedAt: summary?.updatedAt ?? null,
-            verificationState: summary?.state ?? null,
+            verificationState: summary?.state ?? deriveZohoState(client),
             plaidLinkUrl: summary?.plaidLinkUrl ?? null,
             plaidStatus: summary?.plaidStatus ?? null,
             cpLimit: summary?.approvedLimit ?? null,
@@ -217,7 +218,13 @@ export async function verificationPipelineRoutes(app: FastifyInstance): Promise<
             workingOn: summary?.workingOn ?? null,
           };
         });
-        if (q.state !== 'all') enriched = enriched.filter((client) => client.verificationState === q.state);
+        if (q.state !== 'all') {
+          enriched = enriched.filter((client) =>
+            q.state === 'in_progress'
+              ? client.verificationState === 'in_progress' || client.verificationState === 'queued'
+              : client.verificationState === q.state,
+          );
+        }
         const total = enriched.length;
         const offset = (q.page - 1) * q.page_size;
         return {

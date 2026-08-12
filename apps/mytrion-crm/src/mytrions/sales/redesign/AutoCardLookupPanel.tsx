@@ -76,7 +76,7 @@ export function AutoCardLookupPanel({
           {message.text}
         </div>
       )}
-      <div className="ss-scroll" style={s('overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)')}>
+      <div className="ss-scroll" data-table-scroller style={s('overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)')}>
         <div style={s('min-width:940px')}>
           <div style={s('display:grid;grid-template-columns:1.05fr 1.35fr .75fr .85fr 1.45fr .8fr .9fr .7fr;gap:8px;padding:11px 13px;background:var(--surface-2);font-size:var(--ss-text-badge);font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
             {['Card ID', 'Card #', 'Unit', 'Driver ID', 'Driver Name', 'X-Ref', 'Status', 'Override'].map((header) => <span key={header}>{header}</span>)}

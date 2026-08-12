@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { beginZohoLogin } from '../api/auth';
 import { ApiError } from '../api/transport';
 import { AuthScreen } from './AuthScreen';
+import { isTelegramWebView } from '../telegram/webApp';
 import styles from './Screen.module.css';
 
 /**
@@ -30,19 +31,25 @@ export function LoginGate({ initialError }: { initialError?: string | undefined 
     }
   }
 
+  const telegram = isTelegramWebView();
+
   return (
     <AuthScreen
       phase={busy ? 'redirecting' : 'idle'}
       title={busy ? 'Connecting to Zoho' : 'Sign in to Mytrion'}
       body={
         busy
-          ? 'Opening Zoho securely — you’ll confirm your account, then we’ll bring you back here.'
-          : 'Use your Zoho account to access the Mytrion portal.'
+          ? telegram
+            ? 'Opening Zoho in this window — stay here until Mytrion comes back.'
+            : 'Opening Zoho securely — you’ll confirm your account, then we’ll bring you back here.'
+          : telegram
+            ? 'Use your Zoho account. Confirm sign-in in this window, then you’ll return to Mytrion.'
+            : 'Use your Zoho account to access the Mytrion portal.'
       }
       error={error}
       action={
         busy ? null : (
-          <button type="button" className={styles.button} onClick={() => void signIn()}>
+          <button type="button" className={styles.button} style={{ minHeight: 44 }} onClick={() => void signIn()}>
             Sign in with Zoho
           </button>
         )

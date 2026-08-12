@@ -242,7 +242,7 @@ export function Jobs() {
             {initialLoad ? '…' : `${activeCount} active · ${catalog.length} total`}
           </span>
         </div>
-        <div className={s.table} aria-busy={initialLoad}>
+        <div className={s.table} data-table-scroller aria-busy={initialLoad}>
           <div className={`${s.tHead} ${s.tJobs}`}>
             <span>Job</span>
             <span>Type</span>
@@ -354,6 +354,7 @@ export function Jobs() {
         </div>
         <div
           className={s.table}
+          data-table-scroller
           style={{ marginTop: 'var(--space-3)' }}
           aria-busy={initialLoad || (loading && runs.length === 0)}
         >

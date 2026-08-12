@@ -307,6 +307,117 @@ describe('C-20 request invoices', () => {
   });
 });
 
+describe('C-18 check payment information', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('shows CMP amounts to the cent and does not call a part-paid invoice Paid', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') {
+        return {
+          invoices: { count: 13, totals: { total_billed: 384_817.4, total_paid: 341_320.57, open_balance: 43_496.83 } },
+          payments: { count: 26, total_amount: 340_174.11 },
+        };
+      }
+      return {
+        invoices: [
+          // CMP's own numbers contradict its status string — this is carrier 5815660's invoice.
+          { id: 1, invoiceNumber: '178238', status: 'PAID', totalAmount: 43_495.62, totalPaid: 10_000, remainingAmount: 33_495.62 },
+          { id: 2, invoiceNumber: '176639', status: 'PAID', totalAmount: 53_026.51, totalPaid: 53_026.51, remainingAmount: 0 },
+          { id: 3, invoiceNumber: '176640', status: 'PAID', totalAmount: 1_200, totalPaid: 0, remainingAmount: 1_200 },
+        ],
+      };
+    });
+
+    const out = await runAutomation(input(action('payments')));
+    if (out.kind !== 'payments') throw new Error(`expected payments, got ${out.kind}`);
+
+    // Exact to the cent — 43,495.62 must not read as 43,496.
+    expect(out.cmpInvoices[0]).toMatchObject({
+      invoiceNumber: '178238',
+      status: 'Partially Paid',
+      total: '$43,495.62',
+      paid: '$10,000.00',
+      remaining: '$33,495.62',
+    });
+    expect(out.cmpInvoices[1]).toMatchObject({ status: 'Paid', total: '$53,026.51' });
+    // Nothing paid at all is Pending, not "Partially Paid".
+    expect(out.cmpInvoices[2]).toMatchObject({ status: 'Pending' });
+    expect(out.summary).toEqual({
+      invoiceCount: '13',
+      totalBilled: '$384,817.40',
+      totalPaid: '$341,320.57',
+      openBalance: '$43,496.83',
+      paymentCount: '26',
+    });
+    // "Payments total" is gone — "Total paid" is the number the team reads.
+    expect(out.summary && 'paymentsTotal' in out.summary).toBe(false);
+  });
+});
+
+describe('C-18 merges the two CMP invoice sources', () => {
+  beforeEach(() => {
+    callTouchpointMock.mockReset();
+  });
+
+  it('takes status and total from clients.invoices, paid/remaining from the Deluge', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      if (key === 'carrier.check_payment') {
+        return {
+          invoices: [
+            { id: 1, invoiceNumber: '178238', status: 'PAID', totalAmount: 43_496, totalPaid: 10_000, remainingAmount: 33_495.62 },
+          ],
+        };
+      }
+      return {
+        data: [
+          { id: 1, invoice_number: '178238', status: 'PARTIALLY_PAID', total_amount: 43_495.62 },
+          { id: 9, invoice_number: '178901', status: 'PENDING', total_amount: 900.25 },
+        ],
+      };
+    });
+
+    const out = await runAutomation(input(action('payments')));
+    if (out.kind !== 'payments') throw new Error(`expected payments, got ${out.kind}`);
+
+    expect(out.cmpInvoices).toEqual([
+      {
+        id: '1',
+        invoiceNumber: '178238',
+        status: 'Partially Paid',
+        total: '$43,495.62',
+        paid: '$10,000.00',
+        remaining: '$33,495.62',
+      },
+      // Live-only invoice: the Deluge never returned it, and it is still a real invoice.
+      { id: '9', invoiceNumber: '178901', status: 'Pending', total: '$900.25', paid: '$0.00', remaining: '$0.00' },
+    ]);
+  });
+
+  it('renders on one source when the other fails, and only errors when both do', async () => {
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      if (key === 'carrier.check_payment') throw new Error('Deluge timeout');
+      return { data: [{ id: 4, invoice_number: '178300', status: 'PAID', total_amount: 10 }] };
+    });
+    const ok = await runAutomation(input(action('payments')));
+    if (ok.kind !== 'payments') throw new Error(`expected payments, got ${ok.kind}`);
+    expect(ok.cmpError).toBeUndefined();
+    expect(ok.cmpInvoices).toHaveLength(1);
+
+    callTouchpointMock.mockImplementation(async (key: string) => {
+      if (key === 'dwh.payment_info') return {};
+      throw new Error('CMP unreachable');
+    });
+    const bad = await runAutomation(input(action('payments')));
+    if (bad.kind !== 'payments') throw new Error(`expected payments, got ${bad.kind}`);
+    expect(bad.cmpError).toBe('CMP unreachable');
+    expect(bad.cmpInvoices).toEqual([]);
+  });
+});
+
 describe('invoice download', () => {
   const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 

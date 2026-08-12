@@ -57,17 +57,29 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
   return tool(
     async ({ query, limit }: { query: string; limit: number }) => {
       const run = requireAgentContext();
+      // Cap server-side: the model may ask for up to MAX_RETRIEVAL_K, and every passage is charged
+      // as input tokens on EVERY model call for the rest of the turn, not just once.
+      const k = Math.min(limit, env.RAG_MAX_PASSAGES);
       // RAG counts against the run's tool-call budget too (registry tools aren't the only path).
       run.budget?.countToolCall();
       if (env.FF_AGENTIC_RAG && env.FF_RAG_V2_RETRIEVAL) {
         const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
         const result = await agenticRetrieve(retrievalCtx, query, {
-          k: limit,
+          k,
           // The model called knowledge_search: it has already decided it wants documentation, so the
           // intent router must not answer "use a live tool instead" and abstain.
           explicitKnowledgeRequest: true,
           allowExternalSearch: Boolean(manifest.webSearch),
-          ...(run.turnContext?.task.resolvedAsk ? { resolvedAsk: run.turnContext.task.resolvedAsk } : {}),
+          // ONLY when history actually resolved a pronoun. `resolvedAsk` is otherwise the raw user
+          // utterance, and `agenticRetrieve` uses it for BOTH planQueries and judgeEvidence — so
+          // passing it unconditionally replaced the model's crafted keyword query with the user's
+          // sentence. Measured on the Sales bench (3 runs/config): expected-doc coverage 39/42 →
+          // 36/42 and mean wall +13%, because a compound ask ("check a client's balance AND see
+          // their card list") retrieved the generic Agent Playbook over the specific C-8/C-24 docs,
+          // graded `partial`, and burned an extra hop plus two grader calls to end up worse.
+          ...(run.turnContext?.task.anaphoraResolved && run.turnContext.task.resolvedAsk
+            ? { resolvedAsk: run.turnContext.task.resolvedAsk }
+            : {}),
         });
         if (run.collect) {
           run.collect.rag = {
@@ -141,7 +153,7 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
         const memory = await recallMemories(retrievalCtx, manifest.key, query);
         return `${result.groundingBlock}${memory}`;
       }
-      const results = await retrieve(retrievalCtx, query, limit);
+      const results = await retrieve(retrievalCtx, query, k);
       run.inspect?.({
         stage: 'rag',
         status: 'complete',

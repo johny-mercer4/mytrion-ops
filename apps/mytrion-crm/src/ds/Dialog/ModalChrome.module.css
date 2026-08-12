@@ -102,7 +102,7 @@
     flex-wrap: nowrap;
     /* Clears the home indicator, and the software keyboard when a field in the body has focus —
        without which the confirm button sits under the user's own hardware. */
-    padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+    padding-block-end: calc(var(--space-4) + var(--layout-safe-b, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
   }
   .footer > * {
     inline-size: 100%;

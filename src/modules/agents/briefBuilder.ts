@@ -65,6 +65,11 @@ export interface TurnBriefInput {
   planHint?: string | undefined;
   /** Canonical v1 context. When present it replaces legacy EnvironmentalContext construction. */
   turnContext?: TurnContextV1 | undefined;
+  /**
+   * The specialists THIS caller may reach (orchestrator turns only). Runtime, not prompt-static,
+   * because the roster is RBAC-filtered per caller — see fleet.ts.
+   */
+  agentFleetXml?: string | undefined;
 }
 
 /** The human message for a turn: identity/date context + optional history + the request. */
@@ -106,6 +111,10 @@ export function buildTurnBrief(input: TurnBriefInput): string {
     parts.push(xmlElement('Text', input.goalRecite, { indent: 2, maxChars: 1_000 }));
     parts.push('</GoalReminder>');
   }
+
+  // Before the blackboard and the plan: the orchestrator has to know who it can delegate to
+  // before it reasons about what to delegate.
+  if (input.agentFleetXml) parts.push(input.agentFleetXml);
 
   if (input.blackboardXml) parts.push(input.blackboardXml);
   if (input.executionPlanXml) {

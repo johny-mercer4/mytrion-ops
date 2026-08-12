@@ -14313,3 +14313,1043 @@ denied by lagging DWH `fetchInvoices`.
 ### Out of scope
 - ServerCRM `fetchInvoices` CMP-first (PR #186 — not required; close if opened)
 - zoho-octane C-20 (still on DWH fetchInvoices by design today)
+
+---
+
+## 2026-08-11 — Agentic core, milestone 1: the two dark RAG flags, measured
+
+Direction from the architect: harness the agentic AI across RAG, a per-agent skill library, and tool
+calling, for ~50 users. Chosen first move was deliberately unglamorous — **turn on what is already
+built but dark, and measure it** — because everything after it needs a scoreboard. Model stack
+decision: **OpenAI-only** (no Groq). Skill library will be **repo files, git-reviewed**.
+
+Rig: `benchSalesChat.ts --runs 3` (11 cases) against the LOCAL corpus (99 docs / 746 embedded
+chunks), API on :3011, one config per server restart. Every config below is 33 turns, ~$0.15.
+
+**The baseline is far healthier than the 2026-08-08 notes describe**: 39/42 expected-doc coverage,
+21/21 answer facts, 0 failures, 0 forbidden tool calls, mean 5,746ms — and *every case stable across
+3 runs*. The metric instability that made those notes hedge is gone, which is the only reason the
+A/B below is worth anything. Sole miss is `money-codes-view-and-draw` 1/2, stably: still the known
+recall gap across two document kinds, still not an ordering problem.
+
+### FF_RAG_V2_CONTEXT was a regression, and the cause was one unconditional argument
+
+Turning it on cost **coverage 39/42 → 36/42, mean wall +13%**, and took `balance-and-cards` from a
+stable 2/2 to `2/2 0/2 1/2`.
+
+`scopedRag.ts` passed `turnContext.task.resolvedAsk` into `agenticRetrieve` whenever it existed. In
+`loop.ts` that becomes `ask`, which drives **both** `planQueries` and `judgeEvidence` — so the flag
+silently replaced the model's crafted keyword query with the user's raw sentence. For the compound
+ask ("check a client's balance **and** see their card list") that retrieved the generic Agent
+Playbook over the specific C-8/C-24 docs, graded `partial/0.68` instead of `sufficient/0.91`, then
+burned an extra hop and two grader calls arriving somewhere worse.
+
+But `resolvedAsk` only *adds* anything when it spliced history in to resolve a pronoun — otherwise
+`resolveAsk()` returns the message verbatim. So the override is now gated on a new
+`task.anaphoraResolved`, and the flag measures **back at parity: 39/42, mean 5,537ms, 99 llm calls,
+`balance-and-cards` stable 2/2**. `FF_RAG_V2_CONTEXT=1`.
+
+Stated plainly: the bench shows the flag is now **cost-free**, not that it is valuable. Every case
+here is a single-turn documentation lookup, and the context contract's payload (tool facts, open
+questions, known-no-match, clause tracking) only pays off in multi-turn, multi-agent, tool-heavy
+work this bench does not contain. Proving the benefit needs those cases — same argument as the
+scratchpad in Phase C. That is the next piece of work, not a claim to make now.
+
+### FF_RAG_CLAIM_VERIFY stays OFF — the repair action is wrong, not its tuning
+
+On the fixed context path it took **answer facts 21/21 → 8/21**. Two real bugs found and fixed:
+
+1. **Marker/entailment conflation.** `verifyAnswerFaithfulness` skipped `if (!MARKER.test(claim))`
+   *before* consulting the grader, so an uncited sentence was deleted without ever being judged. The
+   grader is the authority on SUPPORT; the `[Sn]` marker is the authority on ATTRIBUTION. → 12/21.
+2. **The grader's contract forbade the answer.** Its prompt ended "Do not infer missing facts", but a
+   retention-timer answer is arithmetic *over* documented rules, not a quote from one — so correct
+   derivations were judged unsupported by instruction. Now explicitly: a conclusion COMPUTED from
+   rules and values stated in the evidence IS supported. → 14/21.
+
+Both fixes are kept — they strictly reduce destruction — but **the flag stays off**, and the reason
+is not the remaining 7. It is that the damage is *nondeterministic*: across three runs of identical
+questions and evidence, the calc cases scored 2/7, then a flawless **7/7**, then 5/7. A nano-tier
+sentence-level entailment call is a coin flip, and the consequence of a false negative is silent
+deletion of correct content the user asked for. Citations survived every run (docs 39/42), so
+nothing in the UI would show it happened. Delete-on-doubt is indefensible when the doubt is itself
+unrepeatable.
+
+Re-enable only after the pass is redesigned to **annotate** unsupported claims — turn inspector plus
+audit — and leave the prose alone. Abstention already has two owners that are deterministic:
+`citationCheck` marker stripping and the CRAG `not_documented` grade.
+
+### Untouched on purpose
+
+`FF_RAG_RERANK` stays 0. The 2026-08-08 entry rejected it on reproducible latency (+21% wall, +55%
+retrieval) for no measured gain, and `.env` records that framing specifically so it does not get
+flipped on hopefully later. Nothing measured today changes it.
+
+Backend 2524 passed / 1 skipped, typecheck clean, lint unchanged (4 pre-existing errors, all in
+vendored `ds-bundle/*.d.ts`).
+
+---
+
+## 2026-08-12 — Model tiers: a real hard tier, gpt-4o-mini retired, and why NOT GPT-5.6
+
+### GPT-5.6 exists, and it cannot serve our agent tier
+
+`gpt-5.6-luna` / `-sol` / `-terra` shipped 2026-06-23 — one day after the `llm-providers` skill was
+compiled, which is why that skill has no row for them. Verified live against `/v1/models` and the
+pricing page (post-cut prices; OpenAI dropped Luna 80% and Terra 20% after launch, so any table
+quoting Luna at $1/$6 is stale):
+
+| model | in | cached | out | positioning |
+| --- | --- | --- | --- | --- |
+| gpt-5.6-luna | $0.20 | $0.02 | $1.20 | nano-tier successor |
+| gpt-5.6-terra | $2.00 | $0.20 | $12.00 | mini-tier successor |
+| gpt-5.6-sol | $5.00 | $0.50 | $30.00 | frontier / agentic |
+
+Luna is priced at parity with `gpt-5.4-nano` ($0.20/$1.25) while being a generation newer, so it
+looked like a free upgrade. It is not, for two independent reasons.
+
+**1. The whole 5.6 family refuses function tools on Chat Completions unless
+`reasoning_effort: 'none'`.** Probed directly:
+
+```
+luna  +tools, no effort    400   luna  +tools, effort=low   400   luna +tools, effort=none  200
+terra +tools, no effort    400   terra +tools, effort=none  200   sol  +tools, effort=none  200
+gpt-5.4 / 5.4-mini / 5.4-nano / 5.5  +tools                 200   (reasoning AND tools)
+gpt-5.4-pro                                                 404   (not a chat model at all)
+```
+
+Our entire agent stack is Chat Completions + function tools. Adopting 5.6 there means **no reasoning
+on any tool-bearing call** — precisely where we are weakest (committed tool-F1 is 0.5) — unless the
+stack migrates to `/v1/responses`. That migration is a real option and worth its own evaluation; it
+is not a model swap.
+
+**2. In the roles where 5.6 IS usable (tool-free router/grader), it lost on measurement.**
+`OPEN_AI_FIVE_O_NANO=gpt-5.6-luna`, 3 runs: coverage 39/42 and answer facts 21/21 — identical — but
+mean wall **6,223ms vs 5,537ms (+12%)** and cost **$0.1630 vs $0.1472 (+11%)**. Luna is a reasoning
+model, so it spends output tokens thinking about work (route this / grade that) that does not need
+it. No gain, slower, dearer → rejected, same as rerank.
+
+### What did change
+
+- **`OPEN_AI_HARD_MODEL` `gpt-5.4-mini` → `gpt-5.4`.** It was byte-identical to the grounded tier,
+  so every "escalate to reasoning" path resolved to the model that had just failed. Escalation is now
+  a real step up ($2.50/$15, 272K ctx, reasoning + tools confirmed). `gpt-5.5` is the next rung if
+  5.4 proves insufficient.
+- **`gpt-4o-mini` retired.** `models.default` → `gpt-5.4-nano`. It was legacy, non-reasoning, and the
+  one model still on a 50% cached-input discount rather than 90% — the worst possible choice for the
+  helper calls that repeat a stable prefix most often.
+- **Four call sites fixed as a prerequisite**: `memory.ts`, `skillCache.ts`, `rerank.ts` and
+  `file_analyze.ts` all hardcoded `temperature: 0` + `max_tokens`, which a reasoning-tier id rejects
+  outright. Two of them (memory + skill distillation) run fire-and-forget after every turn inside a
+  try/catch that only logs — so retiring 4o-mini without this would have silently killed memory and
+  skill capture with a 400 and left no visible symptom. Verified after the change: **zero 400s** across
+  a 33-turn run.
+- Pricing rows added for the 5.6 family, `gpt-5.4` and `gpt-5.5`. Unknown ids bill at `gpt-4o` rates,
+  so a missing row is a wrong number, not a zero.
+
+New tiers measured from a clean state: **39/42, 21/21, all 11 cases stable, mean 5,581ms, $0.1460** —
+parity with the reference, which is the expected result since the answer/nano roles did not move.
+
+### The bench was lying to us, and it explains the old "instability"
+
+The first tiers run scored 38/42 with `balance-and-cards` unstable. Nothing in the change touches the
+answer or nano roles, so that could not be causal — and it wasn't. **Distilled agent memory is
+recalled INTO every `knowledge_search` result** (`scopedRag` → `recallMemories`), and every bench turn
+writes more of it. The bench DB had accumulated **567 memory rows** across the day's runs, so each
+successive config answered from a slightly larger corpus than the one before it. Truncating and
+re-running the identical config restored **39/42, all stable**.
+
+That is almost certainly what the Phase C/D notes were describing when they concluded coverage is
+inherently unstable run-to-run and added `--runs N` to cope. From a clean memory state it is not:
+across seven 3-run configs today, every case was stable except where a real regression was being
+measured.
+
+`benchSalesChat.ts` now prints the memory/skill row count in its header and takes `--reset-memory`,
+guarded to a local database — checked BEFORE any query, since `.env` points at Render and the first
+version of the guard sat after two `select`s and hung on DNS instead of refusing.
+
+Backend 2524 passed / 1 skipped, typecheck clean.
+
+### Deliberately left for its own commit
+
+The dead GLM and Groq provider paths. Both are provably unreachable — `modelRouter` never emits
+`'glm'`, and Groq is gated on a `sanitizedBenchmark` flag that nothing in `src/` or `scripts/` ever
+passes — despite `FF_GROQ_ENABLED=1` and two live API keys in `.env`. Removing them touches 14 source
+files plus 4 test files including the chat pipeline's streaming fallback, has zero runtime effect, and
+should be reviewed as a refactor rather than buried in a model-tier change.
+
+### Groq + GLM removed (same day, separate commit)
+
+Both were dead, in different ways. `modelRouter` never emitted `'glm'` at all — the GLM branch in
+`agents/models.ts` and `getGLM()` were unreachable by construction. Groq was reachable only when a
+caller passed `sanitizedBenchmark`, and nothing in `src/` or `scripts/` ever did, so `FF_GROQ_ENABLED=1`
+plus two live API keys in `.env` bought precisely nothing.
+
+Removed: both clients, the router's provider branching, the GLM ChatOpenAI branch, `GROQ_*` / `GLM_*` /
+`FF_GROQ_ENABLED` env, Groq pricing rows, the `envRuntime` key assertion, and four
+`model.includes('/') ? 'groq' : …` provider-detection ternaries that were quietly labelling telemetry.
+`Provider` is now the one-member union `'openai'` — kept as a union rather than deleted because it is
+the seam a future provider plugs into and it keeps `llm_calls.provider` honest. That column stays
+`text`, so adding one back needs no migration.
+
+Two things deliberately kept:
+
+- **`TurnModel.fellBack`**, always false. It is written into audit detail; dropping the field would
+  change the shape of historical audit rows, which is a data change dressed up as a code cleanup.
+- **The mid-stream fallback RULE, in a comment.** `streamTurn` used to refuse to retry once any token
+  had reached the wire, because re-running duplicates visible output. That is the non-obvious part and
+  it is recorded for whoever adds provider two.
+
+`tests/unit/chat-groq.test.ts` deleted (12 tests). `modelRouter.test.ts` rewritten around the
+invariants that survive: each role maps to its tier, escalation resolves to something *different* from
+the answer tier, and no override — `openai/gpt-oss-20b`, `glm-4-flash`, a Llama id — can produce a
+non-OpenAI provider any more.
+
+**Out of scope, deliberately:** `apps/agent-gateway*` are separate deployables (own Dockerfile /
+compose) and still reference Groq; `apps/agent-gateway-groq/` is an empty scaffold. None of them has
+its own `.env`, so **the `GROQ_API_KEY` / `GLM_API_KEY` in the root `.env` were left in place** rather
+than deleted out from under an app I did not audit. They are unused by the backend now and should be
+rotated or removed once the gateway apps are checked.
+
+Backend 2512 passed / 1 skipped (−12: the deleted Groq suite), typecheck clean, lint unchanged.
+Bench after removal, clean memory: 39/42, 21/21, all 11 stable, mean 5,643ms — parity.
+
+---
+
+## 2026-08-12 — Multi-turn bench cases, and a correction: FF_RAG_V2_CONTEXT goes back OFF
+
+Yesterday I enabled `FF_RAG_V2_CONTEXT` on the grounds that the regression was fixed and it now cost
+nothing — while stating plainly that the bench could not show a *benefit*, because every case was a
+single-turn documentation lookup. That was the right caveat, and the honest thing to do was build the
+cases that could settle it rather than leave the flag on for a benefit nobody had demonstrated.
+
+### The cases
+
+`benchSalesChat` now supports multi-TURN cases: a `followUps` array replayed against the SAME
+`conversationId`. Three added, each written so the follow-up is unanswerable on its own — the subject
+is a bare pronoun:
+
+- `mt-fraud-then-override` → "How long does **that one** last?"
+- `mt-openpool-then-cap` → "How many of **them** can I do in one day?"
+- `mt-balance-then-cards` → "And how do I see **their** card list?" (the old compound
+  `balance-and-cards` case, split across the turn boundary)
+
+Telemetry is keyed by conversation, so a follow-up would otherwise re-count its predecessor's
+`rag_runs` / `llm_calls`; each row id is attributed to the first turn that sees it.
+
+### The result: no benefit, and the reason is that something else already does the job
+
+| | contract OFF | contract ON |
+| --- | --- | --- |
+| expected-doc coverage | **61/63** | 60/63 |
+| answer facts | **24/24** | 23/24 |
+| every multi-turn follow-up | **1/1, stable ×3** | **1/1, stable ×3** |
+| mean wall | **6,313ms** | 6,899ms (+9%) |
+
+The follow-ups are answered correctly *with the contract off*. Conversation continuity does not come
+from `<TurnContext>` at all — it comes from the **LangGraph checkpointer** (`FF_AGENT_CHECKPOINTS=1`),
+which restores the thread by `thread_id` so the model simply sees the prior messages. The context
+contract's anaphora handling is redundant with a mechanism that was already on.
+
+So the flag adds XML to every brief — real input tokens on every call — for no measured gain. By the
+same standard that rejected rerank and gpt-5.6-luna, it goes back to **`FF_RAG_V2_CONTEXT=0`**.
+
+**What is kept:** the `resolvedAsk`/`anaphoraResolved` fix and its test. It is correct on its own
+terms and it protects anyone who enables the flag later from the retrieval regression.
+
+**What remains genuinely untested:** `knownNoMatch` retrieval suppression — skipping a repeat search
+when the same query and scope recently missed. It only engages with the contract on, and it needs a
+case shape the bench does not have (a documented miss, asked twice). That, not anaphora, is the
+argument for this flag; it should be enabled only with that evidence.
+
+### Incidental, but it matters for the 50-user rollout
+
+The ON run recorded 1 failure: `429 ... tokens per min (TPM): Limit 200000`. Nothing to do with the
+flag — it was my own back-to-back bench runs exhausting the org quota. Worth writing down anyway: a
+single developer running a benchmark can saturate the shared per-minute limit that ~50 people are
+about to share. The capacity workstream is not theoretical.
+
+---
+
+## 2026-08-12 — BIG PHASE 1: the authored skill library (infrastructure + foundational skills)
+
+Two things named "skill" now exist and they are not the same thing. `skillCache.ts` distills tool
+trajectories automatically and offers them back as *untrusted suggestions*; nobody writes or reviews
+them. **Authored skills** live in `src/modules/agents/skills/**`, are assigned by manifest, and change
+by PR — the same review discipline as prompts and tool manifests. The new ones do not replace the
+cache; they answer a different question (how the work is done here) than RAG does (what is documented).
+
+### Progressive disclosure is the entire design constraint
+
+A skill has a `whenToUse` (≤260 chars, ALWAYS in the system prompt) and a `body` (≤12k chars, fetched
+only when the agent calls `skill.read`). That split is not tidiness. Binding all 83 discovered Zoho
+MCP tools once cost **71,130 input tokens per call** and burned the org's per-minute quota in ~1.4
+questions; a skill library that injected every body would repeat that mistake with prose instead of
+JSON schemas. The index is derived from manifest constants, so the cached prompt prefix still hits.
+
+`skill.read` is built per agent as a closure (`buildSkillTool`), the same pattern as
+`buildScopedRagTool`, and is deliberately NOT a registry tool. Hard rules 3/4 exist because tools
+reach DATA and the dispatcher is where tenant isolation is re-verified per call. This tool returns a
+string compiled into the binary; its only access decision — is this skill assigned to this agent — is
+a reviewed manifest constant enforced by construction, since the closure cannot name a skill the
+manifest did not assign. Unlike RAG passages or memory it is NOT wrapped as untrusted: it is authored
+in-repo, reviewed, and meant to be followed.
+
+### Orchestrator self-knowledge: static skill vs runtime roster
+
+The architect asked that the orchestrator know "how many agents does it have". That is deliberately
+**not** a skill. The roster is RBAC-filtered per caller — a sales rep's orchestrator genuinely
+contains fewer agents than an admin's — so baking a fleet list into the byte-stable system prompt
+would be a lie for most callers, and would advertise specialists the caller cannot reach, which is
+precisely how the model ends up naming a specialist absent from its tool list.
+
+So `fleet.ts` projects `<AgentFleet count=N>` into the turn BRIEF from the already-computed
+RBAC-filtered manifest list, orchestrator turns only (a direct-to-child turn has nobody to route to,
+so the block would be pure prompt weight). The *reasoning* about it lives in the
+`orchestrator-fleet` skill: answer "how many" from the block, never from the number 11.
+
+### The skills
+
+Orchestrator: `orchestrator-fleet` (what it is, roster is per-caller, what to do when nothing fits),
+`orchestrator-routing` (boundaries only — the seams where routing actually fails, not a restatement
+of each agent's description, which the task tool already carries), `orchestrator-context` (what the
+server supplies vs what the brief must carry; resolving "my" without converting a server-enforced
+scope into a free-text filter).
+
+Sales: `sales-client-book`, `sales-cycle`, `sales-progress`, `sales-retention-invoices`.
+
+### The 26→25 cycle does not exist in code
+
+Verified: `billing_cycle` is an unrelated per-carrier string ("Weekly"), and every metric tool —
+`agent.sales_snapshot`, `agent.activity`, `warehouse.my_gallons` — reports CALENDAR periods. A rep
+asking "how many gallons this month" and meaning the cycle gets a number silently missing the 26th–31st
+of the previous month and wrongly including the 1st–25th of this one.
+
+On the 12th of a month the calendar month is 39% elapsed and the cycle is 58% elapsed, so any "am I on
+pace" judgement built on the wrong one is wrong. Until a tool speaks cycles the agent is the only thing
+between that question and a plausible wrong answer, which is why `sales-cycle` teaches boundary
+computation and — more importantly — forbids labelling a calendar result as a cycle result.
+Making the tools cycle-aware is a separate engineering task.
+
+### Tests (16, all green)
+
+Name uniqueness/kebab-case; the `whenToUse`/`body` size caps; **every manifest-assigned name resolves**
+(a manifest naming a deleted skill degrades silently at runtime because `skillsFor` drops unknowns, so
+the build is where it must be caught); **every `usesTools` name exists**, validated against registered
+tools UNION every name a manifest declares — because `warehouse.my_gallons` (FF_DBT_MCP_ENABLED), the
+file tools and blackboard all register conditionally and are absent under test env, exactly the
+"inert until the flag flips" convention `shared.ts` documents; index carries no body; unknown/duplicate
+assignments are ignored; byte-stability; a sales agent cannot read the orchestrator's routing skill;
+and the fleet projection escapes manifest text so a description cannot forge context.
+
+Backend 2528 passed / 1 skipped, typecheck clean, lint clean.
+
+**Still open:** `orchestrator-routing` currently encodes the boundaries verifiable from code today
+(how-to vs do-it, sales/data-center, the billing/finance/collection seam, sales/retention, the missing
+HR agent). A 15-agent department review is running to extend it with per-department triggers,
+anti-triggers and real operational workflows, each verified adversarially before it becomes a rule —
+a wrong routing rule baked into a foundational skill is worse than no rule.
+
+---
+
+## 2026-08-12 — Department review: 18 of 24 routing rules refuted, and I had the cycle backwards
+
+A 15-agent review of every department, followed by an adversarial verify pass on each proposed
+routing boundary (default-refute, "uphold only if the destination genuinely has the tools and the
+named source genuinely does not"). **6 boundaries upheld, 18 refuted.** 39 agents, 4.58M tokens.
+
+Running the verify pass was the whole value. Every one of those 18 read plausibly.
+
+### The systematic error behind almost every refutation
+
+**The reviewers reasoned from HTTP route RBAC; the orchestrator delegates to AGENTS.** A
+`requireDepartment(request, 'billing', …)` guard on a Fastify route says nothing about whether the
+billing *agent* can do the thing — agent capability is exactly `AgentManifest.tools`. The two planes
+are routinely confused, and a rule that confuses them routes work to a specialist with no tool for it,
+producing a confident refusal that reads like a bug.
+
+Concretely, and verified: **no agent in the fleet can** read/create/reassign/list a retention case
+(not even the retention agent — its whole toolset is `zoho_crm.query` + blackboard/file/dbt), list or
+void a money code, read a rejection report (zero hits across all manifests), search a prospect by
+MC/DOT, or answer anything about marketing spend (no cost source exists anywhere). The Sales Mytrion
+UI does all of this through touchpoints and routes that no manifest binds.
+
+That list is now the FIRST section of the routing skill, because a confident dead end costs a user
+more than an honest "that's done in the Retention tab".
+
+Two more refutations worth keeping:
+- **sales vs data-center is a preference, not a boundary.** Identical tools, identical grant — and in
+  the live Sales copilot path data-center is not even reachable. I had written it as a boundary.
+- **Escalation targets are RBAC-filtered.** customer-service is frequently ABSENT from a sales-only
+  worker's fleet, so "I'll pass this to Customer Service" is often a promise nothing keeps.
+
+Of the 6 upheld, one inverts the obvious guess: **creating** a ticket or escalation is sales (gated on
+sales access, sales owns the Create tab); customer-service works the queue. And of the three ticket
+shapes bundled together, only "work the support queue" has any owner — "reply to this ticket" and
+"what did CS answer" have none, since no agent has a Desk reply tool.
+
+**One methodological contamination, noted for honesty:** I committed `routing.ts` before the verify
+phase ran, so some verifiers cited MY OWN skill file back as evidence. Where that happened I fell back
+to the independent pre-existing source (`ORCHESTRATOR_PROMPT`, which already routed Sales Mytrion
+how-to to sales). Verification agents reading a repo that the thing under test lives in is a trap
+worth remembering.
+
+### I was wrong about the 26→25 cycle, and the cause is embarrassing but instructive
+
+Yesterday I wrote that the cycle "is implemented NOWHERE in the codebase". It is implemented **three
+times in `src/`** — `CYCLE_CTE` in `manager/salesKpiBoard.ts:23` (commented "The 26th→25th billing
+cycle, stated once and reused by both queries"), duplicated verbatim in
+`integrations/dwhClientRoster.ts:208` and `:421` — plus a fourth TypeScript implementation,
+`currentBillingCycle()`, in the CRM frontend, which the rep's dashboard already renders as
+"Cycle <start> → <end>".
+
+**Why I missed it:** my grep piped to `head -20`, and unrelated `billing_cycle` matches filled all 20
+lines. The `cycle_start` hits were in the output I truncated. I then reported the absence as a finding
+and wrote a skill around it.
+
+The corrected picture is more useful than "missing" and worse for a copilot: the cycle is canonical in
+the **warehouse and on the rep's dashboard**, while every tool the agent can call is **calendar**-based
+(`warehouse.my_gallons` = today/this_week/this_month, ISO Monday weeks; `crm.transactions` is the only
+range-taking tool; nothing anywhere computes a *previous* cycle). So the agent and the screen the rep
+is looking at will disagree, and both are right. The skill now teaches exactly that, plus the
+server-date vs browser-local-date divergence that can make the two name different cycles for a few
+hours around the 25th/26th.
+
+### Other corrections the review forced
+
+- **`crm.list_cards` does not return last-used**, despite its own description promising "status and
+  last-used info". Verified in servercrm: `SELECT card_number, status FROM octane.dim_card`. The skill
+  had repeated the false promise.
+- **`crm.transactions` returns page 1 only**, capped at 500 rows.
+- **The zero-that-is-not-a-zero trap is confirmed and precise**: `warehouse.my_gallons` matches by
+  Zoho id suffix ONLY with no display-name fallback (and unit tests lock that in), so an identity
+  mismatch returns an empty set indistinguishable from a rep who sold nothing. Tools disagree on
+  identity too — snapshot/debtors key on display NAME, activity/gallons on Zoho id — which is exactly
+  what makes the cross-check work.
+- **Retention**: all three kill switches confirmed hard-coded false. The 2 BD action SLA and the 5 BD
+  post-contact watch have **no consequence today**. The one live escalation is vacation → Ops → CITI,
+  and an Ops **denial sets the rep's Zoho deal Stage to Closed Lost** — the highest-stakes automatic
+  consequence still switched on, and now stated in the skill.
+- **Sales has no debtor tool** (`agent.debtors` is billing/collection/finance/manager/analyst).
+- Per-client data the copilot cannot reach at all: retention state, tickets, and call history (calls
+  link to a lead/deal/retention case, never to a carrier).
+
+Backend 2528 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — HR agent (tools first), cycle-aware tools, and a false tool description
+
+### HR: built tools-first, because the alternative is the trap we just documented
+
+The department review's sharpest finding was that several agents are named after departments whose
+work they cannot perform — no agent can touch a retention case, a money code or a rejection report.
+Creating an `hr` agent bound to nothing would have reproduced exactly that, so the tools came first.
+
+Two new read tools, both reading the **local `hr_employees` mirror — the same records the HR Mytrion
+renders**. That matters: the only pre-existing employee tool, `zoho_people.search_employees`, reads
+*live Zoho People* and is bound solely to the manager agent, so a chat answer about staff could
+contradict the screen the user was looking at.
+
+- `hr.find_employee` — directory search. Gated `allowedDepartments: ['hr']`, mirroring
+  `requireHrInternal`. Without that gate every internal caller could read all ~213 employee rows.
+- `hr.my_time_off` — the caller's OWN leave position. **Added to `UNIVERSAL_TOOLS`**, and that is the
+  load-bearing decision: the manifest-derived department policy would otherwise stamp it `['hr']` and
+  lock ~200 employees out of their own leave balance. It mirrors `requireTimeOffInternal`, which is
+  audience-only on purpose because owner-scoping happens *inside* `resolveTimeOffEmployee` — it
+  resolves the caller's own row from `zoho:<id>` and cannot return anyone else's. Audience gating
+  still applies, so a partner-audience caller (driver/fleet_manager) does not get it.
+
+The `hr` agent is `readOnly: true` and carries no `crm.*`, `agent.*` or `warehouse.*` tool at all —
+asserted in the golden record, because "HR is about employees, never carriers" is a property worth
+failing the build over.
+
+Its skill (`hr-people-data`) exists mostly to prevent three specific wrong answers, each verified:
+**"the system doesn't let me see salary"** (there is no salary/compensation/contract data anywhere —
+absent, not restricted, and implying otherwise sends someone hunting for a permission that cannot
+exist); **"they were absent on Tuesday"** (attendance covers one office and fewer than half of staff
+have a Face ID, so an empty record means *not enrolled*, and getting this wrong is an accusation
+about a colleague); and **"you've accrued 12 days"** (entitlement is a flat annual allocation with no
+accrual, carry-over or pro-rating, so a mid-year joiner shows a full year).
+
+Both orchestrator skills were corrected — they had said HR has no agent — and the fleet count moved
+11 → 12.
+
+### The cycle now has one definition, and the tools can use it
+
+`CYCLE_START_SQL` / `cycleCte()` / `cycleWindowSql()` / `salesCycleBounds()` live in
+`src/lib/salesCycle.ts`. The three SQL copies in `src/` (salesKpiBoard, and twice in
+dwhClientRoster) now import it; a test walks `src/` and fails if the raw expression reappears
+anywhere else. The CRM frontend's `currentBillingCycle()` is a fourth copy that is deliberately left
+alone — it is a separate bundle and cannot import from `src/`.
+
+`warehouse.my_gallons` gained **`this_cycle` (now the DEFAULT) and `last_cycle`**, so a rep's cycle
+figure and a true cycle-over-cycle comparison are one call each — the previous-cycle window did not
+exist anywhere before. It also returns a `periodLabel` naming the window it measured, so an answer
+cannot silently present a calendar month as a cycle.
+
+The window is half-open (`>= start`, `< start + 1 month`). Because the start is the 26th, the
+exclusive bound lands on the next 26th, which includes the whole 25th without any month-length
+arithmetic. Tests cover the 25th/26th flip, February, and the year boundary.
+
+### crm.list_cards was lying
+
+Its description promised "status and last-used info". The endpoint behind it is
+`SELECT card_number, status FROM octane.dim_card` — verified in servercrm. No last-used, no unit, no
+driver, no limits. A description that promises a field is how a model ends up asserting a date it
+never saw, so it now says exactly what the tool returns and explicitly what it does not.
+
+### Ten guard-test failures, all deliberate
+
+Adding an agent and two tools broke 10 assertions across four files — golden per-agent policy, the
+read-only set, department tool gating, file RBAC and the catalog count. Every one is a policy the
+tests exist to force a human to re-approve, so each was updated with the reason rather than the
+number. The golden record for `hr` asserts its absences as much as its tools.
+
+Backend 2551 passed / 1 skipped, typecheck clean, lint unchanged.
+
+### The skill tool was named `skill.read`, and it broke every agent turn
+
+2551 unit tests passed, typecheck clean, lint clean — and the agent was **100% broken**. The first
+live bench run: **51 failures, 0 LLM calls, mean 429ms.**
+
+`400 Invalid 'tools[1].function.name': string does not match pattern '^[a-zA-Z0-9_-]+$'`.
+
+REGISTRY tool names are dotted (`crm.list_cards`, `blackboard.read`) and survive because
+`agentTools.ts` maps `[^a-zA-Z0-9_-]` → `__` before binding. A per-agent CLOSURE tool never passes
+through that mangling — which is exactly why the existing one is called `knowledge_search`, not
+`knowledge.search`. I copied the registry convention into a place where it does not apply, and the
+dot reached OpenAI verbatim, killing every turn for every agent before a single model call.
+
+Renamed to `skill_read`, with the reason recorded at the definition. The real fix is the guard: a
+test now asserts every per-agent bound tool name matches OpenAI's pattern, and that the skill index
+advertises the same name it binds. **Nothing in the suite binds a real model**, which is why 2551
+green tests said nothing about this — worth remembering before trusting a green suite about runtime
+behaviour again.
+
+### Skills measured: quality held, cost is real
+
+Sales bench, 3 runs, clean memory, direct-to-agent:
+
+| | before skills | with skills |
+| --- | --- | --- |
+| expected-doc coverage | 61/63 | 60/63 |
+| answer facts | **24/24** | **24/24** |
+| failures | 0 | 0 |
+| mean wall | **6,313ms** | 8,896ms (+41%) |
+| llm calls | **155** | 179 |
+| cost | **$0.2249** | $0.2962 (+32%) |
+
+The 61→60 is the `money-codes-view-and-draw` flip (the known two-document recall gap), not a skills
+regression: every case is stable and answer facts are unchanged.
+
+`skill_read` fired **26 times across 51 turns**, and on the right cases — retention questions, client
+lookups, the retention-timer arithmetic. Progressive disclosure is working as designed; the extra
+round trip per read is its cost.
+
+**Stated plainly, and it is the same shape as the FF_RAG_V2_CONTEXT problem:** this bench is
+documentation lookup, which the RAG corpus already answers, so it can show the skills' COST but not
+their BENEFIT. The difference is that skills carry information that exists nowhere else — the 26→25
+rule, which retention kill switches are off, that `crm.list_cards` has no last-used — so the answer
+is to build the cases that test that (cycle questions, period comparisons, a client-resolution flow),
+not to disable them. Until those exist, +41% wall is a measured cost against an unmeasured benefit,
+and should be treated as such.
+
+Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — Skills measured against what they are FOR: 1/15 → 15/15
+
+The skill library shipped with a measured cost (+41% wall) and an unmeasured benefit, which is the
+same position `FF_RAG_V2_CONTEXT` was in before it got turned back off. The difference is that skills
+carry facts that exist nowhere a retrieval can reach, so the fix was to build cases that test that.
+
+Two pieces of new equipment:
+
+- **`FF_AGENT_SKILLS`** (default 1), gating both the whenToUse index and `skill_read`. A capability
+  that cannot be switched off cannot be A/B'd, and this repo turns off what it cannot justify.
+- **Five bench cases anchored on distinctive skill-only tokens** rather than prose: `26`/`25` (the
+  cycle rule), `Monday` (ISO week start), `Closed Lost` (Ops vacation denial), `500`
+  (`crm.transactions` page cap). Verified the control is real: **0 `skill_read` calls with the flag
+  off, 42 with it on.**
+
+### The result
+
+| | skills OFF | skills ON | ON + how-to gate |
+| --- | --- | --- | --- |
+| **skill-only facts** | **1/15** | **15/15** | 14/15 |
+| answer facts (all) | 28/42 | **42/42** | 41/42 |
+| expected-doc coverage | 56/63 | 51/63 | **59/63** |
+| mean wall | **6,323ms** | 9,672ms | 8,991ms |
+| cost | **$0.3004** | $0.3726 | $0.3496 |
+
+**1/15 → 15/15, stable across three runs.** Without skills the agent cannot state the cycle rule, the
+week start, what an Ops denial does to the deal, or that transactions are capped — because none of it
+is in the corpus. With them it gets all of it, every run.
+
+### But the first ON run REGRESSED citations, and it was my skill's fault
+
+Coverage fell 56 → 51, concentrated entirely in `balance-and-cards` (2/2 stable → **0/2, 0/2, 2/2**)
+and `mt-balance-then-cards`. The trace shows why: `tools: skill_read, crm__pick_my_client` — for a
+**how-to** question. It never called `knowledge_search`, so it cited nothing.
+
+`sales-client-book` led with "**Call `crm.pick_my_client` before any per-client tool**", stated
+unconditionally. That fires on "how do I check a client's balance?", and it directly contradicts the
+Sales persona's own rule that a how-to answer comes from `knowledge_search` ALONE. **My skill
+overrode the manifest.** A skill is prompt text with the authority of instructions; one written
+without a scope gate will happily out-argue the persona it was meant to support.
+
+Fixed by putting the gate FIRST — decide how-to vs data before anything else — with the measured
+numbers in the skill so nobody re-orders it back. Re-measured: `balance-and-cards` **2/2 stable**,
+tools `skill_read, knowledge_search`, coverage **59/63**.
+
+Second finding from the same trace: the bench reported **"forbidden tool calls 0"** while the agent
+was calling `crm.pick_my_client` on a how-to, because `NO_LIVE_DATA` only listed CRM/warehouse tools.
+A forbid list that misses the tool actually being misused is worse than no list — it reads as a clean
+bill of health. Now covers every `crm.*` tool in both dotted and `__` bound forms, and it immediately
+caught 2 remaining calls on `skill-transactions-cap` (a hypothetical phrasing the gate does not fully
+catch; the answer was still right).
+
+### Verdict
+
+**`FF_AGENT_SKILLS` stays ON.** Benefit is decisive and reproducible (1/15 → 15/15) on facts available
+nowhere else; after the gate, citation coverage is at or above the skills-off control; the cost is
++42% wall and +16% money. That is the first capability this session to earn its keep on measurement
+rather than on argument.
+
+Also worth recording: 4 of the failures in the gated run were **429 TPM rate limits** (`Limit 200000,
+Used 196383`) from my own back-to-back benching — the third time today. 59/63 was scored *despite*
+losing 4 turns to it. One developer can saturate the quota ~50 people are about to share.
+
+Backend 2554 passed / 1 skipped, typecheck clean, lint unchanged.
+
+---
+
+## 2026-08-12 — Capacity: the ceiling is ~7 turns per minute, org-wide
+
+Rate limiting stopped being a hypothesis today — a single developer running the bench tripped a 429
+**three times**, so I measured where the tokens actually go using the `llm_calls` telemetry the runs
+already write.
+
+### Where the budget goes
+
+| role | calls | avg input | cached | avg output |
+| --- | --- | --- | --- | --- |
+| **answer** | 862 | **12,744** | **89.8%** | 83 |
+| router | 357 | 187 | 0% | 60 |
+| grader | 20 | 1,075 | 0% | 81 |
+
+Per turn: **28,741 input tokens average, 53,559 worst case, 2.24 answer calls.**
+
+**At a 200,000 TPM organisation limit that is ≈7 turns per minute for the entire company.** With ~50
+people, seven or eight asking a question in the same minute saturates it. That is the capacity
+ceiling, and it is nothing to do with answer quality.
+
+**Prompt caching is already working and is not the lever.** 89.8% of input is served from cache — but
+the 429 body reads `Limit 200000, Used 196383`, i.e. **cached tokens still count against TPM**.
+Caching buys ~90% off the *bill*; it buys nothing on the *quota*.
+
+Decomposing one answer call (measured, ~4 chars/token):
+- Sales system prompt **2,469 tok** (persona 1,640 · shared rules 534 · skill index 295)
+- 18 registered tool schemas **1,151 tok**
+- → static, cached prefix ≈ **3,620 tok**
+- → the remaining **~9,100 tok is dynamic**, dominated by the grounding block
+
+And the grounding block is **replayed on every model call for the rest of the turn**. Six passages
+retrieved once are charged 2.24 times. That is the structural driver, not the prompt.
+
+Caveat on the measurement: dbt MCP and Zoho MCP were unreachable locally, so their tool schemas are
+ABSENT from these numbers. Production binds `dbt_mcp.*` (a wildcard) plus 4 named Zoho tools, so real
+prompt weight is **higher** than 12,744.
+
+### A 429 was being reported to users as a broken system
+
+`presentAgentError` had no rate-limit branch, so throttling fell through to *"The AI service failed
+to complete this request. Please retry."* — indistinguishable from a broken model, and it tells the
+user to do the single thing that worsens contention, while the provider was saying *"try again in
+1.083s"*.
+
+Now its own branch, checked BEFORE the model-unavailable one (a 429 body names the model, and
+"unavailable" would send someone to an administrator over something that clears in seconds):
+*"The assistant is at capacity right now — too many requests are in flight across the team. Please
+wait a few seconds and send that again. Nothing is broken and nothing was lost."* Tests assert it
+never leaks the org id, the limit or the raw provider text.
+
+`AGENT_MODEL_MAX_RETRIES` (default **4**, was hard-coded 2). The OpenAI SDK honours the `retry-after`
+a 429 carries, so each retry is a short server-directed wait. Two backoffs is thin for a shared pool;
+a failed turn costs the user their whole question, a third retry costs a second.
+
+### The lever, made measurable
+
+`RAG_MAX_PASSAGES` (default 6 — today's behaviour) caps passages server-side in `scopedRag`,
+regardless of the `limit` the model asks for. It is the biggest single lever on TPM because each
+passage is charged on every subsequent model call in the turn. A/B of 4 vs 6 is running.
+
+### Not code, but the real fix
+
+**200,000 TPM is a low tier.** Every token optimisation below is worth doing and none of them changes
+the order of magnitude: cutting turn cost by a third takes ~7 turns/minute to ~10. Fifty people need
+a higher tier. That is an account action, and it should happen before rollout rather than after the
+first support ticket.
+
+Backend 2559 passed / 1 skipped, typecheck clean.
+
+### The k=4 experiment is INCONCLUSIVE — it was killed by the thing it was measuring
+
+The 4-vs-6 passage A/B returned coverage 14/63 and **49 failures**. That is not a result about `k`.
+
+`server-k4.log` carries **101 rate-limit hits and zero non-429 errors**. The shape gives it away:
+every case scored 1/1 in run 1 and then 0 in runs 2 and 3, with mean wall dropping to 2,628ms — the
+signature of failing fast, not of answering with fewer passages. My earlier runs today took 4
+failures; this one took 49, because the quota degrades progressively under sustained load.
+
+**Nothing about `k` may be concluded from it, and no default was changed on it.** `RAG_MAX_PASSAGES`
+stays at 6, which is exactly today's behaviour. Reading 14/63 as "k=4 destroys quality" would have
+been a serious misdiagnosis, and it is the kind that ships.
+
+Worth stating for its own sake: **I could not measure the optimisation because I had saturated the
+very quota the optimisation exists to relieve.** That is the capacity finding demonstrated on a
+single developer. Fifty people will not get a quieter window than I had.
+
+The experiment needs either a genuinely idle period or — better — the higher tier. Re-run it before
+touching `k`.
+
+### CORRECTION: two different 429s, and I conflated them
+
+The entry above blamed the k=4 collapse on TPM saturation and claimed "the quota degrades
+progressively under sustained load" (4 failures in one run, 49 in the next). **That was wrong.**
+
+The provider returns 429 for two unrelated conditions, and the logs separate cleanly:
+
+- `server-skills-gated.log` — **4 ×** `Rate limit reached … tokens per min (TPM): Limit 200000, Used
+  196383`. Genuine throttling.
+- `server-k4.log` — **77 ×** `You have no credits remaining. Add credits to continue using the API`.
+  **Billing.** The account balance had gone to −0.09.
+
+So the k=4 run did not hit a rate limit at all; it hit an empty wallet. The escalation from 4 to 49
+failures was not load-dependent throttling, it was the balance running out mid-session. My own grep
+had already shown this — `rg "429 Rate limit"` returned nothing for that log while `grep -c 429`
+returned 101 — and I read past it.
+
+**What survives the correction:** the capacity arithmetic, which came from `llm_calls` telemetry and
+not from the failures — 28,741 input tokens per turn, 2.24 answer calls, 89.8% cached, and therefore
+≈7 turns/minute against a 200,000 TPM ceiling. The 4 genuine TPM 429s are real evidence that the
+ceiling is reachable in normal use. What does NOT survive is the claim that sustained load
+progressively degrades the quota.
+
+**And the correction exposed a bug in the fix from the same entry.** `RATE_LIMITED` matches `\b429\b`,
+so credit exhaustion — also a 429 — would have been reported to every user as *"The assistant is at
+capacity right now… please wait a few seconds."* For an empty balance that is advice that can never
+come true, and it hides an outage only an administrator can end. `NO_CREDIT` is now checked first and
+says so plainly; `isRateLimitError` excludes it, so metrics cannot report an unpaid bill as
+congestion.
+
+Balance has been topped up. The k=4 A/B has been re-run — see below.
+
+### k=4 re-run on a funded account: quality-neutral, token-neutral → REJECTED
+
+With credit restored the A/B completed cleanly (0 failures, 2 stray 429s absorbed by the retry
+budget):
+
+| | k=6 | k=4 |
+| --- | --- | --- |
+| expected-doc coverage | 59/63 | **59/63** |
+| answer facts | 41/42 | **42/42** |
+| failures | 4 (billing) | **0** |
+| cost | $0.3496 | $0.3356 |
+| **input tokens / turn** | **27,957** | **33,853** |
+| answer calls / turn | 2.20 | **2.58** |
+| **input tokens / answer call** | **12,629** | **13,068** |
+
+Quality is neutral — same coverage, every case stable. But the optimisation **does not save tokens.
+It costs them.**
+
+Per-CALL prompt size barely moved (12,629 → 13,068), and per-TURN went UP 21%. The reason is
+structural and I had the model wrong: **each `knowledge_search` result stays in the turn's message
+history.** Retrieving fewer passages per search does not shrink the prompt, it makes the agentic loop
+search MORE (answer calls 2.20 → 2.58), and every extra hop appends another grounding block to a
+history that is replayed on every subsequent call. The loop compensates for thinner evidence, and
+compensation is more expensive than the evidence was.
+
+So `RAG_MAX_PASSAGES` stays at **6**. The cap itself is kept — it is a real server-side ceiling on
+what a model can request, and it is now a measured knob rather than a hypothesis.
+
+**What this rules out, and what it points at.** The grounding block is not a lever that can be pulled
+by shrinking `k`. Per answer call the static cached prefix is ~3,620 tok of ~12,700, so ~9,100 is
+accumulated conversation — retrieved passages, tool results, prior turns. The lever is therefore
+**the number of answer calls per turn and what accumulates between them**, not the size of any single
+retrieval. Trimming tool results and pruning superseded grounding blocks from history are the next
+candidates; both are real work and neither should be attempted without this same A/B rig.
+
+Four optimisations measured this session, three rejected on evidence (rerank, gpt-5.6-luna,
+FF_RAG_V2_CONTEXT, and now k=4). The one that survived — the skill library at 1/15 → 15/15 — is the
+only one that was ever argued for on a number rather than on a story.
+
+### Same day — today first in the week list
+
+The API returns the week ascending, so today's card sat wherever it fell — three down on a Wednesday.
+The one card people open this screen to read was the one they had to hunt for. Today is lifted to the
+top; every other day keeps its calendar sequence.
+
+Only today MOVES, deliberately. Pulling it out and reversing the rest would put the OLDEST day directly
+beneath it, which is a stranger reading order than the calendar one — the week should still read as a
+week. On a past week there is no `todayRow`, so nothing is reordered at all.
+
+Reordering is presentational: `weeklyMs` still sums `data.days`, and a test pins that the total does not
+move with the order.
+
+5 tests. Mutations caught: no reorder at all, and today-first-with-the-rest-reversed.
+
+### 2026-08-12 — "Unable to preload CSS" in production
+
+Reported from prod:
+
+```
+Unable to preload CSS for https://octane-ops-ai.onrender.com/assets/index-CLy9FzoA.css
+Refused to apply style … MIME type ('application/json') is not a supported stylesheet MIME type,
+and strict MIME checking is enabled
+```
+
+**Prod was healthy.** Checked it directly: `index.html` serves 200 with `cache-control: no-cache` and
+an ETag, and references `index-fiJcEjJH.css` — the asset the current build actually ships. The missing
+`index-CLy9FzoA.css` was committed in `74fde365` and replaced by later rebuilds, so it is simply gone.
+
+**It is a tab left open across a deploy.** Every build emits new content-hashed names and the old ones
+stop existing. A tab loaded before the deploy is still running the old JS, so its first LAZY route
+import afterwards asks for a chunk that no longer exists — hence "preload", not a first-paint failure.
+Nothing was misconfigured; the error boundary just turned a stale tab into "Something went wrong".
+
+Two fixes, because the cause and the message were separate problems:
+
+1. **`lib/staleBuildReload.ts`** — listens for `vite:preloadError` and reloads once. The newest
+   `index.html` is always one request away (it is `no-cache`), so a reload picks up the new chunk names.
+   Guarded by a `sessionStorage` flag cleared on `load`, so a genuinely broken asset fails VISIBLY on the
+   second try instead of reload-looping. Attached before the first render, since the failure happens on a
+   lazy import and the listener has to exist by then.
+
+2. **A missing `/assets/*` now returns `text/plain`, not the JSON error envelope.** That envelope is what
+   produced the second line: helmet sets `nosniff`, so a stylesheet answered with `application/json`
+   reads as a server misconfiguration rather than "that file is gone". Note the existing
+   `/main/assets/…` redirect only fires when `indexOf('/assets/') > 0`; a ROOT-level `/assets/…` miss
+   fell straight through to the envelope. Deliberately not the SPA shell either — answering a stylesheet
+   with HTML trips the same check with a different type in it. API 404s keep their JSON, and a test pins
+   that.
+
+3 tests, mutation-verified by letting asset misses fall back to the envelope.
+
+**Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
+it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
+answer; worth revisiting only if tabs are routinely left open through deploys.
+
+## 2026-08-12 — Card Activity tooltip parity follow-up
+
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.
+
+### Review follow-up, same day
+
+Three things the first pass got wrong, found by reviewing the diff before opening the PR:
+
+**The tooltip could leave the card through the top.** It was anchored to `.msd-chart-activity-area`
+with only a horizontal clamp, and the plot is 110px tall while the card is ~128px — so the tallest
+day of a cycle had no room above its own point and `translateY(-100%)` pushed the card out over the
+page header. That is the same defect class as the July screenshot bug the previous comment described,
+reintroduced from the other direction. Fixed by moving the positioning boundary out to
+`.msd-chart-block` (which includes the header band) and clamping the card's bottom edge to
+`MSD_TOOLTIP_HEIGHT + gutter`. Days with room still track their point; tall days park at the top of
+the card, beside the column the horizontal clamp already tracks. `.msd-chart-activity-area` is
+deliberately no longer `position: relative` — a test asserts that, because making it relative silently
+caps the clamp at the plot's top edge again.
+
+`MSD_TOOLTIP_HEIGHT` is an over-estimate on purpose: too high parks the card a few pixels low, too
+low lets it clip out. Measuring the card instead would mean a second layout pass per hover.
+
+**Tokens had been replaced by raw hex.** `rgba(15,23,42,.92)` + a `.ss-root.light` twin + `#38bdf8`
+went back to `--hz-modal-surface` / `--glass-bd-hi` / `--accent`, which theme through the cascade and
+need no light override. The `backdrop-filter: blur(8px)` is gone too: the modal surface is already the
+glass primitive, and a second blurred layer that moves on every hover is exactly the composited-layer
+trap in `modern-web-guidance`.
+
+**The series colours disagreed with themselves.** The header legend said grey for Active/New; the
+tooltip said green and blue for the same two series. They are now one set of `--msd-series-*` vars on
+`.msd-chart-block`, consumed by the legend, the plot and the tooltip dots.
+
+Also: `min-width: Npx` budget in `breakpoints.test.ts` ratcheted 76 → 75, since the card now has a
+fixed `width` the clamp can reason about.
+
+### Then it was looked at, and the clamp was the wrong answer
+
+Screenshots of the running app killed the card-clamp above. Two things it got wrong:
+
+**The intended interaction is a tooltip that floats clear of the card**, over whatever is above it —
+not one held inside the chart. Clamping it to the card put it BELOW the point it described on a tall
+day, which is worse than the bug it fixed. The card is now `position: fixed` in viewport coordinates,
+clamped only to the window, so it cannot leave the screen and cannot be clipped by the page scroller.
+Every input is a client rect now, which also deleted the `scrollLeft` arithmetic: scrolling the chart
+sideways or scrolling the page both move `svgLeft`/`svgTop` on their own.
+
+**`position: fixed` does not mean the viewport here.** The chart sits in a glass card, and a
+`backdrop-filter` ancestor becomes the containing block for fixed descendants — so the card was
+resolving against that card's box and floated off by roughly the page's scroll offset. It is now
+portalled to the module root (`.ss-root`), which the repo's stacking rules keep free of
+transform/filter. `--msd-series-*` moved to `.ss-root` for the same reason: the portalled card is no
+longer inside `.msd-chart-block`, so vars declared there would not reach it.
+
+Worth remembering as a rule: **in this app, `position: fixed` inside a workspace card is not fixed to
+the window.** Portal to `.ss-root` (or use `ds/Dialog`, which is in the top layer) instead.
+
+**How it was verified.** 813 CRM tests pass and the geometry is unit-tested, but jsdom does no layout,
+so the placement was checked in the running app on `localhost:5173`. Not by automation: the Playwright
+browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
+no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
+signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — C-18 Check Payment Information: CMP status and exact amounts
+
+Three reports from Sales, one root cause each.
+
+**"Payments total" removed.** It sat beside "Total paid" showing a different number ($340,174 vs
+$341,321) for what reads as the same thing — one is the 90-day payment ledger, the other the amount
+matched to invoices. Two totals that disagree is a support ticket, not a feature. Total paid stays.
+
+**A part-paid invoice was labelled Paid.** Two independent causes, both fixed:
+
+1. `cmpStatusBadge` relabelled anything containing "paid" as the literal string `Paid` — so
+   "Partially Paid" rendered as "Paid" no matter what CMP returned. The badge now shows CMP's own
+   label and derives only the tone, checking partial first.
+2. The invoice list came from `carrier.check_payment` (Deluge) alone, whose status string is the one
+   Sales says is wrong (carrier 5815660). C-18 now also reads `clients.invoices` — the CMP-first
+   route C-20 already trusts — and `mergeCmpInvoices` matches on invoice number, taking status and
+   total from CMP-first and paid/remaining from the Deluge, which is the only source that carries
+   them. Three calls in `Promise.allSettled`: either invoice source alone still renders the panel,
+   and `cmpError` is only raised when both fail.
+
+On top of that, `cmpInvoiceStatus` refuses to call an invoice Paid while CMP's own numbers say money
+is owed: remaining > 0 with something paid is Partially Paid, remaining > 0 with nothing paid is
+Pending. Every other status is passed through untouched, so Cancelled and Overdue keep their word.
+The money is the source of record; the string is what carriers dispute.
+
+**Amounts were rounded to whole dollars.** `money()` uses `maximumFractionDigits: 0`, so CMP's
+$43,495.62 displayed as $43,496 (carrier 5834146). Added `moneyExact` — always cents — and used it
+for every invoice amount in the automations: the C-18 invoice cards (total/paid/remaining), the C-18
+summary tiles, and the C-20 Request Invoices amount column. `money()` is untouched for dashboard
+aggregates, where cents are noise. Deliberately NOT changed: EFS balances, credit lines, money-code
+draws and fuel-transaction totals — none of those are an invoice quoted from a source of record.
+
+5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
+Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
+and 5834146 (cents) on the preview.
+### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
+replacement, and not the carrier product in `apps/mini-app`. Branch: `feature/crm-telegram-mobile` off
+`origin/build`. No commit.
+
+**Telegram bootstrap.** `index.html` loads `telegram-web-app.js` (unpinned, same as the carrier app) and
+an inline first-paint script calls `ready()` / `expand()` / `disableVerticalSwipes()`, stamps
+`data-telegram`, and writes `--tg-inset-*`. `src/telegram/webApp.ts` re-applies on viewport / safe-area /
+theme events. Viewport stays pinch-zoomable (`user-scalable=no` is not copied). Telegram chrome is painted
+to match CRM light/dark; themeParams are not rebound onto `--accent`.
+
+**Auth.** Session was already in localStorage. OAuth *state* was sessionStorage-only — dual-written to
+localStorage now so a WebView that drops sessionStorage across the Zoho round-trip can still complete.
+Backend-signed state remains the CSRF gate. Login copy in Telegram tells the worker to stay in the
+window. **Not in this pass:** Telegram `initData` as identity. Workers remain Zoho OAuth users. If Zoho
+opens in an external browser instead of the WebView, the session will not transfer back into the Mini
+App — that needs a Bot-side return path later.
+
+**RingCentral.** Embeddable is not mounted in Telegram (iframe + WebRTC + OAuth popup). In-UI card:
+"Calling isn’t available in Telegram. Use Mytrion on a desktop browser or the RingCentral app." Desktop
+calling is unchanged. OAuth redirect URI remains
+`https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`. On phone (non-
+Telegram) an incoming-call banner sits above `--layout-bottom-inset` and the vendor pill is lifted off
+the tab bar (`data-rc-ringing`). Sign-in/error cards dropped the 4px side-tab (craft-floor / hook).
+
+**Shell / departments.** `--layout-safe-t` / `--layout-safe-b` max env() with Telegram insets. Header
+pads the Mini App top chrome; tab bar and sheets use `--layout-safe-b`. Admin / Sales / launcher tables
+get `data-table-scroller` (horizontal scroll, sticky first+last columns under 640, `100dvh` instead of
+`100vh`). Launcher grid is 2-col below 900 and 1-col below 640 via data attributes (module CSS is hook-
+blocked). Shared MytrionShell already owns phone tab bar + More sheet, so Admin's 19 tabs are reachable.
+All workspaces that mount MytrionShell (Sales, CS, Billing, Admin, HR, Finance, Manager, Marketing, …)
+inherit the chrome.
+
+**Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
+at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
+DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
+---
+
+## 2026-08-12 — Permission sets: override precedence, a real Save, and a screen verified in a browser
+
+Four asks, all on Mytrion Admin → Permission Sets.
+
+**1. Override (the one that changes semantics).** Sets were strictly additive, so "Billing — Ledger
+only" did nothing to someone whose profile default already granted Billing unscoped. That limitation
+was documented and correct, but it made scoping unusable in practice. New `override` boolean on
+`mytrion_permission_sets` (migration `0115`, hand-written and idempotent — `drizzle-kit generate`
+still emits 388 lines of already-applied tables in this repo and cannot be used).
+
+Resolution gains **Step 3.4** in `combineAccess`, after the per-user override REPLACE and before the
+deny subtraction: if any assigned set carries `override`, `allowed`, `userModes` and `allDept` are
+cleared and only the sets contribute. Deliberate limits, all pinned by tests:
+- a denied Mytrion on the user record **stays denied** — override widens precedence, not authority;
+- an overriding set **cannot** confer all-department access;
+- `homeMytrion` is re-picked from what survives, so nobody lands on a workspace they cannot enter.
+
+`AccessTrace` gains `overriddenBy: string[]`, and the effective-access drawer now says in words why
+a profile default that plainly grants Billing produced no Billing. Without that this is undebuggable.
+
+**2. Save is a real save.** The editor used to PATCH on every click — a half-finished configuration
+was live for everyone holding the set, and there was nothing to press. It now holds a draft, shows a
+save bar only when the draft differs from what is stored, and commits through one new atomic
+`PUT /admin/permission-sets/:id/grants` whose repo writes the three grant columns together, filtered
+to the allowed set so the row can never disagree with itself. Save returns to the list.
+
+The save bar is `position: sticky`. **This forced a structure change:** `.card` is `overflow: hidden`,
+which makes a sticky child stick to a box that never scrolls. The card is therefore rendered by the
+editor, not by the page, so the bar is its sibling. Worth remembering the next time something needs
+to stick inside an admin card.
+
+**3. Three levels, not one wall.** 1 workspaces → 2 full/read-only → 3 tabs, each with its number in
+its own heading (the kicker-above-a-heading shape is gone; the numeral stays because the sequence IS
+the dependency). Levels 2 and 3 are dimmed and inert until level 1 is answered.
+
+**4. Assignees.** Was a chip wall capped at `.slice(0, 60)` — simultaneously overwhelming and
+incomplete, with nothing on screen saying the tail was unreachable. Now a searchable list over the
+whole roster (126 people), assigned pinned above candidates, per-row busy state.
+
+**Verified in a real browser, not by reading class names.** `apps/mytrion-crm/vite.audit.config.ts`
+gained `AUDIT_API_PORT` so an audit can run against its own API on a throwaway local DB — the default
+:3001 is whatever `pnpm dev:all` is pointed at, and `.env` points at Render **production**. Ran a
+CDP script over both themes: list, skeleton, detail, dirty state, assignees, precedence. That pass
+found four things reading the code did not: the save bar was below the fold, the create form vanished
+during loading (the grid jumped on arrival), list cards were ragged because `.profileGrid` is
+`align-items: start`, and skeleton bars were invisible except when the shimmer highlight crossed them
+— fatal under `prefers-reduced-motion`, where nothing moves at all.
+
+`pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
+
+### 2026-08-12 — Horizon worker CRM on its own Telegram bot
+
+Wired Mytrion Horizon (`apps/mytrion-crm`) to a **separate** Telegram bot so it does not share the
+carrier client mini-app / agent-gateway token.
+
+- First-class env: `HORIZON_BOT_TOKEN` (Bot API + initData HMAC), `HORIZON_BOT_SECRET` (webhook
+  `secret_token` / `X-Telegram-Bot-Api-Secret-Token` — cannot be the bot token, Telegram forbids `:`),
+  plus username / Mini App URL / short name / direct / webhook URL. Client keys
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CARRIER_BOT_*` are unchanged.
+- Webhook-only on the API: `POST /v1/telegram/horizon-webhook`. No getUpdates poller. Boot
+  `setWebhook` uses the Horizon token only (skipped unless public HTTPS + secret; refused if the
+  Horizon token equals a client token).
+- CRM UI was already a Mini App host (Zoho OAuth, not initData login). No `src/` UI change, no
+  vendored `app/` rebuild. No bot token in `VITE_*`.
+- Isolation is asserted at boot. Gateway `.env.example` warns not to poll Horizon.
+
+Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-host>/main`, domain
+allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
+token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
+

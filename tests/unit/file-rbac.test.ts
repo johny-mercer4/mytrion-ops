@@ -67,7 +67,8 @@ describe('file tool department policy (derived from manifests)', () => {
   it('generate/analyze tools are available to every real department', () => {
     const depts = departmentsForTool('file.generate_csv').sort();
     expect(depts).toEqual(
-      ['billing', 'c-level', 'collection', 'customer-service', 'finance', 'management', 'marketing', 'retention', 'sales', 'verification'],
+      // 'hr' joined 2026-08-12 with the HR agent, which carries FILE_TOOLS like every department.
+      ['billing', 'c-level', 'collection', 'customer-service', 'finance', 'hr', 'management', 'marketing', 'retention', 'sales', 'verification'],
     );
     expect(departmentsForTool('file.analyze').sort()).toEqual(depts);
   });

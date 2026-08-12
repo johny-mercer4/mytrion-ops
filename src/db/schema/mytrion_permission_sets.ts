@@ -70,6 +70,25 @@ export const mytrionPermissionSets = pgTable(
       .$type<Partial<Record<MytrionId, string[]>>>()
       .notNull()
       .default({}),
+    /**
+     * OVERRIDE — the escape hatch from additivity.
+     *
+     * Additive is the safe default and it has one honest limitation: a set that scopes Billing to
+     * Ledger is defeated by any unscoped Billing grant from a lower layer, because a union cannot
+     * narrow. That is correct for "give these people a bit more", and useless for "these people get
+     * EXACTLY this and nothing else".
+     *
+     * With this on, the permission-set layer becomes authoritative for whoever holds it: the sets'
+     * grants, modes and tab scopes REPLACE the profile default, the role default and the per-user
+     * override rather than unioning onto them. Precedence becomes
+     *   1. permission sets  2. per-user override  3. profile / role defaults
+     * which is the order an admin reads off this screen.
+     *
+     * Two things it deliberately cannot do. Env-named break-glass users stay immune, because that is
+     * the recovery path if someone scopes themselves out of the app. And denies still subtract last,
+     * so an override set can never re-grant something explicitly denied.
+     */
+    override: boolean('override').notNull().default(false),
     active: boolean('active').notNull().default(true),
     createdByZohoUserId: text('created_by_zoho_user_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

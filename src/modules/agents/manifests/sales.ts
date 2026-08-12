@@ -105,6 +105,9 @@ export const salesAgent: AgentManifest = {
   ],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
+  // Foundational copilot skills. The RAG corpus covers Mytrion self-knowledge and SOPs; these cover
+  // the PROCEDURES of being a sales rep's copilot — which the corpus does not document.
+  skills: ['sales-client-book', 'sales-cycle', 'sales-progress', 'sales-retention-invoices'],
   readOnly: false,
   delegatesTo: ['verification', 'billing', 'customer-service'],
 };

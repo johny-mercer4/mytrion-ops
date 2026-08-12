@@ -1,12 +1,11 @@
 /**
- * Model routing: which provider + model serves a given role. The chat loop resolves a model
- * per purpose. Internal evidence remains on OpenAI. Groq is deliberately restricted to
- * sanitized, evidence-free offline benchmark cases.
+ * Model routing: which model serves a given role. OpenAI-only by decision.
  *
- *   worker    — tool-selection + tool-iteration (OpenAI nano in the v2 policy)
- *   answer    — final user-facing answer (kept on OpenAI for instruction-following / low hallucination)
- *   reasoning — hard/ambiguous escalation
- *   embedding — vectors (OpenAI)
+ *   worker    — tool-selection + tool-iteration (nano tier)
+ *   answer    — final user-facing answer (grounded tier: instruction-following / low hallucination)
+ *   reasoning — hard/ambiguous escalation (hard tier — MUST differ from answer, or it is a no-op)
+ *   router / grader / casual — cheap classification (nano tier)
+ *   embedding — vectors
  */
 import { env } from '../../config/env.js';
 import { models, type Provider } from './openaiClient.js';
@@ -30,79 +29,54 @@ export interface ModelPolicy extends ResolvedModel {
 export interface ResolveModelOptions {
   model?: string | undefined;
   evidenceBearing?: boolean | undefined;
-  /** Groq is permitted only for sanitized offline benchmark inputs in the current policy. */
-  sanitizedBenchmark?: boolean | undefined;
+}
+
+/** The cheap tool-free tier: router / grader / casual / worker. */
+function fastModel(): string {
+  return env.FF_RAG_MODEL_POLICY ? (models.nano ?? models.default) : models.default;
 }
 
 /**
- * Resolve a role to a concrete provider+model. Explicit Groq overrides are accepted only when the
- * call carries no internal evidence; evidence-bearing calls are forced to the protected OpenAI role.
+ * Resolve a role to a concrete provider+model. Every role resolves to OpenAI — an explicit `model`
+ * override selects a different OpenAI model, never a different provider.
+ *
+ * This used to carry a Groq branch reachable only when a caller passed `sanitizedBenchmark`, which
+ * nothing ever did; it was removed 2026-08-12 along with the Groq/GLM clients. `evidenceAllowed` is
+ * retained because it is the invariant worth keeping explicit: internal evidence may only be sent to
+ * a provider we have vetted, and any future provider must re-establish that before it is added here.
  */
 export function resolveModelPolicy(role: ModelRole, opts: ResolveModelOptions = {}): ModelPolicy {
-  const evidenceBearing = opts.evidenceBearing ?? (role === 'answer' || role === 'reasoning');
-  const protectedModel = role === 'reasoning'
-    ? (models.hard ?? models.reasoning)
-    : role === 'answer'
-      ? (env.FF_RAG_MODEL_POLICY ? (models.grounded ?? models.default) : models.default)
-      : (env.FF_RAG_MODEL_POLICY ? (models.nano ?? models.default) : models.default);
-  const protectedOpenAi: ResolvedModel = {
-    provider: 'openai',
-    model: protectedModel,
-  };
-
+  let model: string;
   if (opts.model) {
-    const explicit: ResolvedModel = {
-      provider: opts.model.includes('/') ? 'groq' : 'openai',
-      model: opts.model,
-    };
-    const resolved = explicit.provider !== 'openai' && (evidenceBearing || !opts.sanitizedBenchmark)
-      ? protectedOpenAi
-      : explicit;
-    return {
-      role,
-      ...resolved,
-      evidenceAllowed: resolved.provider === 'openai',
-      timeoutMs: env.OPENAI_TIMEOUT_MS,
-      maxOutputTokens: env.LLM_MAX_OUTPUT_TOKENS,
-      retries: 2,
-      ...(resolved.provider === 'openai' ? {} : { fallback: protectedOpenAi }),
-    };
+    model = opts.model;
+  } else {
+    switch (role) {
+      case 'reasoning':
+        model = models.hard ?? models.reasoning;
+        break;
+      case 'embedding':
+        model = models.embedding;
+        break;
+      case 'worker':
+      case 'router':
+      case 'grader':
+      case 'casual':
+        model = fastModel();
+        break;
+      case 'answer':
+      default:
+        model = env.FF_RAG_MODEL_POLICY ? (models.grounded ?? models.default) : models.default;
+        break;
+    }
   }
-  let resolved: ResolvedModel;
-  switch (role) {
-    case 'worker':
-      resolved = env.FF_GROQ_ENABLED && opts.sanitizedBenchmark && !evidenceBearing
-        ? { provider: 'groq', model: env.GROQ_MODEL_WORKER }
-        : { provider: 'openai', model: env.FF_RAG_MODEL_POLICY ? (models.nano ?? models.default) : models.default };
-      break;
-    case 'reasoning':
-      resolved = { provider: 'openai', model: models.hard ?? models.reasoning };
-      break;
-    case 'embedding':
-      resolved = { provider: 'openai', model: models.embedding };
-      break;
-    case 'router':
-    case 'grader':
-    case 'casual':
-      resolved = {
-        provider: 'openai',
-        model: env.FF_RAG_MODEL_POLICY ? (models.nano ?? models.default) : models.default,
-      };
-      break;
-    case 'answer':
-    default:
-      resolved = { provider: 'openai', model: env.FF_RAG_MODEL_POLICY ? (models.grounded ?? models.default) : models.default };
-      break;
-  }
-  if (evidenceBearing && resolved.provider !== 'openai') resolved = protectedOpenAi;
   return {
     role,
-    ...resolved,
-    evidenceAllowed: resolved.provider === 'openai',
+    provider: 'openai',
+    model,
+    evidenceAllowed: true,
     timeoutMs: env.OPENAI_TIMEOUT_MS,
     maxOutputTokens: env.LLM_MAX_OUTPUT_TOKENS,
     retries: 2,
-    ...(resolved.provider === 'openai' ? {} : { fallback: protectedOpenAi }),
   };
 }
 

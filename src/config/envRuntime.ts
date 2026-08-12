@@ -33,7 +33,6 @@ export function assertRuntimeSecrets(): void {
   if (isProduction && !env.FF_SUPPORT_BOT_IDEMPOTENCY) {
     missing.push('FF_SUPPORT_BOT_IDEMPOTENCY=1');
   }
-  if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   // dbt discovery is optional outside production; production requires its full credential set.
   if (env.FF_DBT_MCP_ENABLED && isProduction) {
@@ -43,6 +42,16 @@ export function assertRuntimeSecrets(): void {
   }
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (env.HORIZON_BOT_TOKEN) {
+    if (
+      (env.TELEGRAM_CARRIER_BOT_TOKEN && env.HORIZON_BOT_TOKEN === env.TELEGRAM_CARRIER_BOT_TOKEN) ||
+      (env.TELEGRAM_BOT_TOKEN && env.HORIZON_BOT_TOKEN === env.TELEGRAM_BOT_TOKEN)
+    ) {
+      invalid.push(
+        'HORIZON_BOT_TOKEN must not reuse TELEGRAM_BOT_TOKEN or TELEGRAM_CARRIER_BOT_TOKEN (one poller/webhook per bot)',
+      );
+    }
+  }
   if (env.FF_ZOHO_OAUTH_ENABLED) {
     if (!env.ZOHO_SERVER_CLIENT_ID) missing.push('ZOHO_SERVER_CLIENT_ID');
     if (!env.ZOHO_SERVER_CLIENT_SECRET) missing.push('ZOHO_SERVER_CLIENT_SECRET');

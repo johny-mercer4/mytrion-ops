@@ -10,6 +10,7 @@ import { collectionAgent } from './collection.js';
 import { customerServiceAgent } from './customerService.js';
 import { dataCenterAgent } from './dataCenter.js';
 import { financeAgent } from './finance.js';
+import { hrAgent } from './hr.js';
 import { managerAgent } from './manager.js';
 import { marketingAgent } from './marketing.js';
 import { retentionAgent } from './retention.js';
@@ -28,6 +29,7 @@ const byKey: Record<AgentKey, AgentManifest> = {
   analyst: analystAgent,
   manager: managerAgent,
   collection: collectionAgent,
+  hr: hrAgent,
 };
 
 export const ALL_AGENT_MANIFESTS: AgentManifest[] = AGENT_KEYS.map((key) => byKey[key]);

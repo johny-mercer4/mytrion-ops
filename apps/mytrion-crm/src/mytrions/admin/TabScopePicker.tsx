@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { MYTRIONS, type MytrionId } from '../../access/mytrions.config';
+import { mytrionShortLabel, type MytrionId } from '../../access/mytrions.config';
 import { tabsFor, unknownTabKeys, type TabDescriptor } from '../../access/tabRegistry';
 import s from './admin.module.css';
 
@@ -34,7 +34,7 @@ export function TabScopePicker({
 }) {
   const [query, setQuery] = useState('');
   const tabs = tabsFor(mytrionId);
-  const title = MYTRIONS[mytrionId]?.title ?? mytrionId;
+  const title = mytrionShortLabel(mytrionId);
 
   const groups = useMemo(() => {
     const out = new Map<string, TabDescriptor[]>();

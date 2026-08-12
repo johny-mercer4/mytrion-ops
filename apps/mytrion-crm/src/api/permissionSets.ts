@@ -25,6 +25,14 @@ export interface PermissionSet {
    * empty ARRAY is the opposite statement: scoped to nothing. Never conflate them.
    */
   tabGrants: Partial<Record<MytrionId, string[]>>;
+  /**
+   * Replace the lower layers instead of unioning onto them.
+   *
+   * Additive can only widen, so a tab scope is defeated by any unscoped grant below it. Override is
+   * how a set means "exactly this": permission sets (1) beat the per-user override (2) beat the
+   * profile and role defaults (3).
+   */
+  override: boolean;
   active: boolean;
   assigneeCount: number;
   createdAt: string;
@@ -73,11 +81,32 @@ export async function createPermissionSet(input: {
 
 export async function updatePermissionSet(
   id: string,
-  patch: { name?: string; description?: string | null; active?: boolean },
+  patch: { name?: string; description?: string | null; active?: boolean; override?: boolean },
 ): Promise<PermissionSet> {
   const data = (await request('PATCH', `/admin/permission-sets/${encodeURIComponent(id)}`, {
     ...opts,
     body: patch,
+  })) as { set: PermissionSet };
+  return data.set;
+}
+
+/**
+ * Save the whole grant configuration in one request.
+ *
+ * The editor holds a draft and sends it here, so Save means what it says — one statement server-side,
+ * no half-applied state if a request fails midway.
+ */
+export async function savePermissionSetGrants(
+  id: string,
+  grants: {
+    allowedMytrions: MytrionId[];
+    mytrionAccessModes: Partial<Record<MytrionId, MytrionAccessMode>>;
+    tabGrants: Partial<Record<MytrionId, string[]>>;
+  },
+): Promise<PermissionSet> {
+  const data = (await request('PUT', `/admin/permission-sets/${encodeURIComponent(id)}/grants`, {
+    ...opts,
+    body: grants,
   })) as { set: PermissionSet };
   return data.set;
 }
@@ -178,6 +207,8 @@ export interface EffectiveAccessResponse {
     mytrions: AccessTraceEntry[];
     denied: MytrionId[];
     allDeptDowngraded: boolean;
+    /** Sets that took the whole layer. Empty when resolution was purely additive. */
+    overriddenBy: string[];
   } | null;
 }
 

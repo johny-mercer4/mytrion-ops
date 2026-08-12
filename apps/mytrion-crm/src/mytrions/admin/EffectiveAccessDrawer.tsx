@@ -106,6 +106,20 @@ export function EffectiveAccessDrawer({
                 exists — all-access is a full bypass and cannot express “everything except X”.
               </p>
             )}
+            {/*
+              The single most confusing state this screen can show: a profile default that plainly
+              grants Billing, and no Billing in the result. Say why, by name, or the reader concludes
+              the resolver is broken.
+            */}
+            {trace && trace.overriddenBy.length > 0 && (
+              <p className={s.sub} style={{ margin: 0 }}>
+                Everything below comes only from{' '}
+                {trace.overriddenBy.length === 1 ? 'the overriding set' : 'the overriding sets'}{' '}
+                {trace.overriddenBy.map((name) => `“${name}”`).join(' and ')}. Profile defaults, role
+                defaults and this user&rsquo;s own override grant nothing while an overriding set is
+                assigned — a Mytrion denied on the user record still stays denied.
+              </p>
+            )}
 
             {/*
               An all-access grant makes the per-Mytrion list pure repetition — thirteen blocks each

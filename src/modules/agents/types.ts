@@ -20,6 +20,7 @@ export const AGENT_KEYS = [
   'analyst',
   'manager',
   'collection',
+  'hr',
 ] as const;
 
 export type AgentKey = (typeof AGENT_KEYS)[number];
@@ -87,6 +88,13 @@ export interface AgentManifest {
   model?: string;
   /** Child agent loop cap (LangGraph recursionLimit). Unset → AGENT_MAX_CHILD_ITERATIONS. */
   maxIterations?: number;
+  /**
+   * Authored skills this agent may read (src/modules/agents/skills/**). Assignment is static and
+   * reviewed: the names' `whenToUse` lines enter the byte-stable system prompt, and `skill_read`
+   * can fetch ONLY these bodies. An unknown name fails `skillRegistry.test.ts` rather than the
+   * request.
+   */
+  skills?: string[];
   /**
    * Agents this one may recommend escalating to (advisory routing metadata). Children never
    * call each other directly — they return `escalate` in their structured result and the

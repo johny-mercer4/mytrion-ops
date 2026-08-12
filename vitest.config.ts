@@ -59,6 +59,19 @@ export default defineConfig({
       // which is the only version of "green locally" worth trusting before opening a PR.
       API_KEY: 'test-secret-key',
       BILLING_INGEST_SECRET: 'test-ingest-secret',
+      // Horizon worker-CRM bot — pinned so a developer .env cannot leak a real token into HMAC
+      // tests, and so the webhook secret is a known value. Distinct from TELEGRAM_* on purpose.
+      HORIZON_BOT_TOKEN: 'horizon-test-token',
+      HORIZON_BOT_SECRET: 'horizon-test-secret',
+      HORIZON_BOT_USERNAME: 'horizon_test_bot',
+      HORIZON_MINI_APP_URL: 'https://example.test/main',
+      // The two that `buildHorizonOpenUrl()` branches on BEFORE falling back to the URL above. Left
+      // unpinned they came from the developer's .env, so "no short name is set" was only true on
+      // machines that happened not to set one: green in CI, red locally, for a reason nothing on
+      // screen explains. Same class as the FF_ZOHO_MCP_ENABLED note above. A suite that needs
+      // either branch sets it at runtime and restores to this baseline.
+      HORIZON_MINI_APP_SHORT_NAME: '',
+      HORIZON_MINI_APP_DIRECT: '',
     },
     coverage: {
       provider: 'v8',

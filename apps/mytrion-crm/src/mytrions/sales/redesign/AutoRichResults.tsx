@@ -141,9 +141,15 @@ export function AutoWexTasksPanel({
   );
 }
 
+/**
+ * The label is whatever CMP calls it — only the TONE is derived. This used to relabel anything
+ * containing "paid" as "Paid", which silently turned a Partially Paid invoice into a settled one on
+ * screen no matter what CMP said (carrier 5815660). Partial is checked first for the same reason.
+ */
 function cmpStatusBadge(status: string) {
   const x = status.toLowerCase();
-  if (x.includes('paid')) return badge('Paid', 'var(--ok)');
+  if (x.includes('partial')) return badge(status, 'var(--warn)');
+  if (x.includes('paid')) return badge(status, 'var(--ok)');
   if (x.includes('overdue') || x.includes('pending')) return badge(status, 'var(--warn)');
   return badge(status || '—', 'var(--muted)');
 }
@@ -169,7 +175,6 @@ export function AutoPaymentsPanel({
             ['Total paid', summary.totalPaid],
             ['Open balance', summary.openBalance],
             ['Payment count', summary.paymentCount],
-            ['Payments total', summary.paymentsTotal],
           ] as const).map(([label, value]) => (
             <div key={label} className="ss-pay-stat">
               <div className="ss-track-label">{label}</div>

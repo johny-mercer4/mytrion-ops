@@ -2,9 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { envMock } = vi.hoisted(() => ({
   envMock: {
-    FF_GROQ_ENABLED: false,
     FF_RAG_MODEL_POLICY: true,
-    GROQ_MODEL_WORKER: 'openai/gpt-oss-120b',
     OPENAI_TIMEOUT_MS: 30_000,
     LLM_MAX_OUTPUT_TOKENS: 1_000,
   },
@@ -13,78 +11,75 @@ const { envMock } = vi.hoisted(() => ({
 vi.mock('../../src/config/env.js', () => ({ env: envMock }));
 vi.mock('../../src/modules/llm/openaiClient.js', () => ({
   models: {
-    default: 'gpt-4o-mini',
+    default: 'gpt-5.4-nano',
     nano: 'gpt-5.4-nano',
     grounded: 'gpt-5.4-mini',
     reasoning: 'gpt-5.4-mini',
-    hard: 'gpt-5.6-terra',
+    hard: 'gpt-5.4',
     embedding: 'text-embedding-3-small',
   },
 }));
 
-import { resolveModel } from '../../src/modules/llm/modelRouter.js';
+import { resolveModel, resolveModelPolicy } from '../../src/modules/llm/modelRouter.js';
 
 afterEach(() => {
-  envMock.FF_GROQ_ENABLED = false;
   envMock.FF_RAG_MODEL_POLICY = true;
 });
 
 describe('resolveModel', () => {
-  it('routes the worker role to OpenAI when Groq is disabled', () => {
-    envMock.FF_GROQ_ENABLED = false;
+  it('routes each role to its tier', () => {
     expect(resolveModel('worker')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
-  });
-
-  it('rolls all chat roles back to the GPT-4o-mini control with one flag', () => {
-    envMock.FF_RAG_MODEL_POLICY = false;
-    expect(resolveModel('worker')).toEqual({ provider: 'openai', model: 'gpt-4o-mini' });
-    expect(resolveModel('answer')).toEqual({ provider: 'openai', model: 'gpt-4o-mini' });
-    expect(resolveModel('casual')).toEqual({ provider: 'openai', model: 'gpt-4o-mini' });
-  });
-
-  it('keeps live worker traffic on OpenAI even when Groq is enabled', () => {
-    envMock.FF_GROQ_ENABLED = true;
-    expect(resolveModel('worker')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
-  });
-
-  it('permits Groq only for a sanitized, evidence-free benchmark case', () => {
-    envMock.FF_GROQ_ENABLED = true;
-    expect(resolveModel('worker', { sanitizedBenchmark: true })).toEqual({
-      provider: 'groq',
-      model: 'openai/gpt-oss-120b',
-    });
-  });
-
-  it('keeps evidence-bearing roles on OpenAI even when Groq is enabled', () => {
-    envMock.FF_GROQ_ENABLED = true;
-    expect(resolveModel('answer')).toEqual({ provider: 'openai', model: 'gpt-5.4-mini' });
-    expect(resolveModel('reasoning')).toEqual({ provider: 'openai', model: 'gpt-5.6-terra' });
-    expect(resolveModel('embedding')).toEqual({ provider: 'openai', model: 'text-embedding-3-small' });
+    expect(resolveModel('router')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
+    expect(resolveModel('grader')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
     expect(resolveModel('casual')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
+    expect(resolveModel('answer')).toEqual({ provider: 'openai', model: 'gpt-5.4-mini' });
+    expect(resolveModel('embedding')).toEqual({ provider: 'openai', model: 'text-embedding-3-small' });
   });
 
-  it('permits an explicit Groq override only for sanitized benchmark input', () => {
-    expect(resolveModel('worker', { model: 'openai/gpt-oss-20b', sanitizedBenchmark: true })).toEqual({
-      provider: 'groq',
-      model: 'openai/gpt-oss-20b',
-    });
+  /**
+   * The whole point of an escalation tier. `hard` defaulted to the same id as `grounded` until
+   * 2026-08-12, which made every "escalate to reasoning" path resolve to the model that had just
+   * failed — a no-op dressed as a fallback.
+   */
+  it('escalates to a model that is genuinely different from the answer tier', () => {
+    const answer = resolveModel('answer');
+    const reasoning = resolveModel('reasoning');
+    expect(reasoning).toEqual({ provider: 'openai', model: 'gpt-5.4' });
+    expect(reasoning.model).not.toBe(answer.model);
   });
 
-  it('rejects an explicit Groq override for a live request without evidence', () => {
-    expect(resolveModel('worker', { model: 'openai/gpt-oss-20b' })).toEqual({
-      provider: 'openai',
-      model: 'gpt-5.4-nano',
-    });
+  it('rolls every chat role back to one control model with a single flag', () => {
+    envMock.FF_RAG_MODEL_POLICY = false;
+    expect(resolveModel('worker')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
+    expect(resolveModel('answer')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
+    expect(resolveModel('casual')).toEqual({ provider: 'openai', model: 'gpt-5.4-nano' });
+    // Escalation is deliberately NOT part of the rollback — it must stay a real step up.
+    expect(resolveModel('reasoning')).toEqual({ provider: 'openai', model: 'gpt-5.4' });
   });
 
-  it('honors an explicit model override: a plain id is treated as OpenAI', () => {
+  it('honors an explicit model override', () => {
     expect(resolveModel('worker', { model: 'gpt-4o' })).toEqual({ provider: 'openai', model: 'gpt-4o' });
   });
 
-  it('rejects an explicit Groq override when internal evidence is present', () => {
-    expect(resolveModel('answer', { model: 'openai/gpt-oss-20b', evidenceBearing: true })).toEqual({
-      provider: 'openai',
-      model: 'gpt-5.4-mini',
-    });
+  /**
+   * Groq and GLM were removed 2026-08-12. A slash-bearing id used to be routed to Groq; it must now
+   * resolve to OpenAI like any other override rather than silently selecting a provider that is
+   * gone. `evidenceAllowed` stays true because OpenAI is the only vetted provider — a future
+   * provider has to re-establish that before it can carry internal evidence.
+   */
+  it('never resolves a non-OpenAI provider, whatever the override looks like', () => {
+    for (const model of ['openai/gpt-oss-20b', 'glm-4-flash', 'llama-3.3-70b-versatile']) {
+      const policy = resolveModelPolicy('worker', { model });
+      expect(policy.provider).toBe('openai');
+      expect(policy.model).toBe(model);
+      expect(policy.evidenceAllowed).toBe(true);
+      expect(policy).not.toHaveProperty('fallback');
+    }
+  });
+
+  it('keeps evidence-bearing roles on the vetted provider', () => {
+    const policy = resolveModelPolicy('answer', { evidenceBearing: true });
+    expect(policy.provider).toBe('openai');
+    expect(policy.evidenceAllowed).toBe(true);
   });
 });
