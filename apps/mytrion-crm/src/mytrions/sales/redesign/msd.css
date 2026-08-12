@@ -323,9 +323,6 @@
   flex-direction: column;
   gap: 0.625rem;
   min-width: 0;
-  /* Containing block for `.msd-activity-card`. `position` alone — no transform/filter/contain, which
-     would trap the legacy fixed-position modals behind the header. */
-  position: relative;
 }
 .ss-root.light .msd-chart-block {
   background: var(--surface);
@@ -582,7 +579,9 @@
 /* Card Activity series colours. Fixed data-series identities, not theme chrome — but declared once
    here so the header legend, the plot and the tooltip dots cannot drift apart again (the legend said
    grey for Active/New while the tooltip said green/blue for the same two series). */
-.ss-root .msd-chart-block {
+/* On `.ss-root`, not the chart card: the tooltip is portalled to the module root and still needs the
+   dot colours. */
+.ss-root {
   --msd-series-tx: #be123c;
   --msd-series-tx-hi: #f43f5e;
   --msd-series-tx-glow-fill: rgba(244, 63, 94, 0.15);
@@ -592,9 +591,9 @@
   --msd-crosshair: rgba(148, 163, 184, 0.4);
 }
 
-/* Deliberately NOT a containing block: the tooltip positions against `.msd-chart-block` so a tall
-   day can be clamped into the header band. Making this relative caps it at the plot's own top edge,
-   which is 18px shorter than the card itself. */
+/* Deliberately NOT a containing block, and neither is `.msd-chart-block`: the tooltip is fixed and
+   is meant to float clear of the card. A `position: relative` anywhere on this path would pull it
+   back in and clip it against a box shorter than the card itself. */
 .ss-root .msd-chart-activity-area { min-width: 0; }
 .ss-root .msd-activity-scroller {
   width: 100%;
@@ -849,7 +848,10 @@
 .ss-root.light .msd-hero-kpi--gold .msd-hero-kpi-icon { color: #d97706; }
 .ss-root.light .msd-hero-kpi--blue .msd-hero-kpi-icon { color: #0284c7; }
 
-/* Card Activity tooltip: sibling of the horizontal scroller, lifted above the hovered TX point.
+/* Card Activity tooltip, floating above the hovered TX point.
+   `position: fixed` with viewport coordinates from `msdActivityTooltipPosition`: the card is taller
+   than the 110px plot, so anchoring it inside the chart card leaves nowhere to put it — see the
+   comment on that function. Fixed also means no ancestor overflow can clip it.
    `width` is duplicated in `MSD_TOOLTIP_WIDTH` (dashActivityGeom.ts), which the edge clamp needs —
    change both together. `translateY(-100%)` makes the JS `top` the card's BOTTOM edge; the 10px gap
    above the point lives in JS too, because the clamp has to reason about the whole offset.
@@ -858,11 +860,11 @@
    No `backdrop-filter` — the theme's modal surface is already the glass primitive, and a second
    blurred layer that moves on every hover is the composited-layer trap in the guidance. */
 .ss-root .msd-activity-card {
-  position: absolute;
+  position: fixed;
   width: 184px;
   box-sizing: border-box;
   transform: translateX(-50%) translateY(-100%);
-  z-index: 4;
+  z-index: var(--z-tooltip);
   padding: var(--space-2_5) var(--space-3);
   border-radius: var(--radius-md);
   background: var(--hz-modal-surface);

@@ -2,9 +2,11 @@
  * Cards by Company + Card Activity — self-service MSD parity layout.
  */
 import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './icons';
 import { currentBillingCycle, msdFmtK, msdFmtNum } from './dashFormat';
 import {
+  MSD_TOOLTIP_HEIGHT,
   msdActivityWidth,
   msdActivityTooltipPosition,
   msdAreaPath,
@@ -14,6 +16,7 @@ import {
   msdPointY,
   msdSelBandW,
   msdSelBandX,
+  type MsdActivityPlotBox,
 } from './dashActivityGeom';
 import type {
   ActivityRange,
@@ -63,66 +66,78 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
   const lo = p.selStart != null && p.selEnd != null ? Math.min(p.selStart, p.selEnd) : -1;
   const hi = p.selStart != null && p.selEnd != null ? Math.max(p.selStart, p.selEnd) : -1;
   const cycleLabel = currentBillingCycle().label;
-  const activityBlockRef = useRef<HTMLDivElement>(null);
+  const activityAreaRef = useRef<HTMLDivElement>(null);
   const activityScrollerRef = useRef<HTMLDivElement>(null);
   const activityWrapRef = useRef<HTMLDivElement>(null);
   const activitySvgRef = useRef<SVGSVGElement>(null);
-  const [activityViewport, setActivityViewport] = useState({
-    renderedWidth: chartW,
-    viewportWidth: chartW,
-    scrollLeft: 0,
+  const activityCardRef = useRef<HTMLDivElement>(null);
+  // The card is `position: fixed`, and a fixed element inside a `backdrop-filter` ancestor resolves
+  // against THAT ancestor instead of the viewport — the chart sits in a glass card, so left where it
+  // is rendered the card floats off by the page's scroll offset. Portalled to the module root, which
+  // the repo's stacking rules keep free of transform/filter, so viewport coordinates mean what they say.
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  const [activityPlot, setActivityPlot] = useState<MsdActivityPlotBox>({
+    svgLeft: 0,
+    svgTop: 0,
+    svgWidth: chartW,
     svgHeight: 110,
-    originLeft: 0,
-    originTop: 0,
+    viewportWidth: chartW,
+    viewportHeight: 800,
+    tooltipHeight: MSD_TOOLTIP_HEIGHT,
   });
 
-  const syncActivityViewport = useCallback(() => {
-    const block = activityBlockRef.current;
-    const scroller = activityScrollerRef.current;
-    const wrap = activityWrapRef.current;
+  // The tooltip is `position: fixed`, so every input is a client rect: scrolling the chart sideways,
+  // scrolling the page, and resizing all move the point without changing anything React renders.
+  const syncActivityPlot = useCallback(() => {
     const svg = activitySvgRef.current;
-    if (!block || !scroller || !wrap || !svg) return;
-    // The tooltip is positioned against `.msd-chart-block`, not the scroller: the plot is shorter
-    // than the card, so the clamp needs the header band above it to have somewhere to put a tall day.
-    const blockRect = block.getBoundingClientRect();
-    const scrollerRect = scroller.getBoundingClientRect();
+    if (!svg) return;
     const svgRect = svg.getBoundingClientRect();
-    const next = {
-      renderedWidth: wrap.getBoundingClientRect().width || wrap.clientWidth || chartW,
-      viewportWidth: scroller.clientWidth || scrollerRect.width || chartW,
-      scrollLeft: scroller.scrollLeft,
-      svgHeight: svgRect.height || 110,
-      // `clientLeft`/`clientTop` are the block's border widths: absolute offsets resolve against its
-      // padding box, not the border box `getBoundingClientRect` reports.
-      originLeft: scrollerRect.left - blockRect.left - block.clientLeft,
-      originTop: svgRect.top - blockRect.top - block.clientTop,
-    };
-    setActivityViewport((current) => (
-      current.renderedWidth === next.renderedWidth
-      && current.viewportWidth === next.viewportWidth
-      && current.scrollLeft === next.scrollLeft
-      && current.svgHeight === next.svgHeight
-      && current.originLeft === next.originLeft
-      && current.originTop === next.originTop
-        ? current
-        : next
-    ));
+    const card = activityCardRef.current;
+    setActivityPlot((current) => {
+      const next: MsdActivityPlotBox = {
+        svgLeft: svgRect.left,
+        svgTop: svgRect.top,
+        svgWidth: svgRect.width || chartW,
+        svgHeight: svgRect.height || 110,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        // Measured once the card is on screen; the guess only has to survive the first hover.
+        tooltipHeight: card?.offsetHeight || current.tooltipHeight,
+      };
+      const same = (Object.keys(next) as (keyof MsdActivityPlotBox)[])
+        .every((k) => current[k] === next[k]);
+      return same ? current : next;
+    });
   }, [chartW]);
 
   useLayoutEffect(() => {
-    syncActivityViewport();
-    const block = activityBlockRef.current;
+    const area = activityAreaRef.current;
+    // Falls back to the area itself so the card still renders if the module root ever moves.
+    setPortalHost((area?.closest('.ss-root') as HTMLElement | null) ?? area);
+  }, [len]);
+
+  useLayoutEffect(() => {
+    syncActivityPlot();
     const scroller = activityScrollerRef.current;
     const wrap = activityWrapRef.current;
-    if (!block || !scroller || !wrap || typeof ResizeObserver === 'undefined') return undefined;
-    // The block is observed for `originTop`: the header wraps at narrow widths and the selection
-    // banner comes and goes, both of which move the plot down inside the card.
-    const observer = new ResizeObserver(syncActivityViewport);
-    observer.observe(block);
-    observer.observe(scroller);
-    observer.observe(wrap);
-    return () => observer.disconnect();
-  }, [len, syncActivityViewport]);
+    // Capture phase: the page scroller is an ancestor and scroll does not bubble.
+    window.addEventListener('scroll', syncActivityPlot, { capture: true, passive: true });
+    window.addEventListener('resize', syncActivityPlot);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncActivityPlot);
+    if (scroller) observer?.observe(scroller);
+    if (wrap) observer?.observe(wrap);
+    return () => {
+      window.removeEventListener('scroll', syncActivityPlot, { capture: true });
+      window.removeEventListener('resize', syncActivityPlot);
+      observer?.disconnect();
+    };
+  }, [len, syncActivityPlot]);
+
+  // The card only exists while a day is hovered, so its height can only be measured then. One extra
+  // layout pass on the first hover; after that the height is known and this is a no-op.
+  useLayoutEffect(() => {
+    if (p.hoverIdx != null) syncActivityPlot();
+  }, [p.hoverIdx, syncActivityPlot]);
 
   const hoveredPoint = p.hoverIdx != null ? p.actPoints[p.hoverIdx] : undefined;
   const tooltipPosition = hoveredPoint && p.hoverIdx != null
@@ -130,14 +145,9 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
         index: p.hoverIdx,
         len,
         chartWidth: chartW,
-        renderedWidth: activityViewport.renderedWidth,
-        viewportWidth: activityViewport.viewportWidth,
-        scrollLeft: activityViewport.scrollLeft,
         transactions: hoveredPoint.transactions,
         maxTransactions: maxTx,
-        svgHeight: activityViewport.svgHeight,
-        originLeft: activityViewport.originLeft,
-        originTop: activityViewport.originTop,
+        ...activityPlot,
       })
     : null;
 
@@ -294,7 +304,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
       </div>
 
       <div className="msd-right-col">
-        <div className="msd-chart-block" ref={activityBlockRef}>
+        <div className="msd-chart-block">
           <div className="msd-chart-header">
             <div>
               <span className="msd-chart-title">Card Activity</span>
@@ -354,28 +364,31 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
             </div>
           ) : null}
 
-          <div className="msd-chart-activity-area">
+          <div className="msd-chart-activity-area" ref={activityAreaRef}>
             {/*
-              Outside the horizontal scroller, whose `overflow-x` forces overflow-y to clip. It
-              positions against `.msd-chart-block` (the area is deliberately NOT a containing block),
-              so `msdActivityTooltipPosition` can clamp a tall day into the header band above the plot
-              instead of letting it paint out over the page header.
+              Rendered at the module root, not here: it must escape the scroller (whose `overflow-x`
+              forces overflow-y to clip) AND the glass card's `backdrop-filter`, which would otherwise
+              capture the fixed positioning and offset the card by the page's scroll.
             */}
-            {hoveredPoint && tooltipPosition ? (
-              <div
-                className="msd-activity-card"
-                style={{ left: tooltipPosition.left, top: tooltipPosition.top }}
-                role="status"
-                aria-live="polite"
-              >
-                <div className="msd-activity-card__day">{hoveredPoint.label}</div>
-                <dl className="msd-activity-card__rows">
-                  <div><dt><i data-k="tx" />Transactions</dt><dd>{hoveredPoint.transactions.toLocaleString()}</dd></div>
-                  <div><dt><i data-k="active" />Active Cards</dt><dd>{hoveredPoint.activeCards.toLocaleString()}</dd></div>
-                  <div><dt><i data-k="new" />New Cards</dt><dd>{hoveredPoint.newCards.toLocaleString()}</dd></div>
-                  <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtK(hoveredPoint.volume)}</dd></div>
-                </dl>
-              </div>
+            {hoveredPoint && tooltipPosition && portalHost ? createPortal(
+              (
+                <div
+                  ref={activityCardRef}
+                  className="msd-activity-card"
+                  style={{ left: tooltipPosition.left, top: tooltipPosition.top }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="msd-activity-card__day">{hoveredPoint.label}</div>
+                  <dl className="msd-activity-card__rows">
+                    <div><dt><i data-k="tx" />Transactions</dt><dd>{hoveredPoint.transactions.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="active" />Active Cards</dt><dd>{hoveredPoint.activeCards.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="new" />New Cards</dt><dd>{hoveredPoint.newCards.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtK(hoveredPoint.volume)}</dd></div>
+                  </dl>
+                </div>
+              ),
+              portalHost,
             ) : null}
 
             {len === 0 ? (
@@ -420,7 +433,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
             <div
               ref={activityScrollerRef}
               className="msd-activity-scroller"
-              onScroll={syncActivityViewport}
+              onScroll={syncActivityPlot}
             >
               <div
                 ref={activityWrapRef}
@@ -500,7 +513,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                           fill="transparent"
                           style={{ cursor: 'pointer' }}
                           onMouseEnter={() => {
-                            syncActivityViewport();
+                            syncActivityPlot();
                             p.setHoverIdx(i);
                           }}
                           onClick={(e) => p.onActivityClick(i, e)}
