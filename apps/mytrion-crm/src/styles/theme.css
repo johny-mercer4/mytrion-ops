@@ -245,7 +245,12 @@
      that lives OUTSIDE the shell (RingCentralPhone mounts in WorkerLayout), which is why it is
      declared on :root and not on .shell. */
   --layout-bottombar-h: 0px;
-  --layout-safe-b: env(safe-area-inset-bottom, 0px);
+  --tg-inset-top: 0px;
+  --tg-inset-bottom: 0px;
+  --tg-inset-left: 0px;
+  --tg-inset-right: 0px;
+  --layout-safe-t: max(env(safe-area-inset-top, 0px), var(--tg-inset-top));
+  --layout-safe-b: max(env(safe-area-inset-bottom, 0px), var(--tg-inset-bottom));
   --layout-bottom-inset: calc(var(--layout-bottombar-h) + var(--layout-safe-b));
 
   /* ── Icon ───────────────────────────────────────────────────────────────────

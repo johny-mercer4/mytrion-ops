@@ -55,4 +55,17 @@ body[data-cs-modal-open] .rc-phone-stack {
   iframe[src*='ringcentral-embeddable'] {
     bottom: calc(var(--layout-bottom-inset, 0px) + var(--space-2)) !important;
   }
+
+  html[data-rc-ringing] #rc-widget,
+  html[data-rc-ringing] #rc-widget-adapter-frame,
+  html[data-rc-ringing] iframe#rc-widget-adapter-frame {
+    bottom: calc(var(--layout-bottom-inset, 0px) + 88px) !important;
+  }
+}
+
+html[data-telegram] #rc-widget,
+html[data-telegram] #rc-widget-adapter-frame,
+html[data-telegram] iframe#rc-widget-adapter-frame,
+html[data-telegram] iframe[src*='ringcentral-embeddable'] {
+  display: none !important;
 }

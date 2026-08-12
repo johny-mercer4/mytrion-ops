@@ -196,7 +196,7 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
         </p>
       )}
 
-      <div className={s.table} aria-busy={loading}>
+      <div className={s.table} data-table-scroller aria-busy={loading}>
         <div className={`${s.tHead} ${s.tDocs}`}>
           <span>Document</span>
           <span>Scope</span>

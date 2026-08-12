@@ -16,7 +16,7 @@
   block-size: var(--layout-bottombar-h);
   /* The home indicator overlaps the last ~34px of the screen on a notched device. Padding rather
      than a taller bar, so the touch targets stay where the thumb expects them. */
-  padding-block-end: env(safe-area-inset-bottom, 0px);
+  padding-block-end: var(--layout-safe-b, env(safe-area-inset-bottom, 0px));
   box-sizing: content-box;
 
   /* OPAQUE, not glass — and this is the point of being in flow. --header-bg is var(--glass) at 40%

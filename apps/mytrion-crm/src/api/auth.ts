@@ -14,6 +14,37 @@ import { clearSession, getSession, setSession, type SessionWorker, type StoredSe
 
 const STATE_KEY = 'octane.oauth.state';
 
+function writeOauthState(state: string): void {
+  try {
+    sessionStorage.setItem(STATE_KEY, state);
+  } catch {
+    /* private mode */
+  }
+  try {
+    localStorage.setItem(STATE_KEY, state);
+  } catch {
+    /* Telegram WebView can drop sessionStorage across the Zoho round-trip; localStorage is the fallback. */
+  }
+}
+
+function readAndClearOauthState(): string | null {
+  let fromSession: string | null = null;
+  let fromLocal: string | null = null;
+  try {
+    fromSession = sessionStorage.getItem(STATE_KEY);
+    sessionStorage.removeItem(STATE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    fromLocal = localStorage.getItem(STATE_KEY);
+    localStorage.removeItem(STATE_KEY);
+  } catch {
+    /* ignore */
+  }
+  return fromSession ?? fromLocal;
+}
+
 interface LoginStart {
   authorizeUrl: string;
   state: string;
@@ -22,11 +53,7 @@ interface LoginStart {
 /** Step 1 — redirects the browser to Zoho. Never returns on success (navigation away). */
 export async function beginZohoLogin(): Promise<void> {
   const data = (await request('GET', '/auth/zoho/login')) as LoginStart;
-  try {
-    sessionStorage.setItem(STATE_KEY, data.state);
-  } catch {
-    /* private mode — the backend-signed state is still verified server-side */
-  }
+  writeOauthState(data.state);
   window.location.assign(data.authorizeUrl);
 }
 
@@ -65,13 +92,7 @@ export async function completeZohoCallbackIfPresent(): Promise<boolean> {
     return false;
   }
 
-  let expected: string | null = null;
-  try {
-    expected = sessionStorage.getItem(STATE_KEY);
-    sessionStorage.removeItem(STATE_KEY);
-  } catch {
-    /* ignore */
-  }
+  const expected = readAndClearOauthState();
   // Clean the address bar first so a refresh can't replay a one-time (now consumed) code.
   stripCallbackParams();
 

@@ -3,6 +3,8 @@
  * Docs: https://ringcentral.github.io/ringcentral-embeddable/docs/integration/api/
  */
 
+import { inAppCallingSupported } from './rcCapability';
+
 declare global {
   interface Window {
     RCAdapter?: {
@@ -67,6 +69,7 @@ export function dockRingCentralWidget(): void {
  * Place (or stage) a call in the Embeddable widget. Returns false if the widget isn't loaded yet.
  */
 export function clickToDial(phone: string, toCall = true): boolean {
+  if (!inAppCallingSupported()) return false;
   const phoneNumber = normalizeDialNumber(phone);
   if (!phoneNumber) return false;
 

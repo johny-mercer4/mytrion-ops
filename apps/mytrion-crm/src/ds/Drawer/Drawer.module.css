@@ -172,7 +172,7 @@
     /* The home indicator sits over the last ~34px of the screen, and --kb-inset is however much of
        the viewport the software keyboard is currently covering (see hooks/useViewportInset.ts).
        Without both, a sheet's footer action is under the user's own hardware. */
-    padding-block-end: calc(env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+    padding-block-end: calc(var(--layout-safe-b, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
   }
 
   .dialog[data-state='open'] .panel {
