@@ -12,7 +12,7 @@ const MSD_CSS = join(process.cwd(), 'src/mytrions/sales/redesign/msd.css');
 const POINTS: SalesActivityPoint[] = [
   { date: '2026-07-26', label: 'Jul 26', transactions: 100, activeCards: 90, newCards: 1, volume: 9000 },
   { date: '2026-07-27', label: 'Jul 27', transactions: 110, activeCards: 91, newCards: 0, volume: 9500 },
-  { date: '2026-07-30', label: 'Jul 30', transactions: 112, activeCards: 94, newCards: 0, volume: 10000 },
+  { date: '2026-07-30', label: 'Jul 30', transactions: 112, activeCards: 94, newCards: 0, volume: 10241.36 },
 ];
 
 function renderChart(hoverIdx: number | null = 2) {
@@ -89,7 +89,9 @@ describe('Card Activity hover card positioning', () => {
     expect(card!.querySelector('.msd-activity-card__day')?.textContent).toBe('Jul 30');
     expect(screen.getByText('Transactions')).toBeInTheDocument();
     expect(card!.textContent).toContain('112');
-    expect(card!.textContent).toContain('10k');
+    // Gallons in full: "10k" hid 241.36 gallons of what the carrier is billed on.
+    expect(card!.textContent).toContain('10,241.36');
+    expect(card!.textContent).not.toContain('10k');
     expect(screen.getByTestId('msd-activity-crosshair')).toBeInTheDocument();
     expect(screen.getByTestId('msd-activity-glow')).toBeInTheDocument();
   });

@@ -15353,3 +15353,23 @@ Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-ho
 allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
 token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
 
+
+## 2026-08-13 — Card Activity gallons, in full
+
+The tooltip showed `Gallons 9k` for a day that moved 9,241.36 — via `msdFmtK`, which is a
+one-significant-figure abbreviation. Gallons are what the carrier is billed on, so that is the one
+number on this dashboard that cannot be read approximately, and the Transaction Details table
+directly below it has always shown the exact figure. The panel disagreed with itself.
+
+`msdFmtGallons` (thousands separators, up to 2 decimals, trailing zeros dropped) now formats the
+Card Activity tooltip and the single-day Gallons tile. It is the same rule `SalesDashPanel`'s local
+`fmtVol` already applied to the transactions table, so that duplicate is gone and both read from one
+formatter.
+
+Left abbreviated on purpose: the hero KPI strip (`msdFmtNum(hero.volume)`). It is a cycle total in
+the millions inside a two-up flex row of unbreakable mono figures that already does not fit a phone —
+"1.2M" is the point there, and an exact number would break the strip before it helped anyone. Worth
+revisiting only with a layout change.
+
+3 tests on the formatter, plus the chart test now pins 10,241.36 and asserts "10k" is absent.
+847 CRM tests green.
