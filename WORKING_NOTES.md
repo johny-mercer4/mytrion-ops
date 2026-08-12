@@ -15085,3 +15085,12 @@ candidates; both are real work and neither should be attempted without this same
 Four optimisations measured this session, three rejected on evidence (rerank, gpt-5.6-luna,
 FF_RAG_V2_CONTEXT, and now k=4). The one that survived — the skill library at 1/15 → 15/15 — is the
 only one that was ever argued for on a number rather than on a story.
+
+## 2026-08-12 — Card Activity tooltip parity follow-up
+
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.

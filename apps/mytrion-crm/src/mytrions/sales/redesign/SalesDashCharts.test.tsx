@@ -1,13 +1,10 @@
-/**
- * Card Activity hover card must position against `.msd-activity-wrap`. Without `position: relative`
- * on that wrap, `position: absolute` walks up to a page-level ancestor and the card paints under the
- * header search (the Jul-2026 screenshot bug).
- */
+/** Card Activity tooltip parity with CRM Mytrion: point tracking, scroll compensation and edges. */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { SalesDashCharts } from './SalesDashCharts';
+import { msdActivityTooltipPosition } from './dashActivityGeom';
 import type { SalesActivityPoint } from './dashSalesData';
 
 const MSD_CSS = join(process.cwd(), 'src/mytrions/sales/redesign/msd.css');
@@ -48,23 +45,52 @@ function renderChart(hoverIdx: number | null = 2) {
 }
 
 describe('Card Activity hover card positioning', () => {
-  it('keeps .msd-activity-wrap as the absolute containing block', () => {
+  it('uses a relative activity area outside the horizontal scroller', () => {
     const css = readFileSync(MSD_CSS, 'utf8');
-    const wrapRule = css.match(/\.ss-root\s+\.msd-activity-wrap\s*\{[^}]+\}/);
-    expect(wrapRule?.[0]).toMatch(/position:\s*relative/);
+    const areaRule = css.match(/\.ss-root\s+\.msd-chart-activity-area\s*\{[^}]+\}/);
+    const scrollerRule = css.match(/\.ss-root\s+\.msd-activity-scroller\s*\{[^}]+\}/);
+    expect(areaRule?.[0]).toMatch(/position:\s*relative/);
+    expect(scrollerRule?.[0]).toMatch(/overflow-x:\s*auto/);
+    expect(scrollerRule?.[0]).toMatch(/overflow-y:\s*hidden/);
   });
 
-  it('anchors the hover card inside the activity wrap, not a page ancestor', () => {
+  it('renders the hover card as a scroller sibling inside the activity area', () => {
     const { container } = renderChart(2);
-    const wrap = container.querySelector('.msd-activity-wrap');
+    const area = container.querySelector('.msd-chart-activity-area');
+    const scroller = container.querySelector('.msd-activity-scroller');
     const card = container.querySelector('.msd-activity-card');
-    expect(wrap).toBeTruthy();
+    expect(area).toBeTruthy();
+    expect(scroller).toBeTruthy();
     expect(card).toBeTruthy();
-    expect(wrap!.contains(card!)).toBe(true);
+    expect(area!.contains(card!)).toBe(true);
+    expect(scroller!.contains(card!)).toBe(false);
     expect(card!.querySelector('.msd-activity-card__day')?.textContent).toBe('Jul 30');
     expect(screen.getByText('Transactions')).toBeInTheDocument();
     expect(card!.textContent).toContain('112');
     expect(card!.textContent).toContain('10k');
+    expect(screen.getByTestId('msd-activity-crosshair')).toBeInTheDocument();
+    expect(screen.getByTestId('msd-activity-glow')).toBeInTheDocument();
+  });
+
+  it('clamps the first and last points inside the visible viewport', () => {
+    const shared = {
+      len: 3, chartWidth: 480, renderedWidth: 800, viewportWidth: 800, scrollLeft: 0,
+      transactions: 100, maxTransactions: 112, svgHeight: 110,
+    };
+    expect(msdActivityTooltipPosition({ ...shared, index: 0 }).left).toBe(100);
+    expect(msdActivityTooltipPosition({ ...shared, index: 2 }).left).toBe(700);
+  });
+
+  it('tracks horizontal scrolling and the hovered transaction Y coordinate', () => {
+    const shared = {
+      index: 6, len: 20, chartWidth: 920, renderedWidth: 920, viewportWidth: 480,
+      transactions: 80, maxTransactions: 160, svgHeight: 110,
+    };
+    const atStart = msdActivityTooltipPosition({ ...shared, scrollLeft: 0 });
+    const afterScroll = msdActivityTooltipPosition({ ...shared, scrollLeft: 100 });
+    const higherPoint = msdActivityTooltipPosition({ ...shared, scrollLeft: 100, transactions: 160 });
+    expect(afterScroll.left).toBeCloseTo(atStart.left - 100);
+    expect(higherPoint.top).toBeLessThan(afterScroll.top);
   });
 
   it('labels Card Activity as warehouse txn data (not live EFS status)', () => {
@@ -77,4 +103,3 @@ describe('Card Activity hover card positioning', () => {
     expect(screen.getByText(/Active from warehouse/i)).toBeInTheDocument();
   });
 });
-

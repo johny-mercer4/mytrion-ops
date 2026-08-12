@@ -576,10 +576,14 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
 }
-.ss-root .msd-activity-scroller { overflow-x: auto; }
+.ss-root .msd-chart-activity-area { position: relative; min-width: 0; }
+.ss-root .msd-activity-scroller {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
 .ss-root .msd-activity-wrap {
-  /* Containing block for `.msd-activity-card`. Without this, the absolute hover card walks up to a
-     page-level positioned ancestor and paints under the header search instead of over the chart. */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -587,7 +591,7 @@
 }
 .ss-root .msd-activity-svg {
   width: 100%;
-  height: 90px;
+  height: 110px;
   display: block;
   overflow: visible;
 }
@@ -826,25 +830,25 @@
 .ss-root.light .msd-hero-kpi--gold .msd-hero-kpi-icon { color: #d97706; }
 .ss-root.light .msd-hero-kpi--blue .msd-hero-kpi-icon { color: #0284c7; }
 
-/* ── Card Activity hover card ──────────────────────────────────────────────────
-   Anchored to the hovered column and translated back by half its own width, so it stays centred on
-   the dot without needing a measured position. `top` (not `bottom: calc(100% - N)`) keeps the card
-   inside `.msd-activity-wrap` — the scroller's `overflow-x: auto` forces overflow-y to clip, so a
-   card that extends above the wrap would be cut off. `pointer-events: none` is load-bearing: the
-   card tracks the column under the cursor, so if it could take the pointer it would replace its own
-   hover target and flicker between two days at the boundary. */
+/* Card Activity tooltip: sibling of the horizontal scroller, lifted above the hovered TX point. */
 .ss-root .msd-activity-card {
   position: absolute;
-  top: 4px;
-  transform: translateX(-50%);
-  z-index: 4;
-  min-width: 168px;
-  padding: var(--space-3) var(--space-3_5);
-  border-radius: var(--radius-md);
-  background: var(--hz-modal-surface);
-  border: 1px solid var(--glass-bd-hi);
+  width: 184px;
+  box-sizing: border-box;
+  transform: translateX(-50%) translateY(-100%) translateY(-10px);
+  z-index: 20;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(8px);
   box-shadow: var(--hz-shadow-pop);
   pointer-events: none;
+}
+.ss-root.light .msd-activity-card {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .ss-root .msd-activity-card__day {
@@ -888,9 +892,9 @@
   flex: none;
 }
 .ss-root .msd-activity-card__rows dt i[data-k='tx'] { background: #f43f5e; }
-.ss-root .msd-activity-card__rows dt i[data-k='active'] { background: #16a34a; }
-.ss-root .msd-activity-card__rows dt i[data-k='new'] { background: #0284c7; }
-.ss-root .msd-activity-card__rows dt i[data-k='gal'] { background: var(--accent); }
+.ss-root .msd-activity-card__rows dt i[data-k='active'] { background: #4b5563; }
+.ss-root .msd-activity-card__rows dt i[data-k='new'] { background: #9ca3af; }
+.ss-root .msd-activity-card__rows dt i[data-k='gal'] { background: #0ea5e9; }
 
 /* Figures are monospaced and tabular so the four rows line up as a column. */
 .ss-root .msd-activity-card__rows dd {
@@ -902,8 +906,9 @@
   color: var(--text-primary);
 }
 .ss-root .msd-activity-card__rows dd[data-accent] {
-  color: var(--accent);
+  color: #38bdf8;
 }
+.ss-root.light .msd-activity-card__rows dd[data-accent] { color: #0284c7; }
 
 /* The hero KPI strip is a two-up flex row whose halves are `flex: none` around unbreakable mono
    figures, so it never fit a phone. It stacks below the structure line. */

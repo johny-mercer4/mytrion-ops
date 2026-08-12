@@ -21,6 +21,55 @@ export function msdPointY(val: number, max: number): number {
   return 85 - p * 80;
 }
 
+export interface MsdActivityTooltipPositionOptions {
+  index: number;
+  len: number;
+  chartWidth: number;
+  renderedWidth: number;
+  viewportWidth: number;
+  scrollLeft: number;
+  transactions: number;
+  maxTransactions: number;
+  svgHeight: number;
+  tooltipWidth?: number;
+  edgeGutter?: number;
+}
+
+/**
+ * Position the floating tooltip against the rendered transaction point. The SVG can stretch wider
+ * than its viewBox because the chart wrap has min-width:100%, so scale X before removing scroll.
+ */
+export function msdActivityTooltipPosition({
+  index,
+  len,
+  chartWidth,
+  renderedWidth,
+  viewportWidth,
+  scrollLeft,
+  transactions,
+  maxTransactions,
+  svgHeight,
+  tooltipWidth = 184,
+  edgeGutter = 8,
+}: MsdActivityTooltipPositionOptions): { left: number; top: number } {
+  const safeChartWidth = Math.max(1, chartWidth);
+  const safeRenderedWidth = Math.max(1, renderedWidth);
+  const safeViewportWidth = Math.max(1, viewportWidth);
+  const pointLeft = (msdPointX(index, len, safeChartWidth) / safeChartWidth) * safeRenderedWidth - scrollLeft;
+  const halfTooltip = tooltipWidth / 2;
+  const left = safeViewportWidth <= tooltipWidth + edgeGutter * 2
+    ? safeViewportWidth / 2
+    : Math.min(
+        safeViewportWidth - halfTooltip - edgeGutter,
+        Math.max(halfTooltip + edgeGutter, pointLeft),
+      );
+
+  return {
+    left,
+    top: (msdPointY(transactions, maxTransactions) / 90) * Math.max(1, svgHeight),
+  };
+}
+
 export function msdLinePath(
   values: number[],
   max: number,

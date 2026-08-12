@@ -1,11 +1,12 @@
 /**
  * Cards by Company + Card Activity — self-service MSD parity layout.
  */
-import type { MouseEvent, ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Icon } from './icons';
 import { currentBillingCycle, msdFmtK, msdFmtNum } from './dashFormat';
 import {
   msdActivityWidth,
+  msdActivityTooltipPosition,
   msdAreaPath,
   msdColLeftPct,
   msdLinePath,
@@ -62,6 +63,62 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
   const lo = p.selStart != null && p.selEnd != null ? Math.min(p.selStart, p.selEnd) : -1;
   const hi = p.selStart != null && p.selEnd != null ? Math.max(p.selStart, p.selEnd) : -1;
   const cycleLabel = currentBillingCycle().label;
+  const activityScrollerRef = useRef<HTMLDivElement>(null);
+  const activityWrapRef = useRef<HTMLDivElement>(null);
+  const activitySvgRef = useRef<SVGSVGElement>(null);
+  const [activityViewport, setActivityViewport] = useState({
+    renderedWidth: chartW,
+    viewportWidth: chartW,
+    scrollLeft: 0,
+    svgHeight: 110,
+  });
+
+  const syncActivityViewport = useCallback(() => {
+    const scroller = activityScrollerRef.current;
+    const wrap = activityWrapRef.current;
+    const svg = activitySvgRef.current;
+    if (!scroller || !wrap || !svg) return;
+    const next = {
+      renderedWidth: wrap.getBoundingClientRect().width || wrap.clientWidth || chartW,
+      viewportWidth: scroller.clientWidth || scroller.getBoundingClientRect().width || chartW,
+      scrollLeft: scroller.scrollLeft,
+      svgHeight: svg.getBoundingClientRect().height || 110,
+    };
+    setActivityViewport((current) => (
+      current.renderedWidth === next.renderedWidth
+      && current.viewportWidth === next.viewportWidth
+      && current.scrollLeft === next.scrollLeft
+      && current.svgHeight === next.svgHeight
+        ? current
+        : next
+    ));
+  }, [chartW]);
+
+  useLayoutEffect(() => {
+    syncActivityViewport();
+    const scroller = activityScrollerRef.current;
+    const wrap = activityWrapRef.current;
+    if (!scroller || !wrap || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(syncActivityViewport);
+    observer.observe(scroller);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [len, syncActivityViewport]);
+
+  const hoveredPoint = p.hoverIdx != null ? p.actPoints[p.hoverIdx] : undefined;
+  const tooltipPosition = hoveredPoint && p.hoverIdx != null
+    ? msdActivityTooltipPosition({
+        index: p.hoverIdx,
+        len,
+        chartWidth: chartW,
+        renderedWidth: activityViewport.renderedWidth,
+        viewportWidth: activityViewport.viewportWidth,
+        scrollLeft: activityViewport.scrollLeft,
+        transactions: hoveredPoint.transactions,
+        maxTransactions: maxTx,
+        svgHeight: activityViewport.svgHeight,
+      })
+    : null;
 
   return (
     <div className="msd-bottom-row">
@@ -276,8 +333,27 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
             </div>
           ) : null}
 
-          {len === 0 ? (
-            <div className="msd-activity-empty">
+          <div className="msd-chart-activity-area">
+            {/* Keep the tooltip outside the horizontal scroller so vertical overflow cannot clip it. */}
+            {hoveredPoint && tooltipPosition ? (
+              <div
+                className="msd-activity-card"
+                style={{ left: tooltipPosition.left, top: tooltipPosition.top }}
+                role="status"
+                aria-live="polite"
+              >
+                <div className="msd-activity-card__day">{hoveredPoint.label}</div>
+                <dl className="msd-activity-card__rows">
+                  <div><dt><i data-k="tx" />Transactions</dt><dd>{hoveredPoint.transactions.toLocaleString()}</dd></div>
+                  <div><dt><i data-k="active" />Active Cards</dt><dd>{hoveredPoint.activeCards.toLocaleString()}</dd></div>
+                  <div><dt><i data-k="new" />New Cards</dt><dd>{hoveredPoint.newCards.toLocaleString()}</dd></div>
+                  <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtK(hoveredPoint.volume)}</dd></div>
+                </dl>
+              </div>
+            ) : null}
+
+            {len === 0 ? (
+              <div className="msd-activity-empty">
               <strong>No activity in this cycle yet</strong>
               <span>
                 {p.activityRange === 'recent' ? (
@@ -288,9 +364,9 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                   'Transactions will show up here as they happen.'
                 )}
               </span>
-            </div>
-          ) : len === 1 && p.actPoints[0] ? (
-            <div>
+              </div>
+            ) : len === 1 && p.actPoints[0] ? (
+              <div>
               <div className="msd-activity-single__grid">
                 <div>
                   <div className="msd-activity-single__val" style={{ color: '#be123c' }}>
@@ -313,52 +389,21 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                   <div className="msd-activity-single__label">Gallons</div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="msd-activity-scroller">
+              </div>
+            ) : (
+            <div
+              ref={activityScrollerRef}
+              className="msd-activity-scroller"
+              onScroll={syncActivityViewport}
+            >
               <div
+                ref={activityWrapRef}
                 className="msd-activity-wrap"
                 style={{ width: chartW, minWidth: '100%' }}
                 onMouseLeave={() => p.setHoverIdx(null)}
               >
-                {/*
-                  Hover card. The three value rows below already reveal exact figures on hover, but
-                  they are spread across the full chart width and `volume` was never surfaced at all
-                  — so reading one day meant scanning three rows and still not finding gallons.
-                  This gathers the whole day into one place, anchored to the hovered column.
-
-                  Pointer-events off: the card tracks the same column the cursor is over, so it must
-                  never become the hover target itself and swap the value out from under the reader.
-                */}
-                {p.hoverIdx != null && p.actPoints[p.hoverIdx] ? (
-                  <div
-                    className="msd-activity-card"
-                    style={{ left: msdColLeftPct(p.hoverIdx, len, chartW) }}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <div className="msd-activity-card__day">{p.actPoints[p.hoverIdx]!.label}</div>
-                    <dl className="msd-activity-card__rows">
-                      <div>
-                        <dt><i data-k="tx" />Transactions</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.transactions.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="active" />Active Cards</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.activeCards.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="new" />New Cards</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.newCards.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="gal" />Gallons</dt>
-                        <dd data-accent>{msdFmtK(p.actPoints[p.hoverIdx]!.volume)}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                ) : null}
                 <svg
+                  ref={activitySvgRef}
                   viewBox={`0 0 ${chartW} 90`}
                   className="msd-activity-svg"
                   preserveAspectRatio="none"
@@ -373,6 +418,15 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                     strokeWidth="1.5"
                     strokeDasharray="4,3"
                   />
+                  {p.hoverIdx != null && hoveredPoint ? (
+                    <line
+                      data-testid="msd-activity-crosshair"
+                      x1={msdPointX(p.hoverIdx, len, chartW)} y1={2}
+                      x2={msdPointX(p.hoverIdx, len, chartW)} y2={88}
+                      stroke="rgba(148,163,184,0.4)" strokeWidth={1} strokeDasharray="3,2"
+                      pointerEvents="none"
+                    />
+                  ) : null}
                   {lo >= 0 && hi >= 0 ? (
                     <rect
                       x={msdSelBandX(lo, len, chartW)}
@@ -419,12 +473,27 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                           height={90}
                           fill="transparent"
                           style={{ cursor: 'pointer' }}
-                          onMouseEnter={() => p.setHoverIdx(i)}
+                          onMouseEnter={() => {
+                            syncActivityViewport();
+                            p.setHoverIdx(i);
+                          }}
                           onClick={(e) => p.onActivityClick(i, e)}
                         />
                       </g>
                     );
                   })}
+                  {p.hoverIdx != null && hoveredPoint ? (
+                    <circle
+                      data-testid="msd-activity-glow"
+                      cx={msdPointX(p.hoverIdx, len, chartW)}
+                      cy={msdPointY(hoveredPoint.transactions, maxTx)}
+                      r={10}
+                      fill="rgba(244,63,94,0.15)"
+                      stroke="rgba(244,63,94,0.35)"
+                      strokeWidth={1}
+                      pointerEvents="none"
+                    />
+                  ) : null}
                 </svg>
                 <div className="msd-activity-vals">
                   {p.actPoints.map((m, i) => (
@@ -473,7 +542,8 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
               </div>
               <div className="msd-activity-tip">Tip: click a day to pin it. Hold Shift + click another day for a range.</div>
             </div>
-          )}
+            )}
+          </div>
         </div>
         {p.children}
       </div>
