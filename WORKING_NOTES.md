@@ -15141,3 +15141,41 @@ Two fixes, because the cause and the message were separate problems:
 **Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
 it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
 answer; worth revisiting only if tabs are routinely left open through deploys.
+
+### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
+replacement, and not the carrier product in `apps/mini-app`. Branch: `feature/crm-telegram-mobile` off
+`origin/build`. No commit.
+
+**Telegram bootstrap.** `index.html` loads `telegram-web-app.js` (unpinned, same as the carrier app) and
+an inline first-paint script calls `ready()` / `expand()` / `disableVerticalSwipes()`, stamps
+`data-telegram`, and writes `--tg-inset-*`. `src/telegram/webApp.ts` re-applies on viewport / safe-area /
+theme events. Viewport stays pinch-zoomable (`user-scalable=no` is not copied). Telegram chrome is painted
+to match CRM light/dark; themeParams are not rebound onto `--accent`.
+
+**Auth.** Session was already in localStorage. OAuth *state* was sessionStorage-only — dual-written to
+localStorage now so a WebView that drops sessionStorage across the Zoho round-trip can still complete.
+Backend-signed state remains the CSRF gate. Login copy in Telegram tells the worker to stay in the
+window. **Not in this pass:** Telegram `initData` as identity. Workers remain Zoho OAuth users. If Zoho
+opens in an external browser instead of the WebView, the session will not transfer back into the Mini
+App — that needs a Bot-side return path later.
+
+**RingCentral.** Embeddable is not mounted in Telegram (iframe + WebRTC + OAuth popup). In-UI card:
+"Calling isn’t available in Telegram. Use Mytrion on a desktop browser or the RingCentral app." Desktop
+calling is unchanged. OAuth redirect URI remains
+`https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`. On phone (non-
+Telegram) an incoming-call banner sits above `--layout-bottom-inset` and the vendor pill is lifted off
+the tab bar (`data-rc-ringing`). Sign-in/error cards dropped the 4px side-tab (craft-floor / hook).
+
+**Shell / departments.** `--layout-safe-t` / `--layout-safe-b` max env() with Telegram insets. Header
+pads the Mini App top chrome; tab bar and sheets use `--layout-safe-b`. Admin / Sales / launcher tables
+get `data-table-scroller` (horizontal scroll, sticky first+last columns under 640, `100dvh` instead of
+`100vh`). Launcher grid is 2-col below 900 and 1-col below 640 via data attributes (module CSS is hook-
+blocked). Shared MytrionShell already owns phone tab bar + More sheet, so Admin's 19 tabs are reachable.
+All workspaces that mount MytrionShell (Sales, CS, Billing, Admin, HR, Finance, Manager, Marketing, …)
+inherit the chrome.
+
+**Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
+at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
+DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
