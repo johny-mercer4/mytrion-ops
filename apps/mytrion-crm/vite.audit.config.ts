@@ -20,7 +20,13 @@ import tailwindcss from '@tailwindcss/vite';
  * and the client uses the relative base:
  *
  *   VITE_DEV_MOCK_AUTH=1 VITE_API_URL= pnpm exec vite --config vite.audit.config.ts
+ *
+ * `AUDIT_API_PORT` retargets the proxy. The default :3001 is whatever `pnpm dev:all` is pointed at —
+ * and `.env`'s `MYTRION_OPS_DATABASE_URL` is the RENDER PRODUCTION database, so auditing a screen
+ * that writes anything must run its own API against a throwaway local DB on another port.
  */
+const API_PORT = process.env.AUDIT_API_PORT ?? '3001';
+
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
@@ -32,8 +38,8 @@ export default defineConfig({
     port: 5175,
     strictPort: true,
     proxy: {
-      '/v1': { target: 'http://localhost:3001', changeOrigin: true },
-      '/realtime': { target: 'ws://localhost:3001', ws: true },
+      '/v1': { target: `http://localhost:${API_PORT}`, changeOrigin: true },
+      '/realtime': { target: `ws://localhost:${API_PORT}`, ws: true },
     },
   },
 });

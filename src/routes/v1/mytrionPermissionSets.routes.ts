@@ -53,6 +53,15 @@ const metaBody = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   active: z.boolean().optional(),
+  /** Replace the lower layers rather than union onto them — see the schema for the full contract. */
+  override: z.boolean().optional(),
+});
+
+/** The whole grant configuration, applied in one statement — what the Save button sends. */
+const grantsBody = z.object({
+  allowedMytrions: z.array(mytrionIdSchema).max(20),
+  mytrionAccessModes: z.record(z.string(), z.enum(['read', 'full'])).default({}),
+  tabGrants: z.record(z.string(), z.array(tabKeySchema).max(64)).default({}),
 });
 
 const grantBody = z.object({
@@ -220,6 +229,7 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
       ...(body.name === undefined ? {} : { name: body.name }),
       ...(body.description === undefined ? {} : { description: body.description }),
       ...(body.active === undefined ? {} : { active: body.active }),
+      ...(body.override === undefined ? {} : { override: body.override }),
     });
     if (!after) throw new AppError('Permission set not found', { code: 'NOT_FOUND', statusCode: 404 });
 
@@ -230,12 +240,66 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
       resourceId: id,
       detail: {
         changed: Object.keys(body),
-        before: { name: before.name, description: before.description, active: before.active },
-        after: { name: after.name, description: after.description, active: after.active },
+        before: {
+          name: before.name,
+          description: before.description,
+          active: before.active,
+          override: before.override,
+        },
+        after: {
+          name: after.name,
+          description: after.description,
+          active: after.active,
+          override: after.override,
+        },
       },
     });
-    // Deactivating a set changes what every holder can reach.
-    if (body.active !== undefined) mytrionAccessService.invalidateAll();
+    // Deactivating a set — or flipping it between additive and override — changes what every holder
+    // can reach, so both invalidate.
+    if (body.active !== undefined || body.override !== undefined) mytrionAccessService.invalidateAll();
+    return { set: after };
+  });
+
+  /**
+   * Replace the whole grant configuration at once.
+   *
+   * The per-Mytrion PATCH below is right for a control that saves itself. This is what a Save button
+   * needs: one statement, so a draft can never half-apply and leave the set describing access nobody
+   * chose. The editor holds a draft and posts it here.
+   */
+  app.put('/admin/permission-sets/:id/grants', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = grantsBody.parse(request.body ?? {});
+    const before = await loadSet(ctx, id);
+    const after = await withPermissionSetTables(() =>
+      mytrionPermissionSetsRepo.replaceGrants(ctx, id, {
+        allowedMytrions: body.allowedMytrions,
+        mytrionAccessModes: body.mytrionAccessModes,
+        tabGrants: body.tabGrants,
+      }),
+    );
+    if (!after) throw new AppError('Permission set not found', { code: 'NOT_FOUND', statusCode: 404 });
+
+    await auditFromContext(ctx, {
+      action: 'admin.permission_set.grants.replace',
+      status: 'ok',
+      resourceType: 'mytrion_permission_set',
+      resourceId: id,
+      detail: {
+        before: {
+          allowedMytrions: before.allowedMytrions,
+          mytrionAccessModes: before.mytrionAccessModes,
+          tabGrants: before.tabGrants,
+        },
+        after: {
+          allowedMytrions: after.allowedMytrions,
+          mytrionAccessModes: after.mytrionAccessModes,
+          tabGrants: after.tabGrants,
+        },
+      },
+    });
+    mytrionAccessService.invalidateAll();
     return { set: after };
   });
 
