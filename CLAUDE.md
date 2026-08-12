@@ -5,20 +5,28 @@
 Octane internal AI assistant. TypeScript backend. Multi-tenant-lite (internal + partner audiences).
 Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
 
-## Telegram agent apps — DO NOT confuse the two
+## Telegram agent apps — DO NOT confuse them
 
-There are **two** Telegram agent apps under `apps/`. When asked to "run the bot / gateway", the
-answer is almost always `agent-gateway` — not `agent-telegram-bot`.
+There are **two** Telegram agent apps under `apps/`, plus a **separate Horizon worker bot** on the API.
+When asked to "run the bot / gateway", the answer is almost always `agent-gateway` — not
+`agent-telegram-bot`, and not the Horizon bot.
 
 - **`apps/agent-gateway`** ← THE Octane support bot ("support bot v2", Claude Agent SDK, Node/tsx).
   Own `Dockerfile` + `docker-compose.yml` (`container_name: octane-agent-gateway`). Run it with
   `cd apps/agent-gateway && docker compose up -d --build`, logs `docker logs -f octane-agent-gateway`.
   Talks to the backend via `OCTANE_API_BASE` (`http://host.docker.internal:3001` inside the container).
+  Token: **`TELEGRAM_BOT_TOKEN`** (carrier client mini-app / support bot). Long-polls `getUpdates`.
 - **`apps/agent-telegram-bot`** — upstream **hamroh** framework (Python/uv, `python -m hamroh`). Not
   the product bot; do not launch it for Octane work.
-- **Only one poller per bot token.** Both apps' `.env` carry the *same* `TELEGRAM_BOT_TOKEN`, so
+- **Horizon worker CRM Mini App** (`apps/mytrion-crm` inside Telegram) — a **third** bot. Token:
+  **`HORIZON_BOT_TOKEN`** + webhook secret **`HORIZON_BOT_SECRET`**. Webhooked by the API at
+  `/v1/telegram/horizon-webhook`. Never put this token in agent-gateway. Never reuse
+  `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CARRIER_BOT_TOKEN` as Horizon.
+- **Only one poller per bot token.** Both gateway apps' `.env` carry the *same* `TELEGRAM_BOT_TOKEN`, so
   running both at once = Telegram `Conflict` (409). Kill one before starting the other.
   *(Session 2026-07-22: launched hamroh by mistake — wrong bot + token clash with the gateway.)*
+  Setting `setWebhook` on the client token would also kill gateway polling — Horizon `setWebhook`
+  uses `HORIZON_BOT_TOKEN` only.
 
 ## Local run stack (what "the app" needs to be up)
 

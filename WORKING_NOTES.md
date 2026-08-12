@@ -15244,3 +15244,112 @@ draws and fuel-transaction totals — none of those are an invoice quoted from a
 5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
 Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
 and 5834146 (cents) on the preview.
+### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
+replacement, and not the carrier product in `apps/mini-app`. Branch: `feature/crm-telegram-mobile` off
+`origin/build`. No commit.
+
+**Telegram bootstrap.** `index.html` loads `telegram-web-app.js` (unpinned, same as the carrier app) and
+an inline first-paint script calls `ready()` / `expand()` / `disableVerticalSwipes()`, stamps
+`data-telegram`, and writes `--tg-inset-*`. `src/telegram/webApp.ts` re-applies on viewport / safe-area /
+theme events. Viewport stays pinch-zoomable (`user-scalable=no` is not copied). Telegram chrome is painted
+to match CRM light/dark; themeParams are not rebound onto `--accent`.
+
+**Auth.** Session was already in localStorage. OAuth *state* was sessionStorage-only — dual-written to
+localStorage now so a WebView that drops sessionStorage across the Zoho round-trip can still complete.
+Backend-signed state remains the CSRF gate. Login copy in Telegram tells the worker to stay in the
+window. **Not in this pass:** Telegram `initData` as identity. Workers remain Zoho OAuth users. If Zoho
+opens in an external browser instead of the WebView, the session will not transfer back into the Mini
+App — that needs a Bot-side return path later.
+
+**RingCentral.** Embeddable is not mounted in Telegram (iframe + WebRTC + OAuth popup). In-UI card:
+"Calling isn’t available in Telegram. Use Mytrion on a desktop browser or the RingCentral app." Desktop
+calling is unchanged. OAuth redirect URI remains
+`https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`. On phone (non-
+Telegram) an incoming-call banner sits above `--layout-bottom-inset` and the vendor pill is lifted off
+the tab bar (`data-rc-ringing`). Sign-in/error cards dropped the 4px side-tab (craft-floor / hook).
+
+**Shell / departments.** `--layout-safe-t` / `--layout-safe-b` max env() with Telegram insets. Header
+pads the Mini App top chrome; tab bar and sheets use `--layout-safe-b`. Admin / Sales / launcher tables
+get `data-table-scroller` (horizontal scroll, sticky first+last columns under 640, `100dvh` instead of
+`100vh`). Launcher grid is 2-col below 900 and 1-col below 640 via data attributes (module CSS is hook-
+blocked). Shared MytrionShell already owns phone tab bar + More sheet, so Admin's 19 tabs are reachable.
+All workspaces that mount MytrionShell (Sales, CS, Billing, Admin, HR, Finance, Manager, Marketing, …)
+inherit the chrome.
+
+**Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
+at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
+DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
+---
+
+## 2026-08-12 — Permission sets: override precedence, a real Save, and a screen verified in a browser
+
+Four asks, all on Mytrion Admin → Permission Sets.
+
+**1. Override (the one that changes semantics).** Sets were strictly additive, so "Billing — Ledger
+only" did nothing to someone whose profile default already granted Billing unscoped. That limitation
+was documented and correct, but it made scoping unusable in practice. New `override` boolean on
+`mytrion_permission_sets` (migration `0115`, hand-written and idempotent — `drizzle-kit generate`
+still emits 388 lines of already-applied tables in this repo and cannot be used).
+
+Resolution gains **Step 3.4** in `combineAccess`, after the per-user override REPLACE and before the
+deny subtraction: if any assigned set carries `override`, `allowed`, `userModes` and `allDept` are
+cleared and only the sets contribute. Deliberate limits, all pinned by tests:
+- a denied Mytrion on the user record **stays denied** — override widens precedence, not authority;
+- an overriding set **cannot** confer all-department access;
+- `homeMytrion` is re-picked from what survives, so nobody lands on a workspace they cannot enter.
+
+`AccessTrace` gains `overriddenBy: string[]`, and the effective-access drawer now says in words why
+a profile default that plainly grants Billing produced no Billing. Without that this is undebuggable.
+
+**2. Save is a real save.** The editor used to PATCH on every click — a half-finished configuration
+was live for everyone holding the set, and there was nothing to press. It now holds a draft, shows a
+save bar only when the draft differs from what is stored, and commits through one new atomic
+`PUT /admin/permission-sets/:id/grants` whose repo writes the three grant columns together, filtered
+to the allowed set so the row can never disagree with itself. Save returns to the list.
+
+The save bar is `position: sticky`. **This forced a structure change:** `.card` is `overflow: hidden`,
+which makes a sticky child stick to a box that never scrolls. The card is therefore rendered by the
+editor, not by the page, so the bar is its sibling. Worth remembering the next time something needs
+to stick inside an admin card.
+
+**3. Three levels, not one wall.** 1 workspaces → 2 full/read-only → 3 tabs, each with its number in
+its own heading (the kicker-above-a-heading shape is gone; the numeral stays because the sequence IS
+the dependency). Levels 2 and 3 are dimmed and inert until level 1 is answered.
+
+**4. Assignees.** Was a chip wall capped at `.slice(0, 60)` — simultaneously overwhelming and
+incomplete, with nothing on screen saying the tail was unreachable. Now a searchable list over the
+whole roster (126 people), assigned pinned above candidates, per-row busy state.
+
+**Verified in a real browser, not by reading class names.** `apps/mytrion-crm/vite.audit.config.ts`
+gained `AUDIT_API_PORT` so an audit can run against its own API on a throwaway local DB — the default
+:3001 is whatever `pnpm dev:all` is pointed at, and `.env` points at Render **production**. Ran a
+CDP script over both themes: list, skeleton, detail, dirty state, assignees, precedence. That pass
+found four things reading the code did not: the save bar was below the fold, the create form vanished
+during loading (the grid jumped on arrival), list cards were ragged because `.profileGrid` is
+`align-items: start`, and skeleton bars were invisible except when the shimmer highlight crossed them
+— fatal under `prefers-reduced-motion`, where nothing moves at all.
+
+`pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
+
+### 2026-08-12 — Horizon worker CRM on its own Telegram bot
+
+Wired Mytrion Horizon (`apps/mytrion-crm`) to a **separate** Telegram bot so it does not share the
+carrier client mini-app / agent-gateway token.
+
+- First-class env: `HORIZON_BOT_TOKEN` (Bot API + initData HMAC), `HORIZON_BOT_SECRET` (webhook
+  `secret_token` / `X-Telegram-Bot-Api-Secret-Token` — cannot be the bot token, Telegram forbids `:`),
+  plus username / Mini App URL / short name / direct / webhook URL. Client keys
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CARRIER_BOT_*` are unchanged.
+- Webhook-only on the API: `POST /v1/telegram/horizon-webhook`. No getUpdates poller. Boot
+  `setWebhook` uses the Horizon token only (skipped unless public HTTPS + secret; refused if the
+  Horizon token equals a client token).
+- CRM UI was already a Mini App host (Zoho OAuth, not initData login). No `src/` UI change, no
+  vendored `app/` rebuild. No bot token in `VITE_*`.
+- Isolation is asserted at boot. Gateway `.env.example` warns not to poll Horizon.
+
+Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-host>/main`, domain
+allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
+token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
+

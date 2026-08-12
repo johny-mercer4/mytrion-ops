@@ -284,7 +284,7 @@ export function KpiData() {
       </div>
 
       <div className={k.toolbar}>
-        <nav className={k.tabs} aria-label="KPI Admin sections">
+        <nav className={`${k.tabs} hscroll`} aria-label="KPI Admin sections">
           {VIEWS.map((item) => {
             const Icon = item.icon;
             return (

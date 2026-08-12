@@ -397,7 +397,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           </div>
         </div>
       ) : (
-      <div className={s.table}>
+      <div className={s.table} data-table-scroller>
         <div className={s.tHead} style={TABLE_COLS}>
           <span>Table</span>
           <span>Type</span>

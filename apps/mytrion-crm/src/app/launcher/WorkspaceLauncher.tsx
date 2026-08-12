@@ -45,7 +45,7 @@ export function WorkspaceLauncher({ ids }: { ids: MytrionId[] }) {
       />
 
       <div className={styles.scroll}>
-        <main className={styles.content}>
+        <main className={styles.content} data-launcher-content>
           <header className={styles.hero}>
             <p className={styles.eyebrow}>
               <span className={styles.pulse} aria-hidden />
@@ -55,7 +55,7 @@ export function WorkspaceLauncher({ ids }: { ids: MytrionId[] }) {
               Welcome back, <span className={styles.name}>{firstName}</span>
             </h1>
 
-            <div className={styles.stats}>
+            <div className={styles.stats} data-launcher-stats>
               <StatCard
                 kind="access"
                 icon={<Building2 size={22} strokeWidth={1.6} />}
@@ -99,7 +99,7 @@ export function WorkspaceLauncher({ ids }: { ids: MytrionId[] }) {
                 <strong>Billing</strong>, or clear the search.
               </p>
             ) : (
-              <ul className={styles.grid}>
+              <ul className={styles.grid} data-launcher-grid>
                 {visible.map((tile, i) => (
                   <WorkspaceCard
                     key={tile.id}

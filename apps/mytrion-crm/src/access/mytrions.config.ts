@@ -427,3 +427,16 @@ export function agentKeyFor(id: MytrionId): AgentKey | null {
     ? null
     : (id as AgentKey);
 }
+
+/**
+ * "Billing", not "Billing Mytrion".
+ *
+ * `title` carries the word because it names the workspace on its own, in a header or a launcher
+ * tile. In a list where every entry is a Mytrion — a chip grid, a per-workspace field label — it
+ * distinguishes nothing and just pushes the part that does distinguish them further right.
+ */
+export function mytrionShortLabel(id: MytrionId): string {
+  const m = MYTRIONS[id];
+  if (!m) return id;
+  return m.title.replace(/\s*Mytrion\s*/i, ' ').trim() || m.tag;
+}

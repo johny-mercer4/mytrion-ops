@@ -296,7 +296,7 @@ export function DataLoader() {
               </div>
             </div>
 
-            <div className={s.table} aria-busy={journal.loading}>
+            <div className={s.table} data-table-scroller aria-busy={journal.loading}>
               <div className={`${s.tHead} ${dl.batchTable}`}>
                 <span>When</span>
                 <span>Database user</span>

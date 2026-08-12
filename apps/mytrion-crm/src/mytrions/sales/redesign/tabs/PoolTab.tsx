@@ -432,7 +432,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
         ) : null}
 
         <div className={`ss-pool-table-wrap${submitting ? ' is-busy' : ''}`}>
-          <div className="ss-scroll" style={s('flex:1;overflow:auto')}>
+          <div className="ss-scroll" data-table-scroller style={s('flex:1;overflow:auto')}>
             <div style={s(filtered.length === 0 && !feed.loading ? '' : 'min-width:920px')}>
               {(filtered.length > 0 || feed.loading) && (
               <div className="ss-pool-head">

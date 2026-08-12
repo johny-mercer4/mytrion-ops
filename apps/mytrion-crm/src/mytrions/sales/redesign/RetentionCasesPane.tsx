@@ -271,7 +271,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
             'border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-sm)',
           )}
         >
-          <div className="ss-scroll" style={s('overflow:auto;max-height:calc(100vh - 320px)')}>
+          <div className="ss-scroll" data-table-scroller style={s('overflow:auto;max-height:calc(100dvh - 320px)')}>
             <div style={s('min-width:920px')}>
               <div
                 style={s(

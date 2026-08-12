@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { horizonTelegramEnvShape } from './envHorizon.js';
 import { operationalEnvShape } from './envOperational.js';
 
 /** Parse a '0'/'1'/'true'/'false' style flag into a boolean, with a default. */
@@ -223,9 +224,9 @@ const EnvSchema = z.object({
   // primary user directly. Callers can still override per-call with an explicit chatId.
   TELEGRAM_CHAT_ID_MAIN: z.string().default(''),
 
-  // --- Carrier onboarding bot (separate from the assistant's own Telegram integration above) ---
-  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>. The bot
-  // itself (webhook + mini-app) is future work; today we only need the username to build the link.
+  // --- Carrier onboarding / client mini-app bot (apps/mini-app + agent-gateway). ---
+  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>.
+  // This token is ALSO what agent-gateway long-polls. Do NOT reuse it for Horizon.
   TELEGRAM_CARRIER_BOT_USERNAME: z.string().default(''),
   TELEGRAM_CARRIER_BOT_TOKEN: z.string().default(''),
   // Public HTTPS URL of apps/mini-app once deployed — the inline web_app button's target (`/start`
@@ -238,6 +239,9 @@ const EnvSchema = z.object({
   // App URL = <origin>/mini-app/). Then links use https://t.me/<bot>?startapp=<id> (no short name)
   // and open the mini-app directly. Off → ?start= fallback (needs a bot /start reply, not built).
   TELEGRAM_CARRIER_MINI_APP_DIRECT: z.string().default(''),
+
+  // --- Horizon worker-CRM Mini App bot (apps/mytrion-crm). Isolated from the carrier bot above. ---
+  ...horizonTelegramEnvShape,
 
   // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
   // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import {
   assignPermissionSet,
   createPermissionSet,
@@ -9,8 +17,11 @@ import {
   type PermissionSet,
   type PermissionSetSnapshot,
 } from '../../api/permissionSets';
-import { Button, EmptyState, ErrorState } from '@/ds';
+import { Button, EmptyState, ErrorState, Switch } from '@/ds';
+import { MYTRIONS } from '../../access/mytrions.config';
+import { MytrionGlyph } from '../../components/icons';
 import { PermissionSetEditor } from './PermissionSetEditor';
+import { PermissionSetAssignees } from './PermissionSetAssignees';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 
@@ -41,6 +52,16 @@ export function PermissionSets() {
   const [busy, setBusy] = useState(false);
   const [nameError, setNameError] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
+  /** The one person currently being added or removed, so only their row shows a pending state. */
+  const [assigneeBusy, setAssigneeBusy] = useState<string | null>(null);
+  /**
+   * Live toggles that are mid-request, by set id.
+   *
+   * The screen mutates optimistically, so this is not "what is the value" — it is only what still
+   * needs confirming. Keyed by id rather than a single boolean because the LIST can toggle too.
+   */
+  const [pendingOverride, setPendingOverride] = useState<Set<string>>(new Set());
+  const [pendingActive, setPendingActive] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -96,12 +117,55 @@ export function PermissionSets() {
     }
   }
 
-  async function toggleActive(set: PermissionSet): Promise<void> {
+  /**
+   * Flip it on screen NOW, reconcile with the server after.
+   *
+   * Both of these are live settings, and both used to wait for a round trip before showing anything
+   * at all — so a click looked like it had missed and got repeated, and the second click computed
+   * its payload from the SAME stale value as the first. Two contradictory writes would race and the
+   * loser silently won. Optimistic paint plus a per-set in-flight guard removes both halves: there
+   * is instant feedback, and a second flip cannot be issued until the first settles.
+   *
+   * On failure the optimistic value is rolled back to what the server still holds, because the
+   * alternative is a screen that quietly disagrees with the database.
+   */
+  async function toggleLive(
+    set: PermissionSet,
+    field: 'active' | 'override',
+    pending: Set<string>,
+    setPending: Dispatch<SetStateAction<Set<string>>>,
+    announce: (next: boolean) => [string, string],
+  ): Promise<void> {
+    // One flip at a time per set. Without this the second click computes its payload from the same
+    // stale value as the first, and two contradictory writes race with the loser silently winning.
+    if (pending.has(set.id)) return;
+    const next = !set[field];
+
+    // Functional updates throughout: `pending` is the value captured when this handler was created,
+    // and by the time the request settles another set may have entered or left the same Set.
+    setPending((prev) => new Set(prev).add(set.id));
+    merge({ ...set, [field]: next });
     try {
-      merge(await updatePermissionSet(set.id, { active: !set.active }));
+      merge(await updatePermissionSet(set.id, { [field]: next }));
+      const [title, body] = announce(next);
+      adminToast.success(title, body);
     } catch (err) {
+      merge(set); // roll back to the row the server still holds
       adminToast.error('Could not update', err instanceof Error ? err.message : undefined);
+    } finally {
+      setPending((prev) => {
+        const copy = new Set(prev);
+        copy.delete(set.id);
+        return copy;
+      });
     }
+  }
+
+  async function toggleActive(set: PermissionSet): Promise<void> {
+    await toggleLive(set, 'active', pendingActive, setPendingActive, (on) => [
+      on ? 'Permission set activated' : 'Permission set deactivated',
+      set.name,
+    ]);
   }
 
   async function remove(set: PermissionSet): Promise<void> {
@@ -117,23 +181,147 @@ export function PermissionSets() {
     }
   }
 
-  async function assign(setId: string, zohoUserId: string, name: string | null): Promise<void> {
+  /**
+   * Assign and unassign fold the ONE row that changed into state.
+   *
+   * Both used to `await load()`, which refetches every set, every assignment and the whole 126-person
+   * roster to add one name — so the list flickered, scroll position and the search box's filtered
+   * view were rebuilt underneath the cursor, and adding five people meant five full-screen reloads.
+   * The server returns the created assignment, so there is nothing here the client has to ask for.
+   *
+   * `assigneeCount` is maintained alongside, because it is what the list card and the header read.
+   */
+  const applyAssignmentDelta = useCallback((setId: string, delta: number) => {
+    setSnapshot((prev) =>
+      prev
+        ? {
+            ...prev,
+            sets: prev.sets.map((row) =>
+              row.id === setId
+                ? { ...row, assigneeCount: Math.max(0, row.assigneeCount + delta) }
+                : row,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  async function assign(
+    setId: string,
+    entry: { zohoUserId: string; name: string | null; email: string | null },
+  ): Promise<void> {
+    if (assigneeBusy) return;
+    setAssigneeBusy(entry.zohoUserId);
     try {
-      await assignPermissionSet(setId, { zohoUserId, userName: name });
-      await load();
+      const assignment = await assignPermissionSet(setId, {
+        zohoUserId: entry.zohoUserId,
+        userName: entry.name,
+        email: entry.email,
+      });
+      setSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              // Re-assigning someone who is already there returns the existing row; replace rather
+              // than append so the list cannot show a duplicate.
+              assignments: [
+                ...prev.assignments.filter(
+                  (a) => !(a.permissionSetId === setId && a.zohoUserId === assignment.zohoUserId),
+                ),
+                assignment,
+              ],
+            }
+          : prev,
+      );
+      applyAssignmentDelta(setId, 1);
     } catch (err) {
       adminToast.error('Could not assign', err instanceof Error ? err.message : undefined);
+    } finally {
+      setAssigneeBusy(null);
     }
   }
 
   async function unassign(setId: string, zohoUserId: string): Promise<void> {
+    if (assigneeBusy) return;
+    setAssigneeBusy(zohoUserId);
     try {
       await unassignPermissionSet(setId, zohoUserId);
-      await load();
+      setSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments.filter(
+                (a) => !(a.permissionSetId === setId && a.zohoUserId === zohoUserId),
+              ),
+            }
+          : prev,
+      );
+      applyAssignmentDelta(setId, -1);
     } catch (err) {
       adminToast.error('Could not unassign', err instanceof Error ? err.message : undefined);
+    } finally {
+      setAssigneeBusy(null);
     }
   }
+
+  /** Level 1 beats level 2 beats level 3 — the switch that makes a scope actually narrow. */
+  async function toggleOverride(set: PermissionSet): Promise<void> {
+    await toggleLive(set, 'override', pendingOverride, setPendingOverride, (on) => [
+      on ? 'Set now overrides lower layers' : 'Set is additive again',
+      set.name,
+    ]);
+  }
+
+  /*
+    Rendered while loading as well as when loaded. It needs nothing from the snapshot, and holding
+    its space stops the card grid jumping down by the height of the whole form the moment data
+    arrives — which is the arrival shift a skeleton exists to prevent.
+
+    A real form, not a bare input beside a button that silently disables itself. The first version
+    disabled Create until the field had text and said nothing about why, so an empty field plus a dim
+    button reads as "this screen is broken" — which is exactly how it was reported. The button now
+    always submits; an empty name focuses the field and says what it wants, so the failure is
+    answerable instead of silent.
+  */
+  const createForm = (
+    <form
+      className={s.createRow}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void create();
+      }}
+    >
+      {/* The controls align on the INPUT's baseline; the message sits below the whole row. Putting
+          it inside the field made the field taller and pushed Create out of line with the box it
+          submits — the validation itself broke the layout it was complaining about. */}
+      <div className={s.createRowControls}>
+        <label className={s.psField} htmlFor="ps-name">
+          <span className={s.fieldLabel}>New permission set</span>
+          <input
+            id="ps-name"
+            ref={nameRef}
+            className={s.input}
+            placeholder="e.g. Billing — Read Only"
+            value={newName}
+            aria-describedby={nameError ? 'ps-name-error' : undefined}
+            aria-invalid={nameError ? true : undefined}
+            onChange={(e) => {
+              setNewName(e.target.value);
+              if (nameError) setNameError('');
+            }}
+          />
+        </label>
+        <button type="submit" className={s.primaryBtn} disabled={busy}>
+          {busy ? 'Creating…' : 'Create set'}
+        </button>
+      </div>
+      {nameError && (
+        <span id="ps-name-error" className={s.inlineError} role="alert">
+          {nameError}
+        </span>
+      )}
+    </form>
+  );
 
   const header = (
     <div className={s.head}>
@@ -183,13 +371,25 @@ export function PermissionSets() {
     return (
       <div className={`${s.panel} ${s.panelWide}`}>
         {header}
-        {/* One loading affordance for this region — the skeleton owns the first paint, nothing else. */}
-        <div className={s.profileGrid} aria-busy="true">
+        {createForm}
+        {/* One loading affordance for this region — the skeleton owns the first paint, nothing else.
+            Same grid, same card chrome, same line positions as the loaded list, so arrival swaps
+            text in rather than replacing one shape with another. */}
+        <div className={`${s.profileGrid} ${s.psGrid}`} aria-busy="true">
           <span className={s.srOnly} role="status">
             Loading permission sets…
           </span>
-          <div className={s.skelCard} />
-          <div className={s.skelCard} />
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className={s.card} aria-hidden="true">
+              <div className={s.cardHead}>
+                <span className={`${s.psSkelRow} ${s.psSkelTitle}`} />
+              </div>
+              <div className={s.profileCardBody}>
+                <span className={`${s.psSkelRow} ${s.psSkelText}`} />
+                <span className={`${s.psSkelRow} ${s.psSkelBtn}`} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -197,7 +397,6 @@ export function PermissionSets() {
 
   if (open) {
     const assignees = snapshot.assignments.filter((a) => a.permissionSetId === open.id);
-    const assignedIds = new Set(assignees.map((a) => a.zohoUserId));
 
     return (
       <div className={`${s.panel} ${s.panelWide}`}>
@@ -213,11 +412,26 @@ export function PermissionSets() {
               {open.active ? 'Active' : 'Inactive — grants nothing while switched off'} ·{' '}
               {countLabel(open.allowedMytrions.length, 'Mytrion')} ·{' '}
               {countLabel(assignees.length, 'assignee')}
+              {open.override ? ' · Overrides lower layers' : ''}
             </p>
           </div>
-          <div className={s.profileActions}>
-            <button type="button" className={s.ghostBtn} onClick={() => void toggleActive(open)}>
-              {open.active ? 'Deactivate' : 'Activate'}
+          {/* Deactivate and Delete sat flush against each other — two buttons of very different
+              consequence reading as one control. `.psHeadActions` is the same row with real space
+              between them. */}
+          <div className={s.psHeadActions}>
+            <button
+              type="button"
+              className={s.ghostBtn}
+              disabled={pendingActive.has(open.id)}
+              onClick={() => void toggleActive(open)}
+            >
+              {pendingActive.has(open.id)
+                ? open.active
+                  ? 'Deactivating…'
+                  : 'Activating…'
+                : open.active
+                  ? 'Deactivate'
+                  : 'Activate'}
             </button>
             <button type="button" className={s.dangerBtn} onClick={() => void remove(open)}>
               Delete
@@ -225,12 +439,41 @@ export function PermissionSets() {
           </div>
         </div>
 
+        {/* The editor owns its own card — the sticky save bar has to sit outside it. */}
+        <PermissionSetEditor
+          set={open}
+          onSaved={(next) => {
+            merge(next);
+            // Back to the list: saving is the end of the task, and staying on a form with no unsaved
+            // changes left gives no signal that anything happened.
+            setOpenId(null);
+          }}
+        />
+
         <div className={s.card}>
           <div className={s.cardHead}>
-            <span className={s.cardTitle}>Grants</span>
+            <span className={s.cardTitle}>Precedence</span>
           </div>
           <div className={s.profileCardBody}>
-            <PermissionSetEditor set={open} onChanged={merge} />
+            {/*
+              A Switch, not a Checkbox: this takes effect the instant it is flipped, with no Save
+              anywhere near it. `pending` keeps the knob at the position the click asked for while
+              the request is in flight — the previous checkbox stayed at the OLD position until the
+              round trip returned, which reads as a missed click and gets clicked again.
+            */}
+            <Switch
+              label="Override — this set replaces lower layers instead of adding to them"
+              checked={open.override}
+              pending={pendingOverride.has(open.id)}
+              onChange={() => void toggleOverride(open)}
+            />
+            <p className={s.fieldHint}>
+              Normally every layer adds up, so a profile default granting Billing unscoped defeats
+              this set&rsquo;s tab scope. With override on, the order is: <strong>1.</strong> this
+              permission set, <strong>2.</strong> the per-user override, <strong>3.</strong> role and
+              profile defaults — and only what this set grants survives. A Mytrion denied on the user
+              record stays denied either way.
+            </p>
           </div>
         </div>
 
@@ -241,49 +484,21 @@ export function PermissionSets() {
             </span>
           </div>
           <div className={s.profileCardBody}>
-            {assignees.length === 0 ? (
-              <p className={s.sub} style={{ margin: 0 }}>
-                Nobody yet — a set has no effect until it is assigned to someone.
-              </p>
-            ) : (
-              <div className={s.profileChipGrid}>
-                {assignees.map((a) => (
-                  <button
-                    key={a.zohoUserId}
-                    type="button"
-                    className={`${s.filterChip} ${s.filterChipOn}`}
-                    title={`Remove ${a.userName ?? a.zohoUserId}`}
-                    onClick={() => void unassign(open.id, a.zohoUserId)}
-                  >
-                    <span aria-hidden="true" style={{ display: 'inline-block', width: '1.05em' }}>
-                      ✕
-                    </span>
-                    {a.userName ?? a.zohoUserId}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className={s.field}>
-              <span className={s.fieldLabel}>Add someone</span>
-              {/* The roster carries every ACTIVE Zoho worker, so an admin can assign someone who has
-                  never had an access row of any kind. */}
-              <div className={s.profileChipGrid}>
-                {snapshot.roster
-                  .filter((r) => !assignedIds.has(r.zohoUserId))
-                  .slice(0, 60)
-                  .map((r) => (
-                    <button
-                      key={r.zohoUserId}
-                      type="button"
-                      className={s.filterChip}
-                      onClick={() => void assign(open.id, r.zohoUserId, r.name)}
-                    >
-                      + {r.name ?? r.zohoUserId}
-                    </button>
-                  ))}
-              </div>
-            </div>
+            {/* The roster carries every ACTIVE Zoho worker, so an admin can assign someone who has
+                never had an access row of any kind. */}
+            <PermissionSetAssignees
+              assignees={assignees}
+              roster={snapshot.roster}
+              busyId={assigneeBusy}
+              onAdd={(entry) =>
+                void assign(open.id, {
+                  zohoUserId: entry.zohoUserId,
+                  name: entry.name,
+                  email: entry.email,
+                })
+              }
+              onRemove={(a) => void unassign(open.id, a.zohoUserId)}
+            />
           </div>
         </div>
       </div>
@@ -294,50 +509,7 @@ export function PermissionSets() {
     <div className={`${s.panel} ${s.panelWide}`}>
       {header}
 
-      {/*
-        A real form, not a bare input beside a button that silently disables itself.
-        The first version disabled Create until the field had text and said nothing about why, so an
-        empty field plus a dim button reads as "this screen is broken" — which is exactly how it was
-        reported. The button now always submits; an empty name focuses the field and says what it
-        wants, so the failure is answerable instead of silent.
-      */}
-      <form
-        className={s.createRow}
-        onSubmit={(e) => {
-          e.preventDefault();
-          void create();
-        }}
-      >
-        {/* The controls align on the INPUT's baseline; the message sits below the whole row. Putting
-            it inside the field made the field taller and pushed Create out of line with the box it
-            submits — the validation itself broke the layout it was complaining about. */}
-        <div className={s.createRowControls}>
-          <label className={s.psField} htmlFor="ps-name">
-            <span className={s.fieldLabel}>New permission set</span>
-            <input
-              id="ps-name"
-              ref={nameRef}
-              className={s.input}
-              placeholder="e.g. Billing — Read Only"
-              value={newName}
-              aria-describedby={nameError ? 'ps-name-error' : undefined}
-              aria-invalid={nameError ? true : undefined}
-              onChange={(e) => {
-                setNewName(e.target.value);
-                if (nameError) setNameError('');
-              }}
-            />
-          </label>
-          <button type="submit" className={s.primaryBtn} disabled={busy}>
-            {busy ? 'Creating…' : 'Create set'}
-          </button>
-        </div>
-        {nameError && (
-          <span id="ps-name-error" className={s.inlineError} role="alert">
-            {nameError}
-          </span>
-        )}
-      </form>
+      {createForm}
 
       {snapshot.sets.length === 0 ? (
         /* The design system's empty state: says what happened AND what to try next, with the one
@@ -353,16 +525,34 @@ export function PermissionSets() {
           }
         />
       ) : (
-        <div className={s.profileGrid}>
+        <div className={`${s.profileGrid} ${s.psGrid}`}>
           {snapshot.sets.map((set) => {
             const scoped = Object.keys(set.tabGrants).length;
             return (
               <div key={set.id} className={s.card}>
                 <div className={s.cardHead}>
                   <span className={s.cardTitle}>{set.name}</span>
+                  {set.override && <span className={`${s.pill} ${s.pillInfo}`}>Override</span>}
                   {!set.active && <span className={`${s.pill} ${s.pillNeutral}`}>Inactive</span>}
                 </div>
                 <div className={s.profileCardBody}>
+                  {/* Which workspaces, at a glance — the department marks are how these are told
+                      apart everywhere else in the app, and a count alone made every card identical. */}
+                  {set.allowedMytrions.length > 0 && (
+                    <div className={s.psGlyphRow}>
+                      {set.allowedMytrions.map((id) => (
+                        <span
+                          key={id}
+                          className={s.psGlyphChip}
+                          title={MYTRIONS[id]?.title ?? id}
+                          data-mytrion={id}
+                        >
+                          <MytrionGlyph name={MYTRIONS[id]?.icon ?? id} size={14} />
+                          {MYTRIONS[id]?.tag ?? id}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className={s.sub} style={{ margin: 0 }}>
                     {set.allowedMytrions.length === 0
                       ? 'No Mytrions yet'

@@ -126,6 +126,32 @@ function progressPct(t: TierResult): number {
   return Math.max(0, Math.min(100, ((t.gallons - base) / span) * 100));
 }
 
+/**
+ * MARKETING'S "No Tier" MEANS ACTIVE CLIENTS ONLY.
+ *
+ * A carrier that transacted nothing last month is not a loyalty prospect — it is a dormant account,
+ * and counting it as "No Tier" buries the population this workspace exists to move up the tiers.
+ * The roster carries hundreds of them, so the No Tier tile dwarfs every earned tier and the
+ * distribution bar says nothing.
+ *
+ * `activeCardsPrevMonth >= 1` is not a new definition invented here: it is the loyalty program's own
+ * track basis ("≥1 tx previous month"), the same window `resolveTierForRow` scores against. So a
+ * carrier shown as No Tier in Marketing is exactly one that WAS trading and has not earned a tier.
+ *
+ * ONLY the untiered are dropped. A dormant carrier that still holds a tier — `lastTier` is retained
+ * through a dormant month by design — keeps its badge and stays visible, because losing an earned
+ * tier from the roster would hide a churn signal rather than clean up a number.
+ *
+ * SALES IS DELIBERATELY UNCHANGED. `RecordsTab` and `ClientModal` read the same shared
+ * `tierBucketOf`, and a rep looking at their own book must still see a dormant client sitting at No
+ * Tier — that is the account to call. This filter lives here, in the Marketing card, precisely so it
+ * cannot reach them.
+ */
+export function countsForMarketing(row: Pick<Scored, 'bucket' | 'client'>): boolean {
+  if (row.bucket !== 'idle') return true;
+  return (row.client.activeCardsPrevMonth ?? 0) >= 1;
+}
+
 /** A carrier plus its resolved tier — computed once per roster, reused by filter/sort/render. */
 interface Scored {
   client: LoyaltyClient;
@@ -366,7 +392,13 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
     { staleMs: 300_000 },
   );
 
-  /** Resolve every carrier's tier once — filters and the distribution both read this. */
+  /**
+   * Resolve every carrier's tier once — filters and the distribution both read this.
+   *
+   * The Marketing filter is applied HERE rather than at render, so the distribution tiles, the
+   * stacked bar and every count derive from the same population that is listed. Filtering later
+   * would leave the tiles claiming a roster the table cannot show.
+   */
   const scored = useMemo<Scored[]>(
     () =>
       (roster?.clients ?? []).map((rawClient) => {
@@ -384,7 +416,7 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
           projectedTier,
           bucket: tierBucketOf(tier),
         };
-      }),
+      }).filter(countsForMarketing),
     [roster, localOverrides],
   );
   const selectedRow = selectedCarrier
@@ -430,6 +462,16 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
   const busy = loading || revalidating;
   const visible = filtered.slice(0, shown);
   const tieredTotal = counts.gold + counts.silver + counts.bronze;
+  /**
+   * The denominator is the population THIS SCREEN scores, not `roster.total`.
+   *
+   * `roster.total` is the server's count of every carrier, including the dormant ones dropped by
+   * `countsForMarketing`. Leaving it as the denominator would make the distribution percentages sum
+   * to well under 100% and print a client count larger than anything the grid can show — the
+   * distribution would be describing a roster that is not on screen.
+   */
+  const scoredTotal = scored.length;
+  const dormantHidden = Math.max(0, roster ? roster.total - scoredTotal : 0);
 
   return (
     <div className="mg-page mg-lty">
@@ -488,16 +530,21 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
         <>
           <Distribution
             counts={counts}
-            total={roster.total}
+            total={scoredTotal}
             selected={bucket}
             onSelect={resetWindow(setBucket)}
           />
 
           <div className="mg-toolbar">
             <div className="mg-summary">
-              <strong>{n0(roster.total)}</strong> clients · <strong>{n0(tieredTotal)}</strong> hold
-              a tier · showing <strong>{n0(visible.length)}</strong> of{' '}
-              <strong>{n0(filtered.length)}</strong>
+              <strong>{n0(scoredTotal)}</strong> active clients ·{' '}
+              <strong>{n0(tieredTotal)}</strong> hold a tier · showing{' '}
+              <strong>{n0(visible.length)}</strong> of <strong>{n0(filtered.length)}</strong>
+              {/* Say what was removed. A count that silently shrinks is the kind of number nobody
+                  can reconcile against the DWH six months later. */}
+              {dormantHidden > 0 ? (
+                <span> · {n0(dormantHidden)} dormant hidden</span>
+              ) : null}
             </div>
             <label className="mg-search">
               <Search size={15} />

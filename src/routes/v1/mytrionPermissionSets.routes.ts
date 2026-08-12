@@ -31,7 +31,7 @@ import {
 } from '../../repos/mytrionPermissionSetsRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
-import { isMissingTable } from '../../repos/util.js';
+import { isMissingColumn, isMissingTable } from '../../repos/util.js';
 
 const mytrionIdSchema = z.enum([...MYTRION_IDS] as [MytrionId, ...MytrionId[]]);
 
@@ -53,6 +53,15 @@ const metaBody = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   active: z.boolean().optional(),
+  /** Replace the lower layers rather than union onto them — see the schema for the full contract. */
+  override: z.boolean().optional(),
+});
+
+/** The whole grant configuration, applied in one statement — what the Save button sends. */
+const grantsBody = z.object({
+  allowedMytrions: z.array(mytrionIdSchema).max(20),
+  mytrionAccessModes: z.record(z.string(), z.enum(['read', 'full'])).default({}),
+  tabGrants: z.record(z.string(), z.array(tabKeySchema).max(64)).default({}),
 });
 
 const grantBody = z.object({
@@ -72,29 +81,33 @@ const assignBody = z.object({
 });
 
 /**
- * Turn "relation does not exist" into an answer instead of a 500.
+ * Turn "relation does not exist" and "column does not exist" into an answer instead of a 500.
  *
  * Code reaches an environment before its migration does — that is the ordinary order of a deploy,
  * not an edge case. Without this the whole screen returns `INTERNAL_ERROR` / "Internal server
  * error", which names neither the cause nor the fix and sends an admin to the server logs to find a
  * one-line answer. Mirrors what `dataLoader.routes.ts` already does for its own table.
  *
+ * MISSING COLUMNS COUNT, and they are the case that recurs. A table is only absent on the single
+ * release that introduces it; a column is absent every time a later migration adds one. `override`
+ * (0115) proved it — the tables were there, the SELECT named a column that was not, 42P01 never
+ * fired, and this screen went back to returning a bare 500 it already knew how to explain.
+ *
  * 503 rather than 500: this is a temporary, operator-fixable state, and the message says exactly
- * which command fixes it.
+ * which command fixes it. No migration NUMBER in the message — naming one goes stale on the next
+ * migration and then actively misdirects, which is how it read when 0115 landed.
  */
-const MISSING_TABLE_MESSAGE =
-  'Permission sets need database migration 0114. Run `pnpm db:migrate` against this environment, ' +
-  'then reload.';
+const NOT_MIGRATED_MESSAGE =
+  'Permission sets need a database migration that has not run on this environment. Run ' +
+  '`pnpm db:migrate` against it, then reload.';
 
 async function withPermissionSetTables<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (err) {
-    if (
-      isMissingTable(err, 'mytrion_permission_sets') ||
-      isMissingTable(err, 'mytrion_permission_set_assignments')
-    ) {
-      throw new AppError(MISSING_TABLE_MESSAGE, {
+    const tables = ['mytrion_permission_sets', 'mytrion_permission_set_assignments'] as const;
+    if (tables.some((t) => isMissingTable(err, t) || isMissingColumn(err, t))) {
+      throw new AppError(NOT_MIGRATED_MESSAGE, {
         statusCode: 503,
         code: 'PERMISSION_SETS_NOT_MIGRATED',
         // AppError hides messages on 5xx by default, which is right for anything that might carry
@@ -220,6 +233,7 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
       ...(body.name === undefined ? {} : { name: body.name }),
       ...(body.description === undefined ? {} : { description: body.description }),
       ...(body.active === undefined ? {} : { active: body.active }),
+      ...(body.override === undefined ? {} : { override: body.override }),
     });
     if (!after) throw new AppError('Permission set not found', { code: 'NOT_FOUND', statusCode: 404 });
 
@@ -230,12 +244,66 @@ export async function mytrionPermissionSetsRoutes(app: FastifyInstance): Promise
       resourceId: id,
       detail: {
         changed: Object.keys(body),
-        before: { name: before.name, description: before.description, active: before.active },
-        after: { name: after.name, description: after.description, active: after.active },
+        before: {
+          name: before.name,
+          description: before.description,
+          active: before.active,
+          override: before.override,
+        },
+        after: {
+          name: after.name,
+          description: after.description,
+          active: after.active,
+          override: after.override,
+        },
       },
     });
-    // Deactivating a set changes what every holder can reach.
-    if (body.active !== undefined) mytrionAccessService.invalidateAll();
+    // Deactivating a set — or flipping it between additive and override — changes what every holder
+    // can reach, so both invalidate.
+    if (body.active !== undefined || body.override !== undefined) mytrionAccessService.invalidateAll();
+    return { set: after };
+  });
+
+  /**
+   * Replace the whole grant configuration at once.
+   *
+   * The per-Mytrion PATCH below is right for a control that saves itself. This is what a Save button
+   * needs: one statement, so a draft can never half-apply and leave the set describing access nobody
+   * chose. The editor holds a draft and posts it here.
+   */
+  app.put('/admin/permission-sets/:id/grants', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = grantsBody.parse(request.body ?? {});
+    const before = await loadSet(ctx, id);
+    const after = await withPermissionSetTables(() =>
+      mytrionPermissionSetsRepo.replaceGrants(ctx, id, {
+        allowedMytrions: body.allowedMytrions,
+        mytrionAccessModes: body.mytrionAccessModes,
+        tabGrants: body.tabGrants,
+      }),
+    );
+    if (!after) throw new AppError('Permission set not found', { code: 'NOT_FOUND', statusCode: 404 });
+
+    await auditFromContext(ctx, {
+      action: 'admin.permission_set.grants.replace',
+      status: 'ok',
+      resourceType: 'mytrion_permission_set',
+      resourceId: id,
+      detail: {
+        before: {
+          allowedMytrions: before.allowedMytrions,
+          mytrionAccessModes: before.mytrionAccessModes,
+          tabGrants: before.tabGrants,
+        },
+        after: {
+          allowedMytrions: after.allowedMytrions,
+          mytrionAccessModes: after.mytrionAccessModes,
+          tabGrants: after.tabGrants,
+        },
+      },
+    });
+    mytrionAccessService.invalidateAll();
     return { set: after };
   });
 

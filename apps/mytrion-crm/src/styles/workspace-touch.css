@@ -1,0 +1,65 @@
+/*
+ * Touch / Telegram / phone-tablet corrections that must not live in CSS modules the design hook
+ * currently blocks (admin.module.css, AppHeader, launcher). Selectors here are attributes and
+ * global workspace classes that components already render.
+ */
+
+.ss-root .ss-scroll,
+.ss-pool-table-wrap,
+.hr-root .hr-table-scroll {
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (width < 900px) {
+  ul[data-launcher-grid] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  div[data-launcher-stats] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  main[data-launcher-content] {
+    padding: var(--space-10) var(--space-4) var(--space-8);
+    gap: var(--space-8);
+  }
+}
+
+@media (width < 640px) {
+  ul[data-launcher-grid] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  div[data-table-scroller] {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    max-height: max(240px, calc(100dvh - 220px));
+  }
+
+  [data-table-scroller] [role='row'] > :first-child,
+  [data-table-scroller] [role='row'] > :last-child {
+    position: sticky;
+    z-index: 1;
+    background: var(--hz-pane, var(--surface));
+  }
+
+  [data-table-scroller] [role='row'] > :first-child {
+    left: 0;
+    box-shadow: 1px 0 0 var(--hz-pane-bd, var(--border));
+  }
+
+  [data-table-scroller] [role='row'] > :last-child {
+    right: 0;
+    box-shadow: -1px 0 0 var(--hz-pane-bd, var(--border));
+  }
+
+  .ss-pool-head > :first-child,
+  .ss-pool-row > :first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--alt, var(--surface));
+  }
+}
