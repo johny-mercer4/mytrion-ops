@@ -90,12 +90,13 @@ export function BillingShell() {
       <div style={{ display: active === id ? 'contents' : 'none' }}>{node}</div>
     ) : null;
 
-  const item = (id: SectionId, label: string, icon: ReactNode) => ({
+  const item = (id: SectionId, label: string, icon: ReactNode, primary = false) => ({
     key: id,
     label,
     icon,
     active: active === id,
     onClick: () => navigate(id),
+    ...(primary ? { primary: true as const } : {}),
   });
 
   /**
@@ -107,16 +108,16 @@ export function BillingShell() {
       id: 'money',
       label: 'Money',
       items: [
-        item('datacenter', 'Data Center', <Database size={19} />),
-        item('transactions', 'Transactions', <CreditCard size={19} />),
-        item('ledger', 'Ledger', <Scale size={19} />),
+        item('datacenter', 'Data Center', <Database size={19} />, true),
+        item('transactions', 'Transactions', <CreditCard size={19} />, true),
+        item('ledger', 'Ledger', <Scale size={19} />, true),
       ],
     },
     {
       id: 'recovery',
       label: 'Recovery',
       items: [
-        item('debtors', 'Debtors', <Users size={19} />),
+        item('debtors', 'Debtors', <Users size={19} />, true),
         item('prepay', 'Prepay', <Wallet size={19} />),
         item('returns', 'Returns', <Undo2 size={19} />),
       ],

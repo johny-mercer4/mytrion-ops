@@ -65,6 +65,7 @@ export default function AdminMytrion() {
           active: tab === 'kb',
           onClick: () => setTab('kb'),
           keywords: ['rag', 'docs', 'sources'],
+          primary: true,
         },
         {
           key: 'train',
@@ -98,6 +99,7 @@ export default function AdminMytrion() {
           active: tab === 'access',
           onClick: () => setTab('access'),
           keywords: ['rbac', 'workers', 'permissions'],
+          primary: true,
         },
         {
           key: 'permission-sets',
@@ -116,6 +118,7 @@ export default function AdminMytrion() {
           active: CARRIER_TABS.includes(tab),
           onClick: () => setTab('carriers'),
           keywords: ['companies', 'invites', 'mini-app'],
+          primary: true,
           children: [
             {
               key: 'carriers-registered',
@@ -206,6 +209,7 @@ export default function AdminMytrion() {
           active: tab === 'audit',
           onClick: () => setTab('audit'),
           keywords: ['history', 'trail'],
+          primary: true,
         },
         {
           key: 'jobs',

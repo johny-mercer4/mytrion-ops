@@ -168,7 +168,8 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
     // live defect: one is a 16px badge dot, the other a 150px filter field inside a wrapping row.
     // 76 -> 75: the Card Activity tooltip now has a fixed `width` its edge clamp can reason about,
     // so its `min-width` went away.
-    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 75);
+    // 75 -> 74: Billing phone sheets dropped `.bm-table { min-width: 480px }`.
+    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 74);
   });
 
   it('does not add an inline minWidth in TSX', () => {
@@ -218,7 +219,8 @@ describe('viewport units', () => {
   // that must not be covered. Not a blind codemod — `dvh` re-lays-out on every URL-bar frame, which
   // is the wrong trade for a 400-row table.
   it('does not add a bare vh', () => {
-    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 26);
+    // 26 -> 25: Billing phone sheets use 96dvh instead of a 16vh overlay gutter.
+    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 25);
   });
 
   /**

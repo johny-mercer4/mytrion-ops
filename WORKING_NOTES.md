@@ -15575,3 +15575,34 @@ phone, not a kanban skeleton).
 
 **Out of sprint.** `initData` as identity; in-Telegram WebRTC; restyling Zoho’s page; `apps/mini-app`.
 Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget` before any UI PR. Not committed until asked.
+
+---
+
+## 2026-08-13 — CS / Billing / Admin phone lists + sheets
+
+Same Horizon Telegram grammar as Sales (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`), structure line
+640 / `useIsPhone()`. Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`. Tickets stay parked;
+Retention Cases is the ticket-like list, Open Pool is the pool.
+
+**Customer Service.** Tab bar pins Home / Applications / Retention Cases / Open Pool. Retention
+Cases: full-bleed rows (title + due, chevron) and `ds/Drawer` detail (`CaseDetailBody`). Open Pool
+already used DataTable cards; phone sheet body is `OpenPoolCaseSheet` (timeline lives in `detail.render`
+because DataTable’s sheet wins over `onRowActivate`).
+
+**Billing.** Tab bar pins Data Center / Transactions / Ledger / Debtors. Ledger section rows collapse
+to company + closing amount (carrier as meta). Statement modal is date + amount rows on phone; the
+desktop table is unchanged. Shared `bm-modal` is a 96dvh bottom sheet with grabber
+(`--duration-moderate` / `--ease-decelerate`). Dropped `.bm-table { min-width: 480px }` on phone.
+TransactionModal was not rewritten — the CSS sheet covers invoice/payment.
+
+**Admin.** Tab bar pins Knowledge Base / User Management / Carrier User Management / Audit Log.
+Tables collapse to title + trailing action (audit keeps actor / action / status). Invitations: phone
+list rows open an “Invite details” sheet for Copy/Cancel/reissue. New registration link is a Drawer
+on phone (`CarrierUserForm` + `onClose`). Desktop tables and tests at 1280 are unchanged.
+
+**Budgets.** `breakpoints.test.ts` min-width 75→74, bare vh 26→25 (480px table floor and 16vh gutter
+went away). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** CS Applications / CITI / Maintenance, Billing Debtors/Prepay/Returns dense tables, Admin
+Deals/Jobs/KB still inherit CSS collapse rather than purpose-built list+sheet. HR / Marketing /
+Manager are next in the playbook, not this pass.

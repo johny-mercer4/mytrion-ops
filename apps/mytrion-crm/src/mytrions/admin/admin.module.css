@@ -2453,3 +2453,130 @@
     animation: none;
   }
 }
+
+/* Horizon phone: tables collapse to title + trailing */
+@media (width < 640px) {
+  .tableScroll > .table,
+  .dealsLayout .tableScroll > .table {
+    min-width: 0;
+  }
+  .tHead {
+    display: none;
+  }
+  .tCarrier,
+  .tInvite,
+  .tUsers,
+  .tDocs,
+  .tJobs,
+  .tDeals,
+  .tDealsRecovery {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 3.5rem;
+  }
+  .tAudit {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    min-height: 3.5rem;
+  }
+  .tRow:not(.tAudit) > :not(:first-child):not(:last-child) {
+    display: none;
+  }
+  .tAudit > :nth-child(1),
+  .tAudit > :nth-child(3),
+  .tAudit > :nth-child(4) {
+    display: none;
+  }
+  .tAudit > :nth-child(2),
+  .tAudit > :nth-child(5),
+  .tAudit > :nth-child(6) {
+    display: revert;
+  }
+  .docTitle {
+    font-size: 1rem;
+  }
+}
+
+.phoneList {
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--hz-pane);
+}
+
+.phoneRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 3.5rem;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.phoneRow:last-child {
+  border-bottom: none;
+}
+
+.phoneRowText {
+  flex: 1;
+  min-width: 0;
+}
+
+.phoneRowTitle {
+  display: block;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phoneRowMeta {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phoneRowChevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  display: flex;
+}
+
+.inviteSheetDl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.inviteSheetDl div {
+  display: grid;
+  gap: 2px;
+}
+
+.inviteSheetDl dt {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.inviteSheetDl dd {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.inviteSheetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}

@@ -81,12 +81,13 @@ export function CsShell() {
       <div style={{ display: active === id ? 'contents' : 'none' }}>{node}</div>
     ) : null;
 
-  const item = (id: CsSectionId, label: string, icon: ReactNode): NavItem => ({
+  const item = (id: CsSectionId, label: string, icon: ReactNode, primary = false): NavItem => ({
     key: id,
     label,
     icon,
     active: active === id,
     onClick: () => navigate(id),
+    ...(primary ? { primary: true } : {}),
   });
 
   const soon = (key: string, label: string, icon: ReactNode): NavItem => ({
@@ -101,8 +102,8 @@ export function CsShell() {
       id: 'work',
       label: 'Work',
       items: [
-        item('home', 'Home', <HomeIcon size={19} />),
-        item('applications', 'Applications', <FileText size={19} />),
+        item('home', 'Home', <HomeIcon size={19} />, true),
+        item('applications', 'Applications', <FileText size={19} />, true),
         item('maintenance', 'Maintenance', <Wrench size={19} />),
       ],
     },
@@ -110,8 +111,8 @@ export function CsShell() {
       id: 'retention',
       label: 'Retention',
       items: [
-        item('retention-cases', 'Retention Cases', <ShieldCheck size={19} />),
-        item('open-pool', 'Open Pool', <Activity size={19} />),
+        item('retention-cases', 'Retention Cases', <ShieldCheck size={19} />, true),
+        item('open-pool', 'Open Pool', <Activity size={19} />, true),
         item('citi-folder', 'CITI Folder', <FolderOpen size={19} />),
         item('citi-fuel', 'Citifuel Clients', <Building2 size={19} />),
       ],

@@ -485,6 +485,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         <CarrierUserForm
           key={formKey}
           onInviteCreated={() => void loadInvitations()}
+          onClose={() => setShowForm(false)}
           {...(draft ? { initial: draft } : {})}
         />
       )}
