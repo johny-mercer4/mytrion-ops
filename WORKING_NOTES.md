@@ -15085,3 +15085,18 @@ candidates; both are real work and neither should be attempted without this same
 Four optimisations measured this session, three rejected on evidence (rerank, gpt-5.6-luna,
 FF_RAG_V2_CONTEXT, and now k=4). The one that survived — the skill library at 1/15 → 15/15 — is the
 only one that was ever argued for on a number rather than on a story.
+
+### Same day — today first in the week list
+
+The API returns the week ascending, so today's card sat wherever it fell — three down on a Wednesday.
+The one card people open this screen to read was the one they had to hunt for. Today is lifted to the
+top; every other day keeps its calendar sequence.
+
+Only today MOVES, deliberately. Pulling it out and reversing the rest would put the OLDEST day directly
+beneath it, which is a stranger reading order than the calendar one — the week should still read as a
+week. On a past week there is no `todayRow`, so nothing is reordered at all.
+
+Reordering is presentational: `weeklyMs` still sums `data.days`, and a test pins that the total does not
+move with the order.
+
+5 tests. Mutations caught: no reorder at all, and today-first-with-the-rest-reversed.

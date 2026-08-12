@@ -80,6 +80,21 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
    * fresh empty day while the shift the person is actually working sits on yesterday's.
    */
   const dayClock = activeVisit?.day ?? todayRow;
+
+  /**
+   * Today first, then the rest of the week in its own order.
+   *
+   * The server returns the week ascending, so today sat wherever it fell — three cards down on a
+   * Wednesday, and the one card anybody opens this screen to read was the one they had to hunt for.
+   *
+   * Only today MOVES. The remaining days keep their calendar sequence rather than being re-sorted, so
+   * the week still reads as a week: pulling today out and reversing everything else would put the
+   * oldest day directly beneath it. On a past week `todayRow` is undefined and nothing is reordered.
+   */
+  const orderedDays = useMemo(
+    () => (todayRow ? [todayRow, ...data.days.filter((day) => day !== todayRow)] : data.days),
+    [data.days, todayRow],
+  );
   // `currentState` / `lastPunch` come from the employee's latest punch overall, not from
   // `from..to`, so they may only decorate this card while the range still touches now: today is
   // in it, or a session inside it is still open (a visit that ran past Tashkent midnight).
@@ -160,7 +175,7 @@ export function HrAttendanceWeek({ data, today }: { data: AttendanceSummaryDto; 
       </section>
 
       <ul className="hr-att-days">
-        {data.days.map((day) => {
+        {orderedDays.map((day) => {
           const isToday = day.date === today;
           const workedMs = dayDurationMs(day, nowMs);
           return (
