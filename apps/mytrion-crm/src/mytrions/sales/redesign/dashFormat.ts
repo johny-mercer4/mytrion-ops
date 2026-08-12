@@ -14,6 +14,16 @@ export function msdFmtK(v: number): string {
   return String(Math.round(n));
 }
 
+/**
+ * Gallons, in full. `msdFmtK` turns 9,241.36 into "9k", which is the one number on this dashboard
+ * nobody can afford to read approximately — it is what the carrier is billed on, and the
+ * Transaction Details table right below has always shown it exactly. Trailing zeros are dropped, so
+ * a whole-gallon day reads "9,241" rather than "9,241.00".
+ */
+export function msdFmtGallons(v: number): string {
+  return (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
 export function dbtFormatMoney(v: number): string {
   const n = Number(v) || 0;
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
