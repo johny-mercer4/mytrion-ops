@@ -58,6 +58,23 @@ export async function insertApplicantUpdate(input: {
   return { id };
 }
 
+export async function insertPlaidLinkAction(input: {
+  requestId: string;
+  agent: string;
+  regenerate?: boolean;
+}): Promise<{ id: number }> {
+  const kind = input.regenerate ? 'regenerate_plaid_link' : 'generate_plaid_link';
+  const result = await getWritePool().query<{ id: number }>(
+    `INSERT INTO kxd.sales_agent_updates (request_id, agent, changes, kind)
+     VALUES ($1, $2, '{}'::jsonb, $3)
+     RETURNING id`,
+    [input.requestId, input.agent, kind],
+  );
+  const id = result.rows[0]?.id;
+  if (id == null) throw new Error('[credit-platform-write] plaid-link action insert returned no id');
+  return { id };
+}
+
 /**
  * Queue bank-statement uploads for the credit-platform consumer, which ATTACHES them to the case
  * (scope 'sales_bank_statement') — it never triggers the Plaid LLM parse (the analyst runs that

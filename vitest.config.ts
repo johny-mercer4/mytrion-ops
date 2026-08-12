@@ -65,6 +65,13 @@ export default defineConfig({
       HORIZON_BOT_SECRET: 'horizon-test-secret',
       HORIZON_BOT_USERNAME: 'horizon_test_bot',
       HORIZON_MINI_APP_URL: 'https://example.test/main',
+      // The two that `buildHorizonOpenUrl()` branches on BEFORE falling back to the URL above. Left
+      // unpinned they came from the developer's .env, so "no short name is set" was only true on
+      // machines that happened not to set one: green in CI, red locally, for a reason nothing on
+      // screen explains. Same class as the FF_ZOHO_MCP_ENABLED note above. A suite that needs
+      // either branch sets it at runtime and restores to this baseline.
+      HORIZON_MINI_APP_SHORT_NAME: '',
+      HORIZON_MINI_APP_DIRECT: '',
     },
     coverage: {
       provider: 'v8',

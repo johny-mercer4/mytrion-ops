@@ -1,11 +1,14 @@
 /**
  * Cards by Company + Card Activity — self-service MSD parity layout.
  */
-import type { MouseEvent, ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './icons';
 import { currentBillingCycle, msdFmtK, msdFmtNum } from './dashFormat';
 import {
+  MSD_TOOLTIP_HEIGHT,
   msdActivityWidth,
+  msdActivityTooltipPosition,
   msdAreaPath,
   msdColLeftPct,
   msdLinePath,
@@ -13,6 +16,7 @@ import {
   msdPointY,
   msdSelBandW,
   msdSelBandX,
+  type MsdActivityPlotBox,
 } from './dashActivityGeom';
 import type {
   ActivityRange,
@@ -62,6 +66,90 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
   const lo = p.selStart != null && p.selEnd != null ? Math.min(p.selStart, p.selEnd) : -1;
   const hi = p.selStart != null && p.selEnd != null ? Math.max(p.selStart, p.selEnd) : -1;
   const cycleLabel = currentBillingCycle().label;
+  const activityAreaRef = useRef<HTMLDivElement>(null);
+  const activityScrollerRef = useRef<HTMLDivElement>(null);
+  const activityWrapRef = useRef<HTMLDivElement>(null);
+  const activitySvgRef = useRef<SVGSVGElement>(null);
+  const activityCardRef = useRef<HTMLDivElement>(null);
+  // The card is `position: fixed`, and a fixed element inside a `backdrop-filter` ancestor resolves
+  // against THAT ancestor instead of the viewport — the chart sits in a glass card, so left where it
+  // is rendered the card floats off by the page's scroll offset. Portalled to the module root, which
+  // the repo's stacking rules keep free of transform/filter, so viewport coordinates mean what they say.
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  const [activityPlot, setActivityPlot] = useState<MsdActivityPlotBox>({
+    svgLeft: 0,
+    svgTop: 0,
+    svgWidth: chartW,
+    svgHeight: 110,
+    viewportWidth: chartW,
+    viewportHeight: 800,
+    tooltipHeight: MSD_TOOLTIP_HEIGHT,
+  });
+
+  // The tooltip is `position: fixed`, so every input is a client rect: scrolling the chart sideways,
+  // scrolling the page, and resizing all move the point without changing anything React renders.
+  const syncActivityPlot = useCallback(() => {
+    const svg = activitySvgRef.current;
+    if (!svg) return;
+    const svgRect = svg.getBoundingClientRect();
+    const card = activityCardRef.current;
+    setActivityPlot((current) => {
+      const next: MsdActivityPlotBox = {
+        svgLeft: svgRect.left,
+        svgTop: svgRect.top,
+        svgWidth: svgRect.width || chartW,
+        svgHeight: svgRect.height || 110,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        // Measured once the card is on screen; the guess only has to survive the first hover.
+        tooltipHeight: card?.offsetHeight || current.tooltipHeight,
+      };
+      const same = (Object.keys(next) as (keyof MsdActivityPlotBox)[])
+        .every((k) => current[k] === next[k]);
+      return same ? current : next;
+    });
+  }, [chartW]);
+
+  useLayoutEffect(() => {
+    const area = activityAreaRef.current;
+    // Falls back to the area itself so the card still renders if the module root ever moves.
+    setPortalHost((area?.closest('.ss-root') as HTMLElement | null) ?? area);
+  }, [len]);
+
+  useLayoutEffect(() => {
+    syncActivityPlot();
+    const scroller = activityScrollerRef.current;
+    const wrap = activityWrapRef.current;
+    // Capture phase: the page scroller is an ancestor and scroll does not bubble.
+    window.addEventListener('scroll', syncActivityPlot, { capture: true, passive: true });
+    window.addEventListener('resize', syncActivityPlot);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncActivityPlot);
+    if (scroller) observer?.observe(scroller);
+    if (wrap) observer?.observe(wrap);
+    return () => {
+      window.removeEventListener('scroll', syncActivityPlot, { capture: true });
+      window.removeEventListener('resize', syncActivityPlot);
+      observer?.disconnect();
+    };
+  }, [len, syncActivityPlot]);
+
+  // The card only exists while a day is hovered, so its height can only be measured then. One extra
+  // layout pass on the first hover; after that the height is known and this is a no-op.
+  useLayoutEffect(() => {
+    if (p.hoverIdx != null) syncActivityPlot();
+  }, [p.hoverIdx, syncActivityPlot]);
+
+  const hoveredPoint = p.hoverIdx != null ? p.actPoints[p.hoverIdx] : undefined;
+  const tooltipPosition = hoveredPoint && p.hoverIdx != null
+    ? msdActivityTooltipPosition({
+        index: p.hoverIdx,
+        len,
+        chartWidth: chartW,
+        transactions: hoveredPoint.transactions,
+        maxTransactions: maxTx,
+        ...activityPlot,
+      })
+    : null;
 
   return (
     <div className="msd-bottom-row">
@@ -252,15 +340,15 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
               </div>
               <div className="msd-legend">
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#be123c' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-tx)' }} />
                   Tx
                 </span>
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#374151' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-active)' }} />
                   Active
                 </span>
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#9ca3af' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-new)' }} />
                   New
                 </span>
               </div>
@@ -276,103 +364,108 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
             </div>
           ) : null}
 
-          {len === 0 ? (
-            <div className="msd-activity-empty">
-              <strong>No activity in this cycle yet</strong>
-              <span>
-                {p.activityRange === 'recent' ? (
-                  <button type="button" className="msd-selrange-clear" onClick={() => p.setActivityRange('all')}>
-                    View History →
-                  </button>
-                ) : (
-                  'Transactions will show up here as they happen.'
-                )}
-              </span>
-            </div>
-          ) : len === 1 && p.actPoints[0] ? (
-            <div>
-              <div className="msd-activity-single__grid">
-                <div>
-                  <div className="msd-activity-single__val" style={{ color: '#be123c' }}>
-                    {msdFmtNum(p.actPoints[0].transactions)}
+          <div className="msd-chart-activity-area" ref={activityAreaRef}>
+            {/*
+              Rendered at the module root, not here: it must escape the scroller (whose `overflow-x`
+              forces overflow-y to clip) AND the glass card's `backdrop-filter`, which would otherwise
+              capture the fixed positioning and offset the card by the page's scroll.
+            */}
+            {hoveredPoint && tooltipPosition && portalHost ? createPortal(
+              (
+                <div
+                  ref={activityCardRef}
+                  className="msd-activity-card"
+                  style={{ left: tooltipPosition.left, top: tooltipPosition.top }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="msd-activity-card__day">{hoveredPoint.label}</div>
+                  <dl className="msd-activity-card__rows">
+                    <div><dt><i data-k="tx" />Transactions</dt><dd>{hoveredPoint.transactions.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="active" />Active Cards</dt><dd>{hoveredPoint.activeCards.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="new" />New Cards</dt><dd>{hoveredPoint.newCards.toLocaleString()}</dd></div>
+                    <div><dt><i data-k="gal" />Gallons</dt><dd data-accent>{msdFmtK(hoveredPoint.volume)}</dd></div>
+                  </dl>
+                </div>
+              ),
+              portalHost,
+            ) : null}
+
+            {len === 0 ? (
+              <div className="msd-activity-empty">
+                <strong>No activity in this cycle yet</strong>
+                <span>
+                  {p.activityRange === 'recent' ? (
+                    <button type="button" className="msd-selrange-clear" onClick={() => p.setActivityRange('all')}>
+                      View History →
+                    </button>
+                  ) : (
+                    'Transactions will show up here as they happen.'
+                  )}
+                </span>
+              </div>
+            ) : len === 1 && p.actPoints[0] ? (
+              <div>
+                <div className="msd-activity-single__grid">
+                  <div>
+                    <div className="msd-activity-single__val" style={{ color: 'var(--msd-series-tx)' }}>
+                      {msdFmtNum(p.actPoints[0].transactions)}
+                    </div>
+                    <div className="msd-activity-single__label">Transactions</div>
                   </div>
-                  <div className="msd-activity-single__label">Transactions</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].activeCards)}</div>
-                  <div className="msd-activity-single__label">Active cards</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].newCards)}</div>
-                  <div className="msd-activity-single__label">New cards</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val" style={{ color: '#0284c7' }}>
-                    {msdFmtNum(p.actPoints[0].volume)}
+                  <div>
+                    <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].activeCards)}</div>
+                    <div className="msd-activity-single__label">Active cards</div>
                   </div>
-                  <div className="msd-activity-single__label">Gallons</div>
+                  <div>
+                    <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].newCards)}</div>
+                    <div className="msd-activity-single__label">New cards</div>
+                  </div>
+                  <div>
+                    <div className="msd-activity-single__val" style={{ color: 'var(--accent)' }}>
+                      {msdFmtNum(p.actPoints[0].volume)}
+                    </div>
+                    <div className="msd-activity-single__label">Gallons</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="msd-activity-scroller">
+            ) : (
+            <div
+              ref={activityScrollerRef}
+              className="msd-activity-scroller"
+              onScroll={syncActivityPlot}
+            >
               <div
+                ref={activityWrapRef}
                 className="msd-activity-wrap"
                 style={{ width: chartW, minWidth: '100%' }}
                 onMouseLeave={() => p.setHoverIdx(null)}
               >
-                {/*
-                  Hover card. The three value rows below already reveal exact figures on hover, but
-                  they are spread across the full chart width and `volume` was never surfaced at all
-                  — so reading one day meant scanning three rows and still not finding gallons.
-                  This gathers the whole day into one place, anchored to the hovered column.
-
-                  Pointer-events off: the card tracks the same column the cursor is over, so it must
-                  never become the hover target itself and swap the value out from under the reader.
-                */}
-                {p.hoverIdx != null && p.actPoints[p.hoverIdx] ? (
-                  <div
-                    className="msd-activity-card"
-                    style={{ left: msdColLeftPct(p.hoverIdx, len, chartW) }}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <div className="msd-activity-card__day">{p.actPoints[p.hoverIdx]!.label}</div>
-                    <dl className="msd-activity-card__rows">
-                      <div>
-                        <dt><i data-k="tx" />Transactions</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.transactions.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="active" />Active Cards</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.activeCards.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="new" />New Cards</dt>
-                        <dd>{p.actPoints[p.hoverIdx]!.newCards.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt><i data-k="gal" />Gallons</dt>
-                        <dd data-accent>{msdFmtK(p.actPoints[p.hoverIdx]!.volume)}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                ) : null}
                 <svg
+                  ref={activitySvgRef}
                   viewBox={`0 0 ${chartW} 90`}
                   className="msd-activity-svg"
                   preserveAspectRatio="none"
                 >
                   <path d={msdAreaPath(txVals, maxTx, chartW)} fill="rgba(159,18,57,0.12)" stroke="none" />
-                  <path d={msdLinePath(txVals, maxTx, chartW)} fill="none" stroke="#be123c" strokeWidth="2.5" />
-                  <path d={msdLinePath(acVals, maxCards, chartW)} fill="none" stroke="#374151" strokeWidth="1.5" />
+                  <path d={msdLinePath(txVals, maxTx, chartW)} fill="none" stroke="var(--msd-series-tx)" strokeWidth="2.5" />
+                  <path d={msdLinePath(acVals, maxCards, chartW)} fill="none" stroke="var(--msd-series-active)" strokeWidth="1.5" />
                   <path
                     d={msdLinePath(ncVals, maxCards, chartW)}
                     fill="none"
-                    stroke="#9ca3af"
+                    stroke="var(--msd-series-new)"
                     strokeWidth="1.5"
                     strokeDasharray="4,3"
                   />
+                  {p.hoverIdx != null && hoveredPoint ? (
+                    <line
+                      data-testid="msd-activity-crosshair"
+                      x1={msdPointX(p.hoverIdx, len, chartW)} y1={2}
+                      x2={msdPointX(p.hoverIdx, len, chartW)} y2={88}
+                      stroke="var(--msd-crosshair)" strokeWidth={1} strokeDasharray="3,2"
+                      pointerEvents="none"
+                    />
+                  ) : null}
                   {lo >= 0 && hi >= 0 ? (
                     <rect
                       x={msdSelBandX(lo, len, chartW)}
@@ -395,21 +488,21 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                           cx={x}
                           cy={msdPointY(m.activeCards, maxCards)}
                           r={p.hoverIdx === i ? 4.5 : 2.5}
-                          fill="#374151"
+                          fill="var(--msd-series-active)"
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.3 : 0.8}
                         />
                         <circle
                           cx={x}
                           cy={msdPointY(m.newCards, maxCards)}
                           r={p.hoverIdx === i ? 4.5 : 2.5}
-                          fill="#9ca3af"
+                          fill="var(--msd-series-new)"
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.3 : 0.8}
                         />
                         <circle
                           cx={x}
                           cy={msdPointY(m.transactions, maxTx)}
                           r={p.hoverIdx === i ? 5.5 : 3}
-                          fill={p.hoverIdx === i ? '#f43f5e' : '#be123c'}
+                          fill={p.hoverIdx === i ? 'var(--msd-series-tx-hi)' : 'var(--msd-series-tx)'}
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.4 : 1}
                         />
                         <rect
@@ -419,12 +512,27 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                           height={90}
                           fill="transparent"
                           style={{ cursor: 'pointer' }}
-                          onMouseEnter={() => p.setHoverIdx(i)}
+                          onMouseEnter={() => {
+                            syncActivityPlot();
+                            p.setHoverIdx(i);
+                          }}
                           onClick={(e) => p.onActivityClick(i, e)}
                         />
                       </g>
                     );
                   })}
+                  {p.hoverIdx != null && hoveredPoint ? (
+                    <circle
+                      data-testid="msd-activity-glow"
+                      cx={msdPointX(p.hoverIdx, len, chartW)}
+                      cy={msdPointY(hoveredPoint.transactions, maxTx)}
+                      r={10}
+                      fill="var(--msd-series-tx-glow-fill)"
+                      stroke="var(--msd-series-tx-glow-bd)"
+                      strokeWidth={1}
+                      pointerEvents="none"
+                    />
+                  ) : null}
                 </svg>
                 <div className="msd-activity-vals">
                   {p.actPoints.map((m, i) => (
@@ -473,7 +581,8 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
               </div>
               <div className="msd-activity-tip">Tip: click a day to pin it. Hold Shift + click another day for a range.</div>
             </div>
-          )}
+            )}
+          </div>
         </div>
         {p.children}
       </div>

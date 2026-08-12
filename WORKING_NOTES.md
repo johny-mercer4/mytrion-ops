@@ -15142,6 +15142,108 @@ Two fixes, because the cause and the message were separate problems:
 it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
 answer; worth revisiting only if tabs are routinely left open through deploys.
 
+## 2026-08-12 — Card Activity tooltip parity follow-up
+
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.
+
+### Review follow-up, same day
+
+Three things the first pass got wrong, found by reviewing the diff before opening the PR:
+
+**The tooltip could leave the card through the top.** It was anchored to `.msd-chart-activity-area`
+with only a horizontal clamp, and the plot is 110px tall while the card is ~128px — so the tallest
+day of a cycle had no room above its own point and `translateY(-100%)` pushed the card out over the
+page header. That is the same defect class as the July screenshot bug the previous comment described,
+reintroduced from the other direction. Fixed by moving the positioning boundary out to
+`.msd-chart-block` (which includes the header band) and clamping the card's bottom edge to
+`MSD_TOOLTIP_HEIGHT + gutter`. Days with room still track their point; tall days park at the top of
+the card, beside the column the horizontal clamp already tracks. `.msd-chart-activity-area` is
+deliberately no longer `position: relative` — a test asserts that, because making it relative silently
+caps the clamp at the plot's top edge again.
+
+`MSD_TOOLTIP_HEIGHT` is an over-estimate on purpose: too high parks the card a few pixels low, too
+low lets it clip out. Measuring the card instead would mean a second layout pass per hover.
+
+**Tokens had been replaced by raw hex.** `rgba(15,23,42,.92)` + a `.ss-root.light` twin + `#38bdf8`
+went back to `--hz-modal-surface` / `--glass-bd-hi` / `--accent`, which theme through the cascade and
+need no light override. The `backdrop-filter: blur(8px)` is gone too: the modal surface is already the
+glass primitive, and a second blurred layer that moves on every hover is exactly the composited-layer
+trap in `modern-web-guidance`.
+
+**The series colours disagreed with themselves.** The header legend said grey for Active/New; the
+tooltip said green and blue for the same two series. They are now one set of `--msd-series-*` vars on
+`.msd-chart-block`, consumed by the legend, the plot and the tooltip dots.
+
+Also: `min-width: Npx` budget in `breakpoints.test.ts` ratcheted 76 → 75, since the card now has a
+fixed `width` the clamp can reason about.
+
+### Then it was looked at, and the clamp was the wrong answer
+
+Screenshots of the running app killed the card-clamp above. Two things it got wrong:
+
+**The intended interaction is a tooltip that floats clear of the card**, over whatever is above it —
+not one held inside the chart. Clamping it to the card put it BELOW the point it described on a tall
+day, which is worse than the bug it fixed. The card is now `position: fixed` in viewport coordinates,
+clamped only to the window, so it cannot leave the screen and cannot be clipped by the page scroller.
+Every input is a client rect now, which also deleted the `scrollLeft` arithmetic: scrolling the chart
+sideways or scrolling the page both move `svgLeft`/`svgTop` on their own.
+
+**`position: fixed` does not mean the viewport here.** The chart sits in a glass card, and a
+`backdrop-filter` ancestor becomes the containing block for fixed descendants — so the card was
+resolving against that card's box and floated off by roughly the page's scroll offset. It is now
+portalled to the module root (`.ss-root`), which the repo's stacking rules keep free of
+transform/filter. `--msd-series-*` moved to `.ss-root` for the same reason: the portalled card is no
+longer inside `.msd-chart-block`, so vars declared there would not reach it.
+
+Worth remembering as a rule: **in this app, `position: fixed` inside a workspace card is not fixed to
+the window.** Portal to `.ss-root` (or use `ds/Dialog`, which is in the top layer) instead.
+
+**How it was verified.** 813 CRM tests pass and the geometry is unit-tested, but jsdom does no layout,
+so the placement was checked in the running app on `localhost:5173`. Not by automation: the Playwright
+browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
+no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
+signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — C-18 Check Payment Information: CMP status and exact amounts
+
+Three reports from Sales, one root cause each.
+
+**"Payments total" removed.** It sat beside "Total paid" showing a different number ($340,174 vs
+$341,321) for what reads as the same thing — one is the 90-day payment ledger, the other the amount
+matched to invoices. Two totals that disagree is a support ticket, not a feature. Total paid stays.
+
+**A part-paid invoice was labelled Paid.** Two independent causes, both fixed:
+
+1. `cmpStatusBadge` relabelled anything containing "paid" as the literal string `Paid` — so
+   "Partially Paid" rendered as "Paid" no matter what CMP returned. The badge now shows CMP's own
+   label and derives only the tone, checking partial first.
+2. The invoice list came from `carrier.check_payment` (Deluge) alone, whose status string is the one
+   Sales says is wrong (carrier 5815660). C-18 now also reads `clients.invoices` — the CMP-first
+   route C-20 already trusts — and `mergeCmpInvoices` matches on invoice number, taking status and
+   total from CMP-first and paid/remaining from the Deluge, which is the only source that carries
+   them. Three calls in `Promise.allSettled`: either invoice source alone still renders the panel,
+   and `cmpError` is only raised when both fail.
+
+On top of that, `cmpInvoiceStatus` refuses to call an invoice Paid while CMP's own numbers say money
+is owed: remaining > 0 with something paid is Partially Paid, remaining > 0 with nothing paid is
+Pending. Every other status is passed through untouched, so Cancelled and Overdue keep their word.
+The money is the source of record; the string is what carriers dispute.
+
+**Amounts were rounded to whole dollars.** `money()` uses `maximumFractionDigits: 0`, so CMP's
+$43,495.62 displayed as $43,496 (carrier 5834146). Added `moneyExact` — always cents — and used it
+for every invoice amount in the automations: the C-18 invoice cards (total/paid/remaining), the C-18
+summary tiles, and the C-20 Request Invoices amount column. `money()` is untouched for dashboard
+aggregates, where cents are noise. Deliberately NOT changed: EFS balances, credit lines, money-code
+draws and fuel-transaction totals — none of those are an invoice quoted from a source of record.
+
+5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
+Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
+and 5834146 (cents) on the preview.
 ### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
 
 CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
