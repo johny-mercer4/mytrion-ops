@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import {
   assignPermissionSet,
   createPermissionSet,
@@ -9,7 +17,7 @@ import {
   type PermissionSet,
   type PermissionSetSnapshot,
 } from '../../api/permissionSets';
-import { Button, EmptyState, ErrorState } from '@/ds';
+import { Button, EmptyState, ErrorState, Switch } from '@/ds';
 import { MYTRIONS } from '../../access/mytrions.config';
 import { MytrionGlyph } from '../../components/icons';
 import { PermissionSetEditor } from './PermissionSetEditor';
@@ -46,6 +54,14 @@ export function PermissionSets() {
   const nameRef = useRef<HTMLInputElement>(null);
   /** The one person currently being added or removed, so only their row shows a pending state. */
   const [assigneeBusy, setAssigneeBusy] = useState<string | null>(null);
+  /**
+   * Live toggles that are mid-request, by set id.
+   *
+   * The screen mutates optimistically, so this is not "what is the value" — it is only what still
+   * needs confirming. Keyed by id rather than a single boolean because the LIST can toggle too.
+   */
+  const [pendingOverride, setPendingOverride] = useState<Set<string>>(new Set());
+  const [pendingActive, setPendingActive] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -101,12 +117,55 @@ export function PermissionSets() {
     }
   }
 
-  async function toggleActive(set: PermissionSet): Promise<void> {
+  /**
+   * Flip it on screen NOW, reconcile with the server after.
+   *
+   * Both of these are live settings, and both used to wait for a round trip before showing anything
+   * at all — so a click looked like it had missed and got repeated, and the second click computed
+   * its payload from the SAME stale value as the first. Two contradictory writes would race and the
+   * loser silently won. Optimistic paint plus a per-set in-flight guard removes both halves: there
+   * is instant feedback, and a second flip cannot be issued until the first settles.
+   *
+   * On failure the optimistic value is rolled back to what the server still holds, because the
+   * alternative is a screen that quietly disagrees with the database.
+   */
+  async function toggleLive(
+    set: PermissionSet,
+    field: 'active' | 'override',
+    pending: Set<string>,
+    setPending: Dispatch<SetStateAction<Set<string>>>,
+    announce: (next: boolean) => [string, string],
+  ): Promise<void> {
+    // One flip at a time per set. Without this the second click computes its payload from the same
+    // stale value as the first, and two contradictory writes race with the loser silently winning.
+    if (pending.has(set.id)) return;
+    const next = !set[field];
+
+    // Functional updates throughout: `pending` is the value captured when this handler was created,
+    // and by the time the request settles another set may have entered or left the same Set.
+    setPending((prev) => new Set(prev).add(set.id));
+    merge({ ...set, [field]: next });
     try {
-      merge(await updatePermissionSet(set.id, { active: !set.active }));
+      merge(await updatePermissionSet(set.id, { [field]: next }));
+      const [title, body] = announce(next);
+      adminToast.success(title, body);
     } catch (err) {
+      merge(set); // roll back to the row the server still holds
       adminToast.error('Could not update', err instanceof Error ? err.message : undefined);
+    } finally {
+      setPending((prev) => {
+        const copy = new Set(prev);
+        copy.delete(set.id);
+        return copy;
+      });
     }
+  }
+
+  async function toggleActive(set: PermissionSet): Promise<void> {
+    await toggleLive(set, 'active', pendingActive, setPendingActive, (on) => [
+      on ? 'Permission set activated' : 'Permission set deactivated',
+      set.name,
+    ]);
   }
 
   async function remove(set: PermissionSet): Promise<void> {
@@ -122,18 +181,59 @@ export function PermissionSets() {
     }
   }
 
+  /**
+   * Assign and unassign fold the ONE row that changed into state.
+   *
+   * Both used to `await load()`, which refetches every set, every assignment and the whole 126-person
+   * roster to add one name — so the list flickered, scroll position and the search box's filtered
+   * view were rebuilt underneath the cursor, and adding five people meant five full-screen reloads.
+   * The server returns the created assignment, so there is nothing here the client has to ask for.
+   *
+   * `assigneeCount` is maintained alongside, because it is what the list card and the header read.
+   */
+  const applyAssignmentDelta = useCallback((setId: string, delta: number) => {
+    setSnapshot((prev) =>
+      prev
+        ? {
+            ...prev,
+            sets: prev.sets.map((row) =>
+              row.id === setId
+                ? { ...row, assigneeCount: Math.max(0, row.assigneeCount + delta) }
+                : row,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
   async function assign(
     setId: string,
     entry: { zohoUserId: string; name: string | null; email: string | null },
   ): Promise<void> {
+    if (assigneeBusy) return;
     setAssigneeBusy(entry.zohoUserId);
     try {
-      await assignPermissionSet(setId, {
+      const assignment = await assignPermissionSet(setId, {
         zohoUserId: entry.zohoUserId,
         userName: entry.name,
         email: entry.email,
       });
-      await load();
+      setSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              // Re-assigning someone who is already there returns the existing row; replace rather
+              // than append so the list cannot show a duplicate.
+              assignments: [
+                ...prev.assignments.filter(
+                  (a) => !(a.permissionSetId === setId && a.zohoUserId === assignment.zohoUserId),
+                ),
+                assignment,
+              ],
+            }
+          : prev,
+      );
+      applyAssignmentDelta(setId, 1);
     } catch (err) {
       adminToast.error('Could not assign', err instanceof Error ? err.message : undefined);
     } finally {
@@ -142,10 +242,21 @@ export function PermissionSets() {
   }
 
   async function unassign(setId: string, zohoUserId: string): Promise<void> {
+    if (assigneeBusy) return;
     setAssigneeBusy(zohoUserId);
     try {
       await unassignPermissionSet(setId, zohoUserId);
-      await load();
+      setSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments.filter(
+                (a) => !(a.permissionSetId === setId && a.zohoUserId === zohoUserId),
+              ),
+            }
+          : prev,
+      );
+      applyAssignmentDelta(setId, -1);
     } catch (err) {
       adminToast.error('Could not unassign', err instanceof Error ? err.message : undefined);
     } finally {
@@ -155,15 +266,10 @@ export function PermissionSets() {
 
   /** Level 1 beats level 2 beats level 3 — the switch that makes a scope actually narrow. */
   async function toggleOverride(set: PermissionSet): Promise<void> {
-    try {
-      merge(await updatePermissionSet(set.id, { override: !set.override }));
-      adminToast.success(
-        set.override ? 'Set is additive again' : 'Set now overrides lower layers',
-        set.name,
-      );
-    } catch (err) {
-      adminToast.error('Could not update', err instanceof Error ? err.message : undefined);
-    }
+    await toggleLive(set, 'override', pendingOverride, setPendingOverride, (on) => [
+      on ? 'Set now overrides lower layers' : 'Set is additive again',
+      set.name,
+    ]);
   }
 
   /*
@@ -313,8 +419,19 @@ export function PermissionSets() {
               consequence reading as one control. `.psHeadActions` is the same row with real space
               between them. */}
           <div className={s.psHeadActions}>
-            <button type="button" className={s.ghostBtn} onClick={() => void toggleActive(open)}>
-              {open.active ? 'Deactivate' : 'Activate'}
+            <button
+              type="button"
+              className={s.ghostBtn}
+              disabled={pendingActive.has(open.id)}
+              onClick={() => void toggleActive(open)}
+            >
+              {pendingActive.has(open.id)
+                ? open.active
+                  ? 'Deactivating…'
+                  : 'Activating…'
+                : open.active
+                  ? 'Deactivate'
+                  : 'Activate'}
             </button>
             <button type="button" className={s.dangerBtn} onClick={() => void remove(open)}>
               Delete
@@ -338,14 +455,18 @@ export function PermissionSets() {
             <span className={s.cardTitle}>Precedence</span>
           </div>
           <div className={s.profileCardBody}>
-            <label className={s.accessCheckRow}>
-              <input
-                type="checkbox"
-                checked={open.override}
-                onChange={() => void toggleOverride(open)}
-              />
-              <span>Override — this set replaces lower layers instead of adding to them</span>
-            </label>
+            {/*
+              A Switch, not a Checkbox: this takes effect the instant it is flipped, with no Save
+              anywhere near it. `pending` keeps the knob at the position the click asked for while
+              the request is in flight — the previous checkbox stayed at the OLD position until the
+              round trip returned, which reads as a missed click and gets clicked again.
+            */}
+            <Switch
+              label="Override — this set replaces lower layers instead of adding to them"
+              checked={open.override}
+              pending={pendingOverride.has(open.id)}
+              onChange={() => void toggleOverride(open)}
+            />
             <p className={s.fieldHint}>
               Normally every layer adds up, so a profile default granting Billing unscoped defeats
               this set&rsquo;s tab scope. With override on, the order is: <strong>1.</strong> this

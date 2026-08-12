@@ -27,6 +27,17 @@ export interface SwitchProps
   labelPlacement?: SwitchLabelPlacement;
   /** Spans its container, so a column of settings rows aligns its switches on one edge. */
   fullWidth?: boolean;
+  /**
+   * The flip has been made and the server has not answered yet.
+   *
+   * Pass this with an OPTIMISTIC `checked` — the knob must already be at the new position. A switch
+   * promises an immediate effect, so leaving it at the old position until a round trip returns reads
+   * as "the click missed" and gets clicked again, which is how a live setting ends up with two
+   * contradictory writes racing each other.
+   *
+   * While pending the control keeps focus but refuses further flips, and announces `aria-busy`.
+   */
+  pending?: boolean;
 }
 
 /**
@@ -82,6 +93,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
     className,
     style,
     disabled,
+    pending = false,
     onClick,
     id,
     'aria-describedby': describedBy,
@@ -100,7 +112,11 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
     // aria-disabled announces "unavailable", so it must not flip. Preventing the default on `click`
     // cancels the checkbox activation behaviour; Space dispatches a click, so pointer and keyboard
     // are both covered by this one handler. `readOnly` would not work — it is inert on checkboxes.
-    if (explained) event.preventDefault();
+    //
+    // `pending` cancels the same way rather than setting `disabled`: a disabled input drops out of
+    // the tab order, so a keyboard user who flips a switch loses their place for the length of a
+    // request and lands somewhere else when it returns.
+    if (explained || pending) event.preventDefault();
     onClick?.(event);
   };
 
@@ -113,6 +129,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
       data-placement={labelPlacement}
       data-full={fullWidth || undefined}
       data-disabled={disabled || explained || undefined}
+      data-pending={pending || undefined}
     >
       <span className={styles.control}>
         <input
@@ -124,6 +141,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
           className={styles.input}
           disabled={disabled}
           aria-disabled={ariaDisabled}
+          aria-busy={pending || undefined}
           aria-describedby={
             [describedBy, description ? descriptionId : null].filter(Boolean).join(' ') || undefined
           }
