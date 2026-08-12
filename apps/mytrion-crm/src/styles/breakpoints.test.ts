@@ -166,7 +166,9 @@ describe('fixed tracks — the things that cannot fit a phone', () => {
   it('does not add a CSS min-width in px', () => {
     // 74 -> 76 on the merge of origin/build (PR #166, CS Applications sort/filter). Neither is a
     // live defect: one is a 16px badge dot, the other a 150px filter field inside a wrapping row.
-    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 76);
+    // 76 -> 75: the Card Activity tooltip now has a fixed `width` its edge clamp can reason about,
+    // so its `min-width` went away.
+    expectBudget('CSS `min-width: Npx`', census(CSS_FILES, /min-width\s*:\s*\d+px/g), 75);
   });
 
   it('does not add an inline minWidth in TSX', () => {

@@ -63,6 +63,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
   const lo = p.selStart != null && p.selEnd != null ? Math.min(p.selStart, p.selEnd) : -1;
   const hi = p.selStart != null && p.selEnd != null ? Math.max(p.selStart, p.selEnd) : -1;
   const cycleLabel = currentBillingCycle().label;
+  const activityBlockRef = useRef<HTMLDivElement>(null);
   const activityScrollerRef = useRef<HTMLDivElement>(null);
   const activityWrapRef = useRef<HTMLDivElement>(null);
   const activitySvgRef = useRef<SVGSVGElement>(null);
@@ -71,24 +72,38 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
     viewportWidth: chartW,
     scrollLeft: 0,
     svgHeight: 110,
+    originLeft: 0,
+    originTop: 0,
   });
 
   const syncActivityViewport = useCallback(() => {
+    const block = activityBlockRef.current;
     const scroller = activityScrollerRef.current;
     const wrap = activityWrapRef.current;
     const svg = activitySvgRef.current;
-    if (!scroller || !wrap || !svg) return;
+    if (!block || !scroller || !wrap || !svg) return;
+    // The tooltip is positioned against `.msd-chart-block`, not the scroller: the plot is shorter
+    // than the card, so the clamp needs the header band above it to have somewhere to put a tall day.
+    const blockRect = block.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
     const next = {
       renderedWidth: wrap.getBoundingClientRect().width || wrap.clientWidth || chartW,
-      viewportWidth: scroller.clientWidth || scroller.getBoundingClientRect().width || chartW,
+      viewportWidth: scroller.clientWidth || scrollerRect.width || chartW,
       scrollLeft: scroller.scrollLeft,
-      svgHeight: svg.getBoundingClientRect().height || 110,
+      svgHeight: svgRect.height || 110,
+      // `clientLeft`/`clientTop` are the block's border widths: absolute offsets resolve against its
+      // padding box, not the border box `getBoundingClientRect` reports.
+      originLeft: scrollerRect.left - blockRect.left - block.clientLeft,
+      originTop: svgRect.top - blockRect.top - block.clientTop,
     };
     setActivityViewport((current) => (
       current.renderedWidth === next.renderedWidth
       && current.viewportWidth === next.viewportWidth
       && current.scrollLeft === next.scrollLeft
       && current.svgHeight === next.svgHeight
+      && current.originLeft === next.originLeft
+      && current.originTop === next.originTop
         ? current
         : next
     ));
@@ -96,10 +111,14 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
 
   useLayoutEffect(() => {
     syncActivityViewport();
+    const block = activityBlockRef.current;
     const scroller = activityScrollerRef.current;
     const wrap = activityWrapRef.current;
-    if (!scroller || !wrap || typeof ResizeObserver === 'undefined') return undefined;
+    if (!block || !scroller || !wrap || typeof ResizeObserver === 'undefined') return undefined;
+    // The block is observed for `originTop`: the header wraps at narrow widths and the selection
+    // banner comes and goes, both of which move the plot down inside the card.
     const observer = new ResizeObserver(syncActivityViewport);
+    observer.observe(block);
     observer.observe(scroller);
     observer.observe(wrap);
     return () => observer.disconnect();
@@ -117,6 +136,8 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
         transactions: hoveredPoint.transactions,
         maxTransactions: maxTx,
         svgHeight: activityViewport.svgHeight,
+        originLeft: activityViewport.originLeft,
+        originTop: activityViewport.originTop,
       })
     : null;
 
@@ -273,7 +294,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
       </div>
 
       <div className="msd-right-col">
-        <div className="msd-chart-block">
+        <div className="msd-chart-block" ref={activityBlockRef}>
           <div className="msd-chart-header">
             <div>
               <span className="msd-chart-title">Card Activity</span>
@@ -309,15 +330,15 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
               </div>
               <div className="msd-legend">
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#be123c' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-tx)' }} />
                   Tx
                 </span>
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#374151' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-active)' }} />
                   Active
                 </span>
                 <span className="msd-legend-item">
-                  <span className="msd-legend-dot" style={{ background: '#9ca3af' }} />
+                  <span className="msd-legend-dot" style={{ background: 'var(--msd-series-new)' }} />
                   New
                 </span>
               </div>
@@ -334,7 +355,12 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
           ) : null}
 
           <div className="msd-chart-activity-area">
-            {/* Keep the tooltip outside the horizontal scroller so vertical overflow cannot clip it. */}
+            {/*
+              Outside the horizontal scroller, whose `overflow-x` forces overflow-y to clip. It
+              positions against `.msd-chart-block` (the area is deliberately NOT a containing block),
+              so `msdActivityTooltipPosition` can clamp a tall day into the header band above the plot
+              instead of letting it paint out over the page header.
+            */}
             {hoveredPoint && tooltipPosition ? (
               <div
                 className="msd-activity-card"
@@ -354,41 +380,41 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
 
             {len === 0 ? (
               <div className="msd-activity-empty">
-              <strong>No activity in this cycle yet</strong>
-              <span>
-                {p.activityRange === 'recent' ? (
-                  <button type="button" className="msd-selrange-clear" onClick={() => p.setActivityRange('all')}>
-                    View History →
-                  </button>
-                ) : (
-                  'Transactions will show up here as they happen.'
-                )}
-              </span>
+                <strong>No activity in this cycle yet</strong>
+                <span>
+                  {p.activityRange === 'recent' ? (
+                    <button type="button" className="msd-selrange-clear" onClick={() => p.setActivityRange('all')}>
+                      View History →
+                    </button>
+                  ) : (
+                    'Transactions will show up here as they happen.'
+                  )}
+                </span>
               </div>
             ) : len === 1 && p.actPoints[0] ? (
               <div>
-              <div className="msd-activity-single__grid">
-                <div>
-                  <div className="msd-activity-single__val" style={{ color: '#be123c' }}>
-                    {msdFmtNum(p.actPoints[0].transactions)}
+                <div className="msd-activity-single__grid">
+                  <div>
+                    <div className="msd-activity-single__val" style={{ color: 'var(--msd-series-tx)' }}>
+                      {msdFmtNum(p.actPoints[0].transactions)}
+                    </div>
+                    <div className="msd-activity-single__label">Transactions</div>
                   </div>
-                  <div className="msd-activity-single__label">Transactions</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].activeCards)}</div>
-                  <div className="msd-activity-single__label">Active cards</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].newCards)}</div>
-                  <div className="msd-activity-single__label">New cards</div>
-                </div>
-                <div>
-                  <div className="msd-activity-single__val" style={{ color: '#0284c7' }}>
-                    {msdFmtNum(p.actPoints[0].volume)}
+                  <div>
+                    <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].activeCards)}</div>
+                    <div className="msd-activity-single__label">Active cards</div>
                   </div>
-                  <div className="msd-activity-single__label">Gallons</div>
+                  <div>
+                    <div className="msd-activity-single__val">{msdFmtNum(p.actPoints[0].newCards)}</div>
+                    <div className="msd-activity-single__label">New cards</div>
+                  </div>
+                  <div>
+                    <div className="msd-activity-single__val" style={{ color: 'var(--accent)' }}>
+                      {msdFmtNum(p.actPoints[0].volume)}
+                    </div>
+                    <div className="msd-activity-single__label">Gallons</div>
+                  </div>
                 </div>
-              </div>
               </div>
             ) : (
             <div
@@ -409,12 +435,12 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                   preserveAspectRatio="none"
                 >
                   <path d={msdAreaPath(txVals, maxTx, chartW)} fill="rgba(159,18,57,0.12)" stroke="none" />
-                  <path d={msdLinePath(txVals, maxTx, chartW)} fill="none" stroke="#be123c" strokeWidth="2.5" />
-                  <path d={msdLinePath(acVals, maxCards, chartW)} fill="none" stroke="#374151" strokeWidth="1.5" />
+                  <path d={msdLinePath(txVals, maxTx, chartW)} fill="none" stroke="var(--msd-series-tx)" strokeWidth="2.5" />
+                  <path d={msdLinePath(acVals, maxCards, chartW)} fill="none" stroke="var(--msd-series-active)" strokeWidth="1.5" />
                   <path
                     d={msdLinePath(ncVals, maxCards, chartW)}
                     fill="none"
-                    stroke="#9ca3af"
+                    stroke="var(--msd-series-new)"
                     strokeWidth="1.5"
                     strokeDasharray="4,3"
                   />
@@ -423,7 +449,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                       data-testid="msd-activity-crosshair"
                       x1={msdPointX(p.hoverIdx, len, chartW)} y1={2}
                       x2={msdPointX(p.hoverIdx, len, chartW)} y2={88}
-                      stroke="rgba(148,163,184,0.4)" strokeWidth={1} strokeDasharray="3,2"
+                      stroke="var(--msd-crosshair)" strokeWidth={1} strokeDasharray="3,2"
                       pointerEvents="none"
                     />
                   ) : null}
@@ -449,21 +475,21 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                           cx={x}
                           cy={msdPointY(m.activeCards, maxCards)}
                           r={p.hoverIdx === i ? 4.5 : 2.5}
-                          fill="#374151"
+                          fill="var(--msd-series-active)"
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.3 : 0.8}
                         />
                         <circle
                           cx={x}
                           cy={msdPointY(m.newCards, maxCards)}
                           r={p.hoverIdx === i ? 4.5 : 2.5}
-                          fill="#9ca3af"
+                          fill="var(--msd-series-new)"
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.3 : 0.8}
                         />
                         <circle
                           cx={x}
                           cy={msdPointY(m.transactions, maxTx)}
                           r={p.hoverIdx === i ? 5.5 : 3}
-                          fill={p.hoverIdx === i ? '#f43f5e' : '#be123c'}
+                          fill={p.hoverIdx === i ? 'var(--msd-series-tx-hi)' : 'var(--msd-series-tx)'}
                           opacity={p.hoverIdx != null && p.hoverIdx !== i ? 0.4 : 1}
                         />
                         <rect
@@ -488,8 +514,8 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
                       cx={msdPointX(p.hoverIdx, len, chartW)}
                       cy={msdPointY(hoveredPoint.transactions, maxTx)}
                       r={10}
-                      fill="rgba(244,63,94,0.15)"
-                      stroke="rgba(244,63,94,0.35)"
+                      fill="var(--msd-series-tx-glow-fill)"
+                      stroke="var(--msd-series-tx-glow-bd)"
                       strokeWidth={1}
                       pointerEvents="none"
                     />

@@ -323,6 +323,9 @@
   flex-direction: column;
   gap: 0.625rem;
   min-width: 0;
+  /* Containing block for `.msd-activity-card`. `position` alone — no transform/filter/contain, which
+     would trap the legacy fixed-position modals behind the header. */
+  position: relative;
 }
 .ss-root.light .msd-chart-block {
   background: var(--surface);
@@ -576,7 +579,23 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
 }
-.ss-root .msd-chart-activity-area { position: relative; min-width: 0; }
+/* Card Activity series colours. Fixed data-series identities, not theme chrome — but declared once
+   here so the header legend, the plot and the tooltip dots cannot drift apart again (the legend said
+   grey for Active/New while the tooltip said green/blue for the same two series). */
+.ss-root .msd-chart-block {
+  --msd-series-tx: #be123c;
+  --msd-series-tx-hi: #f43f5e;
+  --msd-series-tx-glow-fill: rgba(244, 63, 94, 0.15);
+  --msd-series-tx-glow-bd: rgba(244, 63, 94, 0.35);
+  --msd-series-active: #374151;
+  --msd-series-new: #9ca3af;
+  --msd-crosshair: rgba(148, 163, 184, 0.4);
+}
+
+/* Deliberately NOT a containing block: the tooltip positions against `.msd-chart-block` so a tall
+   day can be clamped into the header band. Making this relative caps it at the plot's own top edge,
+   which is 18px shorter than the card itself. */
+.ss-root .msd-chart-activity-area { min-width: 0; }
 .ss-root .msd-activity-scroller {
   width: 100%;
   overflow-x: auto;
@@ -830,25 +849,26 @@
 .ss-root.light .msd-hero-kpi--gold .msd-hero-kpi-icon { color: #d97706; }
 .ss-root.light .msd-hero-kpi--blue .msd-hero-kpi-icon { color: #0284c7; }
 
-/* Card Activity tooltip: sibling of the horizontal scroller, lifted above the hovered TX point. */
+/* Card Activity tooltip: sibling of the horizontal scroller, lifted above the hovered TX point.
+   `width` is duplicated in `MSD_TOOLTIP_WIDTH` (dashActivityGeom.ts), which the edge clamp needs —
+   change both together. `translateY(-100%)` makes the JS `top` the card's BOTTOM edge; the 10px gap
+   above the point lives in JS too, because the clamp has to reason about the whole offset.
+   `pointer-events: none` is load-bearing: the card tracks the column under the cursor, so if it
+   could take the pointer it would replace its own hover target and flicker between two days.
+   No `backdrop-filter` — the theme's modal surface is already the glass primitive, and a second
+   blurred layer that moves on every hover is the composited-layer trap in the guidance. */
 .ss-root .msd-activity-card {
   position: absolute;
   width: 184px;
   box-sizing: border-box;
-  transform: translateX(-50%) translateY(-100%) translateY(-10px);
-  z-index: 20;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  backdrop-filter: blur(8px);
+  transform: translateX(-50%) translateY(-100%);
+  z-index: 4;
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--hz-modal-surface);
+  border: 1px solid var(--glass-bd-hi);
   box-shadow: var(--hz-shadow-pop);
   pointer-events: none;
-}
-.ss-root.light .msd-activity-card {
-  background: rgba(255, 255, 255, 0.97);
-  border-color: rgba(0, 0, 0, 0.1);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .ss-root .msd-activity-card__day {
@@ -891,10 +911,10 @@
   border-radius: var(--radius-full);
   flex: none;
 }
-.ss-root .msd-activity-card__rows dt i[data-k='tx'] { background: #f43f5e; }
-.ss-root .msd-activity-card__rows dt i[data-k='active'] { background: #4b5563; }
-.ss-root .msd-activity-card__rows dt i[data-k='new'] { background: #9ca3af; }
-.ss-root .msd-activity-card__rows dt i[data-k='gal'] { background: #0ea5e9; }
+.ss-root .msd-activity-card__rows dt i[data-k='tx'] { background: var(--msd-series-tx-hi); }
+.ss-root .msd-activity-card__rows dt i[data-k='active'] { background: var(--msd-series-active); }
+.ss-root .msd-activity-card__rows dt i[data-k='new'] { background: var(--msd-series-new); }
+.ss-root .msd-activity-card__rows dt i[data-k='gal'] { background: var(--accent); }
 
 /* Figures are monospaced and tabular so the four rows line up as a column. */
 .ss-root .msd-activity-card__rows dd {
@@ -906,9 +926,8 @@
   color: var(--text-primary);
 }
 .ss-root .msd-activity-card__rows dd[data-accent] {
-  color: #38bdf8;
+  color: var(--accent);
 }
-.ss-root.light .msd-activity-card__rows dd[data-accent] { color: #0284c7; }
 
 /* The hero KPI strip is a two-up flex row whose halves are `flex: none` around unbreakable mono
    figures, so it never fit a phone. It stacks below the structure line. */

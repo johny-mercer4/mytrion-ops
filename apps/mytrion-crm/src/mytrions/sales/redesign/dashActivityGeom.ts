@@ -21,6 +21,15 @@ export function msdPointY(val: number, max: number): number {
   return 85 - p * 80;
 }
 
+/** Kept in sync with `.msd-activity-card { width }` in msd.css. */
+export const MSD_TOOLTIP_WIDTH = 184;
+/**
+ * Upper bound on the rendered height of the four-row card. Only the vertical clamp reads it, and it
+ * is safe in one direction only: over-estimating parks the tooltip a few pixels lower than it needs
+ * to be, under-estimating lets it clip out through the top of the chart block.
+ */
+export const MSD_TOOLTIP_HEIGHT = 128;
+
 export interface MsdActivityTooltipPositionOptions {
   index: number;
   len: number;
@@ -31,13 +40,24 @@ export interface MsdActivityTooltipPositionOptions {
   transactions: number;
   maxTransactions: number;
   svgHeight: number;
+  /** Scroller left edge within the positioning boundary (`.msd-chart-block`). */
+  originLeft?: number;
+  /** Plot-area top edge within the positioning boundary. */
+  originTop?: number;
   tooltipWidth?: number;
+  tooltipHeight?: number;
+  tooltipGap?: number;
   edgeGutter?: number;
 }
 
 /**
  * Position the floating tooltip against the rendered transaction point. The SVG can stretch wider
  * than its viewBox because the chart wrap has min-width:100%, so scale X before removing scroll.
+ *
+ * `top` is the tooltip's BOTTOM edge — CSS lifts it with `translateY(-100%)`. It is clamped so the
+ * card can never leave the top of `.msd-chart-block`: the plot is ~110px tall and the card is ~128px,
+ * so a tall day has no room above its own point and the card would otherwise paint out over the page
+ * header. Clamped days sit at the top of the block, still beside the column the `left` clamp tracks.
  */
 export function msdActivityTooltipPosition({
   index,
@@ -49,7 +69,11 @@ export function msdActivityTooltipPosition({
   transactions,
   maxTransactions,
   svgHeight,
-  tooltipWidth = 184,
+  originLeft = 0,
+  originTop = 0,
+  tooltipWidth = MSD_TOOLTIP_WIDTH,
+  tooltipHeight = MSD_TOOLTIP_HEIGHT,
+  tooltipGap = 10,
   edgeGutter = 8,
 }: MsdActivityTooltipPositionOptions): { left: number; top: number } {
   const safeChartWidth = Math.max(1, chartWidth);
@@ -57,16 +81,17 @@ export function msdActivityTooltipPosition({
   const safeViewportWidth = Math.max(1, viewportWidth);
   const pointLeft = (msdPointX(index, len, safeChartWidth) / safeChartWidth) * safeRenderedWidth - scrollLeft;
   const halfTooltip = tooltipWidth / 2;
-  const left = safeViewportWidth <= tooltipWidth + edgeGutter * 2
+  const visibleLeft = safeViewportWidth <= tooltipWidth + edgeGutter * 2
     ? safeViewportWidth / 2
     : Math.min(
         safeViewportWidth - halfTooltip - edgeGutter,
         Math.max(halfTooltip + edgeGutter, pointLeft),
       );
+  const pointTop = (msdPointY(transactions, maxTransactions) / 90) * Math.max(1, svgHeight);
 
   return {
-    left,
-    top: (msdPointY(transactions, maxTransactions) / 90) * Math.max(1, svgHeight),
+    left: originLeft + visibleLeft,
+    top: Math.max(tooltipHeight + edgeGutter, originTop + pointTop - tooltipGap),
   };
 }
 
