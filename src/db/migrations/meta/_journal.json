@@ -813,6 +813,13 @@
       "when": 1786126833001,
       "tag": "0114_mytrion_permission_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1786130433001,
+      "tag": "0115_permission_set_override",
+      "breakpoints": true
     }
   ]
 }

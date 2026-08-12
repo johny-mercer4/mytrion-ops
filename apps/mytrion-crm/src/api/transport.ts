@@ -270,7 +270,7 @@ export async function requestBlob(
 }
 
 export async function request(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
@@ -297,7 +297,7 @@ export async function request(
 }
 
 async function requestOnce(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions,
 ): Promise<unknown> {

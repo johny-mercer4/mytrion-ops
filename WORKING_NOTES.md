@@ -15179,3 +15179,54 @@ inherit the chrome.
 **Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
 at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
 DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
+---
+
+## 2026-08-12 — Permission sets: override precedence, a real Save, and a screen verified in a browser
+
+Four asks, all on Mytrion Admin → Permission Sets.
+
+**1. Override (the one that changes semantics).** Sets were strictly additive, so "Billing — Ledger
+only" did nothing to someone whose profile default already granted Billing unscoped. That limitation
+was documented and correct, but it made scoping unusable in practice. New `override` boolean on
+`mytrion_permission_sets` (migration `0115`, hand-written and idempotent — `drizzle-kit generate`
+still emits 388 lines of already-applied tables in this repo and cannot be used).
+
+Resolution gains **Step 3.4** in `combineAccess`, after the per-user override REPLACE and before the
+deny subtraction: if any assigned set carries `override`, `allowed`, `userModes` and `allDept` are
+cleared and only the sets contribute. Deliberate limits, all pinned by tests:
+- a denied Mytrion on the user record **stays denied** — override widens precedence, not authority;
+- an overriding set **cannot** confer all-department access;
+- `homeMytrion` is re-picked from what survives, so nobody lands on a workspace they cannot enter.
+
+`AccessTrace` gains `overriddenBy: string[]`, and the effective-access drawer now says in words why
+a profile default that plainly grants Billing produced no Billing. Without that this is undebuggable.
+
+**2. Save is a real save.** The editor used to PATCH on every click — a half-finished configuration
+was live for everyone holding the set, and there was nothing to press. It now holds a draft, shows a
+save bar only when the draft differs from what is stored, and commits through one new atomic
+`PUT /admin/permission-sets/:id/grants` whose repo writes the three grant columns together, filtered
+to the allowed set so the row can never disagree with itself. Save returns to the list.
+
+The save bar is `position: sticky`. **This forced a structure change:** `.card` is `overflow: hidden`,
+which makes a sticky child stick to a box that never scrolls. The card is therefore rendered by the
+editor, not by the page, so the bar is its sibling. Worth remembering the next time something needs
+to stick inside an admin card.
+
+**3. Three levels, not one wall.** 1 workspaces → 2 full/read-only → 3 tabs, each with its number in
+its own heading (the kicker-above-a-heading shape is gone; the numeral stays because the sequence IS
+the dependency). Levels 2 and 3 are dimmed and inert until level 1 is answered.
+
+**4. Assignees.** Was a chip wall capped at `.slice(0, 60)` — simultaneously overwhelming and
+incomplete, with nothing on screen saying the tail was unreachable. Now a searchable list over the
+whole roster (126 people), assigned pinned above candidates, per-row busy state.
+
+**Verified in a real browser, not by reading class names.** `apps/mytrion-crm/vite.audit.config.ts`
+gained `AUDIT_API_PORT` so an audit can run against its own API on a throwaway local DB — the default
+:3001 is whatever `pnpm dev:all` is pointed at, and `.env` points at Render **production**. Ran a
+CDP script over both themes: list, skeleton, detail, dirty state, assignees, precedence. That pass
+found four things reading the code did not: the save bar was below the fold, the create form vanished
+during loading (the grid jumped on arrival), list cards were ragged because `.profileGrid` is
+`align-items: start`, and skeleton bars were invisible except when the shimmer highlight crossed them
+— fatal under `prefers-reduced-motion`, where nothing moves at all.
+
+`pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
