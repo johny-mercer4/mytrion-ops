@@ -15100,3 +15100,44 @@ Reordering is presentational: `weeklyMs` still sums `data.days`, and a test pins
 move with the order.
 
 5 tests. Mutations caught: no reorder at all, and today-first-with-the-rest-reversed.
+
+### 2026-08-12 — "Unable to preload CSS" in production
+
+Reported from prod:
+
+```
+Unable to preload CSS for https://octane-ops-ai.onrender.com/assets/index-CLy9FzoA.css
+Refused to apply style … MIME type ('application/json') is not a supported stylesheet MIME type,
+and strict MIME checking is enabled
+```
+
+**Prod was healthy.** Checked it directly: `index.html` serves 200 with `cache-control: no-cache` and
+an ETag, and references `index-fiJcEjJH.css` — the asset the current build actually ships. The missing
+`index-CLy9FzoA.css` was committed in `74fde365` and replaced by later rebuilds, so it is simply gone.
+
+**It is a tab left open across a deploy.** Every build emits new content-hashed names and the old ones
+stop existing. A tab loaded before the deploy is still running the old JS, so its first LAZY route
+import afterwards asks for a chunk that no longer exists — hence "preload", not a first-paint failure.
+Nothing was misconfigured; the error boundary just turned a stale tab into "Something went wrong".
+
+Two fixes, because the cause and the message were separate problems:
+
+1. **`lib/staleBuildReload.ts`** — listens for `vite:preloadError` and reloads once. The newest
+   `index.html` is always one request away (it is `no-cache`), so a reload picks up the new chunk names.
+   Guarded by a `sessionStorage` flag cleared on `load`, so a genuinely broken asset fails VISIBLY on the
+   second try instead of reload-looping. Attached before the first render, since the failure happens on a
+   lazy import and the listener has to exist by then.
+
+2. **A missing `/assets/*` now returns `text/plain`, not the JSON error envelope.** That envelope is what
+   produced the second line: helmet sets `nosniff`, so a stylesheet answered with `application/json`
+   reads as a server misconfiguration rather than "that file is gone". Note the existing
+   `/main/assets/…` redirect only fires when `indexOf('/assets/') > 0`; a ROOT-level `/assets/…` miss
+   fell straight through to the envelope. Deliberately not the SPA shell either — answering a stylesheet
+   with HTML trips the same check with a different type in it. API 404s keep their JSON, and a test pins
+   that.
+
+3 tests, mutation-verified by letting asset misses fall back to the envelope.
+
+**Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
+it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
+answer; worth revisiting only if tabs are routinely left open through deploys.
