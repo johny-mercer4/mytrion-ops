@@ -59,6 +59,12 @@ export default defineConfig({
       // which is the only version of "green locally" worth trusting before opening a PR.
       API_KEY: 'test-secret-key',
       BILLING_INGEST_SECRET: 'test-ingest-secret',
+      // Horizon worker-CRM bot — pinned so a developer .env cannot leak a real token into HMAC
+      // tests, and so the webhook secret is a known value. Distinct from TELEGRAM_* on purpose.
+      HORIZON_BOT_TOKEN: 'horizon-test-token',
+      HORIZON_BOT_SECRET: 'horizon-test-secret',
+      HORIZON_BOT_USERNAME: 'horizon_test_bot',
+      HORIZON_MINI_APP_URL: 'https://example.test/main',
     },
     coverage: {
       provider: 'v8',

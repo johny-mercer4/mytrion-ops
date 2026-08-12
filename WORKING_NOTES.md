@@ -15230,3 +15230,24 @@ during loading (the grid jumped on arrival), list cards were ragged because `.pr
 — fatal under `prefers-reduced-motion`, where nothing moves at all.
 
 `pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
+
+### 2026-08-12 — Horizon worker CRM on its own Telegram bot
+
+Wired Mytrion Horizon (`apps/mytrion-crm`) to a **separate** Telegram bot so it does not share the
+carrier client mini-app / agent-gateway token.
+
+- First-class env: `HORIZON_BOT_TOKEN` (Bot API + initData HMAC), `HORIZON_BOT_SECRET` (webhook
+  `secret_token` / `X-Telegram-Bot-Api-Secret-Token` — cannot be the bot token, Telegram forbids `:`),
+  plus username / Mini App URL / short name / direct / webhook URL. Client keys
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CARRIER_BOT_*` are unchanged.
+- Webhook-only on the API: `POST /v1/telegram/horizon-webhook`. No getUpdates poller. Boot
+  `setWebhook` uses the Horizon token only (skipped unless public HTTPS + secret; refused if the
+  Horizon token equals a client token).
+- CRM UI was already a Mini App host (Zoho OAuth, not initData login). No `src/` UI change, no
+  vendored `app/` rebuild. No bot token in `VITE_*`.
+- Isolation is asserted at boot. Gateway `.env.example` warns not to poll Horizon.
+
+Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-host>/main`, domain
+allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
+token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
+

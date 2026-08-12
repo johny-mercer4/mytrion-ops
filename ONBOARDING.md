@@ -60,8 +60,11 @@ octane-assistant/
 └── eval-reports/             committed agent behaviour eval runs
 ```
 
-**Two Telegram bots share one token.** Running `agent-telegram-bot` and `agent-gateway` at the same
-time = Telegram 409 Conflict. `agent-gateway` is the product one.
+**Two Telegram agent apps share one client token.** Running `agent-telegram-bot` and `agent-gateway` at
+the same time = Telegram 409 Conflict. `agent-gateway` is the product one (`TELEGRAM_BOT_TOKEN`).
+
+**Horizon is a third bot.** Worker CRM Mini App (`apps/mytrion-crm`) uses `HORIZON_BOT_TOKEN` +
+`HORIZON_BOT_SECRET`. Do not reuse the client token. The API webhooks Horizon; it does not long-poll.
 
 ---
 
@@ -280,7 +283,7 @@ getting this wrong caused a boot crash-loop.
 | **OpenAI** | API key | `modules/llm/*` | the only required LLM key |
 | **dbt MCP** | OAuth client_credentials | `integrations/dbtMcp.ts` | **agents reach the DWH only through this** |
 | **Composio** | shared org account | `integrations/composio.ts` (ZOHO, ZOHO_DESK, FIRECRAWL) | `FF_COMPOSIO_WRITES=0` |
-| **Telegram** ×2 | bot tokens; Mini App uses HMAC `initData` | `integrations/telegram.ts`, `telegramCarrierBot.ts` | R + W |
+| **Telegram** ×3 | bot tokens; carrier Mini App HMAC `initData` uses `TELEGRAM_CARRIER_BOT_TOKEN`; Horizon HMAC uses `HORIZON_BOT_TOKEN`; Horizon webhook uses `HORIZON_BOT_SECRET` | `integrations/telegram.ts`, `telegramCarrierBot.ts`, `telegramHorizonBot.ts` | R + W |
 | **Zapier** | webhook URL | `integrations/zapier.ts` | outbound only |
 | **Browser automation (BOCA)** | `x-api-key` | `integrations/browserAutomation.ts` | W, 300s timeout |
 | **Anthropic** | API key | **only** in `apps/agent-gateway` (`claude-sonnet-4-5`) | sidecar |
