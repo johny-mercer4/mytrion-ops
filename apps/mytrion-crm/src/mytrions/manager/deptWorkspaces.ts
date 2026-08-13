@@ -7,10 +7,10 @@
  * it has one block or five, and a new block is an entry here rather than a layout change.
  */
 import type { LucideIcon } from 'lucide-react';
-import { ClipboardList, Gauge, Megaphone } from 'lucide-react';
+import { ClipboardList, Gauge } from 'lucide-react';
 import type { ManagerDepartmentId } from './managerNav';
 
-export type DeptWorkspaceId = 'tasks' | 'kpi' | 'announcements';
+export type DeptWorkspaceId = 'tasks' | 'kpi';
 
 export interface DeptWorkspace {
   id: DeptWorkspaceId;
@@ -42,23 +42,13 @@ const KPI: DeptWorkspace = {
   tone: 'var(--tone-emerald)',
 };
 
-const ANNOUNCEMENTS: DeptWorkspace = {
-  id: 'announcements',
-  label: 'Announcements',
-  tag: 'Publish',
-  description:
-    'Compose department-wide updates, preview exactly what agents will see and publish them to the right teams.',
-  icon: Megaphone,
-  tone: 'var(--tone-sky)',
-};
-
 /**
  * Which blocks a desk offers. Tasks is universal; KPI is Sales-only for now because its metrics are
  * sales-shaped (deal app fills, fuel volume by owning agent) and the other desks have no equivalent
  * yet. Add an entry here when one does — do not generalise the Sales query to fit.
  */
 const BY_DEPARTMENT: Partial<Record<ManagerDepartmentId, readonly DeptWorkspace[]>> = {
-  sales: [TASKS, KPI, ANNOUNCEMENTS],
+  sales: [TASKS, KPI],
 };
 
 export function deptWorkspaces(department: ManagerDepartmentId): readonly DeptWorkspace[] {
@@ -66,5 +56,5 @@ export function deptWorkspaces(department: ManagerDepartmentId): readonly DeptWo
 }
 
 export function isDeptWorkspace(value: string): value is DeptWorkspaceId {
-  return value === 'tasks' || value === 'kpi' || value === 'announcements';
+  return value === 'tasks' || value === 'kpi';
 }

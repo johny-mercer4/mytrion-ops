@@ -16,7 +16,6 @@ import type { ManagerTaskDepartment } from '../../api/managerTasks';
 import { deptWorkspaces, type DeptWorkspaceId } from './deptWorkspaces';
 import { TasksBlock } from './tasks/TasksBlock';
 import { SalesKpiBlock } from './kpi/SalesKpiBlock';
-import { AnnouncementsBlock } from './announcements/AnnouncementsBlock';
 
 export function DepartmentDesk({ dept }: { dept: ManagerDepartment }) {
   const Icon = dept.icon;
@@ -97,7 +96,6 @@ export function DepartmentDesk({ dept }: { dept: ManagerDepartment }) {
       ) : null}
 
       {active?.id === 'kpi' ? <SalesKpiBlock /> : null}
-      {active?.id === 'announcements' ? <AnnouncementsBlock /> : null}
     </div>
   );
 }

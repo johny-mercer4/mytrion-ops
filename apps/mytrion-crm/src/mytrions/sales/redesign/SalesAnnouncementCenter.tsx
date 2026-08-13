@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
-  listSalesAnnouncements,
-  markSalesAnnouncementRead,
+  listAnnouncements,
+  markAnnouncementRead,
+  recordAnnouncementView,
   type MytrionAnnouncementDto,
 } from '../../../api/announcements';
 import { Badge } from '../../../ds/Badge/Badge';
@@ -10,8 +11,8 @@ import { Dialog } from '../../../ds/Dialog/Dialog';
 import { EmptyState } from '../../../ds/EmptyState/EmptyState';
 import { Icon } from '../../../ds/Icon/Icon';
 import { Skeleton } from '../../../ds/Skeleton/Skeleton';
-import { Markdown } from '../../../features/chat/Markdown';
 import { useLoad } from '../../_shared/useLoad';
+import { AnnouncementContent } from '../../manager/announcements/AnnouncementContent';
 import './salesAnnouncements.css';
 
 function formatDate(value: string, includeYear = false): string {
@@ -73,7 +74,7 @@ function AnnouncementCard({
 }
 
 export function SalesAnnouncementCenter() {
-  const announcements = useLoad(() => listSalesAnnouncements(), []);
+  const announcements = useLoad(() => listAnnouncements(), []);
   const [view, setView] = useState<'new' | 'archive'>('new');
   const [selected, setSelected] = useState<MytrionAnnouncementDto | null>(null);
   const [markingRead, setMarkingRead] = useState(false);
@@ -88,7 +89,7 @@ export function SalesAnnouncementCenter() {
     setMarkingRead(true);
     setReadError(null);
     try {
-      await markSalesAnnouncementRead(selected.id);
+      await markAnnouncementRead(selected.id);
       setSelected(null);
       setView('archive');
       announcements.reload();
@@ -97,6 +98,12 @@ export function SalesAnnouncementCenter() {
     } finally {
       setMarkingRead(false);
     }
+  };
+
+  const openAnnouncement = (announcement: MytrionAnnouncementDto): void => {
+    setSelected(announcement);
+    setReadError(null);
+    void recordAnnouncementView(announcement.id).catch(() => undefined);
   };
 
   return (
@@ -153,10 +160,7 @@ export function SalesAnnouncementCenter() {
             <AnnouncementCard
               key={announcement.id}
               announcement={announcement}
-              onOpen={(next) => {
-                setSelected(next);
-                setReadError(null);
-              }}
+              onOpen={openAnnouncement}
             />
           ))
         )}
@@ -199,7 +203,7 @@ export function SalesAnnouncementCenter() {
                 <Badge intent="neutral">Standard priority</Badge>
               )}
             </div>
-            <Markdown text={selected.body} />
+            <AnnouncementContent text={selected.body} />
             {readError ? (
               <p className="sa-detail-error" role="alert">
                 {readError}

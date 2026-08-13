@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { mytrionAnnouncementRepo } from '../../repos/mytrionAnnouncementRepo.js';
+import type { MytrionAnnouncement } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment } from './helpers.js';
+import { requireDepartment, requireInternal } from './helpers.js';
 
 const DEPARTMENTS = [
   'sales',
@@ -33,9 +34,7 @@ function readerDepartments(ctx: TenantContext): string[] {
 }
 
 function dto(
-  announcement: Awaited<ReturnType<typeof mytrionAnnouncementRepo.listForManager>>[number] & {
-    readAt?: Date | null;
-  },
+  announcement: MytrionAnnouncement & { readAt?: Date | null; viewCount?: number },
 ) {
   return {
     id: announcement.id,
@@ -46,6 +45,7 @@ function dto(
     createdByUserId: announcement.createdByUserId,
     publishedAt: announcement.publishedAt.toISOString(),
     createdAt: announcement.createdAt.toISOString(),
+    ...(announcement.viewCount !== undefined ? { viewCount: announcement.viewCount } : {}),
     ...(announcement.readAt !== undefined
       ? { readAt: announcement.readAt?.toISOString() ?? null, read: announcement.readAt != null }
       : {}),
@@ -83,7 +83,7 @@ export async function mytrionAnnouncementsRoutes(app: FastifyInstance): Promise<
   });
 
   app.get('/announcements', auth, async (request) => {
-    const ctx = requireDepartment(request, 'sales', 'Sales announcements');
+    const ctx = requireInternal(request, 'Department announcements');
     const query = listSchema.parse(request.query ?? {});
     const announcements = await mytrionAnnouncementRepo.listForReader(
       ctx,
@@ -95,10 +95,27 @@ export async function mytrionAnnouncementsRoutes(app: FastifyInstance): Promise<
   });
 
   app.post<{ Params: { announcementId: string } }>(
+    '/announcements/:announcementId/view',
+    auth,
+    async (request) => {
+      const ctx = requireInternal(request, 'Department announcements');
+      const announcementId = z.string().trim().min(1).max(160).parse(request.params.announcementId);
+      const viewed = await mytrionAnnouncementRepo.recordView(
+        ctx,
+        announcementId,
+        ctx.userId,
+        readerDepartments(ctx),
+      );
+      if (!viewed) throw new NotFoundError('Announcement not found');
+      return { viewed: true, id: announcementId };
+    },
+  );
+
+  app.post<{ Params: { announcementId: string } }>(
     '/announcements/:announcementId/read',
     auth,
     async (request) => {
-      const ctx = requireDepartment(request, 'sales', 'Sales announcements');
+      const ctx = requireInternal(request, 'Department announcements');
       const announcementId = z.string().trim().min(1).max(160).parse(request.params.announcementId);
       const marked = await mytrionAnnouncementRepo.markRead(
         ctx,

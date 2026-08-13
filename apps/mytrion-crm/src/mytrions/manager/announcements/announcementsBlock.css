@@ -228,6 +228,15 @@
   flex: none;
 }
 
+.an-published-stats {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 .an-mobile-tabs {
   display: none;
 }

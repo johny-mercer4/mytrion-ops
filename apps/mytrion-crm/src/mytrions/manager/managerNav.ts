@@ -20,6 +20,7 @@ import {
   Fuel,
   Headphones,
   LineChart,
+  Megaphone,
   Smartphone,
   TrendingUp,
 } from 'lucide-react';
@@ -27,7 +28,7 @@ import type { UserContext } from '../../context/userContext';
 import { canSeeTab } from '../../access/resolveAccess';
 
 /** Cards on the Overview hub. Add an id here as new hub blocks land (payouts, approvals, KPIs, …). */
-export type ManagerCardId = 'efs';
+export type ManagerCardId = 'efs' | 'announcements';
 
 export type ManagerDepartmentId =
   | 'sales'
@@ -82,6 +83,16 @@ export const MANAGER_CARDS: ManagerCard[] = [
     // Same Layer-2 posture as the other two: entering Manager is the gate. The real boundary is
     // the `management`-gated /v1/manager/efs/* endpoint, which additionally refuses any carrier
     // that is not in octane.dim_company.
+    access: () => true,
+  },
+  {
+    id: 'announcements',
+    label: 'Announcements',
+    tag: 'Publish',
+    description:
+      'Create company updates, target any combination of departments and track how many agents viewed each announcement.',
+    icon: Megaphone,
+    tone: 'var(--tone-violet)',
     access: () => true,
   },
 ];

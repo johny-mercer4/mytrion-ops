@@ -59,5 +59,28 @@ export const mytrionAnnouncementReads = pgTable(
   }),
 );
 
+/** One unique view per worker and announcement; opening does not imply acknowledgement. */
+export const mytrionAnnouncementViews = pgTable(
+  'mytrion_announcement_views',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => `mav_${createId()}`),
+    tenantId: text('tenant_id').notNull(),
+    announcementId: text('announcement_id')
+      .notNull()
+      .references(() => mytrionAnnouncements.id, { onDelete: 'cascade' }),
+    viewerUserId: text('viewer_user_id').notNull(),
+    viewedAt: timestamp('viewed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    announcementViewerUk: uniqueIndex('mytrion_announcement_views_announcement_viewer_uk').on(
+      table.tenantId,
+      table.announcementId,
+      table.viewerUserId,
+    ),
+  }),
+);
+
 export type MytrionAnnouncement = typeof mytrionAnnouncements.$inferSelect;
 export type NewMytrionAnnouncement = typeof mytrionAnnouncements.$inferInsert;

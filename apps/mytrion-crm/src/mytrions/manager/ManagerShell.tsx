@@ -15,6 +15,7 @@ import { readManagerUrlState, writeManagerUrlState } from './managerUrlState';
 import { DepartmentDesk } from './DepartmentDesk';
 import { ManagerHome } from './ManagerHome';
 import { EfsConsoleCard } from './cards/EfsConsoleCard';
+import { AnnouncementsWorkspace } from './announcements/AnnouncementsWorkspace';
 import { isEfsTab, type EfsTabId } from './cards/efs/efsModel';
 import { MYTRION_URL_SLUG } from '../../access/mytrions.config';
 import { canAccess } from '../../access/resolveAccess';
@@ -26,7 +27,7 @@ import '../_shared/hub/hubChips.css';
 import '../_shared/hub/hubDialog.css';
 import '../_shared/hub/hubTheme.css';
 
-const CARD_IDS: readonly ManagerCardId[] = ['efs'];
+const CARD_IDS: readonly ManagerCardId[] = ['efs', 'announcements'];
 
 /**
  * Referrals and Loyalty moved to the Marketing Mytrion. Their `?card=` links were pasted into
@@ -172,7 +173,7 @@ export function ManagerShell() {
           tone: 'var(--tone-pink)',
           active: view === 'overview' || CARD_IDS.includes(view as ManagerCardId),
           onClick: () => go('overview'),
-          keywords: ['home', 'hub', 'efs', 'fuel', 'cards'],
+          keywords: ['home', 'hub', 'efs', 'fuel', 'cards', 'announcements', 'communications'],
         },
       ],
     },
@@ -207,6 +208,9 @@ export function ManagerShell() {
             onSelect={selectCarrier}
             onTab={selectTab}
           />
+        ) : null}
+        {view === 'announcements' ? (
+          <AnnouncementsWorkspace onBack={() => go('overview')} />
         ) : null}
         {activeDept ? <DepartmentDesk dept={activeDept} /> : null}
       </div>

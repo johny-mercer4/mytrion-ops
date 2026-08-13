@@ -12,9 +12,9 @@ import { Checkbox } from '../../../ds/Checkbox/Checkbox';
 import { EmptyState } from '../../../ds/EmptyState/EmptyState';
 import { Input } from '../../../ds/Input/Input';
 import { Skeleton } from '../../../ds/Skeleton/Skeleton';
-import { Markdown } from '../../../features/chat/Markdown';
 import { useLoad } from '../../_shared/useLoad';
-import { HrRichText } from '../../hr/HrRichText';
+import { AnnouncementContent } from './AnnouncementContent';
+import { AnnouncementRichEditor } from './AnnouncementRichEditor';
 import './announcementsBlock.css';
 
 const DEPARTMENTS: ReadonlyArray<{ id: AnnouncementDepartment; label: string }> = [
@@ -22,6 +22,8 @@ const DEPARTMENTS: ReadonlyArray<{ id: AnnouncementDepartment; label: string }> 
   { id: 'customer-service', label: 'Customer Service' },
   { id: 'billing', label: 'Billing' },
   { id: 'collection', label: 'Collection' },
+  { id: 'finance', label: 'Finance' },
+  { id: 'mobile', label: 'Mobile' },
   { id: 'verification', label: 'Verification' },
 ];
 
@@ -51,7 +53,11 @@ function AnnouncementPreview({
       <h3>{title.trim() || 'Your announcement title'}</h3>
       <time>{dateLabel(new Date().toISOString())}</time>
       <div className="an-preview-body">
-        {body.trim() ? <Markdown text={body} /> : <p>Your message preview updates as you type.</p>}
+        {body.trim() ? (
+          <AnnouncementContent text={body} />
+        ) : (
+          <p>Your message preview updates as you type.</p>
+        )}
       </div>
     </article>
   );
@@ -86,7 +92,10 @@ function PublishedList({ announcements }: { announcements: MytrionAnnouncementDt
                 .join(' · ')}
             </div>
           </div>
-          <time>{dateLabel(announcement.publishedAt)}</time>
+          <div className="an-published-stats">
+            <span>{announcement.viewCount ?? 0} views</span>
+            <time>{dateLabel(announcement.publishedAt)}</time>
+          </div>
         </article>
       ))}
     </div>
@@ -97,7 +106,7 @@ export function AnnouncementsBlock() {
   const announcements = useLoad(() => listManagerAnnouncements(), []);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [targets, setTargets] = useState<AnnouncementDepartment[]>(['sales']);
+  const [targets, setTargets] = useState<AnnouncementDepartment[]>([]);
   const [priority, setPriority] = useState<AnnouncementPriority>('normal');
   const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -194,7 +203,7 @@ export function AnnouncementsBlock() {
             <label className="an-field-label" htmlFor="announcement-body">
               Body
             </label>
-            <HrRichText
+            <AnnouncementRichEditor
               id="announcement-body"
               value={body}
               onChange={(value) => {
@@ -202,7 +211,6 @@ export function AnnouncementsBlock() {
                 setMessage(null);
               }}
               placeholder="Share the update and any next steps…"
-              rows={7}
             />
 
             <fieldset className="an-targets">
@@ -276,9 +284,9 @@ export function AnnouncementsBlock() {
           </div>
         </form>
 
-        <aside className="an-preview" aria-label="Live Sales preview">
+        <aside className="an-preview" aria-label="Live targeted-agent preview">
           <header className="an-panel-head">
-            <span className="an-live-dot" aria-hidden="true" /> Sales agent sees
+            <span className="an-live-dot" aria-hidden="true" /> Targeted agents see
           </header>
           <div className="an-preview-stage">
             <AnnouncementPreview title={title} body={body} priority={priority} />

@@ -11,6 +11,7 @@ vi.mock('../../src/repos/mytrionAnnouncementRepo.js', () => ({
     listForManager: vi.fn(),
     listForReader: vi.fn(),
     markRead: vi.fn(),
+    recordView: vi.fn(),
   },
 }));
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   repo.listForManager.mockResolvedValue([]);
   repo.listForReader.mockResolvedValue([]);
   repo.markRead.mockResolvedValue(true);
+  repo.recordView.mockResolvedValue(true);
 });
 
 describe('manager announcements', () => {
@@ -119,7 +121,7 @@ describe('manager announcements', () => {
   });
 });
 
-describe('sales announcement lifecycle', () => {
+describe('department announcement lifecycle', () => {
   it('lists the signed-in worker’s department feed with read state', async () => {
     repo.listForReader.mockResolvedValue([
       { ...announcement(), readAt: null },
@@ -158,6 +160,23 @@ describe('sales announcement lifecycle', () => {
       'zoho:77',
       ['sales'],
     );
+  });
+
+  it('records a unique view without marking the announcement read', async () => {
+    const salesToken = await token({ profile: 'Sales Rep' });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/announcements/man_1/view',
+      headers: bearer(salesToken),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(repo.recordView).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID }),
+      'man_1',
+      'zoho:77',
+      ['sales'],
+    );
+    expect(repo.markRead).not.toHaveBeenCalled();
   });
 
   it('does not expose an announcement outside the reader audience', async () => {

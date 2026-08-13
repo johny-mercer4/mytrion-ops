@@ -3,12 +3,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SalesAnnouncementCenter } from './SalesAnnouncementCenter';
 
-const listSalesAnnouncements = vi.fn();
-const markSalesAnnouncementRead = vi.fn();
+const listAnnouncements = vi.fn();
+const markAnnouncementRead = vi.fn();
+const recordAnnouncementView = vi.fn();
 
 vi.mock('../../../api/announcements', () => ({
-  listSalesAnnouncements: () => listSalesAnnouncements(),
-  markSalesAnnouncementRead: (id: string) => markSalesAnnouncementRead(id),
+  listAnnouncements: () => listAnnouncements(),
+  markAnnouncementRead: (id: string) => markAnnouncementRead(id),
+  recordAnnouncementView: (id: string) => recordAnnouncementView(id),
 }));
 
 const rows = [
@@ -40,8 +42,9 @@ const rows = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listSalesAnnouncements.mockResolvedValue(rows);
-  markSalesAnnouncementRead.mockResolvedValue(undefined);
+  listAnnouncements.mockResolvedValue(rows);
+  markAnnouncementRead.mockResolvedValue(undefined);
+  recordAnnouncementView.mockResolvedValue(undefined);
   HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) {
     this.setAttribute('open', '');
   });
@@ -63,11 +66,12 @@ describe('SalesAnnouncementCenter', () => {
   it('keeps Close unread and moves Got it to Archive after the API succeeds', async () => {
     render(<SalesAnnouncementCenter />);
     fireEvent.click(await screen.findByRole('button', { name: /Q3 Sales Target Update/ }));
+    expect(recordAnnouncementView).toHaveBeenCalledWith('man_new');
     fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!);
-    expect(markSalesAnnouncementRead).not.toHaveBeenCalled();
+    expect(markAnnouncementRead).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /Q3 Sales Target Update/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
-    await waitFor(() => expect(markSalesAnnouncementRead).toHaveBeenCalledWith('man_new'));
+    await waitFor(() => expect(markAnnouncementRead).toHaveBeenCalledWith('man_new'));
   });
 });

@@ -15449,3 +15449,26 @@ schema changes. Desktop and 390px visual QA covered Manager Compose/Preview plus
 Got it/Archive. The full backend suite still has unrelated baseline/environment failures (109 of 2618,
 including localhost WebSocket `EPERM`, profile-gate expectations, and timeouts); the feature suite is
 green in isolation.
+
+## 2026-08-13 — Announcements become a company publishing workspace
+
+Follow-up to Issue 12 moved Announcements out of the Sales department desk and into the Manager
+Overview's Workspaces row. One composer now targets any combination of Sales, Customer Service,
+Billing, Collection, Finance, Mobile, and Verification; the reader API is internal/audience-scoped
+instead of Sales-gated, and repository audience predicates still decide which rows a worker may see.
+
+The body field is now a publishing editor: H2/H3, bold/italic, quote, bulleted/numbered lists, links,
+left/center/right alignment, Write/Preview, image uploads, and general file attachments. Uploaded
+assets are stored through the existing governed file service. Announcement bodies persist durable
+file-id tokens, never expiring presigned URLs; readers resolve a fresh RBAC-checked URL when an image
+is displayed or a file is downloaded. Markdown remains sanitized and raw HTML remains disabled.
+
+Added idempotent per-worker view receipts and a manager-side unique view count. Opening records a
+view without acknowledging the post; Close preserves New, while Got it remains the explicit read /
+archive action.
+
+Verification: backend and CRM typechecks green; announcement backend tests 7/7; CRM 858/858; token,
+breakpoint, upload, alignment, durable-asset, and signed-link tests green; Drizzle reports no schema
+drift after migration 0118; production widget rebuilt. Local browser QA at 1280px and 390px covered
+the Manager workspace entry, full toolbar, live preview, local image upload, fresh asset rendering,
+and compact Write/Preview mode with no browser errors.
