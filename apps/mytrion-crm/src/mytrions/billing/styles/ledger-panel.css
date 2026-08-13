@@ -1213,3 +1213,117 @@
     color: var(--accent-on);
     font-size: 0.75rem;
 }
+
+/* Phone: section list is company + closing; statement is date + amount. */
+@media (width < 640px) {
+    .bm-root .bm-ledger-panel .lg-section-header { display: none; }
+    .bm-root .bm-ledger-panel .lg-section-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+            "company closing chev"
+            "carrier closing chev";
+        align-items: center;
+        column-gap: 12px;
+        row-gap: 3px;
+        min-height: 56px;
+        padding: 12px 14px;
+        flex-wrap: nowrap;
+    }
+    .bm-root .bm-ledger-panel .db-col-company { grid-area: company; min-width: 0; }
+    .bm-root .bm-ledger-panel .db-col-carrier {
+        grid-area: carrier;
+        flex: none;
+        min-width: 0;
+    }
+    .bm-root .bm-ledger-panel .lg-col-closing { grid-area: closing; }
+    .bm-root .bm-ledger-panel .lg-col-cycle,
+    .bm-root .bm-ledger-panel .lg-col-amt:not(.lg-col-closing) { display: none; }
+    .bm-root .bm-ledger-panel .lg-breakdown,
+    .bm-root .bm-ledger-panel .lg-recon { display: none; }
+    .bm-root .bm-ledger-panel .db-company-name {
+        font-size: 16px;
+        font-weight: 650;
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .bm-root .bm-ledger-panel .db-carrier-id {
+        font-size: 13px;
+        font-family: var(--font-body);
+        color: var(--text-muted);
+    }
+    .bm-root .bm-ledger-panel .lg-amt,
+    .bm-root .bm-ledger-panel .lg-amt-closing {
+        font-size: 16px;
+        width: auto;
+        text-align: right;
+    }
+    .bm-root .bm-ledger-panel .lg-section-row::after {
+        content: '';
+        grid-area: chev;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--text-muted);
+        border-bottom: 2px solid var(--text-muted);
+        rotate: -45deg;
+    }
+}
+
+.bm-root .lg-stmt-phone {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.bm-root .lg-stmt-phone-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "title amt"
+        "meta amt";
+    column-gap: 12px;
+    row-gap: 3px;
+    align-items: center;
+    min-height: 56px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.bm-root .lg-stmt-phone-row:last-child { border-bottom: none; }
+
+.bm-root .lg-stmt-phone-title {
+    grid-area: title;
+    font-size: 16px;
+    font-weight: 650;
+    color: var(--text-primary);
+}
+
+.bm-root .lg-stmt-phone-meta {
+    grid-area: meta;
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bm-root .lg-stmt-phone-amt {
+    grid-area: amt;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.bm-root .lg-stmt-phone-row--bookend {
+    background: var(--surface-raised);
+}
+
+.bm-root .lg-stmt-phone-empty {
+    padding: 1.25rem 14px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}

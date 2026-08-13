@@ -820,6 +820,13 @@
       "when": 1786130433001,
       "tag": "0115_permission_set_override",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1786185000001,
+      "tag": "0116_horizon_worker_telegram_links",
+      "breakpoints": true
     }
   ]
 }

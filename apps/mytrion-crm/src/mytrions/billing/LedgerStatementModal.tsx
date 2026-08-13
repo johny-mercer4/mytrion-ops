@@ -20,6 +20,7 @@ import { useEffect } from 'react';
 
 import { fetchLedgerStatement } from '../../api/billing';
 import type { LedgerSectionId } from '../../api/ledgerTypes';
+import { useIsPhone } from '../../hooks/useMediaQuery';
 import { useLoad } from '../_shared/useLoad';
 import { fmtMoney, formatYmdShort, formatYmd, toWireRange, type LedgerRange } from './ledgerModel';
 import type { AmountColumn } from './LedgerTable';
@@ -41,6 +42,7 @@ export function LedgerStatementModal({
   range: LedgerRange;
   onClose: () => void;
 }) {
+  const phone = useIsPhone();
   const wire = toWireRange(range);
   const load = useLoad(
     () => fetchLedgerStatement({ carrierId, section, ...wire }),
@@ -148,63 +150,95 @@ export function LedgerStatementModal({
                 </div>
               ) : null}
 
-              <div className="lg-preview-wrap">
-                <table className="lg-stmt-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th className={`lg-th-num${column === 'debit' ? ' lg-th-active' : ''}`}>Debit</th>
-                      <th className={`lg-th-num${column === 'credit' ? ' lg-th-active' : ''}`}>Credit</th>
-                      <th
-                        className="lg-th-num lg-th-running"
-                        title={
-                          isBalance
-                            ? 'Running balance after each line.'
-                            : 'Cumulative movement — no opening balance is recorded, so this is not a balance.'
-                        }
-                      >
-                        {isBalance ? 'Balance' : 'Net movement'}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="lg-stmt-bookend">
-                      <td>{formatYmdShort(d.period.startDate)}</td>
-                      <td>{isBalance ? 'Opening balance' : 'Opening balance — not recorded'}</td>
-                      <td className="lg-td-num" />
-                      <td className="lg-td-num" />
-                      <td className="lg-td-num lg-stmt-running">{isBalance ? fmtMoney(d.opening) : '—'}</td>
-                    </tr>
-                    {lines.length === 0 ? (
+              {phone ? (
+                <div className="lg-stmt-phone" aria-label="Statement lines">
+                  <div className="lg-stmt-phone-row lg-stmt-phone-row--bookend">
+                    <span className="lg-stmt-phone-title">{formatYmdShort(d.period.startDate)}</span>
+                    <span className="lg-stmt-phone-meta">
+                      {isBalance ? 'Opening balance' : 'Opening balance — not recorded'}
+                    </span>
+                    <span className="lg-stmt-phone-amt">{isBalance ? fmtMoney(d.opening) : '—'}</span>
+                  </div>
+                  {lines.length === 0 ? (
+                    <div className="lg-stmt-phone-empty">No activity in this period.</div>
+                  ) : (
+                    lines.map((l) => (
+                      <div key={l.id} className="lg-stmt-phone-row">
+                        <span className="lg-stmt-phone-title">{formatYmdShort(l.date)}</span>
+                        <span className="lg-stmt-phone-meta">{l.description}</span>
+                        <span className="lg-stmt-phone-amt">{fmtMoney(l.running)}</span>
+                      </div>
+                    ))
+                  )}
+                  <div className="lg-stmt-phone-row lg-stmt-phone-row--bookend">
+                    <span className="lg-stmt-phone-title">{formatYmdShort(d.period.endDate)}</span>
+                    <span className="lg-stmt-phone-meta">
+                      {isBalance ? 'Closing balance' : 'Net movement for the period'}
+                    </span>
+                    <span className="lg-stmt-phone-amt">
+                      {isBalance ? fmtMoney(d.closing) : fmtMoney(d.debit - d.credit)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="lg-preview-wrap">
+                  <table className="lg-stmt-table">
+                    <thead>
                       <tr>
-                        <td colSpan={5} className="lg-td-empty">
-                          No activity in this period.
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th className={`lg-th-num${column === 'debit' ? ' lg-th-active' : ''}`}>Debit</th>
+                        <th className={`lg-th-num${column === 'credit' ? ' lg-th-active' : ''}`}>Credit</th>
+                        <th
+                          className="lg-th-num lg-th-running"
+                          title={
+                            isBalance
+                              ? 'Running balance after each line.'
+                              : 'Cumulative movement — no opening balance is recorded, so this is not a balance.'
+                          }
+                        >
+                          {isBalance ? 'Balance' : 'Net movement'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="lg-stmt-bookend">
+                        <td>{formatYmdShort(d.period.startDate)}</td>
+                        <td>{isBalance ? 'Opening balance' : 'Opening balance — not recorded'}</td>
+                        <td className="lg-td-num" />
+                        <td className="lg-td-num" />
+                        <td className="lg-td-num lg-stmt-running">{isBalance ? fmtMoney(d.opening) : '—'}</td>
+                      </tr>
+                      {lines.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="lg-td-empty">
+                            No activity in this period.
+                          </td>
+                        </tr>
+                      ) : (
+                        lines.map((l) => (
+                          <tr key={l.id}>
+                            <td>{formatYmdShort(l.date)}</td>
+                            <td className="lg-stmt-desc">{l.description}</td>
+                            <td className="lg-td-num">{l.debit !== null ? fmtMoney(l.debit) : ''}</td>
+                            <td className="lg-td-num">{l.credit !== null ? fmtMoney(l.credit) : ''}</td>
+                            <td className="lg-td-num lg-stmt-running">{fmtMoney(l.running)}</td>
+                          </tr>
+                        ))
+                      )}
+                      <tr className="lg-stmt-bookend">
+                        <td>{formatYmdShort(d.period.endDate)}</td>
+                        <td>{isBalance ? 'Closing balance' : 'Net movement for the period'}</td>
+                        <td className="lg-td-num">{fmtMoney(d.debit)}</td>
+                        <td className="lg-td-num">{fmtMoney(d.credit)}</td>
+                        <td className="lg-td-num lg-stmt-running">
+                          {isBalance ? fmtMoney(d.closing) : fmtMoney(d.debit - d.credit)}
                         </td>
                       </tr>
-                    ) : (
-                      lines.map((l) => (
-                        <tr key={l.id}>
-                          <td>{formatYmdShort(l.date)}</td>
-                          <td className="lg-stmt-desc">{l.description}</td>
-                          <td className="lg-td-num">{l.debit !== null ? fmtMoney(l.debit) : ''}</td>
-                          <td className="lg-td-num">{l.credit !== null ? fmtMoney(l.credit) : ''}</td>
-                          <td className="lg-td-num lg-stmt-running">{fmtMoney(l.running)}</td>
-                        </tr>
-                      ))
-                    )}
-                    <tr className="lg-stmt-bookend">
-                      <td>{formatYmdShort(d.period.endDate)}</td>
-                      <td>{isBalance ? 'Closing balance' : 'Net movement for the period'}</td>
-                      <td className="lg-td-num">{fmtMoney(d.debit)}</td>
-                      <td className="lg-td-num">{fmtMoney(d.credit)}</td>
-                      <td className="lg-td-num lg-stmt-running">
-                        {isBalance ? fmtMoney(d.closing) : fmtMoney(d.debit - d.credit)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <p className="lg-modal-note">
                 {lines.length} line{lines.length === 1 ? '' : 's'}

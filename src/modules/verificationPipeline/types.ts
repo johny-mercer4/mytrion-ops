@@ -59,7 +59,8 @@ export interface PipelineRequirementField {
   label: string;
   type: PipelineRequirementFieldType;
   required: boolean;
-  placeholder?: string;
+  /** What Verification needs in this field so the application can proceed. Never an HTML placeholder. */
+  hint?: string;
   options?: string[];
 }
 
@@ -197,6 +198,12 @@ export function normalizeReviewState(
   return 'queued';
 }
 
+/**
+ * Zoho-only fallback when credit_platform has no request for the deal. Live `summary.state` always
+ * wins on the roster. "Declined-Prepay/Secured Only" is a CREDIT product decision (no LOC) — it
+ * still maps to `rejected` here so the "Rejected (prepay)" filter has a Zoho-side bucket when the
+ * desk has not opened a request. It is NOT proof the verification desk closed the case.
+ */
 export function deriveZohoState(input: {
   creditDecision: string | null;
   applicationStatus: string | null;
@@ -205,9 +212,7 @@ export function deriveZohoState(input: {
   const cd = (input.creditDecision ?? '').trim().toLowerCase();
   if (cd) {
     if (cd.startsWith('approved')) return 'approved';
-    if (cd.startsWith('declined') || cd.includes('reject') || cd.includes('prepay') || cd.includes('secured')) {
-      return 'rejected';
-    }
+    if (cd.startsWith('declined') || cd.includes('reject')) return 'rejected';
   }
   if (input.applicationId || input.applicationStatus) return 'in_progress';
   return null;

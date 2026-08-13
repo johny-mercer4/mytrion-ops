@@ -49,7 +49,7 @@ export function LoginGate({ initialError }: { initialError?: string | undefined 
       error={error}
       action={
         busy ? null : (
-          <button type="button" className={styles.button} style={{ minHeight: 44 }} onClick={() => void signIn()}>
+          <button type="button" className={styles.button} onClick={() => void signIn()}>
             Sign in with Zoho
           </button>
         )

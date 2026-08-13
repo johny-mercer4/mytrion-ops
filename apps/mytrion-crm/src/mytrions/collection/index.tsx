@@ -35,12 +35,14 @@ export default function CollectionMytrion() {
       label: 'Collection',
       items: tabs.map((tab) => ({
         key: tab.id,
-        label: tab.soon ? `${tab.label} · Soon` : tab.label,
+        label: tab.label,
         icon: <tab.icon size={19} />,
         tone: tab.tone,
         active: view === tab.id,
         onClick: () => open(tab.id),
         keywords: tab.keywords,
+        ...(tab.soon ? { soon: true } : {}),
+        primary: tab.id === 'home',
       })),
     },
   ];

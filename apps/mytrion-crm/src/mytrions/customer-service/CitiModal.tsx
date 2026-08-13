@@ -6,7 +6,7 @@
  * canonical option lists (live CRM metadata must not overwrite them); Company is an Accounts
  * typeahead, Agent/Owner are user lookups. Lookup values write as {id} objects (Zoho REST contract).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   createCitifuel,
@@ -74,6 +74,8 @@ export function CitiModal({
   const isCreating = client === null;
   const raw = client?.raw ?? {};
   useScrollLock();
+  const titleId = useId();
+  const companySearchId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // A new client is owned by whoever creates it — the widget left Owner blank, so every new record
@@ -261,10 +263,17 @@ export function CitiModal({
 
   return (
     <div className="cs-modal-backdrop" onClick={(e) => e.target === e.currentTarget && !saving && !deleting && onClose()}>
-      <div className="cs-modal-box cs-modal-wide" ref={boxRef} tabIndex={-1}>
+      <div
+        className="cs-modal-box cs-modal-wide"
+        ref={boxRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="cs-modal-header">
-          <h3 className="cs-modal-title">{isCreating ? 'New Citifuel Client' : client?.name || 'Client'}</h3>
-          <button className="cs-modal-close" onClick={onClose} aria-label="Close">
+          <h3 className="cs-modal-title" id={titleId}>{isCreating ? 'New Citifuel Client' : client?.name || 'Client'}</h3>
+          <button type="button" className="cs-modal-close" onClick={onClose} aria-label="Close">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -287,9 +296,10 @@ export function CitiModal({
               <input className="cs-form-input" type="number" value={values.App_ID} onChange={(e) => set('App_ID', e.target.value)} />
             </div>
             <div className="cs-form-field cs-form-field-wide">
-              <label className="cs-form-label">Company (Accounts)</label>
+              <label className="cs-form-label" htmlFor={companySearchId}>Company (Accounts)</label>
               <div className="cs-lookup-wrap">
                 <input
+                  id={companySearchId}
                   className="cs-form-input"
                   autoComplete="off"
                   placeholder="Search company…"

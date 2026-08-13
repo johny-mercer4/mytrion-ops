@@ -8,8 +8,6 @@
   padding: var(--space-8);
   border-radius: var(--radius-md);
   background: var(--glass);
-  backdrop-filter: blur(var(--blur));
-  -webkit-backdrop-filter: blur(var(--blur));
   border: 1px solid var(--glass-bd);
   box-shadow: var(--glare);
   color: inherit;

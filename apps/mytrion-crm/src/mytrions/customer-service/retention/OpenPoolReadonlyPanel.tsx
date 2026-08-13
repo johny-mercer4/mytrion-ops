@@ -27,6 +27,7 @@ import { useLoad } from '../live';
 import { subscribeCsRetentionLive } from './retentionLiveBus';
 import { CaseBadge, deadlineLabel, statusLabel, statusTone } from './casesUi';
 import { DataTable, type DataColumn } from '@/ds';
+import { OpenPoolCaseSheet } from './OpenPoolCaseSheet';
 
 type SortKey = 'companyName' | 'carrierId' | 'daysInactive' | 'gallons90d' | 'assignmentCount';
 type StatusFilter = 'all' | 'available' | 'pending';
@@ -297,10 +298,6 @@ export function OpenPoolReadonlyPanel() {
     <div className="cs-panel cs-ret-panel cs-pool-panel">
       <div className="cs-panel-header">
         <div>
-          <div className="cs-pool-kicker">
-            <Layers size={13} strokeWidth={2.3} aria-hidden />
-            Sales Open Pool · readonly
-          </div>
           <h2 className="cs-panel-title">Open Pool</h2>
           <p className="cs-panel-sub">
             Quiet deals waiting for a Sales agent to claim. CS cannot claim from here — your Phase 2
@@ -465,6 +462,7 @@ export function OpenPoolReadonlyPanel() {
               detail={{
                 title: (c) => c.companyName || c.carrierId,
                 subtitle: (c) => c.carrierId,
+                render: (c) => <OpenPoolCaseSheet row={c} />,
               }}
               sort={{
                 by: sort.key,

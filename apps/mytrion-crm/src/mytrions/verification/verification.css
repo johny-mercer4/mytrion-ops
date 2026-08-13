@@ -316,8 +316,7 @@
   border: 1px solid var(--hz-pane-bd);
   background: linear-gradient(152deg, color-mix(in srgb, var(--vc) 9%, transparent), transparent 58%),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  /* No backdrop-filter: roster cards scroll in/out of view. Focus then scroll-back left them empty. */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition: border-color var(--hz-dur-tone) var(--hz-ease), box-shadow var(--hz-dur-tone) var(--hz-ease),
     transform var(--hz-dur-lift) var(--hz-ease);
@@ -720,4 +719,63 @@
   [data-mytrion='verification'] .vf-sk {
     animation: none;
   }
+}
+
+/* Horizon phone leftover pass — roster is a list; detail is a sheet. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .vf-cardc-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  [data-mytrion='verification'] .vf-cardc {
+    min-height: 3.5rem;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    padding: 12px 14px;
+    gap: 4px;
+  }
+  [data-mytrion='verification'] .vf-cardc:last-child {
+    border-bottom: none;
+  }
+  [data-mytrion='verification'] .vf-cardc-meta,
+  [data-mytrion='verification'] .vf-cardc-shimmer {
+    display: none;
+  }
+  [data-mytrion='verification'] .vf-modal-backdrop {
+    align-items: stretch;
+    justify-content: flex-end;
+    flex-direction: column;
+    padding: 0;
+  }
+  [data-mytrion='verification'] .vf-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 96dvh;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    animation: vfSheetUp var(--duration-moderate) var(--ease-decelerate);
+    position: relative;
+    padding-block-start: 20px;
+  }
+  [data-mytrion='verification'] .vf-modal::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 36px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--border);
+  }
+}
+@keyframes vfSheetUp {
+  from { translate: 0 100%; }
 }

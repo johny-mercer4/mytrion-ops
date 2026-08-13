@@ -5,7 +5,18 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { CarrierInvitation } from '../../api/carrierUsers';
-import { AlertIcon, BanIcon, BuildingIcon, CopyIcon, PersonIcon, PlusIcon, SearchIcon } from '../../components/icons';
+import {
+  AlertIcon,
+  BanIcon,
+  BuildingIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  PersonIcon,
+  PlusIcon,
+  SearchIcon,
+} from '../../components/icons';
+import { Drawer } from '@/ds';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import {
   INVITE_STATUS_LABEL,
   expiresSoon,
@@ -45,6 +56,50 @@ const PILL_CLASS: Record<InviteStatus, string> = {
   cancelled: 'pillBad', // revoked by hand
 };
 
+function profileLabel(profile: CarrierInvitation['profile']): string {
+  return profile === 'owner' ? 'Owner' : profile === 'manager' ? 'Manager' : 'Driver';
+}
+
+function InviteActions({
+  inv,
+  st,
+  live,
+  busy,
+  onCopy,
+  onCancel,
+  onReissue,
+}: {
+  inv: CarrierInvitation;
+  st: InviteStatus;
+  live: boolean;
+  busy: boolean;
+  onCopy: (url: string) => void;
+  onCancel: (inv: CarrierInvitation) => void;
+  onReissue: (inv: CarrierInvitation) => void;
+}) {
+  if (live) {
+    return (
+      <>
+        <button type="button" className={s.miniBtn} onClick={() => onCopy(inv.inviteUrl)}>
+          <CopyIcon />
+          Copy
+        </button>
+        <button type="button" className={`${s.miniBtn} ${s.miniDanger}`} disabled={busy} onClick={() => onCancel(inv)}>
+          <BanIcon />
+          Cancel
+        </button>
+      </>
+    );
+  }
+  if (st === 'redeemed') return null;
+  return (
+    <button type="button" className={s.miniBtn} onClick={() => onReissue(inv)}>
+      <PlusIcon size={10} />
+      New registration link
+    </button>
+  );
+}
+
 export function CarrierInvitations({
   invitations,
   loading,
@@ -64,6 +119,8 @@ export function CarrierInvitations({
   onCancel: (inv: CarrierInvitation) => void;
   onReissue: (inv: CarrierInvitation) => void;
 }) {
+  const phone = useIsPhone();
+  const [picked, setPicked] = useState<CarrierInvitation | null>(null);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -114,6 +171,8 @@ export function CarrierInvitations({
 
   const pageSafe = Math.min(page, Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
   const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const pickedLive = picked ? isLiveInvite(picked, now) : false;
+  const pickedSt = picked ? inviteStatus(picked, now) : null;
 
   return (
     <>
@@ -146,115 +205,182 @@ export function CarrierInvitations({
         </span>
       </label>
 
-      <div className={s.tableScroll} data-table-scroller>
-        <div className={s.table} role="table" aria-label="Carrier invitations" aria-busy={loading}>
-        <div className={`${s.tHead} ${s.tInvite}`} role="row">
-          <span role="columnheader">Company</span>
-          <span role="columnheader">Type</span>
-          <span role="columnheader">Carrier</span>
-          <span role="columnheader">Agent</span>
-          <span role="columnheader">Status</span>
-          <span role="columnheader">Expires</span>
-          <span role="columnheader">Actions</span>
-        </div>
+      {phone ? (
+        <div className={s.phoneList}>
           {loading && (
-            <>
-              <span className={s.srOnly} role="status">
-                Loading invitations…
-              </span>
-              <TableSkeleton widths={INV_SKELETON} rowClassName={s.tRow} colsClassName={s.tInvite} />
-            </>
+            <span className={s.srOnly} role="status">
+              Loading invitations…
+            </span>
           )}
-        {!loading &&
-          paged.map((inv) => {
-            const st = inviteStatus(inv, now);
-            const live = isLiveInvite(inv, now);
-            const soon = expiresSoon(inv, now);
-            return (
-              <div key={inv.id} className={`${s.tRow} ${s.tInvite}`} role="row">
-                <span className={s.cellStack} role="cell">
-                  <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
-                  {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
-                  {inv.profile === 'manager' && <span className={s.cellSub}>manager · owner-level access</span>}
-                </span>
-                <span role="cell">
-                  <span className={`${s.pill} ${s.pillNeutral}`}>
-                    {inv.profile === 'driver' ? <PersonIcon size={11} /> : <BuildingIcon size={11} />}
-                    {inv.profile === 'owner' ? 'Owner' : inv.profile === 'manager' ? 'Manager' : 'Driver'}
-                  </span>
-                </span>
-                <span className={s.mono} role="cell">
-                  {inv.carrierId ?? inv.applicationId ?? '—'}
-                </span>
-                {/* Sales agent column (2026-07-23, owner ask): who this registration link belongs
-                    to — the invite already carried agent_name; nothing rendered it. */}
-                <span className={s.cellSub} role="cell" title={inv.agentZohoUserId ?? undefined}>
-                  {inv.agentName ?? '—'}
-                </span>
-                <span role="cell">
-                  <span className={`${s.pill} ${s[PILL_CLASS[st]]}`}>{INVITE_STATUS_LABEL[st]}</span>
-                </span>
-                {/* Relative first, absolute in the tooltip: "in 4 hours" is the thing the agent is
-                    actually deciding on. Once a link is redeemed or cancelled its expiry stops
-                    meaning anything, and a countdown next to "Redeemed" just reads as still-live. */}
-                {/* Amber once it's inside its last day — the same colour "Expired" will turn into,
-                    so the warning and the outcome it predicts read as one scale. The icon carries
-                    it too: colour alone would leave the urgency invisible to anyone who can't see
-                    the hue. */}
-                <span
-                  className={`${s.cellSub} ${soon ? s.cellWarn : ''}`}
-                  role="cell"
-                  title={new Date(inv.expiresAt).toLocaleString()}
+          {!loading &&
+            paged.map((inv) => {
+              const st = inviteStatus(inv, now);
+              const soon = expiresSoon(inv, now);
+              const expiry =
+                st === 'redeemed' || st === 'cancelled'
+                  ? ''
+                  : soon
+                    ? 'expires soon'
+                    : relativeTime(inv.expiresAt, now);
+              return (
+                <button
+                  key={inv.id}
+                  type="button"
+                  className={s.phoneRow}
+                  onClick={() => setPicked(inv)}
                 >
-                  {st === 'redeemed' || st === 'cancelled' ? '—' : relativeTime(inv.expiresAt, now)}
-                  {soon && <AlertIcon />}
+                  <span className={s.phoneRowText}>
+                    <span className={s.phoneRowTitle}>{inv.companyName ?? '(unnamed company)'}</span>
+                    <span className={s.phoneRowMeta}>
+                      {[INVITE_STATUS_LABEL[st], expiry].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className={s.phoneRowChevron} aria-hidden>
+                    <ChevronRightIcon />
+                  </span>
+                </button>
+              );
+            })}
+          {!loading && !error && filtered.length === 0 && (
+            <p className={s.none}>
+              {invitations.length === 0
+                ? 'No invitations yet. Use New registration link to create one.'
+                : 'No invitations match this filter.'}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className={s.tableScroll} data-table-scroller>
+          <div className={s.table} role="table" aria-label="Carrier invitations" aria-busy={loading}>
+            <div className={`${s.tHead} ${s.tInvite}`} role="row">
+              <span role="columnheader">Company</span>
+              <span role="columnheader">Type</span>
+              <span role="columnheader">Carrier</span>
+              <span role="columnheader">Agent</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Expires</span>
+              <span role="columnheader">Actions</span>
+            </div>
+            {loading && (
+              <>
+                <span className={s.srOnly} role="status">
+                  Loading invitations…
                 </span>
-                <span style={{ display: 'flex', gap: 'var(--space-2)' }} role="cell">
-                  {live ? (
-                    <>
-                      <button type="button" className={s.miniBtn} onClick={() => onCopy(inv.inviteUrl)}>
-                        <CopyIcon />
-                        Copy
-                      </button>
-                      <button
-                        type="button"
-                        className={`${s.miniBtn} ${s.miniDanger}`}
-                        disabled={busyId === inv.id}
-                        onClick={() => onCancel(inv)}
-                      >
-                        <BanIcon />
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    st !== 'redeemed' && (
-                      // A spent link used to leave a dead row with nothing to do. There's no
-                      // resend/extend endpoint, so the honest action is to seed a fresh one — and
-                      // it's named for the control it opens, not invented as a second synonym.
-                      <button type="button" className={s.miniBtn} onClick={() => onReissue(inv)}>
-                        <PlusIcon size={10} />
-                        New registration link
-                      </button>
-                    )
-                  )}
+                <TableSkeleton widths={INV_SKELETON} rowClassName={s.tRow} colsClassName={s.tInvite} />
+              </>
+            )}
+            {!loading &&
+              paged.map((inv) => {
+                const st = inviteStatus(inv, now);
+                const live = isLiveInvite(inv, now);
+                const soon = expiresSoon(inv, now);
+                return (
+                  <div key={inv.id} className={`${s.tRow} ${s.tInvite}`} role="row">
+                    <span className={s.cellStack} role="cell">
+                      <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
+                      {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
+                      {inv.profile === 'manager' && <span className={s.cellSub}>manager · owner-level access</span>}
+                    </span>
+                    <span role="cell">
+                      <span className={`${s.pill} ${s.pillNeutral}`}>
+                        {inv.profile === 'driver' ? <PersonIcon size={11} /> : <BuildingIcon size={11} />}
+                        {profileLabel(inv.profile)}
+                      </span>
+                    </span>
+                    <span className={s.mono} role="cell">
+                      {inv.carrierId ?? inv.applicationId ?? '—'}
+                    </span>
+                    <span className={s.cellSub} role="cell" title={inv.agentZohoUserId ?? undefined}>
+                      {inv.agentName ?? '—'}
+                    </span>
+                    <span role="cell">
+                      <span className={`${s.pill} ${s[PILL_CLASS[st]]}`}>{INVITE_STATUS_LABEL[st]}</span>
+                    </span>
+                    <span
+                      className={`${s.cellSub} ${soon ? s.cellWarn : ''}`}
+                      role="cell"
+                      title={new Date(inv.expiresAt).toLocaleString()}
+                    >
+                      {st === 'redeemed' || st === 'cancelled' ? '—' : relativeTime(inv.expiresAt, now)}
+                      {soon && <AlertIcon />}
+                    </span>
+                    <span style={{ display: 'flex', gap: 'var(--space-2)' }} role="cell">
+                      <InviteActions
+                        inv={inv}
+                        st={st}
+                        live={live}
+                        busy={busyId === inv.id}
+                        onCopy={onCopy}
+                        onCancel={onCancel}
+                        onReissue={onReissue}
+                      />
+                    </span>
+                  </div>
+                );
+              })}
+            {!loading && !error && filtered.length === 0 && (
+              <div className={s.none} role="row">
+                <span role="cell">
+                  {invitations.length === 0
+                    ? 'No invitations yet. Use New registration link to create one.'
+                    : 'No invitations match this filter.'}
                 </span>
               </div>
-            );
-          })}
-          {/* Suppressed while the load error stands: no list ever arrived, so "no invitations yet"
-              would be a claim about data we don't have. */}
-          {!loading && !error && filtered.length === 0 && (
-            <div className={s.none} role="row">
-              <span role="cell">
-                {invitations.length === 0
-                  ? 'No invitations yet. Use New registration link to create one.'
-                  : 'No invitations match this filter.'}
-              </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {!loading && <Pager page={pageSafe} total={filtered.length} onChange={setPage} />}
+
+      {phone ? (
+        <Drawer
+          open={picked != null}
+          onClose={() => setPicked(null)}
+          title={picked?.companyName ?? 'Invite'}
+          subtitle="Invite details"
+          size="md"
+        >
+          {picked && pickedSt ? (
+            <>
+              <dl className={s.inviteSheetDl}>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <span className={`${s.pill} ${s[PILL_CLASS[pickedSt]]}`}>{INVITE_STATUS_LABEL[pickedSt]}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Type</dt>
+                  <dd>{profileLabel(picked.profile)}</dd>
+                </div>
+                <div>
+                  <dt>Carrier</dt>
+                  <dd>{picked.carrierId ?? picked.applicationId ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Expires</dt>
+                  <dd>
+                    {pickedSt === 'redeemed' || pickedSt === 'cancelled'
+                      ? '—'
+                      : relativeTime(picked.expiresAt, now)}
+                  </dd>
+                </div>
+              </dl>
+              <div className={s.inviteSheetActions}>
+                <InviteActions
+                  inv={picked}
+                  st={pickedSt}
+                  live={pickedLive}
+                  busy={busyId === picked.id}
+                  onCopy={onCopy}
+                  onCancel={onCancel}
+                  onReissue={onReissue}
+                />
+              </div>
+            </>
+          ) : null}
+        </Drawer>
+      ) : null}
     </>
   );
 }

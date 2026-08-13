@@ -15,8 +15,8 @@
 
 
 .cs-root .cs-citi-fuel-panel .cs-modal-box {
-    --cs-modal-accent: #EA580C;
-    --cs-modal-accent-glow: rgba(234, 88, 12, 0.14);
+    --cs-modal-accent: var(--tone-orange);
+    --cs-modal-accent-glow: color-mix(in srgb, var(--tone-orange) 14%, transparent);
 }
 
 /* ─── Backdrop ─────────────────────────────────────────────── */
@@ -311,7 +311,7 @@
 
 .cs-root .cs-confirm-danger {
     background: var(--cs-danger);
-    color: #FFFFFF;
+    color: var(--surface);
     border-color: transparent;
     font-weight: 600;
 }
@@ -322,4 +322,39 @@
 
 .cs-root .cs-confirm-danger:focus-visible {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-danger) 26%, transparent);
+}
+
+@media (width < 640px) {
+    .cs-root .cs-modal-backdrop {
+        align-items: stretch;
+        justify-content: flex-end;
+        padding: 0;
+        flex-direction: column;
+    }
+
+    .cs-root .cs-modal-box,
+    .cs-root .cs-modal-box.cs-modal-wide {
+        max-width: 100%;
+        max-height: 96dvh;
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+        animation: csSheetUp var(--duration-moderate) var(--ease-decelerate);
+        position: relative;
+        padding-top: 12px;
+    }
+
+    .cs-root .cs-modal-box::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        translate: -50% 0;
+        width: 36px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--border);
+    }
+}
+
+@keyframes csSheetUp {
+    from { translate: 0 100%; }
 }

@@ -79,18 +79,4 @@ export async function ensureTxnPdfLibs(): Promise<void> {
   await pdfLoadPromise;
 }
 
-export function deliverBlob(blob: Blob, filename: string): void {
-  if (window.MytrionDownload?.deliverBlob) {
-    window.MytrionDownload.deliverBlob(blob, filename);
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
+export { deliverBlob } from '@/lib/deliverExport';

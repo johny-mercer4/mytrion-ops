@@ -1,19 +1,19 @@
 /*
  * COMPOSITED-LAYER DISCIPLINE — read before changing anything here.
  *
- * The lift lives on .cell (the <li>) and uses `translate`, NOT `transform`, while the blur lives on
- * .card (the <a>). Three consequences, all deliberate:
+ * The lift lives on .cell (the <li>) and uses `translate`, NOT `transform`. Three consequences,
+ * all deliberate:
  *
  *   1. `translate`'s initial value is `none`, which does not promote a layer and does not make the
  *      element a containing block. The old card emitted `transform: translateY(0) scale(1)` AT REST,
  *      which does both — and stacked on backdrop-filter, that is the combination that has already
  *      shipped un-repainted children in this app.
- *   2. The translating node and the blurred node are different elements, so even mid-animation the
- *      promoted layer is not the one being filtered.
+ *   2. Hover lift is isolated on .cell, so even mid-animation the promoted layer is not the card.
  *   3. No JS. The old version re-rendered on every pointerenter to recompute inline styles.
  *
- * Also: no `overflow: hidden` (nothing overflows; both effect layers inherit the radius), and every
- * transition names its properties — `transition: all` on a blurred surface forces re-rasterisation.
+ * Also: no `overflow: hidden` (nothing overflows; both effect layers inherit the radius), every
+ * transition names its properties, and `.card` itself carries no `backdrop-filter` — these tiles
+ * scroll in the launcher grid (same empty-after-scroll bug as Sales `.ss-card-h`).
  */
 
 .cell {
@@ -63,8 +63,6 @@
   padding: var(--space-6);
   border-radius: var(--radius-md);
   background: var(--glass);
-  backdrop-filter: blur(var(--blur));
-  -webkit-backdrop-filter: blur(var(--blur));
   border: 1px solid var(--glass-bd);
   box-shadow: var(--glare);
   color: inherit;

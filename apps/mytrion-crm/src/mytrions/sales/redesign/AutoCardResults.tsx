@@ -1,7 +1,7 @@
 import { Badge, s } from './dc';
 import { Icon } from './icons';
 import { cardStatusBadge } from './AutoPicklist';
-import { fmtDate, type CardLastUsedRow, type LimitUpdateResult } from './autoLive';
+import { fmtDate, maskCard, type CardLastUsedRow, type LimitUpdateResult } from './autoLive';
 import { badge } from './salesData';
 
 const mono = "font-family:var(--font-mono)";
@@ -48,7 +48,7 @@ export function AutoCardLastUsedPanel({ rows }: { rows: CardLastUsedRow[] }) {
                 <Icon name="card" size={18} />
               </div>
               <div>
-                <div style={s(`${mono};font-size:var(--ss-text-sm);font-weight:800`)}>•••• {row.cardNumber.slice(-4)}</div>
+                <div style={s(`${mono};font-size:var(--ss-text-sm);font-weight:800`)}>{maskCard(row.cardNumber)}</div>
                 <div style={s('margin-top:5px')}><Badge vm={cardStatusBadge(row.status)} /></div>
               </div>
             </div>
@@ -83,7 +83,7 @@ export function AutoLimitUpdatePanel({ result }: { result: LimitUpdateResult }) 
           </div>
           <div>
             <div style={s('font-size:var(--ss-text-2xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>{result.limitId} gallon limit</div>
-            <div style={s(`${mono};font-size:var(--ss-text-sm);font-weight:700;margin-top:3px`)}>Card •••• {result.cardNumber.slice(-4)}</div>
+            <div style={s(`${mono};font-size:var(--ss-text-sm);font-weight:700;margin-top:3px`)}>Card {maskCard(result.cardNumber)}</div>
           </div>
         </div>
         <Badge vm={badge('CONFIRMED BY EFS', 'var(--ok)')} />

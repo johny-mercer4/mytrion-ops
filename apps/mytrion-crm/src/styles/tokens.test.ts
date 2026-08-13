@@ -387,4 +387,19 @@ describe('token contract', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it('declares the mobile duration ladder and zeros it under reduced motion', () => {
+    const theme = code(THEME);
+    const global = code(GLOBAL);
+    for (const token of [
+      '--duration-instant',
+      '--duration-fast',
+      '--duration-normal',
+      '--duration-moderate',
+      '--duration-slow',
+    ]) {
+      expect(theme).toContain(`${token}:`);
+      expect(global).toContain(`${token}: 0.01ms`);
+    }
+  });
 });

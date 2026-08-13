@@ -15427,3 +15427,517 @@ history of past draws is not drawing, and it is what accounting asks for.
 Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
 the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
 CRM 851 green. Both vendored bundles rebuilt.
+
+## 2026-08-13 — Sales Verification: card vs detail mapping, Horizon glass
+
+Sales → Verification roster cards and the pipeline detail were lying to each other.
+
+**Mapping bug.** The card printed Zoho `Credit_Decision` verbatim (`Declined-Prepay/Secured Only`).
+The detail pane preferred `pipeline.decision` and relabeled it `Prepay` / `Not Accepted` / `LOC
+Approved` as soon as the credit-platform snapshot loaded — same click, different credit line.
+WEX `Application_Status` was also rewritten on both surfaces (`Pending Decision` → `Review`), so
+operators never saw the real WEX value.
+
+Fix: card and detail share `ApplicationStatusFacts` / `VerificationStateLine` in
+`verificationFields.tsx`. Deal Pipeline = `dealStage`, WEX = raw `applicationStatus` (bucket is
+tone + tooltip only), Credit decision = raw Zoho. The platform snapshot is a separate
+"Verification desk" field. Declined-prepay + verification still in progress is explained, not
+collapsed. `deriveZohoState` no longer treats a bare "prepay"/"secured" substring as rejected
+(Declined-Prepay still maps via `startsWith('declined')` for the Zoho-only filter fallback; live
+`summary.state` still wins).
+
+**UI.** Roster cards and detail sections use incumbent `.ss-card-h` (blur, highlight, glare) instead
+of a flat custom card with a 3px tone bar and hover `transform`. Labels use `--muted` not `--faint`
+(border colour). Primary = who + verification next action + "Open pipeline"; secondary = WEX /
+credit / deal stage. Split `VerificationTab.tsx` (was over the 600-line cap) into
+`VerificationDetail.tsx`. Breakpoints on the ladder (`width < 900` / `640`). Nested copy-buttons
+removed from the card (the card is the button).
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md at repo root — incumbent Horizon left as authority, docs
+not repaired. Live a11y audit skipped (AccessLint MCP down; browser MCP dropped; Vite `:5173` needs
+auth). Source audit + unit tests only.
+
+Not committed. `pnpm build:widget` rebuilds `apps/mytrion-crm/app/`.
+
+## 2026-08-13 — Sales Verification: platform Credit, approved collapse, Data Center sheet
+
+Operators rejected the last pass: headline Credit was Zoho `Credit_Decision` (`Approved-Requested`)
+while the desk said Undecided, the numbered pipeline stayed up after a green result, and both the
+pipeline and Edit applicant sat in a generic centered overlay.
+
+**Credit.** Card and detail Credit is the verification-platform outcome again (`platformCreditLabel` /
+`deskDecisionLabel`: Prepay / Not Accepted / LOC Approved / Undecided). Zoho credit is a secondary
+tile in the sheet. Roster without a snapshot derives the same labels from `verificationState` +
+payment type.
+
+**Approved collapse.** `pipelineIsApproved` hides Pre Stop / Black List / FMCSA / … when
+`verificationState === 'approved'` or every used stage is done/skipped with a loc/prepaid decision.
+In-progress, failed, rejected, and awaiting-intake still show the step list.
+
+**Layout / modals.** Detail is the Data Center `DetailSheet` (portal, `--scrim`, 820px like Client
+detail, avatar header, tile grid, footer Close). Edit applicant uses the same sheet. One pipeline
+fetch, one skeleton in the sheet body; the roster stays under the scrim.
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md — incumbent Client detail is the layout authority.
+Not committed.
+
+## 2026-08-13 — Sales Verification: Credit Decision is Zoho again
+
+Operators reversed the previous mapping. Headline **Credit Decision** on the roster card and the
+detail sheet is Zoho `Credit_Decision` (`Approved-Requested`, `Declined-Prepay/Secured Only`, empty
+→ "Not decided yet"). The verification-platform outcome is a separate "Verification desk" line
+(Prepay / LOC Approved / Undecided) and the approved-result block — it is not labeled Credit
+Decision.
+
+**Layout.** 2-column fact grid (no leftover 3+2 row). Body type for dates; IDs are secondary
+tabular, not display mono. Header actions clustered like Client detail (In Pipeline pill, Edit
+applicant 32px, close). List-row facts paint immediately; pipeline skeleton is only the step
+region. List + pipeline `useCachedLoad` staleMs 90s so a reopen of the same client does not refetch
+while fresh.
+
+Approved step-list collapse and Data Center sheet placement kept.
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md.
+Not committed.
+
+## 2026-08-13 — Marketing Loyalty: month-scoped tier export (CSV + Excel)
+
+`hotfix/Mytrion`. Loyalty Program board gains an **Export** action: pick a month, get every loyalty
+tier client for it as a styled `.xlsx` or a flat `.csv`.
+
+**The month rule.** Export month M ⇒ the tier is what **M-1** earned; the activity reported alongside
+it is **M's own**. Pick July and you get July gallons/cards/transactions, tiered by June. That is the
+program (`_shared/loyalty.ts`: status is earned from the full previous calendar month), just with the
+months named explicitly instead of inherited from today.
+
+**Backend.** New `integrations/dwhLoyaltyMonth.ts` — one read-only query, month bound as `$1::date`,
+windows named by ROLE (`basis_*` = the month that earns the tier, `month_*` = the reported month)
+rather than prev/this, because those words only mean something relative to today. Cycle window is the
+26th of M-1 → 25th of M. `dwhClientRoster.allCarriersCte` is now exported so both loyalty reads share
+one carrier dedupe. `modules/manager/loyaltyMonthRoster.ts` resolves/bounds the month (refuses a
+future one and anything past 36 months — refuses, never clamps), attaches the override overlay, and
+makes the one judgement call: `dim_company.tier_name` is TODAY's tier, so it is forwarded only for a
+current-month export and withheld for every past month. Route `GET /v1/marketing/loyalty/export`,
+marketing-gated, **audit-logged** (`marketing.loyalty.export.read`) — the board read is a screen
+someone looked at; this is the whole company book leaving as a file.
+
+**Tier math is still client-side and still single-copy.** `loyaltyExportModel.toTierInput` maps the
+month-anchored row onto `resolveTierForRow`'s `prevMonth`/`thisMonth` inputs — four lines, one visible
+place, no second copy of the thresholds in SQL or on the server.
+
+**Design.** Picklist columns (Tier, Projected Next Tier, How It Was Earned, 6 perks, Perk Source,
+Enterprise Mode) carry a coloured fill AND a real Excel `dataValidation` list, so they behave like the
+Zoho picklists they mirror. Palette is a print-tuned light-tint/dark-ink pair per bucket
+(`loyaltyExportStyle.ts`) — NOT the board's `--lty-*`, which are tuned for dark glass and vanish on
+white. Workbook is three sheets: Overview (both months, partial-month banner, distribution), Clients
+(group band, frozen header + identity columns, autofilter, SUM totals with cached results), Legend
+(thresholds and perk matrix read out of `_shared/loyalty.ts`, never retyped).
+
+**UI.** Month picker lives in the export dialog, not the page header — a month control next to the
+board would read as filtering the board, and then "last month" would mean two things. Dialog previews
+the exact scored population it will write (same `buildExportPayload`), so the footer row count is the
+sheet row count. Scope: Active clients / Tier holders only / Every carrier.
+
+**Refactors forced by the 600-line cap.** `LoyaltyCard.tsx` was already at 615; its presentation moved
+to `LoyaltyBoardCards.tsx` (behaviour unchanged) and now uses the shared `TierBucket` /
+`TIER_BUCKET_ORDER` instead of a local duplicate. Marketing's population predicate moved to
+`loyaltyPopulation.ts` so the export shares it; `countsForMarketing` stays exported for its test.
+
+`pnpm lint` (4 pre-existing `ds-bundle/*.d.ts` errors only), both typechecks, 2631 backend + 901 CRM
+tests green. `app/` rebuilt via `pnpm build:widget`; `exceljs` and the workbook builder stay lazy
+chunks. Not committed.
+
+---
+
+## 2026-08-13 — Horizon Telegram mobile sprint (Sales core)
+
+**Challenge.** Make Horizon feel like a phone app inside Telegram for sales: sign in, work a deal,
+leave — without desktop chrome, a RingCentral pill, or a broken Zoho hop.
+
+**Test task.** Open today’s Verification applicant and say the Zoho Credit Decision out loud.
+Five agents, real Telegram, not DevTools-only. Script + CS/Billing/Admin roll-out live in
+`docs/design/HORIZON_MOBILE_PLAYBOOK.md`.
+
+**RC freeze.** Never mount Embeddable in Telegram. `inAppCallingSupported()` is false;
+`mountAdapter` returns after teardown; `RingCentralPhone` renders null. Deleted
+`TelegramCallingNotice` (the undismissable “popup”). Call Hub copy points at desktop / RC app.
+Desktop calling and the Embeddable OAuth redirect are unchanged.
+
+**OAuth freeze.** We cannot restyle `accounts.zoho.com`. Own chrome: theme-aware `LoginGate` /
+callback (`Screen.module.css` dropped the hardcoded dark glass + grid mesh). Stay in-WebView;
+dual-write OAuth state already in `auth.ts`.
+
+**Sales phone grammar.** Structure line 640: Data Center leads/deals/rejections are grouped list
+rows (`dataCenterPhoneList.tsx`); Client + Verification + Call detail use `phoneSheetLayout`
+(bottom sheet, grabber, 96dvh). Desktop kanban / 820–960 dialogs unchanged. Tab bar pins Home,
+Inbox, Data Center, Verification; More is `ds/Drawer`. Duration ladder `--duration-instant` …
+`--duration-slow`; reduced-motion zeros it. One skeleton per screen (`SalesBodySkeleton` rows on
+phone, not a kanban skeleton).
+
+**Out of sprint.** `initData` as identity; in-Telegram WebRTC; restyling Zoho’s page; `apps/mini-app`.
+Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget` before any UI PR. Not committed until asked.
+
+---
+
+## 2026-08-13 — CS / Billing / Admin phone lists + sheets
+
+Same Horizon Telegram grammar as Sales (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`), structure line
+640 / `useIsPhone()`. Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`. Tickets stay parked;
+Retention Cases is the ticket-like list, Open Pool is the pool.
+
+**Customer Service.** Tab bar pins Home / Applications / Retention Cases / Open Pool. Retention
+Cases: full-bleed rows (title + due, chevron) and `ds/Drawer` detail (`CaseDetailBody`). Open Pool
+already used DataTable cards; phone sheet body is `OpenPoolCaseSheet` (timeline lives in `detail.render`
+because DataTable’s sheet wins over `onRowActivate`).
+
+**Billing.** Tab bar pins Data Center / Transactions / Ledger / Debtors. Ledger section rows collapse
+to company + closing amount (carrier as meta). Statement modal is date + amount rows on phone; the
+desktop table is unchanged. Shared `bm-modal` is a 96dvh bottom sheet with grabber
+(`--duration-moderate` / `--ease-decelerate`). Dropped `.bm-table { min-width: 480px }` on phone.
+TransactionModal was not rewritten — the CSS sheet covers invoice/payment.
+
+**Admin.** Tab bar pins Knowledge Base / User Management / Carrier User Management / Audit Log.
+Tables collapse to title + trailing action (audit keeps actor / action / status). Invitations: phone
+list rows open an “Invite details” sheet for Copy/Cancel/reissue. New registration link is a Drawer
+on phone (`CarrierUserForm` + `onClose`). Desktop tables and tests at 1280 are unchanged.
+
+**Budgets.** `breakpoints.test.ts` min-width 75→74, bare vh 26→25 (480px table floor and 16vh gutter
+went away). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** CS Applications / CITI / Maintenance, Billing Debtors/Prepay/Returns dense tables, Admin
+Deals/Jobs/KB still inherit CSS collapse rather than purpose-built list+sheet. HR / Marketing /
+Manager are next in the playbook, not this pass.
+
+---
+
+## 2026-08-13 — Remaining Mytrions phone lists + sheets
+
+Same playbook (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`). Shared primitive: `_shared/phone/PhoneList`
+(title + meta, 44px, chevron). Detail stays `ds/Drawer` or the existing modal CSS retargeted to a
+96dvh bottom sheet (`--duration-moderate` / `--ease-decelerate`). Did not touch `apps/mini-app` or
+`TELEGRAM_BOT_TOKEN`. Loyalty month-export landed in its own commit first (`feat(marketing): export
+loyalty tiers for a chosen month`).
+
+**Pins (4 or fewer).** HR: Home / Employees / Attendance / Time Off. Marketing: both programs.
+Manager: Overview + Sales / CS / Billing. Finance: Home / Clients. Collection: Home (`soon` now a
+real flag, not a label suffix). Recruit: Home / Jobs / Candidates. Analyst: Sales / CRM / CS /
+Finance. Verification + Trailhead: ModuleShell pins the first four built (non-soon) tabs.
+
+**Lists.** CS Applications is a PhoneList on phone (desktop table unchanged). HR attendance roster
+is a PhoneList on phone. Verification client cards collapse to one-column rows (no blur). Billing
+Debtors / Prepay / Returns hide the multi-column header and keep company + amount. Admin Deals /
+Jobs / KB / job-runs keep the existing 2-col collapse and no longer force `min-width: 1040px`
+sideways scroll.
+
+**Sheets.** Finance client, HR employee/dept, Verification client, loyalty/export (was 960), Recruit
+job/candidate, and Admin KB/Jobs dialogs become bottom sheets below 640. CS Application / CITI
+modals already had the shared `cs-modal` sheet.
+
+**Budgets.** Off-ladder 77→72, legacy max-width 97→92 (Recruit 760/1100, Prepay/Returns 700, loyalty
+680). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** Manager department desks are still ComingSoon copy. Collection Array/Cases unbuilt.
+Trailhead unbuilt. Finance invoice/payment/transaction tables inside the client sheet still dense.
+Recruit job cards are cards, not list rows. Horizon brand kickers / gradient wordmarks left as
+incumbent identity.
+
+**Impeccable reaudit (2026-08-13).** Context: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, no
+`CONTEXT_STALE`. Sprint blockers already hold: `#rc-widget` gated in Telegram, login is token
+themed (not a leftover dark desktop card), sheets are 96dvh grabber panels below 640, core lists
+are PhoneList / DataTable cards / column-collapse rather than required sideways tables. Batched
+fix: PhoneList now uses `--text-primary` / `--space-1` ( `--text` is not a global token); CS
+Applications phone load is one skeleton. Detector clean on the new phone files. Deferred:
+incumbent kickers / gradient wordmarks, loyalty 32px month steppers, Finance tables inside the
+client sheet, Recruit cards.
+
+**AccessLint.** MCP `plugin-accesslint-accesslint` was `error` (live discovery failed; `mcp_auth`
+timed out). Source-pattern report only — unlabeled search fields, CS Application/CITI sheets
+missing `role="dialog"`, icon-only close without a name.
+
+## 2026-08-13 — Loyalty export dialog: button states fixed, light/dark verified
+
+Follow-up on the export dialog. Reported: "the hover effect on buttons is really bad." It was a
+specificity bug, not taste.
+
+**Root cause.** `hubDialog.css` had ONE `.mg-lty-modal-foot button:hover` rule setting `background`
+and `color` for every footer button. At (0,4,1) it beat `.is-primary` and `.is-reset` at (0,3,0) —
+which are declared *later* in the file, so they read as though they would win. Hovering the primary
+therefore discarded `--accent`/`--on-accent` and repainted it as a neutral pane with body ink: a full
+polarity inversion in both themes, reading as the button going *inactive* under the cursor. Hovering
+`.is-reset` likewise dropped `--danger`. Second bug in the same rule: it hovered from a COLOUR
+(`--hz-pane-alt`) to a GRADIENT (`--hz-pane-lift`); `background-image` does not interpolate, so the
+change snapped. Both also affected LoyaltyBonusModal — fixed there for free.
+
+**Fix.** One hover language — hover = more accent presence, never a polarity change. Neutral gains a
+wash, tonal deepens its wash, primary saturates toward `--accent-strong` (which theme.css documents as
+"the saturated FILL and hover step", so this is the system's own answer). Every state is colour →
+colour so the transition has something to smooth. Added `:active` and `:focus-visible` — the ring uses
+`outline-offset` so it lands on the footer rather than invisibly on the accent fill.
+
+**Hierarchy.** Excel and CSV were both `is-primary` — two solid accent fills side by side, no place for
+the eye to land. Excel is primary (the designed artifact); CSV takes a new reusable `.is-tonal`.
+
+**A silent theming bug found on the way.** `--lty-*` was defined only on `.mg-root .mg-lty`
+(descendant). The dialogs portal to `document.body` with BOTH classes on one root element, which a
+descendant combinator cannot match, so every `--lty-*` read inside a dialog was an undefined custom
+property → invalid at computed-value time → silently `inherit`. The export dialog's tier icons were
+muted grey instead of gold/sky in both themes. Added `.mg-root.mg-lty` to both palette blocks.
+
+**Distilled Step 3.** "Carriers" repeated the selected scope card's row count AND the footer's — the
+same number three times on one screen — and "Hold a tier" repeated the "Tier holders only" card. Cut
+both; what remains is the two months' in-network gallons, labelled to match the relation strip. Also
+split the Refresh control: the timestamp is a caption, not the button's label ("Updated just now" is
+not something you click).
+
+**Verified in a real browser**, not by reasoning: a CDP script opened the dialog and dispatched genuine
+`Input.dispatchMouseEvent` moves (CSS `:hover` ignores synthetic events), capturing dark+light ×
+1280/375 at rest and on both actions. That round caught two regressions I had just introduced —
+wrapping Refresh in a div broke `.mg-lty-modal-section-head > button` and let the kicker rule uppercase
+the caption, and the mobile footer's inherited `1fr 1fr` grid orphaned CSV onto its own row. Both
+fixed and re-confirmed. Contrast measured: primary hover 9.7→8.5:1 dark, 7.5→6.8:1 light.
+
+`pnpm typecheck` clean, 2631 backend tests green, 910/911 CRM green. The one failure is
+`ds/purity.test.ts` on a **pre-existing** `border-radius: 99px` at `ds/Drawer/Drawer.module.css:188`,
+committed in 67565825 (Horizon phone lists) — not in this diff; `var(--radius-full)` fixes it.
+`app/` rebuilt. Not committed.
+
+## 2026-08-13 — Horizon phone a11y apply-pass (Impeccable + AccessLint)
+
+Continue of the aborted Operate cycle. Context.mjs: `NO_PRODUCT_MD` / `SCOPED_EXISTING_ALLOWED`, no `CONTEXT_STALE`. Vite was down, so AccessLint used `audit_html` (compact) on login, Data Center list, client sheet, Verification.
+
+**AccessLint before → after (targeted mechanicals):**
+- Login: 2 moderate (no main / no landmark) → 0
+- Data Center list: 1 serious (placeholder-only label) + 2 moderate → 0
+- Client sheet: 2 critical (unlabelled input, unnamed Close) + 3 moderate → 3 moderate page-level (`page-has-heading-one`, `landmark-main`, `region`) — overlay fragment; the page behind now supplies `<main>` + h1. TODO, do not invent a dialog h1.
+- Verification: 2 moderate → 0 (with page landmarks)
+
+**Applied.** AuthScreen + MytrionShell `<main>` (inner Billing/CS/Sales/Recruit `<main>` demoted to avoid nesting). CS Application/CITI + Billing debtor/prepay/return-match sheets: `role="dialog"` / `aria-modal` / labelled Close. Debtors/Prepay clickable rows are `<button>`. Search fields use existing placeholder copy as `aria-label`. PhoneList hover/active is named `background-color` only. Sales detail accent stripe 3px → 1px (hook `border-accent-on-rounded`). Debtors age-bar dropped `transition: width`; invoice cards dropped the 3px left stripe.
+
+**Incumbent, left.** AppHeader gradient wordmark; rail width collapse animation; Sales `theme.css` side-tab / gradient-text. Loyalty `hubDialog.css` hover polarity fix from the prior uncommitted pass is in this commit.
+
+`pnpm build:widget` rebuilt `apps/mytrion-crm/app/`. Desktop ≥900 unchanged (structure still 640). Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`.
+
+## 2026-08-13 — Horizon worker Telegram identity linking (Zoho login)
+
+First slice only: persist Telegram credentials when a worker signs in with Zoho inside the Horizon Mini App. sendDocument / file delivery is not in this change.
+
+**Table** `horizon_worker_telegram_links` (migration `0116_horizon_worker_telegram_links`, hand-written + idempotent — `drizzle-kit generate` still cannot be used here because meta snapshots have drifted). Not `telegram_octane_users`, not `sales_agent_mini_app_principals`. PK is uuid (`gen_random_uuid()`). Unique per tenant on `zoho_user_id` and on `telegram_user_id`. `telegram_username` / `zoho_username` / `zoho_email` are caches, not auth keys. `linked_via` is `webapp_bind` | `bot_start`; `status` is `active` | `revoked`.
+
+**Bind (primary).** After Zoho session is live in the CRM Mini App (`UserContextProvider`), a headless `POST /v1/horizon/telegram/link` sends Bearer + raw initData. Server verifies HMAC with `HORIZON_BOT_TOKEN` (same algorithm as the existing Horizon helper; not the carrier token). Zoho user comes from the session (`zoho:<id>`), Telegram user from verified initData. Failures do not block CRM; the client retries a few times. `impersonate: false` so View-as cannot attach the admin's Telegram to another worker.
+
+**Prod apply (2026-08-13 evening).** `0116` was the only pending journal entry on Render app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com`). Applied with `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate` (not a full pending stack). Verified live: table + unique indexes present; insert/readback of `telegram_user_id` / `telegram_chat_id` / `telegram_username` succeeded; duplicate zoho and telegram ids rejected (`23505`); smoke row deleted. Pending count is 0. Rebuilt vendored CRM `app/` so Mini App prod actually POSTs `/horizon/telegram/link` after Zoho login. API route still needs this branch deployed.
+
+**Webhook (supplement).** Horizon `/start` in a private chat refreshes `telegram_chat_id` / `telegram_username` on an existing active row. It does not create a worker identity. Unlinked `/start` still only opens the Mini App.
+
+**Gaps for the sendDocument slice:** lookup by `telegram_chat_id` (private chat ≈ user id, already stored), Bot API `sendDocument` on `HORIZON_BOT_TOKEN`, download-button wiring in CRM, and what to do when the worker has not opened `/start` yet (chat_id still equals user id from initData, which is enough for private chat).
+
+## 2026-08-13 — Horizon Telegram upsert + Mini App file delivery
+
+Two slices on `hotfix/Mytrion`. No `telegram_octane_users` table. Carrier mini-app / `TELEGRAM_BOT_TOKEN` untouched.
+
+**1. No duplicate `horizon_worker_telegram_links` rows.** Unique indexes already exist (`horizon_worker_tg_links_tenant_zoho_uk`, `horizon_worker_tg_links_tenant_tg_uk`). `planHorizonTelegramWebAppBind` + `upsertWebAppBind` look up tenant+zoho and tenant+telegram inside a transaction: same pair or same zoho re-login → UPDATE (telegram ids, username, chat_id, zoho snapshot, `updated_at`); same telegram already bound to another zoho → `TELEGRAM_LINKED_TO_OTHER_WORKER` (no insert). Unique-violation catch is the belt-and-suspenders.
+
+**2. Mini App exports via Horizon `sendDocument`; desktop unchanged.** Shared CRM helper `deliverExport` (`apps/mytrion-crm/src/lib/deliverExport.ts`): if `isTelegramWebView()` is false, existing `deliverBlob` / `<a download>` / `MytrionDownload` path (invoices still use the Zoho-webview signed-URL carve-out when *not* in Telegram). Inside Telegram WebView, POST the blob to `POST /v1/horizon/telegram/export-send` (Zoho Bearer, `impersonate:false`). API `sendHorizonDocumentToLinkedWorker` looks up `horizon_worker_telegram_links` by session zoho id (tenant-scoped) and calls `sendHorizonDocument` on **HORIZON_BOT_TOKEN only**. Unlinked → 409 `TELEGRAM_CHAT_UNLINKED` + toast to open Mini App after Zoho login. Success toast: "Sent — check your Horizon bot chat".
+
+Call sites: Sales invoices (`downloadInvoice`), C-15 txn report, C-30 card lookup, verification attachments; Billing debtors/prepay XLSX + opening template/export/rejected; CS CITI CSV + maintenance attachments (bytes route for Telegram CORS); Marketing loyalty + referrals; Analyst reports; HR attendance CSV.
+
+Deferred: signed-URL desktop path for maintenance attachments is unchanged.
+
+## 2026-08-13 — Admin: Octane Telegram Users
+
+Simple Admin list of `horizon_worker_telegram_links`. Access group tab **Octane Telegram Users**. Columns: user name, Zoho user id, Telegram user id, Telegram username, last login (`updated_at` from the Mini App bind after Zoho sign-in). Search is client-side over those fields. Admin-only `GET /v1/horizon/telegram/links` (all-department). Empty / loading / no-match states. Phone collapses to name + last login; handle stays on the name stack.
+
+## 2026-08-13 — Automations UI: balance/status blocks, last-6 cards, C-26 prompt fields
+
+Four Sales Automations complaints from the floor, all in the result/config UI — no touchpoint or
+route changed.
+
+### C-8 Balance and Q-7/C-28 Account Status stopped being sentences
+
+Both actions returned `{kind:'message'}`, so `dwh.carrier_balance` and `dwh.carrier_overview` — which
+answer with a dozen fields each — were collapsed into one line and everything else was thrown away.
+They now return their own payload kinds rendered by `AutoBalancePanel` / `AutoAccountStatusPanel`.
+
+Balance leads with the three blocks CRM Mytrion showed, in its order: **EFS Balance**
+(`efs_balance`, falling back to `balance`), **Available Limit** (`credit_remaining`), **Weekly
+Limit** (`credit_limit` — CMP bills weekly, and the mini-app status sheet already names it that).
+Account type / payment terms / billing cycle / credit used follow as a secondary grid, and only when
+the source answered for them.
+
+A missing figure renders `—`, never `$0.00`: a prepay account has no credit line at all, and `$0.00`
+in the Available Limit block reads as "line exhausted" — the opposite of true.
+
+Account Status keeps the live-EFS active-card count (the reason C-1 shows up on the next C-28) and
+adds what the sentence dropped: open debt with its invoice count and oldest debt days, the worst
+invoice status, the hard-debtor flag as a badge, and per-source failures as notices instead of a
+silent zero. The tile says "Active cards (live EFS)" only when the live roster actually answered.
+
+### Cards: last SIX digits is now the standard, from one helper
+
+EFS cards on a fleet share a long prefix and routinely differ only in the 5th-from-last digit, so
+`•••• 1111` matched several physical cards. Card Lookup (C-30) already showed six; everything else
+showed four. `maskCard` / `shortCard` / `CARD_MASK_DIGITS` in `autoLive.ts` are now the single
+source, and every Sales card surface goes through them: picklist, selected-card chip, C-24 Card Last
+Used rows, the limit-update panel, C-15 transaction rows and groups, the txn export columns, the
+Client modal card list, Client Management's driver card picker, and C-30 (switched off its own
+inline slice). Client-modal mask expectations moved from `•••• 7340` to `•••• 317340`.
+
+Left at four on purpose: the touchpoint audit-log redaction (`redactParams`) is a PAN control, not a
+display surface, and rejection reports / comms tickets only ever *store* `card_last4` — six digits
+there is an ingest and schema change, not a UI one.
+
+### C-26 Unit / Driver Change: the fields are a new prompt, not a form to retype
+
+The credentials panel above already shows the live EFS unit / driver ID / driver name, so prefilling
+the same three values below it asked the agent to retype what was on screen. C-26 now opens empty
+with placeholder **New prompt** on all three, and the runner already sends only non-empty fields, so
+leaving one blank leaves that prompt untouched. C-1 Card Activation still prefills — there the values
+ride along with the activate and the fields are a confirmation.
+
+Also: `.ss-pay-grid` drops to two columns below 640px. Three dollar figures on a phone row leaves
+~90px a tile and truncates the amount — that grid now carries three result panels, not one.
+
+CRM 860 green (4 new panel tests), backend 2611 green, lint clean, vendored `app/` rebuilt.
+
+## 2026-08-13 — Sales Verification: MC/DOT flags on the input, not in the field
+
+Verification sometimes stuffed proceed copy ("Need a valid MC", platform `placeholder` / `flag` /
+event detail) into the MC or DOT value or HTML placeholder. Sales then showed that prose as if it
+were the identifier.
+
+Pipeline mapping now keeps that copy on `hint` only — never as an HTML placeholder. The action
+request and Edit applicant inputs stay empty until the agent types a real id; the exact platform
+sentence renders as a red warning under the field (`aria-invalid` + `aria-describedby`). The record
+MC/DOT tiles do the same instead of displaying the prose as the number. Pipeline lookup ignores a
+DOT that is not an authority id (avoids a 400 on `dot.max(64)` and a bogus SQL match).
+
+Also: action-request fields collapse to one column under 640px, inputs use `--radius-md` /
+`--shadow-sm` / 44px touch height, no `field.placeholder` on MC/DOT.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Sales cards empty after focus + scroll (Automations + Verification)
+
+Same compositor defect on both surfaces. `.ss-card-h` applied `backdrop-filter: blur` to every
+Automations catalog button and every Verification roster button. Focusing (or hovering) a card
+promotes that layer; scrolling it off-screen and back leaves the layer un-repainted — children
+still in the DOM, the card looks empty. AutoCatalog had already dropped rest `transform` /
+`overflow: hidden` / `transition: all`; the shared blur was the remaining half.
+
+Fix (refinement, not redesign):
+- `ss-horizon.css` — blur stays on modal chrome and empty/result panes; **not** on `.ss-card-h`.
+  Glass tint is `--surface` + `--shadow-sm`. Same treatment for `.ss-float-drop` (the deal/card
+  picklist is a scrollport over near-opaque `--hz-modal-surface`).
+- `AutoFloatingDrop` — `overflow-x: hidden` + `overflow-y: auto` instead of `overflow: hidden`
+  on the listbox.
+- Contract test `ssCardLayer.test.ts` locks the CSS/source so the blur cannot creep back onto
+  scrolling cards.
+
+Unrelated audit notes (not fixed): AutoCatalog still uses an inline 3-column grid with no
+480/640 ladder (Verification already has it); AutoTab is over the 600-line cap; deal/card pick
+rows are `div role="option"` with mousedown only.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Impeccable init (PRODUCT.md)
+
+`/impeccable init` ran on `hotfix/Mytrion`. Wrote `PRODUCT.md` (product-schema 1) from repo sources — Octane fuel-card ops, worker Mytrions / Horizon Mini App, carrier Telegram bot + mini-app. No DESIGN.md; no visual world invented. Live config at `.impeccable/live/config.json` (CRM + mini-app source HTML; vendored `app/` excluded; CSP none). Did not touch Sales card CSS or vendored hashes.
+
+## 2026-08-13 — Same empty-card compositor bug, rest of CRM
+
+Hunt after Sales `.ss-card-h` / `.ss-float-drop` (`9ccdd0e1`). Same trap: `backdrop-filter` on a
+scrolling roster tile or picklist scrollport; focus/hover promotes a layer; scroll off and back
+leaves it un-repainted.
+
+**Fixed (blur off scrolling cards / rows / picklists; glass tint kept):** hub `.mg-card` / `.mg-dept`
+/ `.mg-acc`, ModuleShell `.ms-jump`, Collection `.co-jump`, HR jump/stat/req/employee/dept cards,
+Verification Mytrion `.vf-cardc`, Recruit metric/job/candidate tiles, Analyst card/KPI/report
+catalog, Finance `.fi-stat` / `.fi-row`, CS card/metric/retention rows, Billing KPI tiles + table
+wraps + modal invoice cards, Loyalty `.mg-lty-c`, Escalation `.readyTile` / `.row` / `.pickerPanel`,
+Admin `.statTile`, launcher WorkspaceCard/StatCard, page KPIs, chat message bubbles/chips/picker.
+
+**Left (safe chrome):** modals/scrims, docked headers/rails (AppHeader, MytrionShell sidebar,
+MobileTabBar opaque), DS Dialog/Drawer/Dropdown/Tooltip/DatePicker, empty/ComingSoon panes,
+toolbars/search/buttons/chips/badges, mini-app sticky header (`backdropFilter` on docked chrome),
+CS/Billing table *headers* that are sticky over rows, TicketConsole/comms docked panes,
+ChatPanel dock/composer. `theme.css` untouched.
+
+**Not changed (other compositor traps):** catalog `transform` only while dragging (already);
+CS/HR/Analyst cards still `overflow: hidden` + hover `transform` (lift), without blur so the
+empty-paint bug should not fire; billing `content-visibility: auto` on table rows; DropdownMenu
+blur on a short popover scrollport (DS chrome allowlist).
+
+Contract: `ssCardLayer.test.ts` now walks all CRM CSS. Rebuild: `pnpm -C apps/mytrion-crm build`.
+
+Impeccable: refinement, `SCOPED_EXISTING_ALLOWED`, Operate. Did not write PRODUCT.md / DESIGN.md.
+
+## 2026-08-13 — CS Applications: global sort/filter, off Deluge onto direct COQL
+
+QA (Dina Carter) reopened "issue-17": PR #166 (2026-08-10) shipped sort/filter/copyable-fields for
+the Applications/Clients tables, but sort/filter was explicitly client-side over one loaded page —
+"sorted by date filled, only sorted the first page." Filter-dropdown option lists had the identical
+bug (built from the loaded page's distinct values). Fixing it for real needed a data-path change, not
+a UI patch: `cs.applications.list` was a `kind: 'deluge'` touchpoint calling `mytrionGetApplications`,
+which has a FIXED `ORDER BY`/`WHERE` per tab and no filter param surface — and, more fundamentally,
+**the "Agent (Deal)" filter/sort/facet needs a join to the Deals module that has no expressible path
+in COQL or Deluge**: `Applications.Related_Deal` (labeled "Agent (Owner)") is empty on every record
+checked live; the real match is `Applications.Application_ID` = `Deals.Application_ID`, a
+cross-module value join.
+
+**Moved the touchpoint to `kind: 'local'`**, backed by a direct COQL drain
+(`src/integrations/csApplicationsQuery.ts`: `drainApplications`/`drainDeals`, `runCoqlAll`, 2000-row
+pages) instead of Deluge. A dedicated SWR cache (`src/lib/applicationsSnapshotCache.ts` — NOT the
+shared `touchpointReadCache`, whose 500-entry LRU and tenant-wide invalidate-on-any-write are both
+wrong for a snapshot that costs ~10 COQL calls to rebuild) holds the joined Applications+Deals
+dataset per tenant, soft TTL 5 min / hard TTL 30 min, stale-while-revalidate. Sort/filter/search/facet
+computation (`src/modules/customerService/applicationsListQuery.ts`, pure functions) now runs over
+the WHOLE cached dataset, not one page. `applicationsSave.ts` patches the cached row in place after a
+write (`patchApplicationSnapshotRow`) instead of a full re-drain.
+
+**Verified against live prod Zoho before trusting any of this**: Apps tab 4,389 rows / Clients tab
+7,823 rows / Deals-with-Application_ID 10,709 rows — small enough for the full in-memory snapshot,
+cold parallel drain ~3-4s. Ran an old-vs-new regression diff (old Deluge touchpoint vs. the new
+handler, same params, both tabs, multiple pages) and found two REAL bugs the diff caught, not
+theoretical ones:
+- The drain's first COQL query had no `WHERE` clause at all — Zoho COQL rejects that outright
+  (`SELECT ... FROM Applications` with nothing after it → 400 `missing clause`). Fixed with an
+  always-true `WHERE id is not null`.
+- ~5% of a sampled tab page had `_dealOwner` regress to "not assigned" that the OLD system resolved
+  correctly, in two distinct ways: (1) the old Deluge falls back to matching `Deals.Deal_Name` against
+  the Application's `Name` when `Application_ID` doesn't match a Deal — replicated in
+  `matchDealsByName()`. (2) Deal owners who've since been deactivated have a raw `Owner.name` that's
+  literally `null` in COQL — the old Deluge resolves names against BOTH `AllUsers` and `DeactiveUsers`
+  Zoho user-list types; the existing `zohoCrm.listActiveUsers()` only covers active ones (correctly,
+  for its actual other use — the admin act-as-agent picker). Added
+  `zohoCrm.listUsersForNameResolution()` as a separate primitive rather than changing what
+  `listActiveUsers()` returns. One remaining, deliberate, non-regressive divergence: when multiple
+  Applications share an exact company name, the old Deluge's `nameToRecId` map only ever registers
+  the FIRST one it iterates, so every other same-named Application permanently reads "not assigned"
+  under the old system even when a name-matched Deal genuinely exists — the new code matches each one
+  independently instead of replicating that quirk (confirmed live: three separate Application records
+  named "J&D express trucking", only one of which the old system ever had a chance to match).
+
+**Frontend**: `live.ts` was already at the 600-line cap — the Applications data-loading block (now
+sort/filter-aware) moved to a new `liveApplications.ts`, and the four coercion primitives it shares
+with the rest of `live.ts` (`str`/`num`/`bool01`/`lookupName`) moved to `liveCoerce.ts` so neither file
+has to import from the other (would've been a live.ts ↔ liveApplications.ts cycle otherwise).
+`applicationsFilters.ts` dropped `filterApplications`/`sortApplications`/`distinctValues` (the server
+owns this now) and gained `filtersToParams`/`applicationsQueryKey` — the latter matters because
+`useLoad`'s effect keys off `JSON.stringify(deps)`, and a `Set` (the WEX multi-select) stringifies to
+`{}`, so passing `AppFilters` directly as a dep would have silently never refetched on a WEX chip
+toggle. The filter panel JSX moved to `ApplicationsFilterPanel.tsx` once facets-as-props landed.
+Dropped the frontend's own `APPLICATIONS_PAGE_SIZE` from 2000 to 200 — not a backend limitation
+anymore, but `ApplicationsTable.tsx` is sized for ~200 rows × 28 columns (~5,600 cells) per render.
+
+The Deluge function `mytrionGetApplications` is untouched in Zoho — the legacy `zoho-octane` widget
+still calls it directly. Search-through-pagination is fixed as a side effect: the old function
+hardcoded `more_records = false` whenever a search term was active, so page 2 of a search was
+unreachable; over an in-memory snapshot that limitation just doesn't exist.
+
+44 new backend tests (`cs-applications-list.test.ts` pure logic, `cs-applications-snapshot.test.ts`
+drain/cache with stubbed fetch — pattern from `coql-paginate.test.ts`), a new `AsyncSWRCache.peek()`
+primitive (+3 tests) so a single-row patch doesn't force a cache reload, and a `touchpoints-catalog`
+assertion pinning `cs.applications.list`'s `kind` to `'local'` so an accidental revert to Deluge trips
+a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated failure in
+`sales-golive-contract.test.ts` — confirmed present before this branch too, not caused by this work).
+Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
+same session) rather than a fresh branch off `build`.

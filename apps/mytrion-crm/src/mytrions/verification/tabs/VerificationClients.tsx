@@ -17,9 +17,8 @@ import {
  *
  * PAGINATION. The roster is fetched once (cached — see `verificationData.ts`) so search and every
  * filter chip are instant, no round trip. What "proper pagination… fast" buys here is on the RENDER
- * side: glass cards with backdrop-filter are expensive per node, so only one page's worth is ever
- * mounted at a time, with real Prev/Next + page-number controls — not an ever-growing "show more" list
- * that eventually holds thousands of blurred cards at once.
+ * side: only one page's worth is ever mounted at a time, with real Prev/Next + page-number controls
+ * — not an ever-growing "show more" list that eventually holds thousands of roster cards at once.
  */
 
 const PAGE_SIZE = 24;

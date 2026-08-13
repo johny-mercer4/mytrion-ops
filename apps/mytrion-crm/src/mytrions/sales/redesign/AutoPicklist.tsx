@@ -1,7 +1,8 @@
 /**
  * Standardized Automations picklists + loaders.
  * Deal rows: company title + App/Carrier badges + contact · phone.
- * Card rows: last-4 + status badge (active green / inactive orange / fraud red).
+ * Card rows: last-6 (maskCard, the Sales-wide standard) + status badge (active green / inactive
+ * orange / fraud red).
  * Micro loaders for dropdowns; macro loader for the “waiting for result” run phase.
  */
 import type { ReactNode, RefObject } from 'react';
@@ -10,7 +11,7 @@ import { Icon } from './icons';
 import { badge, type BadgeVM } from './salesData';
 import { AutoEmptyState } from './AutoActionResult';
 import { AutoFloatingDrop } from './AutoFloatingDrop';
-import type { Card, Deal } from './autoLive';
+import { maskCard, type Card, type Deal } from './autoLive';
 import { AUTO_INPUT } from './autoControls';
 
 const MONO = "font-family:var(--font-mono)";
@@ -261,7 +262,7 @@ export function CardPickOption({
       className="ss-pick-row"
       style={s('display:flex;align-items:center;gap:10px')}
     >
-      <span style={s(`${MONO};font-size:var(--ss-text-sm);font-weight:600`)}>{`•••• ${card.number.slice(-4)}`}</span>
+      <span style={s(`${MONO};font-size:var(--ss-text-sm);font-weight:600`)}>{maskCard(card.number)}</span>
       <Badge vm={cardStatusBadge(card.status)} />
       <span style={s('font-size:var(--ss-text-2xs);color:var(--muted);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
         {`${card.driver || 'No driver'} · ID ${card.driverId || '—'} · Unit ${card.unit || '—'}`}

@@ -623,7 +623,22 @@ export interface TouchpointMap {
   // ---- Customer Service (departmentAccess: ['customer-service'] — use api/cs.ts csTouchpoint) ----
   'cs.home.metrics': { params: Record<string, never>; result: CsHomeMetrics };
   'cs.applications.list': {
-    params: { tab: 'apps' | 'clients'; search?: string; page?: number; perPage?: number };
+    params: {
+      tab: 'apps' | 'clients';
+      search?: string;
+      page?: number;
+      perPage?: number;
+      sortKey?: 'date' | 'appId' | 'carrierId';
+      sortDir?: 'asc' | 'desc';
+      company?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      stage?: string;
+      biz?: string;
+      agent?: string;
+      wex?: string[];
+      fresh?: boolean;
+    };
     result: CsApplicationsList;
   };
   // 'cs.analytics.maintenance' removed with its catalog entry — Maintenance analytics is SQL over
@@ -880,12 +895,20 @@ export interface CsHomeMetrics {
 /** One enriched Applications row (mytrionGetApplications select list + Deal enrichment). */
 export type CsApplicationRow = Record<string, unknown>;
 
+export interface CsApplicationsFacets {
+  stage: string[];
+  biz: string[];
+  agent: string[];
+  wex: string[];
+}
+
 export interface CsApplicationsList {
-  status?: string;
   data?: CsApplicationRow[];
   more_records?: boolean;
-  page?: number | string;
-  per_page?: number | string;
+  total?: number;
+  facets?: CsApplicationsFacets;
+  generated_at?: string;
+  truncated?: boolean;
 }
 
 export interface CsDataCenterDeal {
