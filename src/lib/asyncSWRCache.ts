@@ -62,6 +62,12 @@ export class AsyncSWRCache {
     return promise;
   }
 
+  /** Direct lookup, no TTL check and no loader — for callers that patch an already-cached value
+   *  in place rather than forcing a rebuild (e.g. a single-row save against a full-dataset snapshot). */
+  peek<T>(key: string): T | undefined {
+    return this.entries.get(key)?.data as T | undefined;
+  }
+
   invalidate(prefix: string): void {
     for (const key of [...this.entries.keys()]) if (key.startsWith(prefix)) this.entries.delete(key);
     for (const key of [...this.inflight.keys()]) if (key.startsWith(prefix)) this.inflight.delete(key);

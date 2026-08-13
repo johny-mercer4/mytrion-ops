@@ -15479,3 +15479,74 @@ Also: `.ss-pay-grid` drops to two columns below 640px. Three dollar figures on a
 ~90px a tile and truncates the amount — that grid now carries three result panels, not one.
 
 CRM 860 green (4 new panel tests), backend 2611 green, lint clean, vendored `app/` rebuilt.
+## 2026-08-13 — CS Applications: global sort/filter, off Deluge onto direct COQL
+
+QA (Dina Carter) reopened "issue-17": PR #166 (2026-08-10) shipped sort/filter/copyable-fields for
+the Applications/Clients tables, but sort/filter was explicitly client-side over one loaded page —
+"sorted by date filled, only sorted the first page." Filter-dropdown option lists had the identical
+bug (built from the loaded page's distinct values). Fixing it for real needed a data-path change, not
+a UI patch: `cs.applications.list` was a `kind: 'deluge'` touchpoint calling `mytrionGetApplications`,
+which has a FIXED `ORDER BY`/`WHERE` per tab and no filter param surface — and, more fundamentally,
+**the "Agent (Deal)" filter/sort/facet needs a join to the Deals module that has no expressible path
+in COQL or Deluge**: `Applications.Related_Deal` (labeled "Agent (Owner)") is empty on every record
+checked live; the real match is `Applications.Application_ID` = `Deals.Application_ID`, a
+cross-module value join.
+
+**Moved the touchpoint to `kind: 'local'`**, backed by a direct COQL drain
+(`src/integrations/csApplicationsQuery.ts`: `drainApplications`/`drainDeals`, `runCoqlAll`, 2000-row
+pages) instead of Deluge. A dedicated SWR cache (`src/lib/applicationsSnapshotCache.ts` — NOT the
+shared `touchpointReadCache`, whose 500-entry LRU and tenant-wide invalidate-on-any-write are both
+wrong for a snapshot that costs ~10 COQL calls to rebuild) holds the joined Applications+Deals
+dataset per tenant, soft TTL 5 min / hard TTL 30 min, stale-while-revalidate. Sort/filter/search/facet
+computation (`src/modules/customerService/applicationsListQuery.ts`, pure functions) now runs over
+the WHOLE cached dataset, not one page. `applicationsSave.ts` patches the cached row in place after a
+write (`patchApplicationSnapshotRow`) instead of a full re-drain.
+
+**Verified against live prod Zoho before trusting any of this**: Apps tab 4,389 rows / Clients tab
+7,823 rows / Deals-with-Application_ID 10,709 rows — small enough for the full in-memory snapshot,
+cold parallel drain ~3-4s. Ran an old-vs-new regression diff (old Deluge touchpoint vs. the new
+handler, same params, both tabs, multiple pages) and found two REAL bugs the diff caught, not
+theoretical ones:
+- The drain's first COQL query had no `WHERE` clause at all — Zoho COQL rejects that outright
+  (`SELECT ... FROM Applications` with nothing after it → 400 `missing clause`). Fixed with an
+  always-true `WHERE id is not null`.
+- ~5% of a sampled tab page had `_dealOwner` regress to "not assigned" that the OLD system resolved
+  correctly, in two distinct ways: (1) the old Deluge falls back to matching `Deals.Deal_Name` against
+  the Application's `Name` when `Application_ID` doesn't match a Deal — replicated in
+  `matchDealsByName()`. (2) Deal owners who've since been deactivated have a raw `Owner.name` that's
+  literally `null` in COQL — the old Deluge resolves names against BOTH `AllUsers` and `DeactiveUsers`
+  Zoho user-list types; the existing `zohoCrm.listActiveUsers()` only covers active ones (correctly,
+  for its actual other use — the admin act-as-agent picker). Added
+  `zohoCrm.listUsersForNameResolution()` as a separate primitive rather than changing what
+  `listActiveUsers()` returns. One remaining, deliberate, non-regressive divergence: when multiple
+  Applications share an exact company name, the old Deluge's `nameToRecId` map only ever registers
+  the FIRST one it iterates, so every other same-named Application permanently reads "not assigned"
+  under the old system even when a name-matched Deal genuinely exists — the new code matches each one
+  independently instead of replicating that quirk (confirmed live: three separate Application records
+  named "J&D express trucking", only one of which the old system ever had a chance to match).
+
+**Frontend**: `live.ts` was already at the 600-line cap — the Applications data-loading block (now
+sort/filter-aware) moved to a new `liveApplications.ts`, and the four coercion primitives it shares
+with the rest of `live.ts` (`str`/`num`/`bool01`/`lookupName`) moved to `liveCoerce.ts` so neither file
+has to import from the other (would've been a live.ts ↔ liveApplications.ts cycle otherwise).
+`applicationsFilters.ts` dropped `filterApplications`/`sortApplications`/`distinctValues` (the server
+owns this now) and gained `filtersToParams`/`applicationsQueryKey` — the latter matters because
+`useLoad`'s effect keys off `JSON.stringify(deps)`, and a `Set` (the WEX multi-select) stringifies to
+`{}`, so passing `AppFilters` directly as a dep would have silently never refetched on a WEX chip
+toggle. The filter panel JSX moved to `ApplicationsFilterPanel.tsx` once facets-as-props landed.
+Dropped the frontend's own `APPLICATIONS_PAGE_SIZE` from 2000 to 200 — not a backend limitation
+anymore, but `ApplicationsTable.tsx` is sized for ~200 rows × 28 columns (~5,600 cells) per render.
+
+The Deluge function `mytrionGetApplications` is untouched in Zoho — the legacy `zoho-octane` widget
+still calls it directly. Search-through-pagination is fixed as a side effect: the old function
+hardcoded `more_records = false` whenever a search term was active, so page 2 of a search was
+unreachable; over an in-memory snapshot that limitation just doesn't exist.
+
+44 new backend tests (`cs-applications-list.test.ts` pure logic, `cs-applications-snapshot.test.ts`
+drain/cache with stubbed fetch — pattern from `coql-paginate.test.ts`), a new `AsyncSWRCache.peek()`
+primitive (+3 tests) so a single-row patch doesn't force a cache reload, and a `touchpoints-catalog`
+assertion pinning `cs.applications.list`'s `kind` to `'local'` so an accidental revert to Deluge trips
+a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated failure in
+`sales-golive-contract.test.ts` — confirmed present before this branch too, not caused by this work).
+Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
+same session) rather than a fresh branch off `build`.
