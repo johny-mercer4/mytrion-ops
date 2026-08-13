@@ -15,7 +15,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, RBACError } from '../../lib/errors.js';
-import { AsyncSWRCache } from '../../lib/asyncSWRCache.js';
+import {
+  invalidateTouchpointReadCache,
+  touchpointReadCache,
+  TOUCHPOINT_READ_STALE_MS,
+  TOUCHPOINT_READ_TTL_MS,
+} from '../../lib/touchpointReadCache.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   dispatchPreparedTouchpoint,
@@ -31,9 +36,6 @@ const dispatchSchema = callerIdentitySchema.extend({
   params: z.record(z.unknown()).default({}),
 });
 
-const touchpointReadCache = new AsyncSWRCache(500);
-const TOUCHPOINT_READ_TTL_MS = 90_000;
-const TOUCHPOINT_READ_STALE_MS = 10 * 60_000;
 const MUTATION_REPLAY_TTL_MS = 15 * 60_000;
 const MUTATION_REPLAY_MAX = 1_000;
 
@@ -287,7 +289,7 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
         // Tenant-wide invalidation is intentionally conservative: it prevents a successful write
         // from being hidden behind a 90-second read cache without requiring every catalog entry to
         // maintain a fragile list of dependent keys.
-        touchpointReadCache.invalidate(`${ctx.tenantId}:`);
+        invalidateTouchpointReadCache(ctx.tenantId);
       }
       if (shouldAudit) {
         await auditInvocation(ctx, key, 'ok', { ...baseDetail, params });

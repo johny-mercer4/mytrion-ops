@@ -203,6 +203,10 @@ describe('cs touchpoint catalog', () => {
     expect(listTouchpoints().filter((t) => t.key.startsWith('cs.'))).toHaveLength(keys.length);
   });
 
+  it('cs.applications.list is a local COQL handler, not Deluge — a revert would silently reintroduce the page-cap/no-pagination-on-search bugs', () => {
+    expect(getTouchpoint('cs.applications.list')?.kind).toBe('local');
+  });
+
   it('no longer exposes ANY Maintenance touchpoint — that data lives in our own table', () => {
     // `cs.analytics.maintenance` (mytrionGetMaintenanceAnalytics) and `maintenance.create`
     // (createmaintenance) were removed once maintenance_cases became the source of truth. The
