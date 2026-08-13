@@ -476,7 +476,15 @@ export function Applications() {
             setOpenApp(null);
             notify(warning ? 'info' : 'success', warning ?? 'Saved');
             invalidateApplicationsCache();
-            pageData.refresh();
+            // reload(), NOT refresh(): refresh() forces `fresh: true`, which on the backend means
+            // "force a full Applications+Deals re-drain from Zoho" (applicationsSnapshotCache.ts) —
+            // several seconds, and a real risk of the re-drain reading Zoho's COQL index before it
+            // has caught up with the write we just made, overwriting the correct in-place patch
+            // (applicationsSave.ts's patchApplicationSnapshotRow) with stale pre-save data. A plain
+            // reload() still re-fetches over the network (invalidateApplicationsCache() just cleared
+            // this component's own cache) but reads the ALREADY-PATCHED snapshot instead of forcing
+            // a rebuild of it.
+            pageData.reload();
           }}
         />
       ) : null}
