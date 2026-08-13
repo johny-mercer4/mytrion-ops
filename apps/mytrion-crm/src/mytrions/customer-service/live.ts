@@ -30,17 +30,17 @@ import {
   type MaintenanceQuery,
   type MaintenanceRecord,
 } from '@/api/cs';
-import type { CsApplicationRow, CsDataCenterDeal } from '@/api/touchpointTypes';
+import type { CsDataCenterDeal } from '@/api/touchpointTypes';
 import type {
   ActivityRow,
   AnalyticsBlock,
-  Application,
   BreakdownItem,
   CitiClient,
   LeaderboardRow,
   PriorityRow,
   VolumeDay,
 } from './data';
+import { lookupName, str } from './liveCoerce';
 
 export { useLoad, type Loaded } from '../_shared/useLoad';
 export { getCsContext, type CsContext };
@@ -52,32 +52,12 @@ export type {
   MaintenanceQuery,
   MaintenanceRecord,
 };
-
-// ---- shared coercions ----
-
-const str = (v: unknown): string => (v == null ? '' : typeof v === 'object' ? lookupName(v) : String(v));
-const num = (v: unknown): number | null => {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-const bool01 = (v: unknown): 0 | 1 => (v === true || v === 'true' || v === 1 || v === '1' ? 1 : 0);
-
-function lookupName(v: unknown): string {
-  if (v && typeof v === 'object') {
-    const o = v as { name?: unknown; full_name?: unknown };
-    return str(o.name ?? o.full_name ?? '');
-  }
-  return v == null ? '' : String(v);
-}
-
-/** Alias-tolerant field read — the org's Applications rows carry inconsistent casings. */
-function pick(r: CsApplicationRow, ...keys: string[]): unknown {
-  for (const k of keys) {
-    if (r[k] !== undefined && r[k] !== null) return r[k];
-  }
-  return undefined;
-}
+export {
+  invalidateApplicationsCache,
+  loadApplications,
+  APPLICATIONS_PAGE_SIZE,
+  type AppsPage,
+} from './liveApplications';
 
 export function fmtDate(v: unknown): string {
   const s = str(v);
@@ -106,107 +86,6 @@ export function relTime(v: unknown): string {
   const h = Math.floor(mins / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-// ---- Applications ----
-
-export interface AppsPage {
-  rows: Application[];
-  moreRecords: boolean;
-}
-
-/** Deal owner from Deluge enrichment (`_dealOwner`) — never Application Owner. */
-function dealAgentName(r: CsApplicationRow): string {
-  const o = pick(r, '_dealOwner', '_dealAgent');
-  if (o == null || o === '') return 'not assigned';
-  if (typeof o === 'object') {
-    const name = lookupName(o).trim();
-    return name || 'not assigned';
-  }
-  const s = String(o).trim();
-  return s || 'not assigned';
-}
-
-function mapAppRow(r: CsApplicationRow): Application {
-  return {
-    id: str(r.id),
-    appId: str(pick(r, 'Application_ID', 'Application_IDD')),
-    company: str(r.Name),
-    first: str(r.First_Name),
-    last: str(r.Last_Name),
-    biz: str(r.Type_of_Business) as Application['biz'],
-    stage: str(r.Stage),
-    wex: str(r.WEX_Status),
-    mc: str(r.emc),
-    dot: str(r.DOT),
-    phone: str(r.Phone),
-    email: str(r.Email),
-    street: str(r.Address),
-    city: str(r.City),
-    state: str(r.State),
-    zip: str(r.Zip_Code),
-    credit: num(r.Credit_Score),
-    trucks: num(r.Number_of_Trucks) ?? 0,
-    cards: num(pick(r, 'Cards_Requested', 'Cards_Ordered')) ?? 0,
-    date: fmtDate(r.Date_Filled),
-    /** Raw value for sort/filter — `date` above is display-formatted and must never be sorted on
-     *  directly (lexicographic order on 'Aug 6, 2026' strings isn't chronological order). */
-    dateFilledRaw: str(r.Date_Filled),
-    agent: dealAgentName(r),
-    notes: str(r.Customer_Service_Notes),
-    cycle: str(r.Billing_Cycle),
-    pay: str(r.Payment_Type_Billing) as Application['pay'],
-    ta: bool01(r.Email_to_TA),
-    efs: bool01(pick(r, 'TA_EFS_Added')),
-    lmt: bool01(pick(r, 'Limits_Added', 'Limits_added')),
-    mob: bool01(pick(r, 'Mobile_Driver_App', 'Mobile_driver_app')),
-    chn: bool01(pick(r, 'Chain_Policy', 'Chain_policy')),
-    verified: r.Verified === true || r.Verified === 'true',
-    carrierId: str(r.Carrier_ID),
-  };
-}
-
-/** Short TTL cache — tab switches / revisits skip another Deluge + COQL round-trip. */
-const APPS_CACHE_TTL_MS = 90_000;
-const appsCache = new Map<string, { at: number; data: AppsPage }>();
-
-/** One COQL page can return up to 2000 rows (Zoho v8) — avoid 200-row loop chatter. */
-export const APPLICATIONS_PAGE_SIZE = 2000;
-
-export function invalidateApplicationsCache(): void {
-  appsCache.clear();
-}
-
-export async function loadApplications(
-  tab: 'apps' | 'clients',
-  search: string,
-  page: number,
-  fresh = false,
-): Promise<AppsPage> {
-  const q = search.trim();
-  const cacheKey = `${tab}|${q}|${page}|${APPLICATIONS_PAGE_SIZE}`;
-  if (fresh) appsCache.delete(cacheKey);
-  else {
-    const hit = appsCache.get(cacheKey);
-    if (hit && Date.now() - hit.at < APPS_CACHE_TTL_MS) return hit.data;
-  }
-
-  const res = await csTouchpoint(
-    'cs.applications.list',
-    {
-      tab,
-      ...(q ? { search: q } : {}),
-      page,
-      perPage: APPLICATIONS_PAGE_SIZE,
-    },
-    { force: fresh },
-  );
-  const data: AppsPage = {
-    rows: (res.data ?? []).map(mapAppRow),
-    moreRecords: res.more_records === true,
-  };
-  appsCache.set(cacheKey, { at: Date.now(), data });
-  return data;
 }
 
 // ---- Home ----

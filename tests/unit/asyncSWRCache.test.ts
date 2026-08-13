@@ -37,4 +37,28 @@ describe('AsyncSWRCache', () => {
     await cache.getOrLoad('sales:user:1', loader, { ttlMs: 60_000 });
     expect(loader).toHaveBeenCalledTimes(2);
   });
+
+  describe('peek', () => {
+    it('returns the cached value without checking TTL or invoking a loader', async () => {
+      const cache = new AsyncSWRCache();
+      await cache.getOrLoad('a', async () => ({ n: 1 }), { ttlMs: 0 }); // already-expired TTL
+      expect(cache.peek('a')).toEqual({ n: 1 });
+    });
+
+    it('returns the SAME object reference — mutating it in place is visible on the next getOrLoad', async () => {
+      const cache = new AsyncSWRCache();
+      const loader = vi.fn(async () => ({ rows: [{ id: '1', name: 'old' }] }));
+      await cache.getOrLoad('a', loader, { ttlMs: 60_000 });
+      const peeked = cache.peek<{ rows: Array<{ id: string; name: string }> }>('a');
+      peeked!.rows[0]!.name = 'new';
+      const after = await cache.getOrLoad('a', loader, { ttlMs: 60_000 });
+      expect(after.data.rows[0]!.name).toBe('new');
+      expect(loader).toHaveBeenCalledTimes(1); // still fresh — the patch didn't force a reload
+    });
+
+    it('returns undefined for a missing key', () => {
+      const cache = new AsyncSWRCache();
+      expect(cache.peek('missing')).toBeUndefined();
+    });
+  });
 });

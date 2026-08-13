@@ -45,8 +45,10 @@ describe('catalog shape', () => {
     // when Sales briefly moved to /v1/comms (17 → 13). Sales then went BACK to filing in Zoho Desk, so
     // `tickets.create_in_crm` and `tickets.create_escalation` are live again (13 → 15). The two
     // `tickets.upload_*` attachment touchpoints did NOT come back: the routes attach through the Desk
-    // API directly, and those two had no callers even before the removal.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(15);
+    // API directly, and those two had no callers even before the removal. Then `cs.applications.list`
+    // moved off `mytrionGetApplications` to a direct-COQL `kind: 'local'` handler (2026-08-13, global
+    // sort/filter — the Deluge function had no expressible path for the Deal-owner join anyway) (15 → 14).
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(14);
     // Includes direct EFS card-status and delta-limit writes used by Sales automations.
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(50);
     // BOCA and Close Application are guarded local handlers around Playwright.

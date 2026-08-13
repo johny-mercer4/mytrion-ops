@@ -7,18 +7,19 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { getCardTrackingBulk, toggleOnboarding, type OnboardingField } from '@/api/cs';
+import type { CsApplicationsFacets } from '@/api/touchpointTypes';
 import {
   activeFilterCount,
-  distinctValues,
+  applicationsQueryKey,
   emptyFilters,
-  filterApplications,
-  sortApplications,
+  filtersToParams,
   SORT_OPTIONS,
   type AppFilters,
   type SortDir,
   type SortKey,
 } from './applicationsFilters';
 import { ApplicationModal } from './ApplicationModal';
+import { ApplicationsFilterPanel } from './ApplicationsFilterPanel';
 import { CardTracking } from './CardTracking';
 import { copyWithToast } from './copyToast';
 import {
@@ -70,13 +71,17 @@ export function Applications() {
   // Bulk-fetched FedEx tracking numbers, keyed by row id — see the effect below. Kept separate
   // from `overrides` (that one is specifically the tick-box optimistic-update mechanism).
   const [trackingById, setTrackingById] = useState<Record<string, string>>({});
-  // Sort + filter (QA feedback 2026-08-10) — client-side over the loaded page; see
-  // applicationsFilters.ts for why there's no server-side equivalent. Persists across apps/clients
-  // tab switches, same as `search` already does.
+  // Sort + filter (QA feedback 2026-08-10; moved server-side 2026-08-13 — see
+  // applicationsListQuery.ts on the backend). Persists across apps/clients tab switches, same as
+  // `search` already does. `filters` is the immediate UI state (drives the badge count and the
+  // controls themselves); `queryFilters` is debounced the same way `search`→`query` is, so a
+  // free-typed Company Name doesn't fire a request per keystroke.
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<AppFilters>(emptyFilters);
+  const [queryFilters, setQueryFilters] = useState<AppFilters>(emptyFilters);
+  const [facets, setFacets] = useState<CsApplicationsFacets>({ stage: [], biz: [], agent: [], wex: [] });
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -86,11 +91,36 @@ export function Applications() {
     return () => clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQueryFilters(filters);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [filters]);
+
+  // Sort has no free-text input (a <select> + direction toggle) — apply immediately, just reset
+  // to page 1 so a re-sort doesn't land on what's now an out-of-range page.
+  useEffect(() => setPage(1), [sortKey, sortDir]);
+
+  const queryParams = useMemo(
+    () => filtersToParams(queryFilters, sortKey, sortDir),
+    [queryFilters, sortKey, sortDir],
+  );
+  const queryKey = applicationsQueryKey(queryParams);
+
   const pageData = useLoad(
-    (fresh) => loadApplications(subTab, query, page, fresh),
-    [subTab, query, page],
+    (fresh) => loadApplications(subTab, query, page, queryParams, fresh),
+    [subTab, query, page, queryKey],
   );
   const loading = pageData.loading || pageData.refreshing;
+
+  // useLoad nulls `data` on every input change (see useLoad.ts) — reading facets straight off
+  // `pageData.data` would blank every filter dropdown on each keystroke/page turn. Hold them in
+  // state instead, updated only once a load actually resolves.
+  useEffect(() => {
+    if (pageData.data) setFacets(pageData.data.facets);
+  }, [pageData.data]);
 
   // Clients-tab only — Tracking # is Deal-level data an "apps in process" row has no use for.
   // One bulk call for the whole page rather than one lookup per row (see getCardTrackingBulk /
@@ -129,20 +159,13 @@ export function Applications() {
     });
   }, [pageData.data, overrides, trackingById]);
 
-  const rows = useMemo(
-    () => sortApplications(filterApplications(merged, filters), sortKey, sortDir),
-    [merged, filters, sortKey, sortDir],
-  );
-
-  // Filter dropdown option lists — distinct values actually present on the loaded page, not a
-  // hardcoded picklist (those drift; see ApplicationModal's Stage options for how stale one gets).
-  const stageOptions = useMemo(() => distinctValues(merged, (a) => a.stage), [merged]);
-  const bizOptions = useMemo(() => distinctValues(merged, (a) => a.biz), [merged]);
-  const agentOptions = useMemo(() => distinctValues(merged, (a) => a.agent), [merged]);
-  const wexOptions = useMemo(() => distinctValues(merged, (a) => a.wex), [merged]);
+  // Sort/filter/search are all server-side now — `merged` (the loaded page + optimistic
+  // overrides) is already the exact row set + order to render.
+  const rows = merged;
   const filterCount = activeFilterCount(filters);
 
   const hasMore = pageData.data?.moreRecords === true;
+  const total = pageData.data?.total ?? rows.length;
   // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
   // per tab, so this only ever changes when the tab does.
   const columns = useMemo(() => columnsFor(subTab), [subTab]);
@@ -229,7 +252,12 @@ export function Applications() {
               'FedEx shipment tracking for additional card orders'
             ) : (
               <>
-                {rows.length} on page · Page {page}
+                {rows.length} of {total} · Page {page}
+                {pageData.data?.truncated ? (
+                  <span style={{ color: 'var(--cs-warn, #b45309)', marginLeft: '0.5rem' }} title="More records exist than this list drained — results may be incomplete.">
+                    ⚠ partial
+                  </span>
+                ) : null}
                 {loading ? <span style={{ color: 'var(--cs-accent)', marginLeft: '0.5rem' }}>Loading…</span> : null}
               </>
             )}
@@ -354,120 +382,7 @@ export function Applications() {
 
       {/* ── Filter panel (collapsible) — company/date/stage/business type/agent + WEX status chips ── */}
       {activeTab !== 'tracking' && filtersOpen ? (
-        <div className="cs-app-filter-panel">
-          <div className="cs-app-filter-row">
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Company Name</label>
-              <input
-                type="text"
-                className="cs-form-input"
-                value={filters.company}
-                placeholder="Contains…"
-                onChange={(e) => setFilters((f) => ({ ...f, company: e.target.value }))}
-              />
-            </div>
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Date Filled From</label>
-              <input
-                type="date"
-                className="cs-form-input"
-                value={filters.dateFrom}
-                onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
-              />
-            </div>
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Date Filled To</label>
-              <input
-                type="date"
-                className="cs-form-input"
-                value={filters.dateTo}
-                onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
-              />
-            </div>
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Stage</label>
-              <select
-                className="cs-form-input"
-                value={filters.stage}
-                onChange={(e) => setFilters((f) => ({ ...f, stage: e.target.value }))}
-              >
-                <option value="">All</option>
-                {stageOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Business Type</label>
-              <select
-                className="cs-form-input"
-                value={filters.biz}
-                onChange={(e) => setFilters((f) => ({ ...f, biz: e.target.value }))}
-              >
-                <option value="">All</option>
-                {bizOptions.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="cs-app-filter-field">
-              <label className="cs-app-filter-label">Agent (Deal)</label>
-              <select
-                className="cs-form-input"
-                value={filters.agent}
-                onChange={(e) => setFilters((f) => ({ ...f, agent: e.target.value }))}
-              >
-                <option value="">All</option>
-                {agentOptions.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {filterCount > 0 ? (
-              <button
-                type="button"
-                className="cs-btn cs-btn-ghost cs-app-filter-clear"
-                onClick={() => setFilters(emptyFilters())}
-              >
-                Clear filters
-              </button>
-            ) : null}
-          </div>
-          {wexOptions.length > 0 ? (
-            <div className="cs-app-filter-wex-row">
-              <span className="cs-app-filter-label">WEX Status</span>
-              <div className="cs-app-filter-chips">
-                {wexOptions.map((w) => {
-                  const active = filters.wex.has(w);
-                  return (
-                    <button
-                      key={w}
-                      type="button"
-                      className={`cs-chip is-neutral${active ? ' active' : ''}`}
-                      aria-pressed={active}
-                      onClick={() =>
-                        setFilters((f) => {
-                          const next = new Set(f.wex);
-                          if (next.has(w)) next.delete(w);
-                          else next.add(w);
-                          return { ...f, wex: next };
-                        })
-                      }
-                    >
-                      {w}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <ApplicationsFilterPanel filters={filters} setFilters={setFilters} facets={facets} filterCount={filterCount} />
       ) : null}
 
       {activeTab === 'tracking' ? (

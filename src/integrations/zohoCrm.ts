@@ -222,6 +222,44 @@ export class ZohoCrmWrapper extends ZohoWrapper {
   }
 
   /**
+   * List EVERY CRM user, active or deactivated (`GET /users?type=AllUsers` + `type=DeactiveUsers`)
+   * — used ONLY to resolve a Deal Owner id to a display name (a Deal's raw `Owner.name` can be
+   * missing entirely once its owner is deactivated — verified live against a real record). NOT for
+   * permission/roster decisions; use `listActiveUsers()` for those.
+   */
+  async listUsersForNameResolution(): Promise<CrmUser[]> {
+    const out: CrmUser[] = [];
+    const seen = new Set<string>();
+    const MAX_PAGES = 10;
+    for (const type of ['AllUsers', 'DeactiveUsers']) {
+      for (let page = 1; page <= MAX_PAGES; page += 1) {
+        const res = await this.requestRaw('GET', '/users', { query: { type, page, per_page: 200 } });
+        if (res.status === 204) break;
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`[zoho-crm] GET /users?type=${type} HTTP ${res.status}: ${text.slice(0, 300)}`);
+        }
+        const json = text ? (JSON.parse(text) as CrmUsersApiResponse) : {};
+        const users = json.users ?? [];
+        for (const u of users) {
+          if (!u.id || seen.has(u.id)) continue;
+          seen.add(u.id);
+          out.push({
+            zohoUserId: u.id,
+            name: u.full_name ?? null,
+            email: u.email ?? null,
+            profile: u.profile?.name ?? null,
+            role: u.role?.name ?? null,
+            isOnline: u.Isonline === true,
+          });
+        }
+        if (json.info?.more_records !== true) break;
+      }
+    }
+    return out;
+  }
+
+  /**
    * Attach a file to a CRM record (`POST /{module}/{id}/Attachments`, multipart field `file`).
    * Mirrors the widget's `ZOHO.CRM.API.attachFile` — the ticket/escalation attachment Deluge functions
    * then read this attachment off the record and push it to the Desk ticket. Returns the attachment id.

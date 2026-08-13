@@ -1,13 +1,9 @@
 /**
- * Client-side sort + filter over the currently loaded Applications/Clients page.
- *
- * There is no server-side sort/filter for this list: the query itself is a Zoho Deluge function
- * (`mytrionGetApplications`) that lives inside Zoho, not in this repo — see `loadApplications` in
- * live.ts. This operates on whatever page is already loaded (up to APPLICATIONS_PAGE_SIZE rows).
+ * Sort + filter STATE for the CS Applications/Clients list. The actual sort/filter/facet
+ * computation moved server-side 2026-08-13 (see applicationsListQuery.ts, backend) so it's
+ * correct across the WHOLE dataset, not just one loaded page — this file now only owns the UI
+ * state shape and translating it into touchpoint params + a stable cache key.
  */
-import type { Application } from './data';
-import { parseYmd } from './live';
-
 export type SortKey = 'date' | 'appId' | 'carrierId';
 export type SortDir = 'asc' | 'desc';
 
@@ -40,68 +36,43 @@ export function activeFilterCount(f: AppFilters): number {
   );
 }
 
-/** Local-midnight day timestamp, or null. Never `new Date(rawString).getTime()` directly — a bare
- *  'YYYY-MM-DD' parses as UTC and lands a day early in every timezone west of it (see live.ts). */
-function dayTime(raw: string): number | null {
-  const d = parseYmd(raw.slice(0, 10));
-  return d ? d.getTime() : null;
+export interface ApplicationsQueryParams {
+  sortKey: SortKey;
+  sortDir: SortDir;
+  company: string;
+  dateFrom: string;
+  dateTo: string;
+  stage: string;
+  biz: string;
+  agent: string;
+  wex: string[];
 }
 
-function numericOrLocaleCompare(a: string, b: string): number {
-  const na = Number(a);
-  const nb = Number(b);
-  // Application/Carrier IDs are numeric-looking but not fixed-width, so plain string comparison
-  // ranks '90000123' above '500000005' — numeric compare when both sides parse cleanly.
-  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
-  return a.localeCompare(b);
-}
-
-export function sortApplications(rows: Application[], key: SortKey, dir: SortDir): Application[] {
-  // Flipping direction by reversing the whole sorted array would also flip which end the
-  // "missing value" rows sink to — the sign only applies to the real comparison, never to the
-  // fixed "missing sinks to the bottom" branches below.
-  const sign = dir === 'desc' ? -1 : 1;
-  const cmp = (a: Application, b: Application): number => {
-    if (key === 'date') {
-      const ta = dayTime(a.dateFilledRaw);
-      const tb = dayTime(b.dateFilledRaw);
-      if (ta === null && tb === null) return 0;
-      if (ta === null) return 1;
-      if (tb === null) return -1;
-      return (ta - tb) * sign;
-    }
-    const va = key === 'appId' ? a.appId : a.carrierId;
-    const vb = key === 'appId' ? b.appId : b.carrierId;
-    if (!va && !vb) return 0;
-    if (!va) return 1;
-    if (!vb) return -1;
-    return numericOrLocaleCompare(va, vb) * sign;
+/**
+ * Touchpoint params for the current sort+filter state. `wex` is SORTED — the backend's read-cache
+ * key preserves array order (it sorts object keys, not array elements), so an unsorted Set→array
+ * conversion would fragment the cache across insertion-order variations of the identical selection.
+ */
+export function filtersToParams(f: AppFilters, sortKey: SortKey, sortDir: SortDir): ApplicationsQueryParams {
+  return {
+    sortKey,
+    sortDir,
+    company: f.company,
+    dateFrom: f.dateFrom,
+    dateTo: f.dateTo,
+    stage: f.stage,
+    biz: f.biz,
+    agent: f.agent,
+    wex: [...f.wex].sort(),
   };
-  return [...rows].sort(cmp);
 }
 
-export function filterApplications(rows: Application[], f: AppFilters): Application[] {
-  const company = f.company.trim().toLowerCase();
-  const from = f.dateFrom ? dayTime(f.dateFrom) : null;
-  const to = f.dateTo ? dayTime(f.dateTo) : null;
-  return rows.filter((a) => {
-    if (company && !a.company.toLowerCase().includes(company)) return false;
-    if (f.stage && a.stage !== f.stage) return false;
-    if (f.biz && a.biz !== f.biz) return false;
-    if (f.agent && a.agent !== f.agent) return false;
-    if (f.wex.size > 0 && !f.wex.has(a.wex)) return false;
-    if (from !== null || to !== null) {
-      const t = dayTime(a.dateFilledRaw);
-      if (t === null) return false;
-      if (from !== null && t < from) return false;
-      if (to !== null && t > to) return false;
-    }
-    return true;
-  });
-}
-
-/** Distinct, sorted, non-empty values for a filter dropdown — derived from the loaded rows rather
- *  than a hardcoded list, since live picklists drift (see ApplicationModal's Stage options). */
-export function distinctValues(rows: Application[], get: (a: Application) => string): string[] {
-  return [...new Set(rows.map(get).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+/**
+ * A stable string for these params. `useLoad`'s effect keys off `JSON.stringify(deps)`
+ * (apps/mytrion-crm/src/mytrions/_shared/useLoad.ts), and a `Set` stringifies to `{}` — passing
+ * `AppFilters` directly as a dep would silently never refetch when a WEX chip is toggled. Pass
+ * this string instead.
+ */
+export function applicationsQueryKey(params: ApplicationsQueryParams): string {
+  return JSON.stringify(params);
 }
