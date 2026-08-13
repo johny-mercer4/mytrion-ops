@@ -14,6 +14,7 @@
 import { useRef, useState, type SyntheticEvent } from 'react';
 import { Bold, Eye, Italic, Link2, List, ListOrdered, Pencil } from 'lucide-react';
 import { Markdown } from '../../features/chat/Markdown';
+import './HrRichText.css';
 
 type Wrap = { before: string; after: string };
 type LinePrefix = { prefix: string; ordered?: boolean };
@@ -109,7 +110,7 @@ export function HrRichText({
         <div className="hr-rt-tools" role="group" aria-label="Formatting">
           <button
             type="button"
-            className="hr-icon-btn"
+            className="hr-rt-icon-btn"
             aria-label="Bold"
             disabled={disabled || preview}
             onClick={() => wrap(BOLD)}
@@ -118,7 +119,7 @@ export function HrRichText({
           </button>
           <button
             type="button"
-            className="hr-icon-btn"
+            className="hr-rt-icon-btn"
             aria-label="Italic"
             disabled={disabled || preview}
             onClick={() => wrap(ITALIC)}
@@ -127,7 +128,7 @@ export function HrRichText({
           </button>
           <button
             type="button"
-            className="hr-icon-btn"
+            className="hr-rt-icon-btn"
             aria-label="Bulleted list"
             disabled={disabled || preview}
             onClick={() => prefixLines({ prefix: '- ' })}
@@ -136,7 +137,7 @@ export function HrRichText({
           </button>
           <button
             type="button"
-            className="hr-icon-btn"
+            className="hr-rt-icon-btn"
             aria-label="Numbered list"
             disabled={disabled || preview}
             onClick={() => prefixLines({ prefix: '1. ', ordered: true })}
@@ -145,7 +146,7 @@ export function HrRichText({
           </button>
           <button
             type="button"
-            className="hr-icon-btn"
+            className="hr-rt-icon-btn"
             aria-label="Link"
             disabled={disabled || preview}
             onClick={() => wrap(LINK)}

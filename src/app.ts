@@ -101,6 +101,7 @@ import { salesBootstrapRoutes } from './routes/v1/salesBootstrap.routes.js';
 import { callHubRoutes } from './routes/v1/callHub.routes.js';
 import { managerEfsRoutes } from './routes/v1/managerEfs.routes.js';
 import { managerTasksRoutes } from './routes/v1/managerTasks.routes.js';
+import { mytrionAnnouncementsRoutes } from './routes/v1/mytrionAnnouncements.routes.js';
 import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
@@ -489,6 +490,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(salesBootstrapRoutes);
       await v1.register(callHubRoutes);
       await v1.register(managerTasksRoutes);
+      await v1.register(mytrionAnnouncementsRoutes);
       await v1.register(managerEfsRoutes);
       await v1.register(kpiAdminRoutes);
     },

@@ -54,6 +54,7 @@ export * from './verification_sales_responses.js';
 export * from './mytrion_rejection_reports.js';
 export * from './sales_kpi.js';
 export * from './mytrion_worker_tasks.js';
+export * from './mytrion_announcements.js';
 export * from './mytrion_agent_presence.js';
 export * from './mytrion_threads.js';
 export * from './mytrion_tickets.js';

@@ -15427,3 +15427,25 @@ history of past draws is not drawing, and it is what accounting asks for.
 Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
 the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
 CRM 851 green. Both vendored bundles rebuilt.
+
+## 2026-08-13 — Sales announcements: Manager publish → agent acknowledgement
+
+Implemented the approved Issue 12 path as one tenant-scoped announcement lifecycle:
+
+- Manager → Sales now has an Announcements workspace with a Markdown composer, live agent preview,
+  department targeting, standard/high priority, validation, and a published list. The compact layout
+  switches between Compose and Preview so neither pane is squeezed on a phone.
+- Sales Home now separates targeted announcements into New and Archive. Opening an item is read-only;
+  Close leaves it unread, while Got it writes one idempotent per-agent receipt and moves it to Archive.
+- Added `mytrion_announcements` and `mytrion_announcement_reads`, migration 0117, repository-only DB
+  access, management/Sales department gates, tenant and audience conditions in every read/write query,
+  audit events, and `/v1/manager/announcements` + `/v1/announcements` routes.
+- Reused the sanitized Markdown renderer for body content and extracted the existing HR Markdown editor
+  styles so the shared editor remains usable outside HR without inheriting HR page selectors.
+
+Verification: announcement route tests 6/6, CRM tests 855/855, backend and CRM typechecks green,
+lint green with 23 existing warnings, widget production build green, Drizzle reports no ungenerated
+schema changes. Desktop and 390px visual QA covered Manager Compose/Preview plus Sales New/detail/Close/
+Got it/Archive. The full backend suite still has unrelated baseline/environment failures (109 of 2618,
+including localhost WebSocket `EPERM`, profile-gate expectations, and timeouts); the feature suite is
+green in isolation.
