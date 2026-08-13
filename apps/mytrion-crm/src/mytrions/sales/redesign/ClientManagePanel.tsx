@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
+import { maskCard } from './autoLive';
 import { isMiniAppPilotAgent } from './miniAppPilot';
 
 import {
@@ -397,7 +398,7 @@ export function ClientManagePanel({
                   <option value="">Select a card number…</option>
                   {availableCards.map((c) => (
                     <option key={c.cardId ?? c.cardNumber ?? ''} value={c.cardId ?? ''}>
-                      {(c.cardNumber || c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
+                      {(c.cardNumber ? maskCard(c.cardNumber) : c.cardId || '—') + (c.status ? ` · ${c.status}` : '')}
                     </option>
                   ))}
                 </select>
