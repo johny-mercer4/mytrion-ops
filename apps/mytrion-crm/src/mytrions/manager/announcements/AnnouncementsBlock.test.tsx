@@ -8,20 +8,69 @@ const publishManagerAnnouncement = vi.fn();
 const uploadAnnouncementAsset = vi.fn();
 const getAnnouncementAssetDownload = vi.fn();
 
-vi.mock('@ckeditor/ckeditor5-react', () => ({
-  CKEditor: ({ data, onChange, config }: {
-    data: string;
-    onChange: (event: unknown, editor: { getData: () => string }) => void;
-    config: { placeholder?: string };
-  }) => (
-    <textarea
-      aria-label="Rich text editor"
-      value={data}
-      placeholder={config.placeholder}
-      onChange={(event) => onChange(event, { getData: () => event.target.value })}
-    />
-  ),
-}));
+vi.mock('@tiptap/react', async () => {
+  const React = await import('react');
+  type EditorOptions = {
+    content?: string;
+    editorProps?: { attributes?: Record<string, string> };
+    onUpdate?: (input: { editor: FakeEditor }) => void;
+  };
+  type FakeEditor = {
+    options: EditorOptions;
+    getHTML: () => string;
+    getAttributes: () => Record<string, string>;
+    isActive: () => boolean;
+    chain: () => Record<string, (...args: unknown[]) => unknown>;
+    can: () => { chain: () => Record<string, (...args: unknown[]) => unknown> };
+    commands: { setContent: (html: string) => void };
+  };
+
+  function commandChain(): Record<string, (...args: unknown[]) => unknown> {
+    const chain: Record<string, (...args: unknown[]) => unknown> = {};
+    const proxy = new Proxy(chain, {
+      get: (_, key: string) => (key === 'run' ? () => true : () => proxy),
+    });
+    return proxy;
+  }
+
+  return {
+    useEditor: (options: EditorOptions) => {
+      const optionsRef = React.useRef(options);
+      optionsRef.current = options;
+      const editorRef = React.useRef<FakeEditor | null>(null);
+      if (!editorRef.current) {
+        let html = options.content ?? '';
+        const chain = commandChain();
+        editorRef.current = {
+          options: optionsRef.current,
+          getHTML: () => html,
+          getAttributes: () => ({}),
+          isActive: () => false,
+          chain: () => chain,
+          can: () => ({ chain: () => chain }),
+          commands: { setContent: (next: string) => { html = next; } },
+        };
+      }
+      editorRef.current.options = optionsRef.current;
+      return editorRef.current;
+    },
+    useEditorState: ({ editor, selector }: {
+      editor: FakeEditor | null;
+      selector: (input: { editor: FakeEditor | null }) => unknown;
+    }) => selector({ editor }),
+    EditorContent: ({ editor }: { editor: FakeEditor | null }) =>
+      React.createElement('textarea', {
+        role: 'textbox',
+        'aria-label': 'Rich text editor',
+        value: editor?.getHTML() ?? '',
+        onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+          if (!editor) return;
+          editor.commands.setContent(event.target.value);
+          editor.options.onUpdate?.({ editor });
+        },
+      }),
+  };
+});
 
 vi.mock('../../../api/announcements', () => ({
   listManagerAnnouncements: () => listManagerAnnouncements(),
@@ -29,6 +78,11 @@ vi.mock('../../../api/announcements', () => ({
   uploadAnnouncementAsset: (file: File) => uploadAnnouncementAsset(file),
   getAnnouncementAssetDownload: (id: string) => getAnnouncementAssetDownload(id),
 }));
+
+function setEditorHtml(html: string): void {
+  const editor = screen.getByRole('textbox', { name: 'Rich text editor' });
+  fireEvent.change(editor, { target: { value: html } });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,9 +112,7 @@ describe('AnnouncementsBlock', () => {
     fireEvent.change(screen.getByLabelText('Title'), {
       target: { value: 'Q3 Sales Target Update' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
-      target: { value: '<p>Target raised to <strong>12,000 gallons</strong>.</p>' },
-    });
+    setEditorHtml('<p>Target raised to <strong>12,000 gallons</strong>.</p>');
 
     const preview = within(screen.getByLabelText('Live targeted-agent preview'));
     expect(preview.getByRole('heading', { name: 'Q3 Sales Target Update' })).toBeVisible();
@@ -72,9 +124,7 @@ describe('AnnouncementsBlock', () => {
     await screen.findByText('No announcements published');
 
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Maintenance' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
-      target: { value: '<p>CRM maintenance starts at 8 PM.</p>' },
-    });
+    setEditorHtml('<p>CRM maintenance starts at 8 PM.</p>');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Sales' }));
     fireEvent.click(screen.getByRole('radio', { name: 'High priority' }));
     fireEvent.click(screen.getByRole('button', { name: 'Publish announcement' }));
@@ -91,15 +141,13 @@ describe('AnnouncementsBlock', () => {
     expect(screen.getByText('Published to Sales.')).toBeVisible();
   });
 
-  it('previews CKEditor headings and alignment from safe HTML', async () => {
+  it('previews Tiptap headings and alignment from safe HTML', async () => {
     render(<AnnouncementsBlock />);
     await screen.findByText('No announcements published');
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
-      target: {
-        value: '<h2 style="text-align:center">Important route change</h2><script>alert(1)</script>',
-      },
-    });
+    setEditorHtml(
+      '<h2 style="text-align:center">Important route change</h2><script>alert(1)</script>',
+    );
     const heading = within(screen.getByLabelText('Live targeted-agent preview')).getByRole(
       'heading',
       { name: 'Important route change' },

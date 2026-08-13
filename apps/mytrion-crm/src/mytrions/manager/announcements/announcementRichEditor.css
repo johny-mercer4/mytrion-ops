@@ -1,114 +1,259 @@
-.an-ckeditor,
-.ck-body-wrapper {
-  --ck-color-base-background: var(--surface-alt);
-  --ck-color-base-border: var(--border-default);
-  --ck-color-base-foreground: var(--surface-alt);
-  --ck-color-base-text: var(--text-primary);
-  --ck-color-base-active: var(--accent);
-  --ck-color-base-active-focus: var(--accent);
-  --ck-color-text: var(--text-primary);
-  --ck-color-toolbar-background: var(--surface);
-  --ck-color-toolbar-border: var(--border-default);
-  --ck-color-dropdown-panel-background: var(--surface-alt);
-  --ck-color-dropdown-panel-border: var(--border-default);
-  --ck-color-panel-background: var(--surface-alt);
-  --ck-color-panel-border: var(--border-default);
-  --ck-color-list-background: var(--surface-alt);
-  --ck-color-list-button-hover-background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
-  --ck-color-list-button-on-background: var(--accent);
-  --ck-color-list-button-on-background-focus: var(--accent);
-  --ck-color-list-button-on-text: var(--surface);
-  --ck-color-input-background: var(--surface-alt);
-  --ck-color-input-border: var(--border-strong);
-  --ck-color-input-text: var(--text-primary);
-  --ck-color-input-disabled-background: var(--surface);
-  --ck-color-input-disabled-border: var(--border-default);
-  --ck-color-input-disabled-text: var(--text-muted);
-  --ck-color-button-default-hover-background: var(--surface-raised);
-  --ck-color-button-default-active-background: var(--surface-raised);
-  --ck-color-button-default-disabled-background: transparent;
-  --ck-color-button-on-background: color-mix(in srgb, var(--accent) 18%, var(--surface));
-  --ck-color-button-on-hover-background: color-mix(in srgb, var(--accent) 24%, var(--surface));
-  --ck-color-button-on-active-background: color-mix(in srgb, var(--accent) 28%, var(--surface));
-  --ck-color-button-on-disabled-background: var(--surface-raised);
-  --ck-color-button-on-color: var(--accent);
-  --ck-color-focus-border: var(--accent);
-  --ck-color-focus-outer-shadow: color-mix(in srgb, var(--accent) 26%, transparent);
-  --ck-color-shadow-drop: rgb(0 0 0 / 38%);
-  --ck-color-shadow-drop-active: rgb(0 0 0 / 52%);
-  --ck-color-shadow-inner: rgb(0 0 0 / 24%);
-  --ck-color-tooltip-background: var(--text-primary);
-  --ck-color-tooltip-text: var(--surface);
-  --ck-color-engine-placeholder-text: var(--text-muted);
-  --ck-color-upload-bar-background: var(--accent);
-  --ck-color-link-default: var(--accent);
-  --ck-color-link-selected-background: color-mix(in srgb, var(--accent) 14%, transparent);
-  --ck-color-link-fake-selection: color-mix(in srgb, var(--accent) 30%, transparent);
-  --ck-color-split-button-hover-background: var(--surface-raised);
-  --ck-color-split-button-hover-border: var(--border-strong);
-  --ck-powered-by-background: var(--surface-alt);
-  --ck-powered-by-text-color: var(--text-secondary);
-  --ck-powered-by-border-color: var(--accent);
-  --ck-border-radius: var(--radius-control);
+.an-tiptap {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
   color: var(--text-primary);
 }
 
-.an-ckeditor .ck.ck-toolbar {
-  border-radius: var(--radius-control) var(--radius-control) 0 0;
+.an-tiptap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
-.an-ckeditor .ck.ck-editor__main > .ck-editor__editable {
+.an-tiptap-toolbar {
+  display: flex;
+  min-block-size: 3rem;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  border-block-end: 1px solid var(--border-default);
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+
+.an-tiptap-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline-end: var(--space-1);
+  border-inline-end: 1px solid var(--border-default);
+}
+
+.an-tiptap-group:last-child {
+  border-inline-end: 0;
+}
+
+.an-tiptap-tool {
+  display: inline-grid;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.an-tiptap-tool:hover:not(:disabled),
+.an-tiptap-tool:focus-visible {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.an-tiptap-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+}
+
+.an-tiptap-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.an-tiptap-glyph {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.an-tiptap-tool[aria-label='Underline'] .an-tiptap-glyph {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.an-tiptap-tool[aria-label='Strikethrough'] .an-tiptap-glyph {
+  text-decoration: line-through;
+}
+
+.an-tiptap-tool[aria-label='Align left'] .an-tiptap-glyph {
+  transform: skewY(0deg);
+}
+
+.an-tiptap-tool[aria-label='Align right'] .an-tiptap-glyph {
+  transform: rotate(180deg);
+}
+
+.an-tiptap-heading {
+  position: relative;
+  display: flex;
+  min-inline-size: 8.5rem;
+  align-items: center;
+}
+
+.an-tiptap-heading select {
+  inline-size: 100%;
+  block-size: 2.25rem;
+  appearance: none;
+  padding: 0 2rem 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.an-tiptap-heading select:hover,
+.an-tiptap-heading select:focus-visible {
+  outline: 0;
+  background: var(--surface-raised);
+}
+
+.an-tiptap-heading .ds-icon {
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  pointer-events: none;
+}
+
+.an-tiptap-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.an-tiptap-content {
   min-block-size: 20rem;
   max-block-size: 40rem;
   overflow-y: auto;
-  border-radius: 0;
-  background: var(--surface-alt);
-  color: var(--text-primary);
+  padding: var(--space-3);
+  outline: 0;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   line-height: var(--lh-lg);
 }
 
-.an-ckeditor .ck.ck-dropdown__panel,
-.an-ckeditor .ck.ck-balloon-panel,
-.an-ckeditor .ck.ck-dialog {
-  box-shadow: var(--shadow-elevated, 0 16px 40px rgb(0 0 0 / 42%));
+.an-tiptap-content:empty::before {
+  color: var(--text-muted);
+  content: attr(data-placeholder);
+  pointer-events: none;
 }
 
-.an-ckeditor .ck.ck-list__item .ck-button:hover:not(.ck-disabled),
-.an-ckeditor .ck.ck-list__item .ck-button:focus-visible:not(.ck-disabled) {
-  color: var(--text-primary);
+.an-tiptap-content h2,
+.an-tiptap-content h3,
+.an-tiptap-content p,
+.an-tiptap-content ul,
+.an-tiptap-content ol,
+.an-tiptap-content blockquote,
+.an-tiptap-content table {
+  margin-block: 0 0.75em;
 }
 
-.an-ckeditor .ck.ck-input,
-.an-ckeditor .ck.ck-labeled-field-view__input-wrapper {
-  color: var(--text-primary);
+.an-tiptap-content h2 {
+  font-size: var(--text-xl);
 }
 
-.an-ckeditor .ck-content blockquote {
-  border-inline-start-color: var(--accent);
+.an-tiptap-content h3 {
+  font-size: var(--text-lg);
+}
+
+.an-tiptap-content ul,
+.an-tiptap-content ol {
+  padding-inline-start: 1.5rem;
+}
+
+.an-tiptap-content blockquote {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--accent);
   color: var(--text-secondary);
 }
 
-.an-ckeditor .ck-content figure.image img {
-  max-block-size: 34rem;
-  object-fit: contain;
+.an-tiptap-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
-.an-ckeditor-foot {
+.an-tiptap-content img {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+  margin-inline: auto;
+  border-radius: var(--radius-card, var(--radius-control));
+}
+
+.an-tiptap-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.an-tiptap-content .tableWrapper {
+  margin-block: var(--space-3);
+  overflow-x: auto;
+}
+
+.an-tiptap-content table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.an-tiptap-content th,
+.an-tiptap-content td {
+  position: relative;
+  min-inline-size: 5rem;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  vertical-align: top;
+}
+
+.an-tiptap-content th {
+  background: var(--surface-raised);
+  font-weight: 700;
+}
+
+.an-tiptap-content .selectedCell::after {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.an-tiptap-content .column-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -2px;
+  inline-size: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.an-tiptap-content hr {
+  margin-block: var(--space-4);
+  border: 0;
+  border-block-start: 1px solid var(--border-default);
+}
+
+.an-tiptap-foot {
   display: flex;
-  min-block-size: var(--space-9, 2.25rem);
+  min-block-size: 2.5rem;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
-  border-block-start: 0;
-  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  border-block-start: 1px solid var(--border-default);
   color: var(--text-muted);
   font-size: var(--text-2xs);
 }
 
-.an-ckeditor-foot [role='status'] {
+.an-tiptap-foot [role='status'] {
   min-inline-size: 0;
   flex: 1;
   color: var(--text-secondary);
@@ -124,25 +269,21 @@
   white-space: nowrap;
 }
 
-.an-editor-license {
-  padding: var(--space-3);
-  border: 1px solid var(--intent-danger-fg);
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--intent-danger-fg) 8%, var(--surface));
-  color: var(--intent-danger-fg);
-  font-size: var(--text-sm);
-}
-
 @media (width < 640px) {
-  .an-ckeditor .ck.ck-editor__main > .ck-editor__editable {
+  .an-tiptap-toolbar {
+    align-items: stretch;
+    padding-block: var(--space-1);
+  }
+
+  .an-tiptap-content {
     min-block-size: 18rem;
   }
 
-  .an-ckeditor-foot {
+  .an-tiptap-foot {
     flex-wrap: wrap;
   }
 
-  .an-ckeditor-foot > :last-child {
+  .an-tiptap-foot > :last-child {
     inline-size: 100%;
     text-align: end;
   }

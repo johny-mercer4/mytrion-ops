@@ -15501,3 +15501,18 @@ terms.
 
 Verification: CRM 859/859; backend announcement/file tests 19/19; backend and CRM typechecks green;
 production widget build green; file inline-presign behavior has a unit test.
+
+## 2026-08-14 — Announcement editor moved to MIT-licensed Tiptap
+
+Replaced CKEditor 5 with Tiptap's open-source MIT packages so the commercial Mytrion application
+does not need an editor license key, vendor account, cloud service, or editor-load subscription.
+No Tiptap Pro or cloud packages are used. Removed the CKEditor dependencies and
+`VITE_CKEDITOR_LICENSE_KEY` configuration entirely.
+
+The CRM-themed composer retains headings, inline formatting, lists, quotes, links, alignment,
+tables and row/column controls, horizontal rules, resizable images, governed image uploads, and
+general file attachments. Durable authenticated file URLs and DOMPurify rendering remain unchanged.
+
+Verification: CRM tests 859/859; CRM typecheck green; token and breakpoint contracts green;
+production widget build green. Local browser QA covered formatting, image upload in editor and live
+preview, table controls, desktop and compact layouts, with no CKEditor attribution or console errors.

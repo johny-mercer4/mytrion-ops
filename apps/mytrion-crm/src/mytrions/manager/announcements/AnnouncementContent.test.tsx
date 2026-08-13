@@ -45,7 +45,7 @@ describe('AnnouncementContent', () => {
     expect(getAnnouncementAssetDownload).toHaveBeenCalledWith('file_map');
   });
 
-  it('sanitizes CKEditor HTML and only permits governed image URLs', () => {
+  it('sanitizes rich editor HTML and only permits governed image URLs', () => {
     const html = sanitizeAnnouncementHtml(
       '<h2 style="text-align:right;color:red" onclick="bad()">News</h2>' +
         '<img src="https://tracker.test/pixel.png" onerror="bad()">' +
