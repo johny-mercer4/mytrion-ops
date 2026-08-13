@@ -1,5 +1,8 @@
-/* Sales Verification — roster + detail. Cards use Horizon `.ss-card-h` (blur, highlight, elevation).
-   Field labels use `--muted` (not `--faint` / border colour) so they clear AA on dark glass. */
+/* Sales Verification — roster + detail. Cards use Horizon `.ss-card-h` (highlight, elevation).
+   No backdrop-filter on the roster buttons: that blur on a scrolling card grid is the empty-card-
+   after-scroll defect (focus/hover, scroll away, come back — children unpainted). Glass tint is
+   `--surface` + `--shadow-sm`. Field labels use `--muted` (not `--faint` / border colour) so they
+   clear AA on dark glass. */
 .ss-root .ss-verification-page { max-width:1180px;margin:0 auto; }
 .ss-root .ss-verification-page .ss-skel-grid,
 .ss-root .ss-verification-grid {

@@ -15814,3 +15814,26 @@ Also: action-request fields collapse to one column under 640px, inputs use `--ra
 `--shadow-sm` / 44px touch height, no `field.placeholder` on MC/DOT.
 
 Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Sales cards empty after focus + scroll (Automations + Verification)
+
+Same compositor defect on both surfaces. `.ss-card-h` applied `backdrop-filter: blur` to every
+Automations catalog button and every Verification roster button. Focusing (or hovering) a card
+promotes that layer; scrolling it off-screen and back leaves the layer un-repainted — children
+still in the DOM, the card looks empty. AutoCatalog had already dropped rest `transform` /
+`overflow: hidden` / `transition: all`; the shared blur was the remaining half.
+
+Fix (refinement, not redesign):
+- `ss-horizon.css` — blur stays on modal chrome and empty/result panes; **not** on `.ss-card-h`.
+  Glass tint is `--surface` + `--shadow-sm`. Same treatment for `.ss-float-drop` (the deal/card
+  picklist is a scrollport over near-opaque `--hz-modal-surface`).
+- `AutoFloatingDrop` — `overflow-x: hidden` + `overflow-y: auto` instead of `overflow: hidden`
+  on the listbox.
+- Contract test `ssCardLayer.test.ts` locks the CSS/source so the blur cannot creep back onto
+  scrolling cards.
+
+Unrelated audit notes (not fixed): AutoCatalog still uses an inline 3-column grid with no
+480/640 ladder (Verification already has it); AutoTab is over the 600-line cap; deal/card pick
+rows are `div role="option"` with mousedown only.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.

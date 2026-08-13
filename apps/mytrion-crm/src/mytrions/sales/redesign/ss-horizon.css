@@ -244,14 +244,32 @@
   background:
     linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
     var(--hz-modal-surface) !important;
-  backdrop-filter: blur(var(--hz-blur));
-  -webkit-backdrop-filter: blur(var(--hz-blur));
   border: 1px solid var(--border) !important;
   box-shadow: var(--shadow) !important;
 }
 
+/*
+ * Blur belongs on floating chrome, not on a scrollport. `.ss-float-drop` is the Automations
+ * deal/card picklist — `overflow-y: auto` over a near-opaque `--hz-modal-surface`. A blur on that
+ * scroller is the same defect CS already documented: every scroll frame recomposites the frost, and
+ * focusing a row then scrolling it off-screen can leave the layer un-repainted (empty rows).
+ * Modals stay frosted; the listbox keeps the opaque pane + accent rail.
+ */
+.ss-root .ss-pool-modal,
+.ss-root .ss-modal-box {
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+}
+
 /* ── Cards / surfaces that carry a class ─────────────────────────────────── */
-.ss-root .ss-card-h,
+/*
+ * `.ss-card-h` used to share this blur. That is the empty-card-after-scroll bug: Automations
+ * catalog buttons and Verification roster buttons sit in a scrolling grid, and `backdrop-filter`
+ * promotes each card to its own layer. Focusing (or hovering) a card, scrolling it off-screen,
+ * then coming back leaves that layer un-repainted — children stay in the DOM, the card looks
+ * empty. Glass tint remains `--surface` + `--shadow-sm` (inset glare). Blur stays on empty /
+ * result chrome, which is not a scrolling card grid.
+ */
 .ss-root .ss-pool-empty,
 .ss-root .ss-ret-empty,
 .ss-root .ss-auto-empty,
