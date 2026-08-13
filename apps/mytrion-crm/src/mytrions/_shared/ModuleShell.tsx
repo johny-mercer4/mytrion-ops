@@ -86,6 +86,7 @@ export function ModuleShell({
   const isMain = active?.id === visible[0]?.id;
   const launchers = visible.slice(1);
 
+  const pinIds = new Set(visible.filter((tab) => !tab.soon).slice(0, 4).map((tab) => tab.id));
   const navSections: NavSection[] = [
     {
       id: 'main',
@@ -100,6 +101,7 @@ export function ModuleShell({
         active: view === tab.id,
         onClick: () => open(tab.id),
         keywords: tab.keywords ?? [],
+        primary: pinIds.has(tab.id),
       })),
     },
   ];

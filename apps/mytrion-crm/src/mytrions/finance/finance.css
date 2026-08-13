@@ -1493,3 +1493,36 @@ table.fi-table {
   height: 46px;
   margin: 10px 26px;
 }
+
+/* Horizon phone leftover pass — client detail is a sheet, not a 1320 dialog. */
+@media (width < 640px) {
+  .fi-modal-scrim {
+    align-items: stretch;
+    justify-content: flex-end;
+    flex-direction: column;
+    padding: 0;
+  }
+  .fi-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 96dvh;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    animation: fiSheetUp var(--duration-moderate) var(--ease-decelerate);
+    position: relative;
+    padding-block-start: 12px;
+  }
+  .fi-modal::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 36px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--border);
+  }
+}
+@keyframes fiSheetUp {
+  from { translate: 0 100%; }
+}

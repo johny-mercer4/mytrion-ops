@@ -148,3 +148,36 @@
 @keyframes bmSheetUp {
     from { translate: 0 100%; }
 }
+
+/* Horizon phone leftover pass — Debtors / Prepay / Returns rows, not min-width columns. */
+@media (width < 640px) {
+    .bm-root .db-content-area {
+        overflow-x: hidden;
+    }
+    .bm-root .db-list-header {
+        display: none;
+    }
+    .bm-root .db-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 12px;
+        min-height: 3.5rem;
+        padding: 12px 14px;
+    }
+    .bm-root .db-row-main > :not(.db-col-company):not(.db-col-remain):not(.db-col-owed):not(.db-col-chevron):not(.rt-col-action) {
+        display: none;
+    }
+    .bm-root .db-col-company,
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        flex: none;
+        min-width: 0;
+        text-align: left;
+        padding-right: 0;
+    }
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        text-align: right;
+    }
+}

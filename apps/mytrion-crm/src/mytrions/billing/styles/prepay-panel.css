@@ -49,7 +49,7 @@
 }
 
 /* Narrow screens: segments scroll sideways instead of stacking */
-@media (max-width: 700px) {
+@media (width < 640px) {
     .bm-root .bm-prepay-panel .pp-seg {
         max-width: 100%;
         overflow-x: auto;

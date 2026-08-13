@@ -15606,3 +15606,49 @@ went away). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
 **Gaps.** CS Applications / CITI / Maintenance, Billing Debtors/Prepay/Returns dense tables, Admin
 Deals/Jobs/KB still inherit CSS collapse rather than purpose-built list+sheet. HR / Marketing /
 Manager are next in the playbook, not this pass.
+
+---
+
+## 2026-08-13 — Remaining Mytrions phone lists + sheets
+
+Same playbook (`docs/design/HORIZON_MOBILE_PLAYBOOK.md`). Shared primitive: `_shared/phone/PhoneList`
+(title + meta, 44px, chevron). Detail stays `ds/Drawer` or the existing modal CSS retargeted to a
+96dvh bottom sheet (`--duration-moderate` / `--ease-decelerate`). Did not touch `apps/mini-app` or
+`TELEGRAM_BOT_TOKEN`. Loyalty month-export landed in its own commit first (`feat(marketing): export
+loyalty tiers for a chosen month`).
+
+**Pins (4 or fewer).** HR: Home / Employees / Attendance / Time Off. Marketing: both programs.
+Manager: Overview + Sales / CS / Billing. Finance: Home / Clients. Collection: Home (`soon` now a
+real flag, not a label suffix). Recruit: Home / Jobs / Candidates. Analyst: Sales / CRM / CS /
+Finance. Verification + Trailhead: ModuleShell pins the first four built (non-soon) tabs.
+
+**Lists.** CS Applications is a PhoneList on phone (desktop table unchanged). HR attendance roster
+is a PhoneList on phone. Verification client cards collapse to one-column rows (no blur). Billing
+Debtors / Prepay / Returns hide the multi-column header and keep company + amount. Admin Deals /
+Jobs / KB / job-runs keep the existing 2-col collapse and no longer force `min-width: 1040px`
+sideways scroll.
+
+**Sheets.** Finance client, HR employee/dept, Verification client, loyalty/export (was 960), Recruit
+job/candidate, and Admin KB/Jobs dialogs become bottom sheets below 640. CS Application / CITI
+modals already had the shared `cs-modal` sheet.
+
+**Budgets.** Off-ladder 77→72, legacy max-width 97→92 (Recruit 760/1100, Prepay/Returns 700, loyalty
+680). Rebuild `apps/mytrion-crm/app/` via `pnpm build:widget`.
+
+**Gaps.** Manager department desks are still ComingSoon copy. Collection Array/Cases unbuilt.
+Trailhead unbuilt. Finance invoice/payment/transaction tables inside the client sheet still dense.
+Recruit job cards are cards, not list rows. Horizon brand kickers / gradient wordmarks left as
+incumbent identity.
+
+**Impeccable reaudit (2026-08-13).** Context: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, no
+`CONTEXT_STALE`. Sprint blockers already hold: `#rc-widget` gated in Telegram, login is token
+themed (not a leftover dark desktop card), sheets are 96dvh grabber panels below 640, core lists
+are PhoneList / DataTable cards / column-collapse rather than required sideways tables. Batched
+fix: PhoneList now uses `--text-primary` / `--space-1` ( `--text` is not a global token); CS
+Applications phone load is one skeleton. Detector clean on the new phone files. Deferred:
+incumbent kickers / gradient wordmarks, loyalty 32px month steppers, Finance tables inside the
+client sheet, Recruit cards.
+
+**AccessLint.** MCP `plugin-accesslint-accesslint` was `error` (live discovery failed; `mcp_auth`
+timed out). Source-pattern report only — unlabeled search fields, CS Application/CITI sheets
+missing `role="dialog"`, icon-only close without a name.

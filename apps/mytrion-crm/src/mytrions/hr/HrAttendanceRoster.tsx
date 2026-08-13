@@ -12,7 +12,9 @@
  * The NAME is the button and the row is clickable as a convenience — making every `<tr>` focusable
  * would put a tab stop on each of 145 rows.
  */
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import type { AttendanceTeamListItem } from '../../api/hr';
+import { PhoneList, PhoneListRow } from '../_shared/phone/PhoneList';
 import { departmentTone } from './departmentAppearance';
 import { HrAvatar } from './HrAvatar';
 
@@ -35,6 +37,28 @@ export function HrAttendanceRoster({
   selectedId: string | null;
   onOpen: (item: AttendanceTeamListItem) => void;
 }) {
+  const phone = useIsPhone();
+  if (phone) {
+    return (
+      <PhoneList label="Attendance roster">
+        {items.map((item) => {
+          const name = displayName(item);
+          const presence = PRESENCE_TEXT[item.currentState] ?? 'No activity';
+          const meta = [item.department, item.shift ? `${item.shift.startLocal}–${item.shift.endLocal}` : 'No shift', presence]
+            .filter(Boolean)
+            .join(' · ');
+          return (
+            <PhoneListRow
+              key={item.employeeId}
+              title={name}
+              meta={meta}
+              onClick={() => onOpen(item)}
+            />
+          );
+        })}
+      </PhoneList>
+    );
+  }
   return (
     <div className="hr-listwrap">
       <table className="hr-list hr-att-list">
