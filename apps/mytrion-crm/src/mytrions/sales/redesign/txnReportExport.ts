@@ -2,6 +2,7 @@
  * Transactions Report exports — PDF / Excel / CSV / Text.
  * Column layout mirrors EFS Transaction Report (self-service automation-modal.js).
  */
+import { CARD_MASK_DIGITS } from './autoLive';
 import { deliverBlob, ensureTxnPdfLibs } from './txnExportLibs';
 import {
   ensureTxnInvoices,
@@ -26,10 +27,11 @@ function efsDiscBucket(code: string): string {
   return s === 'CP' ? 'Cost Plus' : s === 'RM' ? 'Retail Minus' : s === 'ND' ? 'No Deal' : 'Other';
 }
 
+/** Last-6 like every other Sales card surface (see `maskCard` in autoLive). */
 function maskCard(num: string, full: boolean): string {
   const t = String(num ?? '—');
-  if (full || t === '—' || t.length <= 4) return t;
-  return `•••• ${t.slice(-4)}`;
+  if (full || t === '—' || t.length <= CARD_MASK_DIGITS) return t;
+  return `•••• ${t.slice(-CARD_MASK_DIGITS)}`;
 }
 
 function pad2(n: number): string {

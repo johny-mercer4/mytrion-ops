@@ -15427,3 +15427,55 @@ history of past draws is not drawing, and it is what accounting asks for.
 Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
 the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
 CRM 851 green. Both vendored bundles rebuilt.
+
+## 2026-08-13 — Automations UI: balance/status blocks, last-6 cards, C-26 prompt fields
+
+Four Sales Automations complaints from the floor, all in the result/config UI — no touchpoint or
+route changed.
+
+### C-8 Balance and Q-7/C-28 Account Status stopped being sentences
+
+Both actions returned `{kind:'message'}`, so `dwh.carrier_balance` and `dwh.carrier_overview` — which
+answer with a dozen fields each — were collapsed into one line and everything else was thrown away.
+They now return their own payload kinds rendered by `AutoBalancePanel` / `AutoAccountStatusPanel`.
+
+Balance leads with the three blocks CRM Mytrion showed, in its order: **EFS Balance**
+(`efs_balance`, falling back to `balance`), **Available Limit** (`credit_remaining`), **Weekly
+Limit** (`credit_limit` — CMP bills weekly, and the mini-app status sheet already names it that).
+Account type / payment terms / billing cycle / credit used follow as a secondary grid, and only when
+the source answered for them.
+
+A missing figure renders `—`, never `$0.00`: a prepay account has no credit line at all, and `$0.00`
+in the Available Limit block reads as "line exhausted" — the opposite of true.
+
+Account Status keeps the live-EFS active-card count (the reason C-1 shows up on the next C-28) and
+adds what the sentence dropped: open debt with its invoice count and oldest debt days, the worst
+invoice status, the hard-debtor flag as a badge, and per-source failures as notices instead of a
+silent zero. The tile says "Active cards (live EFS)" only when the live roster actually answered.
+
+### Cards: last SIX digits is now the standard, from one helper
+
+EFS cards on a fleet share a long prefix and routinely differ only in the 5th-from-last digit, so
+`•••• 1111` matched several physical cards. Card Lookup (C-30) already showed six; everything else
+showed four. `maskCard` / `shortCard` / `CARD_MASK_DIGITS` in `autoLive.ts` are now the single
+source, and every Sales card surface goes through them: picklist, selected-card chip, C-24 Card Last
+Used rows, the limit-update panel, C-15 transaction rows and groups, the txn export columns, the
+Client modal card list, Client Management's driver card picker, and C-30 (switched off its own
+inline slice). Client-modal mask expectations moved from `•••• 7340` to `•••• 317340`.
+
+Left at four on purpose: the touchpoint audit-log redaction (`redactParams`) is a PAN control, not a
+display surface, and rejection reports / comms tickets only ever *store* `card_last4` — six digits
+there is an ingest and schema change, not a UI one.
+
+### C-26 Unit / Driver Change: the fields are a new prompt, not a form to retype
+
+The credentials panel above already shows the live EFS unit / driver ID / driver name, so prefilling
+the same three values below it asked the agent to retype what was on screen. C-26 now opens empty
+with placeholder **New prompt** on all three, and the runner already sends only non-empty fields, so
+leaving one blank leaves that prompt untouched. C-1 Card Activation still prefills — there the values
+ride along with the activate and the fields are a confirmation.
+
+Also: `.ss-pay-grid` drops to two columns below 640px. Three dollar figures on a phone row leaves
+~90px a tile and truncates the amount — that grid now carries three result panels, not one.
+
+CRM 860 green (4 new panel tests), backend 2611 green, lint clean, vendored `app/` rebuilt.

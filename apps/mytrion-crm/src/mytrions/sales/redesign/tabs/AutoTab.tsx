@@ -12,7 +12,7 @@ import { SalesEmpty, SalesPage, SalesPageHead } from '../SalesPage';
 import { useLoad, money } from '../live';
 import {
   AUTO_LIST, LIMITTYPES, LIMIT_CHANGE_MAX, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
-  autoIconColor, loadDeals, loadCards, loadMoneyCodePreview,
+  autoIconColor, loadDeals, loadCards, loadMoneyCodePreview, maskCard,
   type Automation, type Deal, type Card, type InvRow,
   type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
@@ -143,9 +143,15 @@ export function AutoTab() {
     return () => { off = true; };
   }, [autoModal?.id, autoDeal?.carrier]);
 
+  /**
+   * Activation prefills the live EFS prompts — C-1 sends them back with the activate, so the fields
+   * are a confirmation. C-26 (Unit / Driver Change) deliberately does NOT prefill: the current
+   * values already sit in the credentials panel above, and every field there is a NEW prompt to
+   * write. Retyping a value it already showed was the whole complaint.
+   */
   useEffect(() => {
     const current = cardCredentials.data;
-    if (!current || (autoModal?.id !== 'card-activation' && autoModal?.id !== 'unit-driver')) return;
+    if (!current || autoModal?.id !== 'card-activation') return;
     setUnitDriver({
       unitNumber: current.unitNumber,
       driverId: current.driverId,
@@ -205,7 +211,10 @@ export function AutoTab() {
   const setCardQuery = (v: string): void => { setAutoCardQuery(v); setAutoShowCardDrop(true); };
   const selectCard = (c: Card): void => {
     setAutoCard(c); setAutoShowCardDrop(false); setAutoCardQuery('');
-    setUnitDriver({ unitNumber: c.unit || '', driverName: c.driver || '', driverId: c.driverId || '' });
+    // C-26 keeps the prompt fields empty — see the credentials effect above.
+    setUnitDriver(autoModal?.id === 'unit-driver'
+      ? UD0
+      : { unitNumber: c.unit || '', driverName: c.driver || '', driverId: c.driverId || '' });
   };
   const clearCard = (): void => { setAutoCard(null); setUnitDriver(UD0); };
   const setAddr = (k: keyof Addr, v: string): void => setAutoAddr((a) => ({ ...a, [k]: v }));
@@ -320,7 +329,7 @@ export function AutoTab() {
   const successMsg = autoResult?.kind === 'message' ? autoResult.message
     : autoResult?.kind === 'link' ? autoResult.label
       : `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
-  const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
+  const autoCardDisplay = autoCard ? maskCard(autoCard.number) : '';
   const autoCardBadge = autoCard ? cardStatusBadge(autoCard.status) : { text: '', style: '' };
   const wideResult = autoStep === 'done' && hasWideAutoResult(autoResult, invRows, txnReport);
   const modalMaxW = wideResult ? '820px' : '640px';
@@ -485,9 +494,12 @@ export function AutoTab() {
 
                   {showUnitDriver && (
                     <div className="ss-auto-formrow" style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
-                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(AUTO_INPUT)} /></div>
-                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(AUTO_INPUT)} /></div>
-                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      {/* Placeholder is "New prompt" for all three: the current EFS values are already
+                          on screen in the credentials panel above, so these fields only ever carry a
+                          replacement. Leave one blank and it is simply not sent. */}
+                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="New prompt" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="New prompt" className="ss-in" style={s(AUTO_INPUT)} /></div>
+                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="New prompt" className="ss-in" style={s(AUTO_INPUT)} /></div>
                     </div>
                   )}
 
