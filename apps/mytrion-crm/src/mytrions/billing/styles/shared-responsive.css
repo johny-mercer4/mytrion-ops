@@ -62,7 +62,134 @@
 }
 
 /* ═══════════════════════════════════════════════
-   §2  MODAL — bottom sheet
+   §2  ROW LISTS — reflow to a card
+   ═══════════════════════════════════════════════ */
+
+/*
+ * Debtors and Prepay build their rows from the shared `.db-col-*` flex frame, and both re-flex it to
+ * RATIOS rather than the px base (debtors-panel.css:341, prepay-panel.css:151). Ratios mean the row
+ * never overflows — it just divides 375px by seven and crushes. Which is why the overflow audit
+ * passes these tabs and they still look broken: at 375 the header renders as
+ * "CARRIERCOMPANY CYCLESTATUS OLDEST DEBT INVREMAINING" with the words colliding, and a row reads
+ * "5776662 Semi-Weekly Pending 172d 2$90,878" — the invoice count welded to the amount.
+ *
+ * Returns and Ledger already solved this for their own rows with a wrap-into-a-card recipe
+ * (returns-panel.css:64, ledger-panel.css:524). These are the two panels that never got it. Same
+ * recipe, same shape, so all four row lists behave alike on a phone:
+ *
+ *   line 1   carrier id  ·  the money, right-aligned
+ *   line 2   company, full width
+ *   line 3   the qualifiers
+ *
+ * `contain-intrinsic-size` is updated in step, because `.db-row-item` declares `0 46px` for a
+ * one-line row (debtors-panel.css:311) and a three-line card is ~108px. Leaving it stale makes the
+ * scrollbar geometry drift against the real content — the same reason ledger-panel.css:533 restates
+ * it as `0 120px` inside its own query.
+ */
+@media (width < 640px) {
+    .bm-root .bm-debtors-panel .db-list-header,
+    .bm-root .bm-prepay-panel .db-list-header {
+        display: none;
+    }
+
+    .bm-root .bm-debtors-panel .db-row-main,
+    .bm-root .bm-prepay-panel .db-row-main {
+        flex-wrap: wrap;
+        row-gap: var(--space-1_5);
+        column-gap: var(--space-2);
+        align-items: center;
+    }
+
+    /* ── Debtors: carrier · remaining / company / cycle · status · age · inv ── */
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-carrier {
+        order: 1;
+        flex: 0 0 auto;
+        text-align: left;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-remain {
+        order: 2;
+        flex: 1 1 auto;
+        text-align: right;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-company {
+        order: 3;
+        flex: 1 1 100%;
+        padding-right: 0;
+        text-align: left;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-cycle {
+        order: 4;
+        flex: 0 0 auto;
+        text-align: left;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-status {
+        order: 5;
+        flex: 0 0 auto;
+        text-align: left;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-age {
+        order: 6;
+        flex: 0 0 auto;
+        text-align: left;
+        padding-right: 0;
+    }
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-count {
+        order: 7;
+        flex: 0 0 auto;
+        margin-left: auto;
+        text-align: right;
+    }
+
+    /* ── Prepay: carrier · difference / company / loaded · payments ──
+       `.db-col-count` appears TWICE (Loaded, Payments), so these target position, not class. */
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-carrier {
+        order: 1;
+        flex: 0 0 auto;
+        text-align: left;
+    }
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-owed {
+        order: 2;
+        flex: 1 1 auto;
+        text-align: right;
+    }
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-company {
+        order: 3;
+        flex: 1 1 100%;
+        padding-right: 0;
+        text-align: left;
+    }
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-count:nth-child(3),
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-count:nth-child(4) {
+        order: 4;
+        flex: 0 0 auto;
+        text-align: left;
+    }
+
+    /*
+     * The hidden header took the column NAMES with it, and a bare number is not self-describing the
+     * way a "Weekly" pill or "172d" is. These three are the ones that read as noise without a label.
+     */
+    .bm-root .bm-debtors-panel .db-row-main > .db-col-count::before {
+        content: 'Inv ';
+        color: var(--text-muted);
+    }
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-count:nth-child(3)::before {
+        content: 'Loaded ';
+        color: var(--text-muted);
+    }
+    .bm-root .bm-prepay-panel .db-row-main > .db-col-count:nth-child(4)::before {
+        content: 'Paid ';
+        color: var(--text-muted);
+    }
+
+    .bm-root .bm-debtors-panel .db-row-item,
+    .bm-root .bm-prepay-panel .db-row-item {
+        contain-intrinsic-size: 0 108px;
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   §3  MODAL — bottom sheet
    ═══════════════════════════════════════════════ */
 
 /* The 16dvh strip above the sheet is the OVERLAY's padding rather than an `84dvh` cap on the panel:
