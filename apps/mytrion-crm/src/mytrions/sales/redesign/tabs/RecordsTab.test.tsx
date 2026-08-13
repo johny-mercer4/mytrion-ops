@@ -9,6 +9,8 @@ const sales = vi.hoisted(() => ({
 }));
 const state = vi.hoisted(() => ({ clientRows: [] as Array<Record<string, unknown>> }));
 const createAgentInvite = vi.hoisted(() => vi.fn());
+const pilot = vi.hoisted(() => ({ isMiniAppPilotAgent: vi.fn(() => true) }));
+vi.mock('../miniAppPilot', () => pilot);
 
 vi.mock('../ctx', () => ({ useSales: () => sales }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
@@ -64,6 +66,7 @@ function clientRow(
 
 beforeEach(() => {
   state.clientRows = [];
+  pilot.isMiniAppPilotAgent.mockReset().mockReturnValue(true);
   createAgentInvite.mockReset();
   sales.openClient.mockReset();
   sales.pushToast.mockReset();
@@ -96,6 +99,19 @@ describe('Sales Data Center pipeline tabs', () => {
     expect(screen.getByRole('combobox', { name: 'Filter deals by stage' })).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Deals layout' })).toBeInTheDocument();
     expect(screen.getByText('No deals yet')).toBeInTheDocument();
+  });
+
+  it('shows no mini-app control at all to an agent outside the pilot', () => {
+    pilot.isMiniAppPilotAgent.mockReturnValue(false);
+    state.clientRows = [clientRow(true, 'active')];
+
+    render(<RecordsTab />);
+
+    // Not a disabled button: "Mini-app unavailable" on an active client would read as the CLIENT
+    // being ineligible, which is what that copy means everywhere else on this card.
+    expect(screen.queryByRole('button', { name: 'View TPO EXPRESS LLC mini-app' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Mini-app unavailable')).not.toBeInTheDocument();
+    expect(screen.getByText('TPO EXPRESS LLC')).toBeInTheDocument();
   });
 
   it('opens an eligible active company in the Sales-agent mini-app without opening the client modal', async () => {

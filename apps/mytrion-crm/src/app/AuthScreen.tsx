@@ -23,7 +23,13 @@ export function AuthScreen({
   const busy = phase === 'redirecting' || phase === 'exchanging';
 
   return (
-    <div className={`${styles.screen} ${styles.authScreen}`}>
+    <div
+      className={`${styles.screen} ${styles.authScreen}`}
+      style={{
+        padding:
+          'calc(24px + var(--layout-safe-t, 0px)) 24px calc(24px + var(--layout-safe-b, 0px))',
+      }}
+    >
       <div className={`${styles.card} ${styles.authCard}`} role={busy ? 'status' : undefined} aria-busy={busy}>
 
         <p className={styles.authEyebrow}>Mytrion</p>

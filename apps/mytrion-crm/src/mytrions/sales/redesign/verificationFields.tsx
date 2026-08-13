@@ -82,6 +82,38 @@ export function applicationStatusTone(value: string | null): FactTone {
   return 'accent';
 }
 
+const WEX_STATUS_BUCKETS: Record<string, { label: string; tone: FactTone }> = {
+  'saved complete': { label: 'New App', tone: 'accent' },
+  'additional authentication required': { label: 'New App', tone: 'accent' },
+  'pending decision': { label: 'Review', tone: 'muted' },
+  'decisioned': { label: 'Review', tone: 'muted' },
+  'pending setup data': { label: 'Approved – Confirm to Send', tone: 'warn' },
+  'pending setup generic': { label: 'Approved – Confirm to Send', tone: 'warn' },
+  'pending setup': { label: 'Approved – Confirm to Send', tone: 'warn' },
+  'deposit counter offer sent': { label: 'Approved – Confirm to Send', tone: 'warn' },
+  'bocdd needed': { label: 'Incomplete', tone: 'muted' },
+  'saved incomplete': { label: 'Incomplete', tone: 'muted' },
+  'app incomplete': { label: 'Incomplete', tone: 'muted' },
+  'disqualified': { label: 'Closed', tone: 'danger' },
+  'closed fraud': { label: 'Closed', tone: 'danger' },
+  'closed lost': { label: 'Closed', tone: 'danger' },
+  'cards produced': { label: 'Cards Requested', tone: 'ok' },
+};
+
+export function wexStatusBucket(value: string | null | undefined): { label: string; tone: FactTone } | null {
+  if (!value) return null;
+  const norm = value.trim().toLowerCase().replace(/[\s\-_/]+/g, ' ');
+  const exact = WEX_STATUS_BUCKETS[norm];
+  if (exact) return exact;
+  if (norm.includes('incomplete') || norm.includes('bocdd') || norm.includes('needed')) return { label: 'Incomplete', tone: 'muted' };
+  if (norm.includes('closed') || norm.includes('disqualified') || norm.includes('fraud') || norm.includes('lost')) return { label: 'Closed', tone: 'danger' };
+  if (norm.includes('produced') || norm.includes('cards')) return { label: 'Cards Requested', tone: 'ok' };
+  if (norm.includes('setup') || norm.includes('counter offer')) return { label: 'Approved – Confirm to Send', tone: 'warn' };
+  if (norm.includes('decision')) return { label: 'Review', tone: 'muted' };
+  if (norm.includes('saved') || norm.includes('authentication')) return { label: 'New App', tone: 'accent' };
+  return { label: value, tone: 'muted' };
+}
+
 /** Zoho `Stage`. Closed-lost is the only genuinely bad stage; live-on-cards is the good one. */
 export function stageTone(stage: string): FactTone {
   const v = stage.toLowerCase();

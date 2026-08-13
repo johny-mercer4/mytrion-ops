@@ -220,3 +220,44 @@
   line-height: var(--lh-xs);
   letter-spacing: var(--tr-xs);
 }
+
+/*
+ * ── Pending ────────────────────────────────────────────────────────────────
+ * The flip already happened optimistically — the knob is at its new position and the track is
+ * already the new colour. What is unresolved is whether the server agrees, so this must read as
+ * "working", not as "off" or "disabled": dimming it would undo the answer the user just gave.
+ *
+ * The signal is a ring breathing around the knob. It is drawn with `box-shadow` rather than an
+ * extra element so it cannot affect layout, and it animates OPACITY only — the knob's `translate`
+ * is still mid-flight from the flip, and animating two properties on one element makes the arrival
+ * position ambiguous.
+ *
+ * NOT `cursor: wait`. The pointer is over a control that is still meaningful to read.
+ */
+.root[data-pending] .knob {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 38%, transparent);
+  animation: switchPending 1.1s var(--ease-standard) infinite;
+}
+.root[data-pending] {
+  cursor: progress;
+}
+
+@keyframes switchPending {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/*
+ * Reduced motion keeps the RING and drops the pulse. The ring is the state; the breathing is only
+ * the reminder that it is still in flight, and a static ring still says "not settled yet".
+ */
+@media (prefers-reduced-motion: reduce) {
+  .root[data-pending] .knob {
+    animation: none;
+  }
+}

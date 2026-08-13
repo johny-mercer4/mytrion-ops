@@ -192,6 +192,7 @@
     max-block-size: 100%;
     border: 0;
     border-radius: var(--radius-none);
+    padding-block-start: var(--layout-safe-t, 0px);
   }
 
   .dialog[data-mobile='sheet'][data-state='open'] .panel {

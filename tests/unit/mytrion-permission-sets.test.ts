@@ -61,6 +61,7 @@ function set(partial: Partial<MytrionPermissionSetDto> & { id: string }): Mytrio
     allowedMytrions: [],
     mytrionAccessModes: {},
     tabGrants: {},
+    override: false,
     active: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -459,5 +460,90 @@ describe('explain() provenance', () => {
     expect(billing?.tabs.scoped).toBe(true);
     expect(billing?.tabs.keys).toEqual(['ledger']);
     expect(billing?.tabs.unscopedBy).toBeUndefined();
+  });
+});
+
+describe('override — the permission-set layer takes precedence', () => {
+  it('REPLACES the profile default rather than unioning onto it', async () => {
+    // Level 1 (sets) > level 2 (per-user) > level 3 (profile/role). This is the whole feature.
+    profileGrants('sales', 'billing');
+    holds(set({ id: 's1', allowedMytrions: ['hr'], override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.accessibleMytrions).toEqual(['hr']);
+  });
+
+  it('REPLACES a per-user override too', async () => {
+    wa.findByZohoUserId.mockResolvedValue({
+      allowedMytrions: ['sales'], deniedMytrions: [], allDepartmentAccess: null, homeMytrion: null,
+      viewAsUserIds: [], mytrionAccessModes: { sales: 'full' }, active: true,
+    } as never);
+    holds(set({ id: 's1', allowedMytrions: ['billing'], override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal());
+    expect(r.accessibleMytrions).toEqual(['billing']);
+  });
+
+  it('makes a tab scope ACTUALLY narrow — the reason the switch exists', async () => {
+    /**
+     * Additively this is the documented gotcha: the profile grants Billing unscoped, so the union is
+     * unscoped and every tab renders. Override removes the layer that was defeating it.
+     */
+    profileGrants('billing');
+    holds(set({ id: 's1', allowedMytrions: ['billing'], tabGrants: { billing: ['ledger'] }, override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.mytrionTabGrants.billing).toEqual(['ledger']);
+  });
+
+  it('lets a read-only grant actually be read-only', async () => {
+    // Additively a profile grant implies full and a set may not lower it. Override removes it.
+    profileGrants('billing');
+    holds(set({ id: 's1', allowedMytrions: ['billing'], mytrionAccessModes: { billing: 'read' }, override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.mytrionAccessModes.billing).toBe('read');
+  });
+
+  it('strips all-department access from a marker admin', async () => {
+    // "It should override other permissions when assigned" — including the Administrator marker.
+    // Recovery is break-glass (env-named), asserted below, not this path.
+    holds(set({ id: 's1', allowedMytrions: ['billing'], override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Administrator' }),
+    );
+    expect(r.allDepartmentAccess).toBe(false);
+    expect(r.accessibleMytrions).toEqual(['billing']);
+  });
+
+  it('still cannot re-grant something explicitly DENIED', async () => {
+    // Denies subtract last, so override widens the layer but never defeats an admin's explicit no.
+    wa.findByZohoUserId.mockResolvedValue({
+      allowedMytrions: null, deniedMytrions: ['hr'], allDepartmentAccess: null, homeMytrion: null,
+      viewAsUserIds: [], mytrionAccessModes: {}, active: true,
+    } as never);
+    holds(set({ id: 's1', allowedMytrions: ['billing', 'hr'], override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal());
+    expect(r.accessibleMytrions).toEqual(['billing']);
+  });
+
+  it('drops a home the sets no longer grant, rather than routing into a 403', async () => {
+    wa.findByZohoUserId.mockResolvedValue({
+      allowedMytrions: null, deniedMytrions: [], allDepartmentAccess: null, homeMytrion: 'sales',
+      viewAsUserIds: [], mytrionAccessModes: {}, active: true,
+    } as never);
+    holds(set({ id: 's1', allowedMytrions: ['billing'], override: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal());
+    expect(r.homeMytrion).toBe('billing');
+  });
+
+  it('leaves an ADDITIVE set behaving exactly as before', async () => {
+    // The default is false, so nothing that exists today changes.
+    profileGrants('sales');
+    holds(set({ id: 's1', allowedMytrions: ['billing'] }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.accessibleMytrions.sort()).toEqual(['billing', 'sales']);
+  });
+
+  it('names the overriding sets in the trace', async () => {
+    holds(set({ id: 's1', name: 'Billing desk only', allowedMytrions: ['billing'], override: true }));
+    const { trace } = await mytrionAccessService.explain(principal());
+    expect(trace?.overriddenBy).toEqual(['Billing desk only']);
   });
 });

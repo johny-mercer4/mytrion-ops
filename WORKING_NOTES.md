@@ -15086,6 +15086,347 @@ Four optimisations measured this session, three rejected on evidence (rerank, gp
 FF_RAG_V2_CONTEXT, and now k=4). The one that survived — the skill library at 1/15 → 15/15 — is the
 only one that was ever argued for on a number rather than on a story.
 
+### Same day — today first in the week list
+
+The API returns the week ascending, so today's card sat wherever it fell — three down on a Wednesday.
+The one card people open this screen to read was the one they had to hunt for. Today is lifted to the
+top; every other day keeps its calendar sequence.
+
+Only today MOVES, deliberately. Pulling it out and reversing the rest would put the OLDEST day directly
+beneath it, which is a stranger reading order than the calendar one — the week should still read as a
+week. On a past week there is no `todayRow`, so nothing is reordered at all.
+
+Reordering is presentational: `weeklyMs` still sums `data.days`, and a test pins that the total does not
+move with the order.
+
+5 tests. Mutations caught: no reorder at all, and today-first-with-the-rest-reversed.
+
+### 2026-08-12 — "Unable to preload CSS" in production
+
+Reported from prod:
+
+```
+Unable to preload CSS for https://octane-ops-ai.onrender.com/assets/index-CLy9FzoA.css
+Refused to apply style … MIME type ('application/json') is not a supported stylesheet MIME type,
+and strict MIME checking is enabled
+```
+
+**Prod was healthy.** Checked it directly: `index.html` serves 200 with `cache-control: no-cache` and
+an ETag, and references `index-fiJcEjJH.css` — the asset the current build actually ships. The missing
+`index-CLy9FzoA.css` was committed in `74fde365` and replaced by later rebuilds, so it is simply gone.
+
+**It is a tab left open across a deploy.** Every build emits new content-hashed names and the old ones
+stop existing. A tab loaded before the deploy is still running the old JS, so its first LAZY route
+import afterwards asks for a chunk that no longer exists — hence "preload", not a first-paint failure.
+Nothing was misconfigured; the error boundary just turned a stale tab into "Something went wrong".
+
+Two fixes, because the cause and the message were separate problems:
+
+1. **`lib/staleBuildReload.ts`** — listens for `vite:preloadError` and reloads once. The newest
+   `index.html` is always one request away (it is `no-cache`), so a reload picks up the new chunk names.
+   Guarded by a `sessionStorage` flag cleared on `load`, so a genuinely broken asset fails VISIBLY on the
+   second try instead of reload-looping. Attached before the first render, since the failure happens on a
+   lazy import and the listener has to exist by then.
+
+2. **A missing `/assets/*` now returns `text/plain`, not the JSON error envelope.** That envelope is what
+   produced the second line: helmet sets `nosniff`, so a stylesheet answered with `application/json`
+   reads as a server misconfiguration rather than "that file is gone". Note the existing
+   `/main/assets/…` redirect only fires when `indexOf('/assets/') > 0`; a ROOT-level `/assets/…` miss
+   fell straight through to the envelope. Deliberately not the SPA shell either — answering a stylesheet
+   with HTML trips the same check with a different type in it. API 404s keep their JSON, and a test pins
+   that.
+
+3 tests, mutation-verified by letting asset misses fall back to the envelope.
+
+**Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
+it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
+answer; worth revisiting only if tabs are routinely left open through deploys.
+
+## 2026-08-12 — Card Activity tooltip parity follow-up
+
+- Replaced the fixed in-chart hover card with the CRM Mytrion interaction: a tooltip outside the
+  horizontal scroller, positioned from the rendered hovered transaction point.
+- Geometry now scales viewBox X to rendered width, subtracts `scrollLeft`, clamps visible edges, and
+  derives Y from the transaction point instead of a fixed top.
+- Restored the legacy crosshair/glow cues and added focused regression coverage for containment,
+  first/last edges, horizontal scrolling, and point-relative Y movement.
+
+### Review follow-up, same day
+
+Three things the first pass got wrong, found by reviewing the diff before opening the PR:
+
+**The tooltip could leave the card through the top.** It was anchored to `.msd-chart-activity-area`
+with only a horizontal clamp, and the plot is 110px tall while the card is ~128px — so the tallest
+day of a cycle had no room above its own point and `translateY(-100%)` pushed the card out over the
+page header. That is the same defect class as the July screenshot bug the previous comment described,
+reintroduced from the other direction. Fixed by moving the positioning boundary out to
+`.msd-chart-block` (which includes the header band) and clamping the card's bottom edge to
+`MSD_TOOLTIP_HEIGHT + gutter`. Days with room still track their point; tall days park at the top of
+the card, beside the column the horizontal clamp already tracks. `.msd-chart-activity-area` is
+deliberately no longer `position: relative` — a test asserts that, because making it relative silently
+caps the clamp at the plot's top edge again.
+
+`MSD_TOOLTIP_HEIGHT` is an over-estimate on purpose: too high parks the card a few pixels low, too
+low lets it clip out. Measuring the card instead would mean a second layout pass per hover.
+
+**Tokens had been replaced by raw hex.** `rgba(15,23,42,.92)` + a `.ss-root.light` twin + `#38bdf8`
+went back to `--hz-modal-surface` / `--glass-bd-hi` / `--accent`, which theme through the cascade and
+need no light override. The `backdrop-filter: blur(8px)` is gone too: the modal surface is already the
+glass primitive, and a second blurred layer that moves on every hover is exactly the composited-layer
+trap in `modern-web-guidance`.
+
+**The series colours disagreed with themselves.** The header legend said grey for Active/New; the
+tooltip said green and blue for the same two series. They are now one set of `--msd-series-*` vars on
+`.msd-chart-block`, consumed by the legend, the plot and the tooltip dots.
+
+Also: `min-width: Npx` budget in `breakpoints.test.ts` ratcheted 76 → 75, since the card now has a
+fixed `width` the clamp can reason about.
+
+### Then it was looked at, and the clamp was the wrong answer
+
+Screenshots of the running app killed the card-clamp above. Two things it got wrong:
+
+**The intended interaction is a tooltip that floats clear of the card**, over whatever is above it —
+not one held inside the chart. Clamping it to the card put it BELOW the point it described on a tall
+day, which is worse than the bug it fixed. The card is now `position: fixed` in viewport coordinates,
+clamped only to the window, so it cannot leave the screen and cannot be clipped by the page scroller.
+Every input is a client rect now, which also deleted the `scrollLeft` arithmetic: scrolling the chart
+sideways or scrolling the page both move `svgLeft`/`svgTop` on their own.
+
+**`position: fixed` does not mean the viewport here.** The chart sits in a glass card, and a
+`backdrop-filter` ancestor becomes the containing block for fixed descendants — so the card was
+resolving against that card's box and floated off by roughly the page's scroll offset. It is now
+portalled to the module root (`.ss-root`), which the repo's stacking rules keep free of
+transform/filter. `--msd-series-*` moved to `.ss-root` for the same reason: the portalled card is no
+longer inside `.msd-chart-block`, so vars declared there would not reach it.
+
+Worth remembering as a rule: **in this app, `position: fixed` inside a workspace card is not fixed to
+the window.** Portal to `.ss-root` (or use `ds/Dialog`, which is in the top layer) instead.
+
+**How it was verified.** 813 CRM tests pass and the geometry is unit-tested, but jsdom does no layout,
+so the placement was checked in the running app on `localhost:5173`. Not by automation: the Playwright
+browser is a separate profile with no Zoho session, so the dashboard renders without data and there is
+no point to hover, and the Chrome extension was not connected. It was confirmed by eye in the
+signed-in browser — tooltip floating above the hovered day, clear of the chart card.
+
+## 2026-08-12 — C-18 Check Payment Information: CMP status and exact amounts
+
+Three reports from Sales, one root cause each.
+
+**"Payments total" removed.** It sat beside "Total paid" showing a different number ($340,174 vs
+$341,321) for what reads as the same thing — one is the 90-day payment ledger, the other the amount
+matched to invoices. Two totals that disagree is a support ticket, not a feature. Total paid stays.
+
+**A part-paid invoice was labelled Paid.** Two independent causes, both fixed:
+
+1. `cmpStatusBadge` relabelled anything containing "paid" as the literal string `Paid` — so
+   "Partially Paid" rendered as "Paid" no matter what CMP returned. The badge now shows CMP's own
+   label and derives only the tone, checking partial first.
+2. The invoice list came from `carrier.check_payment` (Deluge) alone, whose status string is the one
+   Sales says is wrong (carrier 5815660). C-18 now also reads `clients.invoices` — the CMP-first
+   route C-20 already trusts — and `mergeCmpInvoices` matches on invoice number, taking status and
+   total from CMP-first and paid/remaining from the Deluge, which is the only source that carries
+   them. Three calls in `Promise.allSettled`: either invoice source alone still renders the panel,
+   and `cmpError` is only raised when both fail.
+
+On top of that, `cmpInvoiceStatus` refuses to call an invoice Paid while CMP's own numbers say money
+is owed: remaining > 0 with something paid is Partially Paid, remaining > 0 with nothing paid is
+Pending. Every other status is passed through untouched, so Cancelled and Overdue keep their word.
+The money is the source of record; the string is what carriers dispute.
+
+**Amounts were rounded to whole dollars.** `money()` uses `maximumFractionDigits: 0`, so CMP's
+$43,495.62 displayed as $43,496 (carrier 5834146). Added `moneyExact` — always cents — and used it
+for every invoice amount in the automations: the C-18 invoice cards (total/paid/remaining), the C-18
+summary tiles, and the C-20 Request Invoices amount column. `money()` is untouched for dashboard
+aggregates, where cents are noise. Deliberately NOT changed: EFS balances, credit lines, money-code
+draws and fuel-transaction totals — none of those are an invoice quoted from a source of record.
+
+5 new tests (17 in `autoRunners.test.ts`, 5 in `autoLive.invoiceStatus.test.ts`); 818 CRM tests green.
+Not yet seen against the two named carriers in a signed-in browser — worth checking 5815660 (status)
+and 5834146 (cents) on the preview.
+### 2026-08-12 — Worker CRM as a Telegram Mini App (mobile + tablet)
+
+CONTEXT_STALE: no PRODUCT.md / DESIGN.md. Operate refinement of the incumbent CRM — not a visual-world
+replacement, and not the carrier product in `apps/mini-app`. Branch: `feature/crm-telegram-mobile` off
+`origin/build`. No commit.
+
+**Telegram bootstrap.** `index.html` loads `telegram-web-app.js` (unpinned, same as the carrier app) and
+an inline first-paint script calls `ready()` / `expand()` / `disableVerticalSwipes()`, stamps
+`data-telegram`, and writes `--tg-inset-*`. `src/telegram/webApp.ts` re-applies on viewport / safe-area /
+theme events. Viewport stays pinch-zoomable (`user-scalable=no` is not copied). Telegram chrome is painted
+to match CRM light/dark; themeParams are not rebound onto `--accent`.
+
+**Auth.** Session was already in localStorage. OAuth *state* was sessionStorage-only — dual-written to
+localStorage now so a WebView that drops sessionStorage across the Zoho round-trip can still complete.
+Backend-signed state remains the CSRF gate. Login copy in Telegram tells the worker to stay in the
+window. **Not in this pass:** Telegram `initData` as identity. Workers remain Zoho OAuth users. If Zoho
+opens in an external browser instead of the WebView, the session will not transfer back into the Mini
+App — that needs a Bot-side return path later.
+
+**RingCentral.** Embeddable is not mounted in Telegram (iframe + WebRTC + OAuth popup). In-UI card:
+"Calling isn’t available in Telegram. Use Mytrion on a desktop browser or the RingCentral app." Desktop
+calling is unchanged. OAuth redirect URI remains
+`https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`. On phone (non-
+Telegram) an incoming-call banner sits above `--layout-bottom-inset` and the vendor pill is lifted off
+the tab bar (`data-rc-ringing`). Sign-in/error cards dropped the 4px side-tab (craft-floor / hook).
+
+**Shell / departments.** `--layout-safe-t` / `--layout-safe-b` max env() with Telegram insets. Header
+pads the Mini App top chrome; tab bar and sheets use `--layout-safe-b`. Admin / Sales / launcher tables
+get `data-table-scroller` (horizontal scroll, sticky first+last columns under 640, `100dvh` instead of
+`100vh`). Launcher grid is 2-col below 900 and 1-col below 640 via data attributes (module CSS is hook-
+blocked). Shared MytrionShell already owns phone tab bar + More sheet, so Admin's 19 tabs are reachable.
+All workspaces that mount MytrionShell (Sales, CS, Billing, Admin, HR, Finance, Manager, Marketing, …)
+inherit the chrome.
+
+**Preview.** `pnpm dev:all` → CRM at `http://localhost:5173`. Telegram: BotFather Mini App URL pointing
+at the deployed CRM origin (`/main`), then Sign in with Zoho *in the same WebView*. Phone/tablet:
+DevTools 375 / 768, or `pnpm -C apps/mytrion-crm audit:mobile` with the API up.
+---
+
+## 2026-08-12 — Permission sets: override precedence, a real Save, and a screen verified in a browser
+
+Four asks, all on Mytrion Admin → Permission Sets.
+
+**1. Override (the one that changes semantics).** Sets were strictly additive, so "Billing — Ledger
+only" did nothing to someone whose profile default already granted Billing unscoped. That limitation
+was documented and correct, but it made scoping unusable in practice. New `override` boolean on
+`mytrion_permission_sets` (migration `0115`, hand-written and idempotent — `drizzle-kit generate`
+still emits 388 lines of already-applied tables in this repo and cannot be used).
+
+Resolution gains **Step 3.4** in `combineAccess`, after the per-user override REPLACE and before the
+deny subtraction: if any assigned set carries `override`, `allowed`, `userModes` and `allDept` are
+cleared and only the sets contribute. Deliberate limits, all pinned by tests:
+- a denied Mytrion on the user record **stays denied** — override widens precedence, not authority;
+- an overriding set **cannot** confer all-department access;
+- `homeMytrion` is re-picked from what survives, so nobody lands on a workspace they cannot enter.
+
+`AccessTrace` gains `overriddenBy: string[]`, and the effective-access drawer now says in words why
+a profile default that plainly grants Billing produced no Billing. Without that this is undebuggable.
+
+**2. Save is a real save.** The editor used to PATCH on every click — a half-finished configuration
+was live for everyone holding the set, and there was nothing to press. It now holds a draft, shows a
+save bar only when the draft differs from what is stored, and commits through one new atomic
+`PUT /admin/permission-sets/:id/grants` whose repo writes the three grant columns together, filtered
+to the allowed set so the row can never disagree with itself. Save returns to the list.
+
+The save bar is `position: sticky`. **This forced a structure change:** `.card` is `overflow: hidden`,
+which makes a sticky child stick to a box that never scrolls. The card is therefore rendered by the
+editor, not by the page, so the bar is its sibling. Worth remembering the next time something needs
+to stick inside an admin card.
+
+**3. Three levels, not one wall.** 1 workspaces → 2 full/read-only → 3 tabs, each with its number in
+its own heading (the kicker-above-a-heading shape is gone; the numeral stays because the sequence IS
+the dependency). Levels 2 and 3 are dimmed and inert until level 1 is answered.
+
+**4. Assignees.** Was a chip wall capped at `.slice(0, 60)` — simultaneously overwhelming and
+incomplete, with nothing on screen saying the tail was unreachable. Now a searchable list over the
+whole roster (126 people), assigned pinned above candidates, per-row busy state.
+
+**Verified in a real browser, not by reading class names.** `apps/mytrion-crm/vite.audit.config.ts`
+gained `AUDIT_API_PORT` so an audit can run against its own API on a throwaway local DB — the default
+:3001 is whatever `pnpm dev:all` is pointed at, and `.env` points at Render **production**. Ran a
+CDP script over both themes: list, skeleton, detail, dirty state, assignees, precedence. That pass
+found four things reading the code did not: the save bar was below the fold, the create form vanished
+during loading (the grid jumped on arrival), list cards were ragged because `.profileGrid` is
+`align-items: start`, and skeleton bars were invisible except when the shimmer highlight crossed them
+— fatal under `prefers-reduced-motion`, where nothing moves at all.
+
+`pnpm build:widget` run and `app/` committed; confirmed the new copy is in the hashed bundle.
+
+### 2026-08-12 — Horizon worker CRM on its own Telegram bot
+
+Wired Mytrion Horizon (`apps/mytrion-crm`) to a **separate** Telegram bot so it does not share the
+carrier client mini-app / agent-gateway token.
+
+- First-class env: `HORIZON_BOT_TOKEN` (Bot API + initData HMAC), `HORIZON_BOT_SECRET` (webhook
+  `secret_token` / `X-Telegram-Bot-Api-Secret-Token` — cannot be the bot token, Telegram forbids `:`),
+  plus username / Mini App URL / short name / direct / webhook URL. Client keys
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CARRIER_BOT_*` are unchanged.
+- Webhook-only on the API: `POST /v1/telegram/horizon-webhook`. No getUpdates poller. Boot
+  `setWebhook` uses the Horizon token only (skipped unless public HTTPS + secret; refused if the
+  Horizon token equals a client token).
+- CRM UI was already a Mini App host (Zoho OAuth, not initData login). No `src/` UI change, no
+  vendored `app/` rebuild. No bot token in `VITE_*`.
+- Isolation is asserted at boot. Gateway `.env.example` warns not to poll Horizon.
+
+Need from ops (BotFather / hosting): bot username, Mini App URL `https://<ops-host>/main`, domain
+allowlist, Menu Button or Main App, Render env-group copies of HORIZON_* (local `.env` already has
+token + secret — do not paste). Webhook URL defaults to `/v1/telegram/horizon-webhook` on Render.
+
+
+## 2026-08-13 — Card Activity gallons, in full
+
+The tooltip showed `Gallons 9k` for a day that moved 9,241.36 — via `msdFmtK`, which is a
+one-significant-figure abbreviation. Gallons are what the carrier is billed on, so that is the one
+number on this dashboard that cannot be read approximately, and the Transaction Details table
+directly below it has always shown the exact figure. The panel disagreed with itself.
+
+Two formatters, one rule — never one significant figure:
+
+- `msdFmtGallonsK` — `9.24k`, `0.74k`, `1.23M` — the Card Activity tooltip and the single-day tile.
+  Two decimals ALWAYS, never trimmed: these are tabular-mono columns, and a "10k" next to a "9.24k"
+  breaks the alignment the column exists for. Sub-thousand stays in k (`0.74k`) rather than switching
+  units mid-column. Two decimals is the smallest abbreviation that still resolves ~10 gallons here.
+- `msdFmtGallons` — `9,241.36` — the Transaction Details table and its total. This is the rule
+  `SalesDashPanel`'s local `fmtVol` already applied, so that duplicate is gone and both read from one
+  formatter.
+
+Compact where the number is scanned, exact where it is read off.
+
+Left abbreviated on purpose: the hero KPI strip (`msdFmtNum(hero.volume)`). It is a cycle total in
+the millions inside a two-up flex row of unbreakable mono figures that already does not fit a phone —
+"1.2M" is the point there, and an exact number would break the strip before it helped anyone. Worth
+revisiting only with a layout change.
+
+3 tests on the formatter, plus the chart test now pins 10,241.36 and asserts "10k" is absent.
+847 CRM tests green.
+
+## 2026-08-13 — Sales mini-app: pilot roster, and money code switched off in the catalog
+
+### The mini-app is one agent's for now
+
+Two Sales surfaces put a company into Telegram: "View mini-app" on a client card (the agent's own
+mini-app) and "Generate registration link" in client Manage (the carrier's). Rollout is one agent at
+a time, so both now answer only for a named roster — today just **Daniel Brown**
+(`6227679000031473048`).
+
+`src/modules/carrier/salesMiniAppPilot.ts` is the authority and both routes call it
+(`POST /carrier-invitations`, `POST /carrier/mini-app/sales-agent-invitations`). The CRM has a copy
+of the id list purely so a non-pilot agent is not shown a control that answers 403 — hiding a button
+is decoration; the route is the gate.
+
+**Ids, not names.** A Zoho display name is editable and duplicated in the directory; the id survives
+a rename. The name in the list is a comment for reviewers, never matched on — a test pins both halves
+of that (a renamed Daniel keeps access; someone else renamed to "Daniel Brown" does not gain it).
+
+**Admins keep their bypass, "View as" does not.** Admin Client Management onboards outside the pilot.
+But an admin viewing as an agent sees that agent's Sales, pilot membership included — that is what
+View-as is for, and `impersonatorUserId` is what distinguishes the two.
+
+**Not a disabled button.** Outside the pilot the control is absent, not greyed: "Mini-app unavailable"
+on an active client means *the client* is ineligible everywhere else on that card, and reusing it
+here would have read as a data problem. Manage shows one line of explanation instead, and the
+Registered users / password-reset sections stay — the pilot gates minting links, not managing the
+users a client already has.
+
+### Money code was advertised but switched off
+
+`FF_MINIAPP_MONEY_CODE_ENABLED` has been `0` since it shipped, and the draw/preview/void routes
+enforce it. The owner catalog still listed money code with a live `moneycode` action, so the #1
+most-asked service opened a sheet whose first call returned 503 "not enabled here yet".
+
+It is now a `soon` item (`action: null`), moved below the live rows per the catalog's own "soon items
+last" rule, and dropped from `defaultPinned` — a soon item is not pinnable, and its pin slot goes to
+Balance. Visible but disabled, so an owner reads "coming" rather than hunting for a service that
+vanished. The driver entry was already `soon`. The sheet implementation in `App.tsx` is untouched and
+comes back when the flag does.
+
+Not touched: the money-code REPORT (`/money-code-report`, `/money-code/history`) — reading the
+history of past draws is not drawing, and it is what accounting asks for.
+
+Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-route tests now run as
+the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
+CRM 851 green. Both vendored bundles rebuilt.
 ## 2026-08-13 — CS Applications: global sort/filter, off Deluge onto direct COQL
 
 QA (Dina Carter) reopened "issue-17": PR #166 (2026-08-10) shipped sort/filter/copyable-fields for

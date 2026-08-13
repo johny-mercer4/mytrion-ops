@@ -211,7 +211,7 @@ export function AuditLog() {
         </p>
       )}
 
-      <div className={s.table} aria-busy={showSkeleton}>
+      <div className={s.table} data-table-scroller aria-busy={showSkeleton}>
         <div className={`${s.tHead} ${s.tAudit}`}>
           <span>When</span>
           <span>User</span>

@@ -11,22 +11,24 @@
  *
  * Chrome is the shared Sales scaffold (SalesPage / SalesPageHead / SalesEmpty / SalesPager).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, NAV_DESC } from '../salesData';
 import { useCachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
-import { useUserContext } from '@/context/UserContextProvider';
-import { isAdmin } from '@/access/resolveAccess';
+import { copyToClipboard } from '@/mytrions/admin/carrierUserUtil';
 import {
   getVerificationClients,
   getPipeline,
+  generatePlaidLink,
   downloadVerificationAttachment,
   type VerificationClient,
   type VerificationClientPage,
   type VerificationStateFilter,
+  type PipelineStage,
   type PipelineStageStatus,
+  type PipelineSnapshot,
   type PipelineDecision,
 } from '@/api/verification';
 import { VerificationActionRequest } from '../VerificationActionRequest';
@@ -35,7 +37,6 @@ import { VerificationDetailSkeleton } from '../DataCenterSkeletons';
 import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, SalesPager } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
 import {
-  applicationStatusTone,
   CheckpointRail,
   creditDecisionTone,
   creditScoreTone,
@@ -46,6 +47,7 @@ import {
   riskTone,
   stageTone,
   TONE_COLOR,
+  wexStatusBucket,
 } from '../verificationFields';
 
 const STAGE_VIS: Record<PipelineStageStatus, { color: string; icon: IconName; label: string }> = {
@@ -53,7 +55,7 @@ const STAGE_VIS: Record<PipelineStageStatus, { color: string; icon: IconName; la
   failed: { color: 'var(--danger)', icon: 'close', label: 'Failed' },
   pending: { color: 'var(--warn)', icon: 'clock', label: 'In progress' },
   skipped: { color: 'var(--muted)', icon: 'ban', label: 'Skipped' },
-  not_started: { color: 'var(--border2)', icon: 'clock', label: 'Not started' },
+  not_started: { color: 'var(--muted)', icon: 'clock', label: 'Not started' },
 };
 
 const CLASS_VIS: Record<VerificationClient['classification'], { label: string; color: string }> = {
@@ -82,6 +84,30 @@ function decisionBadge(d: PipelineDecision): { text: string; color: string } {
     default:
       return { text: 'Undecided', color: 'var(--warn)' };
   }
+}
+
+function CopyValue({ text, children, className }: { text: string; children: ReactNode; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const run = () => {
+    void copyToClipboard(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={className}
+      title="Click to copy"
+      onClick={(e) => { e.stopPropagation(); run(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); run(); } }}
+      style={{ cursor: 'pointer' }}
+    >
+      {copied ? '✓ Copied' : children}
+    </span>
+  );
 }
 
 const PAGE_SIZE = 9;
@@ -140,6 +166,83 @@ function PendingPipeline() {
       </div>
     </div>
   );
+}
+
+const PLAID_WAITING = new Set(['CREATED', 'CLICKED']);
+const PLAID_ANALYZING = new Set(['COMPLETED', 'REPORT_REQUESTED', 'REPORT_READY']);
+const PLAID_DEAD = new Set(['EXPIRED', 'FAILED']);
+const PLAID_BTN = 'height:36px;padding:0 15px;border:0;border-radius:9px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:800;display:inline-flex;align-items:center;gap:7px;align-self:flex-start';
+
+function prePlaidPassed(stages: PipelineStage[]): boolean {
+  return ['stop-factor-pre', 'blacklist', 'fmcsa'].every((id) => {
+    const st = stages.find((s) => s.id === id);
+    return !!st && (st.status === 'done' || st.status === 'skipped');
+  });
+}
+
+function PlaidLinkAction({ snapshot, dealId, onChanged }: { snapshot: PipelineSnapshot; dealId: string | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const plaid = snapshot.plaid;
+  const status = String(plaid?.status ?? '').toLowerCase();
+  const linkState = String(plaid?.linkState ?? '').toUpperCase();
+  const linkUrl = plaid?.linkUrl || null;
+  const actionError = String(plaid?.lastActionStatus ?? '').toLowerCase() === 'error' ? (plaid?.lastActionError || 'Generation failed.') : null;
+  const plaidStage = snapshot.stages.find((st) => st.id === 'plaid');
+  const passed = plaidStage?.status === 'done';
+  const dead = !passed && (PLAID_DEAD.has(linkState) || status === 'expired' || status === 'failed');
+  const analyzing = !passed && !dead && (status === 'verified' || (status === 'pending' && PLAID_ANALYZING.has(linkState)));
+  const waiting = !passed && !dead && !analyzing && !!linkUrl && (PLAID_WAITING.has(linkState) || status === 'pending');
+
+  useEffect(() => {
+    if (busy && (linkUrl || status === 'pending' || passed || dead || actionError)) setBusy(false);
+  }, [busy, linkUrl, status, passed, dead, actionError]);
+
+  if (!prePlaidPassed(snapshot.stages)) return null;
+
+  const shell = (children: ReactNode) => (
+    <div style={s('padding:14px 16px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--alt);display:flex;flex-direction:column;gap:10px')}>
+      <div style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)')}>Plaid link</div>
+      {children}
+      {error || actionError ? <div style={s('font-size:12px;color:var(--danger);font-weight:600')}>{error || `Failed: ${actionError}`}</div> : null}
+    </div>
+  );
+
+  if (passed) {
+    return shell(<div style={s('font-size:13px;color:var(--ok);font-weight:700;display:flex;align-items:center;gap:6px')}><Icon name="check" size={14} /> Plaid passed — bank data verified.</div>);
+  }
+  if (analyzing) {
+    return shell(<div style={s('font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px')}><Icon name="clock" size={14} /> Bank connected — analyzing…</div>);
+  }
+
+  const run = (regenerate: boolean) => {
+    if (!snapshot.requestId || !dealId || busy) return;
+    setError(null);
+    setBusy(true);
+    generatePlaidLink({ requestId: snapshot.requestId, dealId, regenerate })
+      .then(() => {
+        let n = 0;
+        const tick = () => { n += 1; onChanged(); if (n < 8) window.setTimeout(tick, 2500); else setBusy(false); };
+        window.setTimeout(tick, 2500);
+      })
+      .catch((e) => { setBusy(false); setError(e instanceof Error ? e.message : 'Could not queue the Plaid link.'); });
+  };
+
+  const generating = <><Icon name="spinner" size={14} /> Generating…</>;
+  const btn = (regenerate: boolean, label: string) => (
+    <button type="button" onClick={() => run(regenerate)} disabled={busy || !snapshot.requestId || !dealId}
+      style={s(`${PLAID_BTN};opacity:${busy || !snapshot.requestId || !dealId ? '.6' : '1'};cursor:${busy ? 'wait' : (!snapshot.requestId || !dealId) ? 'not-allowed' : 'pointer'}`)}>
+      {busy ? generating : <><Icon name="link" size={14} /> {label}</>}
+    </button>
+  );
+
+  if (waiting && linkUrl) {
+    return shell(<><PlaidLinkShare url={linkUrl} />{btn(true, 'Generate new link')}</>);
+  }
+  if (dead) {
+    return shell(<><div style={s('font-size:13px;color:var(--warn)')}>The Plaid link has expired. Generate a fresh one for the applicant.</div>{btn(true, 'Generate new link')}</>);
+  }
+  return shell(<><div style={s('font-size:13px;color:var(--text2)')}>All pre-Plaid checks passed. Generate a Plaid link for the applicant to connect their bank.</div>{btn(false, 'Generate Plaid link')}</>);
 }
 
 function PipelineTimeline({ client }: { client: VerificationClient }) {
@@ -230,11 +333,9 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
         );
       })}</div>
 
+      <PlaidLinkAction snapshot={pipe.data} dealId={client.dealId} onChanged={pipe.reload} />
       {shownStages.some((st) => st.id === 'plaid') ? (
-        <>
-          <PlaidLinkShare url={client.plaidLinkUrl} />
-          <BankStatementUpload requestId={pipe.data.requestId} dealId={client.dealId} onUploaded={pipe.reload} />
-        </>
+        <BankStatementUpload requestId={pipe.data.requestId} dealId={client.dealId} onUploaded={pipe.reload} />
       ) : null}
 
       {attachments.length ? (
@@ -277,6 +378,7 @@ function CrmVerificationRecord({ client, decision }: { client: VerificationClien
     platformBadge?.color ||
     (creditDecisionText ? TONE_COLOR[creditDecisionTone(creditDecisionText)] : undefined);
   const platformReason = decision && decision.outcome === 'rejected' ? decision.reason : null;
+  const wexStatus = wexStatusBucket(client.applicationStatus);
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <section className="ss-vf-section">
@@ -317,17 +419,17 @@ function CrmVerificationRecord({ client, decision }: { client: VerificationClien
       <section className="ss-vf-section">
         <div className="ss-vf-section-head">
           <span>Application</span>
-          {client.applicationId ? <span className="ss-vf-verdict is-mono">#{client.applicationId}</span> : null}
+          {client.applicationId ? (
+            <CopyValue text={String(client.applicationId)} className="ss-vf-verdict is-mono">#{client.applicationId}</CopyValue>
+          ) : null}
         </div>
         <div className="ss-vf-grid">
-          <FactTile label="Zoho deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
-          <FactTile label="WEX application stage" value={client.applicationStage} tone="accent" />
+          <FactTile label="Deal Pipeline" value={client.dealStage} tone={stageTone(client.dealStage)} />
+          <FactTile label="WEX Status" value={wexStatus?.label ?? null} tone={wexStatus?.tone ?? 'muted'} />
           <FactTile
-            label="Zoho application status"
-            value={client.applicationStatus}
-            tone={applicationStatusTone(client.applicationStatus)}
+            label="Applied"
+            value={client.appFillDate ? <CopyValue text={client.appFillDate}>{client.appFillDate}</CopyValue> : null}
           />
-          <FactTile label="Applied" value={client.appFillDate} />
           <FactTile label="Stage updated" value={client.stageUpdatedAt} />
           <FactTile label="Cards requested" value={client.cardsRequested} />
           <FactTile label="Carrier ID" value={client.carrierId} />
@@ -400,14 +502,13 @@ function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBa
 function VerificationCard({
   client,
   onOpen,
-  showAgent,
 }: {
   client: VerificationClient;
   onOpen: () => void;
-  showAgent: boolean;
 }) {
   const cls = CLASS_VIS[client.classification];
   const tone = client.attentionCount ? 'var(--danger)' : cls.color;
+  const wexStatus = wexStatusBucket(client.applicationStatus);
   return (
     <button
       type="button"
@@ -422,16 +523,12 @@ function VerificationCard({
       </div>
 
       <div className="ss-vf-chips">
-        <FactChip label="Deal stage" value={client.dealStage} tone={stageTone(client.dealStage)} />
-        {client.applicationStage ? (
-          <FactChip label="WEX app stage" value={client.applicationStage} tone="accent" />
+        <FactChip label="Deal Pipeline" value={client.dealStage} tone={stageTone(client.dealStage)} />
+        {wexStatus ? (
+          <FactChip label="WEX Status" value={wexStatus.label} tone={wexStatus.tone} />
         ) : null}
-        {client.applicationStatus ? (
-          <FactChip
-            label="App status"
-            value={client.applicationStatus}
-            tone={applicationStatusTone(client.applicationStatus)}
-          />
+        {client.creditDecision ? (
+          <FactChip label="Credit decision" value={client.creditDecision} tone={creditDecisionTone(client.creditDecision)} />
         ) : null}
       </div>
 
@@ -477,12 +574,6 @@ function VerificationCard({
         ) : null}
       </div>
 
-      {showAgent && client.agentName ? (
-        <div className="ss-vf-card-agent">
-          <Icon name="user" size={13} /> Agent: {client.agentName}
-        </div>
-      ) : null}
-
       {client.attentionCount ? (
         <div className="ss-vf-card-attention">
           <Icon name="warn" size={14} /> {client.attentionCount} Verification action
@@ -491,15 +582,22 @@ function VerificationCard({
       ) : null}
 
       <div className="ss-vf-card-foot">
-        <span>{client.appFillDate ? `Applied ${client.appFillDate}` : 'No application date'}</span>
-        {client.applicationId ? <span className="is-mono">#{client.applicationId}</span> : null}
+        <span>
+          {client.appFillDate ? (
+            <>Applied <CopyValue text={client.appFillDate}>{client.appFillDate}</CopyValue></>
+          ) : (
+            'No application date'
+          )}
+        </span>
+        {client.applicationId ? (
+          <CopyValue text={String(client.applicationId)} className="is-mono">#{client.applicationId}</CopyValue>
+        ) : null}
       </div>
     </button>
   );
 }
 
 export function VerificationTab() {
-  const admin = isAdmin(useUserContext());
   const viewAsUserId = getImpersonation()?.zohoUserId;
   const actAs = viewAsUserId ?? 'self';
   const [query, setQuery] = useState('');
@@ -612,7 +710,6 @@ export function VerificationTab() {
               key={client.dealId ?? client.carrierId ?? `application-${index}`}
               client={client}
               onOpen={() => setSelected(client)}
-              showAgent={admin}
             />
           ))}
         </div>

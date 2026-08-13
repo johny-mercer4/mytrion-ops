@@ -91,11 +91,7 @@ function relatedFor(stageId: PipelineStageId, blob: Rec): Array<{ label: string;
       break;
     }
     case 'plaid': {
-      push('Net cash flow (weekly)', firstText(s, ['adjusted_cf_weekly_display']) || firstNum(s, ['adjusted_cf_weekly']));
-      push('Net cash flow (total)', firstText(s, ['net_cash_flow_display']) || firstNum(s, ['net_cash_flow']));
       push('Avg weekly income', firstNum(s, ['avg_weekly_income']));
-      push('NSF count', firstNum(s, ['nsf_count', 'returned_items_count']));
-      push('Overdrafts', firstNum(s, ['overdraft_count']));
       push('Days negative', firstNum(s, ['days_negative_balance']));
       break;
     }

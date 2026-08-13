@@ -6,19 +6,20 @@
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { request, requestBlob } from '@/api/transport';
-import { money } from './live';
+import { money, moneyExact } from './live';
 import { deliverBlob } from './txnExportLibs';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
+  cmpInvoiceStatus,
   filterClientInvoices,
+  mergeCmpInvoices,
   fmtDate,
   invRangeBounds,
   mapInvRange,
   mapInvStatus,
   shortCard,
   str,
-  titleStatus,
   type Addr,
   type Automation,
   type Card,
@@ -161,8 +162,12 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
             r.issueDate ?? r.issue_date ?? r.invoice_date ?? r.period ?? r.created_date ?? r.createdDate
               ?? (r.fromDate && r.toDate ? `${String(r.fromDate)} — ${String(r.toDate)}` : null),
           ),
-          amount: money(r.total_amount ?? r.totalAmount ?? r.amount ?? r.grandTotal),
-          status: titleStatus(r.status ?? r.invoiceStatus ?? r.invoice_status),
+          amount: moneyExact(r.total_amount ?? r.totalAmount ?? r.amount ?? r.grandTotal),
+          status: cmpInvoiceStatus(
+            r.status ?? r.invoiceStatus ?? r.invoice_status,
+            r.totalPaid ?? r.total_paid ?? r.paid ?? r.amount_paid,
+            r.remainingAmount ?? r.remaining_amount ?? r.remaining ?? r.balance ?? r.due,
+          ),
         };
       }));
       // Endpoint is CMP-first; upstream does not emit meta.source on this route.
@@ -195,9 +200,11 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       // Widget parity: DWH payment-info (summary/totals) + live CMP invoices are fetched in
       // PARALLEL and merged — NOT a fallback chain. Either half may fail independently.
       const cid = requireCarrier(deal);
-      const [infoRes, cmpRes] = await Promise.allSettled([
+      const [infoRes, cmpRes, liveRes] = await Promise.allSettled([
         callTouchpoint('dwh.payment_info', { carrierId: cid, days: 90 }),
         callTouchpoint('carrier.check_payment', { carrierId: cid }),
+        // Same CMP-first route C-20 reads, for the status the Deluge gets wrong. See mergeCmpInvoices.
+        callTouchpoint('clients.invoices', { carrierId: cid, limit: 500 }),
       ]);
       let summary: PaymentsSummary | null = null;
       if (infoRes.status === 'fulfilled') {
@@ -205,27 +212,25 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
         const totals = p.invoices?.totals ?? {};
         summary = {
           invoiceCount: str(p.invoices?.count ?? 0),
-          totalBilled: money(totals.total_billed),
-          totalPaid: money(totals.total_paid),
-          openBalance: money(totals.open_balance),
+          // Exact, like the invoices below them: a panel that totals $43,496 over an invoice
+          // reading $43,495.62 looks like two different numbers for the same debt.
+          totalBilled: moneyExact(totals.total_billed),
+          totalPaid: moneyExact(totals.total_paid),
+          openBalance: moneyExact(totals.open_balance),
           paymentCount: str(p.payments?.count ?? 0),
-          paymentsTotal: money(p.payments?.total_amount),
         };
       }
-      let cmpInvoices: CmpInvoiceRow[] = [];
-      let cmpError: string | undefined;
-      if (cmpRes.status === 'fulfilled') {
-        cmpInvoices = (cmpRes.value.invoices ?? []).map((inv, i) => ({
-          id: str(inv.id) || `cmp-${i}`,
-          invoiceNumber: str(inv.invoiceNumber) || `#${i + 1}`,
-          status: str(inv.status) || '—',
-          total: money(inv.totalAmount),
-          paid: money(inv.totalPaid),
-          remaining: money(inv.remainingAmount),
-        }));
-      } else {
-        cmpError = cmpRes.reason instanceof Error ? cmpRes.reason.message : 'CMP invoice check failed.';
-      }
+      const deluge = cmpRes.status === 'fulfilled'
+        ? (cmpRes.value.invoices ?? []) as Array<Record<string, unknown>>
+        : [];
+      const live = liveRes.status === 'fulfilled'
+        ? (liveRes.value.data ?? []) as Array<Record<string, unknown>>
+        : [];
+      const cmpInvoices: CmpInvoiceRow[] = mergeCmpInvoices(deluge, live);
+      // Only an error when NEITHER invoice source answered — one of the two is enough to render.
+      const cmpError = cmpRes.status === 'rejected' && liveRes.status === 'rejected'
+        ? (cmpRes.reason instanceof Error ? cmpRes.reason.message : 'CMP invoice check failed.')
+        : undefined;
       if (!summary && cmpInvoices.length === 0) {
         // Both sources genuinely failed — surface the primary's error, not a silent empty.
         if (infoRes.status === 'rejected') throw infoRes.reason;

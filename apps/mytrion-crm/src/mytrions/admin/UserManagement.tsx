@@ -118,7 +118,7 @@ export function UserManagement() {
             </p>
           )}
 
-          <div className={s.table} aria-busy={loading}>
+          <div className={s.table} data-table-scroller aria-busy={loading}>
             <div className={`${s.tHead} ${s.tUsers}`}>
               <span>User</span>
               <span>Profile</span>

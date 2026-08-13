@@ -146,7 +146,7 @@ export function CarrierInvitations({
         </span>
       </label>
 
-      <div className={s.tableScroll}>
+      <div className={s.tableScroll} data-table-scroller>
         <div className={s.table} role="table" aria-label="Carrier invitations" aria-busy={loading}>
         <div className={`${s.tHead} ${s.tInvite}`} role="row">
           <span role="columnheader">Company</span>

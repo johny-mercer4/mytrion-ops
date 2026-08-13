@@ -549,7 +549,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         ))}
       </div>
 
-      <div className={s.tableScroll}>
+      <div className={s.tableScroll} data-table-scroller>
         <div className={s.table} role="table" aria-label="Registered carrier companies" aria-busy={loading}>
         <div className={`${s.tHead} ${s.tCarrier}`} role="row">
           <span role="columnheader">Company</span>
