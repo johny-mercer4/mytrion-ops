@@ -191,12 +191,16 @@ export async function loadApplications(
     if (hit && Date.now() - hit.at < APPS_CACHE_TTL_MS) return hit.data;
   }
 
-  const res = await csTouchpoint('cs.applications.list', {
-    tab,
-    ...(q ? { search: q } : {}),
-    page,
-    perPage: APPLICATIONS_PAGE_SIZE,
-  });
+  const res = await csTouchpoint(
+    'cs.applications.list',
+    {
+      tab,
+      ...(q ? { search: q } : {}),
+      page,
+      perPage: APPLICATIONS_PAGE_SIZE,
+    },
+    { force: fresh },
+  );
   const data: AppsPage = {
     rows: (res.data ?? []).map(mapAppRow),
     moreRecords: res.more_records === true,

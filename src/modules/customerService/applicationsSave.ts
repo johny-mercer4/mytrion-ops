@@ -10,6 +10,7 @@
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { invalidateTouchpointReadCache } from '../../lib/touchpointReadCache.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { resolveWritePayload } from './fieldResolver.js';
 
@@ -216,6 +217,9 @@ export async function saveApplication(
     ...resolved,
     Edit_History: history,
   });
+  // cs.applications.list caches reads for up to 90s (touchpoints.routes.ts) — without this, a
+  // save can look successful yet reopen with the pre-save value for up to that long.
+  invalidateTouchpointReadCache(ctx.tenantId);
 
   // 5) Deal mirror (best-effort — the widget warns, never fails the save) ---------------
   const relatedDeal = full.Related_Deal as { id?: string } | null | undefined;
