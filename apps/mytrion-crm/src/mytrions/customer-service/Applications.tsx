@@ -18,8 +18,10 @@ import {
   type SortDir,
   type SortKey,
 } from './applicationsFilters';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { ApplicationModal } from './ApplicationModal';
 import { ApplicationsFilterPanel } from './ApplicationsFilterPanel';
+import { ApplicationsPhoneList } from './ApplicationsPhoneList';
 import { CardTracking } from './CardTracking';
 import { copyWithToast } from './copyToast';
 import {
@@ -169,6 +171,8 @@ export function Applications() {
   // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
   // per tab, so this only ever changes when the tab does.
   const columns = useMemo(() => columnsFor(subTab), [subTab]);
+  /* Below 640 the 28-column table is replaced wholesale, not restyled — see ApplicationsPhoneList. */
+  const phone = useIsPhone();
   const openRow = openApp ? (rows.find((r) => r.id === openApp.id) ?? openApp) : null;
 
   const notify = useCallback((kind: ToastState['kind'], message: string) => {
@@ -418,6 +422,17 @@ export function Applications() {
             Try adjusting your search, filters, or switch tabs
           </div>
         </div>
+      ) : phone ? (
+        /* ── Below the STRUCTURE line: the same rows as a tap-to-detail card list ──
+           28 columns of fixed pixel minWidth is ~3,644px; a phone gets the card list and the record
+           sheet instead. The desktop branch below is untouched. */
+        <ApplicationsPhoneList
+          rows={rows}
+          subTab={subTab}
+          columns={columns}
+          pendingToggle={pendingToggle}
+          onOpenRow={onOpenRow}
+        />
       ) : (
         /* ── Table ── */
         <div className="cs-table-wrap cs-app-table-wrap">
