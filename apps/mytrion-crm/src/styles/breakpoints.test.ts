@@ -137,10 +137,12 @@ describe('breakpoint ladder', () => {
         if (!LADDER.has(value)) offenders.push(`${where}  ${value}px`);
       }
     }
+    // 78 -> 76: CS's `shared-responsive.css` carried a 380px block and a 768px block that between
+    // them held nothing but four empty rules. Deleting them removed two off-ladder values.
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      78,
+      76,
     );
   });
 
@@ -152,10 +154,12 @@ describe('breakpoint ladder', () => {
     for (const { line, where } of mediaLines()) {
       if (/(?:max-width|min-width)\s*:\s*\d+px/.test(line)) offenders.push(where);
     }
+    // 99 -> 96: CS's `shared-responsive.css` was rewritten onto range syntax as part of giving CS a
+    // phone layout at all; its three `max-width` blocks (768/640/380) are gone.
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      99,
+      96,
     );
   });
 });
@@ -218,7 +222,9 @@ describe('viewport units', () => {
   // that must not be covered. Not a blind codemod — `dvh` re-lays-out on every URL-bar frame, which
   // is the wrong trade for a 400-row table.
   it('does not add a bare vh', () => {
-    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 26);
+    // 26 -> 25: Billing's modal bottom-sheet gutter went `16vh` -> `16dvh`. It is measured against
+    // the viewport a Telegram webview actually gives the page, not the chrome-hidden one.
+    expectBudget('bare `vh`', census(CSS_FILES, /\b\d+(?:\.\d+)?vh\b/g), 25);
   });
 
   /**

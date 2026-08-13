@@ -1,58 +1,53 @@
 /* =====================================================
-   Customer Service — Responsive Styles
-   Breakpoints: 768px · 640px · 480px · 380px
+   Customer Service — the phone layout.
+
+   Loaded LAST from styles/index.css, after overrides + the Horizon layers + mounted, so these rules
+   win the cascade instead of losing it. Everything here is inside the STRUCTURE line or below, so it
+   cannot reach a laptop.
+
+   Breakpoints: the ladder, and only the ladder — (width < 640px) and (width < 480px).
+   See docs/design/FOUNDATIONS.md 5; src/styles/breakpoints.test.ts fails on a fifth value and on
+   the legacy `max-width` spelling.
+
+   This file previously carried three `max-width` blocks at 768/640/380, two of which contained
+   nothing but four empty rules (`.cs-content`, `.cs-panel`, `.cs-ai-panel`, `.cs-root`) — which is
+   how CS came to have no phone layer at all while reading as covered in review.
    ===================================================== */
 
 /* ═══════════════════════════════════════════════
-   §1  SIDEBAR — collapse to mobile bottom nav (≤ 768px)
+   §1  PANEL CONTENT
    ═══════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
-
-    .cs-root .cs-content {
-    }
-
+@media (width < 640px) {
+    /* A panel that pads itself 38px a side has given away 76 of a 375px screen before any content. */
     .cs-root .cs-panel {
-    }
-
-    .cs-root .cs-ai-panel {
-    }
-}
-
-/* ═══════════════════════════════════════════════
-   §2  PANEL CONTENT  (≤ 640px)
-   ═══════════════════════════════════════════════ */
-
-@media (max-width: 640px) {
-    .cs-root .cs-panel {
-        padding: 1.25rem 1rem;
-        gap: 1rem;
+        padding: var(--space-5) var(--space-4);
+        gap: var(--space-4);
     }
 
     .cs-root .cs-title {
-        font-size: 1.375rem;
+        font-size: var(--text-xl);
     }
 
     .cs-root .cs-summary-banner {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.625rem;
+        gap: var(--space-2_5);
     }
 
     .cs-root .cs-summary-amount {
-        font-size: 1.375rem;
-    }
-
-    .cs-root .cs-table-wrap {
-        overflow-x: auto;
+        font-size: var(--text-xl);
     }
 }
 
-/* ═══════════════════════════════════════════════
-   §4  BOTTOM NAV  (≤ 380px)
-   ═══════════════════════════════════════════════ */
+@media (width < 480px) {
+    .cs-root .cs-panel {
+        padding: var(--space-4) var(--space-3);
+        gap: var(--space-3);
+    }
 
-@media (max-width: 380px) {
-
-    .cs-root {
+    /* One column: two KPI tiles side by side on a 375px screen leaves ~160px each, which truncates
+       the amount — the one thing on the tile that has to stay readable. */
+    .cs-root .cs-summary-banner {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

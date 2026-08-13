@@ -70,11 +70,13 @@
     padding-inline: var(--space-3);
   }
 
-  /* Debtors' KPI row is the app's one hardcoded multi-column KPI grid; the rest already use
-     `auto-fit` with a floor and reflow on their own. */
-  .bm-root .db-kpi-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  /*
+   * `.bm-root .db-kpi-grid` used to be here too, at 1-up. Billing's own
+   * `shared-responsive.css` sets it to 2-up at the SAME specificity, so which one applied depended
+   * on whether the lazy Billing chunk loaded after this sheet — one declaration resolving two ways
+   * per page load. It now lives only in the module sheet (2-up at 640, 1-up at 480), which is also
+   * where the rest of Billing's phone layout is.
+   */
 
   /*
    * A toolbar that was one flex row wraps instead of overflowing. Without this the search field and
