@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   horizonWorkerTelegramLinks,
@@ -34,6 +34,19 @@ function keysOf(
 }
 
 export const horizonWorkerTelegramRepo = {
+  /**
+   * Admin directory. Always tenant-scoped. Newest Mini App bind first (`updated_at` is last login).
+   */
+  async list(ctx: TenantContext, limit = 500): Promise<HorizonWorkerTelegramLink[]> {
+    const cap = Math.min(Math.max(limit, 1), 500);
+    return db
+      .select()
+      .from(horizonWorkerTelegramLinks)
+      .where(eq(horizonWorkerTelegramLinks.tenantId, ctx.tenantId))
+      .orderBy(desc(horizonWorkerTelegramLinks.updatedAt))
+      .limit(cap);
+  },
+
   async findByZohoUserId(
     ctx: TenantContext,
     zohoUserId: string,

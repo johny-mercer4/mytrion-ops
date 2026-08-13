@@ -2,6 +2,7 @@
  * Horizon Mini App Telegram identity.
  *
  * POST /horizon/telegram/link — bind after Zoho login (HMAC initData, not a login).
+ * GET  /horizon/telegram/links — Admin directory of linked workers.
  * POST /horizon/telegram/export-send is registered separately (multipart sendDocument).
  *
  * Never logs raw initData or the bot token.
@@ -13,7 +14,7 @@ import {
   parseHorizonInitDataIdentity,
   verifyHorizonInitData,
 } from '../../integrations/telegramHorizonBot.js';
-import { AppError, AuthError, ValidationError } from '../../lib/errors.js';
+import { AppError, AuthError, RBACError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { zohoUserIdFromContext } from '../../modules/horizon/telegramLink.js';
 import { horizonWorkerTelegramRepo } from '../../repos/horizonWorkerTelegramRepo.js';
@@ -23,7 +24,44 @@ const linkBodySchema = z.object({
   initData: z.string().min(1).max(8_192),
 });
 
+function requireAdmin(request: Parameters<typeof requireContext>[0]) {
+  const ctx = requireContext(request);
+  if (ctx.audience !== 'internal') {
+    throw new RBACError('Horizon Telegram directory is internal-only');
+  }
+  if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
+    throw new RBACError('Admin access required to view Octane Telegram users');
+  }
+  return ctx;
+}
+
+function toDirectoryRow(row: {
+  zohoUsername: string | null;
+  zohoUserId: string;
+  telegramUserId: string;
+  telegramUsername: string | null;
+  updatedAt: Date;
+}) {
+  return {
+    userName: row.zohoUsername,
+    zohoUserId: row.zohoUserId,
+    telegramUserId: row.telegramUserId,
+    telegramUsername: row.telegramUsername,
+    lastLoginAt: row.updatedAt.toISOString(),
+  };
+}
+
 export async function horizonTelegramLinkRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    '/horizon/telegram/links',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireAdmin(request);
+      const rows = await horizonWorkerTelegramRepo.list(ctx);
+      return { items: rows.map(toDirectoryRow) };
+    },
+  );
+
   app.post(
     '/horizon/telegram/link',
     { onRequest: [app.authenticate] },

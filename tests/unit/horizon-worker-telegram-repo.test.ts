@@ -36,6 +36,7 @@ function makeBuilder(): Record<string, unknown> {
     'returning',
     'update',
     'set',
+    'orderBy',
   ]) {
     builder[method] = record(method);
   }
@@ -182,6 +183,22 @@ describe('every Horizon telegram-link read is bound to the caller tenant', () =>
     await horizonWorkerTelegramRepo.findByTelegramUserId(RIVAL, '99');
     const rival = renderedWheres();
     expect(acme.every((w) => w.params.includes('tenant_acme'))).toBe(true);
+    expect(rival.every((w) => w.params.includes('tenant_rival'))).toBe(true);
+    expect(rival.some((w) => w.params.includes('tenant_acme'))).toBe(false);
+  });
+
+  it('list filters on tenant_id and never the rival tenant', async () => {
+    await horizonWorkerTelegramRepo.list(ACME);
+    const acme = renderedWheres();
+    expect(acme.length).toBeGreaterThan(0);
+    for (const w of acme) {
+      expect(w.sql).toContain('"tenant_id"');
+      expect(w.params).toContain('tenant_acme');
+      expect(w.params).not.toContain('tenant_rival');
+    }
+    calls = [];
+    await horizonWorkerTelegramRepo.list(RIVAL);
+    const rival = renderedWheres();
     expect(rival.every((w) => w.params.includes('tenant_rival'))).toBe(true);
     expect(rival.some((w) => w.params.includes('tenant_acme'))).toBe(false);
   });

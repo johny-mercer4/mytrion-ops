@@ -15740,4 +15740,8 @@ Two slices on `hotfix/Mytrion`. No `telegram_octane_users` table. Carrier mini-a
 
 Call sites: Sales invoices (`downloadInvoice`), C-15 txn report, C-30 card lookup, verification attachments; Billing debtors/prepay XLSX + opening template/export/rejected; CS CITI CSV + maintenance attachments (bytes route for Telegram CORS); Marketing loyalty + referrals; Analyst reports; HR attendance CSV.
 
-Deferred: Admin "Octane Telegram Users" directory UI (untracked); signed-URL desktop path for maintenance attachments is unchanged.
+Deferred: signed-URL desktop path for maintenance attachments is unchanged.
+
+## 2026-08-13 — Admin: Octane Telegram Users
+
+Simple Admin list of `horizon_worker_telegram_links`. Access group tab **Octane Telegram Users**. Columns: user name, Zoho user id, Telegram user id, Telegram username, last login (`updated_at` from the Mini App bind after Zoho sign-in). Search is client-side over those fields. Admin-only `GET /v1/horizon/telegram/links` (all-department). Empty / loading / no-match states. Phone collapses to name + last login; handle stays on the name stack.

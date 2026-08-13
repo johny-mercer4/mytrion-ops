@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const upsert = vi.hoisted(() => vi.fn());
+const listLinks = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/repos/horizonWorkerTelegramRepo.js', () => ({
   horizonWorkerTelegramRepo: {
@@ -12,6 +13,7 @@ vi.mock('../../src/repos/horizonWorkerTelegramRepo.js', () => ({
     refreshFromBotStart: vi.fn(),
     findByZohoUserId: vi.fn(),
     findByTelegramUserId: vi.fn(),
+    list: listLinks,
   },
 }));
 
@@ -80,6 +82,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   upsert.mockReset();
+  listLinks.mockReset();
 });
 
 async function workerToken(overrides?: { tenantId?: string; zohoUserId?: string }): Promise<string> {
@@ -247,5 +250,68 @@ describe('Horizon link repo mock isolation', () => {
       payload: { initData: signedInitData({ id: 99 }) },
     });
     expect(horizonWorkerTelegramRepo.refreshFromBotStart).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /v1/horizon/telegram/links', () => {
+  it('rejects a missing bearer', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/horizon/telegram/links' });
+    expect(res.statusCode).toBe(401);
+    expect(listLinks).not.toHaveBeenCalled();
+  });
+
+  it('rejects a worker without all-department access', async () => {
+    const token = await workerToken();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/horizon/telegram/links',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(listLinks).not.toHaveBeenCalled();
+  });
+
+  it('lists mapped fields for an admin, scoped to the session tenant', async () => {
+    const token = await signAccessToken({
+      userId: 'zoho:42',
+      tenantId: DEFAULT_TENANT_ID,
+      audience: 'internal',
+      role: 'admin',
+      worker: {
+        zohoUserId: '42',
+        userName: 'Ada',
+        email: 'ada@octane.test',
+        profile: 'Administrator',
+      },
+    });
+    listLinks.mockResolvedValueOnce([
+      {
+        zohoUsername: 'Ada Lovelace',
+        zohoUserId: '42',
+        telegramUserId: '99',
+        telegramUsername: 'ada',
+        updatedAt: new Date('2026-08-13T16:00:00.000Z'),
+      },
+    ]);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/horizon/telegram/links',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      items: [
+        {
+          userName: 'Ada Lovelace',
+          zohoUserId: '42',
+          telegramUserId: '99',
+          telegramUsername: 'ada',
+          lastLoginAt: '2026-08-13T16:00:00.000Z',
+        },
+      ],
+    });
+    expect(listLinks).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: DEFAULT_TENANT_ID, allDepartmentAccess: true }),
+    );
   });
 });

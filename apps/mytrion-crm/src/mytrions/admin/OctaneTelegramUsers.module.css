@@ -1,0 +1,20 @@
+/* Octane Telegram Users — column grid only. Shared chrome lives in admin.module.css. */
+
+.tTelegram {
+  grid-template-columns: 1.4fr 1.1fr 1.1fr 1.1fr 1.2fr;
+}
+
+.searchInput {
+  font-size: var(--text-input-mobile);
+}
+
+@media (width < 640px) {
+  .tTelegram {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 3.5rem;
+  }
+
+  .tTelegram > :not(:first-child):not(:last-child) {
+    display: none;
+  }
+}
