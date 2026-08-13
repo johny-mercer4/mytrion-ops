@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { callTouchpointMock, requestMock, requestBlobMock } = vi.hoisted(() => ({
+const { callTouchpointMock, requestMock, requestBlobMock, requestMultipartMock, isTelegramWebView } = vi.hoisted(() => ({
   callTouchpointMock: vi.fn(),
   requestMock: vi.fn(),
   requestBlobMock: vi.fn(),
+  requestMultipartMock: vi.fn(),
+  isTelegramWebView: vi.fn(() => false),
 }));
 
 vi.mock('@/api/touchpoints', () => ({
@@ -13,6 +15,15 @@ vi.mock('@/api/touchpoints', () => ({
 vi.mock('@/api/transport', () => ({
   request: requestMock,
   requestBlob: requestBlobMock,
+  requestMultipart: requestMultipartMock,
+}));
+
+vi.mock('@/telegram/webApp', () => ({
+  isTelegramWebView,
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 import { AUTO_LIST, loadCards, type Automation, type Card, type Deal } from './autoLive';
@@ -490,6 +501,8 @@ describe('invoice download', () => {
     callTouchpointMock.mockReset();
     requestMock.mockReset();
     requestBlobMock.mockReset();
+    requestMultipartMock.mockReset();
+    isTelegramWebView.mockReturnValue(false);
     anchorClick.mockClear();
     // jsdom ships no object-URL implementation; deliverBlob needs both halves.
     URL.createObjectURL = vi.fn(() => 'blob:mock');
@@ -539,5 +552,23 @@ describe('invoice download', () => {
     );
     expect(requestBlobMock).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith('https://servercrm.example/signed?token=abc', '_blank', 'noopener');
+  });
+
+  it('sends the invoice to Horizon inside Telegram WebView instead of downloading', async () => {
+    isTelegramWebView.mockReturnValue(true);
+    window.MytrionDownload = { deliverBlob: vi.fn(), isMobileWebView: () => true };
+    requestBlobMock.mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+    requestMultipartMock.mockResolvedValue({ ok: true, sent: true });
+
+    await downloadInvoice('100', 'pdf', 'INV/100', '12345');
+
+    expect(requestBlobMock).toHaveBeenCalledWith('/sales/invoices/100/pdf?carrierId=12345');
+    expect(requestMultipartMock).toHaveBeenCalledWith(
+      '/horizon/telegram/export-send',
+      expect.any(FormData),
+      expect.objectContaining({ impersonate: false }),
+    );
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(anchorClick).not.toHaveBeenCalled();
   });
 });

@@ -58,7 +58,7 @@ export function RecruitHome({ onOpen }: { onOpen: (view: RecruitView) => void })
   if (loading) return <RecruitLoader label="Loading Recruit home" />;
 
   return (
-    <main className="recruit-page">
+    <div className="recruit-page">
       <RecruitHead
         eyebrow="Talent operations"
         title="Recruiting command center"
@@ -165,6 +165,6 @@ export function RecruitHome({ onOpen }: { onOpen: (view: RecruitView) => void })
           </button>
         </article>
       </section>
-    </main>
+    </div>
   );
 }

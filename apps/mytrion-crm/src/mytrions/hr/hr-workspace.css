@@ -191,8 +191,7 @@
   background:
     linear-gradient(152deg, color-mix(in srgb, var(--dc) 9%, transparent), transparent 58%),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  /* No backdrop-filter: department roster cards scroll in a grid. */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),

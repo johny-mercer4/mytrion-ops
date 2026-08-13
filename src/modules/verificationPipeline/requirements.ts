@@ -61,12 +61,18 @@ function fieldFrom(value: unknown, index: number): PipelineRequirementField | nu
     ? item.options.map(text).filter(Boolean).slice(0, 50)
     : undefined;
   const type = FIELD_TYPES.has(rawType) ? rawType : options?.length ? 'select' : 'text';
+  const hint =
+    text(item.hint) ||
+    text(item.flag) ||
+    text(item.instructions) ||
+    text(item.message) ||
+    text(item.placeholder);
   return {
     id,
     label: text(item.label) || labelFromId(id),
     type,
     required: item.required !== false,
-    ...(text(item.placeholder) ? { placeholder: text(item.placeholder) } : {}),
+    ...(hint ? { hint } : {}),
     ...(options?.length ? { options } : {}),
   };
 }
@@ -81,14 +87,15 @@ function fieldList(payload: Record<string, unknown>): PipelineRequirementField[]
   return out.filter((field) => (seen.has(field.id) ? false : (seen.add(field.id), true))).slice(0, 20);
 }
 
-function inferredFields(title: string): PipelineRequirementField[] {
+function inferredFields(title: string, hint: string): PipelineRequirementField[] {
   const lower = title.toLowerCase();
+  const extra = hint ? { hint } : {};
   const fields: PipelineRequirementField[] = [];
   if (/\bmc\b|motor carrier/.test(lower)) {
-    fields.push({ id: 'mc_number', label: 'MC number', type: 'text', required: true });
+    fields.push({ id: 'mc_number', label: 'MC number', type: 'text', required: true, ...extra });
   }
   if (/\bdot\b|usdot/.test(lower)) {
-    fields.push({ id: 'dot_number', label: 'DOT number', type: 'text', required: true });
+    fields.push({ id: 'dot_number', label: 'DOT number', type: 'text', required: true, ...extra });
   }
   return fields;
 }
@@ -127,16 +134,26 @@ export function extractSalesRequirements(events: RequirementEventInput[]): Pipel
     if (!forSales || (!actionStatus && !actionTitle && explicitFields.length === 0)) continue;
     if (['RESOLVED', 'COMPLETED', 'CLOSED'].includes(status)) continue;
 
-    let fields = explicitFields.length ? explicitFields : inferredFields(searchable);
+    const detail =
+      text(nested.instructions) || text(nested.message) || text(nested.detail) || text(nested.reason);
+    let fields = explicitFields.length ? explicitFields : inferredFields(searchable, detail);
     if (fields.length === 0 && !attachmentRequired) {
-      fields = [{ id: 'response', label: 'Response', type: 'textarea', required: true }];
+      fields = [
+        {
+          id: 'response',
+          label: 'Response',
+          type: 'textarea',
+          required: true,
+          ...(detail ? { hint: detail } : {}),
+        },
+      ];
     }
     const eventId = String(event.id);
     requirements.push({
       id: `verification-${eventId}`,
       eventId,
       title: title || 'Verification needs information',
-      detail: text(nested.instructions) || text(nested.message) || text(nested.detail) || text(nested.reason) || null,
+      detail: detail || null,
       createdAt: event.createdAt,
       fields,
       attachmentRequired,

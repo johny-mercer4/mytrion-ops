@@ -158,7 +158,9 @@
     block-size: auto;
     /* Leaves a strip of backdrop above the sheet: it is the only visible affordance saying the
        page is still there, and the only place left to tap to dismiss. */
-    max-block-size: 88%;
+    max-block-size: 96dvh;
+    position: relative;
+    padding-block-start: 12px;
 
     border-inline-start-width: 0;
     border-block-start: 1px solid var(--border-default);
@@ -175,11 +177,27 @@
     padding-block-end: calc(var(--layout-safe-b, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
   }
 
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 36px;
+    height: 4px;
+    /* The grabber is a pill, so it takes the pill token. 99px was both a literal (ds/CONVENTIONS.md:
+       zero literals in a ds stylesheet, enforced by ds/purity.test.ts) and off the 4/8/999 corner
+       language tokens.test.ts pins. On a 4px-tall bar 99px and 999px round identically, so this is a
+       token swap with no visual change. */
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+  }
+
   .dialog[data-state='open'] .panel {
-    animation: sheetIn var(--dur-slow) var(--ease-decelerate);
+    animation: sheetIn var(--duration-moderate) var(--ease-decelerate);
   }
   .dialog[data-state='closing'] .panel {
-    animation: sheetOut var(--dur-fast) var(--ease-accelerate) forwards;
+    animation: sheetOut var(--duration-fast) var(--ease-accelerate) forwards;
   }
 }
 

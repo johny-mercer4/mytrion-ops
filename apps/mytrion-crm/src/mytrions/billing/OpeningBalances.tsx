@@ -143,6 +143,7 @@ export function OpeningBalances({ canWrite }: { canWrite: boolean }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Carrier ID or Company..."
+            aria-label="Search Carrier ID or Company"
           />
           {search ? (
             <button className="db-search-clear" onClick={() => setSearch('')} aria-label="Clear search">

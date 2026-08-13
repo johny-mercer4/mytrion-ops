@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockPipelineProvider } from '../../src/modules/verificationPipeline/provider.js';
 import { extractSalesRequirements } from '../../src/modules/verificationPipeline/requirements.js';
-import { STAGE_CATALOG, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
+import { STAGE_CATALOG, deriveZohoState, normalizeStageStatus } from '../../src/modules/verificationPipeline/types.js';
 
 describe('STAGE_CATALOG', () => {
   it('is the compliance stages in credit_platform order with the credit_platform service ids', () => {
@@ -23,6 +23,39 @@ describe('STAGE_CATALOG', () => {
       'crosscheck',
       'stop-factor-after',
     ]);
+  });
+});
+
+describe('deriveZohoState', () => {
+  it('maps Zoho credit into a filter bucket without treating "prepay" alone as rejected', () => {
+    expect(
+      deriveZohoState({
+        creditDecision: 'Declined-Prepay/Secured Only',
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('rejected');
+    expect(
+      deriveZohoState({
+        creditDecision: 'Approved-Requested',
+        applicationStatus: 'Pending Setup',
+        applicationId: '1',
+      }),
+    ).toBe('approved');
+    expect(
+      deriveZohoState({
+        creditDecision: null,
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('in_progress');
+    expect(
+      deriveZohoState({
+        creditDecision: 'Prepay',
+        applicationStatus: 'Pending Decision',
+        applicationId: '899640',
+      }),
+    ).toBe('in_progress');
   });
 });
 
@@ -95,6 +128,7 @@ describe('extractSalesRequirements', () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0]?.fields.map((field) => field.id)).toEqual(['mc_number', 'dot_number']);
+    expect(result[0]?.fields.every((field) => field.hint === 'Please confirm both identifiers.')).toBe(true);
     expect(result[0]?.detail).toBe('Please confirm both identifiers.');
   });
 
@@ -109,6 +143,7 @@ describe('extractSalesRequirements', () => {
           required_fields: [
             { key: 'policy_number', label: 'Policy number', type: 'text' },
             { key: 'coverage', type: 'select', options: ['Primary', 'Excess'] },
+            { key: 'mc_number', placeholder: 'Provide a valid MC so FMCSA can run.' },
           ],
           attachment_required: true,
         },
@@ -117,6 +152,11 @@ describe('extractSalesRequirements', () => {
     ]);
     expect(result[0]?.attachmentRequired).toBe(true);
     expect(result[0]?.fields[1]).toMatchObject({ id: 'coverage', type: 'select' });
+    expect(result[0]?.fields[2]).toMatchObject({
+      id: 'mc_number',
+      hint: 'Provide a valid MC so FMCSA can run.',
+    });
+    expect(result[0]?.fields[2]).not.toHaveProperty('placeholder');
   });
 
   it('ignores ordinary pipeline events and requests for another department', () => {

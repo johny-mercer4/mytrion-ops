@@ -23,6 +23,7 @@ export const ADMIN_TABS = [
   { key: 'browser', label: 'Knowledge Browser', group: 'AI & Knowledge' },
 
   { key: 'access', label: 'User Management', group: 'Access' },
+  { key: 'octane-telegram-users', label: 'Octane Telegram Users', group: 'Access' },
   { key: 'permission-sets', label: 'Permission Sets', group: 'Access' },
   /**
    * Declared as ONE destination, not two. `carriers-registered` and `carriers-invites` are children

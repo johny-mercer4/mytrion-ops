@@ -492,7 +492,7 @@ export function HomeTab() {
           {ann.loading ? (
             <AnnouncementsRailSkeleton />
           ) : (
-          <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
+          <div className="ss-home-announcements" style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
             {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
             {!ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
             {annData.map((a) => (

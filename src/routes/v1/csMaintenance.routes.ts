@@ -432,6 +432,23 @@ export async function csMaintenanceRoutes(app: FastifyInstance): Promise<void> {
     return { id: attachment.id, name: attachment.fileName, url, expiresAt };
   });
 
+  /** Bytes through our origin — Telegram Mini App cannot fetch a cross-origin signed URL. */
+  app.get('/cs/maintenance/:id/attachments/:attId/bytes', guard, async (request, reply) => {
+    requireCsAccess(request);
+    requireStorageConfigured();
+    const { id, attId } = attachmentIdParam.parse(request.params);
+    const attachment = await maintenanceAttachmentRepo.getById(attId);
+    if (!attachment || attachment.caseId !== id) {
+      throw new AppError('Attachment not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+    }
+    const buf = await storageFor(attachment.storageProvider).getBuffer(attachment.s3Key, maxFileBytes());
+    const safeName = attachment.fileName.replace(/[\r\n"]/g, '_');
+    return reply
+      .type(attachment.mime || 'application/octet-stream')
+      .header('Content-Disposition', `attachment; filename="${safeName}"`)
+      .send(buf);
+  });
+
   app.delete('/cs/maintenance/:id/attachments/:attId', guard, async (request) => {
     const ctx = requireCsAccess(request);
     requireStorageConfigured();

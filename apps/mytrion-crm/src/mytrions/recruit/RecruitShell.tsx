@@ -32,6 +32,7 @@ export function RecruitShell() {
           tone: 'var(--tone-violet)',
           active: view === 'home',
           onClick: () => open('home'),
+          primary: true,
         },
         {
           key: 'jobs',
@@ -41,6 +42,7 @@ export function RecruitShell() {
           active: view === 'jobs',
           onClick: () => open('jobs'),
           keywords: ['roles', 'vacancies', 'departments'],
+          primary: true,
         },
         {
           key: 'candidates',
@@ -50,6 +52,7 @@ export function RecruitShell() {
           active: view === 'candidates',
           onClick: () => open('candidates'),
           keywords: ['applicants', 'employees', 'hiring'],
+          primary: true,
         },
       ],
     },

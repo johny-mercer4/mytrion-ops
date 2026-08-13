@@ -83,23 +83,44 @@
  * 24px gutter on all four sides — on a 375px screen that is a floating card with the form squeezed
  * inside it, which is the single most "awful in the mini app" surface in the workspace.
  *
- * This is Billing's already-shipped recipe, deliberately: the gutter stays the BACKDROP's padding
- * rather than becoming a height cap on the box, so `.cs-modal-box`'s existing `max-height: 100%`
- * keeps meaning "100% of the padded content box" and its own docblock stays true. Aligning to
- * flex-end then turns that same measurement into a sheet.
+ * ONE GRAMMAR, NOT TWO. This is Billing's sheet verbatim, down to the token choices — the grabber,
+ * `96dvh`, `--radius-panel`, and a decelerate-in from `translate: 0 100%` — which Billing in turn
+ * took from Sales' `phoneSheetLayout` on the merge of origin/build. An earlier version of this block
+ * used a `16dvh` backdrop gutter instead; it worked, but it made CS the one workspace whose sheets
+ * rose differently, and two mechanics that differ by 4% are still two mechanics.
  *
  * `dvh`, not `vh`: `vh` is the height with the browser chrome HIDDEN, so inside a Telegram webview a
- * `vh` gutter is short by the header and the sheet's top edge hides under it.
+ * `vh`-measured cap is taller than the space the page actually has.
  */
 @media (width < 640px) {
     .cs-root .cs-modal-backdrop {
-        align-items: flex-end;
-        padding: 16dvh 0 0;
+        align-items: stretch;
+        justify-content: flex-end;
+        flex-direction: column;
+        padding: 0;
     }
 
     .cs-root .cs-modal-box {
         max-width: 100%;
-        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        max-height: 96dvh;
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+        animation: csSheetUp var(--duration-moderate) var(--ease-decelerate);
+        padding-block-start: 12px;
+    }
+
+    /* The grabber. Says "this drags down" and gives the sheet a top edge that reads as a handle
+       rather than a cut. Same 36x4 pill as Billing's. */
+    .cs-root .cs-modal-box::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        translate: -50% 0;
+        width: 36px;
+        height: 4px;
+        border-radius: var(--radius-pill);
+        background: var(--border);
+        z-index: 4;
     }
 
     /*
@@ -117,15 +138,21 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
-    /* The confirm box (420px) becomes a short sheet like the rest — the backdrop is already
-       `flex-end`, so leaving it at 420px would have parked a narrow card against the bottom edge
-       rather than centring it, which is the worst of both. Full width, and it lands under the thumb. */
+    /* The confirm box (420px) becomes a short sheet like the rest. The backdrop is a column pinned to
+       flex-end, so leaving it at 420px would have parked a narrow card against the bottom edge rather
+       than centring it — the worst of both. Full width, and it lands under the thumb. */
     .cs-root .cs-confirm-box {
         max-width: 100%;
-        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     }
 
     .cs-root .cs-modal-body {
         padding: var(--space-4);
     }
+}
+
+/* Mirrors Billing's `bmSheetUp`. Named separately because each workspace's sheet is scoped to its
+   own root and a shared keyframe would have to live in a shared sheet to be reachable from both. */
+@keyframes csSheetUp {
+    from { translate: 0 100%; }
 }

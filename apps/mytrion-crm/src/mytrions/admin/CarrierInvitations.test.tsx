@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CarrierInvitations } from './CarrierInvitations';
 import type { CarrierInvitation } from '../../api/carrierUsers';
+import { setViewport } from '../../test/viewport';
 
 const hours = (n: number) => new Date(Date.now() + n * 3_600_000).toISOString();
 
@@ -174,5 +175,16 @@ describe('CarrierInvitations', () => {
   it('says the table is empty when there is nothing at all', () => {
     setup({ invitations: [] });
     expect(screen.getByText(/No invitations yet\./)).toBeInTheDocument();
+  });
+
+  it('opens invite details in a bottom sheet on phone, not a sideways table', async () => {
+    setViewport(390);
+    const { user, onCopy } = setup();
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Live Co/ }));
+    expect(screen.getByText('Invite details')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(onCopy).toHaveBeenCalledWith('https://t.me/bot?start=abc');
   });
 });

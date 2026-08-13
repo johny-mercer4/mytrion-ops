@@ -106,6 +106,7 @@ export default function AnalystMytrion() {
         active: category.id === c.id,
         onClick: () => setCategory(c.id),
         keywords: c.keywords,
+        primary: c.id === 'sales' || c.id === 'crm' || c.id === 'customer-service' || c.id === 'finance',
       })),
     },
   ];

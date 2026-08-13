@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { requestBlob } from '@/api/transport';
+import { deliverExport } from '@/lib/deliverExport';
 import { maskCard, type CardLookupRow } from './autoLive';
 import { s } from './dc';
-import { deliverBlob } from './txnExportLibs';
 import { AUTO_BUSY_LABEL } from './autoControls';
 
 type Format = 'pdf' | 'xlsx';
@@ -24,7 +24,7 @@ async function downloadCardLookup(
     timeoutMs: 60_000,
   });
   const date = new Date().toISOString().slice(0, 10);
-  deliverBlob(blob, `Octane_Card_Lookup_${date}.${format}`);
+  await deliverExport(blob, `Octane_Card_Lookup_${date}.${format}`);
 }
 
 export function AutoCardLookupPanel({

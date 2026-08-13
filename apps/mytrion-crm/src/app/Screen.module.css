@@ -19,31 +19,17 @@
     var(--bg-primary);
 }
 
-.authGlow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--text-primary) 4%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 4%, transparent) 1px, transparent 1px);
-  background-size: 28px 28px;
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 40%, #000 20%, transparent 75%);
-  opacity: 0.55;
-}
-
 .authCard {
   position: relative;
   z-index: 1;
   width: min(420px, 100%);
   gap: 14px;
   padding: 40px 36px 32px;
-  background: rgba(30, 41, 59, 0.6); /* Translucent background */
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  animation: authIn 220ms var(--ease-out, ease-out);
+  box-shadow: var(--shadow-md);
+  animation: authIn var(--duration-normal) var(--ease-decelerate);
 }
 
 @keyframes authIn {
@@ -55,18 +41,6 @@
     opacity: 1;
     transform: none;
   }
-}
-
-
-
-.authEyebrow {
-  margin: 0;
-  font-family: var(--font-head);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 
 .authProgress {
@@ -114,7 +88,7 @@
 .authStepDone {
   position: relative;
   padding-left: 18px;
-  font-size: 12.5px;
+  font-size: 16px;
   line-height: 1.35;
   color: var(--text-muted);
 }
@@ -172,15 +146,15 @@
 
 .body {
   margin: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.5;
   color: var(--text-secondary);
   max-width: 34ch;
 }
 
 .link {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--accent);
   text-decoration: none;
@@ -196,10 +170,11 @@
   gap: 8px;
   margin-top: 6px;
   min-width: 220px;
-  height: 42px;
+  min-height: 44px;
+  height: 44px;
   padding: 0 22px;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--on-accent);
   background: var(--accent);
@@ -208,10 +183,10 @@
   cursor: pointer;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
   transition:
-    background 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease,
-    opacity 140ms ease;
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
 }
 .button:hover:not(:disabled) {
   background: var(--accent-strong);
@@ -244,7 +219,7 @@
   margin: 4px 0 0;
   width: 100%;
   padding: 10px 12px;
-  font-size: 12.5px;
+  font-size: 16px;
   line-height: 1.5;
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
@@ -265,7 +240,7 @@
   width: 100%;
   padding: 10px 12px;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-primary);
   background: var(--bg-primary, var(--surface));
   border: 1px solid var(--border);
@@ -274,6 +249,18 @@
 .input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+@media (width < 640px) {
+  .authCard,
+  .card {
+    width: 100%;
+    padding: 28px 20px 24px;
+  }
+  .button {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

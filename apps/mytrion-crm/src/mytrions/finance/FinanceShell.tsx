@@ -37,6 +37,7 @@ export function FinanceShell() {
         active: view === t.id,
         onClick: () => setView(t.id),
         keywords: t.keywords,
+        primary: true,
       })),
     },
   ];

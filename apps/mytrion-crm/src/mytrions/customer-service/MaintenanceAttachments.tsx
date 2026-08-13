@@ -13,7 +13,10 @@ import {
   uploadMaintenanceAttachment,
   type MaintenanceAttachment,
 } from '@/api/cs';
+import { requestBlob } from '@/api/transport';
 import { ConfirmDialog } from '@/ds';
+import { deliverExport } from '@/lib/deliverExport';
+import { isTelegramWebView } from '@/telegram/webApp';
 
 const TRASH_PATH =
   'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16';
@@ -60,8 +63,16 @@ export function MaintenanceAttachments({ caseId }: { caseId: string }) {
 
   async function onDownload(att: MaintenanceAttachment) {
     try {
-      const { url } = await getMaintenanceAttachmentDownloadUrl(caseId, att.id);
-      window.open(url, '_blank', 'noopener');
+      if (!isTelegramWebView()) {
+        const { url } = await getMaintenanceAttachmentDownloadUrl(caseId, att.id);
+        window.open(url, '_blank', 'noopener');
+        return;
+      }
+      const blob = await requestBlob(
+        `/cs/maintenance/${encodeURIComponent(caseId)}/attachments/${encodeURIComponent(att.id)}/bytes`,
+        { headers: { 'x-department-access': 'customer-service' } },
+      );
+      await deliverExport(blob, att.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Download failed');
     }

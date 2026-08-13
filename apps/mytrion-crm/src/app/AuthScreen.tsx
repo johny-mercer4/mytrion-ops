@@ -23,7 +23,7 @@ export function AuthScreen({
   const busy = phase === 'redirecting' || phase === 'exchanging';
 
   return (
-    <div
+    <main
       className={`${styles.screen} ${styles.authScreen}`}
       style={{
         padding:
@@ -32,7 +32,6 @@ export function AuthScreen({
     >
       <div className={`${styles.card} ${styles.authCard}`} role={busy ? 'status' : undefined} aria-busy={busy}>
 
-        <p className={styles.authEyebrow}>Mytrion</p>
         <h1 className={styles.title}>{title}</h1>
         <p className={styles.body}>{body}</p>
 
@@ -59,6 +58,6 @@ export function AuthScreen({
           </p>
         ) : null}
       </div>
-    </div>
+    </main>
   );
 }

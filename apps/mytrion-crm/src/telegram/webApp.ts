@@ -60,6 +60,13 @@ export function isTelegramWebView(): boolean {
   return /Telegram/i.test(navigator.userAgent);
 }
 
+/** Raw WebApp initData when running inside Telegram. Never a login credential by itself. */
+export function getTelegramInitData(): string | null {
+  if (!isTelegramWebView()) return null;
+  const data = getTelegramWebApp()?.initData.trim() ?? '';
+  return data.length > 0 ? data : null;
+}
+
 function insetPx(n: number | undefined): number {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
 }

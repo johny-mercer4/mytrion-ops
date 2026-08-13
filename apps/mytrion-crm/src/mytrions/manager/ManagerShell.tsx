@@ -173,6 +173,7 @@ export function ManagerShell() {
           active: view === 'overview' || CARD_IDS.includes(view as ManagerCardId),
           onClick: () => go('overview'),
           keywords: ['home', 'hub', 'efs', 'fuel', 'cards'],
+          primary: true,
         },
       ],
     },
@@ -187,6 +188,7 @@ export function ManagerShell() {
         active: view === dept.id,
         onClick: () => openDept(dept.id),
         keywords: [dept.id.replace(/-/g, ' ')],
+        primary: dept.id === 'sales' || dept.id === 'customer-service' || dept.id === 'billing',
       })),
     },
   ];

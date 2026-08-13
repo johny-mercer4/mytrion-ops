@@ -143,7 +143,7 @@ export function RecruitJobs() {
   if (loading) return <RecruitLoader label="Loading job openings" />;
 
   return (
-    <main className="recruit-page">
+    <div className="recruit-page">
       <RecruitHead
         eyebrow="Workforce planning"
         title="Job openings"
@@ -259,6 +259,6 @@ export function RecruitJobs() {
           </form>
         </RecruitModal>
       ) : null}
-    </main>
+    </div>
   );
 }
