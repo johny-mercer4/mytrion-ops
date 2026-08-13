@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   listManagerAnnouncements,
   publishManagerAnnouncement,
@@ -175,6 +175,8 @@ export function AnnouncementsBlock() {
   const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<'compose' | 'preview'>('compose');
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const markdownInputRef = useRef<HTMLInputElement>(null);
   const valid =
     title.trim().length > 0 &&
     body.trim().length > 0 &&
@@ -194,6 +196,39 @@ export function AnnouncementsBlock() {
       current.includes(id) ? current.filter((target) => target !== id) : [...current, id],
     );
     setMessage(null);
+  };
+
+  const importMarkdown = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (!/\.(?:md|markdown)$/i.test(file.name)) {
+      setMessage('Choose a Markdown file ending in .md or .markdown.');
+      return;
+    }
+    if (file.size > 1_000_000) {
+      setMessage('Choose a Markdown file smaller than 1 MB.');
+      return;
+    }
+    try {
+      const { markdownToAnnouncement } = await import('./markdownImport');
+      const imported = markdownToAnnouncement(await file.text());
+      const nextBody = body.trim() ? `${body}<hr>${imported.html}` : imported.html;
+      if (nextBody.length > 10_000) {
+        setMessage('The imported article would exceed the 10,000 HTML character limit.');
+        return;
+      }
+      setBody(nextBody);
+      if (!title.trim() && imported.title) setTitle(imported.title.slice(0, 200));
+      setMessage(
+        body.trim()
+          ? `Imported ${file.name} below the current draft.`
+          : `Imported ${file.name}.`,
+      );
+    } catch {
+      setMessage('Could not read that Markdown file.');
+    }
   };
 
   const publish = async (): Promise<void> => {
@@ -247,7 +282,11 @@ export function AnnouncementsBlock() {
         </button>
       </div>
 
-      <div className="an-layout" data-mobile-pane={mobilePane}>
+      <div
+        className="an-layout"
+        data-mobile-pane={mobilePane}
+        data-editor-expanded={editorExpanded || undefined}
+      >
         <form
           className="an-composer"
           onSubmit={(event) => {
@@ -255,7 +294,39 @@ export function AnnouncementsBlock() {
             void publish();
           }}
         >
-          <header className="an-panel-head">New announcement</header>
+          <header className="an-panel-head an-composer-head">
+            <span>New announcement</span>
+            <span className="an-composer-tools">
+              <input
+                ref={markdownInputRef}
+                className="an-import-input"
+                type="file"
+                accept=".md,.markdown,text/markdown,text/plain"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(event) => void importMarkdown(event)}
+              />
+              <Button
+                className="an-import-markdown"
+                size="sm"
+                variant="ghost"
+                icon="description"
+                onClick={() => markdownInputRef.current?.click()}
+              >
+                Import Markdown
+              </Button>
+              <Button
+                className="an-editor-expand"
+                size="sm"
+                variant="ghost"
+                icon={editorExpanded ? 'close_fullscreen' : 'open_in_full'}
+                aria-pressed={editorExpanded}
+                onClick={() => setEditorExpanded((expanded) => !expanded)}
+              >
+                {editorExpanded ? 'Restore split view' : 'Expand editor'}
+              </Button>
+            </span>
+          </header>
           <div className="an-form-body">
             <label className="an-field-label" htmlFor="announcement-title">
               Title

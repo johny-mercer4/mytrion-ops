@@ -31,6 +31,19 @@
   text-underline-offset: 0.16em;
 }
 
+.an-content-html ul,
+.an-content-html ol {
+  padding-inline-start: 1.5rem;
+}
+
+.an-content-html ul {
+  list-style: disc;
+}
+
+.an-content-html ol {
+  list-style: decimal;
+}
+
 .an-content-html blockquote {
   margin-inline: 0;
   padding-inline-start: var(--space-3);

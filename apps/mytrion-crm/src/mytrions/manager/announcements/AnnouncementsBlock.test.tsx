@@ -113,6 +113,46 @@ beforeEach(() => {
 });
 
 describe('AnnouncementsBlock', () => {
+  it('keeps the split view by default and lets the manager expand the editor', async () => {
+    render(<AnnouncementsBlock />);
+    await screen.findByText('No announcements published');
+
+    const layout = document.querySelector('.an-layout');
+    const expand = screen.getByRole('button', { name: 'Expand editor' });
+    expect(layout).not.toHaveAttribute('data-editor-expanded');
+    expect(expand).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(expand);
+    expect(layout).toHaveAttribute('data-editor-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Restore split view' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('imports an existing Markdown article and uses its H1 as the title', async () => {
+    render(<AnnouncementsBlock />);
+    await screen.findByText('No announcements published');
+
+    const file = new File([''], 'quarter-update.md', { type: 'text/markdown' });
+    Object.defineProperty(file, 'text', {
+      value: vi.fn().mockResolvedValue('# Quarter update\n\nA **strong** result.'),
+    });
+    const markdownInput = document.querySelector<HTMLInputElement>(
+      'input[type="file"][accept*=".md"]',
+    );
+    expect(markdownInput).not.toBeNull();
+    fireEvent.change(markdownInput!, {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('Quarter update'));
+    expect(
+      within(screen.getByLabelText('Live targeted-agent preview')).getByText('strong'),
+    ).toBeVisible();
+    expect(screen.getByText('Imported quarter-update.md.')).toBeVisible();
+  });
+
   it('updates the Sales preview as the manager composes', async () => {
     render(<AnnouncementsBlock />);
     await screen.findByText('No announcements published');

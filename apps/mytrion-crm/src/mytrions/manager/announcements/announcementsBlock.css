@@ -5,9 +5,13 @@
 
 .an-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(17.5rem, 1fr);
   gap: var(--space-4);
   align-items: start;
+}
+
+.an-layout[data-editor-expanded='true'] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .an-composer,
@@ -33,6 +37,36 @@
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tr-caps);
   text-transform: uppercase;
+}
+
+.an-composer-head {
+  justify-content: space-between;
+}
+
+.an-composer-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.an-import-input {
+  position: absolute;
+  overflow: hidden;
+  inline-size: 1px;
+  block-size: 1px;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.an-import-markdown,
+.an-editor-expand {
+  color: var(--text-secondary);
+  letter-spacing: var(--tr-xs);
+  text-transform: none;
+}
+
+.an-editor-expand {
+  margin-inline-end: calc(var(--space-2) * -1);
 }
 
 .an-form-body {
@@ -130,12 +164,16 @@
 }
 
 .an-preview-card {
-  inline-size: min(100%, 34rem);
+  inline-size: 100%;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-block-start: var(--space-1) solid var(--accent);
   border-radius: var(--radius-panel);
   background: var(--surface-raised);
+}
+
+.an-layout[data-editor-expanded='true'] .an-preview-card {
+  inline-size: min(100%, 34rem);
 }
 
 .an-preview-card[data-priority='high'] {
@@ -339,6 +377,12 @@
   display: none;
 }
 
+@media (width < 900px) {
+  .an-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (width < 640px) {
   .an-mobile-tabs {
     display: grid;
@@ -362,6 +406,21 @@
   .an-mobile-tabs button[aria-selected='true'] {
     border-block-end-color: var(--accent);
     color: var(--accent);
+  }
+
+  .an-composer-head {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: var(--space-2);
+  }
+
+  .an-composer-tools {
+    inline-size: 100%;
+    justify-content: space-between;
+  }
+
+  .an-editor-expand {
+    margin-inline-end: 0;
   }
 
   .an-layout[data-mobile-pane='compose'] .an-preview,

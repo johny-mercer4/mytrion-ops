@@ -130,14 +130,19 @@
 }
 
 .an-tiptap-content {
-  min-block-size: clamp(30rem, 58dvh, 48rem);
-  max-block-size: 64rem;
+  min-block-size: 20rem;
+  max-block-size: 40rem;
   overflow-y: auto;
   padding: var(--space-3);
   outline: 0;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   line-height: var(--lh-lg);
+}
+
+.an-layout[data-editor-expanded='true'] .an-tiptap-content {
+  min-block-size: clamp(30rem, 58dvh, 48rem);
+  max-block-size: 64rem;
 }
 
 .an-tiptap-content:empty::before {
@@ -167,6 +172,14 @@
 .an-tiptap-content ul,
 .an-tiptap-content ol {
   padding-inline-start: 1.5rem;
+}
+
+.an-tiptap-content ul {
+  list-style: disc;
+}
+
+.an-tiptap-content ol {
+  list-style: decimal;
 }
 
 .an-tiptap-content blockquote {

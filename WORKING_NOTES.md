@@ -15543,3 +15543,13 @@ content and render in both live and published previews.
 The Manager composer now takes the full workspace width with a responsive 30–48rem writing canvas.
 The targeted-agent proof moves below the composer at a readable phone-card width, preserving full
 formatting controls and article space without removing the compact Compose/Preview tabs.
+
+UX refinement: the familiar composer + targeted-agent preview split is again the default at desktop
+widths. The composer header now exposes an accessible Expand editor toggle; expanding switches the
+workspace to one column and grows the writing canvas to 30–48rem, while Restore split view returns to
+the compact 20rem editor and side-by-side preview. Narrow screens remain one column automatically.
+
+Markdown import: managers can load `.md` or `.markdown` articles from the composer header. The first
+H1 fills an empty announcement title and is removed from the body; GFM is converted to editor HTML
+with raw source HTML disabled. Import appends below an existing draft rather than overwriting it,
+rejects files over 1 MB, and enforces the existing 10,000-character published HTML limit.
