@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) resolve to anything but 0. Without
+         it the notch/home-indicator insets are silently zero and every safe-area calc() in the app
+         is dead code.
+
+         Deliberately NOT `maximum-scale=1, user-scalable=no`. apps/mini-app uses that to stop iOS
+         zooming a focused input, but Safari has ignored it since iOS 10 and it is a WCAG 1.4.4
+         failure. The real fix is 16px fields, which --text-input-mobile already ships. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0e1a" />
+    <!-- Telegram Mini App SDK. Unpinned on purpose: Telegram revises this file in place; a stale
+         SRI hash would break the worker CRM the next time they ship. Same posture as the carrier
+         mini-app, without copying user-scalable=no. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Theme BEFORE first paint.
+
+         ThemeProvider applies [data-theme] from a useLayoutEffect, which runs after the browser has
+         already painted the document background at least once — so a light-theme user gets a dark
+         flash on every cold load, and the flash is worst on a phone where the paint is slowest.
+         This stamps the attribute and the browser-chrome colour from localStorage synchronously,
+         before the stylesheet has anything to disagree with.
+
+         Kept in sync by hand with hooks/themeContext.tsx (KEY, the 'dark' default) and theme.css
+         (--page in each block). Three literals, in the one place a build step cannot reach.
+
+         When the Telegram SDK is present this also calls ready()/expand() and writes --tg-inset-*
+         so the header and tab bar clear Mini App chrome on the first frame. -->
+    <script>
+      (function () {
+        var theme = 'dark';
+        try {
+          var saved = localStorage.getItem('mytrion-theme');
+          if (saved === 'light' || saved === 'dark') theme = saved;
+        } catch (e) {
+          /* private mode — the default is already correct */
+        }
+        document.documentElement.dataset.theme = theme;
+        var page = theme === 'light' ? '#e0e4f0' : '#0a0e1a';
+        document.documentElement.style.backgroundColor = page;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', page);
+
+        var wa = window.Telegram && window.Telegram.WebApp;
+        var inside = false;
+        if (window.TelegramWebviewProxy) inside = true;
+        else if (wa) {
+          if (wa.initData && wa.initData.length > 0) inside = true;
+          else if (wa.platform && wa.platform !== 'unknown') inside = true;
+          else if (/Telegram/i.test(navigator.userAgent)) inside = true;
+        }
+        function px(n) {
+          return typeof n === 'number' && n > 0 ? Math.round(n) : 0;
+        }
+        var root = document.documentElement;
+        if (inside && wa) {
+          root.setAttribute('data-telegram', 'true');
+          try { wa.ready(); } catch (e) {}
+          try { wa.expand(); } catch (e) {}
+          try { if (wa.disableVerticalSwipes) wa.disableVerticalSwipes(); } catch (e) {}
+          try {
+            if (wa.setHeaderColor) wa.setHeaderColor(page);
+            if (wa.setBackgroundColor) wa.setBackgroundColor(page);
+            if (wa.setBottomBarColor) wa.setBottomBarColor(page);
+          } catch (e) {}
+          var safe = wa.safeAreaInset || {};
+          var content = wa.contentSafeAreaInset || {};
+          root.style.setProperty('--tg-inset-top', px(safe.top) + px(content.top) + 'px');
+          root.style.setProperty('--tg-inset-bottom', px(safe.bottom) + px(content.bottom) + 'px');
+          root.style.setProperty('--tg-inset-left', px(safe.left) + px(content.left) + 'px');
+          root.style.setProperty('--tg-inset-right', px(safe.right) + px(content.right) + 'px');
+        } else {
+          root.style.setProperty('--tg-inset-top', '0px');
+          root.style.setProperty('--tg-inset-bottom', '0px');
+        }
+      })();
+    </script>
+    <!-- data: URI — Vite base './' rewrites /favicon.svg → ./favicon.svg, which 404s on
+         deep SPA routes like /main/salesmytrion (browser resolves /main/favicon.svg). -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22%3E%3Cdefs%3E%3ClinearGradient%20id=%22grad%22%20x1=%220%25%22%20y1=%220%25%22%20x2=%22100%25%22%20y2=%22100%25%22%3E%3Cstop%20offset=%220%25%22%20stop-color=%22%2324C6DC%22%20/%3E%3Cstop%20offset=%2265%25%22%20stop-color=%22%2324C6DC%22%20/%3E%3Cstop%20offset=%22100%25%22%20stop-color=%22%23FF8008%22%20/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath%20d=%22M15%2C85%20L15%2C25%20L40%2C65%20L50%2C80%20L60%2C65%20L85%2C25%20L85%2C85%22%20fill=%22none%22%20stroke=%22url(%23grad)%22%20stroke-width=%2214%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/svg%3E"
+    />
+    <title>Mytrion Horizon</title>
+    <!-- Two families, SELF-HOSTED. @font-face lives in src/styles/fonts.css; the woff2 files are
+         emitted to a stable, unhashed assets/fonts/ path by the assetFileNames rule in
+         vite.config.ts. This replaces a third-party stylesheet plus two cross-origin preconnects.
+
+         Preload only the two faces that paint above the fold: the Space Grotesk variable latin
+         file and Space Mono 400. latin-ext and Mono 700 are demand-loaded via unicode-range and
+         weight, and preloading them would waste 35 KB on the critical path.
+
+         `crossorigin` is REQUIRED even though these are same-origin: fonts are always fetched in
+         anonymous-mode CORS, so a preload without it lands in a different cache partition and the
+         browser downloads the file TWICE.
+
+         Root-absolute `/assets/…`, not `./assets/…` — correct at every route depth in the portal
+         and it skips the 308 in src/plugins/errorHandler.ts. In the Zoho .zet widget sandbox this
+         preload simply misses, which is a SOFT failure: the CSS @font-face still resolves, because
+         url() inside a stylesheet resolves against the stylesheet's own URL, not the document's. -->
+    <link
+      rel="preload"
+      href="/assets/fonts/space-grotesk-latin-wght-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/assets/fonts/space-mono-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script type="module" crossorigin src="./assets/index-DAPgoKRB.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DN89qQwl.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
