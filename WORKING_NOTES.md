@@ -15837,3 +15837,7 @@ Unrelated audit notes (not fixed): AutoCatalog still uses an inline 3-column gri
 rows are `div role="option"` with mousedown only.
 
 Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.
+
+## 2026-08-13 — Impeccable init (PRODUCT.md)
+
+`/impeccable init` ran on `hotfix/Mytrion`. Wrote `PRODUCT.md` (product-schema 1) from repo sources — Octane fuel-card ops, worker Mytrions / Horizon Mini App, carrier Telegram bot + mini-app. No DESIGN.md; no visual world invented. Live config at `.impeccable/live/config.json` (CRM + mini-app source HTML; vendored `app/` excluded; CSP none). Did not touch Sales card CSS or vendored hashes.
