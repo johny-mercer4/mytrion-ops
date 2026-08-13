@@ -31,14 +31,14 @@
         font-size: 1.375rem;
     }
 
-    /* Table — horizontal scroll on small screens */
+    /* Table — no sideways min-width on phone; ledgers collapse in ledger-panel.css */
     .bm-root .bm-table-wrap {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .bm-root .bm-table {
-        min-width: 480px;
+        min-width: 0;
     }
 
     /* Toolbar wraps */
@@ -114,17 +114,70 @@
    §5  MODAL  (≤ 640px)
    ═══════════════════════════════════════════════ */
 
-/* Bottom sheet. The 16vh strip above the sheet is now the OVERLAY's padding rather than a `84vh`
-   cap on the panel: same height, but the gutter and the panel's `max-height: 100%` are one
-   measurement instead of two that can disagree, and the strip stays a backdrop-click target. */
+/* Bottom sheet: grabber, 96dvh, decelerate in — same grammar as Sales phoneSheetLayout. */
 @media (width < 640px) {
     .bm-root .bm-modal-backdrop {
-        align-items: flex-end;
-        padding: 16vh 0 0;
+        align-items: stretch;
+        justify-content: flex-end;
+        flex-direction: column;
+        padding: 0;
     }
 
     .bm-root .bm-modal-box {
         max-width: 100%;
-        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        max-height: 96dvh;
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+        animation: bmSheetUp var(--duration-moderate) var(--ease-decelerate);
+        padding-block-start: 12px;
+    }
+
+    .bm-root .bm-modal-box::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        translate: -50% 0;
+        width: 36px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--border);
+        z-index: 4;
+    }
+}
+
+@keyframes bmSheetUp {
+    from { translate: 0 100%; }
+}
+
+/* Horizon phone leftover pass — Debtors / Prepay / Returns rows, not min-width columns. */
+@media (width < 640px) {
+    .bm-root .db-content-area {
+        overflow-x: hidden;
+    }
+    .bm-root .db-list-header {
+        display: none;
+    }
+    .bm-root .db-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 12px;
+        min-height: 3.5rem;
+        padding: 12px 14px;
+    }
+    .bm-root .db-row-main > :not(.db-col-company):not(.db-col-remain):not(.db-col-owed):not(.db-col-chevron):not(.rt-col-action) {
+        display: none;
+    }
+    .bm-root .db-col-company,
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        flex: none;
+        min-width: 0;
+        text-align: left;
+        padding-right: 0;
+    }
+    .bm-root .db-col-remain,
+    .bm-root .db-col-owed {
+        text-align: right;
     }
 }

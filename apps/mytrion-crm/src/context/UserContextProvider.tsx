@@ -7,9 +7,11 @@ import {
   type ReactNode,
 } from 'react';
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
+import { bindHorizonTelegramAfterLogin, resetHorizonTelegramBind } from '../api/horizonTelegram';
 import { getSession, SESSION_CHANGED_EVENT } from '../api/session';
 import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
+import { isTelegramWebView } from '../telegram/webApp';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
 const Ctx = createContext<UserContext | null>(null);
@@ -104,6 +106,24 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
     };
   }, [state.phase]);
 
+  // Horizon Mini App: after Zoho session is live, bind Telegram identity. Soft-fail; never blocks CRM.
+  useEffect(() => {
+    if (state.phase !== 'authed' || !getSession()) {
+      resetHorizonTelegramBind();
+      return;
+    }
+    void bindHorizonTelegramAfterLogin();
+    const onFocus = (): void => {
+      if (document.visibilityState === 'visible') void bindHorizonTelegramAfterLogin();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [state.phase]);
+
   // A definitively rejected refresh token clears the stored session. React previously kept the
   // stale in-memory user alive, so every HR panel continued issuing 401 requests until a manual
   // reload. Follow same-tab session changes and cross-tab storage changes back to the login gate.
@@ -126,7 +146,11 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
       <AuthScreen
         phase="exchanging"
         title="Signing you in"
-        body="Zoho confirmed your account — finalizing identity."
+        body={
+          isTelegramWebView()
+            ? 'Stay in this window — Mytrion is finishing sign-in.'
+            : 'Zoho confirmed your account — finalizing identity.'
+        }
       />
     );
   }

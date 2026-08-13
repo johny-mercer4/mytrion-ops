@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VerificationClient, VerificationClientPage } from '@/api/verification';
+import type { PipelineSnapshot, VerificationClient, VerificationClientPage } from '@/api/verification';
 import { VerificationTab } from './VerificationTab';
 
 const state = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
     error: null as string | null,
     reload: vi.fn(),
   },
-  pipeline: { data: null, loading: false, error: null, reload: vi.fn() },
+  pipeline: { data: null as PipelineSnapshot | null, loading: false, error: null as string | null, reload: vi.fn() },
 }));
 
 vi.mock('../dcCache', () => ({
@@ -25,6 +25,9 @@ vi.mock('@/context/UserContextProvider', () => ({
 }));
 vi.mock('../live', () => ({
   useLoad: () => state.pipeline,
+}));
+vi.mock('@/hooks/useTheme', () => ({
+  useTheme: () => ({ theme: 'dark', toggle: vi.fn() }),
 }));
 
 function client(index: number, classification: VerificationClient['classification'] = 'in_pipeline'): VerificationClient {
@@ -151,5 +154,111 @@ describe('VerificationTab roster chrome', () => {
     fireEvent.click(screen.getByTestId('verification-card'));
 
     expect(screen.getByLabelText('Loading verification detail')).toBeInTheDocument();
+  });
+
+  it('shows Zoho Credit Decision on the card and in the client-detail sheet', () => {
+    const row = client(1);
+    row.companyName = 'Daniilo Jacshvili';
+    row.creditDecision = 'Declined-Prepay/Secured Only';
+    row.applicationStatus = 'Pending Decision';
+    row.dealStage = 'Application Processing';
+    row.verificationState = 'in_progress';
+    row.applicationId = '899640';
+    row.missingFields = ['date of birth'];
+    state.current = {
+      data: page([row]),
+      loading: false,
+      revalidating: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    state.pipeline = {
+      data: {
+        requestId: 'req-1',
+        status: 'REVIEW',
+        updatedAt: null,
+        stages: [{ id: 'stop-factor-pre', order: 1, label: 'Pre Stop Factors', status: 'pending' }],
+        decision: { outcome: 'rejected', reason: 'Prepay required' },
+        requirements: [],
+        events: [],
+        attachments: [],
+        source: 'credit_platform',
+      },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+
+    render(<VerificationTab />);
+
+    expect(screen.getByTestId('vf-credit-decision')).toHaveTextContent('Declined-Prepay/Secured Only');
+    expect(screen.getByText('Credit Decision')).toBeInTheDocument();
+    expect(screen.getByTestId('vf-wex-status')).toHaveTextContent('Pending Decision');
+    expect(screen.getByTestId('vf-deal-pipeline')).toHaveTextContent('Application Processing');
+    expect(screen.getByTestId('vf-verification-state')).toHaveTextContent('Verification: In progress');
+
+    fireEvent.click(screen.getByTestId('verification-card'));
+
+    const dialog = screen.getByRole('dialog', { name: 'Verification Daniilo Jacshvili' });
+    expect(within(dialog).getByTestId('vf-credit-decision')).toHaveTextContent('Declined-Prepay/Secured Only');
+    expect(within(dialog).getByText('Credit Decision')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('vf-desk-decision')).toHaveTextContent('Prepay');
+    expect(within(dialog).getByTestId('vf-wex-status')).toHaveTextContent('Pending Decision');
+    expect(within(dialog).getByTestId('vf-deal-pipeline')).toHaveTextContent('Application Processing');
+    expect(within(dialog).getByTestId('vf-verification-state')).toHaveTextContent('Verification: In progress');
+    expect(within(dialog).getByTestId('vf-credit-note')).toHaveTextContent('prepay/secured only');
+    expect(within(dialog).queryByText('Not Accepted')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Pre Stop Factors')).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
+  });
+
+  it('hides numbered compliance steps once the request is approved', () => {
+    const row = client(1);
+    row.companyName = 'Approved Carrier';
+    row.verificationState = 'approved';
+    row.cpPaymentType = 'LOC';
+    row.cpLimit = 5000;
+    row.creditDecision = 'Approved-Requested';
+    state.current = {
+      data: page([row]),
+      loading: false,
+      revalidating: false,
+      error: null,
+      reload: vi.fn(),
+    };
+    state.pipeline = {
+      data: {
+        requestId: 'req-ok',
+        status: 'APPROVED',
+        updatedAt: null,
+        stages: [
+          { id: 'stop-factor-pre', order: 1, label: 'Pre Stop Factors', status: 'done' },
+          { id: 'blacklist', order: 2, label: 'Black List Match', status: 'done' },
+          { id: 'fmcsa', order: 3, label: 'FMCSA', status: 'skipped' },
+        ],
+        decision: { outcome: 'loc' },
+        requirements: [],
+        events: [],
+        attachments: [],
+        source: 'credit_platform',
+      },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+
+    render(<VerificationTab />);
+    expect(screen.getByTestId('vf-credit-decision')).toHaveTextContent('Approved-Requested');
+    expect(screen.getByText('Credit Decision')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('verification-card'));
+
+    const dialog = screen.getByRole('dialog', { name: 'Verification Approved Carrier' });
+    expect(within(dialog).getByTestId('vf-credit-decision')).toHaveTextContent('Approved-Requested');
+    expect(within(dialog).getByText('Credit Decision')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('vf-approved-result')).toHaveTextContent('LOC Approved');
+    expect(within(dialog).queryByText('Pre Stop Factors')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Black List Match')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('FMCSA')).not.toBeInTheDocument();
   });
 });

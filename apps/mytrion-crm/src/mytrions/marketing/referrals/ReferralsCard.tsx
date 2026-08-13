@@ -281,7 +281,7 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
     setExporting(format);
     setExportError('');
     try {
-      if (format === 'csv') downloadReferralCsv(model.cards, periodMonth);
+      if (format === 'csv') await downloadReferralCsv(model.cards, periodMonth);
       else await downloadReferralExcel(model.cards, periodMonth);
     } catch (reason) {
       setExportError(reason instanceof Error ? reason.message : 'Could not create the export.');

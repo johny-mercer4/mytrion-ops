@@ -1,5 +1,6 @@
 import type { ReferralCalculationPreview } from '../../../api/referrals';
 import type { ReferralCardModel } from './referralModel';
+import { deliverExport } from '@/lib/deliverExport';
 
 export interface ReferralExportRow {
   period: string;
@@ -168,27 +169,18 @@ export function buildReferralExportRows(
   });
 }
 
-function deliverBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
 function csvCell(value: unknown): string {
   const text = value == null ? '' : String(value);
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export function downloadReferralCsv(cards: ReferralCardModel[], periodMonth: string): void {
+export async function downloadReferralCsv(cards: ReferralCardModel[], periodMonth: string): Promise<void> {
   const rows = buildReferralExportRows(cards, periodMonth);
   const lines = [
     COLUMNS.map((column) => csvCell(column.label)).join(','),
     ...rows.map((row) => COLUMNS.map((column) => csvCell(row[column.key])).join(',')),
   ];
-  deliverBlob(
+  await deliverExport(
     new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }),
     `referral-calculations_${periodMonth.slice(0, 7)}.csv`,
   );
@@ -270,7 +262,7 @@ export async function downloadReferralExcel(
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  deliverBlob(
+  await deliverExport(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),

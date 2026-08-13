@@ -19,20 +19,20 @@ import { AutoEmptyState } from './AutoActionResult';
 /**
  * Catalog card style.
  *
- * Three things here are deliberate, because together they were making the card's CONTENT vanish
- * while hovering and scrolling the grid:
+ * Four things here are deliberate, because together they were making the card's CONTENT vanish
+ * while focusing/hovering and scrolling the grid:
  *
  *  - `transform` is emitted ONLY while dragging. A permanent `scale(1)` is not a no-op: it promotes
- *    the card to its own composited layer and makes it a containing block for its children. Stacked
- *    on the `backdrop-filter: blur(20px)` that `.ss-card-h` puts on every one of these cards, a
- *    scroll that changes what the filter samples could leave the promoted layer un-repainted — the
- *    children were still there, just not painted.
+ *    the card to its own composited layer and makes it a containing block for its children.
+ *  - `.ss-card-h` no longer carries `backdrop-filter`. That blur, on every catalog (and Verification)
+ *    button in a scrolling grid, is what left the promoted layer un-repainted after a card was
+ *    focused, scrolled off-screen, and brought back — children still in the DOM, card looks empty.
  *  - `overflow: hidden` is gone. Nothing in the card overflows (icon box, SOON pill, drag handle,
  *    title, code chips, description are all normal flow), so it bought nothing and gave that stale
  *    layer something to clip against.
  *  - `transition: all` is now an explicit property list. `all` re-runs the transition machinery for
- *    every changed property — including ones that force the blur layer to re-rasterise — and it was
- *    also overriding the narrower transition `.ss-card-h` sets in ss-horizon.css.
+ *    every changed property and it was also overriding the narrower transition `.ss-card-h` sets in
+ *    ss-horizon.css.
  *
  * Rest appearance is unchanged; the drag scale still animates (from `none`, which interpolates).
  */

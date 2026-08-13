@@ -3,7 +3,7 @@ import {
   sendVerificationResponse,
   type PipelineRequirement,
 } from '@/api/verification';
-import { s } from './dc';
+import { FieldProceedFlag, fieldProceedHint } from './verificationFields';
 import { Icon } from './icons';
 
 interface Props {
@@ -11,12 +11,6 @@ interface Props {
   dealId: string | null;
   requirement: PipelineRequirement;
   onSent: () => void;
-}
-
-function inputStyle(): React.CSSProperties {
-  return s(
-    'width:100%;min-height:42px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none',
-  );
 }
 
 export function VerificationActionRequest({ requestId, dealId, requirement, onSent }: Props) {
@@ -30,22 +24,29 @@ export function VerificationActionRequest({ requestId, dealId, requirement, onSe
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fieldHints = requirement.fields
+    .map((field) => fieldProceedHint(field))
+    .filter((hint): hint is string => Boolean(hint));
+  const headerDetail =
+    requirement.detail && !fieldHints.includes(requirement.detail) ? requirement.detail : null;
+
   if (requirement.response) {
     return (
-      <div
-        style={s(
-          'padding:16px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--ok) 35%,var(--border));background:color-mix(in srgb,var(--ok) 7%,var(--surface))',
-        )}
-      >
-        <div style={s('display:flex;align-items:center;gap:10px;color:var(--ok);font-weight:800')}>
-          <Icon name="checkCircle" size={18} /> Response sent
-        </div>
-        <div style={s('margin-top:6px;font-size:12px;color:var(--text2)')}>
-          {new Date(requirement.response.sentAt).toLocaleString()}
-          {requirement.response.attachmentName ? ` · ${requirement.response.attachmentName}` : ''}
+      <div className="ss-vf-approved">
+        <div className="ss-vf-approved-head">
+          <span className="ss-vf-approved-icon">
+            <Icon name="checkCircle" size={18} />
+          </span>
+          <div>
+            <div className="ss-vf-approved-val">Response sent</div>
+            <div className="ss-vf-req-meta">
+              {new Date(requirement.response.sentAt).toLocaleString()}
+              {requirement.response.attachmentName ? ` · ${requirement.response.attachmentName}` : ''}
+            </div>
+          </div>
         </div>
         {requirement.response.warning ? (
-          <div style={s('margin-top:8px;font-size:12px;color:var(--warn)')}>
+          <div className="ss-vf-plaid-err" style={{ marginTop: 8 }}>
             {requirement.response.warning}
           </div>
         ) : null}
@@ -87,110 +88,106 @@ export function VerificationActionRequest({ requestId, dealId, requirement, onSe
   };
 
   return (
-    <div
-      style={s(
-        'padding:18px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 42%,var(--border));background:color-mix(in srgb,var(--danger) 6%,var(--surface));box-shadow:0 12px 32px rgba(10,16,30,.08)',
-      )}
-    >
-      <div style={s('display:flex;align-items:flex-start;gap:12px')}>
-        <span
-          style={s(
-            'width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)',
-          )}
-        >
+    <div className="ss-vf-req">
+      <div className="ss-vf-req-head">
+        <span className="ss-vf-req-icon">
           <Icon name="warn" size={18} />
         </span>
-        <div style={s('min-width:0')}>
-          <div style={s('font-size:15px;font-weight:800;color:var(--danger)')}>{requirement.title}</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>
+        <div className="ss-vf-req-copy">
+          <div className="ss-vf-req-title">{requirement.title}</div>
+          <div className="ss-vf-req-meta">
             Verification needs your response · {new Date(requirement.createdAt).toLocaleString()}
           </div>
-          {requirement.detail ? (
-            <div style={s('font-size:13px;color:var(--text2);line-height:1.55;margin-top:8px')}>
-              {requirement.detail}
-            </div>
-          ) : null}
+          {headerDetail ? <div className="ss-vf-req-detail">{headerDetail}</div> : null}
         </div>
       </div>
 
       {requirement.fields.length ? (
-        <div style={s('display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px')}>
-          {requirement.fields.map((field) => (
-            <label key={field.id} style={s(field.type === 'textarea' ? 'grid-column:1/-1' : '')}>
-              <span style={s('display:block;font-size:12px;font-weight:750;color:var(--text2);margin-bottom:6px')}>
-                {field.label} {field.required ? <span style={s('color:var(--danger)')}>*</span> : null}
-              </span>
-              {field.type === 'textarea' ? (
-                <textarea
-                  value={values[field.id] ?? ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
-                  placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
-                  rows={3}
-                  style={{ ...inputStyle(), resize: 'vertical' }}
-                />
-              ) : field.type === 'select' ? (
-                <select
-                  value={values[field.id] ?? ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
-                  style={inputStyle()}
-                >
-                  <option value="">Select…</option>
-                  {(field.options ?? []).map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={field.type}
-                  value={values[field.id] ?? ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
-                  placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
-                  style={inputStyle()}
-                />
-              )}
-            </label>
-          ))}
+        <div className="ss-vf-req-fields">
+          {requirement.fields.map((field) => {
+            const hint = fieldProceedHint(field);
+            const flagId = `vf-flag-${requirement.id}-${field.id}`;
+            const flagged = Boolean(hint);
+            const setValue = (value: string) =>
+              setValues((current) => ({ ...current, [field.id]: value }));
+            return (
+              <label key={field.id} className={field.type === 'textarea' ? 'is-wide' : undefined}>
+                <span className="ss-vf-field-lbl">
+                  {field.label}{' '}
+                  {field.required ? <span style={{ color: 'var(--danger)' }}>*</span> : null}
+                </span>
+                {field.type === 'textarea' ? (
+                  <textarea
+                    value={values[field.id] ?? ''}
+                    onChange={(event) => setValue(event.target.value)}
+                    rows={3}
+                    aria-invalid={flagged}
+                    aria-describedby={hint ? flagId : undefined}
+                    className={`ss-vf-input${flagged ? ' is-flagged' : ''}`}
+                    style={{ resize: 'vertical' }}
+                  />
+                ) : field.type === 'select' ? (
+                  <select
+                    value={values[field.id] ?? ''}
+                    onChange={(event) => setValue(event.target.value)}
+                    aria-invalid={flagged}
+                    aria-describedby={hint ? flagId : undefined}
+                    className={`ss-vf-input${flagged ? ' is-flagged' : ''}`}
+                  >
+                    <option value="">Select…</option>
+                    {(field.options ?? []).map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    value={values[field.id] ?? ''}
+                    onChange={(event) => setValue(event.target.value)}
+                    aria-invalid={flagged}
+                    aria-describedby={hint ? flagId : undefined}
+                    className={`ss-vf-input${flagged ? ' is-flagged' : ''}`}
+                  />
+                )}
+                {hint ? <FieldProceedFlag id={flagId} text={hint} /> : null}
+              </label>
+            );
+          })}
         </div>
       ) : null}
 
-      <div style={s('display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:12px')}>
+      <div className="ss-vf-req-extra">
         <label>
-          <span style={s('display:block;font-size:12px;font-weight:750;color:var(--text2);margin-bottom:6px')}>
-            Attachment {requirement.attachmentRequired ? <span style={s('color:var(--danger)')}>*</span> : '(optional)'}
+          <span className="ss-vf-field-lbl">
+            Attachment {requirement.attachmentRequired ? <span style={{ color: 'var(--danger)' }}>*</span> : '(optional)'}
           </span>
-          <span
-            style={s(
-              'min-height:42px;padding:0 12px;border-radius:10px;border:1px dashed var(--border);background:var(--surface);display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;overflow:hidden',
-            )}
-          >
+          <span className="ss-vf-file-pick">
             <Icon name="attach" size={15} />
-            <span style={s('white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {file?.name ?? requirement.attachmentLabel ?? 'Choose a file (max 20 MB)'}
             </span>
-            <input
-              type="file"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              style={{ display: 'none' }}
-            />
+            <input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
           </span>
         </label>
         <label>
-          <span style={s('display:block;font-size:12px;font-weight:750;color:var(--text2);margin-bottom:6px')}>
-            Note (optional)
-          </span>
-          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add context for Verification" style={inputStyle()} />
+          <span className="ss-vf-field-lbl">Note (optional)</span>
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Add context for Verification"
+            className="ss-vf-input"
+          />
         </label>
       </div>
 
-      {error ? <div role="alert" style={s('font-size:12px;color:var(--danger);margin-top:10px')}>{error}</div> : null}
-      <div style={s('display:flex;justify-content:flex-end;margin-top:14px')}>
+      {error ? <div role="alert" className="ss-vf-edit-err">{error}</div> : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
         <button
           type="button"
           onClick={submit}
           disabled={sending}
-          style={s(
-            `height:40px;padding:0 17px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);font-size:13px;font-weight:800;display:flex;align-items:center;gap:8px;cursor:${sending ? 'wait' : 'pointer'};opacity:${sending ? '.7' : '1'}`,
-          )}
+          className="ss-vf-plaid-btn"
+          style={{ opacity: sending ? 0.7 : 1, cursor: sending ? 'wait' : 'pointer' }}
         >
           <Icon name={sending ? 'spinner' : 'send'} size={15} />
           {sending ? 'Sending…' : 'Send to Verification'}

@@ -225,8 +225,6 @@
     position: relative;
     overflow: hidden;
     background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-md));
-    -webkit-backdrop-filter: blur(var(--hz-blur-md));
     border: 1px solid var(--hz-pane-bd);
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
     transition:

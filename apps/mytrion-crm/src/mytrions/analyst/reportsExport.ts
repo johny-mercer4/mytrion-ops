@@ -10,6 +10,7 @@
  * of exporting to Excel rather than reading the dashboard.
  */
 import type { ReportColumn, ReportResult } from '@/api/analytics';
+import { deliverExport } from '@/lib/deliverExport';
 
 const F = 'Arial';
 const C = {
@@ -41,18 +42,6 @@ function ymdToDate(v: unknown): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ''));
   if (!m) return null;
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-}
-
-function deliverBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 /** Excel forbids []:*?/\ in sheet names and caps them at 31 chars. */
@@ -198,7 +187,7 @@ export async function buildReportWorkbook(
 export async function exportReportXlsx(result: ReportResult, meta: ReportExportMeta): Promise<void> {
   const buf = await buildReportWorkbook(result, meta);
   const stamp = new Date(result.generatedAt).toISOString().slice(0, 10);
-  deliverBlob(
+  await deliverExport(
     new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     `${result.reportId}-${stamp}.xlsx`,
   );

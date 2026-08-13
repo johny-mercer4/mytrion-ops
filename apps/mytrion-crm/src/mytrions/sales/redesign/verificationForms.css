@@ -1,0 +1,95 @@
+/* Verification action + applicant inputs. Flag copy lives under the field, never in placeholder. */
+.ss-root .ss-vf-req {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+.ss-root .ss-vf-req-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.ss-root .ss-vf-req-copy { min-width: 0; flex: 1; }
+.ss-root .ss-vf-req-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+.ss-root .ss-vf-req-title { font-size: 15px; font-weight: 800; color: var(--danger); }
+.ss-root .ss-vf-req-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.ss-root .ss-vf-req-detail { font-size: 13px; color: var(--text2); line-height: 1.55; margin-top: 8px; }
+.ss-root .ss-vf-req-fields,
+.ss-root .ss-vf-req-extra {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ss-root .ss-vf-req-fields { margin-top: 16px; }
+.ss-root .ss-vf-req-extra { margin-top: 12px; }
+.ss-root .ss-vf-req-fields .is-wide { grid-column: 1 / -1; }
+.ss-root .ss-vf-field-lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+.ss-root .ss-vf-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: inherit;
+  outline: none;
+}
+.ss-root .ss-vf-input.is-flagged {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+.ss-root .ss-vf-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ss-root .ss-vf-input:disabled { opacity: .6; }
+.ss-root .ss-vf-field-flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: var(--ss-text-2xs);
+  font-weight: 700;
+  line-height: 1.45;
+}
+.ss-root .ss-vf-tile.is-flagged {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border2));
+}
+.ss-root .ss-vf-file-pick {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  cursor: pointer;
+  overflow: hidden;
+}
+.ss-root .ss-vf-file-pick input { display: none; }
+
+@media (width < 640px) {
+  .ss-root .ss-vf-req-fields,
+  .ss-root .ss-vf-req-extra { grid-template-columns: minmax(0, 1fr); }
+}

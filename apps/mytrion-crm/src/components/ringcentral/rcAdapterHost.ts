@@ -1,5 +1,6 @@
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
 import { installRcConsoleFilter } from './rcConsoleFilter';
+import { inAppCallingSupported } from './rcCapability';
 import {
   RC_ADAPTER_SCRIPT_ID,
   dockRingCentralWidget,
@@ -80,6 +81,10 @@ export async function mountAdapter(
   adapterUrl: string,
   opts: { cancelled: () => boolean; onLoadError: () => void },
 ): Promise<void> {
+  if (!inAppCallingSupported()) {
+    teardownAdapter();
+    return;
+  }
   const nextSrc = withStylesUri(adapterUrl);
   const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
   const frame = rcFrame();

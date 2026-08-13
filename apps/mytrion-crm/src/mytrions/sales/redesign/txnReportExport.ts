@@ -2,8 +2,9 @@
  * Transactions Report exports — PDF / Excel / CSV / Text.
  * Column layout mirrors EFS Transaction Report (self-service automation-modal.js).
  */
+import { deliverExport, deliverVendorDownload } from '@/lib/deliverExport';
 import { CARD_MASK_DIGITS } from './autoLive';
-import { deliverBlob, ensureTxnPdfLibs } from './txnExportLibs';
+import { ensureTxnPdfLibs } from './txnExportLibs';
 import {
   ensureTxnInvoices,
   groupTransactions,
@@ -296,7 +297,7 @@ async function downloadExcel(
     });
   });
   const buffer = await workbook.xlsx.writeBuffer();
-  deliverBlob(
+  await deliverExport(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
@@ -317,37 +318,39 @@ export async function downloadTxnReport(
 
   if (opts.format === 'pdf') {
     await ensureTxnPdfLibs();
-    await window.MytrionPdfUtils!.generateTransactionsPdf({
-      carrierId,
-      startDate: withInv.from,
-      endDate: withInv.to,
-      summary: {
-        totalTransactions: list.length,
-        totalFundedAmount: list.reduce((s, t) => s + (t.fundedTotal || 0), 0),
-        totalDiscount: list.reduce((s, t) => s + (t.discAmount || 0), 0),
-        totalGallons: list.reduce((s, t) => s + (t.fuelQuantity || 0), 0),
-        totalCarrierFee: list.reduce((s, t) => s + (t.carrierFee || 0), 0),
-        dateRange: withInv.summary.dateRange,
-      },
-      ai: {},
-      transactions: list,
-      logoUrl: '',
-      options: {
-        pageBreak: opts.pageBreak,
-        removeDetails: opts.removeDetails,
-        grandTotalOnly: opts.grandTotalOnly,
-        removeGroupSummary: opts.removeGroupSummary,
-        fullCardNumber: opts.showEntireCardNumber,
-        showTime: opts.showTransactionTime,
-        retailOnly: opts.retailPriceOnly,
-        showDiscount: opts.showDiscount,
-        showDiscountDetail: opts.showDiscountDetail,
-        addDataCaptureFee: opts.addDataCaptureFee,
-        groupBy: opts.groupBy,
-        showDriverColumns: true,
-        quantityUnitLabel: 'Qty',
-      },
-    });
+    await deliverVendorDownload(() =>
+      window.MytrionPdfUtils!.generateTransactionsPdf({
+        carrierId,
+        startDate: withInv.from,
+        endDate: withInv.to,
+        summary: {
+          totalTransactions: list.length,
+          totalFundedAmount: list.reduce((s, t) => s + (t.fundedTotal || 0), 0),
+          totalDiscount: list.reduce((s, t) => s + (t.discAmount || 0), 0),
+          totalGallons: list.reduce((s, t) => s + (t.fuelQuantity || 0), 0),
+          totalCarrierFee: list.reduce((s, t) => s + (t.carrierFee || 0), 0),
+          dateRange: withInv.summary.dateRange,
+        },
+        ai: {},
+        transactions: list,
+        logoUrl: '',
+        options: {
+          pageBreak: opts.pageBreak,
+          removeDetails: opts.removeDetails,
+          grandTotalOnly: opts.grandTotalOnly,
+          removeGroupSummary: opts.removeGroupSummary,
+          fullCardNumber: opts.showEntireCardNumber,
+          showTime: opts.showTransactionTime,
+          retailOnly: opts.retailPriceOnly,
+          showDiscount: opts.showDiscount,
+          showDiscountDetail: opts.showDiscountDetail,
+          addDataCaptureFee: opts.addDataCaptureFee,
+          groupBy: opts.groupBy,
+          showDriverColumns: true,
+          quantityUnitLabel: 'Qty',
+        },
+      }),
+    );
     return;
   }
 
@@ -367,7 +370,7 @@ export async function downloadTxnReport(
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const csv = aoa.map((r) => r.map(esc).join(',')).join('\r\n');
-    deliverBlob(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' }), `${filenameBase}.csv`);
+    await deliverExport(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' }), `${filenameBase}.csv`);
     return;
   }
 
@@ -416,5 +419,5 @@ export async function downloadTxnReport(
   efsSummaryBlock(list, opts.showDiscount).forEach((row) => {
     out.push(row.map((c) => String(c ?? '')).join('  '));
   });
-  deliverBlob(new Blob([out.join('\n')], { type: 'text/plain;charset=utf-8' }), `${filenameBase}.txt`);
+  await deliverExport(new Blob([out.join('\n')], { type: 'text/plain;charset=utf-8' }), `${filenameBase}.txt`);
 }

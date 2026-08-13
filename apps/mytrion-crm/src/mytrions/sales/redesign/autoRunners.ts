@@ -6,8 +6,9 @@
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { request, requestBlob } from '@/api/transport';
+import { deliverExport } from '@/lib/deliverExport';
+import { isTelegramWebView } from '@/telegram/webApp';
 import { money, moneyExact } from './live';
-import { deliverBlob } from './txnExportLibs';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
@@ -599,8 +600,9 @@ export async function downloadInvoice(
 
   // Zoho app WebView: blob URLs don't survive the tab hop, so open the short-lived signed URL and
   // let the OS download it natively. Same carve-out (and reason) as the widget — but routed through
-  // our own gate rather than the unscoped servercrm endpoint.
-  if (window.MytrionDownload?.isMobileWebView?.()) {
+  // our own gate rather than the unscoped servercrm endpoint. Telegram Mini App is NOT this path:
+  // files go to the Horizon bot chat via deliverExport.
+  if (!isTelegramWebView() && window.MytrionDownload?.isMobileWebView?.()) {
     const { url } = (await request('GET', `${base}/signed-url${scope}`)) as { url?: string };
     if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
     window.open(url, '_blank', 'noopener');
@@ -609,7 +611,7 @@ export async function downloadInvoice(
 
   const blob = await requestBlob(`${base}${scope}`);
   if (blob.size === 0) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
-  deliverBlob(blob, fileName);
+  await deliverExport(blob, fileName);
 }
 
 /** Sequential multi-invoice download (reference: downloadAllSelected / downloadSelectedExcel). */

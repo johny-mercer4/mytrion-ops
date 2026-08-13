@@ -17,9 +17,11 @@ import type { ClientRecord } from './ctx';
 import { s } from './dc';
 import { Icon, type IconName } from './icons';
 import { LoyaltyOverrideNotice } from './LoyaltyOverrideNotice';
+import { sheetBackdrop, sheetPanel } from './phoneSheetLayout';
 import { useAccessibleDialog } from './useAccessibleDialog';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import {
   resolveProjectedTierForRow,
   resolveTierForRow,
@@ -241,13 +243,12 @@ export function ClientModal({
   const tile = 'padding:14px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
   const tLbl = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
   const tVal = "font-family:var(--font-mono);font-size:21px;font-weight:600;margin-top:5px";
+  const phone = useIsPhone();
   return (
     <div
       role="presentation"
       onClick={onClose}
-      style={s(
-        'position:fixed;inset:0;z-index:var(--z-modal);background:var(--scrim);backdrop-filter:blur(var(--scrim-blur));-webkit-backdrop-filter:blur(var(--scrim-blur));display:flex;align-items:center;justify-content:center;padding:var(--space-6)',
-      )}
+      style={s(sheetBackdrop(phone))}
     >
       <div
         ref={dialogRef}
@@ -257,10 +258,13 @@ export function ClientModal({
         aria-label={`Client ${client.name}`}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={s(
-          'width:100%;max-width:820px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
-        )}
+        style={s(sheetPanel(phone, phone ? '' : 'max-width:820px'))}
       >
+        {phone ? (
+          <div aria-hidden style={s('flex-shrink:0;display:flex;justify-content:center;padding:8px 0 0')}>
+            <span style={s('width:36px;height:4px;border-radius:99px;background:var(--border)')} />
+          </div>
+        ) : null}
         <div
           style={s(
             'flex-shrink:0;padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;background:color-mix(in srgb,var(--surface) 88%,var(--alt))',
@@ -410,7 +414,7 @@ export function ClientModal({
                     <span style={s("font-family:var(--font-mono);font-size:14px;color:var(--text)")}>{numFmt(projectedTier.gallons)} ULSR + ULSD gal</span>
                   </div>
                   <div style={s('position:relative;height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-                    <div style={s(`position:absolute;inset:0 auto 0 0;width:${progressPct(projectedTier)}%;border-radius:99px;background:${tierColor(projectedTier.nextLevel)};transition:width .5s ease`)} />
+                    <div style={s(`position:absolute;inset:0;transform-origin:left center;transform:scaleX(${progressPct(projectedTier) / 100});border-radius:99px;background:${tierColor(projectedTier.nextLevel)};transition:transform var(--duration-moderate) var(--ease-standard)`)} />
                   </div>
                   <div style={s('font-size:12px;margin-top:7px;color:var(--muted)')}>
                     {numFmt(projectedTier.gallonsToNext)} gal to {tierLabel(projectedTier.nextLevel)}

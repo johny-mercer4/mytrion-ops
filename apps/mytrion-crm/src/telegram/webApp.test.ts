@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyTelegramInsets,
   bootTelegram,
+  getTelegramInitData,
   isTelegramWebView,
   type TelegramWebApp,
 } from './webApp';
@@ -32,6 +33,12 @@ describe('isTelegramWebView', () => {
   it('is true when Mini App initData is present', () => {
     window.Telegram = { WebApp: mockWebApp({ initData: 'query_id=1&user=%7B%7D' }) };
     expect(isTelegramWebView()).toBe(true);
+    expect(getTelegramInitData()).toBe('query_id=1&user=%7B%7D');
+  });
+
+  it('does not expose empty initData as a bind payload', () => {
+    window.Telegram = { WebApp: mockWebApp({ initData: '', platform: 'unknown' }) };
+    expect(getTelegramInitData()).toBeNull();
   });
 
   it('is true when TelegramWebviewProxy exists', () => {

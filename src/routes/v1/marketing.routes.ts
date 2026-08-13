@@ -25,6 +25,7 @@ import {
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { fetchLoyaltyRoster } from '../../modules/manager/loyaltyRoster.js';
+import { fetchLoyaltyMonthRoster } from '../../modules/manager/loyaltyMonthRoster.js';
 import { loyaltyOverrideView } from '../../modules/manager/loyaltyOverrides.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { loyaltyClientOverrideRepo } from '../../repos/loyaltyClientOverrideRepo.js';
@@ -134,6 +135,59 @@ export async function marketingRoutes(app: FastifyInstance): Promise<void> {
         cause: error,
       });
     }
+  });
+
+  /**
+   * Loyalty Program EXPORT — the same program as `/loyalty/clients`, measured against a chosen month
+   * instead of against today: for month M the tier comes from M-1 and the reported activity is M's.
+   *
+   * A SEPARATE route rather than a `?month=` on the board read, deliberately. The board's contract is
+   * "the tier in force right now" and its projection is pinned by a test to exactly the fields the
+   * board renders; a month parameter would make that endpoint answer two different questions and
+   * make "prevMonth" mean either "last month" or "the month before the one you asked for" depending
+   * on a query string. The windows here are named by role (`basis*` / `month*`) for the same reason.
+   *
+   * AUDITED, unlike the board read. This is a bulk extract of the entire company book — every
+   * carrier, its agent and its fuel volumes — leaving the building as a file. Who pulled which month
+   * is the record worth having; the board read is a screen someone looked at.
+   */
+  app.get('/marketing/loyalty/export', guard, async (request) => {
+    const ctx = requireMarketingAccess(request);
+    const query = z
+      .object({
+        month: z
+          .string()
+          .trim()
+          .regex(/^\d{4}-\d{2}-01$/, 'month must be the first of a month as YYYY-MM-01'),
+        refresh: z.enum(['1']).optional(),
+      })
+      .parse(request.query);
+    let roster;
+    try {
+      roster = await fetchLoyaltyMonthRoster(ctx, query.month, { force: query.refresh === '1' });
+    } catch (error) {
+      // A rejected month is the caller's error and must stay a 400 — only warehouse failures are 502.
+      if (error instanceof ValidationError) throw error;
+      throw new AppError(`Loyalty data is temporarily unavailable: ${errorMessage(error)}`, {
+        statusCode: 502,
+        code: 'LOYALTY_DATA_UNAVAILABLE',
+        expose: true,
+        cause: error,
+      });
+    }
+    await auditFromContext(ctx, {
+      action: 'marketing.loyalty.export.read',
+      status: 'ok',
+      resourceType: 'loyalty_month',
+      resourceId: roster.month,
+      detail: {
+        month: roster.month,
+        basisMonth: roster.basisMonth,
+        monthComplete: roster.monthComplete,
+        carriers: roster.total,
+      },
+    });
+    return roster;
   });
 
   app.patch('/marketing/loyalty/clients/:carrierId/rewards', guard, async (request) => {

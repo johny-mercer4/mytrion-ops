@@ -344,6 +344,11 @@ button {
     --dur-fast: 0.01ms;
     --dur-base: 0.01ms;
     --dur-slow: 0.01ms;
+    --duration-instant: 0.01ms;
+    --duration-fast: 0.01ms;
+    --duration-normal: 0.01ms;
+    --duration-moderate: 0.01ms;
+    --duration-slow: 0.01ms;
     --hz-hover-lift-sm: none;
     --lift-1: none;
     --lift-2: none;

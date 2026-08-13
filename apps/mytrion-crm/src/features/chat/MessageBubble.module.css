@@ -20,8 +20,6 @@
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: 0 8px 24px -8px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   position: relative;
   overflow: hidden;
@@ -67,8 +65,6 @@
   font-weight: 600;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: default;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -191,8 +187,6 @@
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--danger) 22%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 /* generative UI picker (HITL card) */
@@ -203,8 +197,6 @@
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: var(--shadow-md);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pickerPrompt {

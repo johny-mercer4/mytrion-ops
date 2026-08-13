@@ -18,8 +18,10 @@ import {
   type SortDir,
   type SortKey,
 } from './applicationsFilters';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { ApplicationModal } from './ApplicationModal';
 import { ApplicationsFilterPanel } from './ApplicationsFilterPanel';
+import { ApplicationsPhoneList } from './ApplicationsPhoneList';
 import { CardTracking } from './CardTracking';
 import { copyWithToast } from './copyToast';
 import {
@@ -54,6 +56,7 @@ const REFRESH_PATH =
 /* ─── Panel ──────────────────────────────────────────────────────────────── */
 
 export function Applications() {
+  const phone = useIsPhone();
   const [subTab, setSubTab] = useState<SubTab>('apps');
   // Separate from `subTab`: switching to Card Tracking must not touch the Applications-table
   // query state, so flipping back to Apps/Clients shows exactly what was there before, unrefetched.
@@ -388,11 +391,15 @@ export function Applications() {
       {activeTab === 'tracking' ? (
         <CardTracking />
       ) : loading ? (
-        <div className="cs-table-wrap">
-          {Array.from({ length: 10 }, (_, i) => (
-            <div key={i} className="cs-skeleton" style={{ height: 36, borderRadius: 4, marginBottom: 2 }} />
-          ))}
-        </div>
+        phone ? (
+          <div className="cs-skeleton" style={{ height: 220, borderRadius: 4 }} aria-hidden />
+        ) : (
+          <div className="cs-table-wrap">
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} className="cs-skeleton" style={{ height: 36, borderRadius: 4, marginBottom: 2 }} />
+            ))}
+          </div>
+        )
       ) : rows.length === 0 ? (
         /* ── Empty state (outside scroll container so it stays centered) ── */
         <div className="cs-app-empty">
@@ -402,6 +409,7 @@ export function Applications() {
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
+            aria-hidden
             style={{ color: 'var(--text-muted)', marginBottom: '0.75rem' }}
           >
             <path
@@ -419,6 +427,9 @@ export function Applications() {
           </div>
         </div>
       ) : (
+        phone ? (
+          <ApplicationsPhoneList rows={rows} subTab={subTab} onOpen={onOpenRow} />
+        ) : (
         /* ── Table ── */
         <div className="cs-table-wrap cs-app-table-wrap">
           <table className="cs-table cs-app-table">
@@ -448,6 +459,7 @@ export function Applications() {
             </tbody>
           </table>
         </div>
+        )
       )}
 
       {/* ── Pagination ── */}

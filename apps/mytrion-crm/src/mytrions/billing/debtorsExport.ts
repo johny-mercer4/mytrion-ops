@@ -8,6 +8,7 @@
  */
 import type { Debtor } from './data';
 import { fmtCycle } from './data';
+import { deliverExport } from '@/lib/deliverExport';
 
 const F = 'Arial';
 const C = {
@@ -226,12 +227,5 @@ export async function exportDebtorsXlsx(rows: Debtor[], meta: DebtorsExportMeta)
   });
   const stamp = new Date().toISOString().slice(0, 10);
   const fname = `Debtors_Report_${stamp}.xlsx`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fname;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  await deliverExport(blob, fname);
 }
