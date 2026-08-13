@@ -60,7 +60,7 @@ export function RecruitSettings() {
   if (loading) return <RecruitLoader label="Loading Recruit settings" />;
 
   return (
-    <main className="recruit-page">
+    <div className="recruit-page">
       <RecruitHead
         eyebrow="Admin controls"
         title="Recruit settings"
@@ -131,6 +131,6 @@ export function RecruitSettings() {
           {settings ? <small>Last updated {new Date(settings.updatedAt).toLocaleString()}</small> : null}
         </aside>
       </section>
-    </main>
+    </div>
   );
 }

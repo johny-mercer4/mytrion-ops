@@ -5,7 +5,13 @@ import { AutoStatusResult, isEmptyResultMessage } from './AutoActionResult';
 import { AutoCardLastUsedPanel, AutoLimitUpdatePanel } from './AutoCardResults';
 import { AutoCardLookupPanel } from './AutoCardLookupPanel';
 import { AutoInvoicesPanel, AutoTransactionsPanel } from './AutoResultPanels';
-import { AutoPaymentsPanel, AutoTrackingPanel, AutoWexTasksPanel } from './AutoRichResults';
+import {
+  AutoAccountStatusPanel,
+  AutoBalancePanel,
+  AutoPaymentsPanel,
+  AutoTrackingPanel,
+  AutoWexTasksPanel,
+} from './AutoRichResults';
 
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const mono = "font-family:var(--font-mono)";
@@ -59,6 +65,8 @@ export function AutoDoneStep({
   const tracking = result?.kind === 'tracking' ? result : null;
   const wexTasks = result?.kind === 'wex-tasks' ? result : null;
   const payments = result?.kind === 'payments' ? result : null;
+  const balance = result?.kind === 'balance' ? result : null;
+  const accountStatus = result?.kind === 'account-status' ? result : null;
   const lastUsed = result?.kind === 'card-last-used' ? result : null;
   const limit = result?.kind === 'limit-update' ? result : null;
   const cardLookup = result?.kind === 'card-lookup' ? result : null;
@@ -69,7 +77,8 @@ export function AutoDoneStep({
   const messageEmpty = result?.kind === 'message' && isEmptyResultMessage(result.message);
   const empty = invoicesEmpty || transactionsEmpty || cardLookupEmpty || tableEmpty || messageEmpty;
   const rich = (
-    invoices || transactions || cardLookup || table || tracking || wexTasks || payments || lastUsed || limit
+    invoices || transactions || cardLookup || table || tracking || wexTasks || payments
+    || balance || accountStatus || lastUsed || limit
   ) && !empty;
   const emptyTitle = invoicesEmpty
     ? 'No invoices found'
@@ -172,6 +181,8 @@ export function AutoDoneStep({
           cmpError={payments.cmpError}
         />
       )}
+      {balance && <AutoBalancePanel result={balance.result} />}
+      {accountStatus && <AutoAccountStatusPanel result={accountStatus.result} />}
       {lastUsed && <AutoCardLastUsedPanel rows={lastUsed.rows} />}
       {limit && <AutoLimitUpdatePanel result={limit.result} />}
       {table && (

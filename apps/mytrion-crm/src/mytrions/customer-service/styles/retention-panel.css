@@ -58,40 +58,32 @@
   padding: 16px 18px;
   border: none;
   border-bottom: 1px solid var(--border-2);
-  border-left: 3px solid transparent;
   background: transparent;
   color: inherit;
   cursor: pointer;
   font-family: inherit;
   animation: cs-ret-fade-up 0.32s cubic-bezier(0.2, 0, 0, 1) both;
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .cs-root .cs-ret-row:hover {
   background: color-mix(in srgb, var(--cs-accent) 8%, transparent);
-  border-left-color: color-mix(in srgb, var(--cs-accent) 45%, transparent);
-}
-
-.cs-root .cs-ret-row:active {
-  transform: scale(0.995);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--cs-accent) 45%, transparent);
 }
 
 .cs-root .cs-ret-row.active {
   background: var(--cs-accent-soft);
-  border-left-color: var(--cs-accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cs-accent) 18%, transparent);
+  box-shadow: inset 2px 0 0 var(--cs-accent);
 }
 
 .cs-root .cs-ret-row.is-overdue {
-  border-left-color: color-mix(in srgb, var(--cs-danger) 55%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--cs-danger) 55%, transparent);
 }
 
 .cs-root .cs-ret-row.is-overdue.active {
-  border-left-color: var(--cs-danger);
+  box-shadow: inset 2px 0 0 var(--cs-danger);
 }
 
 .cs-root .cs-ret-row-top {
@@ -533,7 +525,7 @@
   background: var(--surface);
 }
 
-.cs-root .cs-ret-quota-kicker {
+.cs-root .cs-ret-quota-label {
   font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.07em;
@@ -997,7 +989,7 @@
 }
 
 /* ── CS Open Pool (readonly) ─────────────────────────────────────────────── */
-.cs-root .cs-pool-kicker {
+.cs-root .cs-pool-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1224,5 +1216,51 @@
   .cs-root .cs-chip {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+.cs-root .cs-ret-chevron {
+  display: none;
+}
+
+@media (width < 640px) {
+  .cs-root .cs-ret-split {
+    grid-template-columns: 1fr;
+  }
+  .cs-root .cs-ret-detail {
+    display: none;
+  }
+  .cs-root .cs-ret-list {
+    max-height: none;
+    border-radius: var(--radius-md);
+  }
+  .cs-root .cs-ret-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 12px 14px;
+  }
+  .cs-root .cs-ret-row-badges {
+    display: none;
+  }
+  .cs-root .cs-ret-row-meta {
+    display: none;
+  }
+  .cs-root .cs-ret-row-top {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+  .cs-root .cs-ret-row-title {
+    font-size: 16px;
+  }
+  .cs-root .cs-ret-chevron {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--text-muted);
   }
 }

@@ -17,8 +17,9 @@ type CsTouchpointKey = Extract<TouchpointKey, `cs.${string}`>;
 export function csTouchpoint<K extends CsTouchpointKey>(
   key: K,
   params: TouchpointMap[K]['params'],
+  opts: { force?: boolean } = {},
 ): Promise<TouchpointMap[K]['result']> {
-  return callTouchpoint(key, params, { departmentAccess: CS_DEPARTMENTS });
+  return callTouchpoint(key, params, { departmentAccess: CS_DEPARTMENTS, ...(opts.force ? { force: true } : {}) });
 }
 
 // ---- Applications writes ----

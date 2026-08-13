@@ -78,6 +78,7 @@ export function HrShell() {
         active: view === tab.id,
         onClick: () => open(tab.id),
         keywords: tab.keywords,
+        primary: tab.id === 'home' || tab.id === 'employees' || tab.id === 'attendance' || tab.id === 'requests',
       })),
     },
   ];

@@ -11,7 +11,7 @@ import { s } from './dc';
 // layer the token scale defines for exactly this case — a dropdown belonging to an open modal.
 // Geometry is untouched: this is an anchored popover, not a centred modal, and it owns no scrim.
 const panelBase =
-  'position:fixed;z-index:var(--z-popover);border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
+  'position:fixed;z-index:var(--z-popover);border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow-x:hidden;overflow-y:auto;max-height:min(230px,42vh)';
 
 export function AutoFloatingDrop({
   open,

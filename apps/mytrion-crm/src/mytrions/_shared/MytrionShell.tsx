@@ -521,7 +521,7 @@ export function MytrionShell({
         </nav>
         )}
 
-        <div className={styles.center} data-scroll={contentScroll}>
+        <main className={styles.center} data-scroll={contentScroll}>
           {chatView ? (
             // A chat crash must never take down the working surface — remount on retry.
             <ErrorBoundary>
@@ -532,7 +532,7 @@ export function MytrionShell({
           ) : (
             children
           )}
-        </div>
+        </main>
       </div>
 
       {/* A SIBLING OF .body, in flow — never position:fixed. See MobileTabBar's docblock: a fixed

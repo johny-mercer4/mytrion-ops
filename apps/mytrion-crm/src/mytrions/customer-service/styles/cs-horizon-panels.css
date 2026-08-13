@@ -22,8 +22,6 @@
 .cs-root .cs-summary-item {
     position: relative;
     background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-md));
-    -webkit-backdrop-filter: blur(var(--hz-blur-md));
     border: 1px solid var(--hz-pane-bd);
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
     transition:
@@ -235,8 +233,7 @@
 /* ── Retention: case rows + detail ───────────────────────────────────────── */
 .cs-root .cs-ret-row {
     background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur-sm));
-    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    border-color: var(--hz-pane-bd);
     border: 1px solid var(--hz-pane-bd);
     box-shadow: var(--hz-glass-inset);
     transition:

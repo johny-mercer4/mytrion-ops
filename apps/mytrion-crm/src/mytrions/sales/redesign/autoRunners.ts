@@ -6,8 +6,9 @@
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { request, requestBlob } from '@/api/transport';
+import { deliverExport } from '@/lib/deliverExport';
+import { isTelegramWebView } from '@/telegram/webApp';
 import { money, moneyExact } from './live';
-import { deliverBlob } from './txnExportLibs';
 import {
   EFS_LOGIN_URL,
   LIMIT_CHANGE_MAX,
@@ -18,6 +19,7 @@ import {
   invRangeBounds,
   mapInvRange,
   mapInvStatus,
+  moneyOrDash,
   shortCard,
   str,
   type Addr,
@@ -251,11 +253,20 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
     }
     case 'balance': {
       const bal = await callTouchpoint('dwh.carrier_balance', { carrierId: requireCarrier(deal) });
-      const parts = [`available balance ${money(bal.efs_balance ?? bal.balance)}`];
-      if (bal.credit_limit != null) parts.push(`on a ${money(bal.credit_limit)} line`);
-      if (bal.credit_remaining != null) parts.push(`${money(bal.credit_remaining)} remaining`);
-      if (bal.efs_error) parts.push(`(EFS: ${bal.efs_error})`);
-      return { kind: 'message', message: `${str(bal.company_name) || 'This carrier'} — ${parts.join(', ')}.` };
+      return {
+        kind: 'balance',
+        result: {
+          companyName: str(bal.company_name) || 'This carrier',
+          efsBalance: moneyOrDash(bal.efs_balance ?? bal.balance),
+          availableLimit: moneyOrDash(bal.credit_remaining),
+          weeklyLimit: moneyOrDash(bal.credit_limit),
+          creditUsed: moneyOrDash(bal.credit_used),
+          accountType: str(bal.account_type),
+          paymentTerms: str(bal.payment_terms),
+          billingCycle: str(bal.billing_cycle),
+          efsError: str(bal.efs_error),
+        },
+      };
     }
     case 'account-status':
     case 'verification': {
@@ -269,6 +280,8 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       if (ovResult.status === 'rejected') throw ovResult.reason;
       const ov = ovResult.value;
       let activeCards = ov.cards?.active_count ?? 0;
+      let totalCards = ov.cards?.count ?? 0;
+      let cardsLive = false;
       if (efsResult.status === 'fulfilled') {
         const rows = (efsResult.value.data ?? []) as Array<Record<string, unknown>>;
         activeCards = rows.filter((r) => {
@@ -277,10 +290,37 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
           if (/inactive|deactiv|suspend|closed|cancel/.test(x)) return false;
           return /active|ok|good/.test(x);
         }).length;
+        totalCards = rows.length;
+        cardsLive = true;
       }
+      const debt = ov.cmp_debt ?? {};
+      const notices = [
+        ov.efs_error ? `EFS: ${str(ov.efs_error)}` : '',
+        debt.error ? `CMP debt: ${str(debt.error)}` : '',
+        ov.cards?.error ? `Cards: ${str(ov.cards.error)}` : '',
+        efsResult.status === 'rejected'
+          ? 'Live EFS card roster unavailable — card counts come from the warehouse and may lag.'
+          : '',
+      ].filter(Boolean);
       return {
-        kind: 'message',
-        message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${activeCards} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
+        kind: 'account-status',
+        result: {
+          companyName: str(ov.company_name) || 'This carrier',
+          isActive: ov.is_active === true,
+          accountType: str(ov.account_type),
+          paymentTerms: str(ov.payment_terms),
+          efsBalance: moneyOrDash(ov.efs_balance),
+          weeklyLimit: moneyOrDash(ov.credit_limit),
+          totalDebt: money(debt.total_debt ?? 0),
+          debtInvoiceCount: debt.invoice_count == null ? '—' : str(debt.invoice_count),
+          maxDebtDays: debt.max_debt_days == null ? '—' : `${str(debt.max_debt_days)} days`,
+          worstStatus: str(debt.worst_status),
+          isHardDebtor: debt.is_hard_debtor === true,
+          activeCards,
+          totalCards,
+          cardsLive,
+          notices,
+        },
       };
     }
     case 'tracking': {
@@ -560,8 +600,9 @@ export async function downloadInvoice(
 
   // Zoho app WebView: blob URLs don't survive the tab hop, so open the short-lived signed URL and
   // let the OS download it natively. Same carve-out (and reason) as the widget — but routed through
-  // our own gate rather than the unscoped servercrm endpoint.
-  if (window.MytrionDownload?.isMobileWebView?.()) {
+  // our own gate rather than the unscoped servercrm endpoint. Telegram Mini App is NOT this path:
+  // files go to the Horizon bot chat via deliverExport.
+  if (!isTelegramWebView() && window.MytrionDownload?.isMobileWebView?.()) {
     const { url } = (await request('GET', `${base}/signed-url${scope}`)) as { url?: string };
     if (!url) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
     window.open(url, '_blank', 'noopener');
@@ -570,7 +611,7 @@ export async function downloadInvoice(
 
   const blob = await requestBlob(`${base}${scope}`);
   if (blob.size === 0) throw new Error(`No ${type.toUpperCase()} available for this invoice.`);
-  deliverBlob(blob, fileName);
+  await deliverExport(blob, fileName);
 }
 
 /** Sequential multi-invoice download (reference: downloadAllSelected / downloadSelectedExcel). */

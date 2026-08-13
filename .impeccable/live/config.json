@@ -1,0 +1,7 @@
+{
+  "files": ["apps/mytrion-crm/index.html", "apps/mini-app/index.html"],
+  "exclude": ["apps/mytrion-crm/app/**", "apps/mini-app/app/**"],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}

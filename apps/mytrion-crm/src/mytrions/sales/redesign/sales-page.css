@@ -519,6 +519,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
+  /* Announcement rail is a carousel on desktop; on phone it is a stacked list. */
+  .ss-root .ss-home-announcements {
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+  }
+  .ss-root .ss-home-announcements > .ss-card-h {
+    flex: none !important;
+    width: 100% !important;
+  }
+
   /* Start · status · end. The middle label is the one that can go; the two endpoints are the axis. */
   .ss-root .ss-home-endpoints {
     font-size: var(--text-2xs) !important;

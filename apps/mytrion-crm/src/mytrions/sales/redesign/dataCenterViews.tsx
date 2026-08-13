@@ -8,6 +8,7 @@ import { s } from './dc';
 import { badge } from './salesData';
 import { useSales } from './ctx';
 import { Icon } from './icons';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
 import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
 import {
@@ -21,6 +22,7 @@ import {
   type LeadVM,
   type RejectionVM,
 } from './dataCenterLive';
+import { PhoneDealsList, PhoneLeadsList, PhoneRejectionsList } from './dataCenterPhoneList';
 
 const AV = (size = 34, fs = 13): string =>
   `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
@@ -85,6 +87,7 @@ export function LeadsView({
   metaOnly?: boolean;
 }) {
   const { openLead, pushToast } = useSales();
+  const phone = useIsPhone();
   const [hoverField, setHoverField] = useState<string | null>(null);
   const q = search.toLowerCase();
   const rows = leads.filter((l) => {
@@ -99,7 +102,11 @@ export function LeadsView({
   });
 
   if (rows.length === 0) {
-    return <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
+    return <EmptyRow msg="No leads found." />;
+  }
+
+  if (phone) {
+    return <PhoneLeadsList rows={rows} onOpen={openLead} />;
   }
 
   const copyVal = (e: MouseEvent, value: string, label: string): void => {
@@ -212,7 +219,7 @@ export function LeadsView({
             {cards.map((ld) => {
               const src = sourceBadge(ld.source);
               return (
-                <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+                <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)`)}>
                   <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
                     <div style={s('font-size:14px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</div>
                     <span style={s(`${src.style};flex-shrink:0;white-space:nowrap`)}>{src.text}</span>
@@ -248,12 +255,18 @@ export function DealsView({
   stageFilter?: string;
 }) {
   const { openDeal } = useSales();
+  const phone = useIsPhone();
   const q = search.toLowerCase();
   const rows = deals.filter((d) => {
     if (stageFilter !== 'all' && d.stage !== stageFilter) return false;
     if (q && !`${d.name} ${d.company} ${d.stage} ${d.carrierId} ${d.app}`.toLowerCase().includes(q)) return false;
     return true;
   });
+
+  if (phone) {
+    if (rows.length === 0) return <EmptyRow msg="No deals found." />;
+    return <PhoneDealsList rows={rows} onOpen={openDeal} />;
+  }
 
   if (view === 'list') {
     return (
@@ -282,7 +295,7 @@ export function DealsView({
         return (
           <KanbanCol key={col.key} col={col} count={cards.length}>
             {cards.map((dl) => (
-              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)`)}>
                 <div style={s('font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</div>
                 {dl.carrierId && <div style={s(SUB)}>Carrier: {dl.carrierId}</div>}
                 {dl.app && <div style={s(SUB)}>App ID: {dl.app}</div>}
@@ -313,11 +326,19 @@ export function RejectionsView({
   onOpen: (r: RejectionVM) => void;
 }) {
   const q = search.toLowerCase();
+  const phone = useIsPhone();
   const rows = q
     ? rejections.filter((r) =>
         `${r.company} ${r.number} ${r.reason} ${r.driverName} ${r.cardLast4}`.toLowerCase().includes(q),
       )
     : rejections;
+
+  if (phone) {
+    if (rows.length === 0) {
+      return <EmptyRow msg="No declines match that search." />;
+    }
+    return <PhoneRejectionsList rows={rows} onOpen={onOpen} />;
+  }
 
   // Status is gone: every row is 'new' until someone works it, so the column was a wall of identical
   // "Open" badges carrying no information. The width goes to the decline reason instead, which is the

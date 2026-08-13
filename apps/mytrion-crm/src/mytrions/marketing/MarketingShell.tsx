@@ -94,6 +94,7 @@ export function MarketingShell() {
         active: view === tab.id,
         onClick: () => go(tab.id),
         keywords: tab.keywords,
+        primary: true,
       })),
     },
   ];

@@ -6,6 +6,7 @@
  * Clients use the owner-scoped DWH roster; pipeline tabs use Zoho CRM; Money Codes use Ops DB.
  */
 import { useMemo, useState } from 'react';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, NAV_DESC, type BadgeVM } from '../salesData';
@@ -324,6 +325,7 @@ export function RecordsTab() {
   const rejLoad = useCachedLoad(`sales:rejections:${actAs}`, loadRejections, { enabled: dcSub === 'rejections' });
 
   const q = search[dcSub].toLowerCase();
+  const phone = useIsPhone();
   const showView = dcSub === 'leads' || dcSub === 'deals';
   const view = dcSub === 'deals' ? dealView : leadView;
   const setView = (v: PipeView): void => (dcSub === 'deals' ? setDealView(v) : setLeadView(v));
@@ -474,7 +476,7 @@ export function RecordsTab() {
             options={[{ v: 'all', label: 'All stages' }, ...DEAL_STAGE_ORDER.map((st) => ({ v: st, label: st }))]}
           />
         )}
-        {showView && (
+        {showView && !phone && (
           <SalesSubTabs
             items={VIEW_TABS}
             value={view}
@@ -591,7 +593,7 @@ export function RecordsTab() {
           emptyMsg="New leads land here as soon as they are assigned to you."
           skeleton={
             <SalesBodySkeleton
-              variant={leadView === 'kanban' ? 'board' : 'table'}
+              variant={phone ? 'rows' : leadView === 'kanban' ? 'board' : 'table'}
               label="leads"
               cols={5}
             />
@@ -611,7 +613,7 @@ export function RecordsTab() {
           emptyMsg="Deals appear here once a lead converts."
           skeleton={
             <SalesBodySkeleton
-              variant={dealView === 'kanban' ? 'board' : 'table'}
+              variant={phone ? 'rows' : dealView === 'kanban' ? 'board' : 'table'}
               label="deals"
               cols={5}
             />
@@ -629,7 +631,7 @@ export function RecordsTab() {
           emptyIcon="rejections"
           emptyTitle="No card declines"
           emptyMsg="Nothing has been declined for your clients yet."
-          skeleton={<SalesBodySkeleton variant="table" label="rejection reports" cols={5} />}
+          skeleton={<SalesBodySkeleton variant={phone ? 'rows' : 'table'} label="rejection reports" cols={5} />}
         >
           <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
         </Gate>

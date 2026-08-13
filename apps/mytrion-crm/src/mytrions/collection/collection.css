@@ -177,8 +177,7 @@
   border-radius: var(--co-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  /* No backdrop-filter: jump cards scroll in a grid (empty-after-scroll compositor trap). */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),

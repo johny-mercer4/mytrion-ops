@@ -23,6 +23,7 @@ import {
   ChartColumn,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   CircleDollarSign,
@@ -181,6 +182,7 @@ export const ICON_REGISTRY = {
   pause: CirclePause,
   upload: CloudUpload,
   chevronLeft: ChevronLeft,
+  chevronRight: ChevronRight,
   chevronDown: ChevronDown,
   // ticket department glyphs
   cs: Headset,

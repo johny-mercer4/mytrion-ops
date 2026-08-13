@@ -27,6 +27,7 @@ import {
   type SalesSubTab,
 } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
+import { isTelegramWebView } from '@/telegram/webApp';
 
 type SourceFilter = CallHubSource | 'all';
 type StatusFilter = CallHubStatus | 'all';
@@ -137,10 +138,18 @@ export function CallHubTab() {
     <SalesPage className="ss-call-page" busy={cold || load.revalidating}>
       <SalesPageHead
         description={
-          <>
-            Calls for <strong>{agentLabel}</strong> only — Mytrion and Zoho history merged. Softphone
-            stays in the corner; open a row to redial.
-          </>
+          isTelegramWebView() ? (
+            <>
+              Calls for <strong>{agentLabel}</strong>. In-app calling is not available in Telegram —
+              use desktop Mytrion or the RingCentral app to place and answer calls. History still
+              shows here.
+            </>
+          ) : (
+            <>
+              Calls for <strong>{agentLabel}</strong> only — Mytrion and Zoho history merged. Softphone
+              stays in the corner; open a row to redial.
+            </>
+          )
         }
         metrics={cold ? undefined : metrics}
       />
@@ -184,7 +193,11 @@ export function CallHubTab() {
           <SalesEmpty
             icon="callHub"
             title={`No calls for ${agentLabel}`}
-            body="Outbound clicks from Data Center and Retention land in Mytrion under this agent; Zoho Call rows owned by them show up here too."
+            body={
+              isTelegramWebView()
+                ? 'Call history still lands here. To place or answer a call, open Mytrion on desktop or use the RingCentral app.'
+                : 'Outbound clicks from Data Center and Retention land in Mytrion under this agent; Zoho Call rows owned by them show up here too.'
+            }
           />
         ) : (
           <>

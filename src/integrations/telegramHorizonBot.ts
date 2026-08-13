@@ -91,6 +91,57 @@ async function callHorizonBot<T = unknown>(
   return json.result as T;
 }
 
+/** Thrown when Telegram refuses the send because the worker has never opened a chat with Horizon. */
+export class HorizonTelegramChatUnreachableError extends Error {
+  constructor(description: string) {
+    super(description);
+    this.name = 'HorizonTelegramChatUnreachableError';
+  }
+}
+
+function isChatUnreachable(description: string): boolean {
+  return /bot can't initiate conversation|bot was blocked|user is deactivated|chat not found/i.test(
+    description,
+  );
+}
+
+/**
+ * Upload a file to a Horizon worker chat as a Telegram document.
+ *
+ * Uses HORIZON_BOT_TOKEN only. Never TELEGRAM_BOT_TOKEN / TELEGRAM_CARRIER_BOT_TOKEN.
+ * Multipart is required — a JSON body only works for an already-uploaded file_id.
+ */
+export async function sendHorizonDocument(opts: {
+  chatId: number | string;
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array;
+}): Promise<void> {
+  const token = env.HORIZON_BOT_TOKEN;
+  if (!token) throw new Error('Horizon bot is not configured (HORIZON_BOT_TOKEN is empty).');
+  if (horizonBotSharesClientToken()) {
+    throw new Error(
+      'HORIZON_BOT_TOKEN equals TELEGRAM_BOT_TOKEN or TELEGRAM_CARRIER_BOT_TOKEN — refusing sendDocument',
+    );
+  }
+
+  const form = new FormData();
+  form.append('chat_id', String(opts.chatId));
+  form.append(
+    'document',
+    new Blob([new Uint8Array(opts.bytes)], { type: opts.contentType }),
+    opts.fileName,
+  );
+
+  const res = await fetch(`${API_ROOT}/bot${token}/sendDocument`, { method: 'POST', body: form });
+  const json = (await res.json()) as { ok: boolean; description?: string };
+  if (!json.ok) {
+    const description = json.description ?? String(res.status);
+    if (isChatUnreachable(description)) throw new HorizonTelegramChatUnreachableError(description);
+    throw new Error(`[telegram-horizon-bot] sendDocument failed: ${description}`);
+  }
+}
+
 export async function sendHorizonOpenPrompt(chatId: number | string): Promise<void> {
   const miniAppUrl = resolveHorizonMiniAppUrl();
   if (!miniAppUrl) {
@@ -172,6 +223,47 @@ export function verifyHorizonInitData(
   const fields: Record<string, string> = {};
   for (const [k, v] of params.entries()) fields[k] = v;
   return { ok: true, fields };
+}
+
+export interface HorizonInitDataIdentity {
+  telegramUserId: string;
+  telegramChatId: string;
+  telegramUsername: string | null;
+}
+
+function parseJsonObject(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function numericId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) return value.trim();
+  return null;
+}
+
+/**
+ * Telegram user (+ private chat) from already-verified initData fields.
+ * When `chat` is absent (Menu Button / private Mini App), chat_id equals user id.
+ */
+export function parseHorizonInitDataIdentity(
+  fields: Record<string, string>,
+): HorizonInitDataIdentity | null {
+  const user = parseJsonObject(fields.user);
+  const telegramUserId = numericId(user?.id);
+  if (!telegramUserId) return null;
+  const chat = parseJsonObject(fields.chat);
+  const telegramChatId = numericId(chat?.id) ?? telegramUserId;
+  const usernameRaw = user?.username;
+  const telegramUsername =
+    typeof usernameRaw === 'string' && usernameRaw.trim() ? usernameRaw.trim() : null;
+  return { telegramUserId, telegramChatId, telegramUsername };
 }
 
 /** Test helper: sign fields the same way Telegram would, using HORIZON_BOT_TOKEN. */

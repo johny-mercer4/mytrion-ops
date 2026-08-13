@@ -314,6 +314,7 @@ export function DataCenter() {
             onChange={(e) => setSearch(e.target.value)}
             type="text"
             placeholder="Search deal name, carrier ID, stage…"
+            aria-label="Search deal name, carrier ID, stage"
             autoComplete="off"
           />
           {search ? (

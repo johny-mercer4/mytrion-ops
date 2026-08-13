@@ -258,8 +258,6 @@
       transparent 62%
     ),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
 }
 .hr-root .hr-stat-l {
@@ -310,8 +308,6 @@
   border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),
@@ -913,8 +909,6 @@
   border-radius: var(--hr-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
   transition:
     border-color var(--hz-dur-wash) var(--hz-ease),
@@ -1139,8 +1133,6 @@
   border-radius: var(--hr-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),
@@ -2140,4 +2132,40 @@
   outline: none;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* Horizon phone leftover pass — employee / department dialogs become sheets. */
+@media (width < 640px) {
+  .hr-root .hr-modal-backdrop {
+    align-items: stretch;
+    justify-content: flex-end;
+    flex-direction: column;
+    padding: 0;
+  }
+  .hr-root .hr-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 96dvh;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    animation: hrSheetUp var(--duration-moderate) var(--ease-decelerate);
+    position: relative;
+    padding-block-start: 12px;
+  }
+  .hr-root .hr-modal::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 36px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--border);
+  }
+  .hr-root .hr-listwrap {
+    overflow-x: hidden;
+  }
+}
+@keyframes hrSheetUp {
+  from { translate: 0 100%; }
 }

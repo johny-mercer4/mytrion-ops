@@ -234,7 +234,7 @@ export function RecruitCandidates() {
   if (loading) return <RecruitLoader label="Loading candidates" />;
 
   return (
-    <main className="recruit-page">
+    <div className="recruit-page">
       <RecruitHead
         eyebrow="Candidate pipeline"
         title="Candidates"
@@ -371,6 +371,6 @@ export function RecruitCandidates() {
           </form>
         </RecruitModal>
       ) : null}
-    </main>
+    </div>
   );
 }

@@ -1,0 +1,128 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/_shared/hub/hubChrome.css",
+          "apps/mytrion-crm/src/mytrions/_shared/moduleShell.css",
+          "apps/mytrion-crm/src/mytrions/analyst/analyst.css",
+          "apps/mytrion-crm/src/mytrions/collection/collection.css",
+          "apps/mytrion-crm/src/mytrions/finance/finance.css",
+          "apps/mytrion-crm/src/mytrions/hr/hr.css"
+        ],
+        "createdAt": "2026-08-13T17:43:12.817Z",
+        "reason": "Incumbent Horizon kicker/title ramp; compositor bugfix must not redesign kickers"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/verification/verification.css"
+        ],
+        "createdAt": "2026-08-13T17:43:12.841Z",
+        "reason": "Incumbent verification card accent; compositor bugfix only"
+      },
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/recruit/recruit.css"
+        ],
+        "createdAt": "2026-08-13T17:43:12.865Z",
+        "reason": "Incumbent Recruit identity; compositor bugfix must not restyle type"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/admin/admin.module.css",
+          "apps/mytrion-crm/src/mytrions/admin/escalationRouting.module.css",
+          "apps/mytrion-crm/src/mytrions/billing/styles/bm-horizon-panels.css",
+          "apps/mytrion-crm/src/mytrions/billing/styles/bm-horizon.css",
+          "apps/mytrion-crm/src/mytrions/customer-service/styles/cs-horizon-panels.css",
+          "apps/mytrion-crm/src/mytrions/customer-service/styles/cs-horizon.css",
+          "apps/mytrion-crm/src/mytrions/hr/hr.css"
+        ],
+        "createdAt": "2026-08-13T17:44:07.707Z",
+        "reason": "Incumbent card accent rails; compositor bugfix only"
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/features/chat/MessageBubble.module.css",
+          "apps/mytrion-crm/src/mytrions/analyst/analyst.css",
+          "apps/mytrion-crm/src/mytrions/finance/finance.css",
+          "apps/mytrion-crm/src/mytrions/hr/hr.css"
+        ],
+        "createdAt": "2026-08-13T17:44:07.731Z",
+        "reason": "Incumbent motion; compositor bugfix must not restyle transitions"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/finance/finance.css",
+          "apps/mytrion-crm/src/mytrions/marketing/loyalty/loyalty.css"
+        ],
+        "createdAt": "2026-08-13T17:44:38.386Z",
+        "reason": "Incumbent card accent rails; compositor bugfix only"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/app/launcher/StatCard.module.css",
+          "apps/mytrion-crm/src/app/launcher/WorkspaceCard.module.css",
+          "apps/mytrion-crm/src/mytrions/_shared/hub/hubWorkspace.css",
+          "apps/mytrion-crm/src/mytrions/_shared/page.module.css",
+          "apps/mytrion-crm/src/mytrions/billing/styles/bm-horizon.css",
+          "apps/mytrion-crm/src/mytrions/customer-service/styles/cs-horizon.css"
+        ],
+        "createdAt": "2026-08-13T17:44:38.410Z",
+        "reason": "Incumbent Horizon kicker ramp; compositor bugfix only"
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/_shared/hub/hubWorkspace.css",
+          "apps/mytrion-crm/src/mytrions/marketing/loyalty/loyalty.css"
+        ],
+        "createdAt": "2026-08-13T17:45:09.386Z",
+        "reason": "Incumbent motion; compositor bugfix only"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "thinkbounce",
+        "files": [
+          "apps/mytrion-crm/src/features/chat/MessageBubble.module.css"
+        ],
+        "createdAt": "2026-08-13T17:45:19.021Z",
+        "reason": "Incumbent thinking-dots motion; compositor bugfix only"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/admin/admin.module.css"
+        ],
+        "createdAt": "2026-08-13T17:45:35.269Z",
+        "reason": "Incumbent Admin lockup; compositor bugfix only"
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "apps/mytrion-crm/src/mytrions/admin/admin.module.css"
+        ],
+        "createdAt": "2026-08-13T17:45:35.293Z",
+        "reason": "Incumbent Admin motion; compositor bugfix only"
+      }
+    ]
+  }
+}

@@ -4,6 +4,7 @@
  * edit is a REST write that carries the legacy department header. Mirrors api/cs.ts.
  */
 import { request, requestBlob, requestMultipart } from './transport';
+import { deliverExport } from '../lib/deliverExport';
 import { callTouchpoint } from './touchpoints';
 import type {
   CarrierOpeningsResponse,
@@ -418,14 +419,7 @@ export function clearClientTypeOverride(carrierId: string): Promise<{ cleared: C
 /** Download a URL as a file, reusing the transport's auth + 401-refresh via requestBlob. */
 async function downloadBlob(path: string, fallbackName: string): Promise<void> {
   const blob = await requestBlob(path, { headers: BILLING_HEADERS });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fallbackName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  await deliverExport(blob, fallbackName);
 }
 
 /**

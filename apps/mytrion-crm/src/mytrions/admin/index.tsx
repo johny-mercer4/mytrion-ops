@@ -18,6 +18,7 @@ import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { KpiData } from './KpiData';
 import { MytrionDatabase } from './MytrionDatabase';
 import { OctaneScope } from './scope/OctaneScope';
+import { OctaneTelegramUsers } from './OctaneTelegramUsers';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
@@ -65,6 +66,7 @@ export default function AdminMytrion() {
           active: tab === 'kb',
           onClick: () => setTab('kb'),
           keywords: ['rag', 'docs', 'sources'],
+          primary: true,
         },
         {
           key: 'train',
@@ -98,6 +100,16 @@ export default function AdminMytrion() {
           active: tab === 'access',
           onClick: () => setTab('access'),
           keywords: ['rbac', 'workers', 'permissions'],
+          primary: true,
+        },
+        {
+          key: 'octane-telegram-users',
+          tone: 'var(--tone-sky)',
+          label: 'Octane Telegram Users',
+          icon: <UsersIcon />,
+          active: tab === 'octane-telegram-users',
+          onClick: () => setTab('octane-telegram-users'),
+          keywords: ['telegram', 'horizon', 'mini-app', 'zoho', 'link'],
         },
         {
           key: 'permission-sets',
@@ -116,6 +128,7 @@ export default function AdminMytrion() {
           active: CARRIER_TABS.includes(tab),
           onClick: () => setTab('carriers'),
           keywords: ['companies', 'invites', 'mini-app'],
+          primary: true,
           children: [
             {
               key: 'carriers-registered',
@@ -206,6 +219,7 @@ export default function AdminMytrion() {
           active: tab === 'audit',
           onClick: () => setTab('audit'),
           keywords: ['history', 'trail'],
+          primary: true,
         },
         {
           key: 'jobs',
@@ -288,6 +302,7 @@ export default function AdminMytrion() {
       {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
       {tab === 'browser' && <KnowledgeBrowser />}
       {tab === 'access' && <UserManagement />}
+      {tab === 'octane-telegram-users' && <OctaneTelegramUsers />}
       {tab === 'permission-sets' && <PermissionSets />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
