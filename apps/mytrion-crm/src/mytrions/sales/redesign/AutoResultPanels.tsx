@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { s, Badge } from './dc';
 import { badge, type BadgeVM } from './salesData';
 import { money } from './live';
-import type { InvRow } from './autoLive';
+import { maskCard, type InvRow } from './autoLive';
 import { downloadInvoice, downloadInvoicesSequential } from './autoRunners';
 import {
   DEFAULT_TXN_OPTS,
@@ -469,7 +469,7 @@ export function AutoTransactionsPanel({
           <div style={s('display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface-2);font-size:var(--ss-text-sm)')}>
             <span style={s(`${mono};font-weight:700`)}>
               {g.isCard
-                ? (opts.showEntireCardNumber ? g.cardNumber : `•••• ${String(g.cardNumber).slice(-4)}`)
+                ? (opts.showEntireCardNumber ? g.cardNumber : maskCard(g.cardNumber))
                 : g.label}
             </span>
             <span style={s('color:var(--muted)')}>
@@ -492,7 +492,7 @@ export function AutoTransactionsPanel({
                 >
               <span style={s('color:var(--text2)')}>{String(tx.transactionDate).slice(0, 10)}</span>
               <span style={s(mono)}>
-                {opts.showEntireCardNumber ? tx.cardNumber : `•••• ${String(tx.cardNumber).slice(-4)}`}
+                {opts.showEntireCardNumber ? tx.cardNumber : maskCard(tx.cardNumber)}
               </span>
               <span style={s('color:var(--text2)')}>{tx.driverName || '—'}</span>
               <span style={s(`text-align:right;${mono}`)}>{tx.fuelQuantity ? tx.fuelQuantity.toFixed(1) : '—'}</span>

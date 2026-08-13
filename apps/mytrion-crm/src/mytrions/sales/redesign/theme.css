@@ -1068,6 +1068,9 @@ html,body{height:100%;margin:0}
   .ss-root .ss-panels{padding-left:16px!important;padding-right:16px!important}
 }
 @media (width < 640px){
+  /* Result stat tiles (balance, account status, payments) reflow rather than squeeze: three
+     dollar figures on one phone row leaves ~90px per tile and truncates the amount. */
+  .ss-root .ss-pay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .ss-root .ss-main-topbar{gap:9px!important;padding-left:12px!important;padding-right:12px!important}
   .ss-root .ss-main-topbar>div:last-child{display:none}
   .ss-root .ss-panels{padding:16px 12px!important}

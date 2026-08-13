@@ -47,7 +47,7 @@ describe('loadClientCards', () => {
     });
 
     await expect(loadClientCards(carrierId)).resolves.toEqual([{
-      num: '•••• 7340',
+      num: '•••• 317340',
       status: 'ACTIVE',
       tone: 'var(--ok)',
       cardType: 'TCH',
@@ -72,7 +72,7 @@ describe('loadClientCards', () => {
     callTouchpointMock.mockRejectedValue(new Error('EFS unavailable'));
 
     await expect(loadClientCards(carrierId)).resolves.toEqual([{
-      num: '•••• 7340',
+      num: '•••• 317340',
       status: 'INACTIVE',
       tone: 'var(--muted)',
       cardType: 'TCH',
@@ -94,7 +94,7 @@ describe('loadClientCards', () => {
     });
 
     await expect(loadClientCards(carrierId)).resolves.toEqual([{
-      num: '•••• 7340',
+      num: '•••• 317340',
       status: 'ACTIVE',
       tone: 'var(--ok)',
       cardType: null,
@@ -120,7 +120,7 @@ describe('loadClientCards', () => {
     });
 
     await expect(loadClientCards(carrierId)).resolves.toEqual([{
-      num: '•••• 7340',
+      num: '•••• 317340',
       status: 'ACTIVE',
       tone: 'var(--ok)',
       cardType: null,
