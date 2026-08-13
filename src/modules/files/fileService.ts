@@ -110,10 +110,13 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
 export async function presignFile(
   ctx: TenantContext,
   fileId: string,
+  opts: { download?: boolean } = {},
 ): Promise<{ file: FileAsset; url: string; expiresAt: string }> {
   const file = await fileRepo.findVisible(ctx, fileId);
   if (!file) throw new NotFoundError('File not found');
-  const link = await storageFor(file.storageProvider).presignGet(file.s3Key, { filename: file.name });
+  const link = await storageFor(file.storageProvider).presignGet(file.s3Key, {
+    ...(opts.download === false ? {} : { filename: file.name }),
+  });
   return { file, url: link.url, expiresAt: link.expiresAt.toISOString() };
 }
 

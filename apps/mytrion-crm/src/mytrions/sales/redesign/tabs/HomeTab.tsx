@@ -16,7 +16,7 @@ import { Icon, type IconName } from '../icons';
 import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_END_HOUR } from '../salesData';
 import { useSessionUser } from '../sessionUser';
 import { CALL_TO_ACTIONS } from '../../data';
-import { invalidateInboxCache, loadSnapshot, loadAnnouncements, loadActivity, loadInbox, numFmt, money, setInboxRead, type AnnVM, type InboxVM } from '../live';
+import { invalidateInboxCache, loadSnapshot, loadActivity, loadInbox, numFmt, money, setInboxRead, type InboxVM } from '../live';
 import { getAppStats } from '@/api/dataCenter';
 import { useCachedLoad } from '../dcCache';
 import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
@@ -31,10 +31,10 @@ import {
   isNewBest,
   claimCelebration,
 } from '../streakStore';
-import { AnnouncementsRailSkeleton, SnapshotCardsSkeleton, InboxListSkeleton } from './HomeSkeleton';
+import { SnapshotCardsSkeleton, InboxListSkeleton } from './HomeSkeleton';
 import { SalesPage } from '../SalesPage';
+import { SalesAnnouncementCenter } from '../SalesAnnouncementCenter';
 
-type AnnItem = AnnVM;
 type InboxItem = InboxVM;
 type InboxType = InboxVM['type'];
 
@@ -155,7 +155,6 @@ export function HomeTab() {
   // background — no cold refetch storm, no whole-page loader. Keyed by the acted-as subject.
   const snap = useCachedLoad(`sales:home:snapshot:${homeKey}`, () => loadSnapshot(), { staleMs: 60_000 });
   const dailyAct = useCachedLoad(`sales:home:activityToday:${homeKey}`, () => loadActivity('today'), { staleMs: 60_000 });
-  const ann = useCachedLoad(`sales:home:announcements:${homeKey}`, () => loadAnnouncements(), { staleMs: 120_000 });
   const inbox = useCachedLoad(`sales:home:inbox:${homeKey}`, () => loadInbox(), { staleMs: 30_000 });
   // Real per-day applications (owner-scoped): pass the acted-as zoho_user_id, else app-stats zeros out.
   const appStats = useCachedLoad(`sales:home:appStats:${homeKey}`, () => getAppStats(currentUserId || undefined), { staleMs: 60_000 });
@@ -204,21 +203,6 @@ export function HomeTab() {
     });
   };
 
-  const openAnn = (a: AnnItem): void => {
-    openDetail({
-      title: a.title,
-      body: a.body,
-      icon: a.icon,
-      iconStyle: iconBox(a.color, 44),
-      metaLabel: 'Posted:',
-      meta: a.time,
-      badges: [
-        badge(a.type.toUpperCase(), a.color),
-        badge(a.prio, a.prio === 'High' ? 'var(--orange)' : 'var(--muted)'),
-      ],
-    });
-  };
-
   // ---- derived view-model (mirrors renderVals) ----
   const T = timeParts();
   const timeOfDay = T.tod;
@@ -231,7 +215,6 @@ export function HomeTab() {
   const hourLabel = (h: number): string => `${((h + 11) % 12) + 1}:00 ${h < 12 ? 'AM' : 'PM'}`;
   const workdayStartLabel = hourLabel(WORKDAY_START_HOUR);
   const workdayEndLabel = hourLabel(WORKDAY_END_HOUR);
-  const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
   // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
   const appsLoading = appStats.loading && !appStats.data;
@@ -484,28 +467,7 @@ export function HomeTab() {
       )}
 
       <>
-          {/* announcements */}
-          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
-            <div style={s('display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
-            <span style={s('font-size:12px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
-          </div>
-          {ann.loading ? (
-            <AnnouncementsRailSkeleton />
-          ) : (
-          <div className="ss-home-announcements" style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
-            {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
-            {!ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
-            {annData.map((a) => (
-              <div key={a.title} {...clickable(() => openAnn(a))} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
-                <div style={s(iconBox(a.color, 40))}><Icon name={a.icon} size={18} /></div>
-                <div style={s('min-width:0')}>
-                  <div style={s('font-size:14px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
-                  <div style={s('font-size:12px;color:var(--muted);margin-top:4px')}>{a.time}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          )}
+          <SalesAnnouncementCenter />
 
           {/* snapshot */}
           <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>

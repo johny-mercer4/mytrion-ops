@@ -58,6 +58,7 @@ export default defineConfig({
     './src/db/schema/mytrion_rejection_reports.ts',
     './src/db/schema/sales_kpi.ts',
     './src/db/schema/mytrion_worker_tasks.ts',
+    './src/db/schema/mytrion_announcements.ts',
     './src/db/schema/hr_employees.ts',
     './src/db/schema/hr_departments.ts',
     './src/db/schema/hr_attendance_shifts.ts',

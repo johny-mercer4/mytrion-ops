@@ -1,0 +1,98 @@
+.hr-rt {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.hr-rt:focus-within {
+  border-color: var(--color-ring);
+}
+
+.hr-rt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1_5);
+  border-block-end: 1px solid var(--border-default);
+  background: var(--surface);
+}
+
+.hr-rt-tools {
+  display: inline-flex;
+  gap: var(--space-0_5);
+}
+
+.hr-rt-icon-btn,
+.hr-rt-toggle {
+  display: inline-flex;
+  min-inline-size: var(--space-8);
+  min-block-size: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+.hr-rt-icon-btn:hover:not(:disabled),
+.hr-rt-toggle:hover,
+.hr-rt-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: var(--accent-soft);
+}
+
+.hr-rt-icon-btn:disabled {
+  color: var(--disabled-fg);
+  cursor: var(--disabled-cursor);
+}
+
+.hr-rt-input {
+  display: block;
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  border: 0;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--lh-lg);
+}
+
+.hr-rt-preview {
+  min-block-size: 108px;
+  padding: var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-lg);
+}
+
+.hr-rt-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+@media (width < 900px) {
+  .hr-rt-input {
+    font-size: var(--text-input-mobile);
+  }
+}

@@ -1,0 +1,303 @@
+.an-tiptap {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+  color: var(--text-primary);
+}
+
+.an-tiptap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.an-tiptap-toolbar {
+  display: flex;
+  min-block-size: 3rem;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  border-block-end: 1px solid var(--border-default);
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+
+.an-tiptap-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline-end: var(--space-1);
+  border-inline-end: 1px solid var(--border-default);
+}
+
+.an-tiptap-group:last-child {
+  border-inline-end: 0;
+}
+
+.an-tiptap-tool {
+  display: inline-grid;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.an-tiptap-tool:hover:not(:disabled),
+.an-tiptap-tool:focus-visible {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.an-tiptap-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+}
+
+.an-tiptap-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.an-tiptap-glyph {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.an-tiptap-tool[aria-label='Underline'] .an-tiptap-glyph {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.an-tiptap-tool[aria-label='Strikethrough'] .an-tiptap-glyph {
+  text-decoration: line-through;
+}
+
+.an-tiptap-tool[aria-label='Align left'] .an-tiptap-glyph {
+  transform: skewY(0deg);
+}
+
+.an-tiptap-tool[aria-label='Align right'] .an-tiptap-glyph {
+  transform: rotate(180deg);
+}
+
+.an-tiptap-heading {
+  position: relative;
+  display: flex;
+  min-inline-size: 8.5rem;
+  align-items: center;
+}
+
+.an-tiptap-heading select {
+  inline-size: 100%;
+  block-size: 2.25rem;
+  appearance: none;
+  padding: 0 2rem 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.an-tiptap-heading select:hover,
+.an-tiptap-heading select:focus-visible {
+  outline: 0;
+  background: var(--surface-raised);
+}
+
+.an-tiptap-heading .ds-icon {
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  pointer-events: none;
+}
+
+.an-tiptap-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.an-tiptap-content {
+  min-block-size: 20rem;
+  max-block-size: 40rem;
+  overflow-y: auto;
+  padding: var(--space-3);
+  outline: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--lh-lg);
+}
+
+.an-layout[data-editor-expanded='true'] .an-tiptap-content {
+  min-block-size: clamp(30rem, 58dvh, 48rem);
+  max-block-size: 64rem;
+}
+
+.an-tiptap-content:empty::before {
+  color: var(--text-muted);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.an-tiptap-content h2,
+.an-tiptap-content h3,
+.an-tiptap-content p,
+.an-tiptap-content ul,
+.an-tiptap-content ol,
+.an-tiptap-content blockquote,
+.an-tiptap-content table {
+  margin-block: 0 0.75em;
+}
+
+.an-tiptap-content h2 {
+  font-size: var(--text-xl);
+}
+
+.an-tiptap-content h3 {
+  font-size: var(--text-lg);
+}
+
+.an-tiptap-content ul,
+.an-tiptap-content ol {
+  padding-inline-start: 1.5rem;
+}
+
+.an-tiptap-content ul {
+  list-style: disc;
+}
+
+.an-tiptap-content ol {
+  list-style: decimal;
+}
+
+.an-tiptap-content blockquote {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--accent);
+  color: var(--text-secondary);
+}
+
+.an-tiptap-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.an-tiptap-content img {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+  margin-inline: auto;
+  border-radius: var(--radius-card, var(--radius-control));
+}
+
+.an-tiptap-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.an-tiptap-content .tableWrapper {
+  margin-block: var(--space-3);
+  overflow-x: auto;
+}
+
+.an-tiptap-content table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.an-tiptap-content th,
+.an-tiptap-content td {
+  position: relative;
+  min-inline-size: 5rem;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  vertical-align: top;
+}
+
+.an-tiptap-content th {
+  background: var(--surface-raised);
+  font-weight: 700;
+}
+
+.an-tiptap-content .selectedCell::after {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.an-tiptap-content .column-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -2px;
+  inline-size: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.an-tiptap-content hr {
+  margin-block: var(--space-4);
+  border: 0;
+  border-block-start: 1px solid var(--border-default);
+}
+
+.an-tiptap-foot {
+  display: flex;
+  min-block-size: 2.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-block-start: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.an-tiptap-foot [role='status'] {
+  min-inline-size: 0;
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.an-editor-hidden-input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (width < 640px) {
+  .an-tiptap-toolbar {
+    align-items: stretch;
+    padding-block: var(--space-1);
+  }
+
+  .an-tiptap-content {
+    min-block-size: 18rem;
+  }
+
+  .an-tiptap-foot {
+    flex-wrap: wrap;
+  }
+
+  .an-tiptap-foot > :last-child {
+    inline-size: 100%;
+    text-align: end;
+  }
+}

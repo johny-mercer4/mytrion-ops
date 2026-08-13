@@ -15428,6 +15428,131 @@ Backend 2581 green (6 pilot tests, 4 catalog tests, and the existing invite-rout
 the pilot agent with a new case proving a non-pilot Sales agent gets 403 on both routes).
 CRM 851 green. Both vendored bundles rebuilt.
 
+## 2026-08-13 — Sales announcements: Manager publish → agent acknowledgement
+
+Implemented the approved Issue 12 path as one tenant-scoped announcement lifecycle:
+
+- Manager → Sales now has an Announcements workspace with a Markdown composer, live agent preview,
+  department targeting, standard/high priority, validation, and a published list. The compact layout
+  switches between Compose and Preview so neither pane is squeezed on a phone.
+- Sales Home now separates targeted announcements into New and Archive. Opening an item is read-only;
+  Close leaves it unread, while Got it writes one idempotent per-agent receipt and moves it to Archive.
+- Added `mytrion_announcements` and `mytrion_announcement_reads`, migration 0117, repository-only DB
+  access, management/Sales department gates, tenant and audience conditions in every read/write query,
+  audit events, and `/v1/manager/announcements` + `/v1/announcements` routes.
+- Reused the sanitized Markdown renderer for body content and extracted the existing HR Markdown editor
+  styles so the shared editor remains usable outside HR without inheriting HR page selectors.
+
+Verification: announcement route tests 6/6, CRM tests 855/855, backend and CRM typechecks green,
+lint green with 23 existing warnings, widget production build green, Drizzle reports no ungenerated
+schema changes. Desktop and 390px visual QA covered Manager Compose/Preview plus Sales New/detail/Close/
+Got it/Archive. The full backend suite still has unrelated baseline/environment failures (109 of 2618,
+including localhost WebSocket `EPERM`, profile-gate expectations, and timeouts); the feature suite is
+green in isolation.
+
+## 2026-08-13 — Announcements become a company publishing workspace
+
+Follow-up to Issue 12 moved Announcements out of the Sales department desk and into the Manager
+Overview's Workspaces row. One composer now targets any combination of Sales, Customer Service,
+Billing, Collection, Finance, Mobile, and Verification; the reader API is internal/audience-scoped
+instead of Sales-gated, and repository audience predicates still decide which rows a worker may see.
+
+The body field is now a publishing editor: H2/H3, bold/italic, quote, bulleted/numbered lists, links,
+left/center/right alignment, Write/Preview, image uploads, and general file attachments. Uploaded
+assets are stored through the existing governed file service. Announcement bodies persist durable
+file-id tokens, never expiring presigned URLs; readers resolve a fresh RBAC-checked URL when an image
+is displayed or a file is downloaded. Markdown remains sanitized and raw HTML remains disabled.
+
+Added idempotent per-worker view receipts and a manager-side unique view count. Opening records a
+view without acknowledging the post; Close preserves New, while Got it remains the explicit read /
+archive action.
+
+Verification: backend and CRM typechecks green; announcement backend tests 7/7; CRM 858/858; token,
+breakpoint, upload, alignment, durable-asset, and signed-link tests green; Drizzle reports no schema
+drift after migration 0118; production widget rebuilt. Local browser QA at 1280px and 390px covered
+the Manager workspace entry, full toolbar, live preview, local image upload, fresh asset rendering,
+and compact Write/Preview mode with no browser errors.
+
+## 2026-08-13 — Announcement composer upgraded to CKEditor 5
+
+Replaced the hand-built Markdown/token toolbar with the official CKEditor 5 React integration. The
+composer now emits sanitized rich HTML and supports headings, inline styles, lists, quotes, links,
+alignment, tables, horizontal rules, pasted Office content, image captions/styles/resizing, and
+general file attachments. Existing Markdown announcements and durable asset tokens continue to
+render, so this is a forward-compatible authoring upgrade rather than a content migration.
+
+Images use a custom CKEditor upload adapter backed by the governed `/v1/files/upload` endpoint. The
+document stores `/v1/files/:id/content`; that new authenticated route rechecks tenant/audience/file
+visibility and redirects to a fresh inline object-store URL. It deliberately does not store an
+expiring presigned URL. Rich HTML is DOMPurify-sanitized before rendering, style attributes are
+reduced to safe text alignment, unsafe tags/handlers are removed, and image sources are limited to
+that durable file route. Sales/agent cards derive plain-text excerpts from HTML instead of exposing
+markup.
+
+CKEditor controls, dropdowns, link balloons, image/table contextual toolbars, focus states, and the
+required attribution badge now inherit the Mytrion dark/light design tokens. Local browser QA
+uploaded an image through the real adapter and verified it in both the editor and live reader preview
+with no console errors.
+
+Licensing is explicit: local development uses CKEditor's `GPL` key; production requires
+`VITE_CKEDITOR_LICENSE_KEY` and renders a configuration alert if it is absent. Do not deploy the
+commercial application with the GPL key unless the whole distribution satisfies CKEditor's GPL
+terms.
+
+Verification: CRM 859/859; backend announcement/file tests 19/19; backend and CRM typechecks green;
+production widget build green; file inline-presign behavior has a unit test.
+
+## 2026-08-14 — Announcement editor moved to MIT-licensed Tiptap
+
+Replaced CKEditor 5 with Tiptap's open-source MIT packages so the commercial Mytrion application
+does not need an editor license key, vendor account, cloud service, or editor-load subscription.
+No Tiptap Pro or cloud packages are used. Removed the CKEditor dependencies and
+`VITE_CKEDITOR_LICENSE_KEY` configuration entirely.
+
+The CRM-themed composer retains headings, inline formatting, lists, quotes, links, alignment,
+tables and row/column controls, horizontal rules, resizable images, governed image uploads, and
+general file attachments. Durable authenticated file URLs and DOMPurify rendering remain unchanged.
+
+Verification: CRM tests 859/859; CRM typecheck green; token and breakpoint contracts green;
+production widget build green. Local browser QA covered formatting, image upload in editor and live
+preview, table controls, desktop and compact layouts, with no CKEditor attribution or console errors.
+
+## 2026-08-14 — Published announcement reader and authenticated images
+
+Managers can now open any row in Published to inspect the complete historical announcement inline.
+The disclosure includes its rich body, audience, exact publish time, priority, and unique view count;
+only one record is expanded at a time and the summary remains keyboard accessible.
+
+Fixed image attachments across Manager and worker readers. Selecting an image through either Upload
+image or Attach file now inserts an image node instead of a filename link. Rich announcement images
+are resolved through the authenticated file API to a fresh object-store URL, so they work in desktop
+clients that cannot attach a bearer token to a raw `<img>` request. Historical filename links are
+also upgraded to images when their governed file MIME type is an image. The download response now
+includes that MIME type; non-image attachments remain links.
+
+Verification: CRM tests 863/863; root and CRM typechecks green; file-service tests 12/12; production
+widget build green. Browser QA published an image through Attach file, confirmed it in the editor and
+live preview, reopened it from Published, and verified the resolved image with no console errors.
+
+Follow-up: Tiptap now keeps two intentional image URLs. Its live node uses the fresh signed upload URL
+so the image is visible inside the editor (including the resize UI), while serialization replaces it
+with `/v1/files/:id/content` before the body reaches React state or the publish API. This prevents an
+expired object-store URL from being persisted. Image-only announcements are also classified as rich
+content and render in both live and published previews.
+
+The Manager composer now takes the full workspace width with a responsive 30–48rem writing canvas.
+The targeted-agent proof moves below the composer at a readable phone-card width, preserving full
+formatting controls and article space without removing the compact Compose/Preview tabs.
+
+UX refinement: the familiar composer + targeted-agent preview split is again the default at desktop
+widths. The composer header now exposes an accessible Expand editor toggle; expanding switches the
+workspace to one column and grows the writing canvas to 30–48rem, while Restore split view returns to
+the compact 20rem editor and side-by-side preview. Narrow screens remain one column automatically.
+
+Markdown import: managers can load `.md` or `.markdown` articles from the composer header. The first
+H1 fills an empty announcement title and is removed from the body; GFM is converted to editor HTML
+with raw source HTML disabled. Import appends below an existing draft rather than overwriting it,
+rejects files over 1 MB, and enforces the existing 10,000-character published HTML limit.
 ## 2026-08-13 — Sales Verification: card vs detail mapping, Horizon glass
 
 Sales → Verification roster cards and the pipeline detail were lying to each other.
