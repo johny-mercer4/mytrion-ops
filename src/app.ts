@@ -47,6 +47,7 @@ import { carrierMiniAppAuthRoutes } from './routes/v1/carrierMiniAppAuth.routes.
 import { carrierMiniAppReportRoutes } from './routes/v1/carrierMiniAppReports.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { horizonTelegramRoutes } from './routes/v1/horizonTelegram.routes.js';
+import { horizonTelegramExportRoutes } from './routes/v1/horizonTelegramExport.routes.js';
 import { horizonTelegramLinkRoutes } from './routes/v1/horizonTelegramLink.routes.js';
 import { commsRoutes } from './routes/v1/comms.routes.js';
 import { commsAdminRoutes } from './routes/v1/commsAdmin.routes.js';
@@ -438,6 +439,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(carrierMiniAppActionsRoutes);
       await v1.register(horizonTelegramRoutes);
       await v1.register(horizonTelegramLinkRoutes);
+      await v1.register(horizonTelegramExportRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);

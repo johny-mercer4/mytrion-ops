@@ -91,6 +91,57 @@ async function callHorizonBot<T = unknown>(
   return json.result as T;
 }
 
+/** Thrown when Telegram refuses the send because the worker has never opened a chat with Horizon. */
+export class HorizonTelegramChatUnreachableError extends Error {
+  constructor(description: string) {
+    super(description);
+    this.name = 'HorizonTelegramChatUnreachableError';
+  }
+}
+
+function isChatUnreachable(description: string): boolean {
+  return /bot can't initiate conversation|bot was blocked|user is deactivated|chat not found/i.test(
+    description,
+  );
+}
+
+/**
+ * Upload a file to a Horizon worker chat as a Telegram document.
+ *
+ * Uses HORIZON_BOT_TOKEN only. Never TELEGRAM_BOT_TOKEN / TELEGRAM_CARRIER_BOT_TOKEN.
+ * Multipart is required — a JSON body only works for an already-uploaded file_id.
+ */
+export async function sendHorizonDocument(opts: {
+  chatId: number | string;
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array;
+}): Promise<void> {
+  const token = env.HORIZON_BOT_TOKEN;
+  if (!token) throw new Error('Horizon bot is not configured (HORIZON_BOT_TOKEN is empty).');
+  if (horizonBotSharesClientToken()) {
+    throw new Error(
+      'HORIZON_BOT_TOKEN equals TELEGRAM_BOT_TOKEN or TELEGRAM_CARRIER_BOT_TOKEN — refusing sendDocument',
+    );
+  }
+
+  const form = new FormData();
+  form.append('chat_id', String(opts.chatId));
+  form.append(
+    'document',
+    new Blob([new Uint8Array(opts.bytes)], { type: opts.contentType }),
+    opts.fileName,
+  );
+
+  const res = await fetch(`${API_ROOT}/bot${token}/sendDocument`, { method: 'POST', body: form });
+  const json = (await res.json()) as { ok: boolean; description?: string };
+  if (!json.ok) {
+    const description = json.description ?? String(res.status);
+    if (isChatUnreachable(description)) throw new HorizonTelegramChatUnreachableError(description);
+    throw new Error(`[telegram-horizon-bot] sendDocument failed: ${description}`);
+  }
+}
+
 export async function sendHorizonOpenPrompt(chatId: number | string): Promise<void> {
   const miniAppUrl = resolveHorizonMiniAppUrl();
   if (!miniAppUrl) {

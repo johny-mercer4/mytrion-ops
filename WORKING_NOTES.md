@@ -15730,3 +15730,14 @@ First slice only: persist Telegram credentials when a worker signs in with Zoho 
 
 **Gaps for the sendDocument slice:** lookup by `telegram_chat_id` (private chat ≈ user id, already stored), Bot API `sendDocument` on `HORIZON_BOT_TOKEN`, download-button wiring in CRM, and what to do when the worker has not opened `/start` yet (chat_id still equals user id from initData, which is enough for private chat).
 
+## 2026-08-13 — Horizon Telegram upsert + Mini App file delivery
+
+Two slices on `hotfix/Mytrion`. No `telegram_octane_users` table. Carrier mini-app / `TELEGRAM_BOT_TOKEN` untouched.
+
+**1. No duplicate `horizon_worker_telegram_links` rows.** Unique indexes already exist (`horizon_worker_tg_links_tenant_zoho_uk`, `horizon_worker_tg_links_tenant_tg_uk`). `planHorizonTelegramWebAppBind` + `upsertWebAppBind` look up tenant+zoho and tenant+telegram inside a transaction: same pair or same zoho re-login → UPDATE (telegram ids, username, chat_id, zoho snapshot, `updated_at`); same telegram already bound to another zoho → `TELEGRAM_LINKED_TO_OTHER_WORKER` (no insert). Unique-violation catch is the belt-and-suspenders.
+
+**2. Mini App exports via Horizon `sendDocument`; desktop unchanged.** Shared CRM helper `deliverExport` (`apps/mytrion-crm/src/lib/deliverExport.ts`): if `isTelegramWebView()` is false, existing `deliverBlob` / `<a download>` / `MytrionDownload` path (invoices still use the Zoho-webview signed-URL carve-out when *not* in Telegram). Inside Telegram WebView, POST the blob to `POST /v1/horizon/telegram/export-send` (Zoho Bearer, `impersonate:false`). API `sendHorizonDocumentToLinkedWorker` looks up `horizon_worker_telegram_links` by session zoho id (tenant-scoped) and calls `sendHorizonDocument` on **HORIZON_BOT_TOKEN only**. Unlinked → 409 `TELEGRAM_CHAT_UNLINKED` + toast to open Mini App after Zoho login. Success toast: "Sent — check your Horizon bot chat".
+
+Call sites: Sales invoices (`downloadInvoice`), C-15 txn report, C-30 card lookup, verification attachments; Billing debtors/prepay XLSX + opening template/export/rejected; CS CITI CSV + maintenance attachments (bytes route for Telegram CORS); Marketing loyalty + referrals; Analyst reports; HR attendance CSV.
+
+Deferred: Admin "Octane Telegram Users" directory UI (untracked); signed-URL desktop path for maintenance attachments is unchanged.

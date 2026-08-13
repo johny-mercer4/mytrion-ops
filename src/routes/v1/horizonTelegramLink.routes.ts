@@ -1,35 +1,27 @@
 /**
- * POST /horizon/telegram/link — bind Horizon Mini App Telegram identity after Zoho login.
+ * Horizon Mini App Telegram identity.
  *
- * Auth is the Zoho Bearer session. initData is HMAC-verified with HORIZON_BOT_TOKEN and is not
- * a login. Never logs raw initData or the bot token.
+ * POST /horizon/telegram/link — bind after Zoho login (HMAC initData, not a login).
+ * POST /horizon/telegram/export-send is registered separately (multipart sendDocument).
+ *
+ * Never logs raw initData or the bot token.
  */
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import {
   parseHorizonInitDataIdentity,
   verifyHorizonInitData,
 } from '../../integrations/telegramHorizonBot.js';
-import { AppError, AuthError, RBACError, ValidationError } from '../../lib/errors.js';
+import { AppError, AuthError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { zohoUserIdFromContext } from '../../modules/horizon/telegramLink.js';
 import { horizonWorkerTelegramRepo } from '../../repos/horizonWorkerTelegramRepo.js';
 import { requireContext } from './helpers.js';
 
 const linkBodySchema = z.object({
   initData: z.string().min(1).max(8_192),
 });
-
-function zohoUserIdFromSession(request: FastifyRequest): string {
-  const ctx = requireContext(request);
-  if (ctx.audience !== 'internal') {
-    throw new RBACError('Horizon Telegram link is internal-only');
-  }
-  if (!ctx.sessionVerified || !ctx.userId.startsWith('zoho:')) {
-    throw new RBACError('Only Zoho-signed-in workers can link Telegram');
-  }
-  return ctx.userId.slice('zoho:'.length);
-}
 
 export async function horizonTelegramLinkRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -43,8 +35,8 @@ export async function horizonTelegramLinkRoutes(app: FastifyInstance): Promise<v
         });
       }
 
-      const zohoUserId = zohoUserIdFromSession(request);
       const ctx = requireContext(request);
+      const zohoUserId = zohoUserIdFromContext(ctx);
       const { initData } = linkBodySchema.parse(request.body ?? {});
 
       const verified = verifyHorizonInitData(initData);

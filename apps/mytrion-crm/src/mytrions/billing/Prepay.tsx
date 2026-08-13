@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchPrepayCompanies, fetchPrepayExternals, fetchPrepayLedger, fetchPrepayRmve } from '@/api/billing';
 import type { BillingPrepayCompanies, BillingPrepayLedger } from '@/api/touchpointTypes';
 import { chunkErrorMessage, isChunkLoadError } from '@/lib/chunkError';
+import { deliverExport } from '@/lib/deliverExport';
 import { useLoad } from '../_shared/useLoad';
 import { fmtCurrency } from './data';
 
@@ -929,14 +930,7 @@ async function exportLedgerXlsx(
   });
   const safe = company.companyName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'company';
   const fname = `Prepay_Ledger_${company.carrierId}_${safe}_${detailRange.start}_${detailRange.end}.xlsx`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fname;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  await deliverExport(blob, fname);
 }
 
 function PrepayLedgerModal({

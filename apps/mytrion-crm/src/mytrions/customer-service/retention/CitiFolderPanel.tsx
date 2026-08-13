@@ -11,26 +11,14 @@ import { useLoad } from '../live';
 import { subscribeCsRetentionLive } from './retentionLiveBus';
 import { CaseBadge, statusLabel, statusTone } from './casesUi';
 import { DataTable, type DataColumn } from '@/ds';
+import { deliverExport } from '@/lib/deliverExport';
 
 function toastMsg(kind: ToastState['kind'], message: string): ToastState {
   return { id: Date.now(), kind, message };
 }
 
-function downloadCsv(csv: string, filename: string): void {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  // Firefox ignores a click on an anchor that isn't in the document, and revoking the URL in the
-  // same tick can cancel a download that hasn't started reading yet — hence append + deferred revoke.
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, 0);
+async function downloadCsv(csv: string, filename: string): Promise<void> {
+  await deliverExport(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
 }
 
 export function CitiFolderPanel() {
@@ -216,7 +204,7 @@ export function CitiFolderPanel() {
               void run(async () => {
                 const count = selected.length;
                 const out = await csRetention.citiExport(selected);
-                downloadCsv(out.csv, `citi-export-${new Date().toISOString().slice(0, 10)}.csv`);
+                await downloadCsv(out.csv, `citi-export-${new Date().toISOString().slice(0, 10)}.csv`);
                 // Surface partial Zoho failures instead of letting the success line bury them.
                 return out.zohoFailures.length > 0
                   ? toastMsg(

@@ -4,6 +4,9 @@
  * The Mini App bind is Zoho Bearer + HMAC-verified initData. Webhook /start never creates a
  * worker identity; it only refreshes chat_id/username on a row that already exists.
  */
+import { RBACError } from '../../lib/errors.js';
+import type { TenantContext } from '../../types/tenantContext.js';
+
 export interface HorizonTelegramLinkKeys {
   id: string;
   zohoUserId: string;
@@ -47,4 +50,15 @@ export function planHorizonTelegramWebAppBind(input: {
   if (byZoho) return { action: 'update', id: byZoho.id };
   if (byTelegram) return { action: 'update', id: byTelegram.id };
   return { action: 'insert' };
+}
+
+/** Zoho worker id from a verified internal session. Never taken from the request body. */
+export function zohoUserIdFromContext(ctx: TenantContext): string {
+  if (ctx.audience !== 'internal') {
+    throw new RBACError('Horizon Telegram is internal-only');
+  }
+  if (!ctx.sessionVerified || !ctx.userId.startsWith('zoho:')) {
+    throw new RBACError('Only Zoho-signed-in workers can use Horizon Telegram');
+  }
+  return ctx.userId.slice('zoho:'.length);
 }

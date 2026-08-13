@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { env } from '../../src/config/env.js';
 import {
   buildHorizonOpenUrl,
@@ -12,6 +12,7 @@ import {
   verifyHorizonInitData,
   verifyHorizonWebhookSecret,
   parseHorizonInitDataIdentity,
+  sendHorizonDocument,
   WEBHOOK_PATH,
 } from '../../src/integrations/telegramHorizonBot.js';
 
@@ -110,3 +111,29 @@ describe('Horizon URLs and /start', () => {
     expect(isHorizonStartCommand(undefined)).toBe(false);
   });
 });
+
+describe('sendHorizonDocument token isolation', () => {
+  it('POSTs sendDocument with HORIZON_BOT_TOKEN, never the client bot tokens', async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      expect(String(url)).toContain(`/bot${env.HORIZON_BOT_TOKEN}/sendDocument`);
+      expect(String(url)).not.toContain(`/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`);
+      expect(String(url)).not.toContain(`/bot${env.TELEGRAM_CARRIER_BOT_TOKEN}/sendDocument`);
+      return {
+        json: async () => ({ ok: true }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await sendHorizonDocument({
+        chatId: '99',
+        fileName: 'report.csv',
+        contentType: 'text/csv',
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+

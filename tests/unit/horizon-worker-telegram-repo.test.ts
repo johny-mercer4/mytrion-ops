@@ -136,6 +136,16 @@ describe('planHorizonTelegramWebAppBind', () => {
     });
     expect(plan.action).toBe('conflict');
   });
+
+  it('updates the same row when the same zoho and telegram re-login', () => {
+    expect(
+      planHorizonTelegramWebAppBind({
+        byZoho: ROW,
+        byTelegram: ROW,
+        zohoUserId: 'zoho-ada',
+      }),
+    ).toEqual({ action: 'update', id: ROW.id });
+  });
 });
 
 describe('every Horizon telegram-link read is bound to the caller tenant', () => {
@@ -206,6 +216,45 @@ describe('Horizon telegram-link writes cannot cross tenants', () => {
       expect(w.params).toContain('tenant_acme');
       expect(w.params).not.toContain('tenant_rival');
     }
+  });
+
+  it('same zoho re-login updates telegram fields and never inserts a second row', async () => {
+    resultQueue = [
+      [ROW],
+      [ROW],
+      [{ ...ROW, telegramUsername: 'ada2', telegramChatId: '99' }],
+    ];
+    await horizonWorkerTelegramRepo.upsertWebAppBind(ACME, {
+      zohoUserId: 'zoho-ada',
+      telegramUserId: '99',
+      telegramChatId: '99',
+      telegramUsername: 'ada2',
+      zohoUsername: 'Ada Lovelace',
+    });
+    expect(calls.some((c) => c.method === 'insert')).toBe(false);
+    expect(calls.some((c) => c.method === 'update')).toBe(true);
+    const set = writtenPayloads().find((p) => p.updatedAt !== undefined);
+    expect(set).toMatchObject({
+      telegramUserId: '99',
+      telegramChatId: '99',
+      telegramUsername: 'ada2',
+      zohoUsername: 'Ada Lovelace',
+      status: 'active',
+    });
+    expect(set?.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses to attach the same telegram id to a second zoho user', async () => {
+    resultQueue = [[], [{ ...ROW, zohoUserId: 'zoho-other' }]];
+    await expect(
+      horizonWorkerTelegramRepo.upsertWebAppBind(ACME, {
+        zohoUserId: 'zoho-ada',
+        telegramUserId: '99',
+        telegramChatId: '99',
+      }),
+    ).rejects.toMatchObject({ code: 'TELEGRAM_LINKED_TO_OTHER_WORKER' });
+    expect(calls.some((c) => c.method === 'insert')).toBe(false);
+    expect(calls.some((c) => c.method === 'update')).toBe(false);
   });
 
   it('bot /start refresh never writes zoho_user_id and always filters by tenant + telegram id', async () => {

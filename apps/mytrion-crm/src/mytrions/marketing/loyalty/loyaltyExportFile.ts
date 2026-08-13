@@ -11,19 +11,9 @@
  */
 import type { LoyaltyExportPayload, LoyaltyExportRow } from './loyaltyExportModel';
 import { EXPORT_COLUMNS, exportFileStem } from './loyaltyExportModel';
+import { deliverExport } from '@/lib/deliverExport';
 
 export type LoyaltyExportFormat = 'xlsx' | 'csv';
-
-function deliverBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 4_000);
-}
 
 /**
  * CSV rendering of one cell.
@@ -62,7 +52,7 @@ export async function downloadLoyaltyExport(
 ): Promise<void> {
   const stem = exportFileStem(payload.roster, payload.scope);
   if (format === 'csv') {
-    deliverBlob(
+    await deliverExport(
       new Blob([buildLoyaltyCsv(payload.rows)], { type: 'text/csv;charset=utf-8' }),
       `${stem}.csv`,
     );
@@ -75,7 +65,7 @@ export async function downloadLoyaltyExport(
   const workbook = new ExcelJS.Workbook();
   buildLoyaltyWorkbook(workbook, payload, generatedAt);
   const buffer = await workbook.xlsx.writeBuffer();
-  deliverBlob(
+  await deliverExport(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),

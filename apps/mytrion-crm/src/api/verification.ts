@@ -9,6 +9,7 @@
  * `Verification_Decision` being a FILE, not a decision value).
  */
 import { request, requestBlob, requestMultipart } from './transport';
+import { deliverExport } from '../lib/deliverExport';
 
 const V_HEADERS = { 'x-department-access': 'sales' } as const;
 
@@ -290,14 +291,7 @@ export async function generatePlaidLink(input: {
 
 export async function downloadVerificationAttachment(id: string, fileName: string): Promise<void> {
   const blob = await requestBlob(`/verification/attachments/${id}/download`, { headers: V_HEADERS });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName || `attachment-${id}`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  await deliverExport(blob, fileName || `attachment-${id}`);
 }
 
 export async function sendVerificationResponse(input: {
