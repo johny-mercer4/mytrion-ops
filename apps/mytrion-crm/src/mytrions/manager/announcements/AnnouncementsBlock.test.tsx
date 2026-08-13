@@ -8,6 +8,21 @@ const publishManagerAnnouncement = vi.fn();
 const uploadAnnouncementAsset = vi.fn();
 const getAnnouncementAssetDownload = vi.fn();
 
+vi.mock('@ckeditor/ckeditor5-react', () => ({
+  CKEditor: ({ data, onChange, config }: {
+    data: string;
+    onChange: (event: unknown, editor: { getData: () => string }) => void;
+    config: { placeholder?: string };
+  }) => (
+    <textarea
+      aria-label="Rich text editor"
+      value={data}
+      placeholder={config.placeholder}
+      onChange={(event) => onChange(event, { getData: () => event.target.value })}
+    />
+  ),
+}));
+
 vi.mock('../../../api/announcements', () => ({
   listManagerAnnouncements: () => listManagerAnnouncements(),
   publishManagerAnnouncement: (input: unknown) => publishManagerAnnouncement(input),
@@ -43,8 +58,8 @@ describe('AnnouncementsBlock', () => {
     fireEvent.change(screen.getByLabelText('Title'), {
       target: { value: 'Q3 Sales Target Update' },
     });
-    fireEvent.change(screen.getByPlaceholderText('Share the update and any next steps…'), {
-      target: { value: 'Target raised to **12,000 gallons**.' },
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
+      target: { value: '<p>Target raised to <strong>12,000 gallons</strong>.</p>' },
     });
 
     const preview = within(screen.getByLabelText('Live targeted-agent preview'));
@@ -57,8 +72,8 @@ describe('AnnouncementsBlock', () => {
     await screen.findByText('No announcements published');
 
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Maintenance' } });
-    fireEvent.change(screen.getByPlaceholderText('Share the update and any next steps…'), {
-      target: { value: 'CRM maintenance starts at 8 PM.' },
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
+      target: { value: '<p>CRM maintenance starts at 8 PM.</p>' },
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Sales' }));
     fireEvent.click(screen.getByRole('radio', { name: 'High priority' }));
@@ -67,37 +82,29 @@ describe('AnnouncementsBlock', () => {
     await waitFor(() =>
       expect(publishManagerAnnouncement).toHaveBeenCalledWith({
         title: 'Maintenance',
-        body: 'CRM maintenance starts at 8 PM.',
+        body: '<p>CRM maintenance starts at 8 PM.</p>',
         targetDepartments: ['sales'],
         priority: 'high',
       }),
     );
     await waitFor(() => expect(listManagerAnnouncements).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('status')).toHaveTextContent('Published to Sales.');
+    expect(screen.getByText('Published to Sales.')).toBeVisible();
   });
 
-  it('formats aligned content and inserts a durable image attachment', async () => {
-    const { container } = render(<AnnouncementsBlock />);
+  it('previews CKEditor headings and alignment from safe HTML', async () => {
+    render(<AnnouncementsBlock />);
     await screen.findByText('No announcements published');
 
-    const editor = screen.getByPlaceholderText('Share the update and any next steps…');
-    fireEvent.change(editor, { target: { value: 'Important route change' } });
-    fireEvent.select(editor, { target: { selectionStart: 0, selectionEnd: 22 } });
-    fireEvent.click(screen.getByRole('button', { name: 'Align center' }));
-    expect(editor).toHaveValue(':::align-center\nImportant route change\n:::');
-
-    const imageInput = container.querySelector<HTMLInputElement>('input[accept="image/*"]');
-    expect(imageInput).not.toBeNull();
-    const image = new File(['image'], 'route-map.png', { type: 'image/png' });
-    fireEvent.change(imageInput!, { target: { files: [image] } });
-
-    await waitFor(() => expect(uploadAnnouncementAsset).toHaveBeenCalledWith(image));
-    await waitFor(() =>
-      expect((editor as HTMLTextAreaElement).value).toContain('[[image:file_1|route-map.png]]'),
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rich text editor' }), {
+      target: {
+        value: '<h2 style="text-align:center">Important route change</h2><script>alert(1)</script>',
+      },
+    });
+    const heading = within(screen.getByLabelText('Live targeted-agent preview')).getByRole(
+      'heading',
+      { name: 'Important route change' },
     );
-    expect(await screen.findByRole('img', { name: 'route-map.png' })).toHaveAttribute(
-      'src',
-      'https://example.test/fresh.png',
-    );
+    expect(heading).toHaveStyle({ textAlign: 'center' });
+    expect(screen.queryByText('alert(1)')).not.toBeInTheDocument();
   });
 });

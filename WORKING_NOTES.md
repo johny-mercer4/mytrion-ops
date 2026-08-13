@@ -15472,3 +15472,32 @@ breakpoint, upload, alignment, durable-asset, and signed-link tests green; Drizz
 drift after migration 0118; production widget rebuilt. Local browser QA at 1280px and 390px covered
 the Manager workspace entry, full toolbar, live preview, local image upload, fresh asset rendering,
 and compact Write/Preview mode with no browser errors.
+
+## 2026-08-13 — Announcement composer upgraded to CKEditor 5
+
+Replaced the hand-built Markdown/token toolbar with the official CKEditor 5 React integration. The
+composer now emits sanitized rich HTML and supports headings, inline styles, lists, quotes, links,
+alignment, tables, horizontal rules, pasted Office content, image captions/styles/resizing, and
+general file attachments. Existing Markdown announcements and durable asset tokens continue to
+render, so this is a forward-compatible authoring upgrade rather than a content migration.
+
+Images use a custom CKEditor upload adapter backed by the governed `/v1/files/upload` endpoint. The
+document stores `/v1/files/:id/content`; that new authenticated route rechecks tenant/audience/file
+visibility and redirects to a fresh inline object-store URL. It deliberately does not store an
+expiring presigned URL. Rich HTML is DOMPurify-sanitized before rendering, style attributes are
+reduced to safe text alignment, unsafe tags/handlers are removed, and image sources are limited to
+that durable file route. Sales/agent cards derive plain-text excerpts from HTML instead of exposing
+markup.
+
+CKEditor controls, dropdowns, link balloons, image/table contextual toolbars, focus states, and the
+required attribution badge now inherit the Mytrion dark/light design tokens. Local browser QA
+uploaded an image through the real adapter and verified it in both the editor and live reader preview
+with no console errors.
+
+Licensing is explicit: local development uses CKEditor's `GPL` key; production requires
+`VITE_CKEDITOR_LICENSE_KEY` and renders a configuration alert if it is absent. Do not deploy the
+commercial application with the GPL key unless the whole distribution satisfies CKEditor's GPL
+terms.
+
+Verification: CRM 859/859; backend announcement/file tests 19/19; backend and CRM typechecks green;
+production widget build green; file inline-presign behavior has a unit test.

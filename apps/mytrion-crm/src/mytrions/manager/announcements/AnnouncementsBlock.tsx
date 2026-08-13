@@ -111,7 +111,11 @@ export function AnnouncementsBlock() {
   const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<'compose' | 'preview'>('compose');
-  const valid = title.trim().length > 0 && body.trim().length > 0 && targets.length > 0;
+  const valid =
+    title.trim().length > 0 &&
+    body.trim().length > 0 &&
+    body.length <= 10_000 &&
+    targets.length > 0;
   const allSelected = targets.length === DEPARTMENTS.length;
   const selectedLabel = useMemo(
     () =>
@@ -130,7 +134,11 @@ export function AnnouncementsBlock() {
 
   const publish = async (): Promise<void> => {
     if (!valid) {
-      setMessage('Add a title, message, and at least one target department.');
+      setMessage(
+        body.length > 10_000
+          ? 'Shorten the message to 10,000 HTML characters before publishing.'
+          : 'Add a title, message, and at least one target department.',
+      );
       return;
     }
     setPublishing(true);

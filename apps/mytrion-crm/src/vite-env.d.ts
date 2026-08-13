@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_SERVERCRM_WS_URL?: string;
   /** Dev-only: set to '1' to bypass Zoho sign-in with a mock admin (uses the API key, no session). */
   readonly VITE_DEV_MOCK_AUTH?: string;
+  /** CKEditor self-hosted production key. Local development falls back to the documented GPL key. */
+  readonly VITE_CKEDITOR_LICENSE_KEY?: string;
 }
 
 interface ImportMeta {

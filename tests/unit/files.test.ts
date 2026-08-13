@@ -10,6 +10,7 @@ vi.mock('../../src/repos/fileRepo.js', async (importOriginal) => {
     fileRepo: {
       ...original.fileRepo,
       create: vi.fn(async (_ctx: unknown, input: Record<string, unknown>) => ({ ...input })),
+      findVisible: vi.fn(),
     },
   };
 });
@@ -19,21 +20,30 @@ import { generateExcel } from '../../src/modules/files/generate/excel.js';
 import { generatePdf } from '../../src/modules/files/generate/pdf.js';
 import { parseFile } from '../../src/modules/files/parse/index.js';
 import { setStorageForTests, type ObjectStorage } from '../../src/modules/files/storage/index.js';
-import { storeFile } from '../../src/modules/files/fileService.js';
+import { presignFile, storeFile } from '../../src/modules/files/fileService.js';
 import { fileRepo } from '../../src/repos/fileRepo.js';
 import { makeContext } from '../fixtures/seed.js';
 
-function mockStorage(): { storage: ObjectStorage; puts: Array<{ key: string; size: number }> } {
+function mockStorage(): {
+  storage: ObjectStorage;
+  puts: Array<{ key: string; size: number }>;
+  presigns: Array<{ key: string; filename?: string }>;
+} {
   const puts: Array<{ key: string; size: number }> = [];
+  const presigns: Array<{ key: string; filename?: string }> = [];
   return {
     puts,
+    presigns,
     storage: {
       put: async (key, body) => void puts.push({ key, size: body.length }),
       getStream: async () => {
         throw new Error('not used');
       },
       getBuffer: async () => Buffer.alloc(0),
-      presignGet: async (key) => ({ url: `https://minio.test/${key}?sig=x`, expiresAt: new Date(Date.now() + 900_000) }),
+      presignGet: async (key, options) => {
+        presigns.push({ key, ...(options?.filename ? { filename: options.filename } : {}) });
+        return { url: `https://minio.test/${key}?sig=x`, expiresAt: new Date(Date.now() + 900_000) };
+      },
       delete: async () => undefined,
     },
   };
@@ -176,5 +186,38 @@ describe('storeFile', () => {
         createdBy: 't',
       }),
     ).rejects.toThrow(/limit/i);
+  });
+});
+
+describe('presignFile', () => {
+  it('omits attachment disposition for durable inline rich-content URLs', async () => {
+    const { storage, presigns } = mockStorage();
+    setStorageForTests(storage);
+    const ctx = makeContext({ tenantId: 'octane' });
+    vi.mocked(fileRepo.findVisible).mockResolvedValue({
+      id: 'file_inline',
+      tenantId: 'octane',
+      audience: 'internal',
+      ownerUserId: 'zoho:42',
+      departmentAccess: null,
+      name: 'announcement.png',
+      mime: 'image/png',
+      sizeBytes: 42,
+      s3Key: 'octane/upload/file_inline/announcement.png',
+      storageProvider: 's3',
+      kind: 'upload',
+      createdBy: 'files.upload',
+      agentTaskId: null,
+      conversationId: null,
+      status: 'ready',
+      expiresAt: null,
+      metadata: {},
+      createdAt: new Date('2026-08-13T12:00:00.000Z'),
+    });
+
+    await presignFile(ctx, 'file_inline', { download: false });
+    expect(presigns).toEqual([
+      { key: 'octane/upload/file_inline/announcement.png' },
+    ]);
   });
 });

@@ -24,7 +24,11 @@ function formatDate(value: string, includeYear = false): string {
 }
 
 function plainTextExcerpt(markdown: string): string {
-  return markdown
+  const source = /<\/?[a-z][\s\S]*>/i.test(markdown)
+    ? new DOMParser().parseFromString(markdown, 'text/html').body.textContent ?? ''
+    : markdown;
+
+  return source
     .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
     .replace(/[*_~`>#]/g, '')
     .replace(/^\s*[-+]\s+/gm, '')

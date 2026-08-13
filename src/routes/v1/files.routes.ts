@@ -86,6 +86,15 @@ export async function filesRoutes(app: FastifyInstance): Promise<void> {
     return { id: file.id, name: file.name, url, expiresAt };
   });
 
+  // Durable, RBAC-checked URL for rich content. The object-store URL is refreshed on every load,
+  // so an announcement stores `/v1/files/:id/content`, never a presigned URL that later expires.
+  app.get<{ Params: { id: string } }>('/files/:id/content', guard, async (request, reply) => {
+    requireFiles();
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const { url } = await presignFile(ctx, request.params.id, { download: false });
+    return reply.redirect(url, 302);
+  });
+
   app.post<{ Params: { id: string } }>('/files/:id/delete', guard, async (request) => {
     requireFiles();
     const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));

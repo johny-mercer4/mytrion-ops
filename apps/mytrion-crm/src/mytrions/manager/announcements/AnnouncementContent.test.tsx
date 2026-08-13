@@ -1,7 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AnnouncementContent, parseAnnouncementContent } from './AnnouncementContent';
+import {
+  AnnouncementContent,
+  parseAnnouncementContent,
+  sanitizeAnnouncementHtml,
+} from './AnnouncementContent';
 
 const getAnnouncementAssetDownload = vi.fn();
 
@@ -39,5 +43,19 @@ describe('AnnouncementContent', () => {
       'https://example.test/map.png',
     );
     expect(getAnnouncementAssetDownload).toHaveBeenCalledWith('file_map');
+  });
+
+  it('sanitizes CKEditor HTML and only permits governed image URLs', () => {
+    const html = sanitizeAnnouncementHtml(
+      '<h2 style="text-align:right;color:red" onclick="bad()">News</h2>' +
+        '<img src="https://tracker.test/pixel.png" onerror="bad()">' +
+        '<img src="/v1/files/file_safe/content"><script>bad()</script>',
+    );
+    expect(html).toContain('<h2 style="text-align: right;">News</h2>');
+    expect(html).toContain('/v1/files/file_safe/content');
+    expect(html).not.toContain('tracker.test');
+    expect(html).not.toContain('script');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('color:');
   });
 });

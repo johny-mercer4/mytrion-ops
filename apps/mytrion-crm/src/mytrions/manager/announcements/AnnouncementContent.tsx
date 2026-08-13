@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
+import { useEffect, useMemo, useState } from 'react';
 import { getAnnouncementAssetDownload } from '../../../api/announcements';
 import { Button } from '../../../ds/Button/Button';
 import { Icon } from '../../../ds/Icon/Icon';
@@ -76,6 +77,37 @@ export function parseAnnouncementContent(text: string): ContentPart[] {
   return parts;
 }
 
+function isRichHtml(text: string): boolean {
+  return /<(?:p|h[1-6]|ul|ol|blockquote|figure|table|hr)\b/i.test(text);
+}
+
+export function sanitizeAnnouncementHtml(html: string): string {
+  const sanitized = DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'iframe', 'object', 'embed', 'script'],
+    FORBID_ATTR: ['srcset', 'onerror', 'onclick', 'onload'],
+  });
+  const doc = new DOMParser().parseFromString(sanitized, 'text/html');
+
+  for (const node of doc.body.querySelectorAll<HTMLElement>('[style]')) {
+    const alignment = node.style.textAlign;
+    node.removeAttribute('style');
+    if (['left', 'center', 'right', 'justify'].includes(alignment)) node.style.textAlign = alignment;
+  }
+  for (const link of doc.body.querySelectorAll<HTMLAnchorElement>('a')) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+  for (const image of doc.body.querySelectorAll<HTMLImageElement>('img')) {
+    if (!/^\/v1\/files\/[A-Za-z0-9_-]+\/content$/.test(image.getAttribute('src') ?? '')) {
+      image.remove();
+    } else {
+      image.loading = 'lazy';
+    }
+  }
+  return doc.body.innerHTML;
+}
+
 function ImageAsset({ fileId, name }: { fileId: string; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -126,6 +158,16 @@ function FileAsset({ fileId, name }: { fileId: string; name: string }) {
 }
 
 export function AnnouncementContent({ text }: { text: string }) {
+  const richHtml = useMemo(() => (isRichHtml(text) ? sanitizeAnnouncementHtml(text) : null), [text]);
+  if (richHtml != null) {
+    return (
+      <div
+        className="an-content an-content-html"
+        // HTML is sanitized above and again constrained to durable Mytrion image URLs.
+        dangerouslySetInnerHTML={{ __html: richHtml }}
+      />
+    );
+  }
   const parts = parseAnnouncementContent(text);
   return (
     <div className="an-content">

@@ -17,7 +17,7 @@ const rows = [
   {
     id: 'man_new',
     title: 'Q3 Sales Target Update',
-    body: 'Target raised to **12,000 gallons**.',
+    body: '<p>Target raised to <strong>12,000 gallons</strong>.</p>',
     targetDepartments: ['sales'],
     priority: 'normal',
     createdByUserId: 'zoho:42',
@@ -57,6 +57,8 @@ describe('SalesAnnouncementCenter', () => {
   it('separates new and archived announcements', async () => {
     render(<SalesAnnouncementCenter />);
     expect(await screen.findByText('Q3 Sales Target Update')).toBeVisible();
+    expect(screen.getByText('Target raised to 12,000 gallons.')).toBeVisible();
+    expect(screen.queryByText('<p>Target raised to')).not.toBeInTheDocument();
     expect(screen.queryByText('System Maintenance')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Archive/ }));
     expect(await screen.findByText('System Maintenance')).toBeVisible();
