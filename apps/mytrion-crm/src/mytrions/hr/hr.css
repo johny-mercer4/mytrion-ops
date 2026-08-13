@@ -258,8 +258,6 @@
       transparent 62%
     ),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
 }
 .hr-root .hr-stat-l {
@@ -310,8 +308,6 @@
   border-radius: var(--hr-r-lg);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),
@@ -913,8 +909,6 @@
   border-radius: var(--hr-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
   transition:
     border-color var(--hz-dur-wash) var(--hz-ease),
@@ -1139,8 +1133,6 @@
   border-radius: var(--hr-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     background var(--hz-dur-tone) var(--hz-ease),

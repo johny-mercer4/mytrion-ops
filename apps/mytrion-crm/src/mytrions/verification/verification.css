@@ -316,8 +316,7 @@
   border: 1px solid var(--hz-pane-bd);
   background: linear-gradient(152deg, color-mix(in srgb, var(--vc) 9%, transparent), transparent 58%),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  /* No backdrop-filter: roster cards scroll in/out of view. Focus then scroll-back left them empty. */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition: border-color var(--hz-dur-tone) var(--hz-ease), box-shadow var(--hz-dur-tone) var(--hz-ease),
     transform var(--hz-dur-lift) var(--hz-ease);

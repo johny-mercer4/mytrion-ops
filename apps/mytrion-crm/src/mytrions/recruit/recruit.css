@@ -126,6 +126,11 @@
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+
+/* Blur is chrome-only. Metric / job / candidate tiles scroll in a roster; filterbar + panel stay put. */
+.recruit-panel,
+.recruit-filterbar {
   backdrop-filter: blur(var(--hz-blur-md));
   -webkit-backdrop-filter: blur(var(--hz-blur-md));
 }

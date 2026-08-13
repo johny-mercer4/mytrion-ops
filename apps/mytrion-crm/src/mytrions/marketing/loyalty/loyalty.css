@@ -250,8 +250,6 @@
       transparent 58%
     ),
     var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
     border-color var(--hz-dur-tone) var(--hz-ease),

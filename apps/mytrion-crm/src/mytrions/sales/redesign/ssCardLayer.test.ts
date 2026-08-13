@@ -1,15 +1,32 @@
 /**
- * Contract: scrolling Sales cards must not be their own blurred compositor layer.
+ * Contract: scrolling glass must not be its own blurred compositor layer.
  *
  * Automations catalog buttons and Verification roster buttons went empty after focus →
  * scroll away → scroll back because `.ss-card-h` (and the Automations picklist scroller)
- * carried `backdrop-filter`. jsdom cannot paint, so this locks the CSS/source contract.
+ * carried `backdrop-filter`. The same trap exists on every other roster / jump / picklist
+ * tile in the CRM. jsdom cannot paint, so this locks the CSS/source contract.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const REDESIGN = join(process.cwd(), 'src/mytrions/sales/redesign');
+const SRC = join(process.cwd(), 'src');
+const REDESIGN = join(SRC, 'mytrions/sales/redesign');
+
+function walkCss(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkCss(full));
+    else if (entry.name.endsWith('.css')) out.push(full);
+  }
+  return out;
+}
+
+/** Comments naming the property must not count as a declaration. */
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
 
 function cssRules(css: string): Array<{ selectors: string[]; body: string }> {
   const rules: Array<{ selectors: string[]; body: string }> = [];
@@ -26,7 +43,7 @@ function cssRules(css: string): Array<{ selectors: string[]; body: string }> {
 }
 
 function hasBackdropFilter(body: string): boolean {
-  return /(?:^|[^-])backdrop-filter\s*:/.test(body);
+  return /(?:^|[^-])backdrop-filter\s*:(?!\s*none\b)/.test(body);
 }
 
 function selectorHits(selectors: string[], needle: string): boolean {
@@ -73,5 +90,100 @@ describe('scrolling Sales cards stay paintable after scroll', () => {
     const panel = drop.match(/const panelBase =\s*'[^']+'/)?.[0] ?? '';
     expect(panel).not.toMatch(/overflow:hidden/);
     expect(panel).toMatch(/overflow-y:auto/);
+  });
+});
+
+/**
+ * Classes that are scrolling card lists, roster tiles, or picklist scrollports.
+ * Blur on these is the empty-after-scroll bug. Floating chrome (modals, headers,
+ * empty panes, DS popovers) is allowed and is not on this list.
+ */
+const SCROLLING_GLASS = [
+  '.ss-card-h',
+  '.ss-float-drop',
+  '.ss-verification-card',
+  '.mg-card',
+  '.mg-dept',
+  '.mg-acc',
+  '.mg-lty-c',
+  '.ms-jump',
+  '.co-jump',
+  '.hr-jump',
+  '.hr-empc',
+  '.hr-deptc',
+  '.hr-req',
+  '.hr-stat',
+  '.vf-cardc',
+  '.recruit-job-card',
+  '.recruit-candidate',
+  '.recruit-metric',
+  '.an-rep',
+  '.an-kpi',
+  '.an-card',
+  '.fi-row',
+  '.fi-stat',
+  '.cs-card',
+  '.cs-ret-row',
+  '.cs-mt-card',
+  '.cs-home-qa-card',
+  '.cs-home-stat-card',
+  '.cs-pool-metric',
+  '.cs-stat-card',
+  '.cs-metric-card',
+  '.bm-summary-item',
+  '.db-kpi-card',
+  '.db-danger-card',
+  '.rt-kpi',
+  '.dc-deals-table',
+  '.readyTile',
+  '.pickerPanel',
+  '.statTile',
+  '.userBubble',
+] as const;
+
+const DS_CHROME = '/ds/';
+
+describe('repo-wide: scrolling cards stay paintable after scroll', () => {
+  const cssFiles = walkCss(SRC);
+
+  it('does not put backdrop-filter on scrolling roster / jump / picklist classes', () => {
+    const hits: string[] = [];
+    for (const file of cssFiles) {
+      const rules = cssRules(stripComments(readFileSync(file, 'utf8'))).filter((rule) =>
+        hasBackdropFilter(rule.body),
+      );
+      for (const rule of rules) {
+        for (const cls of SCROLLING_GLASS) {
+          if (selectorHits(rule.selectors, cls)) {
+            hits.push(`${relative(SRC, file)} :: ${cls}`);
+          }
+        }
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it('keeps launcher workspace/stat tiles free of backdrop-filter', () => {
+    for (const rel of ['app/launcher/WorkspaceCard.module.css', 'app/launcher/StatCard.module.css']) {
+      const rules = cssRules(stripComments(readFileSync(join(SRC, rel), 'utf8')));
+      const card = rules.find((rule) => selectorHits(rule.selectors, '.card'));
+      expect(card, rel).toBeTruthy();
+      expect(hasBackdropFilter(card!.body), rel).toBe(false);
+    }
+  });
+
+  it('does not put backdrop-filter on a scrollport outside design-system chrome', () => {
+    const hits: string[] = [];
+    for (const file of cssFiles) {
+      if (file.includes(DS_CHROME)) continue;
+      const rules = cssRules(stripComments(readFileSync(file, 'utf8')));
+      for (const rule of rules) {
+        if (rule.selectors.some((sel) => sel.includes('}'))) continue;
+        if (!hasBackdropFilter(rule.body)) continue;
+        if (!/overflow-y\s*:\s*(auto|scroll)/.test(rule.body)) continue;
+        hits.push(`${relative(SRC, file)} :: ${rule.selectors.join(', ')}`);
+      }
+    }
+    expect(hits).toEqual([]);
   });
 });

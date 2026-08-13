@@ -337,8 +337,6 @@
   border-radius: var(--mg-r-md);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-sm));
-  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   box-shadow: var(--hz-glass-inset);
   overflow: hidden;
   transition:

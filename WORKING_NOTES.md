@@ -15841,3 +15841,32 @@ Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impecca
 ## 2026-08-13 — Impeccable init (PRODUCT.md)
 
 `/impeccable init` ran on `hotfix/Mytrion`. Wrote `PRODUCT.md` (product-schema 1) from repo sources — Octane fuel-card ops, worker Mytrions / Horizon Mini App, carrier Telegram bot + mini-app. No DESIGN.md; no visual world invented. Live config at `.impeccable/live/config.json` (CRM + mini-app source HTML; vendored `app/` excluded; CSP none). Did not touch Sales card CSS or vendored hashes.
+
+## 2026-08-13 — Same empty-card compositor bug, rest of CRM
+
+Hunt after Sales `.ss-card-h` / `.ss-float-drop` (`9ccdd0e1`). Same trap: `backdrop-filter` on a
+scrolling roster tile or picklist scrollport; focus/hover promotes a layer; scroll off and back
+leaves it un-repainted.
+
+**Fixed (blur off scrolling cards / rows / picklists; glass tint kept):** hub `.mg-card` / `.mg-dept`
+/ `.mg-acc`, ModuleShell `.ms-jump`, Collection `.co-jump`, HR jump/stat/req/employee/dept cards,
+Verification Mytrion `.vf-cardc`, Recruit metric/job/candidate tiles, Analyst card/KPI/report
+catalog, Finance `.fi-stat` / `.fi-row`, CS card/metric/retention rows, Billing KPI tiles + table
+wraps + modal invoice cards, Loyalty `.mg-lty-c`, Escalation `.readyTile` / `.row` / `.pickerPanel`,
+Admin `.statTile`, launcher WorkspaceCard/StatCard, page KPIs, chat message bubbles/chips/picker.
+
+**Left (safe chrome):** modals/scrims, docked headers/rails (AppHeader, MytrionShell sidebar,
+MobileTabBar opaque), DS Dialog/Drawer/Dropdown/Tooltip/DatePicker, empty/ComingSoon panes,
+toolbars/search/buttons/chips/badges, mini-app sticky header (`backdropFilter` on docked chrome),
+CS/Billing table *headers* that are sticky over rows, TicketConsole/comms docked panes,
+ChatPanel dock/composer. `theme.css` untouched.
+
+**Not changed (other compositor traps):** catalog `transform` only while dragging (already);
+CS/HR/Analyst cards still `overflow: hidden` + hover `transform` (lift), without blur so the
+empty-paint bug should not fire; billing `content-visibility: auto` on table rows; DropdownMenu
+blur on a short popover scrollport (DS chrome allowlist).
+
+Contract: `ssCardLayer.test.ts` now walks all CRM CSS. Rebuild: `pnpm -C apps/mytrion-crm build`.
+
+Impeccable: refinement, `SCOPED_EXISTING_ALLOWED`, Operate. Did not write PRODUCT.md / DESIGN.md.
+

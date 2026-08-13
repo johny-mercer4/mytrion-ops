@@ -229,8 +229,6 @@
   border: 1px solid var(--hz-pane-bd);
   border-radius: var(--radius-lg);
   background: var(--hz-pane);
-  backdrop-filter: blur(var(--hz-blur-md));
-  -webkit-backdrop-filter: blur(var(--hz-blur-md));
   padding: var(--space-4);
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition:
