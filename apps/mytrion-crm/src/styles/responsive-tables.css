@@ -45,6 +45,32 @@
 }
 
 /*
+ * Billing's three remaining scrollers — the ones the list above never covered.
+ *
+ * TWO PROPERTIES, NOT THREE, and that is deliberate: each of these already declares its own
+ * `overflow-x: auto`, so restating it here would be a redundant desktop-reachable declaration for no
+ * behavioural gain. What all three lack is the pair that makes an inner scroller behave under a
+ * thumb — which is exactly the combination that produces the bug where flicking past the last column
+ * back-navigates out of the Mini App.
+ *
+ * Verified one by one against each workspace's CSS, the way this file's docblock demands — each of
+ * these IS the scroller, not a rounded frame around one:
+ *
+ *   .lg-subnav        ledger-panel.css:46   the 9-entry Ledger sub-nav — a horizontal STRIP, so the
+ *                                           one most likely to be flicked past its end
+ *   .lg-preview-wrap  ledger-panel.css:456  the 5-9 column preview tables (LedgerControls x3,
+ *                                           PaymentsJournal x2, OpeningImportPreview,
+ *                                           OpeningBalances, LedgerStatementModal)
+ *   .pl-wrap          prepay-panel.css:189  Prepay's 10-column ledger table
+ */
+.lg-subnav,
+.lg-preview-wrap,
+.pl-wrap {
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/*
  * The tables inside them carry a `min-width` (720px in CS's pool and Finance, 640px in HR and
  * Sales' MSD, 1040px in Admin) so their columns keep a readable density instead of crushing. That
  * is deliberate and stays — it only works if the wrapper actually scrolls, which is what the block

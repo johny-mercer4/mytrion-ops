@@ -51,3 +51,60 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* ═══════════════════════════════════════════════
+   §2  MODALS — bottom sheet
+   ═══════════════════════════════════════════════ */
+
+/*
+ * CS had NO phone treatment for its modals: `shared-modal.css` carries no media query at all, so
+ * every CS dialog stayed a flex-centred `max-width: 640px` box (920px for `.cs-modal-wide`) with a
+ * 24px gutter on all four sides — on a 375px screen that is a floating card with the form squeezed
+ * inside it, which is the single most "awful in the mini app" surface in the workspace.
+ *
+ * This is Billing's already-shipped recipe, deliberately: the gutter stays the BACKDROP's padding
+ * rather than becoming a height cap on the box, so `.cs-modal-box`'s existing `max-height: 100%`
+ * keeps meaning "100% of the padded content box" and its own docblock stays true. Aligning to
+ * flex-end then turns that same measurement into a sheet.
+ *
+ * `dvh`, not `vh`: `vh` is the height with the browser chrome HIDDEN, so inside a Telegram webview a
+ * `vh` gutter is short by the header and the sheet's top edge hides under it.
+ */
+@media (width < 640px) {
+    .cs-root .cs-modal-backdrop {
+        align-items: flex-end;
+        padding: 16dvh 0 0;
+    }
+
+    .cs-root .cs-modal-box {
+        max-width: 100%;
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+    }
+
+    /*
+     * `.cs-modal-wide` (Applications, CITI, Maintenance) is `max-width: 920px !important`, so it
+     * needs the `!important` back to be overridden at all — the one place in this sheet where that is
+     * a contract rather than laziness.
+     */
+    .cs-root .cs-modal-wide {
+        max-width: 100% !important;
+    }
+
+    /* The form inside the wide modals is `1fr 1fr` and only collapses at its own 920px query, which
+       leaves two ~150px fields side by side on a phone. */
+    .cs-root .cs-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* The confirm box (420px) becomes a short sheet like the rest — the backdrop is already
+       `flex-end`, so leaving it at 420px would have parked a narrow card against the bottom edge
+       rather than centring it, which is the worst of both. Full width, and it lands under the thumb. */
+    .cs-root .cs-confirm-box {
+        max-width: 100%;
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+    }
+
+    .cs-root .cs-modal-body {
+        padding: var(--space-4);
+    }
+}
