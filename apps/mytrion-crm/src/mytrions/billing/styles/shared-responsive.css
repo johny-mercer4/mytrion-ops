@@ -46,6 +46,21 @@
     .bm-root .bm-table {
         min-width: 480px;
     }
+
+    /*
+     * An eight-figure amount does not fit a half-width tile at 26px, and it does not truncate — it
+     * PAINTS PAST the tile and gets cut by the panel edge. Measured on Transactions at 375:
+     * `$66,711,799.20` wants 223px in a 138px box, so its right edge lands 70px past the tile's,
+     * with `text-overflow: clip` — the total amount is the one number on the screen that has to be
+     * read exactly, and it was rendering as "$66,711,14".
+     *
+     * `--text-xl` (22px) buys back ~34px of the deficit and keeps the KPI hierarchy; the 480 rule
+     * below closes the rest. `tabular-nums` so the digits stop shifting width between refreshes.
+     */
+    .bm-root .bm-summary-amount {
+        font-size: var(--text-xl);
+        font-variant-numeric: tabular-nums;
+    }
 }
 
 @media (width < 480px) {
@@ -58,6 +73,37 @@
        one thing on a billing tile that has to stay readable. */
     .bm-root .db-kpi-grid {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    /*
+     * The same, for the DataCenter/Transactions banner — and this deliberately revises the call
+     * recorded at shared-base.css:735 ("Deliberately NOT 1-up below 480 … a 145px tile still holds
+     * these labels"). That reasoning was about the LABELS, and it is still right about them; it was
+     * never tested against an eight-figure currency VALUE, which a 138px tile overflows by 70px even
+     * after the 22px step above. A phone is 375px, so this is the rule that actually fires there.
+     *
+     * The cost the old comment worried about is real but small: four stacked tiles push the table
+     * further down. It is the right trade against a total that cannot be read.
+     */
+    .bm-root .bm-summary-banner {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /*
+     * Pay back most of what stacking costs. Four full-width tiles at the desktop's 13px/15px padding
+     * put the transaction list below the fold, which is the exact objection the old comment raised —
+     * so the tiles get tighter and the row of three lines (label / amount / sub) sits closer. A
+     * stacked tile has the whole width for its text, so it needs none of the breathing room a 145px
+     * one did.
+     */
+    .bm-root .bm-summary-item {
+        padding: var(--space-2) var(--space-3);
+    }
+    .bm-root .bm-summary-amount {
+        margin-top: 0;
+    }
+    .bm-root .bm-summary-banner {
+        gap: var(--space-2);
     }
 }
 

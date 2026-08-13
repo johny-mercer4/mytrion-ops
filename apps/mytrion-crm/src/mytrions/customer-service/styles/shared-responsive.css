@@ -37,6 +37,27 @@
     .cs-root .cs-summary-amount {
         font-size: var(--text-xl);
     }
+
+    /*
+     * Maintenance's header actions: 460px of content in a 351px row.
+     *
+     * `.cs-header-row` already wraps, but that could never help here — the actions cluster is ONE
+     * flex item, and `min-width: auto` floors a flex item at its min-content width, so it stayed
+     * 460px wide and clipped its own tail. The visible symptom was the view switcher reading
+     * "Card | List | Kanba".
+     *
+     * `min-width: 0` lets the item shrink; `flex-wrap` lets its buttons take a second line rather
+     * than being squeezed; and the switcher then keeps its intrinsic 161px instead of being
+     * compressed to 141px. Its `display`/`gap`/`align-items` live in an inline style on the element
+     * and are deliberately left alone — none of them is what broke.
+     */
+    .cs-root .cs-mt-actions {
+        flex-wrap: wrap;
+        min-width: 0;
+    }
+    .cs-root .cs-mt-view-toggle {
+        flex: 0 0 auto;
+    }
 }
 
 @media (width < 480px) {
