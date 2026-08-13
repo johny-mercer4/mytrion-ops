@@ -93,7 +93,7 @@ export function VerificationActionRequest({ requestId, dealId, requirement, onSe
         <span className="ss-vf-req-icon">
           <Icon name="warn" size={18} />
         </span>
-        <div style={{ minWidth: 0 }}>
+        <div className="ss-vf-req-copy">
           <div className="ss-vf-req-title">{requirement.title}</div>
           <div className="ss-vf-req-meta">
             Verification needs your response · {new Date(requirement.createdAt).toLocaleString()}

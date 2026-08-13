@@ -11,6 +11,7 @@
   align-items: flex-start;
   gap: 12px;
 }
+.ss-root .ss-vf-req-copy { min-width: 0; flex: 1; }
 .ss-root .ss-vf-req-icon {
   width: 34px;
   height: 34px;
