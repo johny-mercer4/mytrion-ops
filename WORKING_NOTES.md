@@ -15516,3 +15516,20 @@ general file attachments. Durable authenticated file URLs and DOMPurify renderin
 Verification: CRM tests 859/859; CRM typecheck green; token and breakpoint contracts green;
 production widget build green. Local browser QA covered formatting, image upload in editor and live
 preview, table controls, desktop and compact layouts, with no CKEditor attribution or console errors.
+
+## 2026-08-14 — Published announcement reader and authenticated images
+
+Managers can now open any row in Published to inspect the complete historical announcement inline.
+The disclosure includes its rich body, audience, exact publish time, priority, and unique view count;
+only one record is expanded at a time and the summary remains keyboard accessible.
+
+Fixed image attachments across Manager and worker readers. Selecting an image through either Upload
+image or Attach file now inserts an image node instead of a filename link. Rich announcement images
+are resolved through the authenticated file API to a fresh object-store URL, so they work in desktop
+clients that cannot attach a bearer token to a raw `<img>` request. Historical filename links are
+also upgraded to images when their governed file MIME type is an image. The download response now
+includes that MIME type; non-image attachments remain links.
+
+Verification: CRM tests 863/863; root and CRM typechecks green; file-service tests 12/12; production
+widget build green. Browser QA published an image through Attach file, confirmed it in the editor and
+live preview, reopened it from Published, and verified the resolved image with no console errors.

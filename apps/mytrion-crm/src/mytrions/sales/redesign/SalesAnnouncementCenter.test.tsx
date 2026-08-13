@@ -6,11 +6,13 @@ import { SalesAnnouncementCenter } from './SalesAnnouncementCenter';
 const listAnnouncements = vi.fn();
 const markAnnouncementRead = vi.fn();
 const recordAnnouncementView = vi.fn();
+const getAnnouncementAssetDownload = vi.fn();
 
 vi.mock('../../../api/announcements', () => ({
   listAnnouncements: () => listAnnouncements(),
   markAnnouncementRead: (id: string) => markAnnouncementRead(id),
   recordAnnouncementView: (id: string) => recordAnnouncementView(id),
+  getAnnouncementAssetDownload: (id: string) => getAnnouncementAssetDownload(id),
 }));
 
 const rows = [
@@ -45,6 +47,13 @@ beforeEach(() => {
   listAnnouncements.mockResolvedValue(rows);
   markAnnouncementRead.mockResolvedValue(undefined);
   recordAnnouncementView.mockResolvedValue(undefined);
+  getAnnouncementAssetDownload.mockResolvedValue({
+    id: 'file_map',
+    name: 'route-map.png',
+    mime: 'image/png',
+    url: 'https://example.test/route-map.png',
+    expiresAt: '2026-08-14T12:00:00.000Z',
+  });
   HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) {
     this.setAttribute('open', '');
   });
@@ -75,5 +84,24 @@ describe('SalesAnnouncementCenter', () => {
     fireEvent.click(screen.getByRole('button', { name: /Q3 Sales Target Update/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
     await waitFor(() => expect(markAnnouncementRead).toHaveBeenCalledWith('man_new'));
+  });
+
+  it('shows an authenticated uploaded image inside the agent announcement dialog', async () => {
+    listAnnouncements.mockResolvedValue([
+      {
+        ...rows[0],
+        body: '<p><img src="/v1/files/file_map/content" alt="Route map"></p>',
+      },
+    ]);
+
+    render(<SalesAnnouncementCenter />);
+    fireEvent.click(await screen.findByRole('button', { name: /Q3 Sales Target Update/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: 'Route map' })).toHaveAttribute(
+        'src',
+        'https://example.test/route-map.png',
+      ),
+    );
+    expect(getAnnouncementAssetDownload).toHaveBeenCalledWith('file_map');
   });
 });

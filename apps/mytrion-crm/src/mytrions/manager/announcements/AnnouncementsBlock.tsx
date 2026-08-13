@@ -10,6 +10,7 @@ import { Badge } from '../../../ds/Badge/Badge';
 import { Button } from '../../../ds/Button/Button';
 import { Checkbox } from '../../../ds/Checkbox/Checkbox';
 import { EmptyState } from '../../../ds/EmptyState/EmptyState';
+import { Icon } from '../../../ds/Icon/Icon';
 import { Input } from '../../../ds/Input/Input';
 import { Skeleton } from '../../../ds/Skeleton/Skeleton';
 import { useLoad } from '../../_shared/useLoad';
@@ -29,6 +30,22 @@ const DEPARTMENTS: ReadonlyArray<{ id: AnnouncementDepartment; label: string }> 
 
 function dateLabel(value: string): string {
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function detailedDateLabel(value: string): string {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function departmentLabel(ids: AnnouncementDepartment[]): string {
+  return ids
+    .map((id) => DEPARTMENTS.find((department) => department.id === id)?.label ?? id)
+    .join(' · ');
 }
 
 function AnnouncementPreview({
@@ -64,6 +81,8 @@ function AnnouncementPreview({
 }
 
 function PublishedList({ announcements }: { announcements: MytrionAnnouncementDto[] }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   if (announcements.length === 0) {
     return (
       <EmptyState
@@ -75,29 +94,74 @@ function PublishedList({ announcements }: { announcements: MytrionAnnouncementDt
   }
   return (
     <div className="an-published-list">
-      {announcements.map((announcement) => (
-        <article className="an-published-row" key={announcement.id}>
-          <div className="an-published-copy">
-            <div className="an-published-title">
-              {announcement.title}
-              {announcement.priority === 'high' ? (
-                <Badge intent="warning" size="sm">
-                  High
-                </Badge>
-              ) : null}
-            </div>
-            <div className="an-published-meta">
-              {announcement.targetDepartments
-                .map((id) => DEPARTMENTS.find((department) => department.id === id)?.label ?? id)
-                .join(' · ')}
-            </div>
-          </div>
-          <div className="an-published-stats">
-            <span>{announcement.viewCount ?? 0} views</span>
-            <time>{dateLabel(announcement.publishedAt)}</time>
-          </div>
-        </article>
-      ))}
+      {announcements.map((announcement) => {
+        const expanded = selectedId === announcement.id;
+        const detailId = `announcement-detail-${announcement.id}`;
+        const audience = departmentLabel(announcement.targetDepartments);
+        return (
+          <article
+            className="an-published-row"
+            data-expanded={expanded || undefined}
+            key={announcement.id}
+          >
+            <button
+              type="button"
+              className="an-published-summary"
+              aria-expanded={expanded}
+              aria-controls={detailId}
+              onClick={() => setSelectedId(expanded ? null : announcement.id)}
+            >
+              <span className="an-published-copy">
+                <span className="an-published-title">
+                  {announcement.title}
+                  {announcement.priority === 'high' ? (
+                    <Badge intent="warning" size="sm">
+                      High
+                    </Badge>
+                  ) : null}
+                </span>
+                <span className="an-published-meta">{audience}</span>
+              </span>
+              <span className="an-published-stats">
+                <span>{announcement.viewCount ?? 0} views</span>
+                <time dateTime={announcement.publishedAt}>
+                  {dateLabel(announcement.publishedAt)}
+                </time>
+              </span>
+              <span className="an-published-action" aria-hidden="true">
+                <Icon name="visibility" size="sm" />
+                <span>{expanded ? 'Hide' : 'View'}</span>
+                <Icon name="expand_more" size="sm" />
+              </span>
+            </button>
+            {expanded ? (
+              <div className="an-published-detail" id={detailId}>
+                <dl className="an-published-detail-meta">
+                  <div>
+                    <dt>Audience</dt>
+                    <dd>{audience}</dd>
+                  </div>
+                  <div>
+                    <dt>Published</dt>
+                    <dd>
+                      <time dateTime={announcement.publishedAt}>
+                        {detailedDateLabel(announcement.publishedAt)}
+                      </time>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Views</dt>
+                    <dd>{announcement.viewCount ?? 0}</dd>
+                  </div>
+                </dl>
+                <div className="an-published-detail-body">
+                  <AnnouncementContent text={announcement.body} />
+                </div>
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }

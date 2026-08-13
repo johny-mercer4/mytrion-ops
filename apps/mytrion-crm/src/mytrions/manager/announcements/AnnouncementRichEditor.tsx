@@ -27,6 +27,14 @@ interface ToolbarButtonProps {
 
 const MIN_IMAGE_WIDTH = 120;
 
+function isImageAsset(file: File, mime?: string): boolean {
+  return (
+    file.type.startsWith('image/') ||
+    mime?.startsWith('image/') === true ||
+    /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file.name)
+  );
+}
+
 export function durableFileUrl(fileId: string): string {
   return `/v1/files/${encodeURIComponent(fileId)}/content`;
 }
@@ -113,7 +121,8 @@ export function AnnouncementRichEditor({
   });
 
   useEffect(() => {
-    if (editor && value !== editor.getHTML()) editor.commands.setContent(value, { emitUpdate: false });
+    if (editor && value !== editor.getHTML())
+      editor.commands.setContent(value, { emitUpdate: false });
   }, [editor, value]);
 
   const toolbar = useEditorState({
@@ -166,10 +175,14 @@ export function AnnouncementRichEditor({
     setStatus(`Uploading ${file.name}…`);
     try {
       const asset = await uploadAnnouncementAsset(file);
-      editor.chain().focus().setImage({
-        src: durableFileUrl(asset.fileId),
-        alt: asset.name || file.name,
-      }).run();
+      editor
+        .chain()
+        .focus()
+        .setImage({
+          src: durableFileUrl(asset.fileId),
+          alt: asset.name || file.name,
+        })
+        .run();
       setStatus(`${asset.name || file.name} added.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : `Could not upload ${file.name}.`);
@@ -186,12 +199,26 @@ export function AnnouncementRichEditor({
     setStatus(`Uploading ${file.name}…`);
     try {
       const asset = await uploadAnnouncementAsset(file);
-      editor.chain().focus().insertContent({
-        type: 'text',
-        text: asset.name || file.name,
-        marks: [{ type: 'link', attrs: { href: durableFileUrl(asset.fileId) } }],
-      }).run();
-      setStatus(`${asset.name || file.name} attached.`);
+      const name = asset.name || file.name;
+      if (isImageAsset(file, asset.mime)) {
+        editor
+          .chain()
+          .focus()
+          .setImage({ src: durableFileUrl(asset.fileId), alt: name })
+          .run();
+        setStatus(`${name} added as an image.`);
+      } else {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: 'text',
+            text: name,
+            marks: [{ type: 'link', attrs: { href: durableFileUrl(asset.fileId) } }],
+          })
+          .run();
+        setStatus(`${name} attached.`);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : `Could not upload ${file.name}.`);
     } finally {
@@ -202,7 +229,11 @@ export function AnnouncementRichEditor({
   const setHeading = (level: string): void => {
     if (!editor) return;
     if (level === '2' || level === '3') {
-      editor.chain().focus().setHeading({ level: Number(level) as 2 | 3 }).run();
+      editor
+        .chain()
+        .focus()
+        .setHeading({ level: Number(level) as 2 | 3 })
+        .run();
     } else {
       editor.chain().focus().setParagraph().run();
     }
@@ -212,8 +243,18 @@ export function AnnouncementRichEditor({
     <div className="an-tiptap" data-ready={editor ? 'true' : 'false'}>
       <div className="an-tiptap-toolbar" role="toolbar" aria-label="Announcement formatting">
         <div className="an-tiptap-group">
-          <ToolbarButton label="Undo" icon="undo" disabled={!state.canUndo} onClick={() => editor?.chain().focus().undo().run()} />
-          <ToolbarButton label="Redo" text="↷" disabled={!state.canRedo} onClick={() => editor?.chain().focus().redo().run()} />
+          <ToolbarButton
+            label="Undo"
+            icon="undo"
+            disabled={!state.canUndo}
+            onClick={() => editor?.chain().focus().undo().run()}
+          />
+          <ToolbarButton
+            label="Redo"
+            text="↷"
+            disabled={!state.canRedo}
+            onClick={() => editor?.chain().focus().redo().run()}
+          />
         </div>
         <label className="an-tiptap-heading">
           <span className="sr-only">Text style</span>
@@ -225,37 +266,141 @@ export function AnnouncementRichEditor({
           <Icon name="expand_more" />
         </label>
         <div className="an-tiptap-group">
-          <ToolbarButton label="Bold" icon="format_bold" active={state.bold} onClick={() => editor?.chain().focus().toggleBold().run()} />
-          <ToolbarButton label="Italic" icon="format_italic" active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()} />
-          <ToolbarButton label="Underline" text="U" active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()} />
-          <ToolbarButton label="Strikethrough" text="S" active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()} />
-          <ToolbarButton label="Clear formatting" text="T×" onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()} />
+          <ToolbarButton
+            label="Bold"
+            icon="format_bold"
+            active={state.bold}
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+          />
+          <ToolbarButton
+            label="Italic"
+            icon="format_italic"
+            active={state.italic}
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+          />
+          <ToolbarButton
+            label="Underline"
+            text="U"
+            active={state.underline}
+            onClick={() => editor?.chain().focus().toggleUnderline().run()}
+          />
+          <ToolbarButton
+            label="Strikethrough"
+            text="S"
+            active={state.strike}
+            onClick={() => editor?.chain().focus().toggleStrike().run()}
+          />
+          <ToolbarButton
+            label="Clear formatting"
+            text="T×"
+            onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}
+          />
         </div>
         <div className="an-tiptap-group">
-          <ToolbarButton label="Bulleted list" icon="list" active={state.bulletList} onClick={() => editor?.chain().focus().toggleBulletList().run()} />
-          <ToolbarButton label="Numbered list" icon="format_list_numbered" active={state.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()} />
-          <ToolbarButton label="Block quote" text="❝" active={state.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} />
+          <ToolbarButton
+            label="Bulleted list"
+            icon="list"
+            active={state.bulletList}
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          />
+          <ToolbarButton
+            label="Numbered list"
+            icon="format_list_numbered"
+            active={state.orderedList}
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          />
+          <ToolbarButton
+            label="Block quote"
+            text="❝"
+            active={state.blockquote}
+            onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          />
         </div>
         <div className="an-tiptap-group">
-          <ToolbarButton label="Align left" text="≡" active={state.alignLeft} onClick={() => editor?.chain().focus().setTextAlign('left').run()} />
-          <ToolbarButton label="Align center" text="≣" active={state.alignCenter} onClick={() => editor?.chain().focus().setTextAlign('center').run()} />
-          <ToolbarButton label="Align right" text="≡" active={state.alignRight} onClick={() => editor?.chain().focus().setTextAlign('right').run()} />
+          <ToolbarButton
+            label="Align left"
+            text="≡"
+            active={state.alignLeft}
+            onClick={() => editor?.chain().focus().setTextAlign('left').run()}
+          />
+          <ToolbarButton
+            label="Align center"
+            text="≣"
+            active={state.alignCenter}
+            onClick={() => editor?.chain().focus().setTextAlign('center').run()}
+          />
+          <ToolbarButton
+            label="Align right"
+            text="≡"
+            active={state.alignRight}
+            onClick={() => editor?.chain().focus().setTextAlign('right').run()}
+          />
         </div>
         <div className="an-tiptap-group">
-          <ToolbarButton label="Link" icon="link" active={state.link} onClick={() => editor && askForLink(editor)} />
-          <ToolbarButton label="Upload image" icon="photo_camera" disabled={uploading != null} onClick={() => imageInputRef.current?.click()} />
-          <ToolbarButton label="Insert table" icon="table" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
-          <ToolbarButton label="Horizontal rule" text="—" onClick={() => editor?.chain().focus().setHorizontalRule().run()} />
+          <ToolbarButton
+            label="Link"
+            icon="link"
+            active={state.link}
+            onClick={() => editor && askForLink(editor)}
+          />
+          <ToolbarButton
+            label="Upload image"
+            icon="photo_camera"
+            disabled={uploading != null}
+            onClick={() => imageInputRef.current?.click()}
+          />
+          <ToolbarButton
+            label="Insert table"
+            icon="table"
+            onClick={() =>
+              editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+            }
+          />
+          <ToolbarButton
+            label="Horizontal rule"
+            text="—"
+            onClick={() => editor?.chain().focus().setHorizontalRule().run()}
+          />
         </div>
       </div>
 
       {state.table ? (
         <div className="an-tiptap-table-tools" role="toolbar" aria-label="Table controls">
-          <Button size="sm" variant="ghost" onClick={() => editor?.chain().focus().addRowAfter().run()}>Add row</Button>
-          <Button size="sm" variant="ghost" onClick={() => editor?.chain().focus().addColumnAfter().run()}>Add column</Button>
-          <Button size="sm" variant="ghost" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button>
-          <Button size="sm" variant="ghost" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button>
-          <Button size="sm" variant="ghost" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => editor?.chain().focus().addRowAfter().run()}
+          >
+            Add row
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => editor?.chain().focus().addColumnAfter().run()}
+          >
+            Add column
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => editor?.chain().focus().deleteRow().run()}
+          >
+            Delete row
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => editor?.chain().focus().deleteColumn().run()}
+          >
+            Delete column
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => editor?.chain().focus().deleteTable().run()}
+          >
+            Delete table
+          </Button>
         </div>
       ) : null}
 
@@ -274,8 +419,23 @@ export function AnnouncementRichEditor({
         <span role="status">{status}</span>
         <span>{value.length.toLocaleString()} / 10,000 HTML characters</span>
       </div>
-      <input ref={imageInputRef} className="an-editor-hidden-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" tabIndex={-1} aria-hidden="true" onChange={(event) => void uploadImage(event)} />
-      <input ref={fileInputRef} className="an-editor-hidden-input" type="file" tabIndex={-1} aria-hidden="true" onChange={(event) => void attachFile(event)} />
+      <input
+        ref={imageInputRef}
+        className="an-editor-hidden-input"
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => void uploadImage(event)}
+      />
+      <input
+        ref={fileInputRef}
+        className="an-editor-hidden-input"
+        type="file"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => void attachFile(event)}
+      />
     </div>
   );
 }

@@ -83,7 +83,7 @@ export async function filesRoutes(app: FastifyInstance): Promise<void> {
     requireFiles();
     const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const { file, url, expiresAt } = await presignFile(ctx, request.params.id);
-    return { id: file.id, name: file.name, url, expiresAt };
+    return { id: file.id, name: file.name, mime: file.mime, url, expiresAt };
   });
 
   // Durable, RBAC-checked URL for rich content. The object-store URL is refreshed on every load,

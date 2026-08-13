@@ -40,6 +40,7 @@ export interface AnnouncementAsset {
 export interface AnnouncementAssetDownload {
   id: string;
   name: string;
+  mime: string;
   url: string;
   expiresAt: string;
 }

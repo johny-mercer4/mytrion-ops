@@ -48,13 +48,20 @@ vi.mock('@tiptap/react', async () => {
           isActive: () => false,
           chain: () => chain,
           can: () => ({ chain: () => chain }),
-          commands: { setContent: (next: string) => { html = next; } },
+          commands: {
+            setContent: (next: string) => {
+              html = next;
+            },
+          },
         };
       }
       editorRef.current.options = optionsRef.current;
       return editorRef.current;
     },
-    useEditorState: ({ editor, selector }: {
+    useEditorState: ({
+      editor,
+      selector,
+    }: {
       editor: FakeEditor | null;
       selector: (input: { editor: FakeEditor | null }) => unknown;
     }) => selector({ editor }),
@@ -99,6 +106,7 @@ beforeEach(() => {
   getAnnouncementAssetDownload.mockResolvedValue({
     id: 'file_1',
     name: 'route-map.png',
+    mime: 'image/png',
     url: 'https://example.test/fresh.png',
     expiresAt: '2026-08-13T23:00:00.000Z',
   });
@@ -154,5 +162,34 @@ describe('AnnouncementsBlock', () => {
     );
     expect(heading).toHaveStyle({ textAlign: 'center' });
     expect(screen.queryByText('alert(1)')).not.toBeInTheDocument();
+  });
+
+  it('opens and closes a published announcement with its full content and metadata', async () => {
+    listManagerAnnouncements.mockResolvedValue([
+      {
+        id: 'announcement_old',
+        title: 'Quarter policy update',
+        body: '<p>Use the <strong>new process</strong>.</p>',
+        targetDepartments: ['sales', 'billing'],
+        priority: 'normal',
+        createdByUserId: 'manager_1',
+        publishedAt: '2026-08-13T12:30:00.000Z',
+        createdAt: '2026-08-13T12:30:00.000Z',
+        viewCount: 14,
+      },
+    ]);
+
+    render(<AnnouncementsBlock />);
+    const row = await screen.findByRole('button', { name: /Quarter policy update/ });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(row);
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('new process')).toBeVisible();
+    expect(screen.getAllByText('Sales · Billing').length).toBeGreaterThan(0);
+    expect(screen.getByText('14', { selector: 'dd' })).toBeVisible();
+
+    fireEvent.click(row);
+    expect(screen.queryByText('new process')).not.toBeInTheDocument();
   });
 });

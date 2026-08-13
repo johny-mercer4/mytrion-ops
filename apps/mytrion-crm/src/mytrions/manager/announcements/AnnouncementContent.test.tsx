@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AnnouncementContent,
@@ -18,6 +18,7 @@ beforeEach(() => {
   getAnnouncementAssetDownload.mockResolvedValue({
     id: 'file_map',
     name: 'Map image.png',
+    mime: 'image/png',
     url: 'https://example.test/map.png',
     expiresAt: '2026-08-13T23:00:00.000Z',
   });
@@ -57,5 +58,33 @@ describe('AnnouncementContent', () => {
     expect(html).not.toContain('script');
     expect(html).not.toContain('onclick');
     expect(html).not.toContain('color:');
+  });
+
+  it('resolves rich-editor images through the authenticated download API', async () => {
+    render(
+      <AnnouncementContent
+        text={'<p><img src="/v1/files/file_map/content" alt="Route map"></p>'}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: 'Route map' })).toHaveAttribute(
+        'src',
+        'https://example.test/map.png',
+      ),
+    );
+    expect(getAnnouncementAssetDownload).toHaveBeenCalledWith('file_map');
+  });
+
+  it('upgrades legacy image attachments from filename links to visible images', async () => {
+    render(
+      <AnnouncementContent
+        text={'<p><a href="/v1/files/file_map/content">Map image.png</a></p>'}
+      />,
+    );
+    expect(await screen.findByRole('img', { name: 'Map image.png' })).toHaveAttribute(
+      'src',
+      'https://example.test/map.png',
+    );
+    expect(screen.queryByRole('link', { name: 'Map image.png' })).not.toBeInTheDocument();
   });
 });
