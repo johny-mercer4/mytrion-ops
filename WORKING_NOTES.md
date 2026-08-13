@@ -15715,3 +15715,16 @@ Continue of the aborted Operate cycle. Context.mjs: `NO_PRODUCT_MD` / `SCOPED_EX
 **Incumbent, left.** AppHeader gradient wordmark; rail width collapse animation; Sales `theme.css` side-tab / gradient-text. Loyalty `hubDialog.css` hover polarity fix from the prior uncommitted pass is in this commit.
 
 `pnpm build:widget` rebuilt `apps/mytrion-crm/app/`. Desktop ≥900 unchanged (structure still 640). Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`.
+
+## 2026-08-13 — Horizon worker Telegram identity linking (Zoho login)
+
+First slice only: persist Telegram credentials when a worker signs in with Zoho inside the Horizon Mini App. sendDocument / file delivery is not in this change.
+
+**Table** `horizon_worker_telegram_links` (migration `0116_horizon_worker_telegram_links`, hand-written + idempotent — `drizzle-kit generate` still cannot be used here because meta snapshots have drifted). Not `telegram_octane_users`, not `sales_agent_mini_app_principals`. PK is uuid (`gen_random_uuid()`). Unique per tenant on `zoho_user_id` and on `telegram_user_id`. `telegram_username` / `zoho_username` / `zoho_email` are caches, not auth keys. `linked_via` is `webapp_bind` | `bot_start`; `status` is `active` | `revoked`.
+
+**Bind (primary).** After Zoho session is live in the CRM Mini App (`UserContextProvider`), a headless `POST /v1/horizon/telegram/link` sends Bearer + raw initData. Server verifies HMAC with `HORIZON_BOT_TOKEN` (same algorithm as the existing Horizon helper; not the carrier token). Zoho user comes from the session (`zoho:<id>`), Telegram user from verified initData. Failures do not block CRM; the client retries a few times. `impersonate: false` so View-as cannot attach the admin's Telegram to another worker. No download-button / UI chrome change — skipped `pnpm build:widget`.
+
+**Webhook (supplement).** Horizon `/start` in a private chat refreshes `telegram_chat_id` / `telegram_username` on an existing active row. It does not create a worker identity. Unlinked `/start` still only opens the Mini App.
+
+**Gaps for the sendDocument slice:** lookup by `telegram_chat_id` (private chat ≈ user id, already stored), Bot API `sendDocument` on `HORIZON_BOT_TOKEN`, download-button wiring in CRM, and what to do when the worker has not opened `/start` yet (chat_id still equals user id from initData, which is enough for private chat).
+

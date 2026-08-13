@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
+import { bindHorizonTelegramAfterLogin, resetHorizonTelegramBind } from '../api/horizonTelegram';
 import { getSession, SESSION_CHANGED_EVENT } from '../api/session';
 import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
@@ -100,6 +101,24 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [state.phase]);
+
+  // Horizon Mini App: after Zoho session is live, bind Telegram identity. Soft-fail; never blocks CRM.
+  useEffect(() => {
+    if (state.phase !== 'authed' || !getSession()) {
+      resetHorizonTelegramBind();
+      return;
+    }
+    void bindHorizonTelegramAfterLogin();
+    const onFocus = (): void => {
+      if (document.visibilityState === 'visible') void bindHorizonTelegramAfterLogin();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };

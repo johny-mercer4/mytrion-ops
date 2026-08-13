@@ -11,6 +11,7 @@ import {
   signHorizonInitData,
   verifyHorizonInitData,
   verifyHorizonWebhookSecret,
+  parseHorizonInitDataIdentity,
   WEBHOOK_PATH,
 } from '../../src/integrations/telegramHorizonBot.js';
 
@@ -47,6 +48,24 @@ describe('Horizon Telegram bot isolation', () => {
       user: JSON.stringify({ id: 1 }),
     });
     expect(verifyHorizonInitData(signed, 3600).ok).toBe(false);
+  });
+
+  it('parses user id, username, and private chat id from verified initData fields', () => {
+    expect(
+      parseHorizonInitDataIdentity({
+        user: JSON.stringify({ id: 99, username: 'ada' }),
+      }),
+    ).toEqual({ telegramUserId: '99', telegramChatId: '99', telegramUsername: 'ada' });
+
+    expect(
+      parseHorizonInitDataIdentity({
+        user: JSON.stringify({ id: 99, username: 'ada' }),
+        chat: JSON.stringify({ id: -100, type: 'supergroup' }),
+      }),
+    ).toEqual({ telegramUserId: '99', telegramChatId: '-100', telegramUsername: 'ada' });
+
+    expect(parseHorizonInitDataIdentity({ user: JSON.stringify({ first_name: 'Ada' }) })).toBeNull();
+    expect(parseHorizonInitDataIdentity({})).toBeNull();
   });
 });
 

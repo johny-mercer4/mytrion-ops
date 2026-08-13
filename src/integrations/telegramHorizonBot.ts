@@ -174,6 +174,47 @@ export function verifyHorizonInitData(
   return { ok: true, fields };
 }
 
+export interface HorizonInitDataIdentity {
+  telegramUserId: string;
+  telegramChatId: string;
+  telegramUsername: string | null;
+}
+
+function parseJsonObject(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function numericId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) return value.trim();
+  return null;
+}
+
+/**
+ * Telegram user (+ private chat) from already-verified initData fields.
+ * When `chat` is absent (Menu Button / private Mini App), chat_id equals user id.
+ */
+export function parseHorizonInitDataIdentity(
+  fields: Record<string, string>,
+): HorizonInitDataIdentity | null {
+  const user = parseJsonObject(fields.user);
+  const telegramUserId = numericId(user?.id);
+  if (!telegramUserId) return null;
+  const chat = parseJsonObject(fields.chat);
+  const telegramChatId = numericId(chat?.id) ?? telegramUserId;
+  const usernameRaw = user?.username;
+  const telegramUsername =
+    typeof usernameRaw === 'string' && usernameRaw.trim() ? usernameRaw.trim() : null;
+  return { telegramUserId, telegramChatId, telegramUsername };
+}
+
 /** Test helper: sign fields the same way Telegram would, using HORIZON_BOT_TOKEN. */
 export function signHorizonInitData(fields: Record<string, string>): string {
   const token = env.HORIZON_BOT_TOKEN;
