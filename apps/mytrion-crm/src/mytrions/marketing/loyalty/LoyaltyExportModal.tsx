@@ -18,7 +18,7 @@
  * fetched stays on screen and the panel is marked stale while it revalidates, rather than blanking
  * back to a skeleton (CLAUDE.md's double-loader rule).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
   CalendarDays,
@@ -31,7 +31,6 @@ import {
   RefreshCw,
   TriangleAlert,
   Trophy,
-  Users,
   X,
 } from 'lucide-react';
 import { getLoyaltyMonthRoster } from '../../../api/loyalty';
@@ -308,6 +307,22 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                   <span>Step 3</span>
                   <h3>What you will get</h3>
                 </div>
+                {/* The timestamp is a CAPTION, not the button's label. It used to be the label, so the
+                    control read "Updated just now" — a status nobody clicks, whose width changed as it
+                    aged. Same split the board header uses.
+
+                    Both are DIRECT children of the section head, deliberately. Wrapping them in a div
+                    broke it twice over: `.mg-lty-modal-section-head > button` stopped matching, so the
+                    button lost its border, padding and background and wrapped onto two lines; and the
+                    caption started matching `.mg-lty-modal-section-head > div > span` — the kicker rule
+                    — which uppercased and letter-spaced it. */}
+                <span className="mg-lex-cachedat">
+                  {revalidating
+                    ? 'Measuring…'
+                    : cachedAt
+                      ? `Updated ${formatCachedAt(cachedAt)}`
+                      : ' '}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
@@ -317,7 +332,7 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                   disabled={loading || revalidating}
                 >
                   <RefreshCw size={14} className={revalidating ? 'mg-spin' : ''} />
-                  {cachedAt && !revalidating ? `Updated ${formatCachedAt(cachedAt)}` : 'Refresh'}
+                  Refresh
                 </button>
               </div>
 
@@ -343,30 +358,29 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                 </div>
               ) : (
                 <>
+                  {/* TWO figures, not four. "Carriers" repeated the selected scope card's own row
+                      count AND the footer's, putting the same number on screen three times, and
+                      "Hold a tier" repeated the "Tier holders only" card. Cutting both removed a
+                      whole tile row — which is also what had been pushing the tier chips under a
+                      sliced scroll fold. What is left is the one thing stated nowhere else: the
+                      in-network gallons behind each of the two months, labelled to match the
+                      relation strip at the top so the pair reads as the same story continued. */}
                   <div className="mg-lex-stats">
                     <div>
                       <span>
-                        <Users size={14} /> Carriers
+                        <Trophy size={14} /> {basisName} · tier basis
                       </span>
-                      <strong>{n0(payload.summary.carriers)}</strong>
+                      <strong>
+                        {n0(payload.summary.basisInNetworkGallons)} <small>gal</small>
+                      </strong>
                     </div>
                     <div>
                       <span>
-                        <Trophy size={14} /> Hold a tier
+                        <Fuel size={14} /> {monthName(month)} · reported
                       </span>
-                      <strong>{n0(payload.summary.tierHolders)}</strong>
-                    </div>
-                    <div>
-                      <span>
-                        <Fuel size={14} /> {basisName} in-network
-                      </span>
-                      <strong>{n0(payload.summary.basisInNetworkGallons)}</strong>
-                    </div>
-                    <div>
-                      <span>
-                        <Fuel size={14} /> {monthName(month)} in-network
-                      </span>
-                      <strong>{n0(payload.summary.monthInNetworkGallons)}</strong>
+                      <strong>
+                        {n0(payload.summary.monthInNetworkGallons)} <small>gal</small>
+                      </strong>
                     </div>
                   </div>
                   {/* `role="list"` and not a bare div: an aria-label on a generic container is not
@@ -374,18 +388,22 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                       arrived as one run of unrelated numbers. */}
                   <div className="mg-lex-dist" role="list" aria-label="Tier distribution in this export">
                     {payload.summary.buckets.map((bucket) => (
-                      <span
-                        key={bucket.bucket}
-                        role="listitem"
-                        className="mg-lex-chip"
-                        /* The one place this surface uses colours that are not app tokens, and it is
-                           deliberate: these chips preview the SPREADSHEET's palette, so they have to
-                           be the spreadsheet's colours rather than the board's dark-surface tuning. */
-                        style={{
-                          background: TIER_SWATCH[bucket.bucket].css,
-                          color: TIER_SWATCH[bucket.bucket].inkCss,
-                        }}
-                      >
+                      <span key={bucket.bucket} role="listitem" className="mg-lex-chip">
+                        {/* The only non-token colours on this surface, and they are confined to a
+                            14px swatch: it previews the actual spreadsheet cell — the export
+                            palette's fill as its background, that cell's ink as its ring. Painting
+                            the whole chip this way made six paper-light pills the loudest thing in
+                            the dark dialog; the chip itself is now theme-native. */}
+                        <span
+                          className="mg-lex-chip-swatch"
+                          style={
+                            {
+                              '--sw-fill': TIER_SWATCH[bucket.bucket].css,
+                              '--sw-ink': TIER_SWATCH[bucket.bucket].inkCss,
+                            } as CSSProperties
+                          }
+                          aria-hidden="true"
+                        />
                         <strong>{n0(bucket.count)}</strong>
                         {bucket.label}
                         <em>{(bucket.share * 100).toFixed(1)}%</em>
@@ -395,8 +413,9 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                   <p className="mg-lty-modal-help mg-lex-foot-note">
                     The workbook carries three sheets — an Overview naming both months, the Clients
                     table, and a Legend of the thresholds and perks. Tier, projected tier, perks and
-                    exception source come through as coloured picklists in the exact colours above; the
-                    CSV holds the same {EXPORT_COLUMNS.length} columns as plain text.
+                    exception source arrive as real Excel picklists, each filled with the colour shown
+                    in its swatch above. The CSV holds the same {EXPORT_COLUMNS.length} columns as
+                    plain text.
                   </p>
                 </>
               )}
@@ -415,20 +434,28 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
             <button type="button" onClick={onClose} disabled={busy !== null}>
               Cancel
             </button>
+            {/* ONE primary, not two. Both buttons were `is-primary`, which put two solid accent
+                fills side by side: the eye had nowhere to land and the pair read as a segmented
+                control it is not. Excel is the primary because it is the designed artifact — three
+                sheets, the coloured tier and perk picklists, the legend. CSV is the same data as
+                plain text for a machine, so it takes the tonal tier: obviously available, obviously
+                the second choice, still in the primary's colour family. */}
             <button
               type="button"
               className="is-primary"
               onClick={() => void download('xlsx')}
               disabled={!ready || busy !== null}
+              title="Styled workbook — coloured tier and perk picklists, overview and legend sheets"
             >
               <FileSpreadsheet size={15} />
               {busy === 'xlsx' ? 'Building…' : 'Excel'}
             </button>
             <button
               type="button"
-              className="is-primary"
+              className="is-tonal"
               onClick={() => void download('csv')}
               disabled={!ready || busy !== null}
+              title="Same columns as plain text, for a spreadsheet import or a script"
             >
               <FileText size={15} />
               {busy === 'csv' ? 'Building…' : 'CSV'}

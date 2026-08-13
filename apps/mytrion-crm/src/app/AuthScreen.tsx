@@ -23,7 +23,7 @@ export function AuthScreen({
   const busy = phase === 'redirecting' || phase === 'exchanging';
 
   return (
-    <div
+    <main
       className={`${styles.screen} ${styles.authScreen}`}
       style={{
         padding:
@@ -58,6 +58,6 @@ export function AuthScreen({
           </p>
         ) : null}
       </div>
-    </div>
+    </main>
   );
 }

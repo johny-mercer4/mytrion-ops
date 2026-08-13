@@ -251,9 +251,10 @@ export function Returns() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search returns..."
+            aria-label="Search returns"
           />
           {searchQuery ? (
-            <button className="db-search-clear" onClick={() => setSearchQuery('')}>
+            <button type="button" className="db-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
               </svg>

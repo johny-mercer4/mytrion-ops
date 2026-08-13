@@ -149,14 +149,14 @@ export function BillingShell() {
       contentScroll="content"
     >
       <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
-        <main className="bm-content">
+        <div className="bm-content">
           {panel('datacenter', els.datacenter)}
           {panel('transactions', els.transactions)}
           {panel('debtors', els.debtors)}
           {panel('prepay', els.prepay)}
           {panel('returns', els.returns)}
           {panel('ledger', els.ledger)}
-        </main>
+        </div>
       </div>
     </MytrionShell>
   );

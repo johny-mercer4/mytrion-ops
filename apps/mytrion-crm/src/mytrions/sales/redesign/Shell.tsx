@@ -302,7 +302,7 @@ export function SalesRedesign() {
         contentScroll="content"
       >
         <div className={`ss-root ${theme === 'light' ? 'light' : ''}`}>
-          <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
+          <div className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
@@ -341,7 +341,7 @@ export function SalesRedesign() {
                 </Suspense>
               )}
             </div>
-          </main>
+          </div>
 
         {/* DETAIL MODAL */}
         {detail && (
@@ -356,8 +356,9 @@ export function SalesRedesign() {
               /* Three rows, and only the middle one moves. `max-height:100%` respects the overlay's
                  own --space-6 gutter (a vh cap does not, which is how a long detail body used to push
                  the panel's top edge off-screen); `flex:none` stops the panel being shrunk below that
-                 cap and handing the overflow back to the page. The 3px accent border-top stays. */
-              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
+                 cap and handing the overflow back to the page. Accent is 1px — same as DetailSheet —
+                 so the radius stays honest. */
+              style={s('width:100%;max-width:520px;max-height:100%;flex:none;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:1px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
             >
               <div style={s('flex:none;display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Icon name={detail.icon} size={19} /></div>

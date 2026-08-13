@@ -139,7 +139,7 @@ export function CsShell() {
   return (
     <MytrionShell id="customer-service" navSections={navSections} enableNavSearch>
       <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
-        <main className="cs-content" key={actAsKey}>
+        <div className="cs-content" key={actAsKey}>
           {panel('home', <Home onNavigate={navigate} />)}
           {panel('applications', <Applications />)}
           {panel('retention-cases', <CasesPanel />)}
@@ -158,7 +158,7 @@ export function CsShell() {
                   title="Customer Service tickets"
                 />,
               )}
-        </main>
+        </div>
         {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
       </div>
     </MytrionShell>

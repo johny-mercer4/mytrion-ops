@@ -115,6 +115,11 @@
   font-weight: var(--fw-semibold);
   line-height: 1;
   cursor: pointer;
+  /* Named properties, and all three are COLOURS on purpose — see the hover note below. */
+  transition:
+    background-color var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    color var(--hz-dur-wash) var(--hz-ease);
 }
 
 .mg-root .mg-lty-modal-head > button {
@@ -122,12 +127,48 @@
   padding: 0;
 }
 
+/* ── One hover language: hover means MORE ACCENT PRESENCE ─────────────────────────────────────────
+   The neutral button gains a wash of accent, the tonal button deepens its wash, and the primary
+   saturates toward --accent-strong (see the footer section). No variant changes polarity, so no
+   button ever stops looking like what it is under the cursor.
+
+   TWO BUGS THIS REPLACES.
+
+   1. This rule used to set `background` and `color` for EVERY footer button, and its specificity
+      (0,4,1 — .mg-root + .mg-lty-modal-foot + :hover + :not(:disabled), plus the `button` element)
+      beat both `.is-primary` and `.is-reset` at (0,3,0). Those are declared LATER in this file, so
+      they read as though they would win. They did not. Hovering the primary action threw away
+      --accent / --on-accent and repainted it as a neutral pane with body ink — a full polarity
+      inversion in BOTH themes (pale-sky-on-dark-teal → dark-pane-on-light-ink in dark, deep-blue-on-
+      white → near-white-on-dark-ink in light). It read as the button going inactive under the cursor,
+      which is the exact inverse of the affordance. Hovering `.is-reset` likewise discarded --danger
+      and took the destructive signal with it. The variant states now sit at (0,5,0) AND later in the
+      file, so they win on specificity and on order.
+   2. The hover went from a COLOUR (--hz-pane-alt) to a GRADIENT (--hz-pane-lift). `background-image`
+      does not interpolate, so the transition above had nothing to smooth and the change landed as a
+      snap. Every state here is colour → colour for that reason. */
 .mg-root .mg-lty-modal-head > button:hover,
 .mg-root .mg-lty-modal-section-head > button:hover:not(:disabled),
 .mg-root .mg-lty-modal-foot button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--hz-pane-bd));
-  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 10%, var(--hz-pane-alt));
   color: var(--text-primary);
+}
+
+.mg-root .mg-lty-modal-head > button:active,
+.mg-root .mg-lty-modal-section-head > button:active:not(:disabled),
+.mg-root .mg-lty-modal-foot button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--hz-pane-alt));
+}
+
+/* A hover-only affordance is no affordance for a keyboard. The ring sits OUTSIDE the control via
+   `outline-offset`, which is what makes it visible on the solid accent primary too — an accent ring
+   drawn on an accent fill is invisible, and that is the usual way this gets shipped broken. */
+.mg-root .mg-lty-modal-head > button:focus-visible,
+.mg-root .mg-lty-modal-section-head > button:focus-visible,
+.mg-root .mg-lty-modal-foot button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The one scrolling row. `min-height: 0` is required — without it the row floors at min-content and
@@ -385,13 +426,61 @@
   background: var(--hz-pane-alt);
 }
 
+/* ── Footer variants ─────────────────────────────────────────────────────────────────────────────
+   Three prominences, and each one keeps its identity through every state. Declared after the shared
+   hover block so they win on source order as well as on specificity (0,5,0 vs 0,4,1) — the previous
+   arrangement relied on order alone and lost.
+
+   All three are built from --accent and --danger rather than from literal colours, so light and dark
+   are one definition. That works because the accent token INVERTS with the theme (#a5e7ff pale sky on
+   dark, #1f4fb0 deep blue on light) while the panes invert with it, so `color: var(--accent)` on a
+   pane-alt-plus-accent-wash lands at 7.8:1 in dark and 5.5:1 in light without a per-theme override. */
 .mg-root .mg-lty-modal-foot .is-reset {
   color: var(--danger);
+}
+.mg-root .mg-lty-modal-foot .is-reset:hover:not(:disabled) {
+  /* Stays red. The old shared hover repainted this to --text-primary, which is a destructive action
+     losing its only warning at the exact moment the cursor is on it. */
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--danger) 12%, var(--hz-pane-alt));
+  color: var(--danger);
+}
+.mg-root .mg-lty-modal-foot .is-reset:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 20%, var(--hz-pane-alt));
+}
+
+/* Tonal — the second-choice action in a pair. Unmistakably available and unmistakably not the
+   primary, while staying in the primary's colour family so the two still read as one action group
+   rather than as an action and an unrelated button. */
+.mg-root .mg-lty-modal-foot .is-tonal {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 14%, var(--hz-pane-alt));
+  color: var(--accent);
+}
+.mg-root .mg-lty-modal-foot .is-tonal:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 24%, var(--hz-pane-alt));
+  color: var(--accent);
+}
+.mg-root .mg-lty-modal-foot .is-tonal:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 32%, var(--hz-pane-alt));
 }
 
 .mg-root .mg-lty-modal-foot .is-primary {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--hz-pane-bd));
   background: var(--accent);
+  color: var(--on-accent);
+}
+.mg-root .mg-lty-modal-foot .is-primary:hover:not(:disabled) {
+  /* Saturates toward --accent-strong instead of flipping to a pane. Measured both ways: dark goes
+     9.7:1 → 8.5:1, light 7.5:1 → 6.8:1, so the ink stays well clear of 4.5:1 while the fill visibly
+     gains energy. The ink itself never moves — that is what keeps it reading as the primary. */
+  border-color: color-mix(in srgb, var(--accent-strong) 60%, var(--accent));
+  background: color-mix(in srgb, var(--accent-strong) 38%, var(--accent));
+  color: var(--on-accent);
+}
+.mg-root .mg-lty-modal-foot .is-primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong) 58%, var(--accent));
   color: var(--on-accent);
 }
 

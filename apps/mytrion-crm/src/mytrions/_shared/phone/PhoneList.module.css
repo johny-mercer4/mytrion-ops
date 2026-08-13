@@ -22,6 +22,7 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
+  transition: background-color var(--duration-fast, 0.2s) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .list > li:last-child .row {
@@ -31,6 +32,16 @@
 .row:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--color-ring, var(--accent));
+}
+
+@media (hover: hover) {
+  .row:hover {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  }
+}
+
+.row:active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
 }
 
 .text {

@@ -523,9 +523,10 @@ export function Prepay() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search Carrier ID or Company..."
+            aria-label="Search Carrier ID or Company"
           />
           {search ? (
-            <button className="db-search-clear" onClick={() => setSearch('')}>
+            <button type="button" className="db-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
               </svg>
@@ -655,7 +656,7 @@ export function Prepay() {
             <>
               {paginated.map((c) => (
                 <div className="db-row-item" key={c.carrierId}>
-                  <div className="db-row-main" onClick={() => setSelected(c)}>
+                  <button type="button" className="db-row-main" onClick={() => setSelected(c)}>
                     <div className="db-col-carrier db-carrier-id">{c.carrierId}</div>
                     <div className="db-col-company">
                       <div className="db-company-name">{c.companyName}</div>
@@ -688,7 +689,7 @@ export function Prepay() {
                     <div className={`db-col-owed db-money-bold ${enriching ? '' : diffClass(c.difference)}`}>
                       {enriching ? <span className="pp-cell-skeleton" /> : fmtCurrency(c.difference)}
                     </div>
-                  </div>
+                  </button>
                 </div>
               ))}
 
@@ -995,9 +996,9 @@ function PrepayLedgerModal({
 
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bm-modal-box" style={{ maxWidth: 1180 }}>
+      <div className="bm-modal-box" role="dialog" aria-modal="true" aria-labelledby="bm-prepay-title" style={{ maxWidth: 1180 }}>
         <div className="bm-modal-header">
-          <h3 className="bm-modal-title">
+          <h3 className="bm-modal-title" id="bm-prepay-title">
             {company.companyName}
             <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem', fontFamily: MONO }}>
               #{company.carrierId}
@@ -1014,7 +1015,7 @@ function PrepayLedgerModal({
             </svg>
             {exporting ? 'Exporting…' : 'Excel'}
           </button>
-          <button className="bm-modal-close" onClick={onClose}>
+          <button type="button" className="bm-modal-close" onClick={onClose} aria-label="Close">
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
             </svg>

@@ -15652,3 +15652,66 @@ client sheet, Recruit cards.
 **AccessLint.** MCP `plugin-accesslint-accesslint` was `error` (live discovery failed; `mcp_auth`
 timed out). Source-pattern report only — unlabeled search fields, CS Application/CITI sheets
 missing `role="dialog"`, icon-only close without a name.
+
+## 2026-08-13 — Loyalty export dialog: button states fixed, light/dark verified
+
+Follow-up on the export dialog. Reported: "the hover effect on buttons is really bad." It was a
+specificity bug, not taste.
+
+**Root cause.** `hubDialog.css` had ONE `.mg-lty-modal-foot button:hover` rule setting `background`
+and `color` for every footer button. At (0,4,1) it beat `.is-primary` and `.is-reset` at (0,3,0) —
+which are declared *later* in the file, so they read as though they would win. Hovering the primary
+therefore discarded `--accent`/`--on-accent` and repainted it as a neutral pane with body ink: a full
+polarity inversion in both themes, reading as the button going *inactive* under the cursor. Hovering
+`.is-reset` likewise dropped `--danger`. Second bug in the same rule: it hovered from a COLOUR
+(`--hz-pane-alt`) to a GRADIENT (`--hz-pane-lift`); `background-image` does not interpolate, so the
+change snapped. Both also affected LoyaltyBonusModal — fixed there for free.
+
+**Fix.** One hover language — hover = more accent presence, never a polarity change. Neutral gains a
+wash, tonal deepens its wash, primary saturates toward `--accent-strong` (which theme.css documents as
+"the saturated FILL and hover step", so this is the system's own answer). Every state is colour →
+colour so the transition has something to smooth. Added `:active` and `:focus-visible` — the ring uses
+`outline-offset` so it lands on the footer rather than invisibly on the accent fill.
+
+**Hierarchy.** Excel and CSV were both `is-primary` — two solid accent fills side by side, no place for
+the eye to land. Excel is primary (the designed artifact); CSV takes a new reusable `.is-tonal`.
+
+**A silent theming bug found on the way.** `--lty-*` was defined only on `.mg-root .mg-lty`
+(descendant). The dialogs portal to `document.body` with BOTH classes on one root element, which a
+descendant combinator cannot match, so every `--lty-*` read inside a dialog was an undefined custom
+property → invalid at computed-value time → silently `inherit`. The export dialog's tier icons were
+muted grey instead of gold/sky in both themes. Added `.mg-root.mg-lty` to both palette blocks.
+
+**Distilled Step 3.** "Carriers" repeated the selected scope card's row count AND the footer's — the
+same number three times on one screen — and "Hold a tier" repeated the "Tier holders only" card. Cut
+both; what remains is the two months' in-network gallons, labelled to match the relation strip. Also
+split the Refresh control: the timestamp is a caption, not the button's label ("Updated just now" is
+not something you click).
+
+**Verified in a real browser**, not by reasoning: a CDP script opened the dialog and dispatched genuine
+`Input.dispatchMouseEvent` moves (CSS `:hover` ignores synthetic events), capturing dark+light ×
+1280/375 at rest and on both actions. That round caught two regressions I had just introduced —
+wrapping Refresh in a div broke `.mg-lty-modal-section-head > button` and let the kicker rule uppercase
+the caption, and the mobile footer's inherited `1fr 1fr` grid orphaned CSV onto its own row. Both
+fixed and re-confirmed. Contrast measured: primary hover 9.7→8.5:1 dark, 7.5→6.8:1 light.
+
+`pnpm typecheck` clean, 2631 backend tests green, 910/911 CRM green. The one failure is
+`ds/purity.test.ts` on a **pre-existing** `border-radius: 99px` at `ds/Drawer/Drawer.module.css:188`,
+committed in 67565825 (Horizon phone lists) — not in this diff; `var(--radius-full)` fixes it.
+`app/` rebuilt. Not committed.
+
+## 2026-08-13 — Horizon phone a11y apply-pass (Impeccable + AccessLint)
+
+Continue of the aborted Operate cycle. Context.mjs: `NO_PRODUCT_MD` / `SCOPED_EXISTING_ALLOWED`, no `CONTEXT_STALE`. Vite was down, so AccessLint used `audit_html` (compact) on login, Data Center list, client sheet, Verification.
+
+**AccessLint before → after (targeted mechanicals):**
+- Login: 2 moderate (no main / no landmark) → 0
+- Data Center list: 1 serious (placeholder-only label) + 2 moderate → 0
+- Client sheet: 2 critical (unlabelled input, unnamed Close) + 3 moderate → 3 moderate page-level (`page-has-heading-one`, `landmark-main`, `region`) — overlay fragment; the page behind now supplies `<main>` + h1. TODO, do not invent a dialog h1.
+- Verification: 2 moderate → 0 (with page landmarks)
+
+**Applied.** AuthScreen + MytrionShell `<main>` (inner Billing/CS/Sales/Recruit `<main>` demoted to avoid nesting). CS Application/CITI + Billing debtor/prepay/return-match sheets: `role="dialog"` / `aria-modal` / labelled Close. Debtors/Prepay clickable rows are `<button>`. Search fields use existing placeholder copy as `aria-label`. PhoneList hover/active is named `background-color` only. Sales detail accent stripe 3px → 1px (hook `border-accent-on-rounded`). Debtors age-bar dropped `transition: width`; invoice cards dropped the 3px left stripe.
+
+**Incumbent, left.** AppHeader gradient wordmark; rail width collapse animation; Sales `theme.css` side-tab / gradient-text. Loyalty `hubDialog.css` hover polarity fix from the prior uncommitted pass is in this commit.
+
+`pnpm build:widget` rebuilt `apps/mytrion-crm/app/`. Desktop ≥900 unchanged (structure still 640). Did not touch `apps/mini-app` or `TELEGRAM_BOT_TOKEN`.
