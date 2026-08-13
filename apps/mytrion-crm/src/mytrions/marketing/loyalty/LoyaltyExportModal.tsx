@@ -29,7 +29,6 @@ import {
   Fuel,
   MoveRight,
   RefreshCw,
-  TriangleAlert,
   Trophy,
   X,
 } from 'lucide-react';
@@ -79,8 +78,25 @@ function monthName(key: string): string {
   });
 }
 
-/** The two months, drawn as the relationship they are. This is the requirement, made visible. */
-function MonthRelation({ basis, month }: { basis: string; month: string }) {
+/**
+ * The two months, drawn as the relationship they are. This is the requirement, made visible.
+ *
+ * `inProgress` used to be a full amber callout below this strip. It was removed on request, and the
+ * fact moved in here as a quiet qualifier on the month it actually describes — which is a better home
+ * for it anyway: the reported month is the thing that is partial, so the caveat belongs on that half
+ * of the pair rather than in a separate block repeating both month names. The workbook's Overview
+ * sheet still carries the full warning, and that is the copy that matters, because the file outlives
+ * this dialog.
+ */
+function MonthRelation({
+  basis,
+  month,
+  inProgress,
+}: {
+  basis: string;
+  month: string;
+  inProgress: boolean;
+}) {
   return (
     <div className="mg-lex-relation">
       <span className="mg-lex-relation-part is-basis">
@@ -92,7 +108,10 @@ function MonthRelation({ basis, month }: { basis: string; month: string }) {
       <span className="mg-lex-relation-part is-month">
         <Fuel size={14} aria-hidden="true" />
         <small>Activity reported for</small>
-        <strong>{month}</strong>
+        <strong>
+          {month}
+          {inProgress ? <i>still in progress · partial</i> : null}
+        </strong>
       </span>
     </div>
   );
@@ -261,16 +280,11 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                   </button>
                 </div>
               </div>
-              <MonthRelation basis={basisName} month={monthName(month)} />
-              {month === currentMonth ? (
-                <p className="mg-lex-notice">
-                  <TriangleAlert size={14} aria-hidden="true" />
-                  <span>
-                    {monthName(month)} is still in progress, so its gallons, cards and transactions are
-                    partial. The tier itself is final — {basisName} has closed.
-                  </span>
-                </p>
-              ) : null}
+              <MonthRelation
+                basis={basisName}
+                month={monthName(month)}
+                inProgress={month === currentMonth}
+              />
             </section>
 
             <section className="mg-lty-modal-section">
@@ -346,7 +360,11 @@ export function LoyaltyExportModal({ onClose }: { onClose: () => void }) {
                   aria-label={`Measuring ${monthName(month)}`}
                 >
                   <div aria-hidden="true">
-                    {[0, 1, 2, 3].map((i) => (
+                    {/* TWO, matching the two month tiles it stands in for. It was four, left over from
+                        the old four-tile row, so the placeholder wrapped to two rows and the panel
+                        shrank by a row's height the moment data landed — a skeleton that does not
+                        mirror its own content is a layout shift with extra steps. */}
+                    {[0, 1].map((i) => (
                       <Bar key={i} h="52px" line={false} delay={(i % 3) as 0 | 1 | 2} />
                     ))}
                   </div>

@@ -734,29 +734,25 @@
   line-height: 1.2;
   white-space: nowrap;
 }
+/* The partial-month caveat, inline on the month it describes. Replaced a full amber callout below the
+   strip (removed on request): a block that repeated both month names to say one of them is not closed
+   yet was the loudest thing in Step 1 for the least new information. `display: block` puts it on its
+   own line under the month rather than trailing it, so a long month name cannot push it out of view. */
+.mg-root .mg-lex-relation-part strong i {
+  display: block;
+  margin-top: 2px;
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  font-style: normal;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+
 .mg-root .mg-lex-relation-arrow {
   align-self: center;
   color: var(--text-muted);
 }
 
-/* ── Partial-month notice ───────────────────────────────────────────────────── */
-.mg-root .mg-lex-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--hz-pane-bd));
-  border-radius: var(--mg-r-sm);
-  background: color-mix(in srgb, var(--warning) 9%, transparent);
-  color: var(--warning);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-.mg-root .mg-lex-notice svg {
-  flex: none;
-  margin-top: 2px;
-}
 
 /* ── Scope choice ───────────────────────────────────────────────────────────── */
 .mg-root .mg-lex-scopes {
@@ -915,8 +911,11 @@
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
 }
+/* --text-secondary, NOT --text-muted. Muted measured 5.4:1 on the chip's pane in dark — over the 4.5
+   floor, but at 11px it read as absent rather than as quiet, which is what was reported. Secondary is
+   10.0:1 dark / 6.8:1 light and the smaller size still keeps it subordinate to the count. */
 .mg-root .mg-lex-chip em {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-2xs);
   font-style: normal;
   font-variant-numeric: tabular-nums;
