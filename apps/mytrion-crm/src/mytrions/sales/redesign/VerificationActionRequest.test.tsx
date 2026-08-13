@@ -15,7 +15,7 @@ const requirement: PipelineRequirement = {
   detail: 'Confirm both identifiers.',
   createdAt: '2026-08-01T10:00:00.000Z',
   fields: [
-    { id: 'mc_number', label: 'MC number', type: 'text', required: true },
+    { id: 'mc_number', label: 'MC number', type: 'text', required: true, hint: 'Provide a valid MC so FMCSA can run.' },
     { id: 'dot_number', label: 'DOT number', type: 'text', required: true },
   ],
   attachmentRequired: false,
@@ -38,8 +38,8 @@ describe('VerificationActionRequest', () => {
       />,
     );
 
-    fireEvent.change(screen.getByPlaceholderText('Enter mc number'), { target: { value: '123456' } });
-    fireEvent.change(screen.getByPlaceholderText('Enter dot number'), { target: { value: '654321' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /MC number/ }), { target: { value: '123456' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /DOT number/ }), { target: { value: '654321' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send to Verification' }));
 
     await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
@@ -51,5 +51,19 @@ describe('VerificationActionRequest', () => {
         values: { mc_number: '123456', dot_number: '654321' },
       }),
     );
+  });
+
+  it('shows the platform flag on the input, not as a placeholder', () => {
+    render(
+      <VerificationActionRequest
+        requestId="deal-1"
+        dealId="6227679000000000001"
+        requirement={requirement}
+        onSent={vi.fn()}
+      />,
+    );
+    expect(screen.queryByPlaceholderText(/valid MC/i)).toBeNull();
+    expect(screen.getByText('Provide a valid MC so FMCSA can run.')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /MC number/ })).toHaveAttribute('aria-invalid', 'true');
   });
 });

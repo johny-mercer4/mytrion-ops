@@ -9,11 +9,10 @@ import { editApplicant, uploadBankStatements, type PipelineApplicant } from '@/a
 import { s } from './dc';
 import { Icon } from './icons';
 import { DetailSheet } from './dataCenterSheet';
+import { FieldProceedFlag, parseAuthorityId } from './verificationFields';
 
-function inputStyle(disabled: boolean): React.CSSProperties {
-  return s(
-    `width:100%;min-height:40px;padding:9px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;outline:none;opacity:${disabled ? '.6' : '1'}`,
-  );
+function inputClass(flagged: boolean): string {
+  return `ss-vf-input${flagged ? ' is-flagged' : ''}`;
 }
 
 const APPLICANT_FIELDS: ReadonlyArray<{ id: keyof PipelineApplicant; label: string; type?: string }> = [
@@ -30,6 +29,18 @@ const APPLICANT_FIELDS: ReadonlyArray<{ id: keyof PipelineApplicant; label: stri
   { id: 'mcNumber', label: 'MC number' },
 ];
 
+const AUTHORITY_FIELDS = new Set<keyof PipelineApplicant>(['mcNumber', 'dotNumber']);
+
+function seedApplicant(initial?: PipelineApplicant): Record<string, string> {
+  return Object.fromEntries(
+    APPLICANT_FIELDS.map((field) => {
+      const raw = initial?.[field.id] ?? '';
+      if (AUTHORITY_FIELDS.has(field.id)) return [field.id, parseAuthorityId(raw).value];
+      return [field.id, raw];
+    }),
+  );
+}
+
 const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px';
 const PRIMARY_BTN = `${FOOT_BTN};border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent)`;
 const GHOST_BTN = `${FOOT_BTN};border:1px solid var(--border);background:var(--alt);color:var(--text)`;
@@ -42,15 +53,15 @@ export function EditApplicantPanel({
   requestId,
   dealId,
   initial,
+  fieldFlags,
 }: {
   requestId: string;
   dealId: string | null;
   initial?: PipelineApplicant | undefined;
+  fieldFlags?: { mcNumber?: string; dotNumber?: string };
 }) {
   const [open, setOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(APPLICANT_FIELDS.map((f) => [f.id, initial?.[f.id] ?? ''])),
-  );
+  const [values, setValues] = useState<Record<string, string>>(() => seedApplicant(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -120,19 +131,28 @@ export function EditApplicantPanel({
           }
         >
           <div className="ss-vf-edit-grid">
-            {APPLICANT_FIELDS.map((field) => (
-              <label key={field.id}>
-                <span className="ss-vf-tile-lbl">{field.label}</span>
-                <input
-                  type={field.type ?? 'text'}
-                  value={values[field.id] ?? ''}
-                  disabled={saving}
-                  placeholder={`Enter ${field.label.toLowerCase()}`}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
-                  style={inputStyle(saving)}
-                />
-              </label>
-            ))}
+            {APPLICANT_FIELDS.map((field) => {
+              const flag =
+                field.id === 'mcNumber' || field.id === 'dotNumber'
+                  ? fieldFlags?.[field.id] ?? parseAuthorityId(initial?.[field.id]).flag
+                  : null;
+              const flagId = `vf-edit-${field.id}`;
+              return (
+                <label key={field.id}>
+                  <span className="ss-vf-tile-lbl">{field.label}</span>
+                  <input
+                    type={field.type ?? 'text'}
+                    value={values[field.id] ?? ''}
+                    disabled={saving}
+                    aria-invalid={Boolean(flag)}
+                    aria-describedby={flag ? flagId : undefined}
+                    className={inputClass(Boolean(flag))}
+                    onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}
+                  />
+                  {flag ? <FieldProceedFlag id={flagId} text={flag} /> : null}
+                </label>
+              );
+            })}
           </div>
           {error ? <div role="alert" className="ss-vf-edit-err">{error}</div> : null}
         </DetailSheet>

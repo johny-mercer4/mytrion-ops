@@ -118,7 +118,8 @@ export interface PipelineRequirementField {
   label: string;
   type: PipelineRequirementFieldType;
   required: boolean;
-  placeholder?: string;
+  /** Platform flag copy — render as a field warning, never as the HTML placeholder. */
+  hint?: string;
   options?: string[];
 }
 export interface PipelineRequirementResponse {

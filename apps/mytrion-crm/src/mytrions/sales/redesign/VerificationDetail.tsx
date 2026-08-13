@@ -31,9 +31,12 @@ import {
   ApplicationStatusFacts,
   FactChip,
   FactTile,
+  FieldProceedFlag,
   gradeTone,
   money,
+  parseAuthorityId,
   pipelineIsApproved,
+  applicantFieldFlags,
   deskDecisionLabel,
   platformCreditLabel,
   zohoCreditDisplay,
@@ -328,7 +331,36 @@ function ApprovedResult({
   );
 }
 
-function CrmVerificationRecord({ client, decision }: { client: VerificationClient; decision: PipelineDecision | null }) {
+function AuthorityTile({
+  label,
+  raw,
+  proceedFlag,
+}: {
+  label: string;
+  raw: string | null | undefined;
+  proceedFlag?: string;
+}) {
+  const parsed = parseAuthorityId(raw);
+  const flag = parsed.flag ?? proceedFlag ?? null;
+  if (!parsed.value && !flag) return null;
+  return (
+    <div className={`ss-vf-tile${flag ? ' is-flagged' : ''}`}>
+      <div className="ss-vf-tile-lbl">{label}</div>
+      {parsed.value ? <div className="ss-vf-tile-val is-id">{parsed.value}</div> : null}
+      {flag ? <FieldProceedFlag id={`vf-record-${label.toLowerCase()}`} text={flag} /> : null}
+    </div>
+  );
+}
+
+function CrmVerificationRecord({
+  client,
+  decision,
+  fieldFlags,
+}: {
+  client: VerificationClient;
+  decision: PipelineDecision | null;
+  fieldFlags?: { mcNumber?: string; dotNumber?: string };
+}) {
   const credit = zohoCreditDisplay(client.creditDecision);
   const desk = decision ? deskDecisionLabel(decision) : null;
   const note = creditVerificationNote(client);
@@ -369,8 +401,8 @@ function CrmVerificationRecord({ client, decision }: { client: VerificationClien
           value={client.applicationId ? <CopyValue text={String(client.applicationId)}>#{client.applicationId}</CopyValue> : null}
           kind="id"
         />
-        <FactTile label="DOT" value={client.dot} kind="id" />
-        <FactTile label="MC" value={client.mc} kind="id" />
+        <AuthorityTile label="DOT" raw={client.dot} {...(fieldFlags?.dotNumber ? { proceedFlag: fieldFlags.dotNumber } : {})} />
+        <AuthorityTile label="MC" raw={client.mc} {...(fieldFlags?.mcNumber ? { proceedFlag: fieldFlags.mcNumber } : {})} />
         <FactTile
           label="Credit score"
           value={client.creditScore}
@@ -401,7 +433,12 @@ export function ClientDetailPage({ client, onBack }: { client: VerificationClien
   const cls = CLASSIFICATION_VIS[client.classification];
   const pipe = useCachedLoad(
     `sales:verification:detail:${client.dealId ?? ''}:${client.carrierId ?? ''}:${client.applicationId ?? ''}`,
-    () => getPipeline({ dealId: client.dealId, carrierId: client.carrierId, applicationId: client.applicationId, dot: client.dot }),
+    () => getPipeline({
+      dealId: client.dealId,
+      carrierId: client.carrierId,
+      applicationId: client.applicationId,
+      dot: parseAuthorityId(client.dot).value || null,
+    }),
     { staleMs: 90_000 },
   );
   const snapshot = pipe.data ?? null;
@@ -422,7 +459,12 @@ export function ClientDetailPage({ client, onBack }: { client: VerificationClien
         <div className="ss-vf-header-actions">
           <span style={s(`${badge(cls.label, cls.color).style};font-size:12px;flex-shrink:0`)}>{cls.label}</span>
           {snapshot?.requestId ? (
-            <EditApplicantPanel requestId={snapshot.requestId} dealId={client.dealId} initial={snapshot.applicant} />
+            <EditApplicantPanel
+              requestId={snapshot.requestId}
+              dealId={client.dealId}
+              initial={snapshot.applicant}
+              fieldFlags={applicantFieldFlags(snapshot)}
+            />
           ) : null}
         </div>
       }
@@ -435,7 +477,11 @@ export function ClientDetailPage({ client, onBack }: { client: VerificationClien
         </div>
       }
     >
-      <CrmVerificationRecord client={client} decision={snapshot?.decision ?? null} />
+      <CrmVerificationRecord
+        client={client}
+        decision={snapshot?.decision ?? null}
+        fieldFlags={applicantFieldFlags(snapshot)}
+      />
       {pipeLoading && !approved ? (
         <VerificationDetailSkeleton />
       ) : pipe.error && !pipe.data && !approved ? (

@@ -31,6 +31,7 @@ import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 import './ss-horizon.css';
 import './verification.css';
+import './verificationForms.css';
 // After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
 import './dc-clients.css';
 // Last: the shared page scaffold (head / metrics / sub-tabs / empty / pager) wins over the

@@ -15797,3 +15797,20 @@ Also: `.ss-pay-grid` drops to two columns below 640px. Three dollar figures on a
 ~90px a tile and truncates the amount — that grid now carries three result panels, not one.
 
 CRM 860 green (4 new panel tests), backend 2611 green, lint clean, vendored `app/` rebuilt.
+
+## 2026-08-13 — Sales Verification: MC/DOT flags on the input, not in the field
+
+Verification sometimes stuffed proceed copy ("Need a valid MC", platform `placeholder` / `flag` /
+event detail) into the MC or DOT value or HTML placeholder. Sales then showed that prose as if it
+were the identifier.
+
+Pipeline mapping now keeps that copy on `hint` only — never as an HTML placeholder. The action
+request and Edit applicant inputs stay empty until the agent types a real id; the exact platform
+sentence renders as a red warning under the field (`aria-invalid` + `aria-describedby`). The record
+MC/DOT tiles do the same instead of displaying the prose as the number. Pipeline lookup ignores a
+DOT that is not an authority id (avoids a 400 on `dot.max(64)` and a bogus SQL match).
+
+Also: action-request fields collapse to one column under 640px, inputs use `--radius-md` /
+`--shadow-sm` / 44px touch height, no `field.placeholder` on MC/DOT.
+
+Impeccable: `NO_PRODUCT_MD`, `SCOPED_EXISTING_ALLOWED`, Operate. Offer `/impeccable init` later.

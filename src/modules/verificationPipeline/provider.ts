@@ -151,7 +151,8 @@ async function findRequest(key: PipelineKey): Promise<RequestRow | null> {
   const dealId = txt(key.dealId) || null;
   const carrierId = txt(key.carrierId) || null;
   const applicationId = txt(key.applicationId) || null;
-  const dot = txt(key.dot) || null;
+  const dotRaw = txt(key.dot);
+  const dot = /^(?:MC|USDOT|DOT|#)?[\s-]*\d{4,10}$/i.test(dotRaw) ? dotRaw : null;
   if (!dealId && !carrierId && !applicationId && !dot) return null;
   const rows = await verificationDb.query<RequestRow>(
     `select request_id, status, result, manual_review_form, manual_review_resolution, post_stop_factor,

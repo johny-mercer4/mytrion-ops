@@ -128,6 +128,7 @@ describe('extractSalesRequirements', () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0]?.fields.map((field) => field.id)).toEqual(['mc_number', 'dot_number']);
+    expect(result[0]?.fields.every((field) => field.hint === 'Please confirm both identifiers.')).toBe(true);
     expect(result[0]?.detail).toBe('Please confirm both identifiers.');
   });
 
@@ -142,6 +143,7 @@ describe('extractSalesRequirements', () => {
           required_fields: [
             { key: 'policy_number', label: 'Policy number', type: 'text' },
             { key: 'coverage', type: 'select', options: ['Primary', 'Excess'] },
+            { key: 'mc_number', placeholder: 'Provide a valid MC so FMCSA can run.' },
           ],
           attachment_required: true,
         },
@@ -150,6 +152,11 @@ describe('extractSalesRequirements', () => {
     ]);
     expect(result[0]?.attachmentRequired).toBe(true);
     expect(result[0]?.fields[1]).toMatchObject({ id: 'coverage', type: 'select' });
+    expect(result[0]?.fields[2]).toMatchObject({
+      id: 'mc_number',
+      hint: 'Provide a valid MC so FMCSA can run.',
+    });
+    expect(result[0]?.fields[2]).not.toHaveProperty('placeholder');
   });
 
   it('ignores ordinary pipeline events and requests for another department', () => {

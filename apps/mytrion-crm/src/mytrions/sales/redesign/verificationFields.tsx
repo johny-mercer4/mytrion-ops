@@ -168,6 +168,55 @@ export function creditVerificationNote(
   return null;
 }
 
+/**
+ * MC / DOT on the case is either a real authority id or a Verification flag stuffed into the same
+ * field. Digits (optional MC/DOT/USDOT prefix) are ids. Anything else is the flag copy — never a
+ * prefilled value or HTML placeholder.
+ */
+export function parseAuthorityId(raw: string | null | undefined): { value: string; flag: string | null } {
+  const text = (raw ?? '').trim();
+  if (!text) return { value: '', flag: null };
+  if (/^(?:MC|USDOT|DOT|#)?[\s-]*\d{4,10}$/i.test(text)) return { value: text, flag: null };
+  return { value: '', flag: text };
+}
+
+export function fieldProceedHint(field: { hint?: string }): string | null {
+  const hint = field.hint?.trim();
+  return hint || null;
+}
+
+const MC_FIELD_IDS = new Set(['mc_number', 'mcnumber', 'mc']);
+const DOT_FIELD_IDS = new Set(['dot_number', 'dotnumber', 'dot', 'usdot']);
+
+/** Open Verification flags for the applicant MC/DOT inputs — exact proceed copy, not a placeholder. */
+export function applicantFieldFlags(
+  snapshot: PipelineSnapshot | null | undefined,
+): { mcNumber?: string; dotNumber?: string } {
+  const flags: { mcNumber?: string; dotNumber?: string } = {};
+  if (!snapshot) return flags;
+  for (const req of snapshot.requirements) {
+    if (req.response) continue;
+    const fallback = (req.detail ?? req.title).trim();
+    for (const field of req.fields) {
+      const copy = (field.hint ?? fallback).trim();
+      if (!copy) continue;
+      const id = field.id.toLowerCase();
+      if (MC_FIELD_IDS.has(id) && !flags.mcNumber) flags.mcNumber = copy;
+      if (DOT_FIELD_IDS.has(id) && !flags.dotNumber) flags.dotNumber = copy;
+    }
+    const blob = `${req.title} ${req.detail ?? ''}`;
+    if (/\bmc\b/i.test(blob) && !flags.mcNumber) flags.mcNumber = fallback;
+    if (/\bdot\b/i.test(blob) && !flags.dotNumber) flags.dotNumber = fallback;
+  }
+  if (snapshot.applicant) {
+    const mc = parseAuthorityId(snapshot.applicant.mcNumber);
+    if (mc.flag && !flags.mcNumber) flags.mcNumber = mc.flag;
+    const dot = parseAuthorityId(snapshot.applicant.dotNumber);
+    if (dot.flag && !flags.dotNumber) flags.dotNumber = dot.flag;
+  }
+  return flags;
+}
+
 /** Shared shape for the three *_Verification picklists (Verified/Passed/Approved vs Failed). */
 export function checkpointTone(value: string | null): FactTone {
   if (!value) return 'muted';
@@ -333,6 +382,15 @@ export function FactTile({
       </div>
       {hint ? <div className="ss-vf-tile-hint">{hint}</div> : null}
     </div>
+  );
+}
+
+export function FieldProceedFlag({ id, text }: { id: string; text: string }) {
+  return (
+    <p id={id} className="ss-vf-field-flag" role="status">
+      <Icon name="warn" size={13} />
+      <span>{text}</span>
+    </p>
   );
 }
 

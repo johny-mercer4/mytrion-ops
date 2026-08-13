@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { PipelineSnapshot } from '@/api/verification';
 import {
+  applicantFieldFlags,
   creditDecisionKind,
   creditDecisionTone,
   creditVerificationNote,
   deskDecisionLabel,
+  parseAuthorityId,
   pipelineIsApproved,
   platformCreditLabel,
   wexStatusDisplay,
@@ -79,6 +81,74 @@ describe('verification desk label', () => {
         { outcome: 'rejected', reason: 'Prepay required' },
       ),
     ).toEqual({ text: 'Prepay', tone: 'warn' });
+  });
+});
+
+describe('authority ids vs Verification flags', () => {
+  it('keeps real MC/DOT numbers and treats prose as a proceed flag', () => {
+    expect(parseAuthorityId('285921')).toEqual({ value: '285921', flag: null });
+    expect(parseAuthorityId('MC 123456')).toEqual({ value: 'MC 123456', flag: null });
+    expect(parseAuthorityId('USDOT 602070')).toEqual({ value: 'USDOT 602070', flag: null });
+    expect(parseAuthorityId('Provide a valid MC so FMCSA can run.')).toEqual({
+      value: '',
+      flag: 'Provide a valid MC so FMCSA can run.',
+    });
+  });
+
+  it('prefers the open requirement copy over stuffed field text', () => {
+    const flags = applicantFieldFlags({
+      requestId: 'req-1',
+      status: 'IN_PROGRESS',
+      updatedAt: null,
+      stages: [],
+      decision: { outcome: 'undecided' },
+      requirements: [
+        {
+          id: 'verification-41',
+          eventId: '41',
+          title: 'MC DOT needed from Sales',
+          detail: 'Provide a valid MC so FMCSA can run.',
+          createdAt: '2026-08-01T10:00:00.000Z',
+          fields: [{ id: 'mc_number', label: 'MC number', type: 'text', required: true, hint: 'Provide a valid MC so FMCSA can run.' }],
+          attachmentRequired: false,
+          attachmentLabel: null,
+        },
+      ],
+      events: [],
+      attachments: [],
+      applicant: { firstName: '', lastName: '', dateOfBirth: '', email: '', phone: '', address: '', city: '', state: '', zipCode: '', dotNumber: '', mcNumber: 'Need MC' },
+      source: 'credit_platform',
+    });
+    expect(flags.mcNumber).toBe('Provide a valid MC so FMCSA can run.');
+  });
+
+  it('uses stuffed applicant MC/DOT as the flag when no requirement copy exists', () => {
+    expect(
+      applicantFieldFlags({
+        requestId: 'req-1',
+        status: 'IN_PROGRESS',
+        updatedAt: null,
+        stages: [],
+        decision: { outcome: 'undecided' },
+        requirements: [],
+        events: [],
+        attachments: [],
+        applicant: {
+          firstName: '',
+          lastName: '',
+          dateOfBirth: '',
+          email: '',
+          phone: '',
+          address: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dotNumber: 'Need a valid DOT',
+          mcNumber: 'Need MC',
+        },
+        source: 'credit_platform',
+      }),
+    ).toEqual({ mcNumber: 'Need MC', dotNumber: 'Need a valid DOT' });
   });
 });
 

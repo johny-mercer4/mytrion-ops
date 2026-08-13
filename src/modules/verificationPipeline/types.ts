@@ -59,7 +59,8 @@ export interface PipelineRequirementField {
   label: string;
   type: PipelineRequirementFieldType;
   required: boolean;
-  placeholder?: string;
+  /** What Verification needs in this field so the application can proceed. Never an HTML placeholder. */
+  hint?: string;
   options?: string[];
 }
 
