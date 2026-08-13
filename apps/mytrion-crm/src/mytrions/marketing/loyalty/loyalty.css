@@ -538,3 +538,385 @@
     transform: none;
   }
 }
+
+/* =====================================================
+   EXPORT DIALOG (.mg-lex) — the month + scope + preview surface.
+
+   Rides on the shared hub dialog chrome (_shared/hub/hubDialog.css): scrim, panel, header, body,
+   section and footer are all inherited, and only the parts that are genuinely new to this dialog
+   are declared here. The alternative — a second dialog skin — is what hubDialog.css was extracted
+   to stop.
+
+   The one structural override is the footer grid: the shared foot is `auto 1fr auto auto` (reset /
+   spacer / cancel / save) and this dialog needs a fifth slot, because Excel and CSV are two
+   different primary actions rather than one Save.
+   ===================================================== */
+.mg-root .mg-lty-modal.mg-lex {
+  /* Narrower than the reward-checklist dialog: no 6-up grid to hold, and a 960px panel around a
+     three-step form leaves the steps floating in whitespace. */
+  width: min(760px, 100%);
+}
+
+/* ── Month stepper ──────────────────────────────────────────────────────────── */
+.mg-root .mg-lex-month {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mg-root .mg-lex-month-step {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    color var(--hz-dur-wash) var(--hz-ease);
+}
+/* 44px touch target from an OVERHANGING hit area, not from a bigger button — growing the control
+   would add 12px to the section header row on every viewport. */
+.mg-root .mg-lex-month-step::before {
+  position: absolute;
+  content: '';
+  inset: -6px;
+}
+.mg-root .mg-lex-month-step:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+  color: var(--text-primary);
+}
+.mg-root .mg-lex-month-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mg-root .mg-lex-month-field {
+  position: relative;
+  display: inline-flex;
+  /* Wide enough for the longest month name so the field does not resize as you step through the
+     year. `ch` and not a magic pixel count: the width that matters here is a number of characters,
+     it tracks the font rather than a snapshot of it, and it is not a fixed track the phone layout
+     has to fight (see styles/breakpoints.test.ts on px min-widths). */
+  min-width: 16ch;
+  min-height: 44px;
+  align-items: center;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-sm);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+.mg-root .mg-lex-month-field > button {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: inherit;
+  outline: none;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.mg-root .mg-lex-month-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.mg-root .mg-lex-month-copy small {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.mg-root .mg-lex-month-copy strong {
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+/* The native picker is the real control; the button above is its trigger. Parked at 1px rather than
+   `display:none` because `showPicker()` throws on a control that is not rendered. */
+.mg-root .mg-lex-month-field input {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.mg-root .mg-lex-month-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hz-pane-bd));
+}
+
+/* ── The two months, as a relationship ──────────────────────────────────────────
+   The whole requirement in one strip: what earns the tier on the left, what is being reported on
+   the right, an arrow between them. It is the first thing in the dialog because "July means June's
+   tier" is the single fact a reader has to hold to trust the file. */
+.mg-root .mg-lex-relation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mg-root .mg-lex-relation-part {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 9px;
+  padding: 11px 13px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-md);
+  background: var(--hz-pane-alt);
+}
+.mg-root .mg-lex-relation-part svg {
+  grid-row: span 2;
+  color: var(--lty-idle-text);
+}
+.mg-root .mg-lex-relation-part.is-basis svg {
+  color: var(--lty-gold-text);
+}
+.mg-root .mg-lex-relation-part.is-month svg {
+  color: var(--lty-enterprise-text);
+}
+.mg-root .mg-lex-relation-part small {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.mg-root .mg-lex-relation-part strong {
+  color: var(--text-primary);
+  font-family: var(--font-head);
+  font-size: var(--text-base);
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.mg-root .mg-lex-relation-arrow {
+  align-self: center;
+  color: var(--text-muted);
+}
+
+/* ── Partial-month notice ───────────────────────────────────────────────────── */
+.mg-root .mg-lex-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--hz-pane-bd));
+  border-radius: var(--mg-r-sm);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  color: var(--warning);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.mg-root .mg-lex-notice svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* ── Scope choice ───────────────────────────────────────────────────────────── */
+.mg-root .mg-lex-scopes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+.mg-root .mg-lex-scopes button {
+  display: flex;
+  min-height: 44px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 13px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-md);
+  background: var(--hz-pane-alt);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    background-color var(--hz-dur-wash) var(--hz-ease);
+}
+.mg-root .mg-lex-scopes button:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd));
+}
+.mg-root .mg-lex-scopes button[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 10%, var(--hz-pane-alt));
+}
+.mg-root .mg-lex-scopes strong {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+}
+.mg-root .mg-lex-scopes span {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.mg-root .mg-lex-scopes em {
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-style: normal;
+  font-weight: var(--fw-bold);
+  /* Reserves its line whether or not a count is in it, so selecting a scope does not resize the row. */
+  min-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Preview: stats + distribution ──────────────────────────────────────────── */
+.mg-root .mg-lex-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+.mg-root .mg-lex-stats > div {
+  padding: 11px 12px;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--mg-r-md);
+  background: var(--hz-pane-alt);
+}
+.mg-root .mg-lex-stats span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.3;
+}
+.mg-root .mg-lex-stats strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-primary);
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* The chips are painted from the EXPORT palette (loyaltyExportStyle.ts), inline, and deliberately
+   not from --lty-*: they are a preview of the spreadsheet's own light-medium colours, so they have
+   to be those colours rather than the board's dark-surface tuning. Everything else here is tokens. */
+.mg-root .mg-lex-dist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+}
+.mg-root .mg-lex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
+  border-radius: var(--mg-r-pill);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+.mg-root .mg-lex-chip strong {
+  font-family: var(--font-head);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-lex-chip em {
+  opacity: 0.72;
+  font-size: var(--text-2xs);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mg-root .mg-lex-foot-note {
+  margin-bottom: 0;
+}
+
+/* Revalidating an already-measured month dims the panel instead of returning it to a skeleton —
+   that swap is exactly how a second loader appears in a region that already had one. */
+.mg-root .mg-lty-modal-section[data-stale='true'] .mg-lex-stats,
+.mg-root .mg-lty-modal-section[data-stale='true'] .mg-lex-dist {
+  opacity: 0.55;
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+
+.mg-root .mg-lex-preview-sk {
+  display: grid;
+  gap: 11px;
+  margin-top: 13px;
+}
+.mg-root .mg-lex-preview-sk > div:first-child {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+.mg-root .mg-lex-preview-sk > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────────── */
+.mg-root .mg-lty-modal-foot.mg-lex-foot {
+  grid-template-columns: auto 1fr auto auto auto;
+}
+.mg-root .mg-lex-rowcount {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (width < 640px) {
+  /* STRUCTURE line: the three-up scope cards, the four-up stats and the five-slot footer all stack.
+     The month stepper moves under its own heading, because a 168px field plus two 32px steppers do
+     not share a row with an <h3> at 360px. */
+  .mg-root .mg-lty-modal-section-head:has(.mg-lex-month) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mg-root .mg-lex-month {
+    justify-content: space-between;
+  }
+  .mg-root .mg-lex-month-field {
+    flex: 1;
+  }
+  .mg-root .mg-lex-relation {
+    grid-template-columns: 1fr;
+  }
+  .mg-root .mg-lex-relation-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+  .mg-root .mg-lex-scopes,
+  .mg-root .mg-lex-stats,
+  .mg-root .mg-lex-preview-sk > div:first-child {
+    grid-template-columns: 1fr;
+  }
+  .mg-root .mg-lex-preview-sk > div:last-child {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mg-root .mg-lty-modal-foot.mg-lex-foot {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mg-root .mg-lex-rowcount {
+    grid-column: 1 / -1;
+  }
+}
