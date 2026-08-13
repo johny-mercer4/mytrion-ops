@@ -4,6 +4,7 @@
  */
 import { callTouchpoint } from '@/api/touchpoints';
 import { getClientCards, getClientBilling, type ClientBilling, type ClientCardDetail } from '@/api/dataCenter';
+import { CARD_MASK_DIGITS } from './autoLive';
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 const galFmt = (v: unknown): string => n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -31,9 +32,10 @@ function cardDigits(raw: unknown): string {
   return String(raw ?? '').replace(/\D/g, '');
 }
 
+/** Last-6, the Sales-wide card standard (see `maskCard` in autoLive). */
 function maskCard(raw: unknown): string {
   const digits = cardDigits(raw);
-  return digits ? `•••• ${digits.slice(-4)}` : '—';
+  return digits ? `•••• ${digits.slice(-CARD_MASK_DIGITS)}` : '—';
 }
 
 function statusTone(up: string): string {

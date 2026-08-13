@@ -174,8 +174,12 @@ describe('live EFS card state', () => {
         return {
           company_name: 'Divergent',
           is_active: true,
+          account_type: 'LOC',
+          payment_terms: 'Weekly',
+          efs_balance: 1250.5,
+          credit_limit: 8000,
           cards: { count: 4, active_count: 0 },
-          cmp_debt: { total_debt: 0 },
+          cmp_debt: { total_debt: 0, invoice_count: 0, max_debt_days: 0, worst_status: 'PAID' },
         };
       }
       if (key === 'efs.cards') {
@@ -190,8 +194,24 @@ describe('live EFS card state', () => {
     });
 
     await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
-      kind: 'message',
-      message: 'Divergent: account active, 1 active cards, open debt $0.',
+      kind: 'account-status',
+      result: {
+        companyName: 'Divergent',
+        isActive: true,
+        accountType: 'LOC',
+        paymentTerms: 'Weekly',
+        efsBalance: '$1,250.50',
+        weeklyLimit: '$8,000.00',
+        totalDebt: '$0',
+        debtInvoiceCount: '0',
+        maxDebtDays: '0 days',
+        worstStatus: 'PAID',
+        isHardDebtor: false,
+        activeCards: 1,
+        totalCards: 2,
+        cardsLive: true,
+        notices: [],
+      },
     });
     expect(callTouchpointMock).toHaveBeenCalledWith('efs.cards', { carrierId: deal.carrier });
   });
@@ -211,9 +231,54 @@ describe('live EFS card state', () => {
     });
 
     await expect(runAutomation(input(action('account-status')))).resolves.toEqual({
-      kind: 'message',
-      message: 'Divergent: account active, 2 active cards, open debt $0.',
+      kind: 'account-status',
+      result: {
+        companyName: 'Divergent',
+        isActive: true,
+        accountType: '',
+        paymentTerms: '',
+        efsBalance: '—',
+        weeklyLimit: '—',
+        totalDebt: '$0',
+        debtInvoiceCount: '—',
+        maxDebtDays: '—',
+        worstStatus: '',
+        isHardDebtor: false,
+        activeCards: 2,
+        totalCards: 4,
+        cardsLive: false,
+        notices: [
+          'Live EFS card roster unavailable — card counts come from the warehouse and may lag.',
+        ],
+      },
     });
+  });
+
+  it('returns the three balance blocks, and a dash where a prepay account has no line', async () => {
+    callTouchpointMock.mockResolvedValue({
+      company_name: 'Divergent',
+      efs_balance: 1250.5,
+      credit_remaining: 3200,
+      credit_limit: null,
+      account_type: 'Prepay',
+      payment_terms: 'Prepay',
+    });
+
+    await expect(runAutomation(input(action('balance')))).resolves.toEqual({
+      kind: 'balance',
+      result: {
+        companyName: 'Divergent',
+        efsBalance: '$1,250.50',
+        availableLimit: '$3,200.00',
+        weeklyLimit: '—',
+        creditUsed: '—',
+        accountType: 'Prepay',
+        paymentTerms: 'Prepay',
+        billingCycle: '',
+        efsError: '',
+      },
+    });
+    expect(callTouchpointMock).toHaveBeenCalledWith('dwh.carrier_balance', { carrierId: deal.carrier });
   });
 
   it('keeps live EFS status and reads the DWH last_used_date fallback', async () => {
