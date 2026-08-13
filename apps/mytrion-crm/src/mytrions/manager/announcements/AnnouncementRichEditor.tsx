@@ -27,6 +27,37 @@ interface ToolbarButtonProps {
 
 const MIN_IMAGE_WIDTH = 120;
 
+function durableFileId(value: string | null): string | null {
+  return value?.match(/^\/v1\/files\/([A-Za-z0-9_-]+)\/content$/)?.[1] ?? null;
+}
+
+const DurableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      fileId: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-file-id') ?? durableFileId(element.getAttribute('src')),
+        renderHTML: (attributes) =>
+          typeof attributes['fileId'] === 'string' && attributes['fileId']
+            ? { 'data-file-id': attributes['fileId'] }
+            : {},
+      },
+    };
+  },
+});
+
+function serializedEditorHtml(editor: Editor): string {
+  const doc = new DOMParser().parseFromString(editor.getHTML(), 'text/html');
+  for (const image of doc.body.querySelectorAll<HTMLImageElement>('img[data-file-id]')) {
+    const fileId = image.dataset['fileId'];
+    if (fileId && /^[A-Za-z0-9_-]+$/.test(fileId)) image.src = durableFileUrl(fileId);
+    image.removeAttribute('data-file-id');
+  }
+  return doc.body.innerHTML;
+}
+
 function isImageAsset(file: File, mime?: string): boolean {
   return (
     file.type.startsWith('image/') ||
@@ -88,7 +119,7 @@ export function AnnouncementRichEditor({
         },
       }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Image.configure({
+      DurableImage.configure({
         allowBase64: false,
         resize: {
           enabled: true,
@@ -112,7 +143,7 @@ export function AnnouncementRichEditor({
       },
     },
     onUpdate: ({ editor: nextEditor }) => {
-      const html = nextEditor.getHTML();
+      const html = serializedEditorHtml(nextEditor);
       onChange(html);
       setStatus(
         html.length > 10_000 ? 'The announcement is over the 10,000 character limit.' : null,
@@ -121,7 +152,7 @@ export function AnnouncementRichEditor({
   });
 
   useEffect(() => {
-    if (editor && value !== editor.getHTML())
+    if (editor && value !== serializedEditorHtml(editor))
       editor.commands.setContent(value, { emitUpdate: false });
   }, [editor, value]);
 
@@ -178,9 +209,13 @@ export function AnnouncementRichEditor({
       editor
         .chain()
         .focus()
-        .setImage({
-          src: durableFileUrl(asset.fileId),
-          alt: asset.name || file.name,
+        .insertContent({
+          type: 'image',
+          attrs: {
+            src: asset.url,
+            alt: asset.name || file.name,
+            fileId: asset.fileId,
+          },
         })
         .run();
       setStatus(`${asset.name || file.name} added.`);
@@ -204,7 +239,10 @@ export function AnnouncementRichEditor({
         editor
           .chain()
           .focus()
-          .setImage({ src: durableFileUrl(asset.fileId), alt: name })
+          .insertContent({
+            type: 'image',
+            attrs: { src: asset.url, alt: name, fileId: asset.fileId },
+          })
           .run();
         setStatus(`${name} added as an image.`);
       } else {

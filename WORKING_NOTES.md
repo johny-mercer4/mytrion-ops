@@ -15533,3 +15533,13 @@ includes that MIME type; non-image attachments remain links.
 Verification: CRM tests 863/863; root and CRM typechecks green; file-service tests 12/12; production
 widget build green. Browser QA published an image through Attach file, confirmed it in the editor and
 live preview, reopened it from Published, and verified the resolved image with no console errors.
+
+Follow-up: Tiptap now keeps two intentional image URLs. Its live node uses the fresh signed upload URL
+so the image is visible inside the editor (including the resize UI), while serialization replaces it
+with `/v1/files/:id/content` before the body reaches React state or the publish API. This prevents an
+expired object-store URL from being persisted. Image-only announcements are also classified as rich
+content and render in both live and published previews.
+
+The Manager composer now takes the full workspace width with a responsive 30–48rem writing canvas.
+The targeted-agent proof moves below the composer at a readable phone-card width, preserving full
+formatting controls and article space without removing the compact Compose/Preview tabs.

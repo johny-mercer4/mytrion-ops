@@ -5,7 +5,7 @@
 
 .an-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(17.5rem, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
@@ -117,6 +117,7 @@
 .an-preview-stage {
   display: grid;
   gap: var(--space-3);
+  justify-items: center;
   padding: var(--space-4);
   background: var(--surface-alt);
 }
@@ -129,6 +130,7 @@
 }
 
 .an-preview-card {
+  inline-size: min(100%, 34rem);
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-block-start: var(--space-1) solid var(--accent);
@@ -335,12 +337,6 @@
 
 .an-mobile-tabs {
   display: none;
-}
-
-@media (width < 900px) {
-  .an-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 @media (width < 640px) {

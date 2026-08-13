@@ -75,6 +75,16 @@ describe('AnnouncementContent', () => {
     expect(getAnnouncementAssetDownload).toHaveBeenCalledWith('file_map');
   });
 
+  it('renders an image-only rich announcement', async () => {
+    render(<AnnouncementContent text={'<img src="/v1/files/file_map/content" alt="Route map">'} />);
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: 'Route map' })).toHaveAttribute(
+        'src',
+        'https://example.test/map.png',
+      ),
+    );
+  });
+
   it('upgrades legacy image attachments from filename links to visible images', async () => {
     render(
       <AnnouncementContent

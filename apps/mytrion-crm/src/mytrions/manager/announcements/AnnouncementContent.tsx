@@ -78,7 +78,7 @@ export function parseAnnouncementContent(text: string): ContentPart[] {
 }
 
 function isRichHtml(text: string): boolean {
-  return /<(?:p|h[1-6]|ul|ol|blockquote|figure|table|hr)\b/i.test(text);
+  return /<(?:p|h[1-6]|ul|ol|blockquote|figure|table|hr|img)\b/i.test(text);
 }
 
 function durableAssetId(value: string | null): string | null {

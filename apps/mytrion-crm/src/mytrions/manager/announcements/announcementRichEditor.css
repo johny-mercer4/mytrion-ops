@@ -130,8 +130,8 @@
 }
 
 .an-tiptap-content {
-  min-block-size: 20rem;
-  max-block-size: 40rem;
+  min-block-size: clamp(30rem, 58dvh, 48rem);
+  max-block-size: 64rem;
   overflow-y: auto;
   padding: var(--space-3);
   outline: 0;
