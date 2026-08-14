@@ -221,7 +221,8 @@ export const verificationRecheckJob = defineJob({
 
 /**
  * Zoho Deals COQL → verification_cases. Does not create credit-platform requests.
- * Fresh-only: Created_Time >= pinned watermark (now at enable), never a 30-day backfill.
+ * Parked in DISABLED_JOB_QUEUES (no cron, no Admin trigger) so generation stays off.
+ * Worker still registered: leftover queued jobs no-op instead of creating cases.
  */
 export const verificationCaseIngestJob = defineJob({
   name: 'automation.verification.case-ingest',
@@ -329,6 +330,8 @@ export const DISABLED_JOB_QUEUES = new Set<string>([
   retentionScanJob.name,
   // Temporary collection pause: protect Zoho API capacity while KPI request volume is reviewed.
   ...KPI_JOB_QUEUES,
+  // Stop creating verification cases until intake is re-enabled on purpose.
+  verificationCaseIngestJob.name,
 ]);
 
 /** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */
@@ -348,7 +351,6 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
-  { name: verificationCaseIngestJob.name, cron: '*/30 * * * *' }, // new Zoho deals only
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
@@ -369,7 +371,6 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
   verificationRecheckJob.name,
-  verificationCaseIngestJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,

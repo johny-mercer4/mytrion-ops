@@ -16525,6 +16525,10 @@ desktop, so it needs its own PR and its own review. No real-device pass yet: the
 `--tg-viewport-stable-height` first paint, `--kb-inset`, and rotation all still need a
 phone in Telegram.
 
+## 2026-08-14 — Verification ingest disabled again
+
+Ingest disabled again; no new cases until re-enabled. `automation.verification.case-ingest` is back in `DISABLED_JOB_QUEUES` (no cron, no Admin trigger). Worker no-ops leftover queued jobs. First-run / refresh HTTP on existing cases kept. Did not delete the existing case, start ingest, or POST `/api/v1/requests`.
+
 ## 2026-08-14 — CI: verification unused-var + CRM breakpoint budgets
 
 - Removed unused `asRecord` in `verificationOrchestrationDb.ts` (eslint error).

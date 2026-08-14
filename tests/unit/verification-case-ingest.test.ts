@@ -13,21 +13,14 @@ import { runVerificationCaseIngest } from '../../src/modules/jobs/workers/verifi
 import { DISABLED_JOB_QUEUES } from '../../src/modules/jobs/catalog.js';
 
 describe('verification case ingest worker', () => {
-  it('runs ingest when the queue is enabled', async () => {
-    vi.mocked(ingestVerificationDeals).mockResolvedValue({
-      created: 0,
-      skipped: 0,
-      failed: 0,
-      total: 0,
-      watermark: '2026-08-14T17:08:00+00:00',
-    });
+  it('no-ops while the queue is parked in DISABLED_JOB_QUEUES', async () => {
     const result = await runVerificationCaseIngest({ trigger: 'manual' });
-    expect(result).toMatchObject({ created: 0, watermark: '2026-08-14T17:08:00+00:00' });
-    expect(ingestVerificationDeals).toHaveBeenCalledOnce();
+    expect(result).toEqual({ skipped: true, reason: 'disabled' });
+    expect(ingestVerificationDeals).not.toHaveBeenCalled();
   });
 
-  it('enables case-ingest and never POSTs /api/v1/requests', () => {
-    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(false);
+  it('keeps case-ingest disabled and never POSTs /api/v1/requests', () => {
+    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(true);
     const src = readFileSync(new URL('../../src/modules/verification/zohoDealIngest.ts', import.meta.url), 'utf8');
     expect(src).not.toContain('createAndStartRequest');
     expect(src).not.toContain('/api/v1/requests');
