@@ -37,11 +37,16 @@ export async function callTouchpoint<K extends TouchpointKey>(
 /**
  * Catalog ids that differ from the Zoho widget's `config.action` log key.
  *
- * These exist so ONE automation is ONE row type regardless of which surface fired it. Two were
- * missing and split their automation across two names in the log: Horizon wrote `balance` and
- * `account_status` from 2026-07 while the widget kept writing `balance_check` (820 rows) and
- * `account_status_check` (228) — same automations, same agents, two entries in every filter
- * dropdown and two partial histories. The widget's key wins because the history is already under it.
+ * These exist so ONE automation is ONE row type regardless of which surface fired it. Three were
+ * missing and split their automation across two names in the log: Horizon wrote `balance`,
+ * `account_status` and `unit_driver` while the widget kept writing `balance_check` (822 rows),
+ * `account_status_check` (229) and `unit_driver_change` (13) — same automations, same agents, two
+ * entries in every filter dropdown and two partial histories. The widget's key wins because the
+ * history is already under it.
+ *
+ * (The hyphenated `account-status` / `card-last-used` / `efs-login` / `wex-tasks` rows in the table
+ * are dead residue: they all stop in mid-July 2026, when the hyphen→underscore normalisation below
+ * landed. No live caller writes them, so they need no alias.)
  */
 const LOG_TYPE_ALIASES: Record<string, string> = {
   'close-app': 'close-wex-application',
@@ -49,6 +54,7 @@ const LOG_TYPE_ALIASES: Record<string, string> = {
   'wex-apps': 'wex-apps-application',
   balance: 'balance-check',
   'account-status': 'account-status-check',
+  'unit-driver': 'unit-driver-change',
 };
 
 /**

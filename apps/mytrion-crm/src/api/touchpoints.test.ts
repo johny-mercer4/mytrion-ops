@@ -101,6 +101,7 @@ describe('logAutomation', () => {
   it.each([
     ['balance', 'balance_check'],
     ['account-status', 'account_status_check'],
+    ['unit-driver', 'unit_driver_change'],
   ])('logs %s under the widget key %s', async (id, expected) => {
     seedSession();
     const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }));
