@@ -1,264 +1,236 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+/**
+ * Sales Verification tab — the agent's own credit applications.
+ *
+ * Rewritten (2026-08-15) alongside the component: the previous suite covered the credit_platform
+ * pipeline cards, a surface that no longer exists. What matters now is that the RED state is legible
+ * without relying on colour, and that the outstanding count shown is the SERVER's, never re-derived
+ * in the browser.
+ */
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PipelineSnapshot, VerificationClient, VerificationClientPage } from '@/api/verification';
+import type { VerificationCaseRow } from '@/api/verificationFlow';
 import { VerificationTab } from './VerificationTab';
 
 const state = vi.hoisted(() => ({
   current: {
-    data: null as VerificationClientPage | null,
+    data: null as { items: VerificationCaseRow[]; total: number } | null,
     loading: true,
     revalidating: false,
     error: null as string | null,
     reload: vi.fn(),
   },
-  pipeline: { data: null as PipelineSnapshot | null, loading: false, error: null as string | null, reload: vi.fn() },
 }));
 
-vi.mock('../dcCache', () => ({
-  useCachedLoad: (key: string) =>
-    key.startsWith('sales:verification:detail:') ? state.pipeline : state.current,
-}));
-
+vi.mock('../dcCache', () => ({ useCachedLoad: () => state.current }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
 vi.mock('@/context/UserContextProvider', () => ({
   useUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
 }));
-vi.mock('../live', () => ({
-  useLoad: () => state.pipeline,
-}));
-vi.mock('@/hooks/useTheme', () => ({
-  useTheme: () => ({ theme: 'dark', toggle: vi.fn() }),
+vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
+vi.mock('../applicationIntake', () => ({
+  ApplicationIntake: ({ applicationId }: { applicationId?: string }) => (
+    <div data-testid="intake">{applicationId ?? 'new'}</div>
+  ),
 }));
 
-function client(index: number, classification: VerificationClient['classification'] = 'in_pipeline'): VerificationClient {
+function row(over: Partial<VerificationCaseRow> = {}): VerificationCaseRow {
   return {
-    dealId: `deal-${index}`,
-    carrierId: `carrier-${index}`,
-    companyName: classification === 'active' ? 'Active account should be hidden' : `Pipeline application ${index}`,
-    dealName: `Deal ${index}`,
-    appFillDate: `2026-07-${String(Math.max(1, 31 - index)).padStart(2, '0')}`,
-    dealStage: 'Application Processing',
-    applicationStage: 'Adjudication',
-    applicationStatus: 'Pending Decision',
-    stageUpdatedAt: null,
-    classification,
-    creditDecision: null,
-    creditScore: null,
-    creditLimit: null,
-    creditLineApproved: null,
-    riskScore: null,
-    creditSafeGrade: null,
-    moneyCodeLimit: null,
-    billingCycle: null,
-    paymentTerms: null,
-    companyVerification: null,
-    billingVerification: null,
-    lovesVerification: null,
-    verified: false,
-    limitsAdded: false,
-    rejectReason: null,
-    verificationNotes: null,
-    cardsRequested: null,
-    applicationId: null,
-    dot: null,
-    mc: null,
-    agentName: 'Sales Agent',
-    modifiedAt: null,
-    attentionCount: 0,
-    verificationStatus: null,
-    verificationUpdatedAt: null,
-    verificationState: null,
-    plaidLinkUrl: null,
-    plaidStatus: null,
-    cpLimit: null,
-    cpPaymentType: null,
-    cpBillingCycle: null,
-    missingFields: [],
-    docsUploaded: 0,
-    workingOn: null,
+    id: 'vc_1',
+    companyName: 'Kaiser Freight LLC',
+    firstName: null,
+    lastName: null,
+    email: 'ops@kaiser.test',
+    phone: '6145550110',
+    applicantType: 'carrier',
+    underwritingRoute: 'octane_internal',
+    verificationProcess: false,
+    phaseCode: 'p1_intake',
+    statusCode: 'intake_incomplete',
+    statusLabel: 'Incomplete application',
+    boardColumn: 'draft',
+    trucksCount: 14,
+    fuelCardsRequested: 12,
+    requestedLimit: '38000.00',
+    approvedLimitAmount: null,
+    intakeMissing: ['ein', 'businessAddress', 'bankStatements'],
+    submittedAt: null,
+    ownerName: 'Test Agent',
+    closedAt: null,
+    createdAt: '2026-08-14T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...over,
   };
 }
 
-function page(clients: VerificationClient[], total = clients.length, current = 1): VerificationClientPage {
-  return {
-    clients,
-    pagination: { page: current, pageSize: 9, total, pageCount: Math.max(1, Math.ceil(total / 9)) },
+beforeEach(() => {
+  state.current = {
+    data: null,
+    loading: true,
+    revalidating: false,
+    error: null,
+    reload: vi.fn(),
   };
+});
+
+function ready(items: VerificationCaseRow[]): void {
+  state.current = { data: { items, total: items.length }, loading: false, revalidating: false, error: null, reload: vi.fn() };
 }
 
-describe('VerificationTab roster chrome', () => {
-  beforeEach(() => {
-    state.current = {
-      data: null,
-      loading: true,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-    state.pipeline = { data: null, loading: false, error: null, reload: vi.fn() };
+describe('loading and empty', () => {
+  it('shows one loader while there is nothing to show', () => {
+    render(<VerificationTab />);
+    expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
   });
 
-  it('uses the standardized card skeleton without Active or order controls', () => {
+  it('points a new agent at Create → Application', () => {
+    ready([]);
     render(<VerificationTab />);
+    expect(screen.getByText(/No applications yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Create → Application/i)).toBeInTheDocument();
+  });
+});
 
-    expect(screen.getByLabelText('Loading verification applications').children).toHaveLength(9);
-    expect(screen.queryByRole('button', { name: /^Active/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Applied:/i })).not.toBeInTheDocument();
+describe('the red state', () => {
+  it('names how many items are outstanding rather than only colouring the card', () => {
+    ready([row()]);
+    render(<VerificationTab />);
+    expect(screen.getByText('3 items still needed')).toBeInTheDocument();
   });
 
-  it('shows one equal-card server page with the paginated total', () => {
-    state.current = {
-      data: page(Array.from({ length: 9 }, (_, index) => client(index + 1)), 12),
-      loading: false,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-
+  it('uses the singular for exactly one outstanding item', () => {
+    ready([row({ intakeMissing: ['ein'] })]);
     render(<VerificationTab />);
-
-    expect(screen.getAllByTestId('verification-card')).toHaveLength(9);
-    expect(screen.getByText('Showing 1–9 of 12 pipeline applications')).toBeInTheDocument();
-    expect(screen.getByTestId('verification-grid')).toHaveClass('ss-verification-grid');
+    expect(screen.getByText('1 item still needed')).toBeInTheDocument();
   });
 
-  it('keeps the full stage visual when Verification intake has not started', () => {
-    state.current = {
-      data: page([client(1)]),
-      loading: false,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-
+  it('reports the server list verbatim — completeness is never re-derived here', () => {
+    // The row has every visible field populated but the server still says three things are missing;
+    // the card must trust the server, because the server is what the gate actually uses.
+    ready([row({ intakeMissing: ['a', 'b', 'c'] })]);
     render(<VerificationTab />);
-    fireEvent.click(screen.getByTestId('verification-card'));
-
-    expect(screen.getByText('Awaiting intake')).toBeInTheDocument();
-    expect(screen.getByText('Pre Stop Factors')).toBeInTheDocument();
-    expect(screen.getByText('Post Stop Factors')).toBeInTheDocument();
-    expect(screen.getAllByText('Not started')).toHaveLength(10);
+    expect(screen.getByText('3 items still needed')).toBeInTheDocument();
   });
 
-  it('uses the standard detail skeleton while the live pipeline loads', () => {
-    state.current = {
-      data: page([client(1)]),
-      loading: false,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-    state.pipeline = { data: null, loading: true, error: null, reload: vi.fn() };
-
+  it('falls back to a plain statement when the missing list is empty but unsubmitted', () => {
+    ready([row({ intakeMissing: [] })]);
     render(<VerificationTab />);
-    fireEvent.click(screen.getByTestId('verification-card'));
+    expect(screen.getByText('Not submitted yet')).toBeInTheDocument();
+  });
+});
 
-    expect(screen.getByLabelText('Loading verification detail')).toBeInTheDocument();
+describe('the green state', () => {
+  it('shows how far along the application is, not the status a second time', () => {
+    ready([
+      row({
+        verificationProcess: true,
+        statusCode: 'in_review',
+        statusLabel: 'In review',
+        boardColumn: 'in_review',
+        phaseCode: 'p6_credit_banking',
+        intakeMissing: [],
+        submittedAt: '2026-08-14T12:00:00.000Z',
+      }),
+    ]);
+    render(<VerificationTab />);
+    // The chip already says "In review"; the body line earns its place by saying something else.
+    expect(screen.getByText('Phase 6 of 10 · Credit & banking')).toBeInTheDocument();
   });
 
-  it('shows Zoho Credit Decision on the card and in the client-detail sheet', () => {
-    const row = client(1);
-    row.companyName = 'Daniilo Jacshvili';
-    row.creditDecision = 'Declined-Prepay/Secured Only';
-    row.applicationStatus = 'Pending Decision';
-    row.dealStage = 'Application Processing';
-    row.verificationState = 'in_progress';
-    row.applicationId = '899640';
-    row.missingFields = ['date of birth'];
-    state.current = {
-      data: page([row]),
-      loading: false,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-    state.pipeline = {
-      data: {
-        requestId: 'req-1',
-        status: 'REVIEW',
-        updatedAt: null,
-        stages: [{ id: 'stop-factor-pre', order: 1, label: 'Pre Stop Factors', status: 'pending' }],
-        decision: { outcome: 'rejected', reason: 'Prepay required' },
-        requirements: [],
-        events: [],
-        attachments: [],
-        source: 'credit_platform',
-      },
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    };
-
+  it('calls out a document request as the agent’s action', () => {
+    ready([
+      row({
+        verificationProcess: true,
+        statusCode: 'pending_docs',
+        boardColumn: 'needs_you',
+        intakeMissing: [],
+      }),
+    ]);
     render(<VerificationTab />);
-
-    expect(screen.getByTestId('vf-credit-decision')).toHaveTextContent('Declined-Prepay/Secured Only');
-    expect(screen.getByText('Credit Decision')).toBeInTheDocument();
-    expect(screen.getByTestId('vf-wex-status')).toHaveTextContent('Pending Decision');
-    expect(screen.getByTestId('vf-deal-pipeline')).toHaveTextContent('Application Processing');
-    expect(screen.getByTestId('vf-verification-state')).toHaveTextContent('Verification: In progress');
-
-    fireEvent.click(screen.getByTestId('verification-card'));
-
-    const dialog = screen.getByRole('dialog', { name: 'Verification Daniilo Jacshvili' });
-    expect(within(dialog).getByTestId('vf-credit-decision')).toHaveTextContent('Declined-Prepay/Secured Only');
-    expect(within(dialog).getByText('Credit Decision')).toBeInTheDocument();
-    expect(within(dialog).getByTestId('vf-desk-decision')).toHaveTextContent('Prepay');
-    expect(within(dialog).getByTestId('vf-wex-status')).toHaveTextContent('Pending Decision');
-    expect(within(dialog).getByTestId('vf-deal-pipeline')).toHaveTextContent('Application Processing');
-    expect(within(dialog).getByTestId('vf-verification-state')).toHaveTextContent('Verification: In progress');
-    expect(within(dialog).getByTestId('vf-credit-note')).toHaveTextContent('prepay/secured only');
-    expect(within(dialog).queryByText('Not Accepted')).not.toBeInTheDocument();
-    expect(within(dialog).getByText('Pre Stop Factors')).toBeInTheDocument();
-    expect(within(dialog).getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/asked you for documents/i)).toBeInTheDocument();
   });
 
-  it('hides numbered compliance steps once the request is approved', () => {
-    const row = client(1);
-    row.companyName = 'Approved Carrier';
-    row.verificationState = 'approved';
-    row.cpPaymentType = 'LOC';
-    row.cpLimit = 5000;
-    row.creditDecision = 'Approved-Requested';
-    state.current = {
-      data: page([row]),
-      loading: false,
-      revalidating: false,
-      error: null,
-      reload: vi.fn(),
-    };
-    state.pipeline = {
-      data: {
-        requestId: 'req-ok',
-        status: 'APPROVED',
-        updatedAt: null,
-        stages: [
-          { id: 'stop-factor-pre', order: 1, label: 'Pre Stop Factors', status: 'done' },
-          { id: 'blacklist', order: 2, label: 'Black List Match', status: 'done' },
-          { id: 'fmcsa', order: 3, label: 'FMCSA', status: 'skipped' },
-        ],
-        decision: { outcome: 'loc' },
-        requirements: [],
-        events: [],
-        attachments: [],
-        source: 'credit_platform',
-      },
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    };
-
+  it('shows the approved limit when there is one', () => {
+    ready([
+      row({
+        verificationProcess: true,
+        statusCode: 'approved',
+        boardColumn: 'approved',
+        approvedLimitAmount: '4560.00',
+        closedAt: '2026-08-15T09:00:00.000Z',
+      }),
+    ]);
     render(<VerificationTab />);
-    expect(screen.getByTestId('vf-credit-decision')).toHaveTextContent('Approved-Requested');
-    expect(screen.getByText('Credit Decision')).toBeInTheDocument();
+    expect(screen.getByText('$4560.00')).toBeInTheDocument();
+  });
+});
 
-    fireEvent.click(screen.getByTestId('verification-card'));
+describe('routing surfaced on the card', () => {
+  it('flags a WEX-routed application', () => {
+    ready([row({ underwritingRoute: 'wex', fuelCardsRequested: 25 })]);
+    render(<VerificationTab />);
+    expect(screen.getByText('WEX')).toBeInTheDocument();
+  });
 
-    const dialog = screen.getByRole('dialog', { name: 'Verification Approved Carrier' });
-    expect(within(dialog).getByTestId('vf-credit-decision')).toHaveTextContent('Approved-Requested');
-    expect(within(dialog).getByText('Credit Decision')).toBeInTheDocument();
-    expect(within(dialog).getByTestId('vf-approved-result')).toHaveTextContent('LOC Approved');
-    expect(within(dialog).queryByText('Pre Stop Factors')).not.toBeInTheDocument();
-    expect(within(dialog).queryByText('Black List Match')).not.toBeInTheDocument();
-    expect(within(dialog).queryByText('FMCSA')).not.toBeInTheDocument();
+  it('does not label an internally-underwritten application with a route', () => {
+    ready([row({ underwritingRoute: 'octane_internal' })]);
+    render(<VerificationTab />);
+    expect(screen.queryByText('WEX')).not.toBeInTheDocument();
+  });
+});
+
+describe('filters', () => {
+  it('separates incomplete from those with Verification', () => {
+    ready([
+      row({ id: 'vc_red' }),
+      row({
+        id: 'vc_green',
+        companyName: 'Ramirez Trucking',
+        verificationProcess: true,
+        statusCode: 'in_review',
+        boardColumn: 'in_review',
+        intakeMissing: [],
+      }),
+    ]);
+    render(<VerificationTab />);
+    expect(screen.getAllByTestId('application-card')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Incomplete/ }));
+    expect(screen.getAllByTestId('application-card')).toHaveLength(1);
+    expect(screen.getByText('Kaiser Freight LLC')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /With Verification/ }));
+    expect(screen.getByText('Ramirez Trucking')).toBeInTheDocument();
+  });
+
+  it('puts a pending-docs case under "Needs you", not "With Verification"', () => {
+    ready([row({ verificationProcess: true, statusCode: 'pending_docs', boardColumn: 'needs_you', intakeMissing: [] })]);
+    render(<VerificationTab />);
+    fireEvent.click(screen.getByRole('tab', { name: /With Verification/ }));
+    expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Needs you/ }));
+    expect(screen.getByTestId('application-card')).toBeInTheDocument();
+  });
+});
+
+describe('opening an application', () => {
+  it('opens the intake form for the card that was clicked', () => {
+    ready([row({ id: 'vc_open' })]);
+    render(<VerificationTab />);
+    fireEvent.click(screen.getByTestId('application-card'));
+    expect(screen.getByTestId('intake')).toHaveTextContent('vc_open');
+  });
+
+  it('names the applicant in the card’s accessible label', () => {
+    ready([row()]);
+    render(<VerificationTab />);
+    expect(
+      screen.getByRole('button', { name: /Open application for Kaiser Freight LLC/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to a person’s name when there is no company', () => {
+    ready([row({ companyName: null, firstName: 'Marisol', lastName: 'Otero', applicantType: 'owner_operator' })]);
+    render(<VerificationTab />);
+    expect(screen.getByText('Marisol Otero')).toBeInTheDocument();
   });
 });

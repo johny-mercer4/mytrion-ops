@@ -1,237 +1,272 @@
 /**
- * Sales "Verification" tab — the agent's applications straight from Zoho CRM Deals, freshest
- * application first. A card opens the verification record + compliance timeline.
+ * Sales "Verification" tab — the agent's own credit applications, on Mytrion's own database.
  *
- * Card and detail share presenters in `verificationFields` so Deal Pipeline, WEX Status, and
- * Zoho Credit Decision cannot disagree. Detail opens as the Data Center client sheet over the roster.
+ * Rebuilt (2026-08-15) off the retired credit_platform pipeline. The card's red/green state IS
+ * `verification_process`: red means Sales still owes intake and Verification cannot start; green
+ * means it is with the desk. The count of outstanding items comes from the server's evaluation, so
+ * the card and the form can never disagree about what is missing.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Icon } from '../icons';
 import { NAV_DESC } from '../salesData';
 import { useCachedLoad } from '../dcCache';
-import { getImpersonation } from '@/api/impersonation';
-import {
-  getVerificationClients,
-  type VerificationClient,
-  type VerificationClientPage,
-  type VerificationStateFilter,
-} from '@/api/verification';
-import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead, SalesPager } from '../SalesPage';
+import { SalesEmpty, SalesErrorNote, SalesPage, SalesPageHead } from '../SalesPage';
 import { SalesBodySkeleton } from '../SalesTabSkeleton';
-import { ClientDetailPage } from '../VerificationDetail';
-import {
-  ApplicationStatusFacts,
-  CLASSIFICATION_VIS,
-  FactChip,
-  money,
-  VerificationStateLine,
-} from '../verificationFields';
+import { s } from '../dc';
+import { ApplicationIntake } from '../applicationIntake';
+import { listApplications, type VerificationCaseRow } from '@/api/verificationFlow';
 
-const PAGE_SIZE = 9;
-const STATE_FILTERS: ReadonlyArray<{ id: VerificationStateFilter; label: string }> = [
+const PAGE_SIZE = 24;
+
+type Filter = 'all' | 'draft' | 'with_verification' | 'needs_you' | 'decided';
+
+const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
   { id: 'all', label: 'All' },
-  { id: 'in_progress', label: 'In progress' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'rejected', label: 'Rejected (prepay)' },
+  { id: 'draft', label: 'Incomplete' },
+  { id: 'with_verification', label: 'With Verification' },
+  { id: 'needs_you', label: 'Needs you' },
+  { id: 'decided', label: 'Decided' },
 ];
 
-function VerificationCard({
-  client,
-  onOpen,
-}: {
-  client: VerificationClient;
-  onOpen: () => void;
-}) {
-  const cls = CLASSIFICATION_VIS[client.classification];
+/** Board column → the words and tone the agent sees. Mirrors `verification_statuses.board_column`. */
+interface ColumnTone {
+  label: string;
+  fg: string;
+  bg: string;
+  bd: string;
+}
+
+const DRAFT_TONE: ColumnTone = {
+  label: 'Incomplete',
+  fg: 'var(--danger)',
+  bg: 'rgba(248,113,113,.12)',
+  bd: 'rgba(248,113,113,.32)',
+};
+
+const COLUMN_TONE: Record<string, ColumnTone> = {
+  draft: DRAFT_TONE,
+  submitted: { label: 'With Verification', fg: 'var(--ok)', bg: 'rgba(52,211,153,.12)', bd: 'rgba(52,211,153,.3)' },
+  in_review: { label: 'In review', fg: 'var(--ok)', bg: 'rgba(52,211,153,.12)', bd: 'rgba(52,211,153,.3)' },
+  needs_you: { label: 'Needs you', fg: 'var(--warn)', bg: 'rgba(251,191,36,.14)', bd: 'rgba(251,191,36,.34)' },
+  approved: { label: 'Approved', fg: 'var(--ok)', bg: 'rgba(52,211,153,.14)', bd: 'rgba(52,211,153,.34)' },
+  declined: { label: 'Declined', fg: 'var(--danger)', bg: 'rgba(248,113,113,.12)', bd: 'rgba(248,113,113,.32)' },
+};
+
+function toneFor(row: VerificationCaseRow): ColumnTone {
+  if (!row.verificationProcess) return DRAFT_TONE;
+  return COLUMN_TONE[row.boardColumn ?? 'submitted'] ?? DRAFT_TONE;
+}
+
+function matchesFilter(row: VerificationCaseRow, filter: Filter): boolean {
+  switch (filter) {
+    case 'draft':
+      return !row.verificationProcess;
+    case 'needs_you':
+      return row.statusCode === 'pending_docs';
+    case 'decided':
+      return Boolean(row.closedAt);
+    case 'with_verification':
+      return row.verificationProcess && !row.closedAt && row.statusCode !== 'pending_docs';
+    default:
+      return true;
+  }
+}
+
+function displayName(row: VerificationCaseRow): string {
+  return (
+    row.companyName ||
+    [row.firstName, row.lastName].filter(Boolean).join(' ') ||
+    'Untitled application'
+  );
+}
+
+/**
+ * Phase labels for the Sales card. The desk owns the full rail; Sales only needs to know how far
+ * along their application is, so this is a short read-only mirror of the fixed 10-phase catalog.
+ */
+const PHASE_PROGRESS: Record<string, { order: number; label: string }> = {
+  p1_intake: { order: 1, label: 'Application intake' },
+  p2_identity: { order: 2, label: 'Identity check' },
+  p3_screening: { order: 3, label: 'Internal screening' },
+  p4_authority: { order: 4, label: 'Authority status' },
+  p5_routing: { order: 5, label: 'Review routing' },
+  p6_credit_banking: { order: 6, label: 'Credit & banking' },
+  p7_hard_stops: { order: 7, label: 'Financial checks' },
+  p8_highway: { order: 8, label: 'Operational review' },
+  p9_risk_capacity: { order: 9, label: 'Risk & capacity' },
+  p10_decision: { order: 10, label: 'Final decision' },
+};
+
+/**
+ * What the body line says for a green case.
+ *
+ * Deliberately NOT the status again — the chip already carries that, and a card that says
+ * "In review" twice has spent its second line saying nothing.
+ */
+function progressLine(row: VerificationCaseRow): string {
+  if (row.closedAt) return row.statusLabel ?? 'Decided';
+  const phase = PHASE_PROGRESS[row.phaseCode];
+  if (!phase) return row.statusLabel ?? 'In review';
+  return `Phase ${phase.order} of 10 · ${phase.label}`;
+}
+
+function ApplicationCard({ row, onOpen }: { row: VerificationCaseRow; onOpen: () => void }) {
+  const tone = toneFor(row);
+  const outstanding = row.intakeMissing?.length ?? 0;
   return (
     <button
       type="button"
       onClick={onOpen}
-      data-testid="verification-card"
-      className="ss-card-h ss-verification-card"
-      aria-label={`Open verification pipeline for ${client.companyName}`}
+      data-testid="application-card"
+      className="ss-card-h"
+      aria-label={`Open application for ${displayName(row)}`}
+      style={s(
+        `text-align:left;display:grid;gap:12px;padding:16px;border-radius:var(--radius-md);background:var(--surface);cursor:pointer;border:1px solid ${tone.bd}`,
+      )}
     >
-      <div className="ss-verification-card-top">
-        <div className="ss-verification-card-heading">
-          <div className="ss-verification-card-title">{client.companyName}</div>
-          <span className="ss-vf-open">
-            Open pipeline <Icon name="chevronRight" size={14} strokeWidth={2.4} />
-          </span>
-        </div>
-        <span className="ss-vf-class" style={{ color: cls.color, borderColor: `color-mix(in srgb,${cls.color} 40%,var(--border))` }}>
-          {cls.label}
+      <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px')}>
+        <span style={s('font-size:15px;font-weight:800;color:var(--text);line-height:1.35')}>
+          {displayName(row)}
+        </span>
+        <span
+          style={s(
+            `flex-shrink:0;padding:4px 10px;border-radius:var(--radius-full);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${tone.fg};background:${tone.bg};border:1px solid ${tone.bd}`,
+          )}
+        >
+          {tone.label}
         </span>
       </div>
 
-      <div className="ss-vf-cp">
-        <VerificationStateLine state={client.verificationState} />
-        {client.verificationState === 'approved' && (client.cpLimit != null || client.cpPaymentType || client.cpBillingCycle) ? (
-          <div className="ss-vf-chips">
-            {client.cpLimit != null ? <FactChip label="Limit" value={money(client.cpLimit)} tone="ok" /> : null}
-            {client.cpPaymentType ? <FactChip label="Type" value={client.cpPaymentType} /> : null}
-            {client.cpBillingCycle ? <FactChip label="Cycle" value={client.cpBillingCycle} /> : null}
-          </div>
-        ) : null}
-        {client.verificationState === 'in_progress' && client.missingFields.length ? (
-          <div className="ss-vf-card-missing">
-            <Icon name="warn" size={13} /> Missing: {client.missingFields.slice(0, 4).join(', ')}
-            {client.missingFields.length > 4 ? '…' : ''}
-          </div>
-        ) : null}
-        {client.verificationState === 'in_progress' && (client.plaidLinkUrl || client.docsUploaded > 0) ? (
-          <div className="ss-vf-chips">
-            {client.plaidLinkUrl ? <FactChip label="Plaid" value="Link ready" tone="accent" icon="link" /> : null}
-            {client.docsUploaded > 0 ? <FactChip label="Docs" value={String(client.docsUploaded)} tone="accent" icon="doc" /> : null}
-          </div>
-        ) : null}
-        {client.workingOn ? (
-          <div className="ss-vf-card-verificator">
-            <Icon name="user" size={14} /> Verificator: {client.workingOn}
-          </div>
-        ) : null}
-      </div>
+      {/* The red state names what is outstanding — a colour alone is neither accessible nor useful. */}
+      {!row.verificationProcess ? (
+        <span style={s('display:flex;align-items:center;gap:7px;font-size:12px;color:var(--danger);font-weight:700')}>
+          <Icon name="warn" size={14} strokeWidth={2.2} />
+          {outstanding > 0
+            ? `${outstanding} item${outstanding === 1 ? '' : 's'} still needed`
+            : 'Not submitted yet'}
+        </span>
+      ) : row.statusCode === 'pending_docs' ? (
+        <span style={s('display:flex;align-items:center;gap:7px;font-size:12px;color:var(--warn);font-weight:700')}>
+          <Icon name="upload" size={14} strokeWidth={2.2} />
+          Verification has asked you for documents
+        </span>
+      ) : (
+        <span style={s('font-size:12px;color:var(--muted)')}>{progressLine(row)}</span>
+      )}
 
-      <ApplicationStatusFacts client={client} />
-
-      {client.attentionCount ? (
-        <div className="ss-vf-card-attention">
-          <Icon name="warn" size={14} /> {client.attentionCount} Verification action
-          {client.attentionCount === 1 ? '' : 's'} required
-        </div>
-      ) : null}
-
-      <div className="ss-vf-card-foot">
-        <span>{client.appFillDate ? `Applied ${client.appFillDate}` : 'No application date'}</span>
-        {client.applicationId ? <span className="is-mono">#{client.applicationId}</span> : null}
+      <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
+        <Fact label="Type" value={row.applicantType === 'owner_operator' ? 'Owner-op' : row.applicantType === 'carrier' ? 'Carrier' : row.applicantType === 'company' ? 'Company' : '—'} />
+        <Fact label="Trucks" value={row.trucksCount == null ? '—' : String(row.trucksCount)} />
+        <Fact label="Cards" value={row.fuelCardsRequested == null ? '—' : String(row.fuelCardsRequested)} />
+        {row.underwritingRoute === 'wex' ? <Fact label="Route" value="WEX" /> : null}
+        {row.approvedLimitAmount ? <Fact label="Approved" value={`$${row.approvedLimitAmount}`} /> : null}
       </div>
     </button>
   );
 }
 
-export function VerificationTab() {
-  const viewAsUserId = getImpersonation()?.zohoUserId;
-  const actAs = viewAsUserId ?? 'self';
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [stateFilter, setStateFilter] = useState<VerificationStateFilter>('all');
-  const [selected, setSelected] = useState<VerificationClient | null>(null);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [query]);
-  const load = useCachedLoad<VerificationClientPage>(
-    `sales:verification:${actAs}:${stateFilter}:${page}:${encodeURIComponent(debouncedQuery)}`,
-    () => getVerificationClients({
-      ...(viewAsUserId ? { zohoUserId: viewAsUserId } : {}),
-      page,
-      pageSize: PAGE_SIZE,
-      query: debouncedQuery,
-      state: stateFilter,
-    }),
-    { staleMs: 90_000 },
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <span
+      style={s(
+        'display:inline-flex;align-items:baseline;gap:5px;padding:4px 9px;border-radius:var(--radius-sm);background:var(--alt);font-size:11px',
+      )}
+    >
+      <span style={s('color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-weight:700')}>
+        {label}
+      </span>
+      <span style={s('color:var(--text);font-weight:700')}>{value}</span>
+    </span>
   );
-  const clients = load.data?.clients ?? [];
-  const total = load.data?.pagination.total ?? 0;
-  const pageCount = load.data?.pagination.pageCount ?? 1;
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const degradedSources = load.data?.sourceHealth
-    ? Object.entries(load.data.sourceHealth)
-        .filter(([, health]) => health === 'degraded')
-        .map(([source]) => source)
-    : [];
-  const showingFallback = Boolean(load.data?.partial || load.data?.freshness === 'stale');
+}
 
-  const emptyMsg = debouncedQuery
-    ? 'No applications match your search.'
-    : stateFilter !== 'all'
-      ? 'No applications in this state.'
-      : 'No verification applications yet.';
+export function VerificationTab() {
+  const [filter, setFilter] = useState<Filter>('all');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = useCallback(() => listApplications({ limit: PAGE_SIZE }), []);
+  const { data, loading, error, reload } = useCachedLoad('sales:verification:applications', load);
+
+  const rows = data?.items ?? [];
+  const visible = rows.filter((r) => matchesFilter(r, filter));
+
+  if (openId) {
+    return (
+      <SalesPage>
+        <button
+          type="button"
+          onClick={() => {
+            setOpenId(null);
+            void reload();
+          }}
+          style={s(
+            'align-self:flex-start;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer',
+          )}
+        >
+          <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
+          All applications
+        </button>
+        <ApplicationIntake applicationId={openId} />
+      </SalesPage>
+    );
+  }
 
   return (
-    <SalesPage
-      className="ss-verification-page"
-      busy={(load.loading && !load.data) || load.revalidating}
-    >
+    <SalesPage>
       <SalesPageHead description={NAV_DESC.verification} />
 
-      <div className="ss-toolbar">
-        <div className="ss-search">
-          <Icon name="search" size={16} />
-          <input
-            value={query}
-            onChange={(e) => { setQuery(e.currentTarget.value); setPage(1); }}
-            aria-label="Search verification applications"
-            placeholder="Search by company, deal name, stage, decision, carrier ID or application #…"
-          />
-          {query ? (
+      <div role="tablist" aria-label="Filter applications" style={s('display:flex;flex-wrap:wrap;gap:8px')}>
+        {FILTERS.map((f) => {
+          const active = filter === f.id;
+          const n = rows.filter((r) => matchesFilter(r, f.id)).length;
+          return (
             <button
+              key={f.id}
               type="button"
-              className="ss-search-clear"
-              aria-label="Clear search"
-              onClick={() => { setQuery(''); setPage(1); }}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setFilter(f.id)}
+              style={s(
+                `height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;cursor:pointer;background:${
+                  active ? 'var(--accent)' : 'var(--surface)'
+                };color:${active ? 'var(--on-accent)' : 'var(--text2)'};border:1px solid ${
+                  active ? 'var(--accent)' : 'var(--border)'
+                }`,
+              )}
             >
-              <Icon name="close" size={13} strokeWidth={2.4} />
+              {f.label}
+              <span style={s('margin-left:7px;opacity:.72')}>{n}</span>
             </button>
-          ) : null}
-        </div>
-        <div className="ss-vf-filters" role="group" aria-label="Filter by verification state">
-          {STATE_FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              className={`ss-vf-filter${stateFilter === filter.id ? ' is-active' : ''}`}
-              aria-pressed={stateFilter === filter.id}
-              onClick={() => { setStateFilter(filter.id); setPage(1); }}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {showingFallback && load.data ? (
-        <div className="ss-source-health" role="status">
-          <Icon name="warn" size={16} color="var(--warn)" />
-          <span>
-            Showing the latest available pipeline data
-            {degradedSources.length ? ` while ${degradedSources.join(' and ')} recovers` : ''}.
-          </span>
-        </div>
-      ) : null}
+      {error ? <SalesErrorNote>Could not load your applications. {String(error)}</SalesErrorNote> : null}
 
-      {load.loading && !load.data ? (
-        <SalesBodySkeleton variant="grid" rows={9} label="verification applications" />
-      ) : load.error && !load.data ? (
-        <SalesErrorNote>{load.error}</SalesErrorNote>
-      ) : clients.length === 0 ? (
+      {/* One loader per surface: `loading` is only true when there is nothing to show. */}
+      {loading ? (
+        <SalesBodySkeleton variant="grid" />
+      ) : visible.length === 0 ? (
         <SalesEmpty
           icon="verification"
-          title={debouncedQuery ? 'No matching applications' : 'No applications yet'}
-          body={emptyMsg}
+          title={rows.length === 0 ? 'No applications yet' : 'Nothing in this filter'}
+          body={
+            rows.length === 0
+              ? 'Start one from Create → Application. It stays with you until every detail and document is in.'
+              : 'Try another filter to see the rest of your applications.'
+          }
         />
       ) : (
-        <>
-        <div className="ss-verification-grid" data-testid="verification-grid">
-          {clients.map((client, index) => (
-            <VerificationCard
-              key={client.dealId ?? client.carrierId ?? `application-${index}`}
-              client={client}
-              onOpen={() => setSelected(client)}
-            />
+        <div
+          style={s(
+            'display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))',
+          )}
+        >
+          {visible.map((row) => (
+            <ApplicationCard key={row.id} row={row} onOpen={() => setOpenId(row.id)} />
           ))}
         </div>
-        {total > 0 ? (
-          <SalesPager
-            page={page}
-            pageCount={pageCount}
-            onPage={setPage}
-            summary={`Showing ${pageStart + 1}–${Math.min(pageStart + clients.length, total)} of ${total}${load.data?.pagination.truncated ? '+' : ''} pipeline applications`}
-          />
-        ) : null}
-        </>
       )}
-      {selected ? <ClientDetailPage client={selected} onBack={() => setSelected(null)} /> : null}
     </SalesPage>
   );
 }
