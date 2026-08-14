@@ -16536,3 +16536,67 @@ Ingest disabled again; no new cases until re-enabled. `automation.verification.c
   input-font-size budget went 45 → 43.
 - Ratcheted CRM breakpoint budgets: off-ladder 70 → 69, max-width 89 → 88, input font-size 44 → 43.
 - ESLint now ignores gitignored `ds-bundle/` so local `pnpm lint` matches CI.
+
+## 2026-08-15 — New Era Verification: Mytrion-owned underwriting flow (Sales → Verification)
+
+Rebuilt Verification against `Octane_New_Applicant_Underwriting_Flow`, on our own Postgres.
+Dependence on the external `credit_platform` DB/API is retired, not deleted.
+
+**Why the data model changed.** The old `verification_cases` was a Zoho-Deal mirror whose pipeline
+truth lived in someone else's database. The SOP describes per-phase decisions, typed financial
+findings, a local blacklist and a capacity calculation — none of which that shape can hold. So:
+one extended table plus 11 new ones (migration `0121_verification_new_era`, hand-written and
+idempotent; `verification_cases` is deliberately absent from `drizzle.config.ts`).
+
+**The shared record.** `verification_cases` is now the one row both desks work, the way
+`retention_cases` already is: lookup tables for phases/statuses, `board_column` as the Sales
+projection, and two thin department-scoped read models over the same rows. Sales fills intake
+(`/v1/verification/applications*`, sales-gated); Verification underwrites
+(`/v1/verification/flow/*`, verification-gated).
+
+**`verification_process` is the gate.** False = red, Sales still owes intake, and the desk cannot
+work it. It is computed server-side from stored state on every mutation and is absent from the
+intake patch type, so a client cannot set it. The gate only OPENS on an explicit submit — a form
+that happens to be complete stays a draft, because releasing work to another department is a
+decision, not a side effect of typing the last field.
+
+**Decisions worth remembering.**
+- Moderate/Weak risk factors seed as NULL on purpose. `computeRecommendedLimit` refuses and names
+  the tier rather than inventing a number. A wildcard default would approve limits nobody set.
+- Avg weekly net cash flow is DERIVED from its two inputs, never accepted from the client — it
+  gates the unsecured LOC. The banking form previews it; the route never forwards it.
+- Fuel is added back in step 2 because the card displaces that spend. `assertFuelNotDoubleCounted`
+  refuses when fuel exceeds total recurring expenses, which means it was recorded outside them.
+- Hard stops route to deposit/prepaid, never to decline. The SOP is explicit and so is the code.
+- A confirmed blacklist decline WRITES the blacklist. Without that the decision was cosmetic.
+- Full SSN/DL are not stored. Last 4 only; the card and licence are Dropbox documents (own root,
+  `dropbox_verification`, provider stamped per row). Screening hashes identifiers rather than
+  holding them — which is a weaker match, which is why every hit needs a human verdict.
+
+**Gotcha that cost a fix — read this before touching Verification UI.**
+`sales/redesign/theme.css` declares `--text`, `--text2`, `--muted`, `--faint`, `--alt`, `--ok`,
+`--warn`, `--accent-rgb` under `.ss-root`. The Verification Mytrion renders through `ModuleShell`
+and never enters that scope, so those names resolve to nothing there and CSS drops the whole
+declaration silently. `styles/tokens.test.ts` cannot see it — it checks a token is declared
+somewhere under `src`, and they all are. The first cut of the phase rail shipped 11 such
+references. Fixed by `verification/flow/style.ts` (local `s()` + global token names) and guarded by
+`verification/flow/tokenScope.test.ts`, which fails on any `.ss-root` token used in that tree and
+on any interactive control under a 44px touch target.
+
+**Legacy quarantine.** `src/modules/verification/killSwitches.ts` gates at the integration layer's
+`isConfigured()` seams, not per call site — every consumer already degrades gracefully there.
+Legacy tabs are UNDECLARED, not merely hidden, because `tabRegistry.test.ts` requires a declared
+tab to render and a declared-but-dead tab could be granted in a permission set.
+`verification-kill-switches.test.ts` proves the quarantine beats a fully-populated environment,
+which is the realistic mistake — a deployment still holding the old DSN and API key.
+
+**Verified.** `scripts/verificationFlowSmoke.ts` walks the whole SOP against a throwaway DB —
+red/green gate, WEX cutoff at 21 cards, banking-first at 10 trucks, owner-operator skipping phases
+4 and 8 with stated reasons, pending-docs returning to the phase that ASKED, derived cash flow,
+the policy refusal, capacity 5700 × 0.80 = 4560, and the blacklist round-trip catching a repeat
+EIN. All checks pass. Backend 2986 tests, CRM 1000, lint 0 errors, typecheck 0 both. Widget rebuilt.
+
+**Still open:** no external API calls anywhere yet — FMCSA/QCmobile (Phase 4), Highway (Phase 8),
+the credit bureau and Plaid are all manual entry by design for the prototype. The Phase 8 Highway
+pane is a checklist rather than a data pull for the same reason. Moderate/Weak risk factors need a
+policy decision before those tiers can be priced at all.

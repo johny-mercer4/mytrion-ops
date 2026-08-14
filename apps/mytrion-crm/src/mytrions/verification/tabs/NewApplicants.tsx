@@ -7,7 +7,7 @@
  */
 import { useCallback, useState } from 'react';
 import { Icon } from '../../sales/redesign/icons';
-import { s } from '../../sales/redesign/dc';
+import { s } from '../flow/style';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { CaseWorkspace } from '../flow/CaseWorkspace';
 import { listDeskCases, type VerificationCaseRow } from '@/api/verificationFlow';
@@ -105,9 +105,9 @@ export function NewApplicants() {
               aria-selected={active}
               onClick={() => setScope(sc.id)}
               style={s(
-                `height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;cursor:pointer;background:${
+                `min-height:44px;padding:0 16px;border-radius:var(--radius-full);font-size:13px;font-weight:700;cursor:pointer;background:${
                   active ? 'var(--accent)' : 'var(--surface)'
-                };color:${active ? 'var(--on-accent)' : 'var(--text2)'};border:1px solid ${
+                };color:${active ? 'var(--on-accent)' : 'var(--text-secondary)'};border:1px solid ${
                   active ? 'var(--accent)' : 'var(--border)'
                 }`,
               )}
@@ -126,13 +126,13 @@ export function NewApplicants() {
       ) : null}
 
       {loading ? (
-        <p style={s('margin:0;padding:32px;text-align:center;color:var(--muted);font-size:14px')}>
+        <p style={s('margin:0;padding:32px;text-align:center;color:var(--text-muted);font-size:14px')}>
           Loading applicants…
         </p>
       ) : visible.length === 0 ? (
         <p
           style={s(
-            'margin:0;padding:32px;text-align:center;color:var(--muted);font-size:14px;border-radius:var(--radius-md);border:1px dashed var(--border)',
+            'margin:0;padding:32px;text-align:center;color:var(--text-muted);font-size:14px;border-radius:var(--radius-md);border:1px dashed var(--border)',
           )}
         >
           {scope === 'workable'
@@ -162,14 +162,14 @@ function Stat({
   tone: 'ok' | 'bad' | 'warn' | 'plain';
 }) {
   const colour =
-    tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--danger)' : tone === 'warn' ? 'var(--warn)' : 'var(--text)';
+    tone === 'ok' ? 'var(--success)' : tone === 'bad' ? 'var(--danger)' : tone === 'warn' ? 'var(--warning)' : 'var(--text-primary)';
   return (
     <div
       style={s(
         'display:grid;gap:3px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
       )}
     >
-      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)')}>
+      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)')}>
         {label}
       </span>
       <span style={s(`font-size:22px;font-weight:800;color:${colour};font-variant-numeric:tabular-nums`)}>
@@ -192,16 +192,16 @@ function ApplicantRow({ row, onOpen }: { row: VerificationCaseRow; onOpen: () =>
       aria-label={`Open ${nameOf(row)}`}
       style={s(
         `width:100%;text-align:left;display:grid;gap:10px;padding:14px 16px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${
-          locked ? 'rgba(248,113,113,.34)' : 'var(--border)'
+          locked ? 'var(--intent-danger-bd)' : 'var(--border)'
         }`,
       )}
     >
       <div style={s('display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between')}>
-        <span style={s('font-size:15px;font-weight:800;color:var(--text)')}>{nameOf(row)}</span>
+        <span style={s('font-size:15px;font-weight:800;color:var(--text-primary)')}>{nameOf(row)}</span>
         <span
           style={s(
             `font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:${
-              locked ? 'var(--danger)' : 'var(--ok)'
+              locked ? 'var(--danger)' : 'var(--success)'
             }`,
           )}
         >
@@ -218,11 +218,11 @@ function ApplicantRow({ row, onOpen }: { row: VerificationCaseRow; onOpen: () =>
         <PhaseMeter phase={phase} />
       )}
 
-      <div style={s('display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted)')}>
+      <div style={s('display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-muted)')}>
         <span>{row.applicantType === 'owner_operator' ? 'Owner-operator' : row.applicantType === 'carrier' ? 'Carrier' : 'Company'}</span>
         <span>{row.trucksCount ?? '—'} trucks</span>
         <span>{row.fuelCardsRequested ?? '—'} cards</span>
-        {row.underwritingRoute === 'wex' ? <span style={s('color:var(--warn);font-weight:700')}>WEX route</span> : null}
+        {row.underwritingRoute === 'wex' ? <span style={s('color:var(--warning);font-weight:700')}>WEX route</span> : null}
         <span>{row.ownerName}</span>
       </div>
     </button>
@@ -245,7 +245,7 @@ function PhaseMeter({ phase }: { phase: number }) {
           />
         ))}
       </span>
-      <span style={s('font-size:12px;color:var(--muted)')}>Phase {phase} of 10</span>
+      <span style={s('font-size:12px;color:var(--text-muted)')}>Phase {phase} of 10</span>
     </span>
   );
 }

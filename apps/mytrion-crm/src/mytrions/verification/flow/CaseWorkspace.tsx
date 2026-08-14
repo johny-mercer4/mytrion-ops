@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../sales/redesign/icons';
-import { s } from '../../sales/redesign/dc';
+import { s } from './style';
 import { PhaseRail, SkippedPane } from './PhaseRail';
 import { DecisionBar, HardStopsPane, PaneShell, ScreeningPane } from './PhasePanes';
 import { BankingPane, CreditPane, DecisionPane, RiskPane } from './ReviewPanes';
@@ -61,7 +61,7 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
   };
 
   if (loading) {
-    return <div style={s('padding:40px;text-align:center;color:var(--muted);font-size:14px')}>Loading case…</div>;
+    return <div style={s('padding:40px;text-align:center;color:var(--text-muted);font-size:14px')}>Loading case…</div>;
   }
   if (!detail) {
     return (
@@ -94,14 +94,14 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
         <div
           role="status"
           style={s(
-            'display:grid;gap:5px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid rgba(248,113,113,.34);background:rgba(248,113,113,.1)',
+            'display:grid;gap:5px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--intent-danger-bd);background:var(--intent-danger-bg)',
           )}
         >
           <span style={s('display:flex;align-items:center;gap:9px;font-size:13px;font-weight:800;color:var(--danger)')}>
             <Icon name="lock" size={15} strokeWidth={2.2} />
             Waiting on Sales — {detail.case.intakeMissing?.length ?? 0} item(s) outstanding
           </span>
-          <span style={s('font-size:12px;color:var(--text2);line-height:1.5')}>
+          <span style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>
             The application is not complete, so it cannot be underwritten yet. You can read everything
             here, but no phase can be signed off.
           </span>
@@ -112,7 +112,7 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
         <div
           role="status"
           style={s(
-            'padding:12px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:13px;color:var(--text2)',
+            'padding:12px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface-alt);font-size:13px;color:var(--text-secondary)',
           )}
         >
           Decided — {detail.case.statusLabel ?? detail.case.statusCode}. This case is closed.
@@ -120,7 +120,7 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
       ) : null}
 
       {error ? (
-        <p role="alert" style={s('margin:0;padding:12px 14px;border-radius:var(--radius-md);border:1px solid rgba(248,113,113,.34);background:rgba(248,113,113,.1);font-size:13px;color:var(--text)')}>
+        <p role="alert" style={s('margin:0;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--intent-danger-bd);background:var(--intent-danger-bg);font-size:13px;color:var(--text-primary)')}>
           {error}
         </p>
       ) : null}
@@ -249,10 +249,10 @@ function ChecklistPane({ detail, phaseCode }: { detail: VerificationDeskDetail; 
       {phaseCode === 'p1_intake' ? <ApplicationFacts detail={detail} /> : null}
       {items.length > 0 ? (
         <div style={s('display:grid;gap:8px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
-          <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text)')}>What to check</h3>
+          <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text-primary)')}>What to check</h3>
           <ul style={s('margin:0;padding-left:18px;display:grid;gap:5px')}>
             {items.map((item) => (
-              <li key={item} style={s('font-size:13px;color:var(--text2);line-height:1.55')}>
+              <li key={item} style={s('font-size:13px;color:var(--text-secondary);line-height:1.55')}>
                 {item}
               </li>
             ))}
@@ -280,10 +280,10 @@ function ApplicationFacts({ detail }: { detail: VerificationDeskDetail }) {
     <dl style={s('margin:0;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
       {facts.map(([label, value]) => (
         <div key={label} style={s('display:grid;gap:3px')}>
-          <dt style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)')}>
+          <dt style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)')}>
             {label}
           </dt>
-          <dd style={s('margin:0;font-size:14px;font-weight:700;color:var(--text)')}>{value}</dd>
+          <dd style={s('margin:0;font-size:14px;font-weight:700;color:var(--text-primary)')}>{value}</dd>
         </div>
       ))}
     </dl>
@@ -296,26 +296,26 @@ function RoutingPane({ detail }: { detail: VerificationDeskDetail }) {
   return (
     <div style={s('display:grid;gap:14px')}>
       <div style={s('display:grid;gap:6px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
-        <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>
+        <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
           {bankFirst ? 'Banking review first, then credit' : 'Credit review first, then banking'}
         </span>
-        <span style={s('font-size:12px;color:var(--muted);line-height:1.55')}>
+        <span style={s('font-size:12px;color:var(--text-muted);line-height:1.55')}>
           {bankFirst
             ? `A carrier with ${routing.bankFirstTruckMin}+ trucks is reviewed banking-first.`
             : `Owner-operators and carriers under ${routing.bankFirstTruckMin} trucks are reviewed credit-first.`}
         </span>
       </div>
       <div style={s('display:grid;gap:6px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
-        <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>
+        <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
           {routing.underwritingRoute === 'wex' ? 'WEX underwriting route' : 'Octane internal underwriting'}
         </span>
-        <span style={s('font-size:12px;color:var(--muted);line-height:1.55')}>
+        <span style={s('font-size:12px;color:var(--text-muted);line-height:1.55')}>
           {routing.underwritingRoute === 'wex'
             ? `Over ${routing.wexCardCutoff} fuel cards requested.`
             : `Up to ${routing.wexCardCutoff} fuel cards requested.`}
         </span>
       </div>
-      <p style={s('margin:0;font-size:12px;color:var(--muted);line-height:1.55')}>
+      <p style={s('margin:0;font-size:12px;color:var(--text-muted);line-height:1.55')}>
         Both reviews must be completed before the final risk assessment unless the applicant is declined
         earlier.
       </p>
@@ -338,8 +338,8 @@ function CaseHeading({ detail }: { detail: VerificationDeskDetail }) {
   const name = c.companyName || [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Application';
   return (
     <div style={s('display:grid;gap:2px;text-align:right')}>
-      <span style={s('font-size:16px;font-weight:800;color:var(--text)')}>{name}</span>
-      <span style={s('font-size:12px;color:var(--muted)')}>{c.statusLabel ?? c.statusCode}</span>
+      <span style={s('font-size:16px;font-weight:800;color:var(--text-primary)')}>{name}</span>
+      <span style={s('font-size:12px;color:var(--text-muted)')}>{c.statusLabel ?? c.statusCode}</span>
     </div>
   );
 }
@@ -350,7 +350,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       style={s(
-        'display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer',
+        'display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;font-weight:700;cursor:pointer',
       )}
     >
       <Icon name="chevronLeft" size={15} strokeWidth={2.2} />

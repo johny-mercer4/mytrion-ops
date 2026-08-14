@@ -9,9 +9,9 @@
  *     than the rule itself.
  */
 import { useState } from 'react';
-import { s } from '../../sales/redesign/dc';
 import { Field, SelectField } from '../../sales/redesign/applicationFields';
 import { Figure, FigureRow } from './PhasePanes';
+import { s } from './style';
 import type {
   VerificationDeskDetail,
   VerificationFinalDecision,
@@ -19,9 +19,9 @@ import type {
 } from '@/api/verificationFlow';
 
 const BTN_PRIMARY =
-  'height:40px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-size:13px;font-weight:800;cursor:pointer';
+  'min-height:44px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:var(--on-accent);font-size:13px;font-weight:800;cursor:pointer';
 const BTN_DISABLED =
-  'height:40px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-size:13px;font-weight:800;cursor:not-allowed';
+  'min-height:44px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface-alt);color:var(--text-muted);font-size:13px;font-weight:800;cursor:not-allowed';
 
 type Draft = Record<string, string>;
 
@@ -93,10 +93,10 @@ export function CreditPane({
       >
         <input type="checkbox" checked={noHit} onChange={(e) => setNoHit(e.currentTarget.checked)} />
         <span style={s('display:grid;gap:2px')}>
-          <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>
+          <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
             No information found in the credit bureau
           </span>
-          <span style={s('font-size:12px;color:var(--muted)')}>
+          <span style={s('font-size:12px;color:var(--text-muted)')}>
             A hard stop — rules out a standard unsecured line.
           </span>
         </span>
@@ -346,10 +346,10 @@ export function RiskPane({
                 }${ok ? '' : ';opacity:.66'}`,
               )}
             >
-              <span style={s('font-size:14px;font-weight:800;color:var(--text);text-transform:capitalize')}>
+              <span style={s('font-size:14px;font-weight:800;color:var(--text-primary);text-transform:capitalize')}>
                 {t}
               </span>
-              <span style={s(`font-size:11px;font-weight:700;color:${ok ? 'var(--ok)' : 'var(--warn)'}`)}>
+              <span style={s(`font-size:11px;font-weight:700;color:${ok ? 'var(--success)' : 'var(--warning)'}`)}>
                 {ok ? 'Factor set' : 'No approved factor'}
               </span>
             </button>
@@ -361,7 +361,7 @@ export function RiskPane({
         <p
           role="status"
           style={s(
-            'margin:0;padding:12px 14px;border-radius:var(--radius-md);border:1px solid rgba(251,191,36,.34);background:rgba(251,191,36,.12);font-size:12px;color:var(--text);line-height:1.55',
+            'margin:0;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--intent-warning-bd);background:var(--intent-warning-bg);font-size:12px;color:var(--text-primary);line-height:1.55',
           )}
         >
           No approved risk factor is set for the {tier} tier, so a limit cannot be recommended. An admin
@@ -370,7 +370,7 @@ export function RiskPane({
       ) : null}
 
       <div style={s('display:grid;gap:6px')}>
-        <label htmlFor="analyst-note" style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)')}>
+        <label htmlFor="analyst-note" style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)')}>
           Analyst recommendation
         </label>
         <textarea
@@ -379,7 +379,7 @@ export function RiskPane({
           value={note}
           onChange={(e) => setNote(e.currentTarget.value)}
           style={s(
-            'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical',
+            'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;font-family:inherit;resize:vertical',
           )}
         />
       </div>
@@ -454,8 +454,8 @@ export function DecisionPane({
                 }`,
               )}
             >
-              <span style={s('font-size:13px;font-weight:800;color:var(--text)')}>{o.label}</span>
-              <span style={s('font-size:12px;color:var(--muted);line-height:1.45')}>{o.body}</span>
+              <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>{o.label}</span>
+              <span style={s('font-size:12px;color:var(--text-muted);line-height:1.45')}>{o.body}</span>
             </button>
           );
         })}
@@ -473,7 +473,7 @@ export function DecisionPane({
       ) : null}
 
       <div style={s('display:grid;gap:6px')}>
-        <label htmlFor="final-note" style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)')}>
+        <label htmlFor="final-note" style={s('font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)')}>
           Reason / conditions
         </label>
         <textarea
@@ -482,7 +482,7 @@ export function DecisionPane({
           value={note}
           onChange={(e) => setNote(e.currentTarget.value)}
           style={s(
-            'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical',
+            'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;font-family:inherit;resize:vertical',
           )}
         />
       </div>

@@ -8,7 +8,7 @@
  */
 import { useState } from 'react';
 import { Icon } from '../../sales/redesign/icons';
-import { s } from '../../sales/redesign/dc';
+import { s } from './style';
 import type {
   VerificationDeskDetail,
   VerificationPhaseOutcome,
@@ -18,10 +18,10 @@ import type {
 } from '@/api/verificationFlow';
 
 const BTN =
-  'height:38px;padding:0 16px;border-radius:var(--radius-md);font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text)';
-const BTN_OK = `${BTN};border-color:rgba(52,211,153,.4);color:var(--ok)`;
-const BTN_WARN = `${BTN};border-color:rgba(251,191,36,.4);color:var(--warn)`;
-const BTN_BAD = `${BTN};border-color:rgba(248,113,113,.4);color:var(--danger)`;
+  'min-height:44px;padding:0 16px;border-radius:var(--radius-md);font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text-primary)';
+const BTN_OK = `${BTN};border-color:var(--intent-success-bd);color:var(--success)`;
+const BTN_WARN = `${BTN};border-color:var(--intent-warning-bd);color:var(--warning)`;
+const BTN_BAD = `${BTN};border-color:var(--intent-danger-bd);color:var(--danger)`;
 
 /** The four outcomes every phase offers, in SOP order. */
 const OUTCOMES: ReadonlyArray<{ id: VerificationPhaseOutcome; label: string; style: string }> = [
@@ -43,11 +43,11 @@ export function PaneShell({
   return (
     <section style={s('display:grid;gap:16px')}>
       <header style={s('display:grid;gap:4px')}>
-        <span style={s('font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint)')}>
+        <span style={s('font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted)')}>
           Phase {phase.order} of 10
         </span>
-        <h2 style={s('margin:0;font-size:18px;font-weight:800;color:var(--text)')}>{phase.label}</h2>
-        <p style={s('margin:0;font-size:13px;color:var(--muted);line-height:1.55')}>{phase.description}</p>
+        <h2 style={s('margin:0;font-size:18px;font-weight:800;color:var(--text-primary)')}>{phase.label}</h2>
+        <p style={s('margin:0;font-size:13px;color:var(--text-muted);line-height:1.55')}>{phase.description}</p>
       </header>
       {children}
       {footer}
@@ -90,7 +90,7 @@ export function DecisionBar({
         'display:grid;gap:12px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
       )}
     >
-      <label htmlFor="phase-note" style={s('font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>
+      <label htmlFor="phase-note" style={s('font-size:12px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em')}>
         Note (optional)
       </label>
       <textarea
@@ -100,7 +100,7 @@ export function DecisionBar({
         onChange={(e) => setNote(e.currentTarget.value)}
         placeholder="What did you find?"
         style={s(
-          'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical',
+          'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;font-family:inherit;resize:vertical',
         )}
       />
       {extra}
@@ -125,7 +125,7 @@ export function DecisionBar({
         <button
           type="button"
           onClick={() => setArming(null)}
-          style={s('justify-self:start;border:none;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline')}
+          style={s('justify-self:start;border:none;background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer;text-decoration:underline')}
         >
           Cancel
         </button>
@@ -146,16 +146,16 @@ export function Figure({
   tone?: 'ok' | 'bad' | 'plain';
   hint?: string;
 }) {
-  const colour = tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--danger)' : 'var(--text)';
+  const colour = tone === 'ok' ? 'var(--success)' : tone === 'bad' ? 'var(--danger)' : 'var(--text-primary)';
   return (
     <div style={s('display:grid;gap:3px')}>
-      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)')}>
+      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)')}>
         {label}
       </span>
       <span style={s(`font-size:18px;font-weight:800;color:${colour};font-variant-numeric:tabular-nums`)}>
         {value}
       </span>
-      {hint ? <span style={s('font-size:11px;color:var(--muted);line-height:1.45')}>{hint}</span> : null}
+      {hint ? <span style={s('font-size:11px;color:var(--text-muted);line-height:1.45')}>{hint}</span> : null}
     </div>
   );
 }
@@ -194,7 +194,7 @@ export function ScreeningPane({
         <button type="button" onClick={onRun} disabled={busy} style={s(busy ? `${BTN};opacity:.5` : BTN)}>
           <Icon name="refresh" size={14} strokeWidth={2.2} /> {hits.length > 0 ? 'Re-run screening' : 'Run screening'}
         </button>
-        <span style={s('font-size:12px;color:var(--muted)')}>
+        <span style={s('font-size:12px;color:var(--text-muted)')}>
           Checks name, EIN, SSN, phone, email, address, MC and USDOT against our blacklist and existing applicants.
         </span>
       </div>
@@ -202,7 +202,7 @@ export function ScreeningPane({
       {hits.length === 0 ? (
         <div
           style={s(
-            'padding:16px;border-radius:var(--radius-md);border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.1);font-size:13px;color:var(--text)',
+            'padding:16px;border-radius:var(--radius-md);border:1px solid var(--intent-success-bd);background:var(--intent-success-bg);font-size:13px;color:var(--text-primary)',
           )}
         >
           No blacklist or duplicate matches.
@@ -229,7 +229,7 @@ export function ScreeningPane({
       {summary.unresolved > 0 ? (
         <p
           role="status"
-          style={s('margin:0;font-size:12px;font-weight:700;color:var(--warn)')}
+          style={s('margin:0;font-size:12px;font-weight:700;color:var(--warning)')}
         >
           {summary.unresolved} match{summary.unresolved === 1 ? '' : 'es'} still need a verdict before this
           phase can pass.
@@ -254,9 +254,9 @@ function HitGroup({
 }) {
   return (
     <div style={s('display:grid;gap:10px')}>
-      <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text)')}>{title}</h3>
+      <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text-primary)')}>{title}</h3>
       {hits.length === 0 ? (
-        <p style={s('margin:0;font-size:12px;color:var(--muted)')}>{emptyLabel}</p>
+        <p style={s('margin:0;font-size:12px;color:var(--text-muted)')}>{emptyLabel}</p>
       ) : (
         <ul style={s('margin:0;padding:0;list-style:none;display:grid;gap:8px')}>
           {hits.map((hit) => (
@@ -267,10 +267,10 @@ function HitGroup({
               )}
             >
               <div style={s('display:flex;flex-wrap:wrap;gap:8px;align-items:baseline')}>
-                <span style={s('font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)')}>
+                <span style={s('font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)')}>
                   {hit.entryType}
                 </span>
-                <span style={s('font-size:13px;font-weight:700;color:var(--text)')}>
+                <span style={s('font-size:13px;font-weight:700;color:var(--text-primary)')}>
                   {hit.matchedValueDisplay ?? hit.matchedCaseLabel ?? 'match'}
                 </span>
               </div>
@@ -286,7 +286,7 @@ function HitGroup({
               ) : (
                 <span
                   style={s(
-                    `font-size:12px;font-weight:800;color:${hit.verdict === 'confirmed' ? 'var(--danger)' : 'var(--ok)'}`,
+                    `font-size:12px;font-weight:800;color:${hit.verdict === 'confirmed' ? 'var(--danger)' : 'var(--success)'}`,
                   )}
                 >
                   {hit.verdict === 'confirmed' ? 'Confirmed match' : 'Ruled a false match'}
@@ -322,7 +322,7 @@ export function HardStopsPane({ detail }: { detail: VerificationDeskDetail }) {
       {hardStops.triggered.length === 0 ? (
         <div
           style={s(
-            'padding:14px 16px;border-radius:var(--radius-md);border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.1);font-size:13px;color:var(--text)',
+            'padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--intent-success-bd);background:var(--intent-success-bg);font-size:13px;color:var(--text-primary)',
           )}
         >
           Neither hard stop applies — a standard unsecured line is still on the table.
@@ -333,14 +333,14 @@ export function HardStopsPane({ detail }: { detail: VerificationDeskDetail }) {
             <div
               key={stop.code}
               style={s(
-                'display:grid;gap:4px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid rgba(248,113,113,.34);background:rgba(248,113,113,.1)',
+                'display:grid;gap:4px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--intent-danger-bd);background:var(--intent-danger-bg)',
               )}
             >
               <span style={s('font-size:13px;font-weight:800;color:var(--danger)')}>{stop.label}</span>
-              <span style={s('font-size:12px;color:var(--text2);line-height:1.5')}>{stop.detail}</span>
+              <span style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>{stop.detail}</span>
             </div>
           ))}
-          <p style={s('margin:0;font-size:12px;color:var(--muted);line-height:1.55')}>
+          <p style={s('margin:0;font-size:12px;color:var(--text-muted);line-height:1.55')}>
             A hard stop is not a decline. It rules out a standard unsecured line — Deposit 1:1, Prepaid or
             Manager Review.
           </p>
@@ -349,15 +349,15 @@ export function HardStopsPane({ detail }: { detail: VerificationDeskDetail }) {
 
       {indicators.length > 0 ? (
         <div style={s('display:grid;gap:8px')}>
-          <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text)')}>
+          <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text-primary)')}>
             Manager-review indicators
           </h3>
-          <p style={s('margin:0;font-size:12px;color:var(--muted)')}>
+          <p style={s('margin:0;font-size:12px;color:var(--text-muted)')}>
             Not declines by themselves — signals worth a second read.
           </p>
           <ul style={s('margin:0;padding-left:18px;display:grid;gap:4px')}>
             {indicators.map((flag) => (
-              <li key={flag} style={s('font-size:12px;color:var(--text2);line-height:1.5')}>
+              <li key={flag} style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>
                 {flag}
               </li>
             ))}

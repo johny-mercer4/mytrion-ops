@@ -9,7 +9,7 @@
  * that quietly hid Phase 4 for an owner-operator would read as "authority was checked".
  */
 import { Icon } from '../../sales/redesign/icons';
-import { s } from '../../sales/redesign/dc';
+import { s } from './style';
 import type { VerificationPhaseStatus, VerificationRailPhase } from '@/api/verificationFlow';
 
 interface StatusVisual {
@@ -23,7 +23,7 @@ interface StatusVisual {
 const STATUS: Record<VerificationPhaseStatus, StatusVisual> = {
   not_started: {
     label: 'Not started',
-    fg: 'var(--muted)',
+    fg: 'var(--text-muted)',
     bg: 'transparent',
     bd: 'var(--border)',
     icon: 'panel',
@@ -31,41 +31,41 @@ const STATUS: Record<VerificationPhaseStatus, StatusVisual> = {
   in_progress: {
     label: 'In progress',
     fg: 'var(--accent)',
-    bg: 'rgba(var(--accent-rgb),.12)',
+    bg: 'var(--accent-soft)',
     bd: 'var(--accent)',
     icon: 'clock',
   },
   passed: {
     label: 'Passed',
-    fg: 'var(--ok)',
-    bg: 'rgba(52,211,153,.12)',
-    bd: 'rgba(52,211,153,.34)',
+    fg: 'var(--success)',
+    bg: 'var(--intent-success-bg)',
+    bd: 'var(--intent-success-bd)',
     icon: 'check',
   },
   pending_docs: {
     label: 'Pending documents',
-    fg: 'var(--warn)',
-    bg: 'rgba(251,191,36,.13)',
-    bd: 'rgba(251,191,36,.34)',
+    fg: 'var(--warning)',
+    bg: 'var(--intent-warning-bg)',
+    bd: 'var(--intent-warning-bd)',
     icon: 'doc',
   },
   manager_review: {
     label: 'Manager review',
-    fg: 'var(--warn)',
-    bg: 'rgba(251,191,36,.13)',
-    bd: 'rgba(251,191,36,.34)',
+    fg: 'var(--warning)',
+    bg: 'var(--intent-warning-bg)',
+    bd: 'var(--intent-warning-bd)',
     icon: 'warn',
   },
   failed: {
     label: 'Declined',
     fg: 'var(--danger)',
-    bg: 'rgba(248,113,113,.12)',
-    bd: 'rgba(248,113,113,.34)',
+    bg: 'var(--intent-danger-bg)',
+    bd: 'var(--intent-danger-bd)',
     icon: 'ban',
   },
   skipped: {
     label: 'Not applicable',
-    fg: 'var(--faint)',
+    fg: 'var(--text-muted)',
     bg: 'transparent',
     bd: 'var(--border)',
     icon: 'ban',
@@ -102,7 +102,7 @@ export function PhaseRail({
             aria-current={active ? 'step' : undefined}
             style={s(
               `display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;text-align:left;padding:10px 12px;border-radius:var(--radius-md);cursor:pointer;background:${
-                active ? 'var(--alt)' : 'transparent'
+                active ? 'var(--surface-alt)' : 'transparent'
               };border:1px solid ${active ? 'var(--accent)' : 'transparent'}`,
             )}
           >
@@ -121,7 +121,7 @@ export function PhaseRail({
               <span
                 style={s(
                   `font-size:13px;font-weight:${active ? '800' : '600'};color:${
-                    phase.applies ? 'var(--text)' : 'var(--faint)'
+                    phase.applies ? 'var(--text-primary)' : 'var(--text-muted)'
                   };line-height:1.35`,
                 )}
               >
@@ -144,14 +144,14 @@ export function SkippedPane({ phase }: { phase: VerificationRailPhase }) {
   return (
     <div
       style={s(
-        'display:grid;gap:10px;padding:20px;border-radius:var(--radius-md);border:1px dashed var(--border);background:var(--alt)',
+        'display:grid;gap:10px;padding:20px;border-radius:var(--radius-md);border:1px dashed var(--border);background:var(--surface-alt)',
       )}
     >
-      <span style={s('display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800;color:var(--text2)')}>
-        <Icon name="ban" size={16} color="var(--faint)" />
+      <span style={s('display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800;color:var(--text-secondary)')}>
+        <Icon name="ban" size={16} color="var(--text-muted)" />
         {phase.label} — not applicable
       </span>
-      <p style={s('margin:0;font-size:13px;color:var(--muted);line-height:1.55')}>
+      <p style={s('margin:0;font-size:13px;color:var(--text-muted);line-height:1.55')}>
         {phase.skipReason ?? 'This phase does not apply to this applicant type.'}
       </p>
     </div>
