@@ -16600,3 +16600,58 @@ EIN. All checks pass. Backend 2986 tests, CRM 1000, lint 0 errors, typecheck 0 b
 the credit bureau and Plaid are all manual entry by design for the prototype. The Phase 8 Highway
 pane is a checklist rather than a data pull for the same reason. Moderate/Weak risk factors need a
 policy decision before those tiers can be priced at all.
+
+## 2026-08-15 — Second read of the underwriting PDF: six SOP gaps closed
+
+Re-reading the flow document line by line against the implementation found six places the code
+was close but not faithful. All six are fixed and covered by `scripts/verificationFlowSmoke.ts`.
+
+1. **Phase 1 wanted the documents, not the digits.** Intake required `ssn_last4` / `dl_last4` but
+   not the SSN card and licence themselves — and Phase 2 exists to cross-check the application
+   *against* them, so an application could reach the desk with nothing to compare. Both are now
+   required for Flow A only.
+2. **"Additional verification" was unreachable.** The outcome existed in the model; no screen
+   offered it, so Phase 2's "INCONSISTENT → Additional Verification / Manager Review" could only
+   land on half its destinations. They are different asks and both are on the decision bar now.
+3. **Collections was never informed.** Phase 3 ends "Decline + Blacklist → Inform Collections
+   Department". Nothing did — and a comment in `screening.ts` claimed it did, which is worse than
+   silence. `verificationFlow/notify.ts` now files a high-priority inbox message tagged
+   `collection`. Best-effort: a notification failure must not leave a confirmed fraud un-declined.
+4. **Only banking gated the risk assessment.** Phase 5 says *both* reviews must complete first.
+   Banking alone still produced a number, and a capacity computed with no credit profile looks
+   exactly as authoritative as a correct one. Now refused, naming which review is outstanding.
+5. **Nine of eleven manager-review indicators.** The two missing ones are judgement-shaped rather
+   than numeric — large related-account transfers, and banking inconsistent with reported
+   operations — so an analyst who spotted them had nowhere to put them. Migration 0122 adds the
+   flag the second needs.
+6. **The underwriting summary was write-only.** It carried eight of the sixteen facts the SOP
+   enumerates and had no surface at all — assembled on every risk assessment, stored, unreadable.
+   Now complete (Highway findings, supporting documents, management exceptions included) and
+   rendered at Phase 10, where the decision is actually made.
+
+### UI/UX audit, second pass
+
+- **`role="radio"` on a button is a promise.** It tells a screen-reader user to expect arrow keys
+  and one tab stop; buttons deliver neither, so the announced affordance did not exist and each
+  option was its own tab stop. `_shared/useRovingRadio.ts` restores both (roving tabindex, arrows
+  with wrap, Home/End) for all three pickers — applicant type, risk tier, final decision.
+- Two plain-text loaders replaced with the desk's own `vf-sk` shimmer plus `aria-busy` and an
+  `sr-only` status, matching `VerificationCases`. The workspace skeleton is shaped like the
+  workspace, so the layout does not jump when data lands.
+- Impeccable detector clean on both surfaces.
+
+### A flake worth chasing rather than retrying
+
+`data-center-routes.test.ts` began failing ~1 run in 3 — an unrelated RingCentral test. It turned
+out to perform two pieces of **unmocked I/O**: `zohoCrmRecords.getRecord` (the file's stub shadows
+only "what each test drives", and the ended-call test drives `getRecord` too) and
+`mytrionCallRepo.create` with no database in a unit run. The route swallows both by design, but
+only after waiting for a socket that was never going to connect — which fits inside the default 5s
+budget on an idle machine and does not on a busy one. Verified against the pre-work commit
+(3/3 green) versus this branch (~1/3 failing): this branch's extra ~140 tests and two more
+`buildApp()` calls were simply enough load to expose it. Both are stubbed now — removing the I/O
+rather than widening the timeout, since a slower machine would find the same edge again. Full
+suite 5/5 clean after.
+
+**Reference:** the process and its Horizon wiring are written up as a shared artifact (10 phases,
+the red/green gate, the capacity formulas and the policy refusal, what is deliberately manual).
