@@ -184,6 +184,18 @@ describe('POST /v1/billing/ingest/dispute', () => {
     expect(upsertDisputeUnlessMatchedMock).not.toHaveBeenCalled();
   });
 
+  // Regression pin: confirmed live 2026-08-14 against docs.stripe.com/api/disputes/object — "prevented"
+  // means the dispute never became a formal chargeback, so no money was ever taken from the merchant.
+  // Without this, a live Zap sending exactly this stage would fall through to the normal creation path
+  // and could auto-reverse a real CMP invoice payment for a chargeback that never happened.
+  it('the "prevented" stage (dispute never became a formal chargeback) also no-ops', async () => {
+    const res = await post('/v1/billing/ingest/dispute', { disputeId: 'du_1', amount: 1000, stage: 'prevented' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'success', ignored: true });
+    expect(upsertDisputeUnlessMatchedMock).not.toHaveBeenCalled();
+    expect(resolveStripeDisputeMatchMock).not.toHaveBeenCalled();
+  });
+
   it('an already-matched return is a benign 200, not a 409 — Zapier must not retry it forever', async () => {
     upsertDisputeUnlessMatchedMock.mockResolvedValue({ id: 700, matched: true });
 
