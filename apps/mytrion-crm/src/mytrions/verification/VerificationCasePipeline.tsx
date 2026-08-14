@@ -36,7 +36,10 @@ export function VerificationCasePipeline({
   return (
     <>
       {groups.map((group) => (
-        <section key={group.id} className={`vf-stage-group is-${group.id}`}>
+        <section
+          key={group.id}
+          className={`vf-stage-group is-${group.id}${group.id === 'auto' && firstRunBusy ? ' is-live' : ''}`}
+        >
           <div className="vf-stage-group-head">
             <div>
               <h4 className="vf-stage-group-title">{group.title}</h4>
@@ -72,6 +75,7 @@ export function VerificationCasePipeline({
                   readinessAvailable={readinessAvailable}
                   readiness={detail.readiness?.stages[stage.id] ?? null}
                   plaidMode={detail.case.plaidMode ?? null}
+                  firstRunStatus={detail.case.firstRunStatus}
                   onAct={onAct}
                 />
               );
@@ -91,6 +95,7 @@ function StageRow({
   readinessAvailable,
   readiness,
   plaidMode,
+  firstRunStatus,
   onAct,
 }: {
   caseId: string;
@@ -106,6 +111,7 @@ function StageRow({
     circuitOpen?: boolean;
   } | null;
   plaidMode: string | null;
+  firstRunStatus: string | null | undefined;
   onAct: (label: string, fn: () => Promise<VerificationCaseDetail>) => Promise<void>;
 }) {
   const status = live?.status ?? 'pending';
@@ -120,6 +126,7 @@ function StageRow({
   const auto = stageGroup(stage.id) === 'auto';
   const { stepStatus } = live ? { stepStatus: String(live.result.step_status ?? '').trim() } : { stepStatus: '' };
   const runTitle = gate.reason ?? (auto ? 'HTTP Run claims the case. First run does not.' : undefined);
+  const showAutoRun = !auto || firstRunStatus === 'completed' || firstRunStatus === 'error';
 
   return (
     <li className={`vf-stage ${display.tone}`}>
@@ -133,19 +140,21 @@ function StageRow({
         ) : null}
         {display.note ? <em>{display.note}</em> : null}
         {gate.reason ? <em>{gate.reason}</em> : null}
-        {auto && !gate.reason ? <em>HTTP Run claims the case. Prefer Start first run above.</em> : null}
+        {auto && !gate.reason ? <em>Start first run above — it does not claim the case.</em> : null}
       </div>
       <div className="vf-stage-btns">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={runBlocked}
-          aria-disabled={gate.blocked || undefined}
-          title={runTitle}
-          onClick={() => void onAct(`run:${stage.id}`, () => runVerificationCaseStage(caseId, stage.id))}
-        >
-          Run
-        </Button>
+        {showAutoRun ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={runBlocked}
+            aria-disabled={gate.blocked || undefined}
+            title={runTitle}
+            onClick={() => void onAct(`run:${stage.id}`, () => runVerificationCaseStage(caseId, stage.id))}
+          >
+            Run
+          </Button>
+        ) : null}
         {stage.id === 'isoftpull' ? (
           <>
             <Button
@@ -157,22 +166,25 @@ function StageRow({
             >
               Run all
             </Button>
-            {ISOFTPULL_BUREAUS.map((bureau) => (
-              <Button
-                key={bureau.id}
-                variant="ghost"
-                size="sm"
-                disabled={runBlocked}
-                title={gate.reason ?? undefined}
-                onClick={() =>
-                  void onAct(`run:${stage.id}:${bureau.id}`, () =>
-                    runVerificationCaseStage(caseId, stage.id, { bureauProvider: bureau.id }),
-                  )
-                }
-              >
-                {bureau.label}
-              </Button>
-            ))}
+            <details className="vf-bureaus">
+              <summary>Bureaus</summary>
+              {ISOFTPULL_BUREAUS.map((bureau) => (
+                <Button
+                  key={bureau.id}
+                  variant="ghost"
+                  size="sm"
+                  disabled={runBlocked}
+                  title={gate.reason ?? undefined}
+                  onClick={() =>
+                    void onAct(`run:${stage.id}:${bureau.id}`, () =>
+                      runVerificationCaseStage(caseId, stage.id, { bureauProvider: bureau.id }),
+                    )
+                  }
+                >
+                  {bureau.label}
+                </Button>
+              ))}
+            </details>
           </>
         ) : null}
         <Button

@@ -13,14 +13,7 @@ import { VerificationCaseDocuments } from './VerificationCaseDocuments';
 import { VerificationCasePipeline } from './VerificationCasePipeline';
 import { VerificationCaseQueueBar } from './VerificationCaseQueueBar';
 import { paymentTone } from './verificationCaseDesk';
-import {
-  caseStatusLabel,
-  caseStatusTone,
-  firstRunLabel,
-  humanizeToken,
-  queueLabel,
-  reviewOwnerLabel,
-} from './verificationCaseUi';
+import { caseStatusLabel, caseStatusTone, firstRunLabel, humanizeToken } from './verificationCaseUi';
 
 const STAGE_SK = 4;
 
@@ -44,11 +37,11 @@ export function VerificationCaseModal({
   const detail = load.data ?? cached;
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<'APPROVED' | 'REJECTED' | null>(null);
 
   const row = detail?.case ?? preview ?? null;
   const stagesPending = load.loading && !detail;
   const banner = actionError ?? (detail ? load.error : null);
-  const review = reviewOwnerLabel(row?.cpOwnerUsername);
 
   const act = async (label: string, fn: () => Promise<VerificationCaseDetail>): Promise<void> => {
     setBusy(label);
@@ -67,7 +60,7 @@ export function VerificationCaseModal({
 
   const title = row?.companyName?.trim() || 'Verification case';
   const subtitle = row
-    ? `${dash(row.zohoStage)} · ${review.label} · ${queueLabel(row.distributeType)}`
+    ? `${dash(row.zohoStage)} · ${firstRunLabel(row.firstRunStatus)} · ${row.stagesDone}/${row.stagesTotal}`
     : undefined;
 
   return (
@@ -83,35 +76,63 @@ export function VerificationCaseModal({
       footer={
         row ? (
           <div className="vf-case-actions">
-            <Button
-              variant="secondary"
-              disabled={Boolean(busy)}
-              loading={busy === 'refresh'}
-              onClick={() => void act('refresh', () => refreshVerificationCase(caseId))}
-            >
-              Refresh
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={Boolean(busy)}
-              onClick={() => void act('review', () => decideVerificationCase(caseId, 'REVIEW'))}
-            >
-              Hold
-            </Button>
-            <Button
-              variant="danger"
-              disabled={Boolean(busy)}
-              onClick={() => void act('reject', () => decideVerificationCase(caseId, 'REJECTED'))}
-            >
-              Reject
-            </Button>
-            <Button
-              variant="primary"
-              disabled={Boolean(busy)}
-              onClick={() => void act('approve', () => decideVerificationCase(caseId, 'APPROVED'))}
-            >
-              Approve
-            </Button>
+            {pendingDecision ? (
+              <>
+                <p className="vf-confirm-note" role="status">
+                  {pendingDecision === 'APPROVED'
+                    ? `Approve ${title}? This writes the credit decision.`
+                    : `Reject ${title}? This writes the credit decision.`}
+                </p>
+                <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setPendingDecision(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant={pendingDecision === 'REJECTED' ? 'danger' : 'primary'}
+                  disabled={Boolean(busy)}
+                  loading={busy === 'decide'}
+                  onClick={() => {
+                    const verdict = pendingDecision;
+                    void act('decide', () => decideVerificationCase(caseId, verdict)).then(() => {
+                      setPendingDecision(null);
+                    });
+                  }}
+                >
+                  {pendingDecision === 'APPROVED' ? 'Confirm approve' : 'Confirm reject'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={Boolean(busy)}
+                  loading={busy === 'refresh'}
+                  onClick={() => void act('refresh', () => refreshVerificationCase(caseId))}
+                >
+                  Refresh
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={Boolean(busy)}
+                  onClick={() => void act('review', () => decideVerificationCase(caseId, 'REVIEW'))}
+                >
+                  Hold
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={Boolean(busy)}
+                  onClick={() => setPendingDecision('REJECTED')}
+                >
+                  Reject
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={Boolean(busy)}
+                  onClick={() => setPendingDecision('APPROVED')}
+                >
+                  Approve
+                </Button>
+              </>
+            )}
           </div>
         ) : null
       }
@@ -124,31 +145,28 @@ export function VerificationCaseModal({
 
       {row ? (
         <div className="vf-modal-body">
+          <div className="vf-case-progress" aria-live="polite">
+            <span
+              className={`vf-pill ${
+                row.firstRunStatus === 'error' ? 'is-bad' : row.firstRunStatus === 'completed' ? 'is-on' : 'is-info'
+              }`}
+            >
+              {firstRunLabel(row.firstRunStatus)}
+            </span>
+            <span className="vf-pill is-mute">
+              {row.stagesDone}/{row.stagesTotal}
+              {row.currentStage ? ` · ${humanizeToken(row.currentStage)}` : ''}
+            </span>
+            <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
+          </div>
+
           <section className="vf-section">
             <h3 className="vf-section-title">Status</h3>
             <div className="vf-card-chips">
-              <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
               <span className="vf-pill is-info">{dash(row.zohoStage)}</span>
-              <span className={`vf-pill ${review.claimed ? 'is-on' : 'is-mute'}`}>{review.label}</span>
-              <span className="vf-pill is-mute">{row.ownerName}</span>
-              <span className="vf-pill is-mute">{queueLabel(row.distributeType)}</span>
-              <span className="vf-pill is-mute">
-                {row.stagesDone}/{row.stagesTotal}
-                {row.currentStage ? ` · ${humanizeToken(row.currentStage)}` : ''}
-              </span>
               <span className={`vf-pill ${row.matchedSnapshotId ? 'is-on' : 'is-mute'}`}>
                 {row.matchedSnapshotId ? dash(row.carrierOperatingStatus) || 'Matched' : 'Unmatched'}
               </span>
-              <span
-                className={`vf-pill ${
-                  row.firstRunStatus === 'error' ? 'is-bad' : row.firstRunStatus === 'completed' ? 'is-on' : 'is-info'
-                }`}
-              >
-                {firstRunLabel(row.firstRunStatus)}
-              </span>
-              {row.slaLabel ? (
-                <span className={`vf-pill ${row.slaStale ? 'is-warn' : 'is-mute'}`}>{row.slaLabel}</span>
-              ) : null}
             </div>
             {row.firstRunError ? <p className="vf-stage-note">{row.firstRunError}</p> : null}
           </section>

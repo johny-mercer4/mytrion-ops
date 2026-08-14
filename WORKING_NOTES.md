@@ -16392,3 +16392,46 @@ no `requests` INSERT, no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
 Applied `0119_verification_first_run` + `0120_verification_case_desk` to Oregon Octane app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com` / `mytrion_ops_db`) via `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate`. Those two were the only pending journal entries (0117/0118 already applied). Not the Ohio credit-platform host. Verified live: `first_run_*`, `cp_owner_username`, offer/Plaid/SLA columns present; pending count 0.
 
 CP confirmed Task 0: `STAGE_NO_HIT_IS_INFORMATIONAL = {fmcsa}` — FMCSA no-hit is informational; iSoftPull / Creditsafe no-hit stays `failed`.
+
+## 2026-08-14 — Verification ingest activate (fresh-only) + desk polish
+
+CP is deployed. Mytrion case flow is on again for **new Zoho deals only**.
+
+### Fresh-only ingest
+
+- Removed `automation.verification.case-ingest` from `DISABLED_JOB_QUEUES`.
+- Restored `*/30 * * * *` cron and Admin manual trigger.
+- COQL is now `Stage IN (…) AND Created_Time >= watermark` (not `Application_Date`).
+- Legacy YYYY-MM-DD watermarks (the old 30-day lookback) are pinned to **now** at jobs boot
+  (`pinLegacyToNow`) and again at ingest start (`resolveFreshIngestWatermark`). Optional floor:
+  `VERIFICATION_INGEST_SINCE`.
+- In-code `isDealAfterWatermark` rejects missing/old `Created_Time`. Dedup on Zoho deal id holds.
+- Still no `createAndStartRequest` / `POST /api/v1/requests`. After insert: `caseSync` bind, then
+  first-run inbox (`patch_payload` → Pre-stop → Blacklist → FMCSA).
+
+### Race (do not flip CP)
+
+`AUTO_STAGE_RUNNER` may still be on. Inbox `run_stage` is outside the advisory lock. Acceptable for
+a fresh-case test if first-run is idempotent. Do not edit verification-mono.
+
+### Impeccable / desk crit (Operate, refinement)
+
+Method: dual-agent critique (A: design · B: detector). Detector: 0 findings. No live overlay
+(no Puppeteer / browser MCP). Heuristics after fixes **28/40** Good.
+
+Fixed in scope (Horizon glass preserved):
+
+- Approve/Reject confirm in the case footer (Hold stays one-click).
+- Status pill soup reduced; first-run + stage count in subtitle and a live progress strip.
+- Auto-stage HTTP Run hidden until first-run completes/errors; isoftpull bureaus behind
+  `<details>`. Transfer ghost button replaced with Decision Desk copy.
+- Summary pills filter the queue; closed status chips de-emphasized.
+- Inbox rows with `/verification/cases/:id` open the case; empty copy no longer names a person.
+- Chip-field + file input labels; first-run `is-live` pulse (opacity, reduced-motion off).
+
+Not redesigned: ModuleShell Queue / Policy / Roster, first-run / desk / inbox architecture.
+
+### Residual
+
+Ingest stays off in prod until this branch merges to `build` then `main`. Widget `app/` must ship
+with the CRM `src/` change.

@@ -162,6 +162,7 @@ export function VerificationCaseDocuments({
             type="file"
             multiple
             className="sr-only"
+            aria-label="Upload bank statements"
             onChange={(event) => {
               void onFiles(event.target.files);
               event.target.value = '';

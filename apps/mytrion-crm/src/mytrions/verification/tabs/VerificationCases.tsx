@@ -11,7 +11,7 @@ import { VerificationCaseModal } from '../VerificationCaseModal';
 import { VerificationSummary, VerificationSummaryItem } from '../VerificationSummaryItem';
 import { CaseCard, CASE_COLUMNS, CaseRow } from '../VerificationCaseListItems';
 import { CASES_PAGE_SIZE, useVerificationCasesList } from '../verificationData';
-import { CASE_STATUS_LABELS } from '../verificationCaseUi';
+import { CASE_STATUS_LABELS, isClosedCaseStatus } from '../verificationCaseUi';
 import { OWNER_SCOPE_CHIPS, ownerScopeCount, statusBucketCount } from '../verificationCaseDesk';
 
 const SK_ROWS = 8;
@@ -203,7 +203,7 @@ export function VerificationCases() {
               <button
                 key={s.id || 'all'}
                 type="button"
-                className="vf-chip"
+                className={`vf-chip${isClosedCaseStatus(s.id) ? ' is-closed' : ''}`}
                 aria-pressed={status === s.id}
                 onClick={() => selectStatus(s.id)}
               >
@@ -239,34 +239,56 @@ export function VerificationCases() {
         </div>
 
         <VerificationSummary pending={countsPending}>
-          <VerificationSummaryItem pending={countsPending} value={shownAgg?.new ?? 0} label="new" />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.new ?? 0}
+            label="new"
+            pressed={status === 'new'}
+            onSelect={() => selectStatus(status === 'new' ? '' : 'new')}
+          />
           <VerificationSummaryItem
             pending={countsPending}
             value={shownAgg?.inProgress ?? 0}
             label="in progress"
+            pressed={status === 'in_progress'}
+            onSelect={() => selectStatus(status === 'in_progress' ? '' : 'in_progress')}
           />
           <VerificationSummaryItem
             pending={countsPending}
             value={shownAgg?.awaitingDecision ?? 0}
             label="hold"
-          />
-          <VerificationSummaryItem
-            pending={countsPending}
-            value={shownAgg?.approved ?? 0}
-            label="approved"
-          />
-          <VerificationSummaryItem
-            pending={countsPending}
-            value={shownAgg?.rejected ?? 0}
-            label="rejected"
+            pressed={status === 'awaiting_decision'}
+            onSelect={() => selectStatus(status === 'awaiting_decision' ? '' : 'awaiting_decision')}
           />
           <VerificationSummaryItem
             pending={countsPending}
             value={shownAgg?.unclaimed ?? 0}
             label="unclaimed"
+            pressed={owner === 'unclaimed'}
+            onSelect={() => selectOwner(owner === 'unclaimed' ? '' : 'unclaimed')}
           />
-          <VerificationSummaryItem pending={countsPending} value={shownAgg?.mine ?? 0} label="mine" />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.mine ?? 0}
+            label="mine"
+            pressed={owner === 'mine'}
+            onSelect={() => selectOwner(owner === 'mine' ? '' : 'mine')}
+          />
           <VerificationSummaryItem pending={countsPending} value={shownAgg?.stale ?? 0} label="stale" />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.approved ?? 0}
+            label="approved"
+            pressed={status === 'approved'}
+            onSelect={() => selectStatus(status === 'approved' ? '' : 'approved')}
+          />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.rejected ?? 0}
+            label="rejected"
+            pressed={status === 'rejected'}
+            onSelect={() => selectStatus(status === 'rejected' ? '' : 'rejected')}
+          />
         </VerificationSummary>
       </div>
 

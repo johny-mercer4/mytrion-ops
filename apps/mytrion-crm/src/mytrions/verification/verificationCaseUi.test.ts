@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   billableRunGate,
+  caseIdFromInboxSource,
   caseStatusLabel,
   caseStatusTone,
   groupStageCatalog,
   humanizeToken,
+  isClosedCaseStatus,
   queueLabel,
   reviewOwnerLabel,
   stageDisplay,
@@ -12,6 +14,16 @@ import {
 } from './verificationCaseUi';
 
 describe('verificationCaseUi', () => {
+  it('parses a case id from an inbox source path', () => {
+    expect(caseIdFromInboxSource('/verification/cases/case_abc123')).toBe('case_abc123');
+    expect(caseIdFromInboxSource('https://app.example/verification/cases/abc-def-12')).toBe(
+      'abc-def-12',
+    );
+    expect(caseIdFromInboxSource('/inbox')).toBeNull();
+    expect(isClosedCaseStatus('approved')).toBe(true);
+    expect(isClosedCaseStatus('new')).toBe(false);
+  });
+
   it('maps status to a tinted pill and a human label', () => {
     expect(caseStatusLabel('awaiting_decision')).toBe('Hold');
     expect(caseStatusTone('awaiting_decision')).toBe('is-warn');

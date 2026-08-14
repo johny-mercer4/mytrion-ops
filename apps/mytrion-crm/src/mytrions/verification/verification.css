@@ -165,8 +165,21 @@
   border-radius: var(--vf-r-pill);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);
+  font-family: inherit;
   font-size: var(--text-sm);
   color: var(--text-muted);
+  cursor: default;
+}
+[data-mytrion='verification'] button.vf-summary-item {
+  cursor: pointer;
+  transition: color var(--hz-dur-wash) var(--hz-ease), background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease);
+}
+[data-mytrion='verification'] button.vf-summary-item:hover,
+[data-mytrion='verification'] button.vf-summary-item.is-on {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--hz-pane-bd));
+  background: var(--tint-info-bg);
 }
 [data-mytrion='verification'] .vf-summary-item strong {
   color: var(--text-primary);
@@ -315,6 +328,10 @@
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 48%, var(--hz-pane-bd));
   background: var(--tint-info-bg);
+}
+[data-mytrion='verification'] .vf-chip.is-closed {
+  color: var(--text-muted);
+  opacity: 0.78;
 }
 [data-mytrion='verification'] .vf-chip-agg .vf-agg-label {
   font-size: inherit;
@@ -697,7 +714,8 @@
   [data-mytrion='verification'] .ms-jump:hover {
     transform: none;
   }
-  [data-mytrion='verification'] .vf-sk {
+  [data-mytrion='verification'] .vf-sk,
+  [data-mytrion='verification'] .vf-stage-group.is-live {
     animation: none;
   }
 }
@@ -868,6 +886,25 @@
   border: 1px solid var(--hz-pane-bd);
   border-radius: var(--vf-r-panel);
   background: var(--hz-pane);
+}
+[data-mytrion='verification'] .vf-inbox-open {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  margin: calc(var(--space-3) * -1) calc(var(--space-3_5) * -1);
+  padding: var(--space-3) var(--space-3_5);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: inherit;
+  transition: background var(--hz-dur-wash) var(--hz-ease);
+}
+[data-mytrion='verification'] .vf-inbox-open:hover,
+[data-mytrion='verification'] .vf-inbox-open:focus-visible {
+  background: var(--hz-pane-lift);
 }
 [data-mytrion='verification'] .vf-inbox span,
 [data-mytrion='verification'] .vf-inbox time {

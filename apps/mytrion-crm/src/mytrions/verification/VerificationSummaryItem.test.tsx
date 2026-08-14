@@ -16,6 +16,25 @@ describe('VerificationSummaryItem', () => {
     expect(screen.getByRole('status').textContent).toBe('Loading counts');
   });
 
+  it('renders a pressed filter control when onSelect is set', () => {
+    const { container } = render(
+      <div data-mytrion="verification">
+        <VerificationSummary pending={false}>
+          <VerificationSummaryItem
+            pending={false}
+            value={4}
+            label="unclaimed"
+            pressed
+            onSelect={() => undefined}
+          />
+        </VerificationSummary>
+      </div>,
+    );
+    const btn = container.querySelector('button.vf-summary-item');
+    expect(btn?.getAttribute('aria-pressed')).toBe('true');
+    expect(btn?.textContent).toMatch(/unclaimed/);
+  });
+
   it('swaps to the real count once data arrives', () => {
     const { container } = render(
       <div data-mytrion="verification">

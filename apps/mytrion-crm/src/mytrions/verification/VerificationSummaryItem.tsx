@@ -12,11 +12,15 @@ export function VerificationSummaryItem({
   value,
   label,
   tone,
+  pressed,
+  onSelect,
 }: {
   pending: boolean;
   value: number;
   label: string;
   tone?: SummaryTone;
+  pressed?: boolean;
+  onSelect?: () => void;
 }) {
   if (pending) {
     return (
@@ -26,8 +30,17 @@ export function VerificationSummaryItem({
     );
   }
   const extra = tone === 'clear' ? ' is-clear' : tone === 'debt' ? ' is-debt' : '';
+  const on = pressed ? ' is-on' : '';
+  const className = `vf-summary-item${extra}${on}`;
+  if (onSelect) {
+    return (
+      <button type="button" className={className} aria-pressed={Boolean(pressed)} onClick={onSelect}>
+        <strong>{value.toLocaleString()}</strong> {label}
+      </button>
+    );
+  }
   return (
-    <span className={`vf-summary-item${extra}`}>
+    <span className={className}>
       <strong>{value.toLocaleString()}</strong> {label}
     </span>
   );

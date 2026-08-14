@@ -57,6 +57,7 @@ export function VerificationChipField({
         <input
           value={draft}
           placeholder={placeholder}
+          aria-label={label}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {

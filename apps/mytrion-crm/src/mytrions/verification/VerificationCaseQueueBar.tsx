@@ -56,9 +56,9 @@ export function VerificationCaseQueueBar({
         >
           Release
         </Button>
-        <Button variant="ghost" size="sm" disabled title={TRANSFER_UNAVAILABLE}>
-          Transfer
-        </Button>
+        <p className="vf-stage-note" title={TRANSFER_UNAVAILABLE}>
+          Transfer lives on Decision Desk.
+        </p>
       </div>
     </section>
   );

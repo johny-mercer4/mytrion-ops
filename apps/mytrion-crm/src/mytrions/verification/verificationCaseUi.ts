@@ -10,6 +10,21 @@ export const CASE_STATUS_LABELS: { id: VerificationCaseStatus | ''; label: strin
   { id: 'failed', label: 'Failed' },
 ];
 
+export const CLOSED_CASE_STATUSES: readonly VerificationCaseStatus[] = [
+  'approved',
+  'rejected',
+  'failed',
+];
+
+export function isClosedCaseStatus(status: VerificationCaseStatus | ''): boolean {
+  return (CLOSED_CASE_STATUSES as readonly string[]).includes(status);
+}
+
+export function caseIdFromInboxSource(sourceUrl: string | null | undefined): string | null {
+  const match = (sourceUrl ?? '').match(/\/verification\/cases\/([A-Za-z0-9_-]{8,})/);
+  return match?.[1] ?? null;
+}
+
 export type CasePillTone = 'is-on' | 'is-bad' | 'is-warn' | 'is-info' | 'is-mute';
 
 export function caseStatusLabel(status: VerificationCaseStatus | string): string {
