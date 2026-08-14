@@ -16,7 +16,11 @@
  */
 import { env } from '../../../config/env.js';
 import type { ObjectStorage } from './types.js';
-import { dropboxMaintenanceStorage, dropboxStorage } from './dropboxStorage.js';
+import {
+  dropboxMaintenanceStorage,
+  dropboxStorage,
+  dropboxVerificationStorage,
+} from './dropboxStorage.js';
 import { s3Storage } from './s3Storage.js';
 
 export type { ObjectStorage } from './types.js';
@@ -32,7 +36,11 @@ export type { ObjectStorage } from './types.js';
  */
 export type CommsStorageProvider = 's3' | 'dropbox';
 export type MaintenanceStorageProvider = 's3' | 'dropbox_maintenance';
-export type StorageProvider = CommsStorageProvider | MaintenanceStorageProvider;
+export type VerificationStorageProvider = 's3' | 'dropbox_verification';
+export type StorageProvider =
+  | CommsStorageProvider
+  | MaintenanceStorageProvider
+  | VerificationStorageProvider;
 
 let override: ObjectStorage | null = null;
 
@@ -40,6 +48,7 @@ const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   s3: s3Storage,
   dropbox: dropboxStorage,
   dropbox_maintenance: dropboxMaintenanceStorage,
+  dropbox_verification: dropboxVerificationStorage,
 };
 
 /**
@@ -76,6 +85,15 @@ export function commsStorageProvider(): CommsStorageProvider {
 /** Where a NEW Maintenance attachment goes. */
 export function maintenanceStorageProvider(): MaintenanceStorageProvider {
   return env.MAINTENANCE_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW Verification applicant document goes. Defaults to Dropbox (not S3, unlike the older
+ * pipelines) because the underwriting flow was built on Dropbox from the start — there are no
+ * pre-existing S3 rows for this table whose reads a default could repoint.
+ */
+export function verificationStorageProvider(): VerificationStorageProvider {
+  return env.VERIFICATION_STORAGE_PROVIDER;
 }
 
 /**

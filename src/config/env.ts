@@ -564,6 +564,14 @@ const EnvSchema = z.object({
   // Maintenance gets its OWN Dropbox folder, not DROPBOX_ROOT_PATH (CS feedback 2026-08-06: don't dump
   // every service into one shared folder) — same app key/secret/refresh token, different root prefix.
   DROPBOX_MAINTENANCE_ROOT_PATH: z.string().default('/maintenance'),
+  // Which provider a NEW Verification applicant document lands on. Defaults to Dropbox, unlike comms
+  // and Maintenance: verification_case_documents is a new table with no pre-existing S3 rows, so there
+  // are no reads a Dropbox default could repoint at bytes that are not there.
+  VERIFICATION_STORAGE_PROVIDER: z.enum(['s3', 'dropbox_verification']).default('dropbox_verification'),
+  // Verification's own Dropbox folder — bank statements, SSN cards, licences, lease agreements. Kept
+  // separate so the later LLM underwriting review has one addressable root, and so applicant PII never
+  // lands in the comms or Maintenance folder.
+  DROPBOX_VERIFICATION_ROOT_PATH: z.string().default('/verification'),
   // Attachment ceiling, SEPARATE from FILE_MAX_SIZE_MB — that one is zod-capped at 200MB (and the global
   // @fastify/multipart limit is derived from it), while a chat attachment on Dropbox can legitimately be
   // larger. Capped at 2GB because beyond that a buffered upload is the wrong design, not a bigger number.

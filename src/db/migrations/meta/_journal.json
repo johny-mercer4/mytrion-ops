@@ -855,6 +855,13 @@
       "when": 1786205000001,
       "tag": "0120_verification_case_desk",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1786210000001,
+      "tag": "0121_verification_new_era",
+      "breakpoints": true
     }
   ]
 }

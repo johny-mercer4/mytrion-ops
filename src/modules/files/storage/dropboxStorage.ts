@@ -110,6 +110,14 @@ function makeDropboxStorage(rootPath: string): ObjectStorage {
 export const dropboxStorage: ObjectStorage = makeDropboxStorage(env.DROPBOX_ROOT_PATH);
 /** Maintenance case attachments — its own root, never `/comms`. Same app, separate folder. */
 export const dropboxMaintenanceStorage: ObjectStorage = makeDropboxStorage(env.DROPBOX_MAINTENANCE_ROOT_PATH);
+/**
+ * Verification applicant documents (bank statements, SSN card, licence, lease agreements) — its own
+ * root, never `/comms` or `/maintenance`. These are the files the later LLM underwriting review reads,
+ * so keeping them in one named folder is what makes that job addressable.
+ */
+export const dropboxVerificationStorage: ObjectStorage = makeDropboxStorage(
+  env.DROPBOX_VERIFICATION_ROOT_PATH,
+);
 
 /** Byte size without downloading — used to reconcile a stored size against Dropbox. */
 export async function dropboxSize(key: string, rootPath: string = env.DROPBOX_ROOT_PATH): Promise<number> {
