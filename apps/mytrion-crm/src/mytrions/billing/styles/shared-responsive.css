@@ -50,8 +50,12 @@
          * viewport, so .bm-panel's existing scroll takes over for the whole panel (KPIs + table)
          * instead of leaving this the only scrollable sliver. !important is required — an inline
          * style always wins over a stylesheet rule regardless of specificity or cascade order.
+         *
+         * dvh, not vh: bare vh is exactly the unit that made the original bug possible (breakpoints.
+         * test.ts's "does not add a bare vh" budget exists for this reason — it's the height with the
+         * URL bar HIDDEN / ignores Telegram's actual visible area, not the real live viewport).
          */
-        min-height: 50vh !important;
+        min-height: 50dvh !important;
     }
 
     .bm-root .bm-table {
