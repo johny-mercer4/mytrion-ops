@@ -43,6 +43,7 @@ import { verificationClientsRoutes } from './routes/v1/verificationClients.route
 import { verificationCaseQueueRoutes } from './routes/v1/verificationCaseQueue.routes.js';
 import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
 import { verificationApplicationsRoutes } from './routes/v1/verificationApplications.routes.js';
+import { verificationFlowRoutes } from './routes/v1/verificationFlow.routes.js';
 import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
 import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
@@ -474,6 +475,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       // Before verificationCasesRoutes: `/verification/applications` must not be captured by that
       // plugin's `/verification/cases/:id` style params. Same ordering reason as the queue routes.
       await v1.register(verificationApplicationsRoutes);
+      await v1.register(verificationFlowRoutes);
       await v1.register(verificationCasesRoutes);
       await v1.register(verificationFirstRunRoutes);
       await v1.register(verificationStrategiesRoutes);

@@ -14,7 +14,7 @@
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { storageFor, verificationStorageProvider } from '../files/storage/index.js';
-import { verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
+import { verificationCaseAssetRepo } from '../../repos/verificationCaseAssetRepo.js';
 import type {
   VerificationCaseDocument,
   VerificationDocType,
@@ -71,7 +71,7 @@ export interface UploadInput {
 
 export const documentService = {
   async list(ctx: TenantContext, caseId: string): Promise<VerificationCaseDocument[]> {
-    return withFlowSchemaGuard(() => verificationFlowRepo.listDocuments(ctx, caseId));
+    return withFlowSchemaGuard(() => verificationCaseAssetRepo.listDocuments(ctx, caseId));
   },
 
   async upload(
@@ -106,7 +106,7 @@ export const documentService = {
 
       // Fulfilling an outstanding ask keeps the ORIGINAL row so `requested_in_phase` survives.
       const existing = input.fulfilsRequestId
-        ? await verificationFlowRepo.findDocument(ctx, caseId, input.fulfilsRequestId)
+        ? await verificationCaseAssetRepo.findDocument(ctx, caseId, input.fulfilsRequestId)
         : undefined;
       if (input.fulfilsRequestId && !existing) {
         throw new NotFoundError('That document request no longer exists.');
@@ -119,7 +119,7 @@ export const documentService = {
       await storageFor(provider).put(key, input.buffer, { contentType: input.mime });
 
       if (existing) {
-        const updated = await verificationFlowRepo.updateDocument(ctx, caseId, existing.id, {
+        const updated = await verificationCaseAssetRepo.updateDocument(ctx, caseId, existing.id, {
           status: 'received',
           docType: input.docType,
           fileName: safeName(input.fileName),
@@ -134,7 +134,7 @@ export const documentService = {
         return updated;
       }
 
-      return verificationFlowRepo.addDocument(ctx, {
+      return verificationCaseAssetRepo.addDocument(ctx, {
         caseId,
         docType: input.docType,
         label: input.label ?? null,
@@ -157,7 +157,7 @@ export const documentService = {
     input: { docType: VerificationDocType; label?: string | undefined; phaseCode: string },
   ): Promise<VerificationCaseDocument> {
     return withFlowSchemaGuard(() =>
-      verificationFlowRepo.addDocument(ctx, {
+      verificationCaseAssetRepo.addDocument(ctx, {
         caseId,
         docType: input.docType,
         label: input.label ?? null,
@@ -179,7 +179,7 @@ export const documentService = {
     documentId: string,
   ): Promise<{ url: string; expiresAt?: Date | undefined; fileName: string }> {
     return withFlowSchemaGuard(async () => {
-      const doc = await verificationFlowRepo.findDocument(ctx, caseId, documentId);
+      const doc = await verificationCaseAssetRepo.findDocument(ctx, caseId, documentId);
       if (!doc) throw new NotFoundError('Document not found');
       if (!doc.s3Key) {
         throw new AppError('That document has been requested but not uploaded yet.', {
@@ -206,9 +206,9 @@ export const documentService = {
    */
   async remove(ctx: TenantContext, caseId: string, documentId: string): Promise<void> {
     return withFlowSchemaGuard(async () => {
-      const doc = await verificationFlowRepo.findDocument(ctx, caseId, documentId);
+      const doc = await verificationCaseAssetRepo.findDocument(ctx, caseId, documentId);
       if (!doc) throw new NotFoundError('Document not found');
-      await verificationFlowRepo.deleteDocument(ctx, caseId, documentId);
+      await verificationCaseAssetRepo.deleteDocument(ctx, caseId, documentId);
       if (doc.s3Key) {
         try {
           await storageFor(doc.storageProvider).delete(doc.s3Key);

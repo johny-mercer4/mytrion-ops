@@ -12,6 +12,7 @@
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { isMissingColumn, isMissingTable } from '../../repos/util.js';
+import { verificationCaseAssetRepo } from '../../repos/verificationCaseAssetRepo.js';
 import { verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
 import { verificationPolicyRepo } from '../../repos/verificationReviewRepo.js';
 import {
@@ -118,8 +119,8 @@ async function refreshGate(
   if (!row) throw new NotFoundError('Application not found');
 
   const [principals, documents] = await Promise.all([
-    verificationFlowRepo.listPrincipals(ctx, caseId),
-    verificationFlowRepo.listDocuments(ctx, caseId),
+    verificationCaseAssetRepo.listPrincipals(ctx, caseId),
+    verificationCaseAssetRepo.listDocuments(ctx, caseId),
   ]);
 
   const verdict = evaluateIntakeCompleteness(
@@ -189,7 +190,7 @@ async function refreshGate(
 /** Write one phase row per phase, marking the inapplicable ones `skipped` with a stated reason. */
 async function seedPhaseRail(ctx: TenantContext, row: VerificationCase): Promise<void> {
   const applicable = new Set(applicablePhases(row.applicantType).map((p) => p.code));
-  await verificationFlowRepo.seedPhases(
+  await verificationCaseAssetRepo.seedPhases(
     ctx,
     row.id,
     PHASE_CATALOG.map((p) => ({
@@ -286,7 +287,7 @@ export const applicationService = {
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
       await this.assertSalesMayEdit(ctx, caseId);
-      await verificationFlowRepo.addPrincipal(ctx, { caseId, ...input });
+      await verificationCaseAssetRepo.addPrincipal(ctx, { caseId, ...input });
       return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
     });
   },
@@ -298,7 +299,7 @@ export const applicationService = {
   ): Promise<ApplicationDetail> {
     return withFlowSchemaGuard(async () => {
       await this.assertSalesMayEdit(ctx, caseId);
-      const removed = await verificationFlowRepo.deletePrincipal(ctx, caseId, principalId);
+      const removed = await verificationCaseAssetRepo.deletePrincipal(ctx, caseId, principalId);
       if (!removed) throw new NotFoundError('Principal not found');
       return refreshGate(ctx, caseId, { actor: zohoFromCtx(ctx) });
     });
