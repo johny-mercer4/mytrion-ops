@@ -15942,6 +15942,83 @@ a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated fai
 Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
 same session) rather than a fresh branch off `build`.
 
+## 2026-08-14 — Verification Mytrion: Existing clients polish
+
+Operate-mode refinement of Verification → Existing clients (not a visual-world replacement).
+
+- **Default order:** creditworthy first (not a debtor AND has a real credit score; 0 = unscored), then other non-debtors, then debtors. API `ORDER BY` matches; CRM re-sorts after filters. Sort override: name / score / recently active.
+- **Activity filters:** Last 30 / 60 / 90 days on `dim_company.last_transaction_date` (now on the lean roster row). Mutually exclusive with Any time. Carriers with no swipe drop out of a window.
+- **Prepay:** cards and modal omit credit score and minimum required balance (no empty labelled fields). Prepay meta is payment day + last activity.
+- **Aggregators:** BANK / DIRECT / MERCHANT_CARD / ZELLE get icon + label + `--tone-*` colour (not colour alone). Filter chips use the same mark.
+- **Summary:** split into matching / not flagged / debtors so “726 clients · 4 debtors” is no longer ambiguous.
+- **Filter panel:** one pane (search, chips, sort, clear). Modal moved to `ds/Dialog` (focus trap, sticky chrome, sheet on phone). Tokens only — light and dark via the cascade.
+
+## 2026-08-14 — Verification cases: Mytrion-owned intake
+
+Mytrion owns Verification intake. A 30-minute pg-boss job (`automation.verification.case-ingest`)
+runs the same two-predicate Zoho Deals COQL as credit-platform (Stage IN + Application_Date; never
+select `DOT` — hydrate `DOT1` / `Trucks1` / `First_name` / `Cell` / `Birth_Of_Date`), writes
+`verification_cases` as **shared + Sarvar Asqarov**, seeds 10 Decision Desk stages, enriches from
+DWH `public.stg_broker_snapshot` (Phone digits → email lower → DOT → normalized company name; miss
+is OK), inboxes Sarvar (`type=verification.case.created`, `tag=verification`, `zohoRecordId=vc:{id}`),
+then fire-and-forget `POST /api/v1/requests` with `request_id = zoho_deal_id`. Progress is read from
+the verification DB on GET/Refresh; agent Run / Approve / Decide are the only other writes. No
+inbound webhook. Configuration Ruleset stays Coming Soon with Orchestration table mapping only.
+
+Owner id: `VERIFICATION_CASE_OWNER_ZOHO_USER_ID` or live `GET /users` match on `Sarvar Asqarov`.
+Lookup failure fails the job — no unowned cases. Watermark advances only when `failed === 0`. Auto-
+start HTTP failure marks the case `failed` and keeps the row.
+
+UI: Applications → **Verification cases** + Inbox. List Refresh actually refetches. Modal uses
+`ds/Dialog`. Tokens only. Rebuild `apps/mytrion-crm/app` with `pnpm build:widget` before the PR.
+
+Cutover risk: set `ZOHO_POLL_ENABLED=0` on credit-platform or both sides ingest the same Deal.
+Sarvar's Zoho id is not in git — resolve against live CRM before the first cron.
+
+## 2026-08-14 — Verification cases list 500 (Render vs local)
+
+`GET /v1/verification/cases` 500'd because the running API reads `.env` `MYTRION_OPS_DATABASE_URL`
+(Render `mytrion_ops_db`). Migration 0117 and the sample case
+`vc_i3aa11v9tqs0jcthgvn75f44` exist only on local Docker `localhost:5433/octane_assistant`.
+Render `to_regclass('public.verification_cases')` is null. Did **not** migrate Render.
+
+Fixes: missing table/column → exposed 503 `VERIFICATION_CASES_NOT_MIGRATED` (names the connected
+host + `pnpm dev:local-db`); list SELECT drops `zoho_raw`; GET/refresh fail-soft if verification-db
+sync fails. `LOCAL_OPS_DATABASE_URL` overrides the app DB in development only so `.env` can stay
+on Render. `pnpm dev:local-db` or `USE_LOCAL_OPS_DB=1 pnpm dev:all`. Do not start the ingest job.
+
+## 2026-08-14 — Combined onto feature/UltraMytrion
+
+`feature/verification-cases-intake` and `feature/verification-mytrion-polish` were the same commit
+with uncommitted work (cases in the working tree, polish in a stash). Combined onto
+`feature/UltraMytrion` and deleted the two old local branches. Neither had been pushed.
+
+## 2026-08-14 — Verification Impeccable operate pass (loaders / fetch / polish)
+
+Operate-mode refinement of Verification cases + inbox + existing clients. Not a visual-world
+replacement. No PRODUCT.md — incumbent Horizon tokens stay authority; `/impeccable init` is a
+follow-up if we want that documented.
+
+- **One skeleton, no spinner beside it.** Cases first paint is the real table header + shimmer cells
+  (desktop) / card placeholders (mobile). Inbox is list-shaped `.vf-sk`. Case modal is field + stage
+  placeholders. Refresh keeps rows and spins only on the button. Clients already did this; mobile
+  card skeletons now match the 3.5rem compact row so they don't jump.
+- **No double list GET.** Filter/page reset is batched in the same event (the old `setPage(1)` effect
+  fired a second request). Cases/inbox/detail use `useCachedLoad` so tab remount (ModuleShell
+  unmounts inactive tabs) and Strict Mode join instead of blanking. No AbortSignal on these GETs —
+  abort would drop the cache write that makes coming back instant; transport already dedupes
+  identical GETs. Modal open does not refetch the list; a successful Run/Approve/Decide writes the
+  case key and invalidates `verification:cases`.
+- **Logic:** list `total` was `aggregates.total` (unfiltered), so a status/search page could be empty.
+  Pagination now uses `verificationCaseRepo.count` with the same WHERE as `list`. Modal subtitle no
+  longer hardcodes Shared. Error+empty no longer claim "no cases/messages" when the API refused.
+- **Inspected** mock-auth :5175 at 1280 and 375: cases table/cards, inbox error empty (mock user has
+  no Zoho id — expected), clients roster + creditworthy sort + activity chips. Modal first paint
+  used a generic title + "Loading…" over the skeleton; header now uses the list-row preview.
+
+Tests: `verification-cases` 12, `verification-cases-routes` 5, `verificationData` 15 — all pass.
+Did not start ingest. Did not migrate Render. Did not rebuild `app/`.
+
 ---
 
 ## 2026-08-14 — Audit Log + Automation Logs: filters, coverage, export

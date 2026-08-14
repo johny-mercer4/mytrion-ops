@@ -38,8 +38,9 @@ const carrierParams = z.object({ carrierId: z.string().min(1).max(64) });
 export async function verificationClientsRoutes(app: FastifyInstance): Promise<void> {
   const auth = { onRequest: [app.authenticate] };
 
-  // The full roster, company-name order. Fetched once and cached client-side — see hrData.ts-style
-  // useCachedLoad on the frontend — so this is the only round trip a session normally makes.
+  // The full roster, creditworthy-first (see listVerificationClients). Fetched once and cached
+  // client-side — see hrData.ts-style useCachedLoad on the frontend — so this is the only round
+  // trip a session normally makes.
   app.get('/verification/roster', auth, async (request) => {
     requireVerificationAccess(request);
     try {

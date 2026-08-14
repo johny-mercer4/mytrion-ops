@@ -4,8 +4,10 @@ import {
   ALL_JOBS,
   CRON_SCHEDULES,
   DEAD_LETTER_QUEUE,
+  MANUAL_TRIGGERABLE_QUEUES,
   payloadToContext,
   tenantContextSchema,
+  verificationCaseIngestJob,
 } from '../../src/modules/jobs/catalog.js';
 import { buildSystemContext, SCHEDULER_USER_ID } from '../../src/modules/jobs/systemContext.js';
 import { makeContext } from '../fixtures/seed.js';
@@ -14,6 +16,17 @@ describe('job catalog', () => {
   it('every cron schedule points at a defined queue', () => {
     const names = new Set(ALL_JOBS.map((j) => j.name));
     for (const s of CRON_SCHEDULES) expect(names.has(s.name)).toBe(true);
+  });
+
+  it('registers verification case ingest as a 30-min singleton', () => {
+    expect(ALL_JOBS.some((j) => j.name === verificationCaseIngestJob.name)).toBe(true);
+    expect(verificationCaseIngestJob.queue.policy).toBe('singleton');
+    expect(verificationCaseIngestJob.queue.retryLimit).toBe(1);
+    expect(verificationCaseIngestJob.queue.expireInSeconds).toBe(1500);
+    expect(CRON_SCHEDULES.find((s) => s.name === verificationCaseIngestJob.name)?.cron).toBe(
+      '*/30 * * * *',
+    );
+    expect(MANUAL_TRIGGERABLE_QUEUES.has(verificationCaseIngestJob.name)).toBe(true);
   });
 
   it('agent.run is retry-bounded and dead-letters', () => {

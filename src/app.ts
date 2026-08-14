@@ -40,6 +40,7 @@ import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.
 import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
 import { verificationWritebackRoutes } from './routes/v1/verificationWriteback.routes.js';
 import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
+import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { mytrionPermissionSetsRoutes } from './routes/v1/mytrionPermissionSets.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
@@ -465,6 +466,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(verificationPipelineRoutes);
       await v1.register(verificationWritebackRoutes);
       await v1.register(verificationClientsRoutes);
+      await v1.register(verificationCasesRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csMaintenanceRoutes);

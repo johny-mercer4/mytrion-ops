@@ -50,6 +50,11 @@ const META: Record<string, JobMeta> = {
     title: 'Verification recheck reminders',
     description: 'Daily LLM reminder of verification rechecks due and anything blocking applications.',
   },
+  'automation.verification.case-ingest': {
+    title: 'Verification case ingest',
+    description:
+      'Every 30 minutes: Zoho Deals COQL → shared verification_cases owned by Sarvar Asqarov, DWH carrier match, inbox, and credit-platform auto-start.',
+  },
   'maintenance.approvals-expiry': {
     title: 'Approvals expiry',
     description: 'Expires write-approvals that sat pending longer than 24 hours.',
@@ -108,6 +113,10 @@ export function humanizeCron(cron: string, tz: string = env.JOBS_CRON_TZ): strin
   if (min === '0' && hour.startsWith('*/') && dom === '*' && mon === '*' && dow === '*') {
     const n = hour.slice(2);
     return n === '1' ? `Every hour${zone}` : `Every ${n} hours${zone}`;
+  }
+  if (hour === '*' && dom === '*' && mon === '*' && dow === '*' && min.startsWith('*/')) {
+    const n = min.slice(2);
+    return n === '1' ? `Every minute${zone}` : `Every ${n} minutes${zone}`;
   }
   if (hour === '*' && dom === '*' && mon === '*' && dow === '*' && /^\d+$/.test(min)) {
     return min === '0'

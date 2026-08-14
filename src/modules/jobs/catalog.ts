@@ -219,6 +219,15 @@ export const verificationRecheckJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** Every 30 minutes: Zoho Deals COQL → verification_cases + credit-platform auto-start. */
+export const verificationCaseIngestJob = defineJob({
+  name: 'automation.verification.case-ingest',
+  schema: z.object({
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1500, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** Daily: decay agent-memory importance and evict faded/expired rows. */
 export const memoryDecayJob = defineJob({
   name: 'maintenance.memory-decay',
@@ -286,6 +295,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   salesBocaRequestJob,
   billingLedgerSnapshotJob,
   verificationRecheckJob,
+  verificationCaseIngestJob,
   checkpointSweepJob,
   platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -335,6 +345,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
+  { name: verificationCaseIngestJob.name, cron: '*/30 * * * *' },
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
@@ -355,6 +366,7 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
   verificationRecheckJob.name,
+  verificationCaseIngestJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,

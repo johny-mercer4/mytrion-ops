@@ -1,17 +1,16 @@
-import { FileCheck2, Home, MessagesSquare, SlidersHorizontal, Users } from 'lucide-react';
+import { FileCheck2, Home, Inbox, MessagesSquare, SlidersHorizontal, Users } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
+import { VerificationCases } from './tabs/VerificationCases';
+import { VerificationInbox } from './tabs/VerificationInbox';
 import './verification.css';
+import './verificationModal.css';
 
 /**
  * Verification Mytrion — credit and compliance decisioning.
  *
- * Main / Applications / Configuration Ruleset are still STRUCTURAL ONLY — the previous module rendered
- * a full applications queue, an application modal, a configuration screen and an inbox built on ~330
- * lines of invented fixtures (`data.ts`), all deleted rather than carried forward: a fabricated credit
- * application is indistinguishable from a real one at a glance. Approving/declining or editing a
- * scoring rule is a write against someone's credit outcome, so those wait on an audited, role-gated
- * endpoint — not a queue or a form that only looks real.
+ * Verification cases + Inbox are live against Octane `verification_cases` and `mytrion_inbox_messages`.
+ * Configuration Ruleset stays Coming Soon (Orchestration editor writes credit_platform later).
  *
  * Existing clients IS live — `src/modules/verification/verificationClients.ts` +
  * `routes/v1/verificationClients.routes.ts` read `octane.dim_company` company-wide (read-only; the
@@ -29,29 +28,34 @@ const TABS: ModuleTab[] = [
     keywords: ['home', 'overview', 'queue', 'throughput'],
   },
   {
-    id: 'applications',
-    label: 'Applications',
-    description: 'New applications awaiting a credit and compliance decision.',
+    id: 'cases',
+    label: 'Verification cases',
+    description: 'Zoho deals ingested as shared cases, with pipeline progress from the credit platform.',
     icon: FileCheck2,
     tone: 'var(--tone-sky)',
-    keywords: ['queue', 'new', 'decision', 'credit', 'approve', 'reject'],
-    soon: {
-      title: 'Application queue',
-      body: 'Incoming applications with their documents, credit signals and decision trail. Approving or declining is a write against someone’s credit outcome, so it waits on an audited, role-gated endpoint — not a queue that only looks real.',
-      sources: ['verification pipeline · verification DB'],
-    },
+    keywords: ['queue', 'cases', 'decision', 'credit', 'approve', 'reject', 'applications'],
+    content: <VerificationCases />,
+  },
+  {
+    id: 'inbox',
+    label: 'Inbox',
+    description: 'New-case and pipeline notifications for Verification.',
+    icon: Inbox,
+    tone: 'var(--tone-violet)',
+    keywords: ['inbox', 'notifications', 'new case'],
+    content: <VerificationInbox />,
   },
   {
     id: 'ruleset',
     label: 'Configuration Ruleset',
-    description: 'The thresholds and rules that drive automatic pass, watch and stop.',
+    description: 'Orchestration: routing, stop factors, strategies, and pipeline steps.',
     icon: SlidersHorizontal,
     tone: 'var(--tone-amber)',
-    keywords: ['rules', 'thresholds', 'tiers', 'policy', 'scoring', 'config'],
+    keywords: ['rules', 'thresholds', 'orchestration', 'stop factors', 'pipeline'],
     soon: {
-      title: 'Configuration ruleset',
-      body: 'Score thresholds, tiers and the rules behind each automatic verdict. Editing these changes who gets credit, so it needs an audit trail and a review step before a single field becomes editable.',
-      sources: ['verification pipeline · rules config'],
+      title: 'Orchestration',
+      body: 'Later this tab edits credit-platform Orchestration only — routing_rules, stop_factors, decision strategies, and pipeline_steps — via the credit-platform config API. Other credit-platform admin tabs stay out of scope.',
+      sources: ['credit_platform · routing_rules · stop_factors · pipeline_steps · system_state'],
     },
   },
   {

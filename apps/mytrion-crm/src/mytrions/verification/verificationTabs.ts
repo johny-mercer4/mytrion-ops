@@ -3,7 +3,8 @@ import type { TabDescriptor } from '../../access/tabRegistry';
 
 export const VERIFICATION_TABS = [
   { key: 'main', label: 'Overview' },
-  { key: 'applications', label: 'Applications' },
+  { key: 'cases', label: 'Verification cases' },
+  { key: 'inbox', label: 'Inbox' },
   { key: 'ruleset', label: 'Ruleset' },
   { key: 'clients', label: 'Clients' },
   { key: 'tickets', label: 'Tickets' },

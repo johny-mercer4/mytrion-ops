@@ -1,0 +1,129 @@
+/* Verification client detail — content inside ds/Dialog. Tokens only; light and dark via cascade. */
+
+[data-mytrion='verification'] .vf-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .vf-modal-flags > .vf-agg {
+  padding: var(--space-0_5) var(--space-2) var(--space-0_5) var(--space-0_5);
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--vc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vc) 28%, transparent);
+}
+
+[data-mytrion='verification'] .vf-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+[data-mytrion='verification'] .vf-section-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .vf-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+[data-mytrion='verification'] .vf-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3_5);
+  border-radius: var(--vf-r-panel);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .vf-stat.is-accent {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--accent) 9%, var(--hz-pane-alt));
+}
+
+[data-mytrion='verification'] .vf-stat.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hz-pane-bd));
+  background: color-mix(in srgb, var(--danger) 10%, var(--hz-pane-alt));
+}
+
+[data-mytrion='verification'] .vf-stat-l {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-stat.is-accent .vf-stat-l {
+  color: var(--accent);
+}
+
+[data-mytrion='verification'] .vf-stat.is-danger .vf-stat-l {
+  color: var(--danger);
+}
+
+[data-mytrion='verification'] .vf-stat-v {
+  font-family: var(--font-head);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+[data-mytrion='verification'] .vf-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+[data-mytrion='verification'] .vf-field {
+  min-height: var(--vf-field-h);
+  padding: var(--space-2_5) var(--space-3);
+  border-radius: var(--vf-r-panel);
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane-alt);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .vf-field dt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-field dd {
+  margin: var(--space-1_5) 0 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+[data-mytrion='verification'] .vf-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

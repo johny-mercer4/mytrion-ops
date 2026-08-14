@@ -1,33 +1,24 @@
 /**
- * One carrier's full verification detail — read-only (the DWH can't be written, and there is nothing
- * here for a reviewer to edit; this is a decisioning REFERENCE, not a record editor).
+ * One carrier's full verification detail — read-only (the DWH can't be written).
  *
- * Two tiers of data, on purpose: the "Payment & Verification" grid renders INSTANTLY from the roster
- * row the card was opened with (already in memory — no spinner for the numbers that matter most), while
- * identity/contact detail (agent, DOT, address, insurance) is fetched separately and fills in a beat
- * later. Splitting it this way is what keeps the roster fetch lean for all ~8,000 carriers.
+ * Payment facts render instantly from the roster row. Identity/contact fills in after a per-carrier
+ * fetch. Prepay clients never show credit score or minimum balance — those fields are omitted, not
+ * dashed. Built on `ds/Dialog` so focus is trapped, Escape/backdrop work, and the header/footer
+ * stay put while the body scrolls.
  */
-import { useEffect } from 'react';
-import { AlertTriangle, Mail, MapPin, Phone, Truck, User, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { Button, Dialog } from '@/ds';
 import type { VerificationClientRow } from '../../api/verificationClients';
+import { AggregatorMark } from './verificationAggregators';
 import { useVerificationClientDetail } from './verificationData';
-
-function money(n: number | null): string {
-  if (n == null) return '—';
-  return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-}
-const dash = (v: string | number | null | undefined): string =>
-  v === '' || v == null ? '—' : String(v);
+import { dash, isPrepayTerms, money } from './verificationFormat';
 
 /**
  * How many <Field> rows the loaded "Contact & identity" grid renders — keep in step with the <dl>
- * below. The skeleton reserved 6 against 11, so the modal's own scroll height grew by two grid rows
- * the moment the detail fetch landed, under the reader's cursor. Height per row is the shared
- * --vf-field-h, so the two branches now agree on both count and geometry.
+ * below. Height per row is the shared --vf-field-h, so skeleton and loaded grid agree.
  */
 const DETAIL_FIELD_COUNT = 11;
 
-/** One tile in the 3-column Payment & Verification grid. */
 function Stat({
   label,
   value,
@@ -54,111 +45,110 @@ export function VerificationClientModal({
 }) {
   const detail = useVerificationClientDetail(client.carrierId);
   const isLoc = client.paymentTerms === 'LOC';
-
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent): void => {
-      if (ev.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
+  const prepay = isPrepayTerms(client.paymentTerms);
   const d = detail.data;
+  const lastActivity = d?.lastTransactionAt ?? client.lastTransactionAt;
+
+  const subtitle = [
+    `#${client.carrierId}`,
+    d?.dot ? `DOT ${d.dot}` : null,
+    client.isActive ? null : 'Inactive',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <div className="vf-modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="vf-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="vf-modal-title"
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <header className="vf-modal-head">
-          <div className="vf-modal-ident">
-            <h2 id="vf-modal-title">{client.companyName}</h2>
-            <p className="vf-modal-sub">
-              #{client.carrierId}
-              {d?.dot ? ` · DOT ${d.dot}` : ''}
-              {!client.isActive ? ' · Inactive' : ''}
-            </p>
-            {client.isDebtor ? (
-              <span className="vf-tag vf-tag-danger vf-modal-debtor">
-                <AlertTriangle size={12} />
-                Flagged as a debtor
-              </span>
-            ) : null}
-          </div>
-          <button type="button" className="vf-icon-btn" aria-label="Close" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </header>
+    <Dialog
+      open
+      size="lg"
+      mobile="sheet"
+      title={client.companyName}
+      subtitle={subtitle}
+      onClose={() => onClose()}
+      closeLabel="Close client detail"
+      data-mytrion="verification"
+      footer={
+        <Button variant="secondary" onClick={() => onClose()}>
+          Close
+        </Button>
+      }
+    >
+      <div className="vf-modal-body">
+        <div className="vf-modal-flags">
+          {client.companyType ? <AggregatorMark companyType={client.companyType} /> : null}
+          {client.paymentTerms ? (
+            <span className={`vf-tag${isLoc ? ' vf-tag-loc' : prepay ? ' vf-tag-prepay' : ''}`}>
+              {client.paymentTerms}
+            </span>
+          ) : null}
+          {client.isDebtor ? (
+            <span className="vf-tag vf-tag-danger">
+              <AlertTriangle size={12} aria-hidden="true" />
+              Flagged as a debtor
+            </span>
+          ) : null}
+        </div>
 
         <section className="vf-section">
           <h3 className="vf-section-title">Payment &amp; verification</h3>
           <div className="vf-stat-grid">
-            <Stat label="Company type" value={dash(client.companyType.replace(/_/g, ' ') || null)} />
+            <Stat label="Aggregator" value={dash(client.companyType.replace(/_/g, ' ') || null)} />
             <Stat label="Payment terms" value={dash(client.paymentTerms)} tone={isLoc ? 'accent' : undefined} />
             <Stat label="Payment day" value={dash(client.paymentDay)} />
-            <Stat label="Minimum required balance" value={money(client.minimumRequiredBalance)} />
-            <Stat label="Billing cycle tag" value={dash(client.billingCycleTag)} />
-            <Stat label="Is debtor" value={client.isDebtor ? 'Yes' : 'No'} tone={client.isDebtor ? 'danger' : undefined} />
-            <Stat label="Billing cycle" value={dash(client.billingCycle)} />
-            {isLoc ? (
-              <Stat label="Credit limit" value={money(client.creditLimit)} tone="accent" />
-            ) : (
-              <Stat label="Credit limit" value="— (not LOC)" />
+            {prepay ? null : (
+              <Stat label="Minimum required balance" value={money(client.minimumRequiredBalance)} />
             )}
-            <Stat label="Credit score" value={dash(client.creditScore)} />
+            <Stat label="Billing cycle tag" value={dash(client.billingCycleTag)} />
+            <Stat
+              label="Debtor flag"
+              value={client.isDebtor ? 'Yes' : 'No'}
+              tone={client.isDebtor ? 'danger' : undefined}
+            />
+            <Stat label="Billing cycle" value={dash(client.billingCycle)} />
+            {isLoc ? <Stat label="Credit limit" value={money(client.creditLimit)} tone="accent" /> : null}
+            {prepay ? null : <Stat label="Credit score" value={dash(client.creditScore)} />}
+            <Stat label="Last activity" value={dash(lastActivity)} />
           </div>
         </section>
 
         <section className="vf-section">
           <h3 className="vf-section-title">Contact &amp; identity</h3>
-          {detail.loading ? (
+          {detail.loading && !d ? (
             <div className="vf-detail-grid" aria-busy="true" aria-label="Loading contact detail">
               {Array.from({ length: DETAIL_FIELD_COUNT }, (_, i) => (
                 <div key={i} className="vf-sk vf-sk-field" />
               ))}
             </div>
-          ) : detail.error ? (
+          ) : detail.error && !d ? (
             <p className="vf-banner-error" role="alert">
               {detail.error}
             </p>
           ) : (
             <dl className="vf-detail-grid">
-              <Field icon={<User size={13} />} label="Contact" value={d?.contact} />
-              <Field icon={<Phone size={13} />} label="Phone" value={d?.phone} mono />
-              <Field icon={<Mail size={13} />} label="Email" value={d?.email} mono />
-              <Field icon={<User size={13} />} label="Agent" value={d?.agentName} />
-              <Field icon={<Mail size={13} />} label="Agent email" value={d?.agentEmail} mono />
-              <Field icon={<MapPin size={13} />} label="Address" value={d?.address} />
-              <Field icon={<Truck size={13} />} label="Money code" value={d?.moneyCode} mono />
+              <Field label="Contact" value={d?.contact} />
+              <Field label="Phone" value={d?.phone} mono />
+              <Field label="Email" value={d?.email} mono />
+              <Field label="Agent" value={d?.agentName} />
+              <Field label="Agent email" value={d?.agentEmail} mono />
+              <Field label="Address" value={d?.address} />
+              <Field label="Money code" value={d?.moneyCode} mono />
               <Field label="Insurance" value={d?.insuranceCoverage} />
               <Field label="CreditSafe grade" value={d?.creditsafeGrade} />
               <Field label="First swipe" value={d?.firstSwipeAt} mono />
-              <Field label="Last transaction" value={d?.lastTransactionAt} mono />
+              <Field label="Last transaction" value={d?.lastTransactionAt ?? client.lastTransactionAt} mono />
             </dl>
           )}
         </section>
-
-        <footer className="vf-modal-actions">
-          <button type="button" className="vf-btn" onClick={onClose}>
-            Close
-          </button>
-        </footer>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
 function Field({
-  icon,
   label,
   value,
   mono,
 }: {
-  icon?: React.ReactNode;
   label: string;
   value?: string | null | undefined;
   mono?: boolean;
@@ -166,10 +156,7 @@ function Field({
   const text = (value ?? '').trim();
   return (
     <div className="vf-field">
-      <dt>
-        {icon}
-        {label}
-      </dt>
+      <dt>{label}</dt>
       <dd className={mono ? 'vf-mono' : undefined}>{text || '—'}</dd>
     </div>
   );

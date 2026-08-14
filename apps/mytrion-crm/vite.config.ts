@@ -17,7 +17,13 @@ export default defineConfig({
     // and every useContext throws React #321 ("invalid hook call") at runtime. dedupe pins one copy.
     dedupe: ['react', 'react-dom'],
   },
-  server: { port: 5173, strictPort: true },
+  server: {
+    port: 5173,
+    strictPort: true,
+    // Listen on IPv4 and IPv6. Default `localhost` on this Mac is [::1] only, so Telegram /
+    // Chrome hitting 127.0.0.1:5173 (or the reverse) looks like a dead app.
+    host: true,
+  },
   // Build into app/ — the web root a Zoho widget (zet) serves and packs. sourcemap is OFF: the
   // app/ dir is packed into the .zet and served publicly, and maps would expose source (and could
   // re-expose any inlined env value). Flip to true only for local debugging, never for a shipped build.

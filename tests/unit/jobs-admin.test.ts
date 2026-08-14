@@ -33,6 +33,9 @@ describe('jobs admin catalog', () => {
     expect(humanizeCron('0 7 * * *', 'America/Chicago')).toBe(
       'Every day at 7:00 AM (America/Chicago)',
     );
+    expect(humanizeCron('*/30 * * * *', 'America/Chicago')).toBe(
+      'Every 30 minutes (America/Chicago)',
+    );
   });
 
   it('lists every catalog queue with titles, schedules, and active flags', () => {
