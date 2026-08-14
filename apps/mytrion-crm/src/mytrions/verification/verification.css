@@ -996,3 +996,16 @@
     align-items: stretch;
   }
 }
+
+/*
+ * New-applicant case workspace: rail beside the pane on desktop, stacked below 900px.
+ *
+ * 900 is the DENSITY breakpoint on the project ladder — the rail and a form pane cannot both hold
+ * their measure narrower than that, and stacking is better than shrinking both. Range syntax, per
+ * the breakpoints budget.
+ */
+@media (width < 900px) {
+  [data-mytrion='verification'] .vf-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

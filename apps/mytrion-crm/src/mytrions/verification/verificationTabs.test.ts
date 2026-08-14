@@ -1,22 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { VERIFICATION_TABS } from './verificationTabs';
+import { LEGACY_VERIFICATION_DESK_ENABLED } from './legacyDesk';
 
 describe('VERIFICATION_TABS', () => {
-  it('puts Inbox under Main and groups Queue / Policy / Roster', () => {
+  it('leads with Main, then the underwriting queue and the roster', () => {
     expect(VERIFICATION_TABS.map((tab) => tab.key)).toEqual([
       'main',
-      'inbox',
-      'cases',
-      'ruleset',
+      'applicants',
       'clients',
       'tickets',
     ]);
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'main')).not.toHaveProperty('group');
-    expect(VERIFICATION_TABS.find((tab) => tab.key === 'ruleset')?.label).toBe('Decision rules');
-    expect(VERIFICATION_TABS.find((tab) => tab.key === 'inbox')?.group).toBe('Queue');
-    expect(VERIFICATION_TABS.find((tab) => tab.key === 'cases')?.group).toBe('Queue');
-    expect(VERIFICATION_TABS.find((tab) => tab.key === 'ruleset')?.group).toBe('Policy');
+    expect(VERIFICATION_TABS.find((tab) => tab.key === 'applicants')?.group).toBe('Queue');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'clients')?.group).toBe('Roster');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'tickets')?.group).toBe('Roster');
+  });
+
+  it('does not declare the quarantined credit-platform tabs', () => {
+    // Declaring a tab the shell will not mount fails tabRegistry.test.ts, and would let an admin
+    // grant a permission set for a tab nobody can open. The components stay on disk; the DECLARATION
+    // is what has to go while the desk is parked.
+    expect(LEGACY_VERIFICATION_DESK_ENABLED).toBe(false);
+    const keys = VERIFICATION_TABS.map((tab) => tab.key) as readonly string[];
+    for (const legacy of ['inbox', 'cases', 'ruleset']) {
+      expect(keys).not.toContain(legacy);
+    }
   });
 });

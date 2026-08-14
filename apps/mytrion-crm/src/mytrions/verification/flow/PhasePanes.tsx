@@ -1,0 +1,369 @@
+/**
+ * The per-phase panes. Each one ends in a decision, per the SOP — every phase has a DECISION box,
+ * so every pane here has a sign-off control rather than an implicit "next".
+ *
+ * Panes that show computed numbers (hard stops, capacity) render them READ-ONLY with the inputs
+ * that produced them. A screen that lets someone type over a derived figure is a screen where the
+ * audit trail stops meaning anything.
+ */
+import { useState } from 'react';
+import { Icon } from '../../sales/redesign/icons';
+import { s } from '../../sales/redesign/dc';
+import type {
+  VerificationDeskDetail,
+  VerificationPhaseOutcome,
+  VerificationRailPhase,
+  VerificationScreeningHit,
+  VerificationScreeningVerdict,
+} from '@/api/verificationFlow';
+
+const BTN =
+  'height:38px;padding:0 16px;border-radius:var(--radius-md);font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text)';
+const BTN_OK = `${BTN};border-color:rgba(52,211,153,.4);color:var(--ok)`;
+const BTN_WARN = `${BTN};border-color:rgba(251,191,36,.4);color:var(--warn)`;
+const BTN_BAD = `${BTN};border-color:rgba(248,113,113,.4);color:var(--danger)`;
+
+/** The four outcomes every phase offers, in SOP order. */
+const OUTCOMES: ReadonlyArray<{ id: VerificationPhaseOutcome; label: string; style: string }> = [
+  { id: 'pass', label: 'Pass', style: BTN_OK },
+  { id: 'pending_docs', label: 'Request documents', style: BTN_WARN },
+  { id: 'manager_review', label: 'Manager review', style: BTN_WARN },
+  { id: 'decline', label: 'Decline', style: BTN_BAD },
+];
+
+export function PaneShell({
+  phase,
+  children,
+  footer,
+}: {
+  phase: VerificationRailPhase;
+  children?: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <section style={s('display:grid;gap:16px')}>
+      <header style={s('display:grid;gap:4px')}>
+        <span style={s('font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint)')}>
+          Phase {phase.order} of 10
+        </span>
+        <h2 style={s('margin:0;font-size:18px;font-weight:800;color:var(--text)')}>{phase.label}</h2>
+        <p style={s('margin:0;font-size:13px;color:var(--muted);line-height:1.55')}>{phase.description}</p>
+      </header>
+      {children}
+      {footer}
+    </section>
+  );
+}
+
+/**
+ * Sign-off. Declining is two-step: the first click arms, the second commits. A credit decline is
+ * not something to lose to a mis-click, and the same guard already exists on the legacy desk.
+ */
+export function DecisionBar({
+  disabled,
+  busy,
+  onDecide,
+  extra,
+}: {
+  disabled?: boolean;
+  busy?: boolean;
+  onDecide: (outcome: VerificationPhaseOutcome, note?: string) => void;
+  extra?: React.ReactNode;
+}) {
+  const [note, setNote] = useState('');
+  const [arming, setArming] = useState<VerificationPhaseOutcome | null>(null);
+
+  const fire = (outcome: VerificationPhaseOutcome): void => {
+    const destructive = outcome === 'decline' || outcome === 'decline_blacklist';
+    if (destructive && arming !== outcome) {
+      setArming(outcome);
+      return;
+    }
+    setArming(null);
+    onDecide(outcome, note.trim() === '' ? undefined : note.trim());
+    setNote('');
+  };
+
+  return (
+    <div
+      style={s(
+        'display:grid;gap:12px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
+      )}
+    >
+      <label htmlFor="phase-note" style={s('font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>
+        Note (optional)
+      </label>
+      <textarea
+        id="phase-note"
+        value={note}
+        rows={2}
+        onChange={(e) => setNote(e.currentTarget.value)}
+        placeholder="What did you find?"
+        style={s(
+          'width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical',
+        )}
+      />
+      {extra}
+      <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
+        {OUTCOMES.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            disabled={disabled || busy}
+            onClick={() => fire(o.id)}
+            style={s(
+              `${o.style}${disabled || busy ? ';opacity:.5;cursor:not-allowed' : ''}${
+                arming === o.id ? ';background:var(--danger);color:var(--on-accent);border-color:var(--danger)' : ''
+              }`,
+            )}
+          >
+            {arming === o.id ? 'Click again to confirm' : o.label}
+          </button>
+        ))}
+      </div>
+      {arming ? (
+        <button
+          type="button"
+          onClick={() => setArming(null)}
+          style={s('justify-self:start;border:none;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline')}
+        >
+          Cancel
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** A labelled read-only figure. Used wherever a number was computed rather than typed. */
+export function Figure({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: 'ok' | 'bad' | 'plain';
+  hint?: string;
+}) {
+  const colour = tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--danger)' : 'var(--text)';
+  return (
+    <div style={s('display:grid;gap:3px')}>
+      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)')}>
+        {label}
+      </span>
+      <span style={s(`font-size:18px;font-weight:800;color:${colour};font-variant-numeric:tabular-nums`)}>
+        {value}
+      </span>
+      {hint ? <span style={s('font-size:11px;color:var(--muted);line-height:1.45')}>{hint}</span> : null}
+    </div>
+  );
+}
+
+export function FigureRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={s(
+        'display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Phase 3 — each hit needs a verdict before the phase can clear. */
+export function ScreeningPane({
+  detail,
+  busy,
+  onRun,
+  onVerdict,
+}: {
+  detail: VerificationDeskDetail;
+  busy: boolean;
+  onRun: () => void;
+  onVerdict: (hitId: string, verdict: VerificationScreeningVerdict) => void;
+}) {
+  const { hits, summary } = detail.screening;
+  const blacklist = hits.filter((h) => h.checkType === 'blacklist');
+  const duplicate = hits.filter((h) => h.checkType === 'duplicate');
+
+  return (
+    <div style={s('display:grid;gap:16px')}>
+      <div style={s('display:flex;flex-wrap:wrap;gap:10px;align-items:center')}>
+        <button type="button" onClick={onRun} disabled={busy} style={s(busy ? `${BTN};opacity:.5` : BTN)}>
+          <Icon name="refresh" size={14} strokeWidth={2.2} /> {hits.length > 0 ? 'Re-run screening' : 'Run screening'}
+        </button>
+        <span style={s('font-size:12px;color:var(--muted)')}>
+          Checks name, EIN, SSN, phone, email, address, MC and USDOT against our blacklist and existing applicants.
+        </span>
+      </div>
+
+      {hits.length === 0 ? (
+        <div
+          style={s(
+            'padding:16px;border-radius:var(--radius-md);border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.1);font-size:13px;color:var(--text)',
+          )}
+        >
+          No blacklist or duplicate matches.
+        </div>
+      ) : (
+        <>
+          <HitGroup
+            title="Check A — Blacklist"
+            emptyLabel="No blacklist match."
+            hits={blacklist}
+            busy={busy}
+            onVerdict={onVerdict}
+          />
+          <HitGroup
+            title="Check B — Active customer / duplicate"
+            emptyLabel="No duplicate match."
+            hits={duplicate}
+            busy={busy}
+            onVerdict={onVerdict}
+          />
+        </>
+      )}
+
+      {summary.unresolved > 0 ? (
+        <p
+          role="status"
+          style={s('margin:0;font-size:12px;font-weight:700;color:var(--warn)')}
+        >
+          {summary.unresolved} match{summary.unresolved === 1 ? '' : 'es'} still need a verdict before this
+          phase can pass.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function HitGroup({
+  title,
+  emptyLabel,
+  hits,
+  busy,
+  onVerdict,
+}: {
+  title: string;
+  emptyLabel: string;
+  hits: VerificationScreeningHit[];
+  busy: boolean;
+  onVerdict: (hitId: string, verdict: VerificationScreeningVerdict) => void;
+}) {
+  return (
+    <div style={s('display:grid;gap:10px')}>
+      <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text)')}>{title}</h3>
+      {hits.length === 0 ? (
+        <p style={s('margin:0;font-size:12px;color:var(--muted)')}>{emptyLabel}</p>
+      ) : (
+        <ul style={s('margin:0;padding:0;list-style:none;display:grid;gap:8px')}>
+          {hits.map((hit) => (
+            <li
+              key={hit.id}
+              style={s(
+                'display:grid;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
+              )}
+            >
+              <div style={s('display:flex;flex-wrap:wrap;gap:8px;align-items:baseline')}>
+                <span style={s('font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)')}>
+                  {hit.entryType}
+                </span>
+                <span style={s('font-size:13px;font-weight:700;color:var(--text)')}>
+                  {hit.matchedValueDisplay ?? hit.matchedCaseLabel ?? 'match'}
+                </span>
+              </div>
+              {hit.verdict === 'unverified' ? (
+                <div style={s('display:flex;gap:8px;flex-wrap:wrap')}>
+                  <button type="button" disabled={busy} onClick={() => onVerdict(hit.id, 'confirmed')} style={s(BTN_BAD)}>
+                    Confirmed match
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => onVerdict(hit.id, 'false_match')} style={s(BTN_OK)}>
+                    False match
+                  </button>
+                </div>
+              ) : (
+                <span
+                  style={s(
+                    `font-size:12px;font-weight:800;color:${hit.verdict === 'confirmed' ? 'var(--danger)' : 'var(--ok)'}`,
+                  )}
+                >
+                  {hit.verdict === 'confirmed' ? 'Confirmed match' : 'Ruled a false match'}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Phase 7 — computed, read-only, with the inputs that produced the verdict. */
+export function HardStopsPane({ detail }: { detail: VerificationDeskDetail }) {
+  const { hardStops, indicators, banking } = detail;
+  return (
+    <div style={s('display:grid;gap:16px')}>
+      <FigureRow>
+        <Figure
+          label="Avg weekly net cash flow"
+          value={banking?.avgWeeklyNetCashFlow ? `$${banking.avgWeeklyNetCashFlow}` : '—'}
+          tone={hardStops.passed ? 'ok' : 'bad'}
+          hint="Recurring income − recurring expenses"
+        />
+        <Figure label="Avg daily balance" value={banking?.avgDailyBalance ? `$${banking.avgDailyBalance}` : '—'} />
+        <Figure
+          label="NSF / returned ACH"
+          value={String((banking?.nsfCount ?? 0) + (banking?.achReturnCount ?? 0))}
+        />
+      </FigureRow>
+
+      {hardStops.triggered.length === 0 ? (
+        <div
+          style={s(
+            'padding:14px 16px;border-radius:var(--radius-md);border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.1);font-size:13px;color:var(--text)',
+          )}
+        >
+          Neither hard stop applies — a standard unsecured line is still on the table.
+        </div>
+      ) : (
+        <div style={s('display:grid;gap:10px')}>
+          {hardStops.triggered.map((stop) => (
+            <div
+              key={stop.code}
+              style={s(
+                'display:grid;gap:4px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid rgba(248,113,113,.34);background:rgba(248,113,113,.1)',
+              )}
+            >
+              <span style={s('font-size:13px;font-weight:800;color:var(--danger)')}>{stop.label}</span>
+              <span style={s('font-size:12px;color:var(--text2);line-height:1.5')}>{stop.detail}</span>
+            </div>
+          ))}
+          <p style={s('margin:0;font-size:12px;color:var(--muted);line-height:1.55')}>
+            A hard stop is not a decline. It rules out a standard unsecured line — Deposit 1:1, Prepaid or
+            Manager Review.
+          </p>
+        </div>
+      )}
+
+      {indicators.length > 0 ? (
+        <div style={s('display:grid;gap:8px')}>
+          <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text)')}>
+            Manager-review indicators
+          </h3>
+          <p style={s('margin:0;font-size:12px;color:var(--muted)')}>
+            Not declines by themselves — signals worth a second read.
+          </p>
+          <ul style={s('margin:0;padding-left:18px;display:grid;gap:4px')}>
+            {indicators.map((flag) => (
+              <li key={flag} style={s('font-size:12px;color:var(--text2);line-height:1.5')}>
+                {flag}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -1,9 +1,7 @@
-import { Building2, ClipboardCheck, Home, Inbox, Scale, Ticket } from 'lucide-react';
+import { Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
-import { VerificationCases } from './tabs/VerificationCases';
-import { VerificationInbox } from './tabs/VerificationInbox';
-import { VerificationRuleset } from './tabs/VerificationRuleset';
+import { NewApplicants } from './tabs/NewApplicants';
 import './verification.css';
 import './verificationModal.css';
 import './verificationRuleset.css';
@@ -11,16 +9,18 @@ import './verificationRuleset.css';
 /**
  * Verification Mytrion — credit and compliance decisioning.
  *
- * Verification cases + Inbox are live against Octane `verification_cases` and `mytrion_inbox_messages`.
- * Decision rules edits credit-platform `stop_factors` and
- * `system_state.decision_strategies_json` through the verification Postgres pools
- * (same DML as verification-mono Orchestration).
+ * New applicants is the 10-phase underwriting flow from the New Applicant Underwriting SOP, running
+ * entirely on Mytrion's own Postgres (`src/modules/verificationFlow/`). A case arrives here when a
+ * Sales agent completes intake; until then it is listed but locked.
+ *
+ * The credit-platform desk (Inbox, Verification cases, Decision rules) is QUARANTINED — see
+ * `legacyDesk.ts` and `src/modules/verification/killSwitches.ts`. Its components are still on disk
+ * and its tests still pass; it is undeclared here so `tabRegistry.test.ts` cannot grant a permission
+ * set for a tab that will not mount.
  *
  * Existing clients IS live — `src/modules/verification/verificationClients.ts` +
  * `routes/v1/verificationClients.routes.ts` read `octane.dim_company` company-wide (read-only; the
- * DWH can't be written), gated on the `verification` department. Distinct from the Sales redesign's
- * own "Verification Pipeline" tab (`verificationPipeline.routes.ts`), which is the caller's own
- * deal-clients plus a mock compliance-stage snapshot — different audience, different data, on purpose.
+ * DWH can't be written), gated on the `verification` department.
  */
 const TABS: ModuleTab[] = [
   {
@@ -33,36 +33,15 @@ const TABS: ModuleTab[] = [
     // No group — Main sits above Queue / Policy / Roster without a section heading.
   },
   {
-    id: 'inbox',
-    label: 'Inbox',
-    description: 'New-case and pipeline notifications for Verification.',
-    icon: Inbox,
-    tone: 'var(--tone-sky)',
-    group: 'Queue',
-    keywords: ['inbox', 'notifications', 'new case'],
-    content: <VerificationInbox />,
-  },
-  {
-    id: 'cases',
-    label: 'Verification cases',
-    description: 'Zoho deals ingested as shared cases, with pipeline progress from the credit platform.',
+    id: 'applicants',
+    label: 'New applicants',
+    description: 'The 10-phase underwriting flow, from intake through to the credit decision.',
     icon: ClipboardCheck,
     tone: 'var(--tone-indigo)',
     group: 'Queue',
     hideKicker: true,
-    keywords: ['queue', 'cases', 'decision', 'credit', 'approve', 'reject', 'applications'],
-    content: <VerificationCases />,
-  },
-  {
-    id: 'ruleset',
-    label: 'Decision rules',
-    description: 'Edits apply on the next run.',
-    icon: Scale,
-    tone: 'var(--tone-amber)',
-    group: 'Policy',
-    hideKicker: true,
-    keywords: ['rules', 'thresholds', 'orchestration', 'stop factors', 'strategies', 'pipeline'],
-    content: <VerificationRuleset />,
+    keywords: ['queue', 'applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases'],
+    content: <NewApplicants />,
   },
   {
     id: 'clients',
@@ -100,7 +79,7 @@ export default function VerificationMytrion() {
       kicker="Decisioning"
       heroLead="Verification "
       heroAccent="Mytrion"
-      heroBlurb="Credit and compliance decisioning — new applications, the ruleset behind each verdict, and re-verification for clients already on the books."
+      heroBlurb="Credit and compliance decisioning — new applicants through the ten underwriting phases, and re-verification for clients already on the books."
       navLabel="Verification"
       tabs={TABS}
     />

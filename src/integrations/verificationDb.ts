@@ -9,6 +9,7 @@
 import pg from 'pg';
 import type { Pool, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
+import { VERIFICATION_LEGACY_DESK_ENABLED } from '../modules/verification/killSwitches.js';
 import { logger } from '../lib/logger.js';
 import { SqlWrapper } from './core/sqlBase.js';
 
@@ -39,7 +40,14 @@ export class VerificationDbWrapper extends SqlWrapper {
   readonly placeholderStyle = '$n' as const;
   readonly readOnly = true;
 
+  /**
+   * Quarantined by `VERIFICATION_LEGACY_DESK_ENABLED`. Gating at `isConfigured` rather than at each
+   * call site is deliberate: every consumer already handles "not configured" gracefully — caseSync
+   * no-ops, the pipeline provider falls back to its mock, Orchestration 503s — so one flag retires
+   * the whole read path without a new failure mode anywhere.
+   */
   isConfigured(): boolean {
+    if (!VERIFICATION_LEGACY_DESK_ENABLED) return false;
     return Boolean(env.VERIFICATION_DATABASE_URL);
   }
 
