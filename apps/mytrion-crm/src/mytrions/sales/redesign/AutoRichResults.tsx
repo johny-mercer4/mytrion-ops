@@ -84,6 +84,7 @@ export function AutoAccountStatusPanel({ result }: { result: AccountStatusResult
         <div className="ss-auto-rich-title">Account Status — {result.companyName}</div>
         <div style={s('display:flex;align-items:center;gap:6px')}>
           <Badge vm={badge(result.isActive ? 'ACTIVE' : 'INACTIVE', result.isActive ? 'var(--ok)' : 'var(--danger)')} />
+          {result.accountType ? <Badge vm={badge(result.accountType, 'var(--accent)')} /> : null}
           {result.isHardDebtor ? <Badge vm={badge('HARD DEBTOR', 'var(--danger)')} /> : null}
         </div>
       </div>
@@ -101,13 +102,6 @@ export function AutoAccountStatusPanel({ result }: { result: AccountStatusResult
         <StatTile label="Invoices in debt" value={result.debtInvoiceCount} />
         <StatTile label="Oldest debt" value={result.maxDebtDays} />
       </div>
-      <MetaGrid
-        rows={[
-          ['Account type', result.accountType],
-          ['Payment terms', result.paymentTerms],
-          ['Worst invoice status', result.worstStatus],
-        ]}
-      />
       {result.notices.map((notice) => (
         <div key={notice} style={s(warnNote)}>{notice}</div>
       ))}

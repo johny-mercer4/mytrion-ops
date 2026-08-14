@@ -44,7 +44,6 @@ export {
   LEAD_STATUS_VALUES,
   LEAD_UNQUALIFIED_REASONS,
 } from '../../modules/sales/leadStatusValues.js';import { auditFromContext } from '../../modules/audit/auditLogger.js';
-import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { assertCarrierOwned, resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -416,7 +415,11 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     if (Object.keys(payload).length === 0) {
       throw new AppError('No editable fields supplied', { statusCode: 400, code: 'NO_FIELDS', expose: true });
     }
-    const resolved = await resolveWritePayload(module, payload);
+    // leadEditBody / dealEditBody are .strict() schemas whose keys ARE the exact Zoho API field
+    // names — no casing ambiguity. resolveWritePayload is designed for CS/billing routes where
+    // field names are user-supplied; here it can reject valid system fields (e.g. Description on
+    // Leads) that Zoho omits from its /settings/fields metadata response.
+    const resolved = payload;
 
     // Lead `Status` is Blueprint-controlled: a plain updateRecord is rejected while the lead is in an
     // active blueprint (and would drop the other edits with it). Split it out — see the helper.

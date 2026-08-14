@@ -12,12 +12,20 @@
 @import './prepay-panel.css';
 @import './returns-panel.css';
 @import './ledger-panel.css';
-@import './ai-chat-panel.css';
 @import './shared-effects.css';
-@import './shared-responsive.css';
 @import './overrides.css';
 /* LAST: the Horizon glass layer wins over the panel sheets above at equal specificity. */
 @import './bm-horizon.css';
 @import './bm-horizon-panels.css';
 /* LAST OF ALL: undoes the page-root assumptions now that .bm-root is a content div. */
 @import './mounted.css';
+/*
+ * AFTER EVERYTHING, and that is the point.
+ *
+ * This sheet used to sit above `overrides.css`, the two Horizon layers and `mounted.css`, so four
+ * later sheets beat its rules at equal specificity and the phone layout silently lost to the
+ * desktop one. Every rule in here is inside `(width < 640px)` or `(width < 480px)`, so loading it
+ * last cannot change a laptop — it only lets the phone rules win the cascade they were written to
+ * win.
+ */
+@import './shared-responsive.css';

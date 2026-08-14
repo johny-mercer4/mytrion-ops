@@ -186,7 +186,11 @@ export function Maintenance() {
             {loading ? <span style={{ color: 'var(--cs-accent)', marginLeft: '0.5rem' }}>Loading…</span> : null}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        {/* The class is a HOOK ONLY — every desktop declaration stays in the inline style beside it,
+            so adding it cannot move a desktop pixel. `cs-mt-actions` carries rules exclusively inside
+            `(width < 640px)`, where this cluster is 460px of nowrap content in a 351px row and the
+            "Kanban" button loses its last 20px. */}
+        <div className="cs-mt-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <div className="cs-mt-view-toggle" role="group" aria-label="View">
             {VIEWS.map((v) => (
               <button

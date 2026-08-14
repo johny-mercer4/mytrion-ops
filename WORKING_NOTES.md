@@ -15941,3 +15941,88 @@ a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated fai
 `sales-golive-contract.test.ts` — confirmed present before this branch too, not caused by this work).
 Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
 same session) rather than a fresh branch off `build`.
+
+## 2026-08-14 — Billing + CS in the Telegram Mini App
+
+The Horizon bot opens `apps/mytrion-crm` — the same SPA and the same bundle as the
+desktop CRM — so Billing and Customer Service ship to a phone exactly as designed for
+1280px. Brief was explicit: fix the phone, change nothing on laptops.
+
+**Rule 0, and it is what shaped everything else.** Every change is either CSS inside
+`(width < 640px)`, a render branch behind `useIsPhone()`, or a deletion of code proven
+dead. The 640–1200 band was frozen — untouched — because several of Billing's and CS's
+existing breakpoints (700/720/760/768/820/860/900/1080/1100/1150/1180) govern tablet
+and small-laptop layout, and re-pointing them at the ladder is how "only mobile"
+becomes a desktop regression.
+
+**Both browser gates for that rule turned out to be unusable, measured not assumed.**
+`audit:shots` advertises a byte-identical before/after comparison but is not
+byte-stable on Billing/CS/Sales at the same commit — entrance animations plus skeleton
+shimmer, two consecutive runs differing by 200–8000 bytes. A full-DOM geometry
+fingerprint failed for a different reason: this dev stack points at the RENDER
+PRODUCTION database, so the data changes between runs — a KPI badge went 77px → 65px
+wide mid-check and shifted every sibling after it, 4863 of 37684 boxes "changing" with
+no code change. Both were sampling a live system. Desktop invariance does not need
+sampling: it is a property of the source. The gate that worked compares, per
+stylesheet, the set of declarations reachable at ≥640px before vs after — 100% of the
+change, immune to a badge that moved. It ends at PASS with 276 declarations unchanged.
+Two escape hatches, both earned: a removal whose selector targets a class no `.tsx`
+renders (checked against every TSX file), and an addition of a property that cannot
+move a pixel (`overscroll-behavior-x`, `-webkit-overflow-scrolling`).
+
+**What was actually wrong, which was not what the plan predicted.**
+
+- Billing already had a careful phone audit — its own comments say "checked at 320 and
+  375 in the browser". Returns and Ledger already reflow rows into cards. The plan's
+  claim that Ledger "reverts to px at every width" read the base rule and missed the
+  `<760` override. Most of the planned Phase A for Billing was already done and was
+  dropped rather than written twice.
+- CS's split panes were likewise a non-issue: they stack at 900/1100/1180, so their
+  fixed `340px` / `minmax(290px, 340px)` tracks never apply on a phone. Dropped.
+- CS's `shared-responsive.css` was 57 lines of which two of three media blocks held
+  nothing but four EMPTY rules, on off-ladder `max-width` breakpoints. That is how CS
+  came to have no phone layer while reading as covered in review.
+- Both modules imported their phone sheet BEFORE `overrides.css`, the Horizon layers
+  and `mounted.css` — four later sheets beating it at equal specificity. Now last.
+- `.db-kpi-grid` was set 2-up in the module sheet and 1-up in `responsive-tables.css`
+  at identical specificity, so which applied depended on whether the lazy chunk loaded
+  after `global.css`. Single-sourced.
+- **The real remaining defect was invisible to every overflow check.** Debtors and
+  Prepay re-flex the shared `.db-col-*` frame to RATIOS, so at 375px the row does not
+  overflow — it divides the width by seven and crushes. `audit:mobile` and a per-tab
+  probe both PASS these tabs while the header renders
+  "CARRIERCOMPANY CYCLESTATUS OLDEST DEBT INVREMAINING" and a row reads
+  "5776662 Semi-Weekly Pending 172d 2$90,878", company name squeezed to *invisible*
+  and the amount cut short of its cents. Fixed with the wrap-into-a-card recipe Returns
+  and Ledger already use, plus `::before` labels for the numeric columns the hidden
+  header stopped naming, plus `contain-intrinsic-size` restated at 108px so scrollbar
+  geometry does not drift against a 3-line card.
+- CS Applications is 28 columns × inline px `minWidth` ≈ 3,644px (measured: the row is
+  really 3,352px at 1280). Below 640 it now renders `ds/DataTable` in card mode. NOT a
+  migration — DataTable's table mode would restyle the desktop — mounted phone-only, so
+  the desktop path is byte-identical. One column definition, two renderings: it maps
+  the same `columnsFor()` array and delegates every cell to the same `AppCell`.
+
+**Two false alarms worth recording.** The interactive browser pane reports
+`visibilityState: hidden`, so Chrome freezes animation clocks at currentTime 0; with
+`csFadeUp`'s `fill-mode: backwards` that pins a `translateY(11px)` on `.cs-panel`
+permanently, makes it a containing block for `position: fixed`, and puts the modal
+911px off-screen. I nearly filed that as a defect — in a visible page both panels
+settle to `transform: none`. Separately, measuring a modal the instant it mounts
+catches `csModalIn` mid-flight: `scale(0.97)` reads as a 6px inset (375 × 0.97 = 364).
+
+**Also worth knowing:** neither audit script can reach a deep tab. Tab state is
+component-local `useState` (billing/Shell.tsx:62, customer-service/Shell.tsx:60) with
+no URL, so `audit:mobile` only ever measures each Mytrion's LANDING tab — Billing's
+Data Center and CS's Home. Everything else in this session was audited by clicking
+through, including opening the MobileTabBar "More" drawer for destinations past the
+fourth. 14 tabs checked at 375: all clean. `data-center`, `inbox`, `tickets` and
+`service-center` are `soon: true` and unreachable by design; CITI Fuel did not resolve
+and is the one gap left unchecked.
+
+**Still open:** Billing's remaining tables (DataCenter is the virtualised one and needs
+`ds/Table` + its own windowed card list, not DataTable), CS Analytics' leaderboard, and
+converting the 14 hand-rolled modals to `ds/Dialog` — that last one restyles the
+desktop, so it needs its own PR and its own review. No real-device pass yet: the
+`--tg-viewport-stable-height` first paint, `--kb-inset`, and rotation all still need a
+phone in Telegram.
