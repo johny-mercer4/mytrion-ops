@@ -102,7 +102,13 @@ const disputeBody = z.object({
   stage: z.string().max(60).optional(),
 });
 
-const NON_CREATION_STAGE = /won|lost|clos|refund|resolv/i;
+// "prevented" is a real, documented Stripe dispute status (docs.stripe.com/api/disputes/object):
+// "A dispute that was prevented from becoming a formal chargeback" — no money was ever taken from
+// the merchant, the same no-action outcome as "won". Confirmed 2026-08-14 against a live Zap
+// ("(Octane) New Dispute") that sends exactly this stage — without this, the dispute would have
+// fallen through to the normal creation path and could auto-reverse a real CMP invoice payment for
+// a chargeback that never actually happened.
+const NON_CREATION_STAGE = /won|lost|clos|refund|resolv|prevent/i;
 
 /** One inbound payment from a Zapier email parser. Only `source` + `sourceRecordId` are required;
  *  everything else is best-effort. Unknown extra fields are preserved in `raw`. */
