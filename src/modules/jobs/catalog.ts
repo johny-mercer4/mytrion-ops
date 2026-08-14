@@ -219,6 +219,19 @@ export const verificationRecheckJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/**
+ * Zoho Deals COQL → verification_cases. Does not create credit-platform requests.
+ * Parked in DISABLED_JOB_QUEUES (no cron, no Admin trigger) so generation stays off.
+ * Worker still registered: leftover queued jobs no-op instead of creating cases.
+ */
+export const verificationCaseIngestJob = defineJob({
+  name: 'automation.verification.case-ingest',
+  schema: z.object({
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1500, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** Daily: decay agent-memory importance and evict faded/expired rows. */
 export const memoryDecayJob = defineJob({
   name: 'maintenance.memory-decay',
@@ -286,6 +299,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   salesBocaRequestJob,
   billingLedgerSnapshotJob,
   verificationRecheckJob,
+  verificationCaseIngestJob,
   checkpointSweepJob,
   platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -316,6 +330,8 @@ export const DISABLED_JOB_QUEUES = new Set<string>([
   retentionScanJob.name,
   // Temporary collection pause: protect Zoho API capacity while KPI request volume is reviewed.
   ...KPI_JOB_QUEUES,
+  // Stop creating verification cases until intake is re-enabled on purpose.
+  verificationCaseIngestJob.name,
 ]);
 
 /** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */

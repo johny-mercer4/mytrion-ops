@@ -40,6 +40,8 @@ export interface VerificationClientRow {
   creditLimit: number | null;
   creditScore: number | null;
   isActive: boolean;
+  /** `dim_company.last_transaction_date` as yyyy-mm-dd. Null when the carrier has never swiped. */
+  lastTransactionAt: string | null;
 }
 
 /** The roster row plus the identity/contact fields only the detail modal needs. */
@@ -73,6 +75,7 @@ interface Row {
   credit_limit: string | number | null;
   credit_score: string | number | null;
   is_active: number | null;
+  last_transaction_date: Date | string | null;
 }
 
 interface DetailRow extends Row {
@@ -92,7 +95,6 @@ interface DetailRow extends Row {
   insurance_coverage: string | null;
   creditsafe_grade: string | null;
   first_swipe_date: Date | string | null;
-  last_transaction_date: Date | string | null;
 }
 
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
@@ -124,15 +126,21 @@ function toRow(r: Row): VerificationClientRow {
     creditLimit: numOrNull(r.credit_limit),
     creditScore: numOrNull(r.credit_score),
     isActive: r.is_active === 1,
+    lastTransactionAt: naiveDate(r.last_transaction_date),
   };
 }
 
 const COMPANY_COLS = `carrier_id, company_name, billing_type, payment_terms, payment_day,
   minimum_required_balance, billing_cycle_tag, is_debtor, billing_cycle, credit_limit, credit_score,
-  is_active`;
+  is_active, last_transaction_date`;
 
 /**
- * Every carrier's verification/payment terms, company-name order.
+ * Every carrier's verification/payment terms.
+ *
+ * Default order is what a reviewer scans first: **not a debtor and has a credit score**, then other
+ * non-debtors, then debtors. A 0 score is "not scored" (same rule as verificationPipeline). Name is
+ * the tie-break. The CRM re-sorts after client-side filters; this order is what an unfiltered first
+ * paint and a raw API consumer both see.
  *
  * `distinct on (carrier_id) … order by update_date desc` keeps the newest dim row per carrier — the
  * same SCD-collapse `financeClients.ts` and `dwhClientRoster.ts` both use, since `dim_company` fans a
@@ -147,7 +155,19 @@ export async function listVerificationClients(): Promise<VerificationClientRow[]
         order by carrier_id, update_date desc nulls last
      )
      select * from company
-     order by company_name asc nulls last, carrier_id asc`,
+     order by
+       case
+         when coalesce(is_debtor, false) is not true
+              and credit_score is not null
+              and credit_score <> 0
+           then 0
+         when coalesce(is_debtor, false) is not true
+           then 1
+         else 2
+       end,
+       credit_score desc nulls last,
+       company_name asc nulls last,
+       carrier_id asc`,
   );
   return rows.map(toRow);
 }
@@ -163,7 +183,7 @@ export async function getVerificationClientDetail(
   const rows = await dwh.query<DetailRow>(
     `select ${COMPANY_COLS}, deal_full_name, agent, agent_email, deal_phone, contact_phone,
             deal_email, contact_email, dot, address, city, state, deal_money_code, comdata_id,
-            insurance_coverage, creditsafe_grade, first_swipe_date, last_transaction_date
+            insurance_coverage, creditsafe_grade, first_swipe_date
        from octane.dim_company
       where carrier_id = $1::bigint
       order by update_date desc nulls last

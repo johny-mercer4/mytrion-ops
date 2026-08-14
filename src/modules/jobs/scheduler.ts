@@ -5,11 +5,14 @@
 import type { PgBoss } from 'pg-boss';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
+import { verificationIngestStateRepo } from '../../repos/verificationIngestStateRepo.js';
 import {
   CRON_SCHEDULES,
   DEPARTMENT_AUTOMATION_QUEUES,
   DISABLED_JOB_QUEUES,
+  verificationCaseIngestJob,
 } from './catalog.js';
+import { buildSystemContext } from './systemContext.js';
 
 export async function applySchedules(boss: PgBoss): Promise<void> {
   // Department automations run LLM agent turns (and DM Telegram) — they must NOT auto-fire just
@@ -33,5 +36,15 @@ export async function applySchedules(boss: PgBoss): Promise<void> {
   }
   for (const [name, schedule] of wanted) {
     await boss.schedule(name, schedule.cron, {}, { tz: schedule.timezone ?? env.JOBS_CRON_TZ });
+  }
+  if (wanted.has(verificationCaseIngestJob.name)) {
+    try {
+      const pinned = await verificationIngestStateRepo.pinLegacyToNow(
+        buildSystemContext(['verification']),
+      );
+      logger.info({ watermark: pinned }, 'verification ingest fresh-only watermark ready');
+    } catch (err) {
+      logger.warn({ err }, 'verification ingest watermark pin skipped');
+    }
   }
 }

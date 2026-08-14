@@ -15,6 +15,7 @@ import {
   CloudUpload,
   Copy,
   Database,
+  Download,
   Eye,
   FileText,
   Hash,
@@ -104,6 +105,7 @@ export const BanIcon = icon(Ban, 11);
 export const ChevronLeftIcon = icon(ChevronLeft, 13);
 export const ChevronRightIcon = icon(ChevronRight, 13);
 export const AlertIcon = icon(TriangleAlert, 11);
+export const DownloadIcon = icon(Download, 12);
 
 // ── content ─────────────────────────────────────────────────────────────────
 export const DocIcon = icon(FileText, 14);

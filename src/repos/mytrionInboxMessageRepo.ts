@@ -40,12 +40,13 @@ interface InboxListFilter {
   category?: InboxCategory;
   unread?: boolean;
   cursor?: string;
+  tag?: string;
 }
 
 function ownerClauses(
   ctx: TenantContext,
   ownerZohoUserId: string,
-  filter: Pick<InboxListFilter, 'query' | 'category' | 'unread'> = {},
+  filter: Pick<InboxListFilter, 'query' | 'category' | 'unread' | 'tag'> = {},
 ) {
   const clauses = [
     eq(mytrionInboxMessages.tenantId, ctx.tenantId),
@@ -71,6 +72,7 @@ function ownerClauses(
     clauses.push(sql`lower(${mytrionInboxMessages.type}) not in ('task', 'warning', 'critical')`);
   }
   if (filter.unread) clauses.push(isNull(mytrionInboxMessages.readAt));
+  if (filter.tag?.trim()) clauses.push(eq(mytrionInboxMessages.tag, filter.tag.trim()));
   return clauses;
 }
 
@@ -158,6 +160,7 @@ export const mytrionInboxMessageRepo = {
     ctx: TenantContext,
     ownerZohoUserId: string,
     query?: string,
+    tag?: string,
   ): Promise<{ all: number; unread: number; task: number; alert: number; reminder: number }> {
     const rows = await db
       .select({
@@ -168,7 +171,14 @@ export const mytrionInboxMessageRepo = {
         reminder: sql<number>`count(*) filter (where lower(${mytrionInboxMessages.type}) not in ('task', 'warning', 'critical'))::int`,
       })
       .from(mytrionInboxMessages)
-      .where(and(...ownerClauses(ctx, ownerZohoUserId, query ? { query } : {})));
+      .where(
+        and(
+          ...ownerClauses(ctx, ownerZohoUserId, {
+            ...(query ? { query } : {}),
+            ...(tag ? { tag } : {}),
+          }),
+        ),
+      );
     const row = rows[0];
     return {
       all: Number(row?.all) || 0,

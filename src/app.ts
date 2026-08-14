@@ -30,6 +30,7 @@ import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { auditLogRoutes } from './routes/v1/auditLogs.routes.js';
 import { dataLoaderRoutes } from './routes/v1/dataLoader.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
@@ -39,6 +40,10 @@ import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.
 import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
 import { verificationWritebackRoutes } from './routes/v1/verificationWriteback.routes.js';
 import { verificationClientsRoutes } from './routes/v1/verificationClients.routes.js';
+import { verificationCaseQueueRoutes } from './routes/v1/verificationCaseQueue.routes.js';
+import { verificationCasesRoutes } from './routes/v1/verificationCases.routes.js';
+import { verificationFirstRunRoutes } from './routes/v1/verificationFirstRun.routes.js';
+import { verificationStrategiesRoutes } from './routes/v1/verificationStrategies.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { mytrionPermissionSetsRoutes } from './routes/v1/mytrionPermissionSets.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
@@ -424,6 +429,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(auditLogRoutes);
       await v1.register(dataLoaderRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
@@ -463,6 +469,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(verificationPipelineRoutes);
       await v1.register(verificationWritebackRoutes);
       await v1.register(verificationClientsRoutes);
+      await v1.register(verificationCaseQueueRoutes);
+      await v1.register(verificationCasesRoutes);
+      await v1.register(verificationFirstRunRoutes);
+      await v1.register(verificationStrategiesRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csMaintenanceRoutes);

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:local-db": "LOCAL_OPS_DATABASE_URL=postgresql://octane:octane@localhost:5433/octane_assistant tsx watch src/server.ts",
     "dev:all": "bash scripts/dev-local.sh",
     "tunnel": "bash scripts/db-tunnel.sh",
     "build": "tsc -p tsconfig.build.json",

@@ -42,6 +42,27 @@ export const auditLog = pgTable(
   (table) => ({
     tenantIdx: index('audit_log_tenant_idx').on(table.tenantId, table.createdAt),
     actionIdx: index('audit_log_action_idx').on(table.action),
+    /**
+     * The Admin Audit Log filters on these columns directly (agent name / profile / role), and the
+     * facet endpoint runs a DISTINCT over each. Without them every filtered page was a seq scan
+     * over the whole table — 41k rows in 30 days and growing.
+     */
+    userNameIdx: index('audit_log_user_name_idx').on(table.tenantId, table.userName),
+    profileIdx: index('audit_log_profile_idx').on(table.tenantId, table.profile),
+    roleIdx: index('audit_log_role_idx').on(table.tenantId, table.role),
+    callerRoleIdx: index('audit_log_caller_role_idx').on(table.tenantId, table.callerRole),
+    /** Action + time — the Logins / Mytrion-access views, and the login-throttle lookback. */
+    actionCreatedIdx: index('audit_log_action_created_idx').on(
+      table.tenantId,
+      table.action,
+      table.createdAt,
+    ),
+    /** 'which Mytrion did this touch' — mytrion.access rows key on (resource_type, resource_id). */
+    resourceIdx: index('audit_log_resource_idx').on(
+      table.tenantId,
+      table.resourceType,
+      table.resourceId,
+    ),
   }),
 );
 

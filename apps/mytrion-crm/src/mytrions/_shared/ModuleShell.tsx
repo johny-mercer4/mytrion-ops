@@ -31,6 +31,14 @@ export interface ModuleTab {
   tone: string;
   /** Extra sidebar-search terms; the label is always searched. */
   keywords?: string[];
+  /**
+   * Sidebar section label. Consecutive tabs that share a group become one NavSection.
+   * A tab without a group starts an unlabelled section — no heading. Main sits above
+   * Queue / Policy / Roster that way, instead of inheriting `navLabel`.
+   */
+  group?: string;
+  /** Hide the page-head kicker — the title already names the page. */
+  hideKicker?: boolean;
   /** Layer-2 gate. Defaults to open — narrow it rather than hiding the item in the shell. */
   access?: (user: UserContext) => boolean;
   /** Unbuilt: renders <ComingSoon />. Mutually exclusive with `content`. */
@@ -56,10 +64,32 @@ export interface ModuleShellProps {
   heroLead: string;
   heroAccent: string;
   heroBlurb: string;
-  /** Sidebar group label. */
+  /** Fallback id slug for an unlabelled section. Not shown as a heading. */
   navLabel: string;
   /** The Main/Home tab id — always first, always built (it's the launcher). */
   tabs: ModuleTab[];
+}
+
+/** Consecutive `group` values become one labelled section. Missing group → no heading. */
+export function groupModuleTabs<T extends { id: string; group?: string }>(
+  tabs: readonly T[],
+  fallbackLabel: string,
+): Array<{ id: string; label: string; items: T[] }> {
+  const groups: Array<{ id: string; label: string; items: T[] }> = [];
+  for (const tab of tabs) {
+    const label = tab.group ?? '';
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      last.items.push(tab);
+      continue;
+    }
+    groups.push({
+      id: (label || fallbackLabel).toLowerCase().replace(/[^a-z0-9]+/g, '-') || tab.id,
+      label,
+      items: [tab],
+    });
+  }
+  return groups;
 }
 
 export function ModuleShell({
@@ -87,24 +117,22 @@ export function ModuleShell({
   const launchers = visible.slice(1);
 
   const pinIds = new Set(visible.filter((tab) => !tab.soon).slice(0, 4).map((tab) => tab.id));
-  const navSections: NavSection[] = [
-    {
-      id: 'main',
-      label: navLabel,
-      items: visible.map((tab) => ({
-        key: tab.id,
-        label: tab.label,
-        // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
-        soon: Boolean(tab.soon),
-        icon: <tab.icon size={19} />,
-        tone: tab.tone,
-        active: view === tab.id,
-        onClick: () => open(tab.id),
-        keywords: tab.keywords ?? [],
-        primary: pinIds.has(tab.id),
-      })),
-    },
-  ];
+  const navSections: NavSection[] = groupModuleTabs(visible, navLabel).map((section) => ({
+    id: section.id,
+    label: section.label,
+    items: section.items.map((tab) => ({
+      key: tab.id,
+      label: tab.label,
+      // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
+      soon: Boolean(tab.soon),
+      icon: <tab.icon size={19} />,
+      tone: tab.tone,
+      active: view === tab.id,
+      onClick: () => open(tab.id),
+      keywords: tab.keywords ?? [],
+      primary: pinIds.has(tab.id),
+    })),
+  }));
 
   return (
     <div data-mytrion={id} className="contents">
@@ -160,7 +188,7 @@ export function ModuleShell({
               ) : (
                 <>
                   <PageHead
-                    kicker={kicker}
+                    {...(active.hideKicker ? {} : { kicker })}
                     title={active.label}
                     description={active.description}
                   />

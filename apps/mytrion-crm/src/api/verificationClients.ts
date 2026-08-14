@@ -22,6 +22,8 @@ export interface VerificationClientRow {
   creditLimit: number | null;
   creditScore: number | null;
   isActive: boolean;
+  /** `dim_company.last_transaction_date` as yyyy-mm-dd. Null when the carrier has never swiped. */
+  lastTransactionAt: string | null;
 }
 
 export interface VerificationClientDetail extends VerificationClientRow {

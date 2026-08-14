@@ -2614,3 +2614,95 @@
 @keyframes adminSheetUp {
   from { translate: 0 100%; }
 }
+
+/* ── Log filter bar (Audit Log, Automation Logs) ──────────────────────────────
+   A labelled dropdown grid rather than another row of chips: agent name, profile and role are
+   open-ended value sets read from the data, so they cannot be enumerated as chips the way
+   audience and status can. auto-fit keeps it one row on a desktop and reflows down the ladder
+   with no width query of its own. */
+/* rem tracks, not px: a fixed px track is the thing that cannot fit a phone, and
+   styles/breakpoints.test.ts counts them. auto-fit + a relative floor reflows down the ladder
+   without a width query of its own. */
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.filterField {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.filterFieldLabel {
+  margin-bottom: var(--space-1_5);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Toolbar that carries the row count on the left and the export control on the right. */
+.logToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.logToolbarSpacer {
+  flex: 1 1 auto;
+}
+
+/* Export split-control. `position: relative` only — no transform, no filter, so it never becomes a
+   containing block for the popover's own stacking. */
+.exportWrap {
+  position: relative;
+}
+.exportMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-1_5));
+  z-index: var(--z-dropdown, 40);
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: var(--space-1_5);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-md);
+  background: var(--hz-pane-lift);
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+  box-shadow: var(--hz-shadow-lift, var(--shadow-lg));
+}
+.exportMenuItem {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--hz-dur-wash) var(--hz-ease);
+}
+.exportMenuItem:hover:not(:disabled) {
+  background: var(--hz-glass-hover);
+}
+.exportMenuItem:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.exportMenuNote {
+  padding: var(--space-1_5) var(--space-3) var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* Column tracks for the two log tables. Both live inside [data-table-scroller], which owns the
+   horizontal scroll below the density line — see styles/responsive-tables.css. */
+.tAutomation {
+  grid-template-columns: 1fr 1.6fr 1.2fr 1fr 1fr;
+}

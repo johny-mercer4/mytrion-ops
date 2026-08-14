@@ -15942,6 +15942,504 @@ a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated fai
 Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
 same session) rather than a fresh branch off `build`.
 
+## 2026-08-14 — Verification Mytrion: Existing clients polish
+
+Operate-mode refinement of Verification → Existing clients (not a visual-world replacement).
+
+- **Default order:** creditworthy first (not a debtor AND has a real credit score; 0 = unscored), then other non-debtors, then debtors. API `ORDER BY` matches; CRM re-sorts after filters. Sort override: name / score / recently active.
+- **Activity filters:** Last 30 / 60 / 90 days on `dim_company.last_transaction_date` (now on the lean roster row). Mutually exclusive with Any time. Carriers with no swipe drop out of a window.
+- **Prepay:** cards and modal omit credit score and minimum required balance (no empty labelled fields). Prepay meta is payment day + last activity.
+- **Aggregators:** BANK / DIRECT / MERCHANT_CARD / ZELLE get icon + label + `--tone-*` colour (not colour alone). Filter chips use the same mark.
+- **Summary:** split into matching / not flagged / debtors so “726 clients · 4 debtors” is no longer ambiguous.
+- **Filter panel:** one pane (search, chips, sort, clear). Modal moved to `ds/Dialog` (focus trap, sticky chrome, sheet on phone). Tokens only — light and dark via the cascade.
+
+## 2026-08-14 — Verification cases: Mytrion-owned intake
+
+Mytrion owns Verification intake. A 30-minute pg-boss job (`automation.verification.case-ingest`)
+runs the same two-predicate Zoho Deals COQL as credit-platform (Stage IN + Application_Date; never
+select `DOT` — hydrate `DOT1` / `Trucks1` / `First_name` / `Cell` / `Birth_Of_Date`), writes
+`verification_cases` as **shared + Sarvar Asqarov**, seeds 10 Decision Desk stages, enriches from
+DWH `public.stg_broker_snapshot` (Phone digits → email lower → DOT → normalized company name; miss
+is OK), inboxes Sarvar (`type=verification.case.created`, `tag=verification`, `zohoRecordId=vc:{id}`),
+then fire-and-forget `POST /api/v1/requests` with `request_id = zoho_deal_id`. Progress is read from
+the verification DB on GET/Refresh; agent Run / Approve / Decide are the only other writes. No
+inbound webhook. Configuration Ruleset stays Coming Soon with Orchestration table mapping only.
+
+Owner id: `VERIFICATION_CASE_OWNER_ZOHO_USER_ID` or live `GET /users` match on `Sarvar Asqarov`.
+Lookup failure fails the job — no unowned cases. Watermark advances only when `failed === 0`. Auto-
+start HTTP failure marks the case `failed` and keeps the row.
+
+UI: Applications → **Verification cases** + Inbox. List Refresh actually refetches. Modal uses
+`ds/Dialog`. Tokens only. Rebuild `apps/mytrion-crm/app` with `pnpm build:widget` before the PR.
+
+Cutover risk: set `ZOHO_POLL_ENABLED=0` on credit-platform or both sides ingest the same Deal.
+Sarvar's Zoho id is not in git — resolve against live CRM before the first cron.
+
+## 2026-08-14 — Verification cases list 500 (Render vs local)
+
+`GET /v1/verification/cases` 500'd because the running API reads `.env` `MYTRION_OPS_DATABASE_URL`
+(Render `mytrion_ops_db`). Migration 0117 and the sample case
+`vc_i3aa11v9tqs0jcthgvn75f44` exist only on local Docker `localhost:5433/octane_assistant`.
+Render `to_regclass('public.verification_cases')` is null. Did **not** migrate Render.
+
+Fixes: missing table/column → exposed 503 `VERIFICATION_CASES_NOT_MIGRATED` (names the connected
+host + `pnpm dev:local-db`); list SELECT drops `zoho_raw`; GET/refresh fail-soft if verification-db
+sync fails. `LOCAL_OPS_DATABASE_URL` overrides the app DB in development only so `.env` can stay
+on Render. `pnpm dev:local-db` or `USE_LOCAL_OPS_DB=1 pnpm dev:all`. Do not start the ingest job.
+
+## 2026-08-14 — Combined onto feature/UltraMytrion
+
+`feature/verification-cases-intake` and `feature/verification-mytrion-polish` were the same commit
+with uncommitted work (cases in the working tree, polish in a stash). Combined onto
+`feature/UltraMytrion` and deleted the two old local branches. Neither had been pushed.
+
+## 2026-08-14 — Verification Impeccable operate pass (loaders / fetch / polish)
+
+Operate-mode refinement of Verification cases + inbox + existing clients. Not a visual-world
+replacement. No PRODUCT.md — incumbent Horizon tokens stay authority; `/impeccable init` is a
+follow-up if we want that documented.
+
+- **One skeleton, no spinner beside it.** Cases first paint is the real table header + shimmer cells
+  (desktop) / card placeholders (mobile). Inbox is list-shaped `.vf-sk`. Case modal is field + stage
+  placeholders. Refresh keeps rows and spins only on the button. Clients already did this; mobile
+  card skeletons now match the 3.5rem compact row so they don't jump.
+- **No double list GET.** Filter/page reset is batched in the same event (the old `setPage(1)` effect
+  fired a second request). Cases/inbox/detail use `useCachedLoad` so tab remount (ModuleShell
+  unmounts inactive tabs) and Strict Mode join instead of blanking. No AbortSignal on these GETs —
+  abort would drop the cache write that makes coming back instant; transport already dedupes
+  identical GETs. Modal open does not refetch the list; a successful Run/Approve/Decide writes the
+  case key and invalidates `verification:cases`.
+- **Logic:** list `total` was `aggregates.total` (unfiltered), so a status/search page could be empty.
+  Pagination now uses `verificationCaseRepo.count` with the same WHERE as `list`. Modal subtitle no
+  longer hardcodes Shared. Error+empty no longer claim "no cases/messages" when the API refused.
+- **Inspected** mock-auth :5175 at 1280 and 375: cases table/cards, inbox error empty (mock user has
+  no Zoho id — expected), clients roster + creditworthy sort + activity chips. Modal first paint
+  used a generic title + "Loading…" over the skeleton; header now uses the list-row preview.
+
+Tests: `verification-cases` 12, `verification-cases-routes` 5, `verificationData` 15 — all pass.
+Did not start ingest. Did not migrate Render. Did not rebuild `app/`.
+
+---
+
+## 2026-08-14 — Audit Log + Automation Logs: filters, coverage, export
+
+Branch `feature/UltraMytrion`. Everything below was measured against the live table first; the row
+counts in the comments are real, not illustrative.
+
+### 1. "Duplicate data" in Logins was `auth.act_as`
+
+`actAsContext()` wrote an `ok` audit row on EVERY request a view-as session made: **9,178 rows in 30
+days against 116 real logins** (1,659 in one week from 14 users). The Logins chip filtered on the
+`auth.` prefix, so it was ~99% the same fact restated.
+
+- New `modules/audit/sessionEvents.ts` — `auditSessionEvent()` collapses an `ok` event to one row per
+  (actor, target) per 30-minute window. In-process TTL map first, one indexed lookback query on a
+  cold key, so a restart or a second instance cannot reopen the flood.
+- **`denied` is never collapsed** — a refused impersonation is a distinct security event every time.
+- Logins now selects its three events by EXACT name (`auth.login`, `auth.zoho.login`,
+  `mini_app.auth.login`), not by prefix. Impersonation got its own chip.
+
+### 2. Carrier mini-app logins did not exist
+
+`mini_app.auth.login` had **zero rows** live. The only writer was the PASSWORD route, and these
+carriers are legacy `telegram` auth-mode registrations that never present a password — the real
+sign-in is the mini app calling `/carrier/mini-app/auth/state` and being told `authenticated`.
+
+- New `modules/carrier/miniAppLoginAudit.ts`, called from both bootstrap and password login.
+- It deliberately does NOT reuse `telegramCtx()`: that context carries no company and no display
+  name, so every carrier login would have landed as an anonymous `telegram:<id>` with an empty
+  Company column. Bootstrap re-opens collapse; an explicit password login never does.
+- This is the carrier client bot, not the Horizon worker bot.
+
+### 3. Mytrion access logging (new security coverage)
+
+`POST /v1/audit/mytrion-access`, written by the SPA's `MytrionGuard` — the single choke point every
+workspace entry passes through (deep link, launcher tile, header switch, auto-route into a home
+Mytrion). Not admin-gated: every worker records their own row. Identity comes from the session; the
+claimed Mytrion is checked against the caller's resolved grant and stored as `granted`, so an
+ungranted claim is recorded `denied` and never collapsed rather than being silently accepted.
+
+### 4. Automation logs split out + `origin_source`
+
+- Migration `0118`: `automation_logs.origin_source` (`'Mytrion Horizon' | 'Mytrion Zoho'`), defaulting
+  to Zoho. That default is a *fallback*, not a guess — pre-existing rows came from either surface and
+  are indistinguishable after the fact, so only a caller that explicitly claims Horizon gets it.
+- Own Admin tab (`Automation Logs`) with origin / automation / agent / date filters. These rows answer
+  a different question from the audit trail and were only visible as `automation.log` with the
+  interesting parts buried in `detail`.
+- Every catalog block already logged via `runAutomation(...).then()`; the real gap was the alias map.
+  Horizon wrote `balance` / `account_status` while the Zoho widget kept writing `balance_check` (820
+  rows) / `account_status_check` (228) — same automations, same agents, two names and two partial
+  histories. Added both aliases; the widget's key wins because the history is already under it.
+
+### 5. Filters + export
+
+- `auditRepo` gained agent-name / profile / role / Zoho-role / resource / date-range / server-side
+  search, plus a `facets()` endpoint so the dropdowns are the tenant's real value space.
+- Free text is now a SERVER filter. It used to narrow only the rows already loaded, which silently
+  disagreed with the "N of M" counter and with any export taken while it was set.
+- Export (CSV + XLSX) on both tabs, re-queried server-side under the current filter so the file is the
+  whole matching set, not the pages scrolled into view. Cap 10,000 rows.
+- **CSV/XLSX formula-injection guard**: audit rows carry user-controlled text, and a cell starting
+  `=`/`+`/`-`/`@` executes on open in Excel and Sheets. Both writers force those cells to text.
+- Migration 0118 also adds the audit_log indexes these filters need — they were seq scans over 41k
+  rows/30d before.
+
+### Verified
+
+- Migration run green on a fresh throwaway DB (never prod; `.env` still points at Render).
+- Backend 2,743 tests pass, lint clean. CRM 947 pass.
+- `apps/mytrion-crm/app/` was NOT committed here: rebuilding it in this working tree also bakes in the
+  uncommitted `feature/verification-cases-intake` UI. Rebuild on a clean tree before the PR.
+
+## 2026-08-14 — Park verification ingest + Rules Strategies / Stop Factors tab
+
+### Ingest off
+
+- `automation.verification.case-ingest` stays in `ALL_JOBS` (queue still provisioned) but is in
+  `DISABLED_JOB_QUEUES`, removed from `CRON_SCHEDULES` and `MANUAL_TRIGGERABLE_QUEUES`. Boot
+  unschedules any leftover pg-boss cron. Worker stays registered; `runVerificationCaseIngest`
+  no-ops so a leftover queued job cannot create cases. Watermark in `verification_ingest_state`
+  was not touched.
+
+### Case prune (Octane app Postgres)
+
+- Prod `dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com`: 61 cases → kept freshest
+  `vc_t0bbv0dt0bq4syc78s8x8xyr` / Eric b trucking; deleted 60 cases, 600 stages, 58 inbox
+  (`zoho_record_id = vc:{id}`).
+- Local Docker `:5433` already had one row (`vc_i3aa11v9tqs0jcthgvn75f44` / Miguel Del Real Gonzalez)
+  — left in place.
+
+### Mono persistence (do not edit verification-mono)
+
+- Stop Factors: CRUD on `stop_factors` via `GET/POST/PUT /api/v1/stop-factors` (cache invalidate +
+  audit; `config_revisions` is a separate publish). Decision-stage rows get `meta.decision_rule`.
+- Rules & Strategies: the JSON list in `system_state.decision_strategies_json` via
+  `GET/POST/PUT /api/v1/decision-strategies` (own revision list in
+  `decision_strategies_revisions_json`). Not the same table as stop factors; strategies bind to
+  those rows through `rule_bindings`.
+
+### Our tab
+
+- Replaces Coming Soon Configuration Ruleset. Key stays `ruleset`.
+- Octane routes (verification department): `GET/POST /v1/verification/stop-factors`,
+  `PUT /v1/verification/stop-factors/:id`, `GET/POST /v1/verification/strategies`,
+  `PUT /v1/verification/strategies/:id`. Proxy to credit-platform `/api/v1` — no raw SQL.
+- UI: list + create/edit `ds/Dialog`, Horizon tokens, `useCachedLoad`, one skeleton per region.
+
+### Risks
+
+- Writes need a credit-platform UI key with admin / `CAP_CONFIG_EDIT`. Gateway-only
+  `CREDIT_PLATFORM_API_KEY` will 401/403 — surfaced as `CREDIT_PLATFORM_FORBIDDEN`.
+- `CREDIT_PLATFORM_BASE_URL` unset → 503. Replica/read-only DSN cannot be used (we do not write
+  verification Postgres from this tab).
+
+## 2026-08-14 — Rules / Stop Factors via verification Postgres (no CREDIT_PLATFORM HTTP)
+
+The tab 503'd because `.env` has `VERIFICATION_DATABASE_URL` (ohio Render `credit_platform`) but
+no `CREDIT_PLATFORM_BASE_URL` / API key. Mono Orchestration itself is just SQL + an in-process
+cache — we now do the same DML through the existing pools.
+
+### Live schema (read-only inspect, `johnmercer` has full DML)
+
+- `stop_factors`: id, name, stage, check_type, field_path, operator, threshold, action_on_fail,
+  action_on_missing, provider_filter, enabled, priority, meta, updated_at. **0 rows** today.
+- `system_state.key`:
+  - `decision_strategies_json` — 9 strategies (fmcsa-authority, octane-sop-hardstops, llc, …)
+  - `decision_strategies_revisions_json` — version trail
+  - `config_version` — cache-bust counter (mono `VersionedTTLCache`)
+- `config_revisions` — empty; mono does **not** insert here on ordinary CRUD (separate Publish).
+- `audit_log` — platform audit, same INSERT as mono `audit()`.
+
+### What we write
+
+- Stop factor POST/PUT: exact mono INSERT/UPDATE, `meta.decision_rule` on stage=decision,
+  `audit_log` row, then bump `system_state.config_version`.
+- Strategy POST/PUT: rewrite `decision_strategies_json` (normalize + sort), append
+  `decision_strategies_revisions_json` (cap 250, version+1 on update), `audit_log`, bump
+  `config_version`.
+- Octane routes unchanged (`/v1/verification/stop-factors*`, `/strategies*`,
+  `requireDepartment(..., 'verification')`). 503 is now `VERIFICATION_DB_UNCONFIGURED` /
+  `VERIFICATION_WRITE_DISABLED` — not CREDIT_PLATFORM_*.
+- `VERIFICATION_WRITE_ENABLED` unset defaults to on.
+
+### Cache caveat
+
+Bumping `config_version` is the row mono's HTTP `config_cache.invalidate()` writes. Core-api
+re-reads that key every ~2s, so its 30s TTL list cache drops. Processor-side `_acfg` HTTP
+caches (stop-factor / decision-engine, typically 30s) are in-process in those services and
+cannot be busted from Postgres — restart or wait TTL. Strategy evaluation in core-api reads
+`system_state` live (no cache).
+
+### UI
+
+Same Ruleset tab. Refresh loads the 9 strategies (or a true empty stop-factor list). One
+skeleton; only the active section fetches.
+
+## 2026-08-14 — Decision rules polish (Finish Review)
+
+Operate refinement of Verification → Decision rules (was “Rules Strategies / Stop Factors”).
+
+### IA
+- Inbox sits directly under Main in `TABS` and `VERIFICATION_TABS`.
+- ModuleShell now groups consecutive `tab.group` values into rail sections: Queue (Inbox, Cases),
+  Policy (Decision rules), Roster (Existing clients, Tickets). Main stays ungrouped under Verification.
+- Tab label is **Decision rules** so the rail no longer clips. Icons: Home / Inbox / ClipboardCheck /
+  Scale / Building2 / Ticket. Inbox tone is sky; Main stays violet. No `SlidersHorizontal`.
+- Page head on this tab has no Decisioning kicker — the title carries the page.
+
+### List + dialogs
+- Active / Disabled pills (`--tint-good` vs muted), dimmed disabled rows, no Yes/No.
+- Search + Active/Disabled filters; stop-factor stage chips kept. Client-side filter over one SWR
+  fetch per resource (both lists load once on the tab).
+- Dialogs stay on `ds/Dialog`. Subtitles / empty states / PageHead: “Applies on the next run.”
+  Sections are human titles; Path / Operator / Value rows have icons; chips for stage scope.
+  Footer uses `ds/Button` primary + secondary so Save is visible in light (`.ms-btn.is-primary`
+  was an unstyled no-op).
+
+### DML
+- Still direct verification Postgres (`verificationOrchestrationDb` + write pool). No CREDIT_PLATFORM HTTP.
+- Stop-factor INSERT now sets `updated_at = NOW()` with the rest of the mono column list.
+- Did not write live: `.env` points at Render `credit_platform`. Proof is unit tests (insert/audit/
+  version bump; strategy append onto an existing JSON list).
+
+## 2026-08-14 — Decision rules + cases polish (Operate)
+
+Flicker on row→modal: `ds/Dialog` mounted `open` with `phase='closed'`, so the first paint had no
+children; a `useEffect` then `showModal()` and swapped in a skeleton. Open now uses
+`useLayoutEffect`, children stay mounted while `open`, and case/strategy dialogs keep last-known
+row data in the header/body. No second fetch, no height/bounce motion.
+
+Decision rules: 2-line word-boundary summary + title tooltip; table wrap inset; Grotesk only on
+`--font-head`; nav/avatar no longer neon cyan on dark (`--text-primary` / `--text-secondary`).
+
+Cases: tinted status/queue/stage/pipeline/carrier pills; same table inset; case modal opens on
+preview then fills stages; `ds/Button` footer. Detector bans removed from files touched
+(`transition: width` dead decl, `--ease-spring` on the tab bar, accent-glow on the active rail).
+
+## 2026-08-14 — Verification Existing clients: badge air + modal keep-children
+
+List cards and the client modal shared one cramped badge language (`2px 8px` pad, `6px` row gap,
+modal flags had no flex gap). Same tokens now: pad `--space-1` / `--space-2_5`, icon-label
+`--space-1_5`, row gap `--space-2`. LOC / Prepay / cycle use `--tint-*`; aggregator marks keep
+`--tone-*`. Card wash and per-item hover hue removed so the grid is not a rainbow. Grotesk stays
+on the company name only. Client dialog stays mounted with last-known row (ruleset/cases pattern).
+
+## 2026-08-14 — Verification sidebar + first-paint count chips
+
+Two UI-only fixes. No ingest, no credit-platform handoff.
+
+1. Sidebar: Main is ungrouped (`group` omitted). `groupModuleTabs` no longer falls back to
+   `navLabel` ("Verification"), so the all-caps VERIFICATION heading above Main is gone. Queue /
+   Policy / Roster stay labelled. MytrionShell already skips empty `section.label`.
+2. Aggregate chips: first visit shimmers a pill-sized `.vf-sk` (same box as the loaded chip; label
+   holds width; ink transparent). Never "—", "0", or a spinner. SWR remount / refresh keeps last
+   numbers. Cases also keep last aggregates across filter-key changes (aggregates are unfiltered).
+
+Chips: cases open / shared / in progress / awaiting decision / unmatched; ruleset N strategies|rules
++ N active; clients on file / not flagged / debtors; first-visit aggregator filter chips.
+
+## 2026-08-14 — Task 0: FMCSA `failed` is a no-hit mapping bug (not DOT quality)
+
+Read-only on credit_platform (`dpg-d8glv2j7uimc73aij70g-a.ohio-postgres.render.com`). Last 7 days:
+852 `fmcsa: failed` of cases that reached the stage; 849 empty `stage_flow.stages.fmcsa.error`;
+those 849 are all `step_results.fmcsa.status=NOT_FOUND` + `no_hit=true`. The 3 readable errors are
+timeouts / delivery unavailable. 833 no-hits used `LEGAL_NAME_STATE`; 12 USDOT; 6 MC. `ran` is
+almost all `OK` (1211) plus 3 `SKIPPED` (no identifiers). Temp query scripts deleted; no writes,
+no ingest, no `AUTO_STAGE_RUNNER` flip, no commit.
+
+**Cause:** `_run_fmcsa_step` treats HTTP 404 as a business no-hit (`NOT_FOUND`, not in
+`_STAGE_ERROR_STATUSES`). `run_decision_desk_stage` then maps anything outside
+`{COMPLETED, PASSED, OK, SKIPPED}` to stage `failed` and leaves `error=""`. Hydrate marks
+`NOT_FOUND` as `terminal_bad` (but `NO_MATCH` as ok). Tasks 1–3 (patch_payload / run_stage /
+disable auto-runner) do **not** fix this — CP must treat `NOT_FOUND`/`no_hit` as `ran` first.
+
+## 2026-08-14 — First-run triggering (Mytrion side)
+
+Mytrion owns WHEN the first run happens. credit_platform still owns HOW (and still creates
+`requests` via Zoho poll → `submit_request_payload`). No ingest start, no `requests` INSERT,
+no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Inbox writes
+
+- `insertPayloadPatch` / `insertRunStage` in `src/integrations/creditPlatformInboxWrites.ts`.
+- Same `kxd.sales_agent_updates` insert + `VERIFICATION_WRITE_ENABLED` kill switch.
+- Patch whitelist: `dot_number`, `mc_number`, `carrier_name`, `state`. Rejects applicant/ssn/status.
+- Run-stage whitelist: `stop_factor_pre`, `blacklist`, `fmcsa`. Rejects billable
+  (`isoftpull`, `creditsafe`, `plaid_bs`) before INSERT.
+- Actor stamp: `mytrion:<userOrSystem>`.
+- Poll helper `waitForInboxSettled` (no webhook). Consumer does not handle these kinds yet —
+  we still enqueue so CP can wire `kxd_inbox_consumer.py`.
+
+### Orchestrator
+
+- `maybeAdvanceFirstRun` / `driveFirstRun` after a local case exists, DWH enrich produced
+  DOT/MC, and `caseSync` bound a CP `request_id`.
+- Sequence: `patch_payload` → wait `applied` → `run_stage` one at a time
+  (`stop_factor_pre` → `blacklist` → `fmcsa`). Never enqueue the next row until the current
+  inbox row is `applied`. Inbox `error` is recorded on the case and stops the loop.
+- Idempotency: `first_run_status` on `verification_cases` (`idle` / `in_flight` /
+  `completed` / `error`) plus compare-and-set `claimFirstRun`. Completed or in-flight
+  pending no-ops. Timeout leaves `in_flight` (same inbox id) so a later call resumes.
+- Wired from case **refresh** (advance, no long poll) and ingest-after-bind (when ingest is
+  later re-enabled). Automation route `POST /v1/verification/cases/:id/first-run` waits
+  through the sequence (RBAC + audit). Human Run does **not** use this path.
+
+### Other API
+
+- Reset: `POST /v1/verification/cases/:id/stages/:stageId/reset` → CP
+  `.../decision-desk/stages/{id}/reset`.
+- Optional `GET .../manual-review/{id}/stage-readiness` on case detail (2s fail-soft).
+- Case attachments: list from `file_attachments`; upload via existing
+  `insertBankStatementFiles`; download scoped to the bound request.
+
+### Ingest guardrail
+
+- `createAndStartRequest` removed from `zohoDealIngest.ts`. Ingest no longer POSTs
+  `/api/v1/requests`. `request_id` stays null until `caseSync` binds a CP row.
+- `automation.verification.case-ingest` remains in `DISABLED_JOB_QUEUES`.
+
+### Schema
+
+- Hand-written `0119_verification_first_run.sql` (verification_cases is not in
+  drizzle.config — stale snapshot, same as 0117). Columns: `first_run_status`,
+  `first_run_step`, `first_run_inbox_id`, `first_run_error`, `cp_owner_username`.
+  Generated file only; not applied to Render.
+
+### Case modal
+
+- Stages grouped Auto (first run) vs Manual.
+- Empty `failed` + `step_status=NOT_FOUND` / `no_hit` renders as “No hit”, not an outage.
+- Subtitle/chip: CP `manual_review_owner_username` as claimed vs Auto (unclaimed); Zoho
+  owner stays as a mute chip.
+- Reset + Run/Approve stay on HTTP. Billable Run gated by readiness, or disabled with
+  desk/HTTP copy when readiness is missing.
+- Attachments reuse the sales write-back inbox + `file_attachments` download.
+
+### Blocked on the credit-platform agent
+
+- Inbox consumer `patch_payload` / `run_stage` branches (Tasks 1–2).
+- FMCSA `NOT_FOUND`/`no_hit` must map to stage `ran`, not empty `failed`.
+- Flip `AUTO_STAGE_RUNNER_ENABLED=0` only after Task 2 is proven (not us).
+
+## 2026-08-14 — Decision Desk gap-close (Verification cases)
+
+Close remaining Applications / Manual queue / Plaid / BS / attachments gaps on
+Mytrion Verification cases. Builds on the first-run work above. No ingest start,
+no `requests` INSERT, no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Applications list
+
+- Status chips: New / In progress / Hold / Approved / Rejected / Failed, plus All.
+  Counts from aggregates; first paint uses skeleton aggregators (never "—" / "0").
+- Owner chips: All / Unclaimed / Mine / Others (`cp_owner_username` vs Horizon actor).
+- Payment / cycle / limit on the table, cards, and modal Application section
+  (synced from CP `manual_review_resolution` / result).
+- Export CSV of the current filter (`GET /v1/verification/cases/export`, cap 2000):
+  Company, Zoho id, DOT, Status, Queue, Owner, Limit, Payment, Cycle.
+
+### Manual queue
+
+- Claim / Release via existing CP HTTP
+  `POST /api/v1/manual-review/{id}/claim|release` with `X-User-Name` = Horizon
+  `userName` (fallback zoho id). Not inbox. Not a first-run prerequisite.
+- Transfer stubbed: CP deleted `/transfer`. UI disabled + `501 TRANSFER_UNAVAILABLE`.
+- SLA copies desk `MANUAL_REVIEW_STALE_MINUTES` (default **30**): claimed and idle
+  that long (idle from `cp_review_updated_at` || `cp_claimed_at` || last sync /
+  created). Stale rows tint warn. No second policy.
+
+### First 3 stages
+
+- Auto group: “System-run. Does not claim.” + Start first run (inbox).
+- Manual group: “Analyst work. HTTP Run claims the case.”
+- HTTP Run on auto stages stays available and warns it will claim.
+- `NOT_FOUND` / empty failed still renders as No hit.
+
+### Billable / Plaid / BS / files
+
+- Paid Run gated by stage-readiness: `paid && !ready`, already paid, circuit open.
+  `plaid_bs` in `bank_statement` mode is exempt (parse path).
+- Plaid generate/regenerate uses `insertPlaidLinkAction` (inbox), not HTTP stage run.
+  Hosted URL only (tracking `/api/v1/plaid/link/` stripped). Copyable in the modal.
+- Bank-statement parse: `POST /api/v1/manual-review/{id}/decision-desk/plaid-bs/parse`.
+- iSoftPull Run-all + Equifax / TransUnion / Experian chips (CP routes exist).
+- Documents grouped Bank statement vs Analyst note; empty + skeleton; last-known
+  files kept. No Decision Desk deep-link (`CREDIT_PLATFORM_ADMIN_URL` not set).
+
+### Schema
+
+- Hand-written `0120_verification_case_desk.sql`: `approved_limit`, `payment_type`,
+  `billing_cycle`, `plaid_status`, `plaid_link_url`, `plaid_mode`, `cp_claimed_at`,
+  `cp_review_updated_at`. Generated file only; not applied to Render (same as 0119).
+
+### Guardrails still hold
+
+- First-run is still inbox `patch_payload` / `run_stage` only. No claim. No
+  `POST /api/v1/requests`.
+- `automation.verification.case-ingest` stays in `DISABLED_JOB_QUEUES`.
+- Human claim/run/approve/reset/decision stay on HTTP.
+
+### Blocked on Claude / credit-platform
+
+- Transfer HTTP + analyst roster (deleted on CP).
+- Inbox consumer for `patch_payload` / `run_stage` / `generate_plaid_link`.
+- FMCSA `NOT_FOUND` → stage `ran`.
+- CreditSafe readiness entry (desk readiness returns plaid_bs / isoftpull / fmcsa).
+- `AUTO_STAGE_RUNNER` flip (not us).
+
+## 2026-08-14 — 0119/0120 on Octane prod + CP Task 0
+
+Applied `0119_verification_first_run` + `0120_verification_case_desk` to Oregon Octane app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com` / `mytrion_ops_db`) via `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate`. Those two were the only pending journal entries (0117/0118 already applied). Not the Ohio credit-platform host. Verified live: `first_run_*`, `cp_owner_username`, offer/Plaid/SLA columns present; pending count 0.
+
+CP confirmed Task 0: `STAGE_NO_HIT_IS_INFORMATIONAL = {fmcsa}` — FMCSA no-hit is informational; iSoftPull / Creditsafe no-hit stays `failed`.
+
+## 2026-08-14 — Verification ingest activate (fresh-only) + desk polish
+
+CP is deployed. Mytrion case flow is on again for **new Zoho deals only**.
+
+### Fresh-only ingest
+
+- Removed `automation.verification.case-ingest` from `DISABLED_JOB_QUEUES`.
+- Restored `*/30 * * * *` cron and Admin manual trigger.
+- COQL is now `Stage IN (…) AND Created_Time >= watermark` (not `Application_Date`).
+- Legacy YYYY-MM-DD watermarks (the old 30-day lookback) are pinned to **now** at jobs boot
+  (`pinLegacyToNow`) and again at ingest start (`resolveFreshIngestWatermark`). Optional floor:
+  `VERIFICATION_INGEST_SINCE`.
+- In-code `isDealAfterWatermark` rejects missing/old `Created_Time`. Dedup on Zoho deal id holds.
+- Still no `createAndStartRequest` / `POST /api/v1/requests`. After insert: `caseSync` bind, then
+  first-run inbox (`patch_payload` → Pre-stop → Blacklist → FMCSA).
+
+### Race (do not flip CP)
+
+`AUTO_STAGE_RUNNER` may still be on. Inbox `run_stage` is outside the advisory lock. Acceptable for
+a fresh-case test if first-run is idempotent. Do not edit verification-mono.
+
+### Impeccable / desk crit (Operate, refinement)
+
+Method: dual-agent critique (A: design · B: detector). Detector: 0 findings. No live overlay
+(no Puppeteer / browser MCP). Heuristics after fixes **28/40** Good.
+
+Fixed in scope (Horizon glass preserved):
+
+- Approve/Reject confirm in the case footer (Hold stays one-click).
+- Status pill soup reduced; first-run + stage count in subtitle and a live progress strip.
+- Auto-stage HTTP Run hidden until first-run completes/errors; isoftpull bureaus behind
+  `<details>`. Transfer ghost button replaced with Decision Desk copy.
+- Summary pills filter the queue; closed status chips de-emphasized.
+- Inbox rows with `/verification/cases/:id` open the case; empty copy no longer names a person.
+- Chip-field + file input labels; first-run `is-live` pulse (opacity, reduced-motion off).
+
+Not redesigned: ModuleShell Queue / Policy / Roster, first-run / desk / inbox architecture.
+
+### Residual
+
+Ingest stays off in prod until this branch merges to `build` then `main`. Widget `app/` must ship
+with the CRM `src/` change.
+
+Git: rebase onto `origin/build` was aborted — hashed `apps/mytrion-crm/app/` rename conflicts.
+Merged `origin/build` instead, then rebuilt the widget. Push of `feature/UltraMytrion` needs
+local GitHub credentials (`git push -u origin HEAD`); this session could not authenticate.
+
 ## 2026-08-14 — Billing + CS in the Telegram Mini App
 
 The Horizon bot opens `apps/mytrion-crm` — the same SPA and the same bundle as the
@@ -16026,3 +16524,15 @@ converting the 14 hand-rolled modals to `ds/Dialog` — that last one restyles t
 desktop, so it needs its own PR and its own review. No real-device pass yet: the
 `--tg-viewport-stable-height` first paint, `--kb-inset`, and rotation all still need a
 phone in Telegram.
+
+## 2026-08-14 — Verification ingest disabled again
+
+Ingest disabled again; no new cases until re-enabled. `automation.verification.case-ingest` is back in `DISABLED_JOB_QUEUES` (no cron, no Admin trigger). Worker no-ops leftover queued jobs. First-run / refresh HTTP on existing cases kept. Did not delete the existing case, start ingest, or POST `/api/v1/requests`.
+
+## 2026-08-14 — CI: verification unused-var + CRM breakpoint budgets
+
+- Removed unused `asRecord` in `verificationOrchestrationDb.ts` (eslint error).
+- Verification search/sort fields: dropped `font-size` on `input`/`select` (`font: inherit`) so the
+  input-font-size budget went 45 → 43.
+- Ratcheted CRM breakpoint budgets: off-ladder 70 → 69, max-width 89 → 88, input font-size 44 → 43.
+- ESLint now ignores gitignored `ds-bundle/` so local `pnpm lint` matches CI.
