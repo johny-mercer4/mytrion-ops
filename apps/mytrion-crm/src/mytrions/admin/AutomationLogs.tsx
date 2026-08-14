@@ -18,6 +18,7 @@ import {
   type AutomationLogFilter,
   type AutomationOriginSource,
 } from '../../api/automationLogs';
+import { ApiError } from '../../api/transport';
 import { SearchIcon } from '../../components/icons';
 import { exportRowsCsv, exportRowsXlsx, type ExportColumn } from './logsExport';
 import {
@@ -74,6 +75,8 @@ export function AutomationLogs() {
   const [reloading, setReloading] = useState(false);
   const [endReached, setEndReached] = useState(false);
   const [error, setError] = useState('');
+  /** The one failure worth its own screen: this environment is behind migration 0118. */
+  const [notReady, setNotReady] = useState(false);
   const loadSeq = useRef(0);
   const pages = useRef(0);
 
@@ -111,6 +114,7 @@ export function AutomationLogs() {
         pages.current = 0;
       }
       setError('');
+      setNotReady(false);
       try {
         const res = await listAutomationLogs({ ...filter, limit: PAGE, offset });
         if (seq !== loadSeq.current) return;
@@ -126,7 +130,10 @@ export function AutomationLogs() {
         });
         setTotal(res.total);
       } catch (e) {
-        if (seq === loadSeq.current) setError(e instanceof Error ? e.message : String(e));
+        if (seq === loadSeq.current) {
+          setError(e instanceof Error ? e.message : String(e));
+          setNotReady(e instanceof ApiError && e.code === 'AUTOMATION_LOGS_NOT_READY');
+        }
       } finally {
         if (seq === loadSeq.current) {
           setLoading(false);
@@ -192,6 +199,27 @@ export function AutomationLogs() {
         </div>
       </div>
 
+      {/* One migration behind is a configuration answer, not an error to debug from the logs. The
+          filters and the table are hidden because none of them can work until 0118 lands. */}
+      {notReady && (
+        <div className={s.emptyState}>
+          <div className={s.emptyTitle}>Automation Logs is one migration behind</div>
+          <p className={s.emptyBody}>
+            This environment&apos;s database does not have{' '}
+            <span className={s.mono}>automation_logs.origin_source</span> yet (migration{' '}
+            <span className={s.mono}>0118</span>). Apply it, then reload:
+          </p>
+          <pre className={s.chunkText}>pnpm db:migrate</pre>
+          <p className={s.emptyBody}>
+            If your <span className={s.mono}>MYTRION_OPS_DATABASE_URL</span> points at Render rather
+            than local Postgres, point it at local first — production applies migrations itself on
+            deploy.
+          </p>
+        </div>
+      )}
+
+      {!notReady && (
+        <>
       <div className={s.chipRow}>
         <button
           type="button"
@@ -258,7 +286,7 @@ export function AutomationLogs() {
         />
       </div>
 
-      {error && (
+      {error && !notReady && (
         <p className={s.errorNote} role="alert">
           {error}
         </p>
@@ -323,6 +351,8 @@ export function AutomationLogs() {
             `Load more (${entries.length} of ${total})`
           )}
         </button>
+      )}
+        </>
       )}
     </div>
   );

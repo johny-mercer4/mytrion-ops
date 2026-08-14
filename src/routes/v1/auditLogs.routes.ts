@@ -12,7 +12,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AUDIENCES } from '../../types/tenantContext.js';
-import { RBACError } from '../../lib/errors.js';
+import { AppError, RBACError } from '../../lib/errors.js';
+import { isMissingColumn, isMissingTable } from '../../repos/util.js';
 import { MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { auditSessionEvent } from '../../modules/audit/sessionEvents.js';
@@ -75,6 +76,29 @@ function requireAdmin(request: FastifyRequest): ReturnType<typeof requireContext
     throw new RBACError('Audit log requires admin access');
   }
   return ctx;
+}
+
+/**
+ * Turn "code is running ahead of its migration" into an answer instead of a bare 500.
+ *
+ * `origin_source` is new in 0118, and the realistic way to meet this is an environment one
+ * migration behind — a local backend pointed at a database that has not had 0118 applied. Left raw
+ * it surfaces as `Internal server error` on a screen that can explain the problem precisely, and
+ * sends whoever hit it to the logs to find a one-line answer. `isMissingColumn` is scoped per table
+ * because Postgres does not name the table in an undefined-column message.
+ */
+async function withAutomationReadiness<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (isMissingColumn(error, 'automation_logs') || isMissingTable(error, 'automation_logs')) {
+      throw new AppError(
+        'Automation Logs migration 0118 is not applied to this database (automation_logs.origin_source is missing).',
+        { statusCode: 503, code: 'AUTOMATION_LOGS_NOT_READY', expose: true, cause: error },
+      );
+    }
+    throw error;
+  }
 }
 
 function toAuditFilter(q: z.infer<typeof auditQuerySchema>): AuditFilter {
@@ -188,7 +212,7 @@ export async function auditLogRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/admin/automation-logs/facets', guard, async (request) => {
     const ctx = requireAdmin(request);
-    const facets = await automationLogRepo.facets(ctx);
+    const facets = await withAutomationReadiness(() => automationLogRepo.facets(ctx));
     return { ...facets, originSources: [...AUTOMATION_ORIGIN_SOURCES] };
   });
 
@@ -196,10 +220,9 @@ export async function auditLogRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireAdmin(request);
     const q = automationQuerySchema.parse(request.query);
     const filter = toAutomationFilter(q);
-    const [entries, total] = await Promise.all([
-      automationLogRepo.list(ctx, filter),
-      automationLogRepo.count(ctx, filter),
-    ]);
+    const [entries, total] = await withAutomationReadiness(() =>
+      Promise.all([automationLogRepo.list(ctx, filter), automationLogRepo.count(ctx, filter)]),
+    );
     return {
       entries: entries.map(({ tenantId: _tenantId, ...rest }) => rest),
       total,

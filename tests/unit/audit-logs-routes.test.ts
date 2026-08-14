@@ -248,6 +248,86 @@ describe('GET /v1/admin/automation-logs', () => {
     });
     expect(response.statusCode).toBe(403);
   });
+
+  /**
+   * Code running ahead of its migration is the realistic way to meet this endpoint failing — a
+   * backend pointed at a database that has not had 0118 applied. It must say so, not 500.
+   */
+  it('answers 503 with the migration name when origin_source is missing', async () => {
+    const undefinedColumn = Object.assign(
+      new Error('Failed query: select ... from "automation_logs"'),
+      {
+        cause: Object.assign(new Error('column "origin_source" does not exist'), { code: '42703' }),
+      },
+    );
+    automationMocks.list.mockRejectedValueOnce(undefinedColumn);
+    automationMocks.count.mockResolvedValueOnce(0);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/automation-logs',
+      headers: { authorization: await bearer() },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: { code: 'AUTOMATION_LOGS_NOT_READY' },
+    });
+    expect((response.json() as { error: { message: string } }).error.message).toContain('0118');
+  });
+
+  it('answers 503 on the facets route too', async () => {
+    automationMocks.facets.mockRejectedValueOnce(
+      Object.assign(new Error('Failed query: select distinct ... from "automation_logs"'), {
+        cause: Object.assign(new Error('column "origin_source" does not exist'), { code: '42703' }),
+      }),
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/automation-logs/facets',
+      headers: { authorization: await bearer() },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ error: { code: 'AUTOMATION_LOGS_NOT_READY' } });
+  });
+
+  it('does not swallow an unrelated failure as a readiness problem', async () => {
+    // Deliberately NOT a connection error: those already map to 503 DB_UNAVAILABLE centrally
+    // (errorHandler → isTransientDbError), which would make this assertion pass for the wrong
+    // reason. A plain programming fault must still surface as a 500.
+    automationMocks.list.mockRejectedValueOnce(new TypeError('cannot read properties of undefined'));
+    automationMocks.count.mockResolvedValueOnce(0);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/automation-logs',
+      headers: { authorization: await bearer() },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(JSON.stringify(response.json())).not.toContain('AUTOMATION_LOGS_NOT_READY');
+  });
+
+  it('leaves a 42703 against ANOTHER table alone', async () => {
+    // isMissingColumn is scoped per table because Postgres does not name the table in an
+    // undefined-column message — the match relies on Drizzle's outer "Failed query" text.
+    automationMocks.list.mockRejectedValueOnce(
+      Object.assign(new Error('Failed query: select ... from "audit_log"'), {
+        cause: Object.assign(new Error('column "nope" does not exist'), { code: '42703' }),
+      }),
+    );
+    automationMocks.count.mockResolvedValueOnce(0);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/automation-logs',
+      headers: { authorization: await bearer() },
+    });
+
+    expect(JSON.stringify(response.json())).not.toContain('AUTOMATION_LOGS_NOT_READY');
+  });
 });
 
 describe('POST /v1/audit/mytrion-access', () => {
