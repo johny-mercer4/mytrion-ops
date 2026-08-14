@@ -181,3 +181,55 @@
         text-align: right;
     }
 }
+
+/* ═══════════════════════════════════════════════
+   §7  KPI BANNER — the total has to be readable
+   ═══════════════════════════════════════════════ */
+
+/*
+ * Added on the merge of origin/build, and kept because the Horizon phone pass above does not cover
+ * it: `.bm-summary-banner` (DataCenter / Transactions) is a separate grid from `.db-kpi-grid`, and
+ * its amount was the one number on the screen still rendering wrong.
+ *
+ * An eight-figure value does not truncate — it PAINTS PAST the tile and the panel edge cuts it.
+ * Measured at 375, both grids, and the numbers are almost identical:
+ *   Transactions  `.bm-summary-amount`  $66,711,799.20  wants 223px in a 138px box  ->  70px past
+ *   Debtors       `.db-kpi-value`       $2,042,604.16   wants 223px in a 133px box  ->  72px past
+ * They read as "$66,711,14" and "$2,042,60". `.db-kpi-grid` is the grid build's phone pass DOES
+ * touch, but only to set it 2-up — 2-up is what leaves 133px, so the tile still had to go 1-up.
+ *
+ * 22px buys back ~34px of the deficit and keeps the KPI hierarchy; the 480 rule closes the rest.
+ * `tabular-nums` stops the digits shifting width between refreshes.
+ */
+@media (width < 640px) {
+    .bm-root .bm-summary-amount,
+    .bm-root .db-kpi-value {
+        font-size: var(--text-xl);
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+@media (width < 480px) {
+    /*
+     * This deliberately revises the call recorded at shared-base.css:735 ("Deliberately NOT 1-up
+     * below 480 … a 145px tile still holds these labels"). That is still right about the LABELS; it
+     * was never tested against an eight-figure currency VALUE, which a 138px tile overflows even
+     * after the 22px step. A phone is 375px, so this is the rule that actually fires there.
+     *
+     * Its stated cost — stacked tiles pushing the list down — is real, so the tiles get tighter in
+     * the same block, which brings the first row back above the fold.
+     */
+    .bm-root .bm-summary-banner,
+    .bm-root .db-kpi-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-2);
+    }
+
+    .bm-root .bm-summary-item {
+        padding: var(--space-2) var(--space-3);
+    }
+
+    .bm-root .bm-summary-amount {
+        margin-top: 0;
+    }
+}

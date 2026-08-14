@@ -137,10 +137,13 @@ describe('breakpoint ladder', () => {
         if (!LADDER.has(value)) offenders.push(`${where}  ${value}px`);
       }
     }
+    // 72 -> 70 merging feature/billing-cs-mobile-view into the origin/build baseline: CS's
+    // `shared-responsive.css` carried a 380px block and a 768px block that between them held nothing
+    // but four empty rules, so deleting them removed two off-ladder values outright.
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      72,
+      70,
     );
   });
 
@@ -152,10 +155,12 @@ describe('breakpoint ladder', () => {
     for (const { line, where } of mediaLines()) {
       if (/(?:max-width|min-width)\s*:\s*\d+px/.test(line)) offenders.push(where);
     }
+    // 92 -> 89 on the same merge: CS's phone sheet was rewritten onto range syntax as part of giving
+    // CS a phone layer at all, so its three `max-width` blocks (768/640/380) are gone.
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      92,
+      89,
     );
   });
 });
