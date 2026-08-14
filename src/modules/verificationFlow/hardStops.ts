@@ -29,6 +29,10 @@ export interface IndicatorInputs {
   existingDebtPayments: number | null;
   oneTimeDeposits: number | null;
   creditRecentTrend: string | null;
+  /** Free text the analyst records; the SOP's "large related-account transfers" lives here. */
+  unusualTransactions: string | null;
+  /** Analyst judgement: does the banking match the operation the applicant described? */
+  bankingInconsistentWithOperations: boolean | null;
 }
 
 export interface IndicatorThresholds {
@@ -109,6 +113,16 @@ export function managerReviewIndicators(
   if ((inputs.existingDebtPayments ?? 0) > 0) flags.push('Heavy debt service');
   if ((inputs.oneTimeDeposits ?? 0) > 0) flags.push('Unexplained or one-time deposits');
   if (inputs.creditRecentTrend === 'deteriorating') flags.push('Recent credit deterioration');
+
+  // The SOP's remaining two indicators. Both are analyst observations rather than numbers, so they
+  // are carried as recorded text / a judgement flag — but they still have to REACH this list, or an
+  // analyst who spotted them has no way to raise them alongside the rest.
+  if ((inputs.unusualTransactions ?? '').trim().length > 0) {
+    flags.push('Unusual transactions or large related-account transfers');
+  }
+  if (inputs.bankingInconsistentWithOperations === true) {
+    flags.push('Banking inconsistent with reported operations');
+  }
 
   return flags;
 }

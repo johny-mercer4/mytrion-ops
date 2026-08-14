@@ -456,6 +456,14 @@ export const verificationBankingReviews = pgTable(
     oneTimeDeposits: numeric('one_time_deposits', { precision: 14, scale: 2 }),
     unusualTransactions: text('unusual_transactions'),
     cashFlowVolatility: text('cash_flow_volatility').$type<VerificationVolatility>(),
+    /**
+     * The SOP's "banking inconsistent with reported operations" manager-review indicator. A
+     * judgement, not a number — an owner-operator whose statements show fleet-scale fuel spend is
+     * the case this catches, and no stored figure expresses it.
+     */
+    bankingInconsistentWithOperations: boolean('banking_inconsistent_with_operations')
+      .notNull()
+      .default(false),
     note: text('note'),
     reviewedBy: text('reviewed_by'),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),

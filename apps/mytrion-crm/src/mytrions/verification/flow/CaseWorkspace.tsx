@@ -61,7 +61,31 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
   };
 
   if (loading) {
-    return <div style={s('padding:40px;text-align:center;color:var(--text-muted);font-size:14px')}>Loading case…</div>;
+    // One loader, shaped like the workspace it becomes — rail beside pane, so the layout does not
+    // jump when the data lands.
+    return (
+      <div aria-busy="true" style={s('display:grid;gap:18px')}>
+        <span className="sr-only" role="status">
+          Loading application
+        </span>
+        <div
+          aria-hidden="true"
+          className="vf-workspace"
+          style={s('display:grid;gap:20px;grid-template-columns:minmax(220px,260px) 1fr;align-items:start')}
+        >
+          <div style={s('display:grid;gap:6px')}>
+            {Array.from({ length: 10 }, (_, i) => (
+              <span key={i} className="vf-sk" style={s('height:44px;border-radius:var(--radius-md)')} />
+            ))}
+          </div>
+          <div style={s('display:grid;gap:14px')}>
+            <span className="vf-sk" style={s('height:22px;width:44%;border-radius:var(--radius-sm)')} />
+            <span className="vf-sk" style={s('height:13px;width:72%;border-radius:var(--radius-sm)')} />
+            <span className="vf-sk" style={s('height:150px;border-radius:var(--radius-md)')} />
+          </div>
+        </div>
+      </div>
+    );
   }
   if (!detail) {
     return (

@@ -13,6 +13,7 @@
  * disagreeing about what is outstanding.
  */
 import type { ReactNode } from 'react';
+import { useRovingRadio } from '../../_shared/useRovingRadio';
 import { s } from './dc';
 import { Icon } from './icons';
 
@@ -177,6 +178,11 @@ export function ApplicantTypePicker({
       body: 'An LLC or corporation with no operating authority. Goes to Manager Review on submit.',
     },
   ];
+  const roving = useRovingRadio(
+    options.map((o) => o.value),
+    value as 'owner_operator' | 'carrier' | 'company' | '',
+    onChange,
+  );
   return (
     <div
       role="radiogroup"
@@ -191,6 +197,7 @@ export function ApplicantTypePicker({
             type="button"
             role="radio"
             aria-checked={active}
+            {...roving(o.value)}
             onClick={() => onChange(o.value)}
             style={s(
               `text-align:left;display:grid;gap:6px;padding:14px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${

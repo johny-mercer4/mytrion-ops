@@ -862,6 +862,13 @@
       "when": 1786210000001,
       "tag": "0121_verification_new_era",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1786215000001,
+      "tag": "0122_verification_banking_consistency",
+      "breakpoints": true
     }
   ]
 }

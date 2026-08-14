@@ -12,6 +12,8 @@ import { useState } from 'react';
 import { Field, SelectField } from '../../sales/redesign/applicationFields';
 import { Figure, FigureRow } from './PhasePanes';
 import { s } from './style';
+import { useRovingRadio } from '../../_shared/useRovingRadio';
+import { UnderwritingSummary } from './UnderwritingSummary';
 import type {
   VerificationDeskDetail,
   VerificationFinalDecision,
@@ -205,6 +207,9 @@ export function BankingPane({
     revenueTrend: existing?.revenueTrend ?? 'stable',
     cashFlowVolatility: existing?.cashFlowVolatility ?? 'low',
   }));
+  const [inconsistent, setInconsistent] = useState(
+    existing?.bankingInconsistentWithOperations ?? false,
+  );
   const set = (k: string) => (v: string) => setDraft((d) => ({ ...d, [k]: v }));
 
   const income = num(draft.recurringWeeklyIncome);
@@ -277,6 +282,27 @@ export function BankingPane({
         />
       </div>
 
+      <label
+        style={s(
+          'display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);cursor:pointer',
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={inconsistent}
+          onChange={(e) => setInconsistent(e.currentTarget.checked)}
+        />
+        <span style={s('display:grid;gap:2px')}>
+          <span style={s('font-size:13px;font-weight:800;color:var(--text-primary)')}>
+            Banking inconsistent with reported operations
+          </span>
+          <span style={s('font-size:12px;color:var(--text-muted);line-height:1.45')}>
+            A manager-review indicator, not a decline. Tick when the statements do not look like the
+            business described — fleet-scale fuel on a two-truck application, for instance.
+          </span>
+        </span>
+      </label>
+
       {fuelOverstated ? (
         <p role="alert" style={s('margin:0;font-size:12px;font-weight:700;color:var(--danger);line-height:1.5')}>
           Fuel is larger than total recurring expenses, so it was recorded outside them. Adding it back
@@ -292,6 +318,7 @@ export function BankingPane({
             ...toBody(draft, BANKING_NUMERIC),
             revenueTrend: draft.revenueTrend || null,
             cashFlowVolatility: draft.cashFlowVolatility || null,
+            bankingInconsistentWithOperations: inconsistent,
           })
         }
         style={s(busy || fuelOverstated ? BTN_DISABLED : BTN_PRIMARY)}
@@ -317,6 +344,7 @@ export function RiskPane({
   const priceable = detail.policy.tierPriceable;
   const risk = detail.risk;
   const blocked = !priceable[tier];
+  const rovingTier = useRovingRadio(['strong', 'moderate', 'weak'] as const, tier, setTier);
 
   return (
     <div style={s('display:grid;gap:16px')}>
@@ -339,6 +367,7 @@ export function RiskPane({
               type="button"
               role="radio"
               aria-checked={active}
+              {...rovingTier(t)}
               onClick={() => setTier(t)}
               style={s(
                 `text-align:left;display:grid;gap:4px;padding:14px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${
@@ -396,6 +425,7 @@ export function RiskPane({
   );
 }
 
+
 const FINAL_OPTIONS: ReadonlyArray<{ id: VerificationFinalDecision; label: string; body: string }> = [
   { id: 'approve', label: 'Approve — standard LOC', body: 'Assign the approved credit limit.' },
   { id: 'deposit_prepaid', label: 'Deposit 1:1 / Prepaid', body: 'Legitimate, but not for unsecured credit.' },
@@ -424,9 +454,18 @@ export function DecisionPane({
   const limitValue = num(limit);
   const blocked = needsLimit && (limitValue === null || limitValue <= 0);
   const destructive = decision === 'decline' || decision === 'decline_blacklist';
+  const rovingDecision = useRovingRadio(
+    FINAL_OPTIONS.map((o) => o.id),
+    decision,
+    (next) => {
+      setDecision(next);
+      setArming(false);
+    },
+  );
 
   return (
     <div style={s('display:grid;gap:16px')}>
+      <UnderwritingSummary detail={detail} />
       {detail.risk?.recommendedLimit ? (
         <FigureRow>
           <Figure label="Recommended limit" value={`$${detail.risk.recommendedLimit}`} tone="ok" />
@@ -444,6 +483,7 @@ export function DecisionPane({
               type="button"
               role="radio"
               aria-checked={active}
+              {...rovingDecision(o.id)}
               onClick={() => {
                 setDecision(o.id);
                 setArming(false);

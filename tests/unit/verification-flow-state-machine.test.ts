@@ -284,6 +284,8 @@ describe('manager-review indicators', () => {
     existingDebtPayments: 0,
     oneTimeDeposits: 0,
     creditRecentTrend: 'stable',
+    unusualTransactions: null,
+    bankingInconsistentWithOperations: false,
   };
 
   it('flags nothing on a clean profile', () => {
@@ -307,5 +309,44 @@ describe('manager-review indicators', () => {
   it('flags a deteriorating revenue trend', () => {
     const flags = managerReviewIndicators({ ...clean, revenueTrend: 'deteriorating' }, thresholds);
     expect(flags).toContain('Material revenue decline');
+  });
+
+  it('flags recorded unusual transactions — the SOP\'s related-account transfers', () => {
+    const flags = managerReviewIndicators(
+      { ...clean, unusualTransactions: 'Weekly $8k transfer to an affiliated LLC.' },
+      thresholds,
+    );
+    expect(flags.join(' ')).toMatch(/related-account transfers/i);
+  });
+
+  it('flags banking inconsistent with reported operations', () => {
+    const flags = managerReviewIndicators(
+      { ...clean, bankingInconsistentWithOperations: true },
+      thresholds,
+    );
+    expect(flags).toContain('Banking inconsistent with reported operations');
+  });
+
+  it('covers all eleven SOP indicators when everything fires at once', () => {
+    // The SOP enumerates eleven. An earlier cut carried nine, and the two judgement-shaped ones
+    // (related-account transfers, banking inconsistent with operations) had no way to be raised.
+    const flags = managerReviewIndicators(
+      {
+        revenueTrend: 'deteriorating',
+        avgDailyBalance: 120,
+        negativeBalanceDays: 4,
+        overdraftCount: 3,
+        nsfCount: 2,
+        achReturnCount: 1,
+        cashFlowVolatility: 'high',
+        existingDebtPayments: 900,
+        oneTimeDeposits: 5000,
+        creditRecentTrend: 'deteriorating',
+        unusualTransactions: 'Large transfers to a related account.',
+        bankingInconsistentWithOperations: true,
+      },
+      thresholds,
+    );
+    expect(flags).toHaveLength(11);
   });
 });

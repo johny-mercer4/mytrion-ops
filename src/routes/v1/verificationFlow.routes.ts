@@ -110,6 +110,7 @@ const bankingBody = z.object({
   oneTimeDeposits: money,
   unusualTransactions: z.string().trim().max(2000).nullable().optional(),
   cashFlowVolatility: z.enum(VERIFICATION_VOLATILITY).nullable().optional(),
+  bankingInconsistentWithOperations: z.boolean().optional(),
   note: z.string().trim().max(2000).nullable().optional(),
 });
 

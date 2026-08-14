@@ -201,6 +201,7 @@ export interface VerificationBankingReview {
   oneTimeDeposits: string | null;
   unusualTransactions: string | null;
   cashFlowVolatility: string | null;
+  bankingInconsistentWithOperations: boolean;
   note: string | null;
 }
 

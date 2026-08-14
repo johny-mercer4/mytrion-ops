@@ -126,9 +126,7 @@ export function NewApplicants() {
       ) : null}
 
       {loading ? (
-        <p style={s('margin:0;padding:32px;text-align:center;color:var(--text-muted);font-size:14px')}>
-          Loading applicants…
-        </p>
+        <QueueSkeleton />
       ) : visible.length === 0 ? (
         <p
           style={s(
@@ -148,6 +146,34 @@ export function NewApplicants() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * One loader per surface, matching the desk's existing `vf-sk` shimmer rather than a spinner.
+ * `aria-busy` plus an `sr-only` status carries the same information to a screen reader, which a
+ * shimmer alone cannot.
+ */
+function QueueSkeleton() {
+  return (
+    <div aria-busy="true" style={s('display:grid;gap:10px')}>
+      <span className="sr-only" role="status">
+        Loading applicants
+      </span>
+      {Array.from({ length: 5 }, (_, i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          style={s(
+            'display:grid;gap:10px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
+          )}
+        >
+          <span className="vf-sk" style={s('height:15px;width:38%;border-radius:var(--radius-sm)')} />
+          <span className="vf-sk" style={s('height:12px;width:22%;border-radius:var(--radius-sm)')} />
+          <span className="vf-sk" style={s('height:12px;width:56%;border-radius:var(--radius-sm)')} />
+        </div>
+      ))}
     </div>
   );
 }

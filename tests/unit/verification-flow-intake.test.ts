@@ -66,6 +66,12 @@ const CARRIER: IntakeCandidate = {
 const statements = (n: number) =>
   Array.from({ length: n }, () => ({ docType: 'bank_statement' as const, status: 'received' as const }));
 
+/** Flow A also needs the licence and SSN card themselves — the SOP lists both as intake items. */
+const IDENTITY_DOCS = [
+  { docType: 'drivers_license' as const, status: 'received' as const },
+  { docType: 'ssn_card' as const, status: 'received' as const },
+];
+
 const PRINCIPAL = [{ fullName: 'Anders Kaiser' }];
 
 describe('applicant type gates everything', () => {
@@ -78,20 +84,35 @@ describe('applicant type gates everything', () => {
 });
 
 describe('Flow A — owner-operator / individual', () => {
-  it('is complete with all fields and three statements', () => {
-    const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], statements(3));
+  it('is complete with all fields, identity documents and three statements', () => {
+    const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], [...statements(3), ...IDENTITY_DOCS]);
     expect(verdict.missing).toEqual([]);
     expect(verdict.complete).toBe(true);
   });
 
-  it('does not require company fields', () => {
+  it('requires the licence and SSN card themselves, not just the last 4', () => {
+    // The SOP lists "Driver's License" and "SSN card" as intake items, and Phase 2 then cross-checks
+    // the application against them — with no document there is nothing to cross-check.
     const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], statements(3));
+    expect(missingFieldKeys(verdict)).toEqual(
+      expect.arrayContaining(['driversLicenseDoc', 'ssnCardDoc']),
+    );
+  });
+
+  it('does not require identity documents from a carrier', () => {
+    const verdict = evaluateIntakeCompleteness(CARRIER, PRINCIPAL, statements(3));
+    expect(missingFieldKeys(verdict)).not.toContain('ssnCardDoc');
+    expect(missingFieldKeys(verdict)).not.toContain('driversLicenseDoc');
+  });
+
+  it('does not require company fields', () => {
+    const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], [...statements(3), ...IDENTITY_DOCS]);
     expect(missingFieldKeys(verdict)).not.toContain('ein');
     expect(missingFieldKeys(verdict)).not.toContain('companyName');
   });
 
   it('does not require principals', () => {
-    const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], statements(3));
+    const verdict = evaluateIntakeCompleteness(OWNER_OPERATOR, [], [...statements(3), ...IDENTITY_DOCS]);
     expect(missingFieldKeys(verdict)).not.toContain('principals');
   });
 
@@ -99,7 +120,7 @@ describe('Flow A — owner-operator / individual', () => {
     const verdict = evaluateIntakeCompleteness(
       { ...OWNER_OPERATOR, ssnLast4: null, dlLast4: null },
       [],
-      statements(3),
+      [...statements(3), ...IDENTITY_DOCS],
     );
     expect(missingFieldKeys(verdict)).toEqual(expect.arrayContaining(['ssnLast4', 'dlLast4']));
   });

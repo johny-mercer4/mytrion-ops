@@ -37,6 +37,7 @@ import {
 } from './deskReviews.js';
 import { documentService } from './documentService.js';
 import { evaluateHardStops, managerReviewIndicators } from './hardStops.js';
+import { informCollectionsOfBlacklist } from './notify.js';
 import { PHASE_CATALOG, isPhaseCode, phaseApplies, phaseByCode, skipReason } from './phases.js';
 import { collectIdentifiers, screeningVerdictSummary } from './screening.js';
 import {
@@ -168,6 +169,8 @@ export const deskService = {
             existingDebtPayments: toNumber(banking?.existingDebtPayments),
             oneTimeDeposits: toNumber(banking?.oneTimeDeposits),
             creditRecentTrend: credit?.recentTrend ?? null,
+            unusualTransactions: banking?.unusualTransactions ?? null,
+            bankingInconsistentWithOperations: banking?.bankingInconsistentWithOperations ?? null,
           },
           {
             adbReviewThreshold: toNumber(policy.adbReviewThreshold) ?? 500,
@@ -345,7 +348,7 @@ export const deskService = {
       dot: row.dot,
       applicantIp: null,
     });
-    return verificationScreeningRepo.addBlacklistEntries(
+    const added = await verificationScreeningRepo.addBlacklistEntries(
       ctx,
       identifiers.map((i) => ({
         entryType: i.entryType,
@@ -357,6 +360,19 @@ export const deskService = {
         addedBy: zohoFromCtx(ctx) ?? ctx.userId,
       })),
     );
+
+    // SOP Phase 3: "Decline + Blacklist -> Inform Collections Department." Blacklisting silently
+    // would leave the team that chases money unaware an applicant was refused for fraud.
+    await informCollectionsOfBlacklist(ctx, {
+      caseId: row.id,
+      applicantName:
+        row.companyName ?? [row.firstName, row.lastName].filter(Boolean).join(' ') ?? row.id,
+      identifierCount: added,
+      reason,
+      actorName: ctx.userName || ctx.userId,
+    });
+
+    return added;
   },
 
   // ---- Phase 6 / 9 reviews (see deskReviews.ts) ----

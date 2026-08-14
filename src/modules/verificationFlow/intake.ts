@@ -131,6 +131,35 @@ function carrierRequirements(c: IntakeCandidate, requireAuthority: boolean): Mis
   return missing;
 }
 
+/** A document counts only once it has actually arrived. */
+function hasDocument(
+  documents: readonly Pick<VerificationCaseDocument, 'docType' | 'status'>[],
+  docType: string,
+): boolean {
+  return documents.some((d) => d.docType === docType && d.status === 'received');
+}
+
+/**
+ * Flow A identity DOCUMENTS.
+ *
+ * The SOP lists "Driver's License" and "SSN card" as intake items, and it means the documents —
+ * Phase 2 then cross-checks the application against them. Requiring only the last 4 digits would
+ * let an application reach the desk with nothing to cross-check against, and the last 4 are also
+ * what the (deliberately weak) SSN screening match runs on. So both the field and the file.
+ */
+function identityDocumentRequirements(
+  documents: readonly Pick<VerificationCaseDocument, 'docType' | 'status'>[],
+): MissingItem[] {
+  const missing: MissingItem[] = [];
+  if (!hasDocument(documents, 'drivers_license')) {
+    missing.push({ field: 'driversLicenseDoc', label: "Driver's licence (upload)", section: 'identity' });
+  }
+  if (!hasDocument(documents, 'ssn_card')) {
+    missing.push({ field: 'ssnCardDoc', label: 'SSN card (upload)', section: 'identity' });
+  }
+  return missing;
+}
+
 /**
  * Banking: three statements OR a Plaid connection. Only `status='received'` bank-statement documents
  * count — a `requested` row is the ask, not the answer.
@@ -181,6 +210,7 @@ export function evaluateIntakeCompleteness(
 
   if (candidate.applicantType === 'owner_operator') {
     missing.push(...ownerOperatorRequirements(candidate));
+    missing.push(...identityDocumentRequirements(documents));
   } else {
     missing.push(...carrierRequirements(candidate, candidate.applicantType === 'carrier'));
     if (principals.length === 0) {

@@ -23,12 +23,40 @@ const BTN_OK = `${BTN};border-color:var(--intent-success-bd);color:var(--success
 const BTN_WARN = `${BTN};border-color:var(--intent-warning-bd);color:var(--warning)`;
 const BTN_BAD = `${BTN};border-color:var(--intent-danger-bd);color:var(--danger)`;
 
-/** The four outcomes every phase offers, in SOP order. */
-const OUTCOMES: ReadonlyArray<{ id: VerificationPhaseOutcome; label: string; style: string }> = [
-  { id: 'pass', label: 'Pass', style: BTN_OK },
-  { id: 'pending_docs', label: 'Request documents', style: BTN_WARN },
-  { id: 'manager_review', label: 'Manager review', style: BTN_WARN },
-  { id: 'decline', label: 'Decline', style: BTN_BAD },
+/**
+ * The outcomes every phase offers, in SOP order.
+ *
+ * "Additional verification" is separate from "Manager review" on purpose: the SOP's Phase 2 routes
+ * INCONSISTENT / SUSPICIOUS to "Additional Verification / Manager Review", and those are different
+ * asks. Additional verification means go and check something; manager review means a human above
+ * you decides. Collapsing them would have lost a distinction the model already carries.
+ */
+const OUTCOMES: ReadonlyArray<{
+  id: VerificationPhaseOutcome;
+  label: string;
+  hint: string;
+  style: string;
+}> = [
+  { id: 'pass', label: 'Pass', hint: 'Consistent and complete — continue.', style: BTN_OK },
+  {
+    id: 'pending_docs',
+    label: 'Request documents',
+    hint: 'Information is missing.',
+    style: BTN_WARN,
+  },
+  {
+    id: 'additional_verification',
+    label: 'Additional verification',
+    hint: 'Something needs checking before this can pass.',
+    style: BTN_WARN,
+  },
+  {
+    id: 'manager_review',
+    label: 'Manager review',
+    hint: 'Inconsistent, borderline, or an exception is being considered.',
+    style: BTN_WARN,
+  },
+  { id: 'decline', label: 'Decline', hint: 'Not approved.', style: BTN_BAD },
 ];
 
 export function PaneShell({
@@ -111,6 +139,7 @@ export function DecisionBar({
             type="button"
             disabled={disabled || busy}
             onClick={() => fire(o.id)}
+            title={o.hint}
             style={s(
               `${o.style}${disabled || busy ? ';opacity:.5;cursor:not-allowed' : ''}${
                 arming === o.id ? ';background:var(--danger);color:var(--on-accent);border-color:var(--danger)' : ''

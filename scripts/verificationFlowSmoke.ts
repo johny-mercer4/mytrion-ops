@@ -178,11 +178,61 @@ async function main(): Promise<void> {
   check('adjusted capacity = net cash flow + fuel', detail.risk?.adjustedWeeklyCapacity === '5700.00');
   check('recommended limit = capacity x 0.80', detail.risk?.recommendedLimit === '4560.00');
 
+  console.log('\n=== 4b. Both reviews are required before capacity ===');
+  {
+    const solo = await applicationService.create(sales, { applicantType: 'carrier' });
+    await applicationService.patch(sales, solo.case.id, {
+      companyName: 'Banking Only LLC',
+      ein: '11-1111111',
+      mc: 'MC-111111',
+      dot: '1111111',
+      businessAddress: '9 Only Banking',
+      email: 'solo@smoke.test',
+      phone: '5552223333',
+      trucksCount: 4,
+      fuelCardsRequested: 4,
+      requestedLimit: '9000',
+      bankingSource: 'plaid',
+      plaidConnected: true,
+    });
+    await applicationService.addPrincipal(sales, solo.case.id, { fullName: 'Solo Owner' });
+    await applicationService.submit(sales, solo.case.id);
+    await deskService.saveBankingReview(desk, solo.case.id, {
+      recurringWeeklyIncome: '9000',
+      recurringWeeklyExpenses: '7000',
+      avgWeeklyFuelExpense: '2000',
+    });
+    await expectThrows(
+      'banking alone cannot produce a limit — credit is still outstanding',
+      () => deskService.saveRiskAssessment(desk, solo.case.id, { riskTier: 'strong' }),
+      /credit review is still outstanding/i,
+    );
+  }
+
   console.log('\n=== 5. Final decision ===');
   await deskService.decidePhase(desk, caseId, 'p9_risk_capacity', { outcome: 'pass' });
   detail = await deskService.decide(desk, caseId, { decision: 'approve', approvedLimit: '4560.00' });
   check('approved and closed', detail.case.statusCode === 'approved' && detail.case.closedAt !== null);
   check('a timeline exists', detail.events.length > 5, `${detail.events.length} events`);
+
+  const summary = (detail.risk?.summary ?? {}) as Record<string, unknown>;
+  const summaryKeys = [
+    'applicantType',
+    'underwritingRoute',
+    'screening',
+    'credit',
+    'banking',
+    'highway',
+    'capacity',
+    'requestedLimit',
+    'supportingDocuments',
+    'managementExceptions',
+  ];
+  check(
+    'the underwriting summary carries every SOP section',
+    summaryKeys.every((k) => k in summary),
+    summaryKeys.filter((k) => !(k in summary)).join(', '),
+  );
 
   console.log('\n=== 6. Owner-operator skips + WEX route ===');
   let oo = await applicationService.create(sales, { applicantType: 'owner_operator' });
@@ -201,6 +251,26 @@ async function main(): Promise<void> {
     bankingSource: 'plaid',
     plaidConnected: true,
   });
+  // Flow A also needs the licence and SSN card themselves — SOP Phase 1.
+  const ooBefore = await applicationService.get(sales, oo.case.id);
+  check(
+    'Flow A demands the licence and SSN card documents',
+    ooBefore.intake.missing.some((m) => m.field === 'ssnCardDoc') &&
+      ooBefore.intake.missing.some((m) => m.field === 'driversLicenseDoc'),
+  );
+  for (const docType of ['drivers_license', 'ssn_card'] as const) {
+    await verificationCaseAssetRepo.addDocument(sales, {
+      caseId: oo.case.id,
+      docType,
+      status: 'received',
+      fileName: `${docType}.pdf`,
+      mime: 'application/pdf',
+      sizeBytes: 512,
+      s3Key: `${DEFAULT_TENANT_ID}/${oo.case.id}/${docType}/smoke`,
+      storageProvider: 'dropbox_verification',
+    });
+  }
+
   oo = await applicationService.submit(sales, oo.case.id);
   check('25 cards route to WEX', oo.underwritingRoute === 'wex');
   check('owner-operator is credit-first', oo.reviewOrder === 'credit_first');
