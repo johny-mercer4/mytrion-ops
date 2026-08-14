@@ -16091,3 +16091,45 @@ ungranted claim is recorded `denied` and never collapsed rather than being silen
 - Backend 2,743 tests pass, lint clean. CRM 947 pass.
 - `apps/mytrion-crm/app/` was NOT committed here: rebuilding it in this working tree also bakes in the
   uncommitted `feature/verification-cases-intake` UI. Rebuild on a clean tree before the PR.
+
+## 2026-08-14 — Park verification ingest + Rules Strategies / Stop Factors tab
+
+### Ingest off
+
+- `automation.verification.case-ingest` stays in `ALL_JOBS` (queue still provisioned) but is in
+  `DISABLED_JOB_QUEUES`, removed from `CRON_SCHEDULES` and `MANUAL_TRIGGERABLE_QUEUES`. Boot
+  unschedules any leftover pg-boss cron. Worker stays registered; `runVerificationCaseIngest`
+  no-ops so a leftover queued job cannot create cases. Watermark in `verification_ingest_state`
+  was not touched.
+
+### Case prune (Octane app Postgres)
+
+- Prod `dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com`: 61 cases → kept freshest
+  `vc_t0bbv0dt0bq4syc78s8x8xyr` / Eric b trucking; deleted 60 cases, 600 stages, 58 inbox
+  (`zoho_record_id = vc:{id}`).
+- Local Docker `:5433` already had one row (`vc_i3aa11v9tqs0jcthgvn75f44` / Miguel Del Real Gonzalez)
+  — left in place.
+
+### Mono persistence (do not edit verification-mono)
+
+- Stop Factors: CRUD on `stop_factors` via `GET/POST/PUT /api/v1/stop-factors` (cache invalidate +
+  audit; `config_revisions` is a separate publish). Decision-stage rows get `meta.decision_rule`.
+- Rules & Strategies: the JSON list in `system_state.decision_strategies_json` via
+  `GET/POST/PUT /api/v1/decision-strategies` (own revision list in
+  `decision_strategies_revisions_json`). Not the same table as stop factors; strategies bind to
+  those rows through `rule_bindings`.
+
+### Our tab
+
+- Replaces Coming Soon Configuration Ruleset. Key stays `ruleset`.
+- Octane routes (verification department): `GET/POST /v1/verification/stop-factors`,
+  `PUT /v1/verification/stop-factors/:id`, `GET/POST /v1/verification/strategies`,
+  `PUT /v1/verification/strategies/:id`. Proxy to credit-platform `/api/v1` — no raw SQL.
+- UI: list + create/edit `ds/Dialog`, Horizon tokens, `useCachedLoad`, one skeleton per region.
+
+### Risks
+
+- Writes need a credit-platform UI key with admin / `CAP_CONFIG_EDIT`. Gateway-only
+  `CREDIT_PLATFORM_API_KEY` will 401/403 — surfaced as `CREDIT_PLATFORM_FORBIDDEN`.
+- `CREDIT_PLATFORM_BASE_URL` unset → 503. Replica/read-only DSN cannot be used (we do not write
+  verification Postgres from this tab).

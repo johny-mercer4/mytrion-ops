@@ -53,7 +53,7 @@ const META: Record<string, JobMeta> = {
   'automation.verification.case-ingest': {
     title: 'Verification case ingest',
     description:
-      'Every 30 minutes: Zoho Deals COQL → shared verification_cases owned by Sarvar Asqarov, DWH carrier match, inbox, and credit-platform auto-start.',
+      'DISABLED: Zoho Deals COQL → shared verification_cases. Parked so no new cases are generated; re-enable by removing it from DISABLED_JOB_QUEUES and restoring the 30-minute cron.',
   },
   'maintenance.approvals-expiry': {
     title: 'Approvals expiry',

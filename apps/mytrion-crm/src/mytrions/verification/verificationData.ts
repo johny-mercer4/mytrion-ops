@@ -22,6 +22,13 @@ import {
   type VerificationClientDetail,
   type VerificationClientRow,
 } from '../../api/verificationClients';
+import {
+  listDecisionStrategies,
+  listStopFactors,
+  type DecisionStrategyRow,
+  type StopFactorRow,
+  type StopFactorStage,
+} from '../../api/verificationStrategies';
 import { useCachedLoad, type CachedLoad } from '../_shared/swrCache';
 import { hasCreditScore } from './verificationFormat';
 
@@ -32,6 +39,7 @@ const STALE_ROSTER = 60 * 60_000;
 const STALE_CASES = 30_000;
 const STALE_CASE = 15_000;
 const STALE_INBOX = 60_000;
+const STALE_RULES = 30_000;
 
 export const CASES_PAGE_SIZE = 25;
 
@@ -89,6 +97,20 @@ export function useVerificationCaseDetail(caseId: string | null): CachedLoad<Ver
     () => getVerificationCase(caseId!),
     { enabled: caseId != null, staleMs: STALE_CASE },
   );
+}
+
+export function useVerificationStopFactors(stage: StopFactorStage | ''): CachedLoad<StopFactorRow[]> {
+  return useCachedLoad(
+    `verification:stop-factors:${stage || 'all'}`,
+    () => listStopFactors(stage),
+    { staleMs: STALE_RULES },
+  );
+}
+
+export function useVerificationStrategies(): CachedLoad<DecisionStrategyRow[]> {
+  return useCachedLoad('verification:strategies', () => listDecisionStrategies(), {
+    staleMs: STALE_RULES,
+  });
 }
 
 export function useVerificationInbox(): CachedLoad<InboxMessage[]> {

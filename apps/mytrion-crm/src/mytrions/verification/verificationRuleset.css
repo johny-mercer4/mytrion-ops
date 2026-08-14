@@ -1,0 +1,134 @@
+/* Rules Strategies / Stop Factors — form + list extras. Reuses .vf-table / .vf-btn / .vf-chip. */
+
+[data-mytrion='verification'] .vf-rs-intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 72ch;
+}
+
+[data-mytrion='verification'] .vf-rs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+[data-mytrion='verification'] .vf-rs-row-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+
+[data-mytrion='verification'] .vf-rs-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-mytrion='verification'] .vf-form {
+  display: grid;
+  gap: var(--space-3_5);
+}
+
+[data-mytrion='verification'] .vf-form-row {
+  display: grid;
+  gap: var(--space-1_5);
+}
+
+[data-mytrion='verification'] .vf-form-row.is-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .vf-form-row.is-check > span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .vf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .vf-form-row > span,
+[data-mytrion='verification'] .vf-form-row > label {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-form-row input,
+[data-mytrion='verification'] .vf-form-row select,
+[data-mytrion='verification'] .vf-form-row textarea {
+  width: 100%;
+  min-height: var(--vf-control-h);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-control);
+  background: var(--hz-pane-alt);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+[data-mytrion='verification'] .vf-form-row textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+[data-mytrion='verification'] .vf-form-row input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  min-height: 0;
+  accent-color: var(--accent);
+}
+
+[data-mytrion='verification'] .vf-form-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-form-repeat {
+  display: grid;
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .vf-form-repeat > span {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps-micro);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .vf-form-repeat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+[data-mytrion='verification'] .vf-sk-rules {
+  display: grid;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .vf-sk-rule {
+  height: 3rem;
+  border-radius: var(--vf-r-panel);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .vf-form-grid,
+  [data-mytrion='verification'] .vf-form-repeat-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

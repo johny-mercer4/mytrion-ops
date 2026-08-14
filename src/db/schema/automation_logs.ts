@@ -14,10 +14,16 @@ export type AutomationOriginSource = (typeof AUTOMATION_ORIGIN_SOURCES)[number];
 export const DEFAULT_AUTOMATION_ORIGIN: AutomationOriginSource = 'Mytrion Zoho';
 
 /**
- * Automation_Logs — a simple append-only log of automation triggers, written from the
- * front-end (Horizon CRM or the legacy Zoho widget) via POST /v1/automation/logs, and by the
- * scheduled department automations. Trigger time/date are stored as the strings the caller sends
- * (pass-through); `created_at` is the authoritative server time.
+ * Automation_Logs — an append-only log of automation triggers, written from the front-end
+ * (Horizon CRM or the legacy Zoho widget) via POST /v1/automation/logs. Trigger time/date are
+ * stored as the strings the caller sends (pass-through); `created_at` is the authoritative
+ * server time.
+ *
+ * Scope: one row per catalog block A PERSON triggered. The scheduled department automations
+ * deliberately do NOT write here — a cron-run agent job fits neither origin, and it surfaced in
+ * the Automation Logs tab as a type that appears in no catalog. Those runs are recorded by
+ * `agent_tasks` + the `agent.turn` audit row instead (see jobs/workers/automations.ts).
+ * ~38 rows written before that decision remain; this table is append-only.
  */
 export const automationLogs = pgTable(
   'automation_logs',

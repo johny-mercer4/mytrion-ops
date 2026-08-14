@@ -3,7 +3,7 @@ import { errorMessage } from '../../../lib/errors.js';
 import { logger } from '../../../lib/logger.js';
 import { auditFromContext } from '../../audit/auditLogger.js';
 import { ingestVerificationDeals, type VerificationIngestSummary } from '../../verification/zohoDealIngest.js';
-import { verificationCaseIngestJob } from '../catalog.js';
+import { DISABLED_JOB_QUEUES, verificationCaseIngestJob } from '../catalog.js';
 import { buildSystemContext } from '../systemContext.js';
 
 export type VerificationCaseIngestPayload = z.infer<typeof verificationCaseIngestJob.schema>;
@@ -11,6 +11,10 @@ export type VerificationCaseIngestPayload = z.infer<typeof verificationCaseInges
 export async function runVerificationCaseIngest(
   payload: VerificationCaseIngestPayload = {},
 ): Promise<VerificationIngestSummary | { skipped: true; reason: string }> {
+  if (DISABLED_JOB_QUEUES.has(verificationCaseIngestJob.name)) {
+    logger.info('verification case ingest skipped — queue disabled');
+    return { skipped: true, reason: 'disabled' };
+  }
   const ctx = buildSystemContext(['verification']);
   const trigger = payload.trigger ?? 'cron';
   try {

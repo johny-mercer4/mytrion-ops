@@ -5,7 +5,7 @@ export const VERIFICATION_TABS = [
   { key: 'main', label: 'Overview' },
   { key: 'cases', label: 'Verification cases' },
   { key: 'inbox', label: 'Inbox' },
-  { key: 'ruleset', label: 'Ruleset' },
+  { key: 'ruleset', label: 'Rules Strategies / Stop Factors' },
   { key: 'clients', label: 'Clients' },
   { key: 'tickets', label: 'Tickets' },
 ] as const satisfies readonly TabDescriptor[];

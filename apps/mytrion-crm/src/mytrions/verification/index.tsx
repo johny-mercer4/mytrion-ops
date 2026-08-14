@@ -3,14 +3,17 @@ import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
 import { VerificationCases } from './tabs/VerificationCases';
 import { VerificationInbox } from './tabs/VerificationInbox';
+import { VerificationRuleset } from './tabs/VerificationRuleset';
 import './verification.css';
 import './verificationModal.css';
+import './verificationRuleset.css';
 
 /**
  * Verification Mytrion — credit and compliance decisioning.
  *
  * Verification cases + Inbox are live against Octane `verification_cases` and `mytrion_inbox_messages`.
- * Configuration Ruleset stays Coming Soon (Orchestration editor writes credit_platform later).
+ * Rules Strategies / Stop Factors edits credit-platform `stop_factors` and
+ * `system_state.decision_strategies_json` through `/api/v1` (same DML as verification-mono).
  *
  * Existing clients IS live — `src/modules/verification/verificationClients.ts` +
  * `routes/v1/verificationClients.routes.ts` read `octane.dim_company` company-wide (read-only; the
@@ -47,16 +50,12 @@ const TABS: ModuleTab[] = [
   },
   {
     id: 'ruleset',
-    label: 'Configuration Ruleset',
-    description: 'Orchestration: routing, stop factors, strategies, and pipeline steps.',
+    label: 'Rules Strategies / Stop Factors',
+    description: 'The stop-factor rows and decision strategies the credit-platform pipeline actually runs.',
     icon: SlidersHorizontal,
     tone: 'var(--tone-amber)',
-    keywords: ['rules', 'thresholds', 'orchestration', 'stop factors', 'pipeline'],
-    soon: {
-      title: 'Orchestration',
-      body: 'Later this tab edits credit-platform Orchestration only — routing_rules, stop_factors, decision strategies, and pipeline_steps — via the credit-platform config API. Other credit-platform admin tabs stay out of scope.',
-      sources: ['credit_platform · routing_rules · stop_factors · pipeline_steps · system_state'],
-    },
+    keywords: ['rules', 'thresholds', 'orchestration', 'stop factors', 'strategies', 'pipeline'],
+    content: <VerificationRuleset />,
   },
   {
     id: 'clients',
