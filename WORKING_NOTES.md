@@ -16435,6 +16435,11 @@ Not redesigned: ModuleShell Queue / Policy / Roster, first-run / desk / inbox ar
 
 Ingest stays off in prod until this branch merges to `build` then `main`. Widget `app/` must ship
 with the CRM `src/` change.
+
+Git: rebase onto `origin/build` was aborted — hashed `apps/mytrion-crm/app/` rename conflicts.
+Merged `origin/build` instead, then rebuilt the widget. Push of `feature/UltraMytrion` needs
+local GitHub credentials (`git push -u origin HEAD`); this session could not authenticate.
+
 ## 2026-08-14 — Billing + CS in the Telegram Mini App
 
 The Horizon bot opens `apps/mytrion-crm` — the same SPA and the same bundle as the
