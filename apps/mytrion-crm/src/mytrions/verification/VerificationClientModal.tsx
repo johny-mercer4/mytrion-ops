@@ -6,9 +6,10 @@
  * dashed. Built on `ds/Dialog` so focus is trapped, Escape/backdrop work, and the header/footer
  * stay put while the body scrolls.
  */
+import { useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Button, Dialog } from '@/ds';
-import type { VerificationClientRow } from '../../api/verificationClients';
+import type { VerificationClientDetail, VerificationClientRow } from '../../api/verificationClients';
 import { AggregatorMark } from './verificationAggregators';
 import { useVerificationClientDetail } from './verificationData';
 import { dash, isPrepayTerms, money } from './verificationFormat';
@@ -38,15 +39,20 @@ function Stat({
 
 export function VerificationClientModal({
   client,
+  open,
   onClose,
 }: {
   client: VerificationClientRow;
+  open: boolean;
   onClose: () => void;
 }) {
-  const detail = useVerificationClientDetail(client.carrierId);
+  const detail = useVerificationClientDetail(open ? client.carrierId : null);
+  const lastDetail = useRef<VerificationClientDetail | null>(null);
+  if (detail.data && detail.data.carrierId === client.carrierId) lastDetail.current = detail.data;
+  const cached = lastDetail.current?.carrierId === client.carrierId ? lastDetail.current : null;
+  const d = detail.data ?? cached;
   const isLoc = client.paymentTerms === 'LOC';
   const prepay = isPrepayTerms(client.paymentTerms);
-  const d = detail.data;
   const lastActivity = d?.lastTransactionAt ?? client.lastTransactionAt;
 
   const subtitle = [
@@ -59,7 +65,7 @@ export function VerificationClientModal({
 
   return (
     <Dialog
-      open
+      open={open}
       size="lg"
       mobile="sheet"
       title={client.companyName}

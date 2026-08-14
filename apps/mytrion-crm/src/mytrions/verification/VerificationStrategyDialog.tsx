@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Equal, Hash, Route } from 'lucide-react';
+import { Button } from '../../ds/Button/Button';
 import { Dialog } from '../../ds/Dialog';
 import {
   saveDecisionStrategy,
@@ -6,17 +8,15 @@ import {
   type StrategyLifecycle,
   type StrategyWrite,
 } from '../../api/verificationStrategies';
-
-function joinList(values: string[] | undefined): string {
-  return (values ?? []).join(', ');
-}
-
-function splitList(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
+import { VerificationChipField } from './VerificationChipField';
+import {
+  CONDITION_OPERATORS,
+  DATA_SOURCE_CHIPS,
+  DECISION_ACTION_CHIPS,
+  STAGE_SCOPE_CHIPS,
+  formatConditionValue,
+  parseConditionValue,
+} from './verificationRulesetFilter';
 
 function draftFrom(row: DecisionStrategyRow | null): StrategyWrite {
   if (!row) {
@@ -55,6 +55,9 @@ function draftFrom(row: DecisionStrategyRow | null): StrategyWrite {
       source: f.source,
       path: f.path,
       required: f.required,
+      merge_key: f.merge_key,
+      weight: f.weight,
+      notes: f.notes,
     })),
     rule_bindings: row.rule_bindings,
     conditions: row.conditions.map((c) => ({
@@ -63,26 +66,39 @@ function draftFrom(row: DecisionStrategyRow | null): StrategyWrite {
       value: c.value,
     })),
     logic: row.logic,
+    meta: row.meta,
   };
 }
 
 export function VerificationStrategyDialog({
+  open,
   row,
   onClose,
   onSaved,
 }: {
+  open: boolean;
   row: DecisionStrategyRow | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const firstRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<StrategyWrite>(() => draftFrom(row));
-  const [sources, setSources] = useState(() => joinList(row?.data_sources));
-  const [stages, setStages] = useState(() => joinList(row?.stage_scope));
-  const [actions, setActions] = useState(() => joinList(row?.decision_actions));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const openedFor = useRef<string | null>(null);
   const existing = row != null;
+
+  useEffect(() => {
+    if (!open) {
+      openedFor.current = null;
+      return;
+    }
+    const key = row?.id ?? 'new';
+    if (openedFor.current === key) return;
+    openedFor.current = key;
+    setDraft(draftFrom(row));
+    setError(null);
+  }, [open, row]);
 
   const save = async (): Promise<void> => {
     if (!draft.title.trim()) {
@@ -97,9 +113,6 @@ export function VerificationStrategyDialog({
         {
           ...draft,
           ...(id ? { id } : {}),
-          data_sources: splitList(sources),
-          stage_scope: splitList(stages),
-          decision_actions: splitList(actions),
           combined_fields: draft.combined_fields.filter((f) => f.path.trim()),
           rule_bindings: draft.rule_bindings.filter((b) => b.category.trim()),
           conditions: draft.conditions.filter((c) => c.path.trim()),
@@ -116,21 +129,21 @@ export function VerificationStrategyDialog({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={() => onClose()}
-      title={existing ? 'Edit strategy' : 'New strategy'}
-      subtitle="Updates system_state.decision_strategies_json — the same record Orchestration writes."
+      title={existing ? draft.title.trim() || 'Edit strategy' : 'New strategy'}
+      subtitle="Applies on the next run."
       size="lg"
       mobile="fullscreen"
       initialFocusRef={firstRef}
       footer={
         <div className="vf-case-actions">
-          <button type="button" className="ms-btn" onClick={() => onClose()} disabled={busy}>
+          <Button variant="secondary" onClick={() => onClose()} disabled={busy}>
             Cancel
-          </button>
-          <button type="button" className="ms-btn is-primary" onClick={() => void save()} disabled={busy}>
-            {busy ? 'Saving…' : existing ? 'Save strategy' : 'Create strategy'}
-          </button>
+          </Button>
+          <Button variant="primary" onClick={() => void save()} loading={busy}>
+            {existing ? 'Save strategy' : 'Create strategy'}
+          </Button>
         </div>
       }
     >
@@ -146,106 +159,132 @@ export function VerificationStrategyDialog({
           void save();
         }}
       >
-        <label className="vf-form-row">
-          <span>Title</span>
-          <input ref={firstRef} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} required />
-        </label>
-        <div className="vf-form-grid">
+        <section className="vf-form-section">
+          <h3>Basics</h3>
           <label className="vf-form-row">
-            <span>Id {existing ? '(locked)' : '(optional slug)'}</span>
-            <input
-              value={draft.id ?? ''}
-              onChange={(e) => setDraft({ ...draft, id: e.target.value })}
-              disabled={existing}
-              placeholder="standard-approval"
-            />
+            <span>Title</span>
+            <input ref={firstRef} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} required />
+          </label>
+          <div className="vf-form-grid">
+            <label className="vf-form-row">
+              <span>{existing ? 'Id' : 'Id (optional)'}</span>
+              <input
+                value={draft.id ?? ''}
+                onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+                disabled={existing}
+                placeholder="standard-approval"
+              />
+            </label>
+            <label className="vf-form-row">
+              <span>Priority</span>
+              <input
+                type="number"
+                min={0}
+                value={draft.priority}
+                onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) || 0 })}
+              />
+            </label>
+          </div>
+          <div className="vf-form-grid">
+            <label className="vf-form-row">
+              <span>Lifecycle</span>
+              <select
+                value={draft.lifecycle}
+                onChange={(e) => setDraft({ ...draft, lifecycle: e.target.value as StrategyLifecycle })}
+              >
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+            <label className="vf-form-row is-check">
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+              />
+              <span>Active</span>
+            </label>
+          </div>
+        </section>
+
+        <section className="vf-form-section">
+          <h3>When it applies</h3>
+          <label className="vf-form-row">
+            <span>Summary</span>
+            <textarea value={draft.summary} onChange={(e) => setDraft({ ...draft, summary: e.target.value })} />
           </label>
           <label className="vf-form-row">
-            <span>Priority</span>
-            <input
-              type="number"
-              min={0}
-              value={draft.priority}
-              onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) || 0 })}
-            />
+            <span>Outcome</span>
+            <textarea value={draft.outcome} onChange={(e) => setDraft({ ...draft, outcome: e.target.value })} />
           </label>
-        </div>
-        <div className="vf-form-grid">
-          <label className="vf-form-row">
-            <span>Lifecycle</span>
-            <select
-              value={draft.lifecycle}
-              onChange={(e) => setDraft({ ...draft, lifecycle: e.target.value as StrategyLifecycle })}
-            >
-              <option value="draft">draft</option>
-              <option value="published">published</option>
-              <option value="archived">archived</option>
-            </select>
-          </label>
-          <label className="vf-form-row is-check">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        <label className="vf-form-row">
-          <span>Summary</span>
-          <textarea value={draft.summary} onChange={(e) => setDraft({ ...draft, summary: e.target.value })} />
-        </label>
-        <label className="vf-form-row">
-          <span>Outcome</span>
-          <textarea value={draft.outcome} onChange={(e) => setDraft({ ...draft, outcome: e.target.value })} />
-        </label>
-        <label className="vf-form-row">
-          <span>Data sources</span>
-          <input value={sources} onChange={(e) => setSources(e.target.value)} placeholder="zoho, fmcsa, plaid" />
-          <p className="vf-form-hint">Comma-separated. Same strings the pipeline already knows.</p>
-        </label>
-        <label className="vf-form-row">
-          <span>Stage scope</span>
-          <input value={stages} onChange={(e) => setStages(e.target.value)} placeholder="fmcsa, plaid_bs, creditsafe" />
-        </label>
-        <label className="vf-form-row">
-          <span>Decision actions</span>
-          <input value={actions} onChange={(e) => setActions(e.target.value)} placeholder="approve, review, reject" />
-        </label>
-        <div className="vf-form-repeat">
-          <span>Rule bindings</span>
+          <VerificationChipField
+            label="Stages"
+            values={draft.stage_scope}
+            suggestions={STAGE_SCOPE_CHIPS}
+            onChange={(stage_scope) => setDraft({ ...draft, stage_scope })}
+            placeholder="Add a stage"
+          />
+          <VerificationChipField
+            label="Data sources"
+            values={draft.data_sources}
+            suggestions={DATA_SOURCE_CHIPS}
+            onChange={(data_sources) => setDraft({ ...draft, data_sources })}
+            placeholder="Add a source"
+          />
+          <VerificationChipField
+            label="Decision"
+            values={draft.decision_actions}
+            suggestions={DECISION_ACTION_CHIPS}
+            onChange={(decision_actions) => setDraft({ ...draft, decision_actions })}
+            placeholder="Add an action"
+          />
+        </section>
+
+        <section className="vf-form-section">
+          <h3>Bindings</h3>
           {draft.rule_bindings.map((binding, i) => (
             <div key={`rb-${i}`} className="vf-form-repeat-row">
-              <input
-                aria-label={`Binding ${i + 1} category`}
-                value={binding.category}
-                placeholder="APPROVE"
-                onChange={(e) => {
-                  const next = draft.rule_bindings.slice();
-                  next[i] = { ...binding, category: e.target.value };
-                  setDraft({ ...draft, rule_bindings: next });
-                }}
-              />
-              <input
-                aria-label={`Binding ${i + 1} stage`}
-                value={binding.stage}
-                placeholder="decision"
-                onChange={(e) => {
-                  const next = draft.rule_bindings.slice();
-                  next[i] = { ...binding, stage: e.target.value };
-                  setDraft({ ...draft, rule_bindings: next });
-                }}
-              />
-              <input
-                aria-label={`Binding ${i + 1} purpose`}
-                value={binding.purpose}
-                placeholder="positive pass checks"
-                onChange={(e) => {
-                  const next = draft.rule_bindings.slice();
-                  next[i] = { ...binding, purpose: e.target.value };
-                  setDraft({ ...draft, rule_bindings: next });
-                }}
-              />
+              <label className="vf-form-row">
+                <span>Category</span>
+                <select
+                  aria-label={`Binding ${i + 1} category`}
+                  value={binding.category}
+                  onChange={(e) => {
+                    const next = draft.rule_bindings.slice();
+                    next[i] = { ...binding, category: e.target.value };
+                    setDraft({ ...draft, rule_bindings: next });
+                  }}
+                >
+                  <option value="APPROVE">Approve</option>
+                  <option value="REVIEW">Review</option>
+                  <option value="REJECT">Reject</option>
+                </select>
+              </label>
+              <label className="vf-form-row">
+                <span>Stage</span>
+                <input
+                  aria-label={`Binding ${i + 1} stage`}
+                  value={binding.stage}
+                  onChange={(e) => {
+                    const next = draft.rule_bindings.slice();
+                    next[i] = { ...binding, stage: e.target.value };
+                    setDraft({ ...draft, rule_bindings: next });
+                  }}
+                />
+              </label>
+              <label className="vf-form-row">
+                <span>Purpose</span>
+                <input
+                  aria-label={`Binding ${i + 1} purpose`}
+                  value={binding.purpose}
+                  onChange={(e) => {
+                    const next = draft.rule_bindings.slice();
+                    next[i] = { ...binding, purpose: e.target.value };
+                    setDraft({ ...draft, rule_bindings: next });
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 className="vf-btn"
@@ -269,41 +308,48 @@ export function VerificationStrategyDialog({
           >
             Add binding
           </button>
-        </div>
-        <div className="vf-form-repeat">
-          <span>Combined fields</span>
+        </section>
+
+        <section className="vf-form-section">
+          <h3>Fields to combine</h3>
           {draft.combined_fields.map((field, i) => (
             <div key={`cf-${i}`} className="vf-form-repeat-row">
-              <input
-                aria-label={`Field ${i + 1} label`}
-                value={field.label}
-                placeholder="Label"
-                onChange={(e) => {
-                  const next = draft.combined_fields.slice();
-                  next[i] = { ...field, label: e.target.value };
-                  setDraft({ ...draft, combined_fields: next });
-                }}
-              />
-              <input
-                aria-label={`Field ${i + 1} source`}
-                value={field.source}
-                placeholder="zoho"
-                onChange={(e) => {
-                  const next = draft.combined_fields.slice();
-                  next[i] = { ...field, source: e.target.value };
-                  setDraft({ ...draft, combined_fields: next });
-                }}
-              />
-              <input
-                aria-label={`Field ${i + 1} path`}
-                value={field.path}
-                placeholder="applicant.Name"
-                onChange={(e) => {
-                  const next = draft.combined_fields.slice();
-                  next[i] = { ...field, path: e.target.value };
-                  setDraft({ ...draft, combined_fields: next });
-                }}
-              />
+              <label className="vf-form-row">
+                <span>Label</span>
+                <input
+                  aria-label={`Field ${i + 1} label`}
+                  value={field.label}
+                  onChange={(e) => {
+                    const next = draft.combined_fields.slice();
+                    next[i] = { ...field, label: e.target.value };
+                    setDraft({ ...draft, combined_fields: next });
+                  }}
+                />
+              </label>
+              <label className="vf-form-row">
+                <span>Source</span>
+                <input
+                  aria-label={`Field ${i + 1} source`}
+                  value={field.source}
+                  onChange={(e) => {
+                    const next = draft.combined_fields.slice();
+                    next[i] = { ...field, source: e.target.value };
+                    setDraft({ ...draft, combined_fields: next });
+                  }}
+                />
+              </label>
+              <label className="vf-form-row">
+                <span>Path</span>
+                <input
+                  aria-label={`Field ${i + 1} path`}
+                  value={field.path}
+                  onChange={(e) => {
+                    const next = draft.combined_fields.slice();
+                    next[i] = { ...field, path: e.target.value };
+                    setDraft({ ...draft, combined_fields: next });
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 className="vf-btn"
@@ -327,51 +373,82 @@ export function VerificationStrategyDialog({
           >
             Add field
           </button>
-        </div>
-        <div className="vf-form-repeat">
-          <span>Conditions</span>
-          {draft.conditions.map((condition, i) => (
-            <div key={`c-${i}`} className="vf-form-repeat-row">
-              <input
-                aria-label={`Condition ${i + 1} path`}
-                value={condition.path}
-                placeholder="stage.status"
-                onChange={(e) => {
-                  const next = draft.conditions.slice();
-                  next[i] = { ...condition, path: e.target.value };
-                  setDraft({ ...draft, conditions: next });
-                }}
-              />
-              <input
-                aria-label={`Condition ${i + 1} operator`}
-                value={condition.operator}
-                placeholder="in"
-                onChange={(e) => {
-                  const next = draft.conditions.slice();
-                  next[i] = { ...condition, operator: e.target.value };
-                  setDraft({ ...draft, conditions: next });
-                }}
-              />
-              <input
-                aria-label={`Condition ${i + 1} value`}
-                value={typeof condition.value === 'string' ? condition.value : JSON.stringify(condition.value ?? '')}
-                placeholder="ran, approved"
-                onChange={(e) => {
-                  const next = draft.conditions.slice();
-                  const raw = e.target.value;
-                  next[i] = { ...condition, value: raw.includes(',') ? raw.split(',').map((s) => s.trim()) : raw };
-                  setDraft({ ...draft, conditions: next });
-                }}
-              />
-              <button
-                type="button"
-                className="vf-btn"
-                onClick={() => setDraft({ ...draft, conditions: draft.conditions.filter((_, j) => j !== i) })}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+        </section>
+
+        <section className="vf-form-section">
+          <h3>Conditions</h3>
+          {draft.conditions.map((condition, i) => {
+            const needsValue = !['exists', 'not_exists', 'truthy'].includes(condition.operator);
+            return (
+              <div key={`c-${i}`} className="vf-cond">
+                <span className="vf-cond-n">{i + 1}</span>
+                <label className="vf-form-row">
+                  <span>
+                    <Route size={12} aria-hidden="true" /> Path
+                  </span>
+                  <input
+                    aria-label={`Condition ${i + 1} path`}
+                    value={condition.path}
+                    placeholder="stage.status"
+                    onChange={(e) => {
+                      const next = draft.conditions.slice();
+                      next[i] = { ...condition, path: e.target.value };
+                      setDraft({ ...draft, conditions: next });
+                    }}
+                  />
+                </label>
+                <label className="vf-form-row">
+                  <span>
+                    <Equal size={12} aria-hidden="true" /> Operator
+                  </span>
+                  <select
+                    aria-label={`Condition ${i + 1} operator`}
+                    value={condition.operator}
+                    onChange={(e) => {
+                      const next = draft.conditions.slice();
+                      next[i] = { ...condition, operator: e.target.value };
+                      setDraft({ ...draft, conditions: next });
+                    }}
+                  >
+                    {(CONDITION_OPERATORS.some((op) => op.id === condition.operator)
+                      ? CONDITION_OPERATORS
+                      : [{ id: condition.operator, label: condition.operator }, ...CONDITION_OPERATORS]
+                    ).map((op) => (
+                      <option key={op.id} value={op.id}>
+                        {op.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {needsValue ? (
+                  <label className="vf-form-row">
+                    <span>
+                      <Hash size={12} aria-hidden="true" /> Value
+                    </span>
+                    <input
+                      aria-label={`Condition ${i + 1} value`}
+                      value={formatConditionValue(condition.value)}
+                      placeholder={condition.operator === 'in' || condition.operator === 'not_in' ? 'ran, approved' : ''}
+                      onChange={(e) => {
+                        const next = draft.conditions.slice();
+                        next[i] = { ...condition, value: parseConditionValue(e.target.value, condition.operator) };
+                        setDraft({ ...draft, conditions: next });
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <span className="vf-cond-skip">No value</span>
+                )}
+                <button
+                  type="button"
+                  className="vf-btn"
+                  onClick={() => setDraft({ ...draft, conditions: draft.conditions.filter((_, j) => j !== i) })}
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })}
           <button
             type="button"
             className="vf-btn"
@@ -384,15 +461,18 @@ export function VerificationStrategyDialog({
           >
             Add condition
           </button>
-        </div>
-        <label className="vf-form-row">
-          <span>Condition logic</span>
-          <input
-            value={draft.logic}
-            onChange={(e) => setDraft({ ...draft, logic: e.target.value })}
-            placeholder="(1 AND 2) OR 3"
-          />
-        </label>
+          <label className="vf-form-row">
+            <span>Logic</span>
+            <input
+              value={draft.logic}
+              onChange={(e) => setDraft({ ...draft, logic: e.target.value })}
+              placeholder="(1 AND 2) OR 3"
+            />
+            <p className="vf-form-hint">
+              Use the numbers above with AND, OR, and NOT. Leave blank to require every condition.
+            </p>
+          </label>
+        </section>
       </form>
     </Dialog>
   );

@@ -6,10 +6,9 @@
  * minimum balance — those fields are LOC-only. Aggregator (billing type) is icon + label, not colour
  * alone.
  */
-import type { CSSProperties } from 'react';
 import { AlertTriangle, Landmark } from 'lucide-react';
 import type { VerificationClientRow } from '../../api/verificationClients';
-import { AggregatorMark, aggregatorTone } from './verificationAggregators';
+import { AggregatorMark } from './verificationAggregators';
 import { isPrepayTerms, money } from './verificationFormat';
 
 export function VerificationClientCard({
@@ -19,7 +18,6 @@ export function VerificationClientCard({
   client: VerificationClientRow;
   onOpen: (c: VerificationClientRow) => void;
 }) {
-  const tone = aggregatorTone(client.companyType);
   const prepay = isPrepayTerms(client.paymentTerms);
   const isLoc = client.paymentTerms === 'LOC';
 
@@ -27,7 +25,6 @@ export function VerificationClientCard({
     <button
       type="button"
       className={`vf-cardc${client.isDebtor ? ' is-debtor' : ''}`}
-      style={{ ['--vc' as string]: tone } as CSSProperties}
       onClick={() => onOpen(client)}
       aria-label={`Open ${client.companyName}`}
     >

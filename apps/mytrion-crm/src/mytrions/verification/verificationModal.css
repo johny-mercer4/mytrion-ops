@@ -3,15 +3,12 @@
 [data-mytrion='verification'] .vf-modal-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   color: var(--text-primary);
 }
 
-[data-mytrion='verification'] .vf-modal-flags > .vf-agg {
-  padding: var(--space-0_5) var(--space-2) var(--space-0_5) var(--space-0_5);
-  border-radius: var(--vf-r-pill);
-  background: color-mix(in srgb, var(--vc) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--vc) 28%, transparent);
+[data-mytrion='verification'] .vf-modal-flags {
+  padding-block-end: var(--space-1);
 }
 
 [data-mytrion='verification'] .vf-section {
@@ -23,7 +20,7 @@
 
 [data-mytrion='verification'] .vf-section-title {
   margin: 0;
-  font-family: var(--font-head);
+  font-family: var(--font-body);
   font-size: var(--text-xs);
   font-weight: var(--fw-bold);
   letter-spacing: var(--tr-caps);
@@ -81,7 +78,7 @@
 }
 
 [data-mytrion='verification'] .vf-stat-v {
-  font-family: var(--font-head);
+  font-family: var(--font-body);
   font-size: var(--text-lg);
   font-weight: var(--fw-bold);
   color: var(--text-primary);

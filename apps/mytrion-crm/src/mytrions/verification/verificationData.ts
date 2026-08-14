@@ -27,7 +27,6 @@ import {
   listStopFactors,
   type DecisionStrategyRow,
   type StopFactorRow,
-  type StopFactorStage,
 } from '../../api/verificationStrategies';
 import { useCachedLoad, type CachedLoad } from '../_shared/swrCache';
 import { hasCreditScore } from './verificationFormat';
@@ -99,16 +98,16 @@ export function useVerificationCaseDetail(caseId: string | null): CachedLoad<Ver
   );
 }
 
-export function useVerificationStopFactors(stage: StopFactorStage | ''): CachedLoad<StopFactorRow[]> {
-  return useCachedLoad(
-    `verification:stop-factors:${stage || 'all'}`,
-    () => listStopFactors(stage),
-    { staleMs: STALE_RULES },
-  );
+export function useVerificationStopFactors(enabled = true): CachedLoad<StopFactorRow[]> {
+  return useCachedLoad('verification:stop-factors', () => listStopFactors(), {
+    enabled,
+    staleMs: STALE_RULES,
+  });
 }
 
-export function useVerificationStrategies(): CachedLoad<DecisionStrategyRow[]> {
+export function useVerificationStrategies(enabled = true): CachedLoad<DecisionStrategyRow[]> {
   return useCachedLoad('verification:strategies', () => listDecisionStrategies(), {
+    enabled,
     staleMs: STALE_RULES,
   });
 }

@@ -41,7 +41,7 @@ export interface StrategyRuleBinding {
 export interface StrategyCondition {
   path: string;
   operator: string;
-  value: unknown;
+  value?: unknown;
 }
 
 export interface DecisionStrategyRow {
@@ -76,6 +76,7 @@ export interface StopFactorWrite {
   enabled: boolean;
   priority: number;
   apply_at_zoho_intake?: boolean;
+  meta?: Record<string, unknown>;
 }
 
 export interface StrategyWrite {
@@ -94,10 +95,14 @@ export interface StrategyWrite {
     source: string;
     path: string;
     required?: boolean;
+    merge_key?: string;
+    weight?: number;
+    notes?: string;
   }>;
   rule_bindings: StrategyRuleBinding[];
   conditions: Array<{ path: string; operator: string; value?: unknown }>;
   logic: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface ConfigSaveResult {

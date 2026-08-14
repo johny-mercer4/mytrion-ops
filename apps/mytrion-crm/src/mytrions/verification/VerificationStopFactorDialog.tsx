@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Equal, Hash, Route } from 'lucide-react';
+import { Button } from '../../ds/Button/Button';
 import { Dialog } from '../../ds/Dialog';
 import {
   saveStopFactor,
@@ -20,8 +22,21 @@ const CHECKS: { id: StopFactorCheckType; label: string }[] = [
   { id: 'blacklist', label: 'Blacklist' },
   { id: 'sql_query', label: 'SQL query' },
 ];
-const OPS: StopFactorOperator[] = ['gte', 'lte', 'gt', 'lt', 'eq', 'neq', 'not_in', 'contains'];
-const ACTIONS: StopFactorAction[] = ['APPROVE', 'REJECT', 'REVIEW'];
+const OPS: { id: StopFactorOperator; label: string }[] = [
+  { id: 'gte', label: 'at least' },
+  { id: 'lte', label: 'at most' },
+  { id: 'gt', label: 'greater than' },
+  { id: 'lt', label: 'less than' },
+  { id: 'eq', label: 'equals' },
+  { id: 'neq', label: 'does not equal' },
+  { id: 'not_in', label: 'is not one of' },
+  { id: 'contains', label: 'contains' },
+];
+const ACTIONS: { id: StopFactorAction; label: string }[] = [
+  { id: 'APPROVE', label: 'Approve' },
+  { id: 'REJECT', label: 'Reject' },
+  { id: 'REVIEW', label: 'Review' },
+];
 
 function isIntake(meta: Record<string, unknown> | undefined): boolean {
   return meta?.apply_at_zoho_intake === true;
@@ -34,9 +49,9 @@ function draftFrom(row: StopFactorRow | null, stage: StopFactorStage | ''): Stop
       stage: (STAGES.some((s) => s.id === row.stage) ? row.stage : 'pre') as StopFactorStage,
       check_type: (CHECKS.some((c) => c.id === row.check_type) ? row.check_type : 'field_check') as StopFactorCheckType,
       field_path: row.field_path,
-      operator: (OPS.includes(row.operator as StopFactorOperator) ? row.operator : 'gte') as StopFactorOperator,
+      operator: (OPS.some((op) => op.id === row.operator) ? row.operator : 'gte') as StopFactorOperator,
       threshold: row.threshold,
-      action_on_fail: (ACTIONS.includes(row.action_on_fail as StopFactorAction)
+      action_on_fail: (ACTIONS.some((a) => a.id === row.action_on_fail)
         ? row.action_on_fail
         : 'REJECT') as StopFactorAction,
       action_on_missing: row.action_on_missing === 'REJECT' || row.action_on_missing === 'REVIEW'
@@ -46,6 +61,7 @@ function draftFrom(row: StopFactorRow | null, stage: StopFactorStage | ''): Stop
       enabled: row.enabled,
       priority: row.priority,
       apply_at_zoho_intake: isIntake(row.meta),
+      meta: row.meta,
     };
   }
   return {
@@ -65,11 +81,13 @@ function draftFrom(row: StopFactorRow | null, stage: StopFactorStage | ''): Stop
 }
 
 export function VerificationStopFactorDialog({
+  open,
   row,
   defaultStage,
   onClose,
   onSaved,
 }: {
+  open: boolean;
   row: StopFactorRow | null;
   defaultStage: StopFactorStage | '';
   onClose: () => void;
@@ -79,7 +97,20 @@ export function VerificationStopFactorDialog({
   const [draft, setDraft] = useState<StopFactorWrite>(() => draftFrom(row, defaultStage));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const openedFor = useRef<string | null>(null);
   const existing = row != null;
+
+  useEffect(() => {
+    if (!open) {
+      openedFor.current = null;
+      return;
+    }
+    const key = row ? String(row.id) : `new:${defaultStage}`;
+    if (openedFor.current === key) return;
+    openedFor.current = key;
+    setDraft(draftFrom(row, defaultStage));
+    setError(null);
+  }, [open, row, defaultStage]);
 
   const set = <K extends keyof StopFactorWrite>(key: K, value: StopFactorWrite[K]): void => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -112,21 +143,21 @@ export function VerificationStopFactorDialog({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={() => onClose()}
-      title={existing ? 'Edit stop factor' : 'New stop factor'}
-      subtitle="Writes the credit-platform stop_factors row the pipeline evaluates."
+      title={existing ? draft.name.trim() || 'Edit stop factor' : 'New stop factor'}
+      subtitle="Applies on the next run."
       size="md"
       mobile="sheet"
       initialFocusRef={firstRef}
       footer={
         <div className="vf-case-actions">
-          <button type="button" className="ms-btn" onClick={() => onClose()} disabled={busy}>
+          <Button variant="secondary" onClick={() => onClose()} disabled={busy}>
             Cancel
-          </button>
-          <button type="button" className="ms-btn is-primary" onClick={() => void save()} disabled={busy}>
-            {busy ? 'Saving…' : existing ? 'Save changes' : 'Create rule'}
-          </button>
+          </Button>
+          <Button variant="primary" onClick={() => void save()} loading={busy}>
+            {existing ? 'Save changes' : 'Create rule'}
+          </Button>
         </div>
       }
     >
@@ -142,129 +173,146 @@ export function VerificationStopFactorDialog({
           void save();
         }}
       >
-        <label className="vf-form-row">
-          <span>Name</span>
-          <input ref={firstRef} value={draft.name} onChange={(e) => set('name', e.target.value)} required />
-        </label>
-        <div className="vf-form-grid">
+        <section className="vf-form-section">
+          <h3>Rule</h3>
           <label className="vf-form-row">
-            <span>Stage</span>
-            <select value={draft.stage} onChange={(e) => set('stage', e.target.value as StopFactorStage)}>
-              {STAGES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            <span>Name</span>
+            <input ref={firstRef} value={draft.name} onChange={(e) => set('name', e.target.value)} required />
           </label>
-          <label className="vf-form-row">
-            <span>Priority</span>
-            <input
-              type="number"
-              min={0}
-              value={draft.priority}
-              onChange={(e) => set('priority', Number(e.target.value) || 0)}
-            />
-          </label>
-        </div>
-        <label className="vf-form-row">
-          <span>Check type</span>
-          <select
-            value={draft.check_type}
-            onChange={(e) => set('check_type', e.target.value as StopFactorCheckType)}
-          >
-            {CHECKS.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="vf-form-row">
-          <span>Field path</span>
-          <input
-            value={draft.field_path ?? ''}
-            onChange={(e) => set('field_path', e.target.value)}
-            placeholder="result.parsed_report.summary.credit_score"
-          />
-        </label>
-        {draft.check_type === 'field_check' ? (
           <div className="vf-form-grid">
             <label className="vf-form-row">
-              <span>Operator</span>
-              <select
-                value={draft.operator}
-                onChange={(e) => set('operator', e.target.value as StopFactorOperator)}
-              >
-                {OPS.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
+              <span>Stage</span>
+              <select value={draft.stage} onChange={(e) => set('stage', e.target.value as StopFactorStage)}>
+                {STAGES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
                   </option>
                 ))}
               </select>
             </label>
             <label className="vf-form-row">
-              <span>Threshold</span>
-              <input value={draft.threshold ?? ''} onChange={(e) => set('threshold', e.target.value)} />
+              <span>Priority</span>
+              <input
+                type="number"
+                min={0}
+                value={draft.priority}
+                onChange={(e) => set('priority', Number(e.target.value) || 0)}
+              />
             </label>
           </div>
-        ) : null}
-        {draft.check_type === 'sql_query' ? (
-          <label className="vf-form-row">
-            <span>SQL query</span>
-            <textarea
-              value={draft.threshold ?? ''}
-              onChange={(e) => set('threshold', e.target.value)}
-              placeholder="SELECT 1 FROM my_table WHERE ssn = '{value}'"
+          <label className="vf-form-row is-check">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(e) => set('enabled', e.target.checked)}
             />
+            <span>Active</span>
           </label>
-        ) : null}
-        <div className="vf-form-grid">
+        </section>
+
+        <section className="vf-form-section">
+          <h3>What to check</h3>
           <label className="vf-form-row">
-            <span>{draft.stage === 'decision' ? 'Decision desk column' : 'Action on fail'}</span>
+            <span>Check type</span>
             <select
-              value={draft.action_on_fail}
-              onChange={(e) => set('action_on_fail', e.target.value as StopFactorAction)}
+              value={draft.check_type}
+              onChange={(e) => set('check_type', e.target.value as StopFactorCheckType)}
             >
-              {ACTIONS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
+              {CHECKS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
                 </option>
               ))}
             </select>
           </label>
           <label className="vf-form-row">
-            <span>If field missing</span>
-            <select
-              value={draft.action_on_missing}
-              onChange={(e) =>
-                set('action_on_missing', e.target.value as StopFactorWrite['action_on_missing'])
-              }
-            >
-              <option value="PASS">PASS</option>
-              <option value="REJECT">REJECT</option>
-              <option value="REVIEW">REVIEW</option>
-            </select>
-          </label>
-        </div>
-        {draft.stage === 'pre' ? (
-          <label className="vf-form-row is-check">
+            <span>
+              <Route size={12} aria-hidden="true" /> Path
+            </span>
             <input
-              type="checkbox"
-              checked={Boolean(draft.apply_at_zoho_intake)}
-              onChange={(e) => set('apply_at_zoho_intake', e.target.checked)}
+              value={draft.field_path ?? ''}
+              onChange={(e) => set('field_path', e.target.value)}
+              placeholder="result.parsed_report.summary.credit_score"
             />
-            <span>Apply at Zoho intake (drop before the request is created)</span>
           </label>
-        ) : null}
-        <label className="vf-form-row is-check">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(e) => set('enabled', e.target.checked)}
-          />
-          <span>Enabled</span>
-        </label>
+          {draft.check_type === 'field_check' ? (
+            <div className="vf-form-grid">
+              <label className="vf-form-row">
+                <span>
+                  <Equal size={12} aria-hidden="true" /> Operator
+                </span>
+                <select
+                  value={draft.operator}
+                  onChange={(e) => set('operator', e.target.value as StopFactorOperator)}
+                >
+                  {OPS.map((op) => (
+                    <option key={op.id} value={op.id}>
+                      {op.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="vf-form-row">
+                <span>
+                  <Hash size={12} aria-hidden="true" /> Value
+                </span>
+                <input value={draft.threshold ?? ''} onChange={(e) => set('threshold', e.target.value)} />
+              </label>
+            </div>
+          ) : null}
+          {draft.check_type === 'sql_query' ? (
+            <label className="vf-form-row">
+              <span>Query</span>
+              <textarea
+                value={draft.threshold ?? ''}
+                onChange={(e) => set('threshold', e.target.value)}
+                placeholder="SELECT 1 FROM my_table WHERE ssn = '{value}'"
+              />
+            </label>
+          ) : null}
+        </section>
+
+        <section className="vf-form-section">
+          <h3>When it fails</h3>
+          <div className="vf-form-grid">
+            <label className="vf-form-row">
+              <span>{draft.stage === 'decision' ? 'Desk column' : 'On fail'}</span>
+              <select
+                value={draft.action_on_fail}
+                onChange={(e) => set('action_on_fail', e.target.value as StopFactorAction)}
+              >
+                {ACTIONS.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="vf-form-row">
+              <span>If missing</span>
+              <select
+                value={draft.action_on_missing}
+                onChange={(e) =>
+                  set('action_on_missing', e.target.value as StopFactorWrite['action_on_missing'])
+                }
+              >
+                <option value="PASS">Pass</option>
+                <option value="REJECT">Reject</option>
+                <option value="REVIEW">Review</option>
+              </select>
+            </label>
+          </div>
+          {draft.stage === 'pre' ? (
+            <label className="vf-form-row is-check">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.apply_at_zoho_intake)}
+                onChange={(e) => set('apply_at_zoho_intake', e.target.checked)}
+              />
+              <span>Apply at Zoho intake (drop before the request is created)</span>
+            </label>
+          ) : null}
+        </section>
       </form>
     </Dialog>
   );

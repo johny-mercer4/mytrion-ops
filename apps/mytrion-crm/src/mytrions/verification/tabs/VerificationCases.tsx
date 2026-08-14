@@ -4,16 +4,12 @@ import { formatCachedAt } from '../../_shared/swrCache';
 import type { VerificationCaseRow, VerificationCaseStatus } from '../../../api/verificationCases';
 import { VerificationCaseModal } from '../VerificationCaseModal';
 import { CASES_PAGE_SIZE, useVerificationCasesList } from '../verificationData';
-
-const STATUSES: { id: VerificationCaseStatus | ''; label: string }[] = [
-  { id: '', label: 'All' },
-  { id: 'new', label: 'New' },
-  { id: 'in_progress', label: 'In progress' },
-  { id: 'awaiting_decision', label: 'Awaiting decision' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'rejected', label: 'Rejected' },
-  { id: 'failed', label: 'Failed' },
-];
+import {
+  CASE_STATUS_LABELS,
+  caseStatusLabel,
+  caseStatusTone,
+  queueLabel,
+} from '../verificationCaseUi';
 
 const CASE_COLUMNS = [
   'Company',
@@ -32,10 +28,6 @@ const SK_CARDS = 6;
 
 function dash(value: string | null | undefined): string {
   return value && value.trim() ? value : '—';
-}
-
-function statusLabel(status: VerificationCaseStatus): string {
-  return STATUSES.find((s) => s.id === status)?.label ?? status;
 }
 
 function CasesSkeleton() {
@@ -175,7 +167,7 @@ export function VerificationCases() {
         <div className="vf-filters">
           <div className="vf-filter-group" role="group" aria-label="Status">
             <span className="vf-filter-label">Status</span>
-            {STATUSES.map((s) => (
+            {CASE_STATUS_LABELS.map((s) => (
               <button
                 key={s.id || 'all'}
                 type="button"
@@ -280,8 +272,12 @@ export function VerificationCases() {
               <li key={row.id}>
                 <button type="button" className="vf-case-card" onClick={() => setOpenId(row.id)}>
                   <strong>{dash(row.companyName)}</strong>
-                  <span>
-                    {statusLabel(row.status)} · {row.stagesDone}/{row.stagesTotal}
+                  <span className="vf-card-chips">
+                    <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
+                    <span className="vf-pill is-info">{queueLabel(row.distributeType)}</span>
+                    <span className="vf-pill is-mute">
+                      {row.stagesDone}/{row.stagesTotal}
+                    </span>
                   </span>
                   <span>
                     {dash(row.zohoStage)} · {dash(row.applicationDate)}
@@ -344,16 +340,28 @@ function CaseRow({
           {dash(row.companyName)}
         </button>
       </td>
-      <td>{dash(row.zohoStage)}</td>
+      <td>
+        <span className="vf-pill is-info">{dash(row.zohoStage)}</span>
+      </td>
       <td>{dash(row.applicationDate)}</td>
       <td>{dash(row.dot)}</td>
       <td>{dash(row.ownerName)}</td>
-      <td>{row.distributeType === 'shared' ? 'Shared' : 'Personal'}</td>
       <td>
-        {row.stagesDone}/{row.stagesTotal}
+        <span className="vf-pill is-mute">{queueLabel(row.distributeType)}</span>
       </td>
-      <td>{row.matchedSnapshotId ? dash(row.carrierOperatingStatus) || 'Matched' : '—'}</td>
-      <td>{statusLabel(row.status)}</td>
+      <td>
+        <span className="vf-pill is-mute">
+          {row.stagesDone}/{row.stagesTotal}
+        </span>
+      </td>
+      <td>
+        <span className={`vf-pill ${row.matchedSnapshotId ? 'is-on' : 'is-mute'}`}>
+          {row.matchedSnapshotId ? dash(row.carrierOperatingStatus) || 'Matched' : 'Unmatched'}
+        </span>
+      </td>
+      <td>
+        <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
+      </td>
     </tr>
   );
 }

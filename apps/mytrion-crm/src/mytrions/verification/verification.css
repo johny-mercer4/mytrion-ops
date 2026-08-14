@@ -38,6 +38,11 @@
    ===================================================== */
 
 [data-mytrion='verification'] {
+  /* Body face is the system UI stack already in --face-ui's fallback — Grotesk stays on --font-head
+     for titles and tab labels only. No new font file. */
+  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-body);
+
   /* Radius aliases, never numbers — one block moves all 14 call sites. Controls (search field,
      button, icon button) take the 4px control corner, panes (toolbar, card, modal, stat, field,
      skeleton) the 8px panel corner. Declared on [data-mytrion], not on .ms-root, so the modal —
@@ -63,7 +68,7 @@
      rhythm, so the real element is never TALLER than the placeholder that stood in for it — that
      direction is the one that matters, because a floor can only ever remove a jump. A value that
      wraps to a second line still overruns, which no fixed reservation can prevent. */
-  --vf-card-h: 180px;
+  --vf-card-h: 192px;
   --vf-field-h: 70px;
 }
 
@@ -263,7 +268,7 @@
   flex-wrap: wrap;
 }
 [data-mytrion='verification'] .vf-filter-label {
-  font-family: var(--font-head);
+  font-family: var(--font-body);
   font-size: var(--text-2xs);
   font-weight: var(--fw-bold);
   letter-spacing: var(--tr-caps-micro);
@@ -365,7 +370,7 @@
    file's tie-down rule: it is a standalone centred heading with 48px of air above and below and
    nothing to crowd, and at 15px it stopped out-ranking the 14px sentence directly beneath it. */
 [data-mytrion='verification'] .vf-empty-title {
-  font-family: var(--font-head);
+  font-family: var(--font-body);
   font-size: var(--text-lg);
   font-weight: var(--fw-bold);
   color: var(--text-primary);
@@ -432,12 +437,11 @@
   gap: var(--space-3_5);
 }
 [data-mytrion='verification'] .vf-cardc {
-  --vc: var(--accent);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2_5);
+  gap: var(--space-3);
   /* Floors the card at the height its skeleton reserved, so a row of cards does not grow when data
      lands and a card with no tags does not sit shorter than its neighbours. */
   min-height: var(--vf-card-h);
@@ -448,22 +452,21 @@
   cursor: pointer;
   border-radius: var(--vf-r-panel);
   border: 1px solid var(--hz-pane-bd);
-  background: linear-gradient(152deg, color-mix(in srgb, var(--vc) 9%, transparent), transparent 58%),
-    var(--hz-pane);
+  /* Neutral pane — aggregator colour lives on the mark, not a per-card wash (that read as a rainbow). */
+  background: var(--hz-pane);
   /* No backdrop-filter: roster cards scroll in/out of view. Focus then scroll-back left them empty. */
   box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
   transition: border-color var(--hz-dur-tone) var(--hz-ease), box-shadow var(--hz-dur-tone) var(--hz-ease),
     transform var(--hz-dur-lift) var(--hz-ease);
 }
-/* Depth is refraction at rest and a shadow only on hover — the tone-tinted lift is the module's
-   identity and there is no token for a per-item tinted shadow, so the geometry stays literal here. */
 [data-mytrion='verification'] .vf-cardc:hover {
-  border-color: color-mix(in srgb, var(--vc) 46%, var(--hz-pane-bd));
-  box-shadow: 0 16px 40px -14px color-mix(in srgb, var(--vc) 30%, transparent), var(--hz-glass-inset);
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+  box-shadow: var(--hz-shadow-lift), var(--hz-glass-inset);
   transform: var(--hz-hover-lift-sm);
 }
 [data-mytrion='verification'] .vf-cardc.is-debtor {
-  border-left: 3px solid var(--danger);
+  border-color: var(--tint-bad-bd);
 }
 [data-mytrion='verification'] .vf-cardc-shimmer {
   position: absolute;
@@ -507,39 +510,37 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
-[data-mytrion='verification'] .vf-cardc-tags {
+[data-mytrion='verification'] .vf-cardc-tags,
+[data-mytrion='verification'] .vf-modal-flags {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1_5);
+  align-items: center;
+  gap: var(--space-2);
 }
 [data-mytrion='verification'] .vf-tag {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-0_5) var(--space-2);
+  gap: var(--space-1_5);
+  padding: var(--space-1) var(--space-2_5);
   border-radius: var(--vf-r-pill);
+  font-family: var(--font-body);
   font-size: var(--text-2xs);
   font-weight: var(--fw-bold);
   letter-spacing: var(--tr-2xs);
   white-space: nowrap;
-  background: color-mix(in srgb, var(--vc) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--vc) 28%, transparent);
-  color: var(--vc);
-}
-[data-mytrion='verification'] .vf-tag-tone {
-  background: color-mix(in srgb, var(--vc) 12%, transparent);
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--tint-neutral-bd);
+  color: var(--text-secondary);
 }
 [data-mytrion='verification'] .vf-tag-loc {
   background: var(--tint-info-bg);
   border-color: var(--tint-info-bd);
   color: var(--accent);
 }
-/* --tone-* wayfinding as CATEGORICAL encoding within one screen, which DESIGN_TOKENS §3 names
-   Verification's client types as an example of. Not a status tint: Prepay is a terms category. */
 [data-mytrion='verification'] .vf-tag-prepay {
-  background: color-mix(in srgb, var(--tone-emerald) 14%, transparent);
-  border-color: color-mix(in srgb, var(--tone-emerald) 32%, transparent);
-  color: var(--tone-emerald);
+  background: var(--tint-good-bg);
+  border-color: var(--tint-good-bd);
+  color: var(--success);
 }
 [data-mytrion='verification'] .vf-tag-danger {
   background: var(--tint-bad-bg);
@@ -549,7 +550,7 @@
 [data-mytrion='verification'] .vf-agg {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-1_5);
   min-width: 0;
 }
 [data-mytrion='verification'] .vf-agg-ico {
@@ -557,21 +558,23 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--vc) 18%, transparent);
   color: var(--vc);
 }
 [data-mytrion='verification'] .vf-agg-label {
+  font-family: var(--font-body);
   font-size: var(--text-2xs);
   font-weight: var(--fw-bold);
   letter-spacing: var(--tr-2xs);
   color: var(--vc);
   white-space: nowrap;
 }
-[data-mytrion='verification'] .vf-cardc-tags > .vf-agg {
-  padding: var(--space-0_5) var(--space-2) var(--space-0_5) var(--space-0_5);
+[data-mytrion='verification'] .vf-cardc-tags > .vf-agg,
+[data-mytrion='verification'] .vf-modal-flags > .vf-agg {
+  padding: var(--space-1) var(--space-2_5) var(--space-1) var(--space-1);
   border-radius: var(--vf-r-pill);
   background: color-mix(in srgb, var(--vc) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--vc) 28%, transparent);
@@ -590,14 +593,15 @@
 [data-mytrion='verification'] .vf-cardc-cell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-0_5);
-  padding: var(--space-2) var(--space-2_5);
+  gap: var(--space-1);
+  padding: var(--space-2_5) var(--space-3);
   background: var(--hz-pane-alt);
   min-width: 0;
 }
 /* 10px had no token. --text-2xs is 11px and theme.css is explicit that this one step absorbs the
    sub-11px micro-label sites; caps at the smallest step track loosest, hence --tr-caps-micro. */
 [data-mytrion='verification'] .vf-cardc-l {
+  font-family: var(--font-body);
   font-size: var(--text-2xs);
   font-weight: var(--fw-bold);
   letter-spacing: var(--tr-caps-micro);
@@ -605,6 +609,7 @@
   color: var(--text-muted);
 }
 [data-mytrion='verification'] .vf-cardc-v {
+  font-family: var(--font-body);
   font-size: var(--text-sm);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
@@ -703,7 +708,7 @@
     -webkit-backdrop-filter: none;
     box-shadow: none;
     padding: var(--space-3) var(--space-3_5);
-    gap: var(--space-1);
+    gap: var(--space-2);
   }
   [data-mytrion='verification'] .vf-cardc:last-child {
     border-bottom: none;
@@ -725,6 +730,7 @@
 }
 [data-mytrion='verification'] .vf-table-wrap {
   overflow-x: auto;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--hz-pane-bd);
   border-radius: var(--vf-r-panel);
   background: var(--hz-pane);
@@ -733,16 +739,25 @@
 [data-mytrion='verification'] .vf-table {
   width: 100%;
   border-collapse: collapse;
+  font-family: var(--font-body);
   font-size: var(--text-sm);
 }
 [data-mytrion='verification'] .vf-table th,
 [data-mytrion='verification'] .vf-table td {
   text-align: left;
-  padding: var(--space-3) var(--space-3_5);
+  padding: var(--space-3_5) var(--space-4);
   border-bottom: 1px solid var(--hz-pane-bd);
   white-space: nowrap;
 }
+[data-mytrion='verification'] .vf-table th:first-child,
+[data-mytrion='verification'] .vf-table td:first-child {
+  white-space: normal;
+}
+[data-mytrion='verification'] .vf-table tr:last-child td {
+  border-bottom: 0;
+}
 [data-mytrion='verification'] .vf-table th {
+  font-family: var(--font-head);
   font-size: var(--text-2xs);
   letter-spacing: var(--tr-caps-micro);
   text-transform: uppercase;
@@ -886,7 +901,24 @@
   border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
 }
 [data-mytrion='verification'] .vf-case-card span {
+  font-family: var(--font-body);
   font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vf-case-card strong {
+  font-family: var(--font-head);
+}
+[data-mytrion='verification'] .vf-card-chips,
+[data-mytrion='verification'] .vf-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+}
+[data-mytrion='verification'] .vf-card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   color: var(--text-muted);
 }
 

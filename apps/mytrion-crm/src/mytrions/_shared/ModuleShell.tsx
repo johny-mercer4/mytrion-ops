@@ -31,6 +31,13 @@ export interface ModuleTab {
   tone: string;
   /** Extra sidebar-search terms; the label is always searched. */
   keywords?: string[];
+  /**
+   * Sidebar section label. Consecutive tabs that share a group become one NavSection; a tab
+   * without a group joins `navLabel` (or starts a new section after a grouped run).
+   */
+  group?: string;
+  /** Hide the page-head kicker — the title already names the page. */
+  hideKicker?: boolean;
   /** Layer-2 gate. Defaults to open — narrow it rather than hiding the item in the shell. */
   access?: (user: UserContext) => boolean;
   /** Unbuilt: renders <ComingSoon />. Mutually exclusive with `content`. */
@@ -62,6 +69,27 @@ export interface ModuleShellProps {
   tabs: ModuleTab[];
 }
 
+export function groupModuleTabs<T extends { id: string; group?: string }>(
+  tabs: readonly T[],
+  fallbackLabel: string,
+): Array<{ id: string; label: string; items: T[] }> {
+  const groups: Array<{ id: string; label: string; items: T[] }> = [];
+  for (const tab of tabs) {
+    const label = tab.group ?? fallbackLabel;
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      last.items.push(tab);
+      continue;
+    }
+    groups.push({
+      id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || tab.id,
+      label,
+      items: [tab],
+    });
+  }
+  return groups;
+}
+
 export function ModuleShell({
   id,
   kicker,
@@ -87,24 +115,22 @@ export function ModuleShell({
   const launchers = visible.slice(1);
 
   const pinIds = new Set(visible.filter((tab) => !tab.soon).slice(0, 4).map((tab) => tab.id));
-  const navSections: NavSection[] = [
-    {
-      id: 'main',
-      label: navLabel,
-      items: visible.map((tab) => ({
-        key: tab.id,
-        label: tab.label,
-        // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
-        soon: Boolean(tab.soon),
-        icon: <tab.icon size={19} />,
-        tone: tab.tone,
-        active: view === tab.id,
-        onClick: () => open(tab.id),
-        keywords: tab.keywords ?? [],
-        primary: pinIds.has(tab.id),
-      })),
-    },
-  ];
+  const navSections: NavSection[] = groupModuleTabs(visible, navLabel).map((section) => ({
+    id: section.id,
+    label: section.label,
+    items: section.items.map((tab) => ({
+      key: tab.id,
+      label: tab.label,
+      // ModuleTab.soon is the ComingSoon panel's config; the rail only needs the fact.
+      soon: Boolean(tab.soon),
+      icon: <tab.icon size={19} />,
+      tone: tab.tone,
+      active: view === tab.id,
+      onClick: () => open(tab.id),
+      keywords: tab.keywords ?? [],
+      primary: pinIds.has(tab.id),
+    })),
+  }));
 
   return (
     <div data-mytrion={id} className="contents">
@@ -160,7 +186,7 @@ export function ModuleShell({
               ) : (
                 <>
                   <PageHead
-                    kicker={kicker}
+                    {...(active.hideKicker ? {} : { kicker })}
                     title={active.label}
                     description={active.description}
                   />

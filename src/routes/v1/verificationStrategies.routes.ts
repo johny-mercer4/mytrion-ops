@@ -1,7 +1,8 @@
 /**
  * Verification Mytrion → Orchestration config (`/v1/verification/stop-factors*`,
- * `/v1/verification/strategies*`). Proxies credit-platform /api/v1 so the pipeline
- * reads the same stop_factors rows and decision_strategies_json the mono UI writes.
+ * `/v1/verification/strategies*`). Reads/writes credit_platform stop_factors and
+ * system_state.decision_strategies_json through the verification DB pools — the same
+ * rows verification-mono Orchestration uses. No CREDIT_PLATFORM_BASE_URL.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';

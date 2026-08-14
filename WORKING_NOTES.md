@@ -16133,3 +16133,94 @@ ungranted claim is recorded `denied` and never collapsed rather than being silen
   `CREDIT_PLATFORM_API_KEY` will 401/403 — surfaced as `CREDIT_PLATFORM_FORBIDDEN`.
 - `CREDIT_PLATFORM_BASE_URL` unset → 503. Replica/read-only DSN cannot be used (we do not write
   verification Postgres from this tab).
+
+## 2026-08-14 — Rules / Stop Factors via verification Postgres (no CREDIT_PLATFORM HTTP)
+
+The tab 503'd because `.env` has `VERIFICATION_DATABASE_URL` (ohio Render `credit_platform`) but
+no `CREDIT_PLATFORM_BASE_URL` / API key. Mono Orchestration itself is just SQL + an in-process
+cache — we now do the same DML through the existing pools.
+
+### Live schema (read-only inspect, `johnmercer` has full DML)
+
+- `stop_factors`: id, name, stage, check_type, field_path, operator, threshold, action_on_fail,
+  action_on_missing, provider_filter, enabled, priority, meta, updated_at. **0 rows** today.
+- `system_state.key`:
+  - `decision_strategies_json` — 9 strategies (fmcsa-authority, octane-sop-hardstops, llc, …)
+  - `decision_strategies_revisions_json` — version trail
+  - `config_version` — cache-bust counter (mono `VersionedTTLCache`)
+- `config_revisions` — empty; mono does **not** insert here on ordinary CRUD (separate Publish).
+- `audit_log` — platform audit, same INSERT as mono `audit()`.
+
+### What we write
+
+- Stop factor POST/PUT: exact mono INSERT/UPDATE, `meta.decision_rule` on stage=decision,
+  `audit_log` row, then bump `system_state.config_version`.
+- Strategy POST/PUT: rewrite `decision_strategies_json` (normalize + sort), append
+  `decision_strategies_revisions_json` (cap 250, version+1 on update), `audit_log`, bump
+  `config_version`.
+- Octane routes unchanged (`/v1/verification/stop-factors*`, `/strategies*`,
+  `requireDepartment(..., 'verification')`). 503 is now `VERIFICATION_DB_UNCONFIGURED` /
+  `VERIFICATION_WRITE_DISABLED` — not CREDIT_PLATFORM_*.
+- `VERIFICATION_WRITE_ENABLED` unset defaults to on.
+
+### Cache caveat
+
+Bumping `config_version` is the row mono's HTTP `config_cache.invalidate()` writes. Core-api
+re-reads that key every ~2s, so its 30s TTL list cache drops. Processor-side `_acfg` HTTP
+caches (stop-factor / decision-engine, typically 30s) are in-process in those services and
+cannot be busted from Postgres — restart or wait TTL. Strategy evaluation in core-api reads
+`system_state` live (no cache).
+
+### UI
+
+Same Ruleset tab. Refresh loads the 9 strategies (or a true empty stop-factor list). One
+skeleton; only the active section fetches.
+
+## 2026-08-14 — Decision rules polish (Finish Review)
+
+Operate refinement of Verification → Decision rules (was “Rules Strategies / Stop Factors”).
+
+### IA
+- Inbox sits directly under Main in `TABS` and `VERIFICATION_TABS`.
+- ModuleShell now groups consecutive `tab.group` values into rail sections: Queue (Inbox, Cases),
+  Policy (Decision rules), Roster (Existing clients, Tickets). Main stays ungrouped under Verification.
+- Tab label is **Decision rules** so the rail no longer clips. Icons: Home / Inbox / ClipboardCheck /
+  Scale / Building2 / Ticket. Inbox tone is sky; Main stays violet. No `SlidersHorizontal`.
+- Page head on this tab has no Decisioning kicker — the title carries the page.
+
+### List + dialogs
+- Active / Disabled pills (`--tint-good` vs muted), dimmed disabled rows, no Yes/No.
+- Search + Active/Disabled filters; stop-factor stage chips kept. Client-side filter over one SWR
+  fetch per resource (both lists load once on the tab).
+- Dialogs stay on `ds/Dialog`. Subtitles / empty states / PageHead: “Applies on the next run.”
+  Sections are human titles; Path / Operator / Value rows have icons; chips for stage scope.
+  Footer uses `ds/Button` primary + secondary so Save is visible in light (`.ms-btn.is-primary`
+  was an unstyled no-op).
+
+### DML
+- Still direct verification Postgres (`verificationOrchestrationDb` + write pool). No CREDIT_PLATFORM HTTP.
+- Stop-factor INSERT now sets `updated_at = NOW()` with the rest of the mono column list.
+- Did not write live: `.env` points at Render `credit_platform`. Proof is unit tests (insert/audit/
+  version bump; strategy append onto an existing JSON list).
+
+## 2026-08-14 — Decision rules + cases polish (Operate)
+
+Flicker on row→modal: `ds/Dialog` mounted `open` with `phase='closed'`, so the first paint had no
+children; a `useEffect` then `showModal()` and swapped in a skeleton. Open now uses
+`useLayoutEffect`, children stay mounted while `open`, and case/strategy dialogs keep last-known
+row data in the header/body. No second fetch, no height/bounce motion.
+
+Decision rules: 2-line word-boundary summary + title tooltip; table wrap inset; Grotesk only on
+`--font-head`; nav/avatar no longer neon cyan on dark (`--text-primary` / `--text-secondary`).
+
+Cases: tinted status/queue/stage/pipeline/carrier pills; same table inset; case modal opens on
+preview then fills stages; `ds/Button` footer. Detector bans removed from files touched
+(`transition: width` dead decl, `--ease-spring` on the tab bar, accent-glow on the active rail).
+
+## 2026-08-14 — Verification Existing clients: badge air + modal keep-children
+
+List cards and the client modal shared one cramped badge language (`2px 8px` pad, `6px` row gap,
+modal flags had no flex gap). Same tokens now: pad `--space-1` / `--space-2_5`, icon-label
+`--space-1_5`, row gap `--space-2`. LOC / Prepay / cycle use `--tint-*`; aggregator marks keep
+`--tone-*`. Card wash and per-item hover hue removed so the grid is not a rainbow. Grotesk stays
+on the company name only. Client dialog stays mounted with last-known row (ruleset/cases pattern).

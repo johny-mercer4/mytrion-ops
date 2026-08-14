@@ -44,8 +44,8 @@ const EnvSchema = z.object({
   // SSL). Read pool (verificationDb.ts) opens it read-only; the write-back pool
   // (creditPlatformWriteDb.ts) opens the SAME DSN in a writable session. ---
   VERIFICATION_DATABASE_URL: z.string().default(''),
-  // Write-back kill switch: when on, the Sales verification tab may INSERT into the credit_platform
-  // kxd.sales_agent_* inbox over VERIFICATION_DATABASE_URL. On by default; set 0 to disable.
+  // Write-back kill switch: when on, Mytrion may write credit_platform over VERIFICATION_DATABASE_URL
+  // (kxd.sales_agent_* inbox + Orchestration stop_factors / system_state). On by default; set 0 to disable.
   VERIFICATION_WRITE_ENABLED: flag('1'),
   // Credit-platform HTTP (fire-and-forget create/run/approve). Empty = ingest still writes the
   // local case and marks auto-start failed.

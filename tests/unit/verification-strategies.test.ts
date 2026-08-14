@@ -1,58 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/integrations/creditPlatformConfig.js', () => ({
-  isCreditPlatformConfigConfigured: vi.fn(() => true),
+vi.mock('../../src/integrations/verificationOrchestrationDb.js', () => ({
+  isOrchestrationDbConfigured: vi.fn(() => true),
+  isOrchestrationWriteConfigured: vi.fn(() => true),
   listStopFactors: vi.fn(),
   createStopFactor: vi.fn(),
   updateStopFactor: vi.fn(),
   listDecisionStrategies: vi.fn(),
   createDecisionStrategy: vi.fn(),
   updateDecisionStrategy: vi.fn(),
-  parseStopFactor: vi.fn((raw: { id?: number; name?: string }) =>
-    raw.id && raw.name
-      ? {
-          id: raw.id,
-          name: raw.name,
-          stage: 'pre',
-          check_type: 'field_check',
-          field_path: null,
-          operator: 'gte',
-          threshold: null,
-          action_on_fail: 'REJECT',
-          action_on_missing: 'PASS',
-          provider_filter: null,
-          enabled: true,
-          priority: 0,
-          meta: {},
-        }
-      : null,
-  ),
-  parseDecisionStrategy: vi.fn((raw: { id?: string; title?: string }) =>
-    raw.id || raw.title
-      ? {
-          id: raw.id ?? 'x',
-          title: raw.title ?? 'X',
-          enabled: true,
-          lifecycle: 'draft',
-          version: 1,
-          priority: 10,
-          summary: '',
-          outcome: '',
-          data_sources: [],
-          stage_scope: [],
-          decision_actions: [],
-          combined_fields: [],
-          rule_bindings: [],
-          conditions: [],
-          logic: '',
-          meta: {},
-        }
-      : null,
-  ),
-}));
-
-vi.mock('../../src/integrations/creditPlatformClient.js', () => ({
-  isCreditPlatformConfigured: vi.fn(() => true),
 }));
 
 vi.mock('../../src/modules/audit/auditLogger.js', () => ({
@@ -62,13 +18,14 @@ vi.mock('../../src/modules/audit/auditLogger.js', () => ({
 import { AppError } from '../../src/lib/errors.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import {
-  createStopFactor,
   createDecisionStrategy,
-  isCreditPlatformConfigConfigured,
+  createStopFactor,
+  isOrchestrationDbConfigured,
+  isOrchestrationWriteConfigured,
   listDecisionStrategies,
   listStopFactors,
   updateStopFactor,
-} from '../../src/integrations/creditPlatformConfig.js';
+} from '../../src/integrations/verificationOrchestrationDb.js';
 import {
   listVerificationStopFactors,
   listVerificationStrategies,
@@ -84,17 +41,35 @@ const createSf = vi.mocked(createStopFactor);
 const updateSf = vi.mocked(updateStopFactor);
 const listSt = vi.mocked(listDecisionStrategies);
 const createSt = vi.mocked(createDecisionStrategy);
-const configured = vi.mocked(isCreditPlatformConfigConfigured);
+const dbConfigured = vi.mocked(isOrchestrationDbConfigured);
+const writeConfigured = vi.mocked(isOrchestrationWriteConfigured);
 
 const ctx: TenantContext = {
   tenantId: DEFAULT_TENANT_ID,
   userId: 'zoho:1',
+  userName: 'Test Worker',
   audience: 'internal',
   role: 'admin',
   scopes: [],
   departments: ['verification'],
   allDepartmentAccess: true,
   requestId: 'req_test',
+};
+
+const sampleFactor = {
+  id: 9,
+  name: 'Min score',
+  stage: 'decision',
+  check_type: 'field_check',
+  field_path: null,
+  operator: 'gte',
+  threshold: '600',
+  action_on_fail: 'REJECT',
+  action_on_missing: 'PASS',
+  provider_filter: null,
+  enabled: true,
+  priority: 0,
+  meta: { decision_rule: true },
 };
 
 describe('verification strategy schemas', () => {
@@ -107,7 +82,7 @@ describe('verification strategy schemas', () => {
       threshold: '600',
       action_on_fail: 'REJECT',
     });
-    createSf.mockResolvedValue({ ok: true, status: 201, json: { status: 'created', id: '9' } });
+    createSf.mockResolvedValue({ status: 'created', id: '9', item: sampleFactor });
     const saved = await saveVerificationStopFactor(ctx, parsed);
     expect(saved.id).toBe('9');
     expect(createSf).toHaveBeenCalledWith(
@@ -116,6 +91,7 @@ describe('verification strategy schemas', () => {
         stage: 'decision',
         meta: expect.objectContaining({ decision_rule: true }),
       }),
+      'Test Worker',
     );
   });
 
@@ -126,7 +102,7 @@ describe('verification strategy schemas', () => {
 });
 
 describe('verification strategy module', () => {
-  it('lists stop factors and strategies from credit-platform', async () => {
+  it('lists stop factors and strategies from the verification DB', async () => {
     listSf.mockResolvedValue([]);
     listSt.mockResolvedValue([]);
     await expect(listVerificationStopFactors('pre')).resolves.toEqual({ items: [] });
@@ -134,24 +110,39 @@ describe('verification strategy module', () => {
     expect(listSf).toHaveBeenCalledWith('pre');
   });
 
-  it('maps a 403 config write to an operator-facing 502', async () => {
-    updateSf.mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: { detail: 'admin role required' },
-    });
+  it('maps a missing stop factor to 404', async () => {
+    updateSf.mockRejectedValue(
+      new AppError('stop factor not found', { statusCode: 404, code: 'VERIFICATION_NOT_FOUND', expose: true }),
+    );
     const parsed = stopFactorWriteSchema.parse({ name: 'X', stage: 'pre' });
     await expect(saveVerificationStopFactor(ctx, parsed, 3)).rejects.toMatchObject({
-      statusCode: 502,
-      code: 'CREDIT_PLATFORM_FORBIDDEN',
+      statusCode: 404,
+      code: 'VERIFICATION_NOT_FOUND',
     } satisfies Partial<AppError>);
   });
 
-  it('creates a strategy through the config API', async () => {
+  it('creates a strategy through the verification DB', async () => {
     createSt.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: { status: 'created', id: 'cashflow', item: { id: 'cashflow', title: 'Cashflow' } },
+      status: 'created',
+      id: 'cashflow',
+      item: {
+        id: 'cashflow',
+        title: 'Cashflow',
+        enabled: true,
+        lifecycle: 'draft',
+        version: 1,
+        priority: 100,
+        summary: '',
+        outcome: '',
+        data_sources: [],
+        stage_scope: [],
+        decision_actions: [],
+        combined_fields: [],
+        rule_bindings: [],
+        conditions: [],
+        logic: '',
+        meta: {},
+      },
     });
     const parsed = strategyWriteSchema.parse({ title: 'Cashflow', id: 'cashflow' });
     const saved = await saveVerificationStrategy(ctx, parsed);
@@ -159,15 +150,22 @@ describe('verification strategy module', () => {
     expect(createSt).toHaveBeenCalled();
   });
 
-  it('fails closed when credit-platform is not configured', async () => {
-    configured.mockReturnValue(false);
-    const client = await import('../../src/integrations/creditPlatformClient.js');
-    vi.mocked(client.isCreditPlatformConfigured).mockReturnValue(false);
+  it('fails closed when the verification DSN is unset', async () => {
+    dbConfigured.mockReturnValue(false);
     await expect(listVerificationStrategies()).rejects.toMatchObject({
       statusCode: 503,
-      code: 'CREDIT_PLATFORM_NOT_CONFIGURED',
+      code: 'VERIFICATION_DB_UNCONFIGURED',
     });
-    configured.mockReturnValue(true);
-    vi.mocked(client.isCreditPlatformConfigured).mockReturnValue(true);
+    dbConfigured.mockReturnValue(true);
+  });
+
+  it('fails closed on write when VERIFICATION_WRITE_ENABLED is off', async () => {
+    writeConfigured.mockReturnValue(false);
+    const parsed = stopFactorWriteSchema.parse({ name: 'X', stage: 'pre' });
+    await expect(saveVerificationStopFactor(ctx, parsed)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'VERIFICATION_WRITE_DISABLED',
+    });
+    writeConfigured.mockReturnValue(true);
   });
 });

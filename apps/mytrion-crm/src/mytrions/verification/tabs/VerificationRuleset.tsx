@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { GitBranch, OctagonAlert, Plus, RefreshCw, Scale, Search, X } from 'lucide-react';
 import { formatCachedAt, invalidateSwrCache } from '../../_shared/swrCache';
 import {
   saveDecisionStrategy,
@@ -11,6 +11,15 @@ import {
 import { VerificationStopFactorDialog } from '../VerificationStopFactorDialog';
 import { VerificationStrategyDialog } from '../VerificationStrategyDialog';
 import { useVerificationStopFactors, useVerificationStrategies } from '../verificationData';
+import {
+  clampSummary,
+  countEnabled,
+  filterStopFactors,
+  filterStrategies,
+  lifecycleLabel,
+  stageLabel,
+  type EnabledFilter,
+} from '../verificationRulesetFilter';
 
 type Section = 'strategies' | 'factors';
 
@@ -21,12 +30,11 @@ const STAGES: { id: StopFactorStage | ''; label: string }[] = [
   { id: 'post', label: 'Post-check' },
 ];
 
-function stageLabel(stage: string): string {
-  if (stage === 'pre') return 'Pre';
-  if (stage === 'post') return 'Post';
-  if (stage === 'decision') return 'Decision';
-  return stage || '—';
-}
+const ENABLED: { id: EnabledFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'enabled', label: 'Active' },
+  { id: 'disabled', label: 'Disabled' },
+];
 
 function RulesSkeleton() {
   return (
@@ -41,27 +49,57 @@ function RulesSkeleton() {
   );
 }
 
+function StatusPill({ enabled }: { enabled: boolean }) {
+  return (
+    <span className={`vf-pill ${enabled ? 'is-on' : 'is-off'}`}>{enabled ? 'Active' : 'Disabled'}</span>
+  );
+}
+
 export function VerificationRuleset() {
   const [section, setSection] = useState<Section>('strategies');
+  const [q, setQ] = useState('');
+  const [enabled, setEnabled] = useState<EnabledFilter>('all');
   const [stage, setStage] = useState<StopFactorStage | ''>('');
-  const [editingFactor, setEditingFactor] = useState<StopFactorRow | null | 'new'>(null);
-  const [editingStrategy, setEditingStrategy] = useState<DecisionStrategyRow | null | 'new'>(null);
+  const [factorOpen, setFactorOpen] = useState(false);
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [editingFactor, setEditingFactor] = useState<StopFactorRow | null>(null);
+  const [editingStrategy, setEditingStrategy] = useState<DecisionStrategyRow | null>(null);
+
+  const openStrategy = (row: DecisionStrategyRow | null): void => {
+    setEditingStrategy(row);
+    setStrategyOpen(true);
+  };
+  const openFactor = (row: StopFactorRow | null): void => {
+    setEditingFactor(row);
+    setFactorOpen(true);
+  };
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const strategies = useVerificationStrategies();
-  const factors = useVerificationStopFactors(stage);
+  const factors = useVerificationStopFactors();
   const load = section === 'strategies' ? strategies : factors;
   const firstLoad = load.loading && !load.data;
-  const countsUnknown = firstLoad || Boolean(load.error && !load.data);
   const cachedCaption = formatCachedAt(load.cachedAt);
-  const strategyItems = strategies.data ?? [];
-  const factorItems = factors.data ?? [];
+  const strategyItems = useMemo(
+    () => filterStrategies(strategies.data ?? [], { q, enabled }),
+    [strategies.data, q, enabled],
+  );
+  const factorItems = useMemo(
+    () => filterStopFactors(factors.data ?? [], { q, enabled, stage }),
+    [factors.data, q, enabled, stage],
+  );
+  const sourceRows = section === 'strategies' ? (strategies.data ?? []) : (factors.data ?? []);
+  const visibleRows = section === 'strategies' ? strategyItems : factorItems;
+  const filtersOn = q.trim() !== '' || enabled !== 'all' || (section === 'factors' && stage !== '');
 
-  const reloadBoth = (): void => {
-    invalidateSwrCache('verification:strategies');
+  const reloadActive = (): void => {
+    if (section === 'strategies') {
+      invalidateSwrCache('verification:strategies');
+      void strategies.reload();
+      return;
+    }
     invalidateSwrCache('verification:stop-factors');
-    void strategies.reload();
     void factors.reload();
   };
 
@@ -97,6 +135,7 @@ export function VerificationRuleset() {
           enabled: !row.enabled,
           priority: row.priority,
           apply_at_zoho_intake: row.meta.apply_at_zoho_intake === true,
+          meta: row.meta,
         },
         row.id,
       );
@@ -129,6 +168,7 @@ export function VerificationRuleset() {
           rule_bindings: row.rule_bindings,
           conditions: row.conditions,
           logic: row.logic,
+          meta: row.meta,
         },
         row.id,
       );
@@ -144,10 +184,6 @@ export function VerificationRuleset() {
   return (
     <div className="vf-clients">
       <div className="vf-panel">
-        <p className="vf-rs-intro">
-          Create or edit the live Orchestration records. Saves write the same stop-factor rows and
-          decision strategies the credit-platform pipeline already reads.
-        </p>
         <div className="vf-toolbar">
           <div className="vf-filter-group" role="group" aria-label="Record type">
             <button
@@ -167,6 +203,21 @@ export function VerificationRuleset() {
               Stop factors
             </button>
           </div>
+          <label className="vf-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={section === 'strategies' ? 'Search strategies' : 'Search stop factors'}
+              aria-label={section === 'strategies' ? 'Search strategies' : 'Search stop factors'}
+            />
+            {q ? (
+              <button type="button" className="vf-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+                <X size={14} aria-hidden="true" />
+              </button>
+            ) : null}
+          </label>
           <div className="vf-refresh">
             {load.revalidating ? (
               <span className="vf-cached">Refreshing…</span>
@@ -187,7 +238,7 @@ export function VerificationRuleset() {
               type="button"
               className="vf-btn"
               onClick={() =>
-                section === 'strategies' ? setEditingStrategy('new') : setEditingFactor('new')
+                section === 'strategies' ? openStrategy(null) : openFactor(null)
               }
             >
               <Plus size={14} aria-hidden="true" />
@@ -195,10 +246,22 @@ export function VerificationRuleset() {
             </button>
           </div>
         </div>
-        {section === 'factors' ? (
-          <div className="vf-filters">
+        <div className="vf-filters">
+          <div className="vf-filter-group" role="group" aria-label="Status">
+            {ENABLED.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="vf-chip"
+                aria-pressed={enabled === item.id}
+                onClick={() => setEnabled(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          {section === 'factors' ? (
             <div className="vf-filter-group" role="group" aria-label="Stage">
-              <span className="vf-filter-label">Stage</span>
               {STAGES.map((s) => (
                 <button
                   key={s.id || 'all'}
@@ -211,28 +274,17 @@ export function VerificationRuleset() {
                 </button>
               ))}
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
         <p className="vf-summary" aria-live="polite">
-          {section === 'strategies' ? (
-            <>
-              <span className="vf-summary-item">
-                <strong>{countsUnknown ? '—' : strategyItems.length}</strong> strategies
-              </span>
-              <span className="vf-summary-item">
-                <strong>{countsUnknown ? '—' : strategyItems.filter((s) => s.enabled).length}</strong> enabled
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="vf-summary-item">
-                <strong>{countsUnknown ? '—' : factorItems.length}</strong> rules
-              </span>
-              <span className="vf-summary-item">
-                <strong>{countsUnknown ? '—' : factorItems.filter((s) => s.enabled).length}</strong> enabled
-              </span>
-            </>
-          )}
+          <span className="vf-summary-item">
+            <strong>{firstLoad ? '—' : visibleRows.length}</strong>
+            {filtersOn && !firstLoad ? ` of ${sourceRows.length}` : ''}{' '}
+            {section === 'strategies' ? 'strategies' : 'rules'}
+          </span>
+          <span className="vf-summary-item is-clear">
+            <strong>{firstLoad ? '—' : countEnabled(visibleRows)}</strong> active
+          </span>
         </p>
       </div>
 
@@ -251,30 +303,51 @@ export function VerificationRuleset() {
         <RulesSkeleton />
       ) : load.error && !load.data ? (
         <div className="vf-empty" role="alert">
-          <SlidersHorizontal size={28} aria-hidden="true" />
+          <Scale size={28} aria-hidden="true" />
           <div className="vf-empty-title">Couldn’t load {section === 'strategies' ? 'strategies' : 'stop factors'}</div>
           <p>{load.error}</p>
           <button type="button" className="vf-btn" onClick={() => void load.reload()}>
             Try again
           </button>
         </div>
-      ) : section === 'strategies' && strategyItems.length === 0 ? (
+      ) : visibleRows.length === 0 ? (
         <div className="vf-empty">
-          <SlidersHorizontal size={28} aria-hidden="true" />
-          <div className="vf-empty-title">No decision strategies</div>
-          <p>Create one to publish policy into decision_strategies_json.</p>
-          <button type="button" className="vf-btn" onClick={() => setEditingStrategy('new')}>
-            New strategy
-          </button>
-        </div>
-      ) : section === 'factors' && factorItems.length === 0 ? (
-        <div className="vf-empty">
-          <SlidersHorizontal size={28} aria-hidden="true" />
-          <div className="vf-empty-title">No stop-factor rules</div>
-          <p>Nothing in this stage. Add a rule or clear the stage filter.</p>
-          <button type="button" className="vf-btn" onClick={() => setEditingFactor('new')}>
-            New stop factor
-          </button>
+          {section === 'strategies' ? <Scale size={28} aria-hidden="true" /> : <OctagonAlert size={28} aria-hidden="true" />}
+          <div className="vf-empty-title">
+            {filtersOn
+              ? 'Nothing matches'
+              : section === 'strategies'
+                ? 'No strategies yet'
+                : 'No stop factors yet'}
+          </div>
+          <p>
+            {filtersOn
+              ? 'Clear search or status to see every record.'
+              : 'Add one and it applies on the next run.'}
+          </p>
+          {filtersOn ? (
+            <button
+              type="button"
+              className="vf-btn"
+              onClick={() => {
+                setQ('');
+                setEnabled('all');
+                setStage('');
+              }}
+            >
+              Clear filters
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="vf-btn"
+              onClick={() =>
+                section === 'strategies' ? openStrategy(null) : openFactor(null)
+              }
+            >
+              {section === 'strategies' ? 'New strategy' : 'New stop factor'}
+            </button>
+          )}
         </div>
       ) : section === 'strategies' ? (
         <>
@@ -283,26 +356,41 @@ export function VerificationRuleset() {
               <caption className="sr-only">Decision strategies</caption>
               <thead>
                 <tr>
-                  <th>Title</th>
+                  <th>Strategy</th>
+                  <th>Status</th>
                   <th>Lifecycle</th>
                   <th>Priority</th>
                   <th>Actions</th>
-                  <th>Enabled</th>
                   <th>Edit</th>
                 </tr>
               </thead>
               <tbody>
                 {strategyItems.map((row) => (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={row.enabled ? undefined : 'is-off'}>
                     <td>
-                      <button type="button" className="vf-link" onClick={() => setEditingStrategy(row)}>
-                        {row.title}
+                      <button
+                        type="button"
+                        className="vf-title-btn"
+                        title={row.summary || row.title}
+                        onClick={() => openStrategy(row)}
+                      >
+                        <GitBranch size={16} aria-hidden="true" />
+                        <span>
+                          <strong>{row.title}</strong>
+                          {row.summary ? <em>{clampSummary(row.summary)}</em> : null}
+                        </span>
                       </button>
                     </td>
-                    <td>{row.lifecycle}</td>
+                    <td>
+                      <StatusPill enabled={row.enabled} />
+                    </td>
+                    <td>
+                      <span className={`vf-pill is-${row.lifecycle === 'published' ? 'info' : row.lifecycle === 'archived' ? 'mute' : 'warn'}`}>
+                        {lifecycleLabel(row.lifecycle)}
+                      </span>
+                    </td>
                     <td>{row.priority}</td>
                     <td>{row.decision_actions.join(', ') || '—'}</td>
-                    <td>{row.enabled ? 'Yes' : 'No'}</td>
                     <td>
                       <div className="vf-rs-row-btns">
                         <button
@@ -313,7 +401,7 @@ export function VerificationRuleset() {
                         >
                           {row.enabled ? 'Disable' : 'Enable'}
                         </button>
-                        <button type="button" className="vf-btn" onClick={() => setEditingStrategy(row)}>
+                        <button type="button" className="vf-btn" onClick={() => openStrategy(row)}>
                           Edit
                         </button>
                       </div>
@@ -326,10 +414,20 @@ export function VerificationRuleset() {
           <ul className="vf-case-cards">
             {strategyItems.map((row) => (
               <li key={row.id}>
-                <button type="button" className="vf-case-card" onClick={() => setEditingStrategy(row)}>
-                  <strong>{row.title}</strong>
+                <button
+                  type="button"
+                  className={`vf-case-card ${row.enabled ? '' : 'is-off'}`}
+                  onClick={() => openStrategy(row)}
+                >
+                  <span className="vf-card-top">
+                    <GitBranch size={16} aria-hidden="true" />
+                    <strong>{row.title}</strong>
+                    <StatusPill enabled={row.enabled} />
+                  </span>
+                  {row.summary ? <span className="vf-card-summary">{clampSummary(row.summary)}</span> : null}
                   <span>
-                    {row.lifecycle} · priority {row.priority} · {row.enabled ? 'enabled' : 'disabled'}
+                    {lifecycleLabel(row.lifecycle)} · priority {row.priority}
+                    {row.decision_actions.length ? ` · ${row.decision_actions.join(', ')}` : ''}
                   </span>
                 </button>
               </li>
@@ -343,28 +441,51 @@ export function VerificationRuleset() {
               <caption className="sr-only">Stop factors</caption>
               <thead>
                 <tr>
-                  <th>Name</th>
+                  <th>Rule</th>
+                  <th>Status</th>
                   <th>Stage</th>
-                  <th>Path</th>
-                  <th>Op</th>
-                  <th>Action</th>
-                  <th>Enabled</th>
+                  <th>Check</th>
+                  <th>On fail</th>
                   <th>Edit</th>
                 </tr>
               </thead>
               <tbody>
                 {factorItems.map((row) => (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={row.enabled ? undefined : 'is-off'}>
                     <td>
-                      <button type="button" className="vf-link" onClick={() => setEditingFactor(row)}>
-                        {row.name}
+                      <button
+                        type="button"
+                        className="vf-title-btn"
+                        title={row.field_path || row.name}
+                        onClick={() => openFactor(row)}
+                      >
+                        <OctagonAlert size={16} aria-hidden="true" />
+                        <span>
+                          <strong>{row.name}</strong>
+                          {row.field_path ? <em>{row.field_path}</em> : null}
+                        </span>
                       </button>
                     </td>
-                    <td>{stageLabel(row.stage)}</td>
-                    <td className="vf-rs-mono">{row.field_path || '—'}</td>
-                    <td>{row.check_type === 'field_check' ? row.operator : '—'}</td>
-                    <td>{row.action_on_fail}</td>
-                    <td>{row.enabled ? 'Yes' : 'No'}</td>
+                    <td>
+                      <StatusPill enabled={row.enabled} />
+                    </td>
+                    <td>
+                      <span className="vf-pill is-info">{stageLabel(row.stage)}</span>
+                    </td>
+                    <td>{row.check_type === 'field_check' ? row.operator : row.check_type}</td>
+                    <td>
+                      <span
+                        className={`vf-pill ${
+                          row.action_on_fail === 'APPROVE'
+                            ? 'is-on'
+                            : row.action_on_fail === 'REVIEW'
+                              ? 'is-warn'
+                              : 'is-bad'
+                        }`}
+                      >
+                        {row.action_on_fail}
+                      </span>
+                    </td>
                     <td>
                       <div className="vf-rs-row-btns">
                         <button
@@ -375,7 +496,7 @@ export function VerificationRuleset() {
                         >
                           {row.enabled ? 'Disable' : 'Enable'}
                         </button>
-                        <button type="button" className="vf-btn" onClick={() => setEditingFactor(row)}>
+                        <button type="button" className="vf-btn" onClick={() => openFactor(row)}>
                           Edit
                         </button>
                       </div>
@@ -388,10 +509,18 @@ export function VerificationRuleset() {
           <ul className="vf-case-cards">
             {factorItems.map((row) => (
               <li key={row.id}>
-                <button type="button" className="vf-case-card" onClick={() => setEditingFactor(row)}>
-                  <strong>{row.name}</strong>
+                <button
+                  type="button"
+                  className={`vf-case-card ${row.enabled ? '' : 'is-off'}`}
+                  onClick={() => openFactor(row)}
+                >
+                  <span className="vf-card-top">
+                    <OctagonAlert size={16} aria-hidden="true" />
+                    <strong>{row.name}</strong>
+                    <StatusPill enabled={row.enabled} />
+                  </span>
                   <span>
-                    {stageLabel(row.stage)} · {row.action_on_fail} · {row.enabled ? 'enabled' : 'disabled'}
+                    {stageLabel(row.stage)} · {row.action_on_fail}
                   </span>
                 </button>
               </li>
@@ -400,27 +529,25 @@ export function VerificationRuleset() {
         </>
       )}
 
-      {editingFactor !== null ? (
-        <VerificationStopFactorDialog
-          row={editingFactor === 'new' ? null : editingFactor}
-          defaultStage={stage}
-          onClose={() => setEditingFactor(null)}
-          onSaved={() => {
-            setEditingFactor(null);
-            reloadBoth();
-          }}
-        />
-      ) : null}
-      {editingStrategy !== null ? (
-        <VerificationStrategyDialog
-          row={editingStrategy === 'new' ? null : editingStrategy}
-          onClose={() => setEditingStrategy(null)}
-          onSaved={() => {
-            setEditingStrategy(null);
-            reloadBoth();
-          }}
-        />
-      ) : null}
+      <VerificationStopFactorDialog
+        open={factorOpen}
+        row={editingFactor}
+        defaultStage={stage}
+        onClose={() => setFactorOpen(false)}
+        onSaved={() => {
+          setFactorOpen(false);
+          reloadActive();
+        }}
+      />
+      <VerificationStrategyDialog
+        open={strategyOpen}
+        row={editingStrategy}
+        onClose={() => setStrategyOpen(false)}
+        onSaved={() => {
+          setStrategyOpen(false);
+          reloadActive();
+        }}
+      />
     </div>
   );
 }

@@ -1,26 +1,22 @@
 /**
- * Verification Mytrion → credit-platform Orchestration config.
+ * Verification Mytrion → Orchestration config.
  * Stop factors are rows in `stop_factors`. Strategies are the JSON list in
- * `system_state.decision_strategies_json`. Both go through /api/v1 so caches
- * and config_revisions stay in sync with verification-mono.
+ * `system_state.decision_strategies_json`. Both go through the verification Postgres
+ * pools (same SQL as verification-mono Orchestration), not CREDIT_PLATFORM_BASE_URL.
  */
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
-import { isCreditPlatformConfigured } from '../../integrations/creditPlatformClient.js';
+import type { DecisionStrategyRecord, StopFactorRecord } from '../../integrations/creditPlatformConfig.js';
 import {
   createDecisionStrategy,
   createStopFactor,
-  isCreditPlatformConfigConfigured,
+  isOrchestrationDbConfigured,
+  isOrchestrationWriteConfigured,
   listDecisionStrategies,
   listStopFactors,
-  parseDecisionStrategy,
-  parseStopFactor,
-  type CreditPlatformHttpResult,
-  type DecisionStrategyRecord,
-  type StopFactorRecord,
   updateDecisionStrategy,
   updateStopFactor,
-} from '../../integrations/creditPlatformConfig.js';
+} from '../../integrations/verificationOrchestrationDb.js';
 import { auditFromContext } from '../audit/auditLogger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -102,44 +98,37 @@ export const strategyWriteSchema = z.object({
 export type StopFactorWriteInput = z.infer<typeof stopFactorWriteSchema>;
 export type StrategyWriteInput = z.infer<typeof strategyWriteSchema>;
 
-function ensureConfigured(): void {
-  if (!isCreditPlatformConfigConfigured() && !isCreditPlatformConfigured()) {
+function ensureReadConfigured(): void {
+  if (!isOrchestrationDbConfigured()) {
     throw new AppError(
-      'Credit-platform config is not configured. Set CREDIT_PLATFORM_BASE_URL and CREDIT_PLATFORM_API_KEY.',
-      { statusCode: 503, code: 'CREDIT_PLATFORM_NOT_CONFIGURED', expose: true },
+      'Verification database is not configured. Set VERIFICATION_DATABASE_URL.',
+      { statusCode: 503, code: 'VERIFICATION_DB_UNCONFIGURED', expose: true },
     );
   }
 }
 
-function httpError(res: CreditPlatformHttpResult, fallback: string): AppError {
-  const detail = res.json.detail ?? res.json.error ?? res.json.raw ?? fallback;
-  const message = typeof detail === 'string' ? detail : fallback;
-  if (res.status === 404) {
-    return new AppError(message || 'Not found', { statusCode: 404, code: 'CREDIT_PLATFORM_NOT_FOUND', expose: true });
-  }
-  if (res.status === 409) {
-    return new AppError(message || 'Conflict', { statusCode: 409, code: 'CREDIT_PLATFORM_CONFLICT', expose: true });
-  }
-  if (res.status === 401 || res.status === 403) {
-    return new AppError(
-      'Credit-platform refused the config write. Check CREDIT_PLATFORM_API_KEY role (admin / CAP_CONFIG_EDIT).',
-      { statusCode: 502, code: 'CREDIT_PLATFORM_FORBIDDEN', expose: true },
+function ensureWriteConfigured(): void {
+  ensureReadConfigured();
+  if (!isOrchestrationWriteConfigured()) {
+    throw new AppError(
+      'Verification write-back is disabled. Set VERIFICATION_WRITE_ENABLED=1.',
+      { statusCode: 503, code: 'VERIFICATION_WRITE_DISABLED', expose: true },
     );
   }
-  return new AppError(message.slice(0, 400) || fallback, {
+}
+
+function wrapDb(err: unknown, fallback: string): never {
+  if (err instanceof AppError) throw err;
+  const message = err instanceof Error ? err.message : fallback;
+  throw new AppError(message.slice(0, 400) || fallback, {
     statusCode: 502,
-    code: 'CREDIT_PLATFORM_ERROR',
+    code: 'VERIFICATION_DB_ERROR',
     expose: true,
   });
 }
 
-function wrapHttp(err: unknown, fallback: string): never {
-  if (err instanceof AppError) throw err;
-  if (err && typeof err === 'object' && 'status' in err && 'json' in err) {
-    throw httpError(err as CreditPlatformHttpResult, fallback);
-  }
-  const message = err instanceof Error ? err.message : fallback;
-  throw new AppError(message, { statusCode: 502, code: 'CREDIT_PLATFORM_UNREACHABLE', expose: true });
+function actorName(ctx: TenantContext): string {
+  return (ctx.userName || ctx.userId || 'verification-mytrion').trim();
 }
 
 function stopFactorBody(input: StopFactorWriteInput): Parameters<typeof createStopFactor>[0] {
@@ -191,16 +180,16 @@ function strategyBody(input: StrategyWriteInput): Parameters<typeof createDecisi
       ...(condition.value !== undefined ? { value: condition.value } : {}),
     })),
     logic: input.logic,
-    meta: input.meta ?? {},
+    ...(input.meta ? { meta: input.meta } : {}),
   };
 }
 
 export async function listVerificationStopFactors(stage?: string): Promise<{ items: StopFactorRecord[] }> {
-  ensureConfigured();
+  ensureReadConfigured();
   try {
     return { items: await listStopFactors(stage) };
   } catch (err) {
-    wrapHttp(err, 'Failed to list stop factors');
+    wrapDb(err, 'Failed to list stop factors');
   }
 }
 
@@ -209,31 +198,29 @@ export async function saveVerificationStopFactor(
   input: StopFactorWriteInput,
   id?: number,
 ): Promise<{ status: string; id: string; item: StopFactorRecord | null }> {
-  ensureConfigured();
+  ensureWriteConfigured();
   const body = stopFactorBody(input);
   try {
-    const res = id == null ? await createStopFactor(body) : await updateStopFactor(id, body);
-    if (!res.ok) throw httpError(res, id == null ? 'Failed to create stop factor' : 'Failed to update stop factor');
-    const savedId = String(res.json.id ?? id ?? '');
+    const res = id == null ? await createStopFactor(body, actorName(ctx)) : await updateStopFactor(id, body, actorName(ctx));
     await auditFromContext(ctx, {
       action: id == null ? 'verification.stop_factor.create' : 'verification.stop_factor.update',
       status: 'ok',
       resourceType: 'stop_factor',
-      resourceId: savedId,
+      resourceId: res.id,
       detail: { name: input.name, stage: input.stage },
     });
-    return { status: String(res.json.status ?? (id == null ? 'created' : 'updated')), id: savedId, item: parseStopFactor({ ...body, id: Number(savedId) || id }) };
+    return { status: res.status, id: res.id, item: res.item };
   } catch (err) {
-    wrapHttp(err, id == null ? 'Failed to create stop factor' : 'Failed to update stop factor');
+    wrapDb(err, id == null ? 'Failed to create stop factor' : 'Failed to update stop factor');
   }
 }
 
 export async function listVerificationStrategies(): Promise<{ items: DecisionStrategyRecord[] }> {
-  ensureConfigured();
+  ensureReadConfigured();
   try {
     return { items: await listDecisionStrategies() };
   } catch (err) {
-    wrapHttp(err, 'Failed to list decision strategies');
+    wrapDb(err, 'Failed to list decision strategies');
   }
 }
 
@@ -242,28 +229,21 @@ export async function saveVerificationStrategy(
   input: StrategyWriteInput,
   id?: string,
 ): Promise<{ status: string; id: string; item: DecisionStrategyRecord | null }> {
-  ensureConfigured();
+  ensureWriteConfigured();
   const body = strategyBody(input);
   try {
     const res = id
-      ? await updateDecisionStrategy(id, body)
-      : await createDecisionStrategy(body);
-    if (!res.ok) throw httpError(res, id ? 'Failed to update strategy' : 'Failed to create strategy');
-    const savedId = String(res.json.id ?? id ?? input.id ?? '');
-    const rawItem = res.json.item;
+      ? await updateDecisionStrategy(id, body, actorName(ctx))
+      : await createDecisionStrategy(body, actorName(ctx));
     await auditFromContext(ctx, {
       action: id ? 'verification.strategy.update' : 'verification.strategy.create',
       status: 'ok',
       resourceType: 'decision_strategy',
-      resourceId: savedId,
+      resourceId: res.id,
       detail: { title: input.title },
     });
-    return {
-      status: String(res.json.status ?? (id ? 'updated' : 'created')),
-      id: savedId,
-      item: parseDecisionStrategy(rawItem) ?? parseDecisionStrategy({ ...body, id: savedId }),
-    };
+    return { status: res.status, id: res.id, item: res.item };
   } catch (err) {
-    wrapHttp(err, id ? 'Failed to update strategy' : 'Failed to create strategy');
+    wrapDb(err, id ? 'Failed to update strategy' : 'Failed to create strategy');
   }
 }

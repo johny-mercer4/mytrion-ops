@@ -1,19 +1,7 @@
 /**
- * Credit-platform Orchestration config — stop_factors + decision_strategies.
- * Calls /api/v1 so the core-api invalidates caches, audits, and writes revisions
- * the same way the verification-mono admin UI does. No raw SQL.
+ * Orchestration record types + parsers for stop_factors / decision_strategies_json.
+ * Persistence lives in verificationOrchestrationDb.ts (verification Postgres), not HTTP.
  */
-import { env } from '../config/env.js';
-import { logger } from '../lib/logger.js';
-
-const TIMEOUT_MS = 12_000;
-
-export interface CreditPlatformHttpResult {
-  ok: boolean;
-  status: number;
-  json: Record<string, unknown>;
-}
-
 export interface StopFactorRecord {
   id: number;
   name: string;
@@ -49,7 +37,7 @@ export interface StrategyRuleBinding {
 export interface StrategyCondition {
   path: string;
   operator: string;
-  value: unknown;
+  value?: unknown;
 }
 
 export interface DecisionStrategyRecord {
@@ -110,25 +98,7 @@ export interface DecisionStrategyWrite {
   rule_bindings: StrategyRuleBinding[];
   conditions: Array<{ path: string; operator: string; value?: unknown }>;
   logic: string;
-  meta: Record<string, unknown>;
-}
-
-function baseUrl(): string {
-  return env.CREDIT_PLATFORM_BASE_URL.replace(/\/+$/, '');
-}
-
-export function isCreditPlatformConfigConfigured(): boolean {
-  return Boolean(env.CREDIT_PLATFORM_BASE_URL && (env.CREDIT_PLATFORM_API_KEY || env.CREDIT_PLATFORM_ANALYST_API_KEY));
-}
-
-function configHeaders(write: boolean): Record<string, string> {
-  const key = env.CREDIT_PLATFORM_API_KEY || env.CREDIT_PLATFORM_ANALYST_API_KEY;
-  return {
-    'X-Api-Key': key,
-    'X-Internal-Api-Key': key,
-    'X-User-Role': write ? 'admin' : 'analyst',
-    'X-User-Name': 'verification-mytrion',
-  };
+  meta?: Record<string, unknown>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -137,51 +107,17 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-async function requestJson(
-  method: 'GET' | 'POST' | 'PUT',
-  path: string,
-  body: Record<string, unknown> | undefined,
-  write: boolean,
-): Promise<CreditPlatformHttpResult> {
-  const url = `${baseUrl()}${path}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json', ...configHeaders(write) },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: controller.signal,
-    });
-    const text = await res.text();
-    let json: Record<string, unknown> = {};
-    if (text) {
-      try {
-        json = asRecord(JSON.parse(text));
-      } catch {
-        json = { raw: text.slice(0, 300) };
-      }
-    }
-    return { ok: res.ok, status: res.status, json };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn({ err: message, path, method }, 'credit-platform config request failed');
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function asItems(json: Record<string, unknown>): unknown[] {
-  return Array.isArray(json.items) ? json.items : [];
-}
-
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
 function asNumber(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
 }
 
 function asBool(value: unknown, fallback = false): boolean {
@@ -285,38 +221,4 @@ export function parseDecisionStrategy(raw: unknown): DecisionStrategyRecord | nu
     logic: asString(row.logic),
     meta: asRecord(row.meta),
   };
-}
-
-export async function listStopFactors(stage?: string): Promise<StopFactorRecord[]> {
-  const q = stage ? `?stage=${encodeURIComponent(stage)}` : '';
-  const res = await requestJson('GET', `/api/v1/stop-factors${q}`, undefined, false);
-  if (!res.ok) return Promise.reject(res);
-  return asItems(res.json).map(parseStopFactor).filter((item): item is StopFactorRecord => item != null);
-}
-
-export async function createStopFactor(body: StopFactorWrite): Promise<CreditPlatformHttpResult> {
-  return requestJson('POST', '/api/v1/stop-factors', { ...body }, true);
-}
-
-export async function updateStopFactor(id: number, body: StopFactorWrite): Promise<CreditPlatformHttpResult> {
-  return requestJson('PUT', `/api/v1/stop-factors/${id}`, { ...body }, true);
-}
-
-export async function listDecisionStrategies(): Promise<DecisionStrategyRecord[]> {
-  const res = await requestJson('GET', '/api/v1/decision-strategies', undefined, false);
-  if (!res.ok) return Promise.reject(res);
-  return asItems(res.json)
-    .map(parseDecisionStrategy)
-    .filter((item): item is DecisionStrategyRecord => item != null);
-}
-
-export async function createDecisionStrategy(body: DecisionStrategyWrite): Promise<CreditPlatformHttpResult> {
-  return requestJson('POST', '/api/v1/decision-strategies', { ...body }, true);
-}
-
-export async function updateDecisionStrategy(
-  id: string,
-  body: DecisionStrategyWrite,
-): Promise<CreditPlatformHttpResult> {
-  return requestJson('PUT', `/api/v1/decision-strategies/${encodeURIComponent(id)}`, { ...body }, true);
 }

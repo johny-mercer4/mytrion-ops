@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { formatCachedAt } from '../../_shared/swrCache';
 import type { VerificationClientRow } from '../../../api/verificationClients';
@@ -31,6 +31,9 @@ export function VerificationClients() {
   const [sort, setSort] = useState<VerificationSort>(DEFAULT_VERIFICATION_SORT);
   const [page, setPage] = useState(1);
   const [openClient, setOpenClient] = useState<VerificationClientRow | null>(null);
+  const lastClient = useRef<VerificationClientRow | null>(null);
+  if (openClient) lastClient.current = openClient;
+  const shownClient = openClient ?? lastClient.current;
 
   const rows = roster.data ?? [];
   const deferredQ = useDeferredValue(filters.q);
@@ -158,8 +161,12 @@ export function VerificationClients() {
         </>
       )}
 
-      {openClient ? (
-        <VerificationClientModal client={openClient} onClose={() => setOpenClient(null)} />
+      {shownClient ? (
+        <VerificationClientModal
+          open={openClient != null}
+          client={shownClient}
+          onClose={() => setOpenClient(null)}
+        />
       ) : null}
     </div>
   );
