@@ -34,19 +34,23 @@ export function isCreditPlatformConfigured(): boolean {
   return Boolean(env.CREDIT_PLATFORM_BASE_URL && env.CREDIT_PLATFORM_API_KEY);
 }
 
-async function postJson(
+async function requestJson(
+  method: 'GET' | 'POST',
   path: string,
-  body: Record<string, unknown>,
   headers: Record<string, string>,
+  body?: Record<string, unknown>,
 ): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
   const url = `${baseUrl()}${path}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body),
+      method,
+      headers: {
+        ...(body ? { 'content-type': 'application/json' } : {}),
+        ...headers,
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: controller.signal,
     });
     const text = await res.text();
@@ -62,6 +66,14 @@ async function postJson(
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function postJson(
+  path: string,
+  body: Record<string, unknown>,
+  headers: Record<string, string>,
+): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
+  return requestJson('POST', path, headers, body);
 }
 
 /** Fire-and-forget create+start. Does not wait for bureau completion. */
@@ -117,26 +129,103 @@ export async function createAndStartRequest(
   }
 }
 
-function analystHeaders(): Record<string, string> {
+function analystHeaders(actor?: string): Record<string, string> {
+  const name = (actor ?? '').trim() || 'verification-mytrion';
   return {
     'X-Api-Key': env.CREDIT_PLATFORM_ANALYST_API_KEY || env.CREDIT_PLATFORM_API_KEY,
     'X-User-Role': 'analyst',
-    'X-User-Name': 'verification-mytrion',
+    'X-User-Name': name.slice(0, 80),
   };
+}
+
+function cpError(res: { status: number; json: Record<string, unknown> }): string {
+  return `HTTP ${res.status}: ${String(res.json.detail ?? res.json.error ?? res.json.raw ?? '')}`.slice(0, 400);
 }
 
 export async function runDecisionDeskStage(
   requestId: string,
   stageId: string,
+  opts: { actor?: string; bureauProvider?: string } = {},
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
   try {
     const res = await postJson(
       `/api/v1/requests/${encodeURIComponent(requestId)}/decision-desk/stages/${encodeURIComponent(stageId)}/run`,
-      {},
-      analystHeaders(),
+      opts.bureauProvider ? { bureau_provider: opts.bureauProvider } : {},
+      analystHeaders(opts.actor),
     );
-    return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function runIsoftpullAll(
+  requestId: string,
+  actor?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
+  try {
+    const res = await postJson(
+      `/api/v1/requests/${encodeURIComponent(requestId)}/decision-desk/stages/isoftpull/run-all`,
+      {},
+      analystHeaders(actor),
+    );
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function claimManualReview(
+  requestId: string,
+  actor: string,
+  note?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
+  try {
+    const res = await postJson(
+      `/api/v1/manual-review/${encodeURIComponent(requestId)}/claim`,
+      { note: note ?? '' },
+      analystHeaders(actor),
+    );
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function releaseManualReview(
+  requestId: string,
+  actor: string,
+  note?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
+  try {
+    const res = await postJson(
+      `/api/v1/manual-review/${encodeURIComponent(requestId)}/release`,
+      { note: note ?? '' },
+      analystHeaders(actor),
+    );
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function parseBankStatements(
+  requestId: string,
+  attachmentIds: number[],
+  actor?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
+  try {
+    const res = await postJson(
+      `/api/v1/manual-review/${encodeURIComponent(requestId)}/decision-desk/plaid-bs/parse`,
+      { attachment_ids: attachmentIds },
+      analystHeaders(actor),
+    );
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -146,17 +235,88 @@ export async function approveDecisionDeskStage(
   requestId: string,
   stageId: string,
   note?: string,
+  actor?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
   try {
     const res = await postJson(
       `/api/v1/requests/${encodeURIComponent(requestId)}/decision-desk/stages/${encodeURIComponent(stageId)}/approve`,
       { note: note ?? '' },
-      analystHeaders(),
+      analystHeaders(actor),
     );
-    return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function resetDecisionDeskStage(
+  requestId: string,
+  stageId: string,
+  actor?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
+  try {
+    const res = await postJson(
+      `/api/v1/requests/${encodeURIComponent(requestId)}/decision-desk/stages/${encodeURIComponent(stageId)}/reset`,
+      {},
+      analystHeaders(actor),
+    );
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface StageReadinessEntry {
+  ready: boolean;
+  missing: string[];
+  paid: boolean;
+  alreadyPaid?: boolean;
+  circuitOpen?: boolean;
+}
+
+export interface StageReadiness {
+  requestId: string;
+  stages: Record<string, StageReadinessEntry>;
+}
+
+function asReadinessEntry(value: unknown): StageReadinessEntry | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  const missing = Array.isArray(rec.missing)
+    ? rec.missing.filter((item): item is string => typeof item === 'string')
+    : [];
+  return {
+    ready: rec.ready !== false,
+    missing,
+    paid: rec.paid === true,
+    ...(rec.already_paid === true || rec.alreadyPaid === true ? { alreadyPaid: true } : {}),
+    ...(rec.circuit_open === true || rec.circuitOpen === true ? { circuitOpen: true } : {}),
+  };
+}
+
+export async function getStageReadiness(requestId: string): Promise<StageReadiness | null> {
+  if (!isCreditPlatformConfigured()) return null;
+  try {
+    const res = await requestJson(
+      'GET',
+      `/api/v1/manual-review/${encodeURIComponent(requestId)}/stage-readiness`,
+      analystHeaders(),
+    );
+    if (!res.ok) return null;
+    const rawStages = res.json.stages;
+    const stages: Record<string, StageReadinessEntry> = {};
+    if (rawStages && typeof rawStages === 'object' && !Array.isArray(rawStages)) {
+      for (const [key, value] of Object.entries(rawStages as Record<string, unknown>)) {
+        const entry = asReadinessEntry(value);
+        if (entry) stages[key] = entry;
+      }
+    }
+    return { requestId: String(res.json.request_id ?? requestId), stages };
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err), requestId }, 'stage-readiness failed');
+    return null;
   }
 }
 
@@ -164,15 +324,16 @@ export async function submitManualDecision(
   requestId: string,
   decision: 'APPROVED' | 'REJECTED' | 'REVIEW',
   reason?: string,
+  actor?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isCreditPlatformConfigured()) return { ok: false, error: 'credit platform not configured' };
   try {
     const res = await postJson(
       `/api/v1/manual-review/${encodeURIComponent(requestId)}/decision`,
       { decision, reason: reason ?? '', note: reason ?? '' },
-      analystHeaders(),
+      analystHeaders(actor),
     );
-    return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+    return res.ok ? { ok: true } : { ok: false, error: cpError(res) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

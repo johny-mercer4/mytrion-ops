@@ -172,6 +172,18 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+/* First-visit count chip: same pill box as the loaded item (real label holds the width),
+   sheen from .vf-sk, ink hidden so "0" / "—" never paint. One loader — no spinner. */
+[data-mytrion='verification'] .vf-summary-item.vf-sk-chip,
+[data-mytrion='verification'] .vf-chip.vf-sk-chip {
+  border-radius: var(--vf-r-pill);
+  color: transparent;
+  pointer-events: none;
+  cursor: default;
+}
+[data-mytrion='verification'] .vf-summary-item.vf-sk-chip strong {
+  color: transparent;
+}
 [data-mytrion='verification'] .vf-summary-item.is-clear {
   background: var(--tint-good-bg);
   border-color: var(--tint-good-bd);
@@ -912,7 +924,19 @@
 [data-mytrion='verification'] .vf-card-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1_5);
+  gap: var(--space-2);
+}
+[data-mytrion='verification'] .vf-chip-n {
+  margin-inline-start: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+[data-mytrion='verification'] .vf-chip[aria-pressed='true'] .vf-chip-n {
+  color: inherit;
+}
+[data-mytrion='verification'] .vf-table tr.is-stale td,
+[data-mytrion='verification'] .vf-case-card.is-stale {
+  background: var(--tint-warn-bg);
 }
 [data-mytrion='verification'] .vf-card-summary {
   display: -webkit-box;

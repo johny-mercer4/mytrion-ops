@@ -16224,3 +16224,171 @@ modal flags had no flex gap). Same tokens now: pad `--space-1` / `--space-2_5`, 
 `--space-1_5`, row gap `--space-2`. LOC / Prepay / cycle use `--tint-*`; aggregator marks keep
 `--tone-*`. Card wash and per-item hover hue removed so the grid is not a rainbow. Grotesk stays
 on the company name only. Client dialog stays mounted with last-known row (ruleset/cases pattern).
+
+## 2026-08-14 — Verification sidebar + first-paint count chips
+
+Two UI-only fixes. No ingest, no credit-platform handoff.
+
+1. Sidebar: Main is ungrouped (`group` omitted). `groupModuleTabs` no longer falls back to
+   `navLabel` ("Verification"), so the all-caps VERIFICATION heading above Main is gone. Queue /
+   Policy / Roster stay labelled. MytrionShell already skips empty `section.label`.
+2. Aggregate chips: first visit shimmers a pill-sized `.vf-sk` (same box as the loaded chip; label
+   holds width; ink transparent). Never "—", "0", or a spinner. SWR remount / refresh keeps last
+   numbers. Cases also keep last aggregates across filter-key changes (aggregates are unfiltered).
+
+Chips: cases open / shared / in progress / awaiting decision / unmatched; ruleset N strategies|rules
++ N active; clients on file / not flagged / debtors; first-visit aggregator filter chips.
+
+## 2026-08-14 — Task 0: FMCSA `failed` is a no-hit mapping bug (not DOT quality)
+
+Read-only on credit_platform (`dpg-d8glv2j7uimc73aij70g-a.ohio-postgres.render.com`). Last 7 days:
+852 `fmcsa: failed` of cases that reached the stage; 849 empty `stage_flow.stages.fmcsa.error`;
+those 849 are all `step_results.fmcsa.status=NOT_FOUND` + `no_hit=true`. The 3 readable errors are
+timeouts / delivery unavailable. 833 no-hits used `LEGAL_NAME_STATE`; 12 USDOT; 6 MC. `ran` is
+almost all `OK` (1211) plus 3 `SKIPPED` (no identifiers). Temp query scripts deleted; no writes,
+no ingest, no `AUTO_STAGE_RUNNER` flip, no commit.
+
+**Cause:** `_run_fmcsa_step` treats HTTP 404 as a business no-hit (`NOT_FOUND`, not in
+`_STAGE_ERROR_STATUSES`). `run_decision_desk_stage` then maps anything outside
+`{COMPLETED, PASSED, OK, SKIPPED}` to stage `failed` and leaves `error=""`. Hydrate marks
+`NOT_FOUND` as `terminal_bad` (but `NO_MATCH` as ok). Tasks 1–3 (patch_payload / run_stage /
+disable auto-runner) do **not** fix this — CP must treat `NOT_FOUND`/`no_hit` as `ran` first.
+
+## 2026-08-14 — First-run triggering (Mytrion side)
+
+Mytrion owns WHEN the first run happens. credit_platform still owns HOW (and still creates
+`requests` via Zoho poll → `submit_request_payload`). No ingest start, no `requests` INSERT,
+no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Inbox writes
+
+- `insertPayloadPatch` / `insertRunStage` in `src/integrations/creditPlatformInboxWrites.ts`.
+- Same `kxd.sales_agent_updates` insert + `VERIFICATION_WRITE_ENABLED` kill switch.
+- Patch whitelist: `dot_number`, `mc_number`, `carrier_name`, `state`. Rejects applicant/ssn/status.
+- Run-stage whitelist: `stop_factor_pre`, `blacklist`, `fmcsa`. Rejects billable
+  (`isoftpull`, `creditsafe`, `plaid_bs`) before INSERT.
+- Actor stamp: `mytrion:<userOrSystem>`.
+- Poll helper `waitForInboxSettled` (no webhook). Consumer does not handle these kinds yet —
+  we still enqueue so CP can wire `kxd_inbox_consumer.py`.
+
+### Orchestrator
+
+- `maybeAdvanceFirstRun` / `driveFirstRun` after a local case exists, DWH enrich produced
+  DOT/MC, and `caseSync` bound a CP `request_id`.
+- Sequence: `patch_payload` → wait `applied` → `run_stage` one at a time
+  (`stop_factor_pre` → `blacklist` → `fmcsa`). Never enqueue the next row until the current
+  inbox row is `applied`. Inbox `error` is recorded on the case and stops the loop.
+- Idempotency: `first_run_status` on `verification_cases` (`idle` / `in_flight` /
+  `completed` / `error`) plus compare-and-set `claimFirstRun`. Completed or in-flight
+  pending no-ops. Timeout leaves `in_flight` (same inbox id) so a later call resumes.
+- Wired from case **refresh** (advance, no long poll) and ingest-after-bind (when ingest is
+  later re-enabled). Automation route `POST /v1/verification/cases/:id/first-run` waits
+  through the sequence (RBAC + audit). Human Run does **not** use this path.
+
+### Other API
+
+- Reset: `POST /v1/verification/cases/:id/stages/:stageId/reset` → CP
+  `.../decision-desk/stages/{id}/reset`.
+- Optional `GET .../manual-review/{id}/stage-readiness` on case detail (2s fail-soft).
+- Case attachments: list from `file_attachments`; upload via existing
+  `insertBankStatementFiles`; download scoped to the bound request.
+
+### Ingest guardrail
+
+- `createAndStartRequest` removed from `zohoDealIngest.ts`. Ingest no longer POSTs
+  `/api/v1/requests`. `request_id` stays null until `caseSync` binds a CP row.
+- `automation.verification.case-ingest` remains in `DISABLED_JOB_QUEUES`.
+
+### Schema
+
+- Hand-written `0119_verification_first_run.sql` (verification_cases is not in
+  drizzle.config — stale snapshot, same as 0117). Columns: `first_run_status`,
+  `first_run_step`, `first_run_inbox_id`, `first_run_error`, `cp_owner_username`.
+  Generated file only; not applied to Render.
+
+### Case modal
+
+- Stages grouped Auto (first run) vs Manual.
+- Empty `failed` + `step_status=NOT_FOUND` / `no_hit` renders as “No hit”, not an outage.
+- Subtitle/chip: CP `manual_review_owner_username` as claimed vs Auto (unclaimed); Zoho
+  owner stays as a mute chip.
+- Reset + Run/Approve stay on HTTP. Billable Run gated by readiness, or disabled with
+  desk/HTTP copy when readiness is missing.
+- Attachments reuse the sales write-back inbox + `file_attachments` download.
+
+### Blocked on the credit-platform agent
+
+- Inbox consumer `patch_payload` / `run_stage` branches (Tasks 1–2).
+- FMCSA `NOT_FOUND`/`no_hit` must map to stage `ran`, not empty `failed`.
+- Flip `AUTO_STAGE_RUNNER_ENABLED=0` only after Task 2 is proven (not us).
+
+## 2026-08-14 — Decision Desk gap-close (Verification cases)
+
+Close remaining Applications / Manual queue / Plaid / BS / attachments gaps on
+Mytrion Verification cases. Builds on the first-run work above. No ingest start,
+no `requests` INSERT, no `AUTO_STAGE_RUNNER` flip, no `app/` rebuild, no commit.
+
+### Applications list
+
+- Status chips: New / In progress / Hold / Approved / Rejected / Failed, plus All.
+  Counts from aggregates; first paint uses skeleton aggregators (never "—" / "0").
+- Owner chips: All / Unclaimed / Mine / Others (`cp_owner_username` vs Horizon actor).
+- Payment / cycle / limit on the table, cards, and modal Application section
+  (synced from CP `manual_review_resolution` / result).
+- Export CSV of the current filter (`GET /v1/verification/cases/export`, cap 2000):
+  Company, Zoho id, DOT, Status, Queue, Owner, Limit, Payment, Cycle.
+
+### Manual queue
+
+- Claim / Release via existing CP HTTP
+  `POST /api/v1/manual-review/{id}/claim|release` with `X-User-Name` = Horizon
+  `userName` (fallback zoho id). Not inbox. Not a first-run prerequisite.
+- Transfer stubbed: CP deleted `/transfer`. UI disabled + `501 TRANSFER_UNAVAILABLE`.
+- SLA copies desk `MANUAL_REVIEW_STALE_MINUTES` (default **30**): claimed and idle
+  that long (idle from `cp_review_updated_at` || `cp_claimed_at` || last sync /
+  created). Stale rows tint warn. No second policy.
+
+### First 3 stages
+
+- Auto group: “System-run. Does not claim.” + Start first run (inbox).
+- Manual group: “Analyst work. HTTP Run claims the case.”
+- HTTP Run on auto stages stays available and warns it will claim.
+- `NOT_FOUND` / empty failed still renders as No hit.
+
+### Billable / Plaid / BS / files
+
+- Paid Run gated by stage-readiness: `paid && !ready`, already paid, circuit open.
+  `plaid_bs` in `bank_statement` mode is exempt (parse path).
+- Plaid generate/regenerate uses `insertPlaidLinkAction` (inbox), not HTTP stage run.
+  Hosted URL only (tracking `/api/v1/plaid/link/` stripped). Copyable in the modal.
+- Bank-statement parse: `POST /api/v1/manual-review/{id}/decision-desk/plaid-bs/parse`.
+- iSoftPull Run-all + Equifax / TransUnion / Experian chips (CP routes exist).
+- Documents grouped Bank statement vs Analyst note; empty + skeleton; last-known
+  files kept. No Decision Desk deep-link (`CREDIT_PLATFORM_ADMIN_URL` not set).
+
+### Schema
+
+- Hand-written `0120_verification_case_desk.sql`: `approved_limit`, `payment_type`,
+  `billing_cycle`, `plaid_status`, `plaid_link_url`, `plaid_mode`, `cp_claimed_at`,
+  `cp_review_updated_at`. Generated file only; not applied to Render (same as 0119).
+
+### Guardrails still hold
+
+- First-run is still inbox `patch_payload` / `run_stage` only. No claim. No
+  `POST /api/v1/requests`.
+- `automation.verification.case-ingest` stays in `DISABLED_JOB_QUEUES`.
+- Human claim/run/approve/reset/decision stay on HTTP.
+
+### Blocked on Claude / credit-platform
+
+- Transfer HTTP + analyst roster (deleted on CP).
+- Inbox consumer for `patch_payload` / `run_stage` / `generate_plaid_link`.
+- FMCSA `NOT_FOUND` → stage `ran`.
+- CreditSafe readiness entry (desk readiness returns plaid_bs / isoftpull / fmcsa).
+- `AUTO_STAGE_RUNNER` flip (not us).
+
+## 2026-08-14 — 0119/0120 on Octane prod + CP Task 0
+
+Applied `0119_verification_first_run` + `0120_verification_case_desk` to Oregon Octane app Postgres (`dpg-d8glv2j7uimc73aij70g-a.oregon-postgres.render.com` / `mytrion_ops_db`) via `ALLOW_REMOTE_DB_MIGRATE=1 pnpm db:migrate`. Those two were the only pending journal entries (0117/0118 already applied). Not the Ohio credit-platform host. Verified live: `first_run_*`, `cp_owner_username`, offer/Plaid/SLA columns present; pending count 0.
+
+CP confirmed Task 0: `STAGE_NO_HIT_IS_INFORMATIONAL = {fmcsa}` — FMCSA no-hit is informational; iSoftPull / Creditsafe no-hit stays `failed`.

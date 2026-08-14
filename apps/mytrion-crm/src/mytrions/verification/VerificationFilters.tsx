@@ -5,7 +5,8 @@
  * without losing debtor vs creditworthy". Active filters stay visible; Clear is one control.
  */
 import { RefreshCw, Search, X } from 'lucide-react';
-import { AggregatorMark } from './verificationAggregators';
+import { AggregatorMark, KNOWN_AGGREGATOR_IDS, aggregatorMeta } from './verificationAggregators';
+import { VerificationSummary, VerificationSummaryItem } from './VerificationSummaryItem';
 import {
   filtersAreActive,
   isVerificationSort,
@@ -49,6 +50,7 @@ export function VerificationFilters({
   rosterTotal,
   cachedCaption,
   revalidating,
+  countsPending = false,
   onFilter,
   onSort,
   onClear,
@@ -64,6 +66,8 @@ export function VerificationFilters({
   rosterTotal: number;
   cachedCaption: string | null;
   revalidating: boolean;
+  /** True only on the cold first roster fetch — remounts keep last counts. */
+  countsPending?: boolean;
   onFilter: <K extends keyof VerificationFilters>(key: K, value: VerificationFilters[K]) => void;
   onSort: (value: VerificationSort) => void;
   onClear: () => void;
@@ -114,20 +118,24 @@ export function VerificationFilters({
         </div>
       </div>
 
-      <div className="vf-summary" aria-live="polite">
-        <span className="vf-summary-item">
-          <strong>{matching.toLocaleString()}</strong> {scopeLabel}
-        </span>
-        <span className="vf-summary-item is-clear">
-          <strong>{clearCount.toLocaleString()}</strong> not flagged
-        </span>
-        <span className="vf-summary-item is-debt">
-          <strong>{debtorCount.toLocaleString()}</strong> debtor{debtorCount === 1 ? '' : 's'}
-        </span>
-        {active && rosterTotal > 0 ? (
+      <VerificationSummary pending={countsPending}>
+        <VerificationSummaryItem pending={countsPending} value={matching} label={scopeLabel} />
+        <VerificationSummaryItem
+          pending={countsPending}
+          value={clearCount}
+          label="not flagged"
+          tone="clear"
+        />
+        <VerificationSummaryItem
+          pending={countsPending}
+          value={debtorCount}
+          label={debtorCount === 1 ? 'debtor' : 'debtors'}
+          tone="debt"
+        />
+        {active && rosterTotal > 0 && !countsPending ? (
           <span className="vf-summary-hint">of {rosterTotal.toLocaleString()} total</span>
         ) : null}
-      </div>
+      </VerificationSummary>
 
       <div className="vf-filters">
         <div className="vf-filter-group" role="group" aria-label="Active in">
@@ -172,7 +180,16 @@ export function VerificationFilters({
             </button>
           ))}
         </div>
-        {companyTypes.length > 0 ? (
+        {countsPending ? (
+          <div className="vf-filter-group" role="group" aria-hidden="true">
+            <span className="vf-filter-label">Aggregator</span>
+            {KNOWN_AGGREGATOR_IDS.map((id) => (
+              <span key={id} className="vf-chip vf-sk vf-sk-chip">
+                {aggregatorMeta(id).label}
+              </span>
+            ))}
+          </div>
+        ) : companyTypes.length > 0 ? (
           <div className="vf-filter-group" role="group" aria-label="Aggregator">
             <span className="vf-filter-label">Aggregator</span>
             <button

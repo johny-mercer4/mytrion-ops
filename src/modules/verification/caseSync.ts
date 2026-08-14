@@ -4,6 +4,12 @@ import type { VerificationCaseStatus } from '../../db/schema/verification_cases.
 import { verificationCaseRepo } from '../../repos/verificationCaseRepo.js';
 import { verificationCaseStageRepo } from '../../repos/verificationCaseStageRepo.js';
 import {
+  asDate,
+  extractOfferFields,
+  extractPlaidMode,
+  hostedPlaidLink,
+} from './verificationCaseDesk.js';
+import {
   DECISION_DESK_STAGES,
   normalizeDeskStageId,
   normalizeDeskStageStatus,
@@ -14,6 +20,17 @@ interface RequestRow {
   status: string | null;
   result: Record<string, unknown> | null;
   updated_at: Date | string | null;
+  manual_review_owner_username: string | null;
+  plaid_status?: string | null;
+  plaid_link_url?: string | null;
+  manual_review_claimed_at?: Date | string | null;
+  manual_review_updated_at?: Date | string | null;
+}
+
+export interface CaseSyncResult {
+  bound: boolean;
+  requestId: string | null;
+  ownerUsername: string | null;
 }
 
 function rec(value: unknown): Record<string, unknown> {
@@ -51,14 +68,33 @@ function stageFlow(result: Record<string, unknown>): Record<string, unknown> {
   return rec(manual.stage_flow);
 }
 
+function mergeStepResult(
+  blob: Record<string, unknown>,
+  step: Record<string, unknown>,
+): Record<string, unknown> {
+  const stepStatus = txt(step.status) || txt(blob.step_status);
+  const noHit =
+    step.no_hit === true ||
+    blob.no_hit === true ||
+    stepStatus.toUpperCase() === 'NOT_FOUND';
+  return {
+    ...blob,
+    ...(stepStatus ? { step_status: stepStatus } : {}),
+    ...(noHit ? { no_hit: true } : {}),
+  };
+}
+
 export async function syncCaseFromVerificationDb(
   ctx: TenantContext,
   caseId: string,
   requestId: string,
-): Promise<void> {
-  if (!verificationDb.isConfigured()) return;
+): Promise<CaseSyncResult> {
+  if (!verificationDb.isConfigured()) {
+    return { bound: false, requestId: null, ownerUsername: null };
+  }
   const rows = await verificationDb.query<RequestRow>(
-    `select request_id, status, result, updated_at
+    `select request_id, status, result, updated_at, manual_review_owner_username,
+            plaid_status, plaid_link_url, manual_review_claimed_at, manual_review_updated_at
        from requests
       where request_id = $1
          or payload->>'zoho_lead_id' = $1
@@ -68,32 +104,43 @@ export async function syncCaseFromVerificationDb(
     [requestId],
   );
   const row = rows[0];
-  if (!row) return;
+  if (!row) return { bound: false, requestId: null, ownerUsername: null };
 
   const result = rec(row.result);
   const flow = stageFlow(result);
   const stagesBlob = rec(flow.stages);
+  const stepResults = rec(result.step_results);
   const currentRaw = txt(flow.current_stage);
   const currentStage = normalizeDeskStageId(currentRaw) ?? (currentRaw || null);
+  const ownerUsername =
+    txt(row.manual_review_owner_username) ||
+    txt(rec(result.manual_review).owner_username) ||
+    null;
 
   const upserts = DECISION_DESK_STAGES.map((stage) => {
     const blob = rec(stagesBlob[stage.id] ?? stagesBlob[stage.id.replace(/_/g, '-')]);
-    const status = normalizeDeskStageStatus(txt(blob.status) || undefined);
+    const step = rec(stepResults[stage.id] ?? stepResults[stage.id.replace(/_/g, '-')]);
+    const merged = mergeStepResult(blob, step);
+    const status = normalizeDeskStageStatus(txt(merged.status) || undefined);
     return {
       stageId: stage.id,
       status,
-      result: blob,
-      error: txt(blob.error) || null,
-      ranAt: blob.ran_at || blob.ranAt ? new Date(String(blob.ran_at ?? blob.ranAt)) : null,
+      result: merged,
+      error: txt(merged.error) || null,
+      ranAt: merged.ran_at || merged.ranAt ? new Date(String(merged.ran_at ?? merged.ranAt)) : null,
       approvedAt:
-        blob.approved_at || blob.approvedAt ? new Date(String(blob.approved_at ?? blob.approvedAt)) : null,
-      approvedBy: txt(blob.approved_by || blob.approvedBy) || null,
+        merged.approved_at || merged.approvedAt
+          ? new Date(String(merged.approved_at ?? merged.approvedAt))
+          : null,
+      approvedBy: txt(merged.approved_by || merged.approvedBy) || null,
     };
   });
   await verificationCaseStageRepo.upsertMany(ctx, caseId, upserts);
 
   const done = upserts.filter((s) => s.status === 'approved' || s.status === 'skipped').length;
   const decision = txt(rec(result).decision) || txt(rec(rec(result).summary).decision);
+  const offer = extractOfferFields(result);
+  const manual = rec(result.manual_review);
   await verificationCaseRepo.update(ctx, caseId, {
     requestId: row.request_id,
     status: mapRequestStatus(row.status),
@@ -102,5 +149,15 @@ export async function syncCaseFromVerificationDb(
     stagesTotal: DECISION_DESK_STAGES.length,
     lastDecision: decision || null,
     lastSyncedAt: new Date(),
+    cpOwnerUsername: ownerUsername,
+    approvedLimit: offer.approvedLimit,
+    paymentType: offer.paymentType,
+    billingCycle: offer.billingCycle,
+    plaidStatus: txt(row.plaid_status) || null,
+    plaidLinkUrl: hostedPlaidLink(row.plaid_link_url),
+    plaidMode: extractPlaidMode(result),
+    cpClaimedAt: asDate(row.manual_review_claimed_at ?? manual.claimed_at),
+    cpReviewUpdatedAt: asDate(row.manual_review_updated_at ?? manual.updated_at ?? row.updated_at),
   });
+  return { bound: true, requestId: row.request_id, ownerUsername };
 }

@@ -10,6 +10,7 @@ import {
 } from '../../../api/verificationStrategies';
 import { VerificationStopFactorDialog } from '../VerificationStopFactorDialog';
 import { VerificationStrategyDialog } from '../VerificationStrategyDialog';
+import { VerificationSummary, VerificationSummaryItem } from '../VerificationSummaryItem';
 import { useVerificationStopFactors, useVerificationStrategies } from '../verificationData';
 import {
   clampSummary,
@@ -276,16 +277,25 @@ export function VerificationRuleset() {
             </div>
           ) : null}
         </div>
-        <p className="vf-summary" aria-live="polite">
-          <span className="vf-summary-item">
-            <strong>{firstLoad ? '—' : visibleRows.length}</strong>
-            {filtersOn && !firstLoad ? ` of ${sourceRows.length}` : ''}{' '}
-            {section === 'strategies' ? 'strategies' : 'rules'}
-          </span>
-          <span className="vf-summary-item is-clear">
-            <strong>{firstLoad ? '—' : countEnabled(visibleRows)}</strong> active
-          </span>
-        </p>
+        <VerificationSummary pending={firstLoad}>
+          <VerificationSummaryItem
+            pending={firstLoad}
+            value={visibleRows.length}
+            label={
+              filtersOn && !firstLoad
+                ? `of ${sourceRows.length} ${section === 'strategies' ? 'strategies' : 'rules'}`
+                : section === 'strategies'
+                  ? 'strategies'
+                  : 'rules'
+            }
+          />
+          <VerificationSummaryItem
+            pending={firstLoad}
+            value={countEnabled(visibleRows)}
+            label="active"
+            tone="clear"
+          />
+        </VerificationSummary>
       </div>
 
       {actionError ? (

@@ -30,6 +30,7 @@ const TABS: ModuleTab[] = [
     icon: Home,
     tone: 'var(--tone-violet)',
     keywords: ['home', 'overview', 'queue', 'throughput'],
+    // No group — Main sits above Queue / Policy / Roster without a section heading.
   },
   {
     id: 'inbox',

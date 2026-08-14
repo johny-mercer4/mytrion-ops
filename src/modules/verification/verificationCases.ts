@@ -2,8 +2,10 @@ import { AppError, NotFoundError } from '../../lib/errors.js';
 import { databaseHost } from '../../config/env.js';
 import {
   approveDecisionDeskStage,
+  resetDecisionDeskStage,
   runDecisionDeskStage,
   submitManualDecision,
+  type StageReadiness,
 } from '../../integrations/creditPlatformClient.js';
 import { logger } from '../../lib/logger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -16,6 +18,13 @@ import {
 import { isMissingColumn, isMissingTable } from '../../repos/util.js';
 import { verificationCaseStageRepo } from '../../repos/verificationCaseStageRepo.js';
 import { syncCaseFromVerificationDb } from './caseSync.js';
+import { maybeAdvanceFirstRun } from './firstRunTrigger.js';
+import { caseSla, creditPlatformActor } from './verificationCaseDesk.js';
+import {
+  listRequestAttachments,
+  loadCaseReadiness,
+  type CaseAttachment,
+} from './verificationCaseExtras.js';
 import { DECISION_DESK_STAGES } from './verificationStages.js';
 
 const VERIFICATION_CASE_TABLES = ['verification_cases', 'verification_case_stages'] as const;
@@ -62,6 +71,14 @@ function iso(value: Date | string | null | undefined): string | null {
 }
 
 export function toCaseDto(row: VerificationCaseListRow | VerificationCase) {
+  const cpOwnerUsername = 'cpOwnerUsername' in row ? row.cpOwnerUsername ?? null : null;
+  const sla = caseSla({
+    cpOwnerUsername,
+    cpReviewUpdatedAt: 'cpReviewUpdatedAt' in row ? row.cpReviewUpdatedAt : null,
+    cpClaimedAt: 'cpClaimedAt' in row ? row.cpClaimedAt : null,
+    lastSyncedAt: 'lastSyncedAt' in row ? row.lastSyncedAt : null,
+    createdAt: row.createdAt,
+  });
   return {
     id: row.id,
     zohoDealId: row.zohoDealId,
@@ -89,6 +106,18 @@ export function toCaseDto(row: VerificationCaseListRow | VerificationCase) {
     stagesDone: row.stagesDone,
     stagesTotal: row.stagesTotal,
     lastDecision: row.lastDecision,
+    firstRunStatus: 'firstRunStatus' in row ? row.firstRunStatus ?? 'idle' : 'idle',
+    firstRunError: 'firstRunError' in row ? row.firstRunError ?? null : null,
+    cpOwnerUsername,
+    approvedLimit: 'approvedLimit' in row ? row.approvedLimit ?? null : null,
+    paymentType: 'paymentType' in row ? row.paymentType ?? null : null,
+    billingCycle: 'billingCycle' in row ? row.billingCycle ?? null : null,
+    plaidStatus: 'plaidStatus' in row ? row.plaidStatus ?? null : null,
+    plaidLinkUrl: 'plaidLinkUrl' in row ? row.plaidLinkUrl ?? null : null,
+    plaidMode: 'plaidMode' in row ? row.plaidMode ?? null : null,
+    slaStale: sla.stale,
+    slaIdleMinutes: sla.idleMinutes,
+    slaLabel: sla.label,
     createdAt: iso(row.createdAt) ?? new Date(0).toISOString(),
   };
 }
@@ -109,6 +138,8 @@ export interface VerificationCaseDetail {
   case: ReturnType<typeof toCaseDto>;
   stages: Array<ReturnType<typeof toStageDto>>;
   catalog: ReadonlyArray<{ id: string; label: string; order: number }>;
+  attachments: CaseAttachment[];
+  readiness: StageReadiness | null;
 }
 
 async function loadOrThrow(ctx: TenantContext, id: string): Promise<VerificationCase> {
@@ -129,13 +160,21 @@ async function syncOrWarn(ctx: TenantContext, caseId: string, requestId: string)
 
 export async function listVerificationCases(
   ctx: TenantContext,
-  filter: { status?: VerificationCaseStatus; query?: string; unmatched?: boolean; limit?: number; offset?: number },
+  filter: {
+    status?: VerificationCaseStatus;
+    query?: string;
+    unmatched?: boolean;
+    owner?: 'unclaimed' | 'mine' | 'others';
+    limit?: number;
+    offset?: number;
+  },
 ) {
   return withVerificationCaseTables(async () => {
+    const scoped = { ...filter, viewer: creditPlatformActor(ctx) };
     const [items, aggregates, total] = await Promise.all([
-      verificationCaseRepo.list(ctx, filter),
-      verificationCaseRepo.aggregates(ctx),
-      verificationCaseRepo.count(ctx, filter),
+      verificationCaseRepo.list(ctx, scoped),
+      verificationCaseRepo.aggregates(ctx, { viewer: scoped.viewer }),
+      verificationCaseRepo.count(ctx, scoped),
     ]);
     return { items: items.map(toCaseDto), aggregates, total };
   });
@@ -148,14 +187,25 @@ export async function getVerificationCase(
 ): Promise<VerificationCaseDetail> {
   return withVerificationCaseTables(async () => {
     let row = await loadOrThrow(ctx, id);
-    if (opts.sync !== false && row.requestId) {
-      await syncOrWarn(ctx, row.id, row.requestId);
+    const lookupId = row.requestId ?? row.zohoDealId;
+    if (opts.sync !== false && lookupId) {
+      await syncOrWarn(ctx, row.id, lookupId);
       row = (await verificationCaseRepo.findById(ctx, id)) ?? row;
     }
     const stages = await verificationCaseStageRepo.listForCase(ctx, row.id);
     const order = new Map<string, number>(DECISION_DESK_STAGES.map((s) => [s.id, s.order]));
     stages.sort((a, b) => (order.get(a.stageId) ?? 99) - (order.get(b.stageId) ?? 99));
-    return { case: toCaseDto(row), stages: stages.map(toStageDto), catalog: DECISION_DESK_STAGES };
+    const requestId = row.requestId;
+    const [attachments, readiness] = requestId
+      ? await Promise.all([listRequestAttachments(requestId), loadCaseReadiness(requestId)])
+      : [[], null];
+    return {
+      case: toCaseDto(row),
+      stages: stages.map(toStageDto),
+      catalog: DECISION_DESK_STAGES,
+      attachments,
+      readiness,
+    };
   });
 }
 
@@ -163,20 +213,49 @@ export async function refreshVerificationCase(
   ctx: TenantContext,
   id: string,
 ): Promise<VerificationCaseDetail> {
-  return getVerificationCase(ctx, id, { sync: true });
+  const detail = await getVerificationCase(ctx, id, { sync: true });
+  if (detail.case.requestId) {
+    try {
+      await maybeAdvanceFirstRun(ctx, id, { agent: 'system', wait: false });
+    } catch (err) {
+      logger.warn({ err, caseId: id }, 'verification first-run advance skipped');
+    }
+  }
+  return getVerificationCase(ctx, id, { sync: false });
 }
 
 export async function runVerificationCaseStage(
   ctx: TenantContext,
   id: string,
   stageId: string,
+  opts: { bureauProvider?: string } = {},
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
   const requestId = row.requestId ?? row.zohoDealId;
-  const started = await runDecisionDeskStage(requestId, stageId);
+  const started = await runDecisionDeskStage(requestId, stageId, {
+    actor: creditPlatformActor(ctx),
+    ...(opts.bureauProvider ? { bureauProvider: opts.bureauProvider } : {}),
+  });
   if (!started.ok) {
     await verificationCaseStageRepo.upsertMany(ctx, row.id, [
       { stageId, status: 'failed', error: started.error ?? 'run failed' },
+    ]);
+  }
+  await syncOrWarn(ctx, row.id, requestId);
+  return getVerificationCase(ctx, id, { sync: false });
+}
+
+export async function resetVerificationCaseStage(
+  ctx: TenantContext,
+  id: string,
+  stageId: string,
+): Promise<VerificationCaseDetail> {
+  const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
+  const requestId = row.requestId ?? row.zohoDealId;
+  const done = await resetDecisionDeskStage(requestId, stageId, creditPlatformActor(ctx));
+  if (!done.ok) {
+    await verificationCaseStageRepo.upsertMany(ctx, row.id, [
+      { stageId, status: 'failed', error: done.error ?? 'reset failed' },
     ]);
   }
   await syncOrWarn(ctx, row.id, requestId);
@@ -191,7 +270,7 @@ export async function approveVerificationCaseStage(
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
   const requestId = row.requestId ?? row.zohoDealId;
-  const done = await approveDecisionDeskStage(requestId, stageId, note);
+  const done = await approveDecisionDeskStage(requestId, stageId, note, creditPlatformActor(ctx));
   if (!done.ok) {
     await verificationCaseStageRepo.upsertMany(ctx, row.id, [
       { stageId, status: 'failed', error: done.error ?? 'approve failed' },
@@ -209,7 +288,7 @@ export async function decideVerificationCase(
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
   const requestId = row.requestId ?? row.zohoDealId;
-  const done = await submitManualDecision(requestId, decision, reason);
+  const done = await submitManualDecision(requestId, decision, reason, creditPlatformActor(ctx));
   if (!done.ok) {
     await verificationCaseRepo.update(ctx, row.id, {
       lastDecision: done.error ?? 'decision failed',

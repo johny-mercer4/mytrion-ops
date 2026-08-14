@@ -15,10 +15,16 @@ describe('groupModuleTabs', () => {
       'Verification',
     );
     expect(groups.map((g) => [g.label, g.items.map((t) => t.id)])).toEqual([
-      ['Verification', ['main']],
+      ['', ['main']],
       ['Queue', ['inbox', 'cases']],
       ['Policy', ['ruleset']],
       ['Roster', ['clients', 'tickets']],
     ]);
+    expect(groups[0]?.id).toBe('verification');
+  });
+
+  it('joins consecutive ungrouped tabs into one unlabelled section', () => {
+    const groups = groupModuleTabs([{ id: 'main' }, { id: 'courses' }], 'Trailhead');
+    expect(groups.map((g) => [g.label, g.items.map((t) => t.id)])).toEqual([['', ['main', 'courses']]]);
   });
 });

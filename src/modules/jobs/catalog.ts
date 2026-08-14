@@ -220,7 +220,7 @@ export const verificationRecheckJob = defineJob({
 });
 
 /**
- * Zoho Deals COQL → verification_cases + credit-platform auto-start.
+ * Zoho Deals COQL → verification_cases. Does not create credit-platform requests.
  * Parked in DISABLED_JOB_QUEUES (no cron, no Admin trigger) so generation stays off.
  * Worker still registered: leftover queued jobs no-op instead of creating cases.
  */

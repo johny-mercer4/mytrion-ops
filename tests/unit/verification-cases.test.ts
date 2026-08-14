@@ -7,6 +7,11 @@ vi.mock('../../src/modules/verification/caseSync.js', () => ({
   syncCaseFromVerificationDb: vi.fn(),
 }));
 
+vi.mock('../../src/modules/verification/verificationCaseExtras.js', () => ({
+  listRequestAttachments: vi.fn(async () => []),
+  loadCaseReadiness: vi.fn(async () => null),
+}));
+
 import { AppError } from '../../src/lib/errors.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import {
@@ -69,7 +74,35 @@ const listRow: VerificationCaseListRow = {
   stagesDone: 0,
   stagesTotal: 10,
   lastDecision: null,
+  firstRunStatus: 'idle',
+  firstRunError: null,
+  cpOwnerUsername: null,
+  approvedLimit: null,
+  paymentType: null,
+  billingCycle: null,
+  plaidStatus: null,
+  plaidLinkUrl: null,
+  plaidMode: null,
+  cpClaimedAt: null,
+  cpReviewUpdatedAt: null,
+  lastSyncedAt: null,
   createdAt: new Date('2026-08-01T00:00:00.000Z'),
+};
+
+const emptyAggregates = {
+  open: 0,
+  shared: 0,
+  inProgress: 0,
+  awaitingDecision: 0,
+  unmatched: 0,
+  total: 0,
+  new: 0,
+  approved: 0,
+  rejected: 0,
+  failed: 0,
+  unclaimed: 0,
+  mine: 0,
+  stale: 0,
 };
 
 describe('VERIFICATION_CASE_LIST_COLUMNS', () => {
@@ -91,7 +124,30 @@ describe('toCaseDto', () => {
       companyName: 'Miguel Del Real Gonzalez',
       distributeType: 'shared',
       createdAt: '2026-08-01T00:00:00.000Z',
+      slaStale: false,
+      slaLabel: 'Unclaimed',
     });
+  });
+
+  it('surfaces offer fields and stale SLA when claimed and idle', () => {
+    const dto = toCaseDto({
+      ...listRow,
+      approvedLimit: '15000',
+      paymentType: 'LOC',
+      billingCycle: 'Weekly',
+      cpOwnerUsername: 'ada',
+      cpReviewUpdatedAt: new Date('2026-08-14T12:00:00.000Z'),
+    });
+    expect(dto.approvedLimit).toBe('15000');
+    expect(dto.paymentType).toBe('LOC');
+    expect(dto.billingCycle).toBe('Weekly');
+    const stale = toCaseDto({
+      ...listRow,
+      cpOwnerUsername: 'ada',
+      cpReviewUpdatedAt: new Date(Date.now() - 45 * 60_000),
+    });
+    expect(stale.slaStale).toBe(true);
+    expect(stale.slaLabel).toMatch(/^Stale/);
   });
 });
 
@@ -119,14 +175,7 @@ describe('listVerificationCases', () => {
 
   it('turns a missing-table list query into a 503', async () => {
     vi.spyOn(verificationCaseRepo, 'list').mockRejectedValue(wrappedMissingTable('verification_cases'));
-    vi.spyOn(verificationCaseRepo, 'aggregates').mockResolvedValue({
-      open: 0,
-      shared: 0,
-      inProgress: 0,
-      awaitingDecision: 0,
-      unmatched: 0,
-      total: 0,
-    });
+    vi.spyOn(verificationCaseRepo, 'aggregates').mockResolvedValue(emptyAggregates);
     vi.spyOn(verificationCaseRepo, 'count').mockResolvedValue(0);
     await expect(listVerificationCases(ctx, { limit: 25, offset: 0 })).rejects.toMatchObject({
       statusCode: 503,
@@ -137,6 +186,7 @@ describe('listVerificationCases', () => {
   it('paginates with the filtered count, not the unfiltered aggregate total', async () => {
     vi.spyOn(verificationCaseRepo, 'list').mockResolvedValue([]);
     vi.spyOn(verificationCaseRepo, 'aggregates').mockResolvedValue({
+      ...emptyAggregates,
       open: 12,
       shared: 40,
       inProgress: 3,
@@ -148,7 +198,23 @@ describe('listVerificationCases', () => {
     const res = await listVerificationCases(ctx, { status: 'new', limit: 25, offset: 0 });
     expect(res.total).toBe(2);
     expect(res.aggregates.total).toBe(40);
-    expect(verificationCaseRepo.count).toHaveBeenCalledWith(ctx, { status: 'new', limit: 25, offset: 0 });
+    expect(verificationCaseRepo.count).toHaveBeenCalledWith(ctx, {
+      status: 'new',
+      limit: 25,
+      offset: 0,
+      viewer: '1',
+    });
+  });
+
+  it('forwards unclaimed/mine owner scope with the viewer', async () => {
+    vi.spyOn(verificationCaseRepo, 'list').mockResolvedValue([]);
+    vi.spyOn(verificationCaseRepo, 'aggregates').mockResolvedValue(emptyAggregates);
+    vi.spyOn(verificationCaseRepo, 'count').mockResolvedValue(0);
+    await listVerificationCases(ctx, { owner: 'unclaimed', limit: 25, offset: 0 });
+    expect(verificationCaseRepo.list).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ owner: 'unclaimed', viewer: '1' }),
+    );
   });
 });
 
@@ -181,6 +247,11 @@ describe('getVerificationCase', () => {
       carrierPhone: null,
       carrierEmail: null,
       lastSyncedAt: null,
+      firstRunStatus: 'idle',
+      firstRunStep: null,
+      firstRunInboxId: null,
+      firstRunError: null,
+      cpOwnerUsername: null,
       updatedAt: new Date('2026-08-01T00:00:00.000Z'),
     });
     vi.spyOn(verificationCaseStageRepo, 'listForCase').mockResolvedValue([]);

@@ -11,6 +11,7 @@ describe('VERIFICATION_TABS', () => {
       'clients',
       'tickets',
     ]);
+    expect(VERIFICATION_TABS.find((tab) => tab.key === 'main')).not.toHaveProperty('group');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'ruleset')?.label).toBe('Decision rules');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'inbox')?.group).toBe('Queue');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'cases')?.group).toBe('Queue');

@@ -2,30 +2,30 @@ import { useRef, useState } from 'react';
 import { Button } from '../../ds/Button/Button';
 import { Dialog } from '../../ds/Dialog';
 import {
-  approveVerificationCaseStage,
   decideVerificationCase,
   refreshVerificationCase,
-  runVerificationCaseStage,
   type VerificationCaseDetail,
   type VerificationCaseRow,
-  type VerificationStageStatus,
 } from '../../api/verificationCases';
 import { invalidateSwrCache, writeSwrCache } from '../_shared/swrCache';
 import { useVerificationCaseDetail } from './verificationData';
-import { caseStatusLabel, caseStatusTone, humanizeToken, queueLabel } from './verificationCaseUi';
+import { VerificationCaseDocuments } from './VerificationCaseDocuments';
+import { VerificationCasePipeline } from './VerificationCasePipeline';
+import { VerificationCaseQueueBar } from './VerificationCaseQueueBar';
+import { paymentTone } from './verificationCaseDesk';
+import {
+  caseStatusLabel,
+  caseStatusTone,
+  firstRunLabel,
+  humanizeToken,
+  queueLabel,
+  reviewOwnerLabel,
+} from './verificationCaseUi';
 
 const STAGE_SK = 4;
 
 function dash(value: string | null | undefined): string {
   return value && value.trim() ? value : '—';
-}
-
-function stageTone(status: VerificationStageStatus): string {
-  if (status === 'approved') return 'is-good';
-  if (status === 'failed') return 'is-bad';
-  if (status === 'running' || status === 'ran' || status === 'ready') return 'is-info';
-  if (status === 'skipped') return 'is-neutral';
-  return '';
 }
 
 export function VerificationCaseModal({
@@ -48,6 +48,7 @@ export function VerificationCaseModal({
   const row = detail?.case ?? preview ?? null;
   const stagesPending = load.loading && !detail;
   const banner = actionError ?? (detail ? load.error : null);
+  const review = reviewOwnerLabel(row?.cpOwnerUsername);
 
   const act = async (label: string, fn: () => Promise<VerificationCaseDetail>): Promise<void> => {
     setBusy(label);
@@ -66,7 +67,7 @@ export function VerificationCaseModal({
 
   const title = row?.companyName?.trim() || 'Verification case';
   const subtitle = row
-    ? `${dash(row.zohoStage)} · ${row.ownerName} · ${queueLabel(row.distributeType)}`
+    ? `${dash(row.zohoStage)} · ${review.label} · ${queueLabel(row.distributeType)}`
     : undefined;
 
   return (
@@ -128,6 +129,8 @@ export function VerificationCaseModal({
             <div className="vf-card-chips">
               <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
               <span className="vf-pill is-info">{dash(row.zohoStage)}</span>
+              <span className={`vf-pill ${review.claimed ? 'is-on' : 'is-mute'}`}>{review.label}</span>
+              <span className="vf-pill is-mute">{row.ownerName}</span>
               <span className="vf-pill is-mute">{queueLabel(row.distributeType)}</span>
               <span className="vf-pill is-mute">
                 {row.stagesDone}/{row.stagesTotal}
@@ -136,8 +139,21 @@ export function VerificationCaseModal({
               <span className={`vf-pill ${row.matchedSnapshotId ? 'is-on' : 'is-mute'}`}>
                 {row.matchedSnapshotId ? dash(row.carrierOperatingStatus) || 'Matched' : 'Unmatched'}
               </span>
+              <span
+                className={`vf-pill ${
+                  row.firstRunStatus === 'error' ? 'is-bad' : row.firstRunStatus === 'completed' ? 'is-on' : 'is-info'
+                }`}
+              >
+                {firstRunLabel(row.firstRunStatus)}
+              </span>
+              {row.slaLabel ? (
+                <span className={`vf-pill ${row.slaStale ? 'is-warn' : 'is-mute'}`}>{row.slaLabel}</span>
+              ) : null}
             </div>
+            {row.firstRunError ? <p className="vf-stage-note">{row.firstRunError}</p> : null}
           </section>
+
+          <VerificationCaseQueueBar caseId={caseId} row={row} busy={busy} onAct={act} />
 
           <section className="vf-section">
             <h3 className="vf-section-title">Application</h3>
@@ -147,8 +163,30 @@ export function VerificationCaseModal({
                 <dd>{dash(row.dot)}</dd>
               </div>
               <div>
+                <dt>Zoho id</dt>
+                <dd>{dash(row.zohoApplicationId || row.zohoDealId)}</dd>
+              </div>
+              <div>
                 <dt>Applied</dt>
                 <dd>{dash(row.applicationDate)}</dd>
+              </div>
+              <div>
+                <dt>Limit</dt>
+                <dd>{dash(row.approvedLimit)}</dd>
+              </div>
+              <div>
+                <dt>Payment</dt>
+                <dd>
+                  {row.paymentType ? (
+                    <span className={`vf-pill ${paymentTone(row.paymentType)}`}>{row.paymentType}</span>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Cycle</dt>
+                <dd>{dash(row.billingCycle)}</dd>
               </div>
               <div>
                 <dt>Phone</dt>
@@ -165,47 +203,7 @@ export function VerificationCaseModal({
             <h3 className="vf-section-title">Pipeline</h3>
             {load.revalidating ? <p className="vf-cached">Updating stages…</p> : null}
             {detail ? (
-              <ol className="vf-stages">
-                {detail.catalog.map((stage) => {
-                  const live = detail.stages.find((s) => s.stageId === stage.id);
-                  const status = live?.status ?? 'pending';
-                  return (
-                    <li key={stage.id} className={`vf-stage ${stageTone(status)}`}>
-                      <div>
-                        <strong>
-                          {stage.order}. {stage.label}
-                        </strong>
-                        <span>{humanizeToken(status)}</span>
-                        {live?.error ? <em>{live.error}</em> : null}
-                      </div>
-                      <div className="vf-stage-btns">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={Boolean(busy)}
-                          onClick={() =>
-                            void act(`run:${stage.id}`, () => runVerificationCaseStage(caseId, stage.id))
-                          }
-                        >
-                          Run
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={Boolean(busy)}
-                          onClick={() =>
-                            void act(`approve:${stage.id}`, () =>
-                              approveVerificationCaseStage(caseId, stage.id),
-                            )
-                          }
-                        >
-                          Approve
-                        </Button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+              <VerificationCasePipeline caseId={caseId} detail={detail} busy={busy} onAct={act} />
             ) : stagesPending ? (
               <ol className="vf-stages" aria-busy="true">
                 <span className="sr-only" role="status">
@@ -225,6 +223,13 @@ export function VerificationCaseModal({
               </div>
             )}
           </section>
+          <VerificationCaseDocuments
+            caseId={caseId}
+            detail={detail}
+            busy={busy}
+            pending={stagesPending}
+            onAct={act}
+          />
         </div>
       ) : stagesPending ? (
         <div className="vf-modal-body" aria-busy="true">

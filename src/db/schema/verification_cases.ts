@@ -36,6 +36,18 @@ export const VERIFICATION_STAGE_STATUSES = [
 ] as const;
 export type VerificationStageStatus = (typeof VERIFICATION_STAGE_STATUSES)[number];
 
+/** Mytrion-owned first-run inbox sequence (patch → pre-stop → blacklist → FMCSA). */
+export const VERIFICATION_FIRST_RUN_STATUSES = ['idle', 'in_flight', 'completed', 'error'] as const;
+export type VerificationFirstRunStatus = (typeof VERIFICATION_FIRST_RUN_STATUSES)[number];
+
+export const VERIFICATION_FIRST_RUN_STEPS = [
+  'patch',
+  'stop_factor_pre',
+  'blacklist',
+  'fmcsa',
+] as const;
+export type VerificationFirstRunStep = (typeof VERIFICATION_FIRST_RUN_STEPS)[number];
+
 /**
  * One Zoho Deal ingested as a Verification Mytrion case. Pipeline truth still lives in
  * credit_platform `requests`; this row is the Mytrion-owned intake + assignment + list model.
@@ -91,6 +103,22 @@ export const verificationCases = pgTable(
     stagesTotal: integer('stages_total').notNull().default(10),
     lastDecision: text('last_decision'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    firstRunStatus: text('first_run_status')
+      .$type<VerificationFirstRunStatus>()
+      .notNull()
+      .default('idle'),
+    firstRunStep: text('first_run_step').$type<VerificationFirstRunStep>(),
+    firstRunInboxId: integer('first_run_inbox_id'),
+    firstRunError: text('first_run_error'),
+    cpOwnerUsername: text('cp_owner_username'),
+    approvedLimit: text('approved_limit'),
+    paymentType: text('payment_type'),
+    billingCycle: text('billing_cycle'),
+    plaidStatus: text('plaid_status'),
+    plaidLinkUrl: text('plaid_link_url'),
+    plaidMode: text('plaid_mode'),
+    cpClaimedAt: timestamp('cp_claimed_at', { withTimezone: true }),
+    cpReviewUpdatedAt: timestamp('cp_review_updated_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

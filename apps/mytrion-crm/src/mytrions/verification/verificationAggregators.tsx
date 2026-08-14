@@ -11,6 +11,8 @@ export interface AggregatorMeta {
   Icon: LucideIcon;
 }
 
+export const KNOWN_AGGREGATOR_IDS = ['BANK', 'DIRECT', 'MERCHANT_CARD', 'ZELLE'] as const;
+
 const AGGREGATORS: Record<string, AggregatorMeta> = {
   BANK: { label: 'Bank', tone: 'var(--tone-sky)', Icon: Landmark },
   DIRECT: { label: 'Direct', tone: 'var(--tone-emerald)', Icon: ArrowLeftRight },

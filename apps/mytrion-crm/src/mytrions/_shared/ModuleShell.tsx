@@ -32,8 +32,9 @@ export interface ModuleTab {
   /** Extra sidebar-search terms; the label is always searched. */
   keywords?: string[];
   /**
-   * Sidebar section label. Consecutive tabs that share a group become one NavSection; a tab
-   * without a group joins `navLabel` (or starts a new section after a grouped run).
+   * Sidebar section label. Consecutive tabs that share a group become one NavSection.
+   * A tab without a group starts an unlabelled section — no heading. Main sits above
+   * Queue / Policy / Roster that way, instead of inheriting `navLabel`.
    */
   group?: string;
   /** Hide the page-head kicker — the title already names the page. */
@@ -63,26 +64,27 @@ export interface ModuleShellProps {
   heroLead: string;
   heroAccent: string;
   heroBlurb: string;
-  /** Sidebar group label. */
+  /** Fallback id slug for an unlabelled section. Not shown as a heading. */
   navLabel: string;
   /** The Main/Home tab id — always first, always built (it's the launcher). */
   tabs: ModuleTab[];
 }
 
+/** Consecutive `group` values become one labelled section. Missing group → no heading. */
 export function groupModuleTabs<T extends { id: string; group?: string }>(
   tabs: readonly T[],
   fallbackLabel: string,
 ): Array<{ id: string; label: string; items: T[] }> {
   const groups: Array<{ id: string; label: string; items: T[] }> = [];
   for (const tab of tabs) {
-    const label = tab.group ?? fallbackLabel;
+    const label = tab.group ?? '';
     const last = groups[groups.length - 1];
     if (last && last.label === label) {
       last.items.push(tab);
       continue;
     }
     groups.push({
-      id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || tab.id,
+      id: (label || fallbackLabel).toLowerCase().replace(/[^a-z0-9]+/g, '-') || tab.id,
       label,
       items: [tab],
     });

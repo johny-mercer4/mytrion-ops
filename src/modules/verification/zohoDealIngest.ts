@@ -2,13 +2,14 @@ import { logger } from '../../lib/logger.js';
 import { errorMessage } from '../../lib/errors.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
-import { createAndStartRequest } from '../../integrations/creditPlatformClient.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { verificationCaseRepo } from '../../repos/verificationCaseRepo.js';
 import { verificationCaseStageRepo } from '../../repos/verificationCaseStageRepo.js';
 import { verificationIngestStateRepo } from '../../repos/verificationIngestStateRepo.js';
 import { matchBrokerSnapshot } from './carrierEnrich.js';
 import { notifyVerificationCaseCreated } from './caseNotify.js';
+import { syncCaseFromVerificationDb } from './caseSync.js';
+import { maybeAdvanceFirstRun } from './firstRunTrigger.js';
 import {
   VERIFICATION_CASE_OWNER_NAME,
   resolveVerificationCaseOwnerId,
@@ -65,7 +66,6 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         zohoDealId: mapped.zohoDealId,
         zohoApplicationId: mapped.zohoApplicationId || null,
         carrierId: mapped.carrierId || null,
-        requestId: mapped.zohoDealId,
         companyName: mapped.companyName || null,
         firstName: mapped.firstName || null,
         lastName: mapped.lastName || null,
@@ -130,35 +130,13 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         logger.warn({ err: errorMessage(err), dealId }, 'verification inbox notify failed');
       }
 
-      const started = await createAndStartRequest({
-        requestId: mapped.zohoDealId,
-        firstName: mapped.firstName,
-        lastName: mapped.lastName,
-        email: mapped.email,
-        phone: mapped.phone,
-        address: mapped.address,
-        city: mapped.city,
-        state: mapped.state,
-        zipCode: mapped.zip,
-        dateOfBirth: mapped.dateOfBirth,
-        ...(mapped.carrierId ? { carrierId: mapped.carrierId } : {}),
-        ...(mapped.applicationDate ? { applicationDate: mapped.applicationDate } : {}),
-        payload: {
-          source: 'zoho',
-          zoho_lead_id: mapped.zohoDealId,
-          zoho_application_id: mapped.zohoApplicationId,
-          company_name: mapped.companyName,
-          dot_number: mapped.dot,
-          zoho_raw: mapped.zohoRaw,
-        },
-      });
-      if (!started.ok) {
-        await verificationCaseRepo.update(ctx, inserted.id, {
-          status: 'failed',
-          lastDecision: started.error ?? 'credit platform auto-start failed',
-        });
-      } else {
-        await verificationCaseRepo.update(ctx, inserted.id, { status: 'in_progress' });
+      try {
+        const synced = await syncCaseFromVerificationDb(ctx, inserted.id, mapped.zohoDealId);
+        if (synced.bound) {
+          await maybeAdvanceFirstRun(ctx, inserted.id, { agent: 'system', wait: false });
+        }
+      } catch (err) {
+        logger.warn({ err: errorMessage(err), dealId }, 'verification first-run after ingest skipped');
       }
       created += 1;
     } catch (err) {

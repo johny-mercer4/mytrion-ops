@@ -1,34 +1,21 @@
-import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Inbox, RefreshCw, Search, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Download, Inbox, RefreshCw, Search, X } from 'lucide-react';
 import { formatCachedAt } from '../../_shared/swrCache';
-import type { VerificationCaseRow, VerificationCaseStatus } from '../../../api/verificationCases';
-import { VerificationCaseModal } from '../VerificationCaseModal';
-import { CASES_PAGE_SIZE, useVerificationCasesList } from '../verificationData';
 import {
-  CASE_STATUS_LABELS,
-  caseStatusLabel,
-  caseStatusTone,
-  queueLabel,
-} from '../verificationCaseUi';
-
-const CASE_COLUMNS = [
-  'Company',
-  'Zoho stage',
-  'Applied',
-  'DOT',
-  'Owner',
-  'Queue',
-  'Pipeline',
-  'Carrier',
-  'Status',
-] as const;
+  exportVerificationCases,
+  type VerificationCaseAggregates,
+  type VerificationCaseStatus,
+  type VerificationOwnerScope,
+} from '../../../api/verificationCases';
+import { VerificationCaseModal } from '../VerificationCaseModal';
+import { VerificationSummary, VerificationSummaryItem } from '../VerificationSummaryItem';
+import { CaseCard, CASE_COLUMNS, CaseRow } from '../VerificationCaseListItems';
+import { CASES_PAGE_SIZE, useVerificationCasesList } from '../verificationData';
+import { CASE_STATUS_LABELS } from '../verificationCaseUi';
+import { OWNER_SCOPE_CHIPS, ownerScopeCount, statusBucketCount } from '../verificationCaseDesk';
 
 const SK_ROWS = 8;
 const SK_CARDS = 6;
-
-function dash(value: string | null | undefined): string {
-  return value && value.trim() ? value : '—';
-}
 
 function CasesSkeleton() {
   return (
@@ -67,13 +54,21 @@ function CasesSkeleton() {
   );
 }
 
+function ChipCount({ value }: { value: number | null }) {
+  if (value == null) return null;
+  return <span className="vf-chip-n">{value.toLocaleString()}</span>;
+}
+
 export function VerificationCases() {
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   const [status, setStatus] = useState<VerificationCaseStatus | ''>('');
+  const [owner, setOwner] = useState<VerificationOwnerScope | ''>('');
   const [unmatched, setUnmatched] = useState(false);
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -83,14 +78,18 @@ export function VerificationCases() {
     return () => window.clearTimeout(t);
   }, [q]);
 
-  const list = useVerificationCasesList({ status, q: debounced, unmatched, page });
+  const list = useVerificationCasesList({ status, q: debounced, unmatched, owner, page });
   const items = list.data?.items ?? [];
   const aggregates = list.data?.aggregates;
+  const lastAggregates = useRef<VerificationCaseAggregates | undefined>(aggregates);
+  if (aggregates) lastAggregates.current = aggregates;
+  const shownAgg = aggregates ?? lastAggregates.current;
   const total = list.data?.total ?? 0;
   const firstLoad = list.loading && !list.data;
+  const countsPending = shownAgg == null && !list.error;
   const totalPages = Math.max(1, Math.ceil(total / CASES_PAGE_SIZE));
   const cachedCaption = formatCachedAt(list.cachedAt);
-  const filtersOn = Boolean(debounced.trim() || status || unmatched);
+  const filtersOn = Boolean(debounced.trim() || status || unmatched || owner);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -101,13 +100,36 @@ export function VerificationCases() {
     setPage(1);
   };
 
-  const toggleUnmatched = (): void => {
-    setUnmatched((v) => !v);
+  const selectOwner = (id: VerificationOwnerScope | ''): void => {
+    setOwner(id);
     setPage(1);
   };
 
-  const agg = (value: number | undefined): string =>
-    firstLoad || value == null ? '—' : value.toLocaleString();
+  const clearFilters = (): void => {
+    setQ('');
+    setDebounced('');
+    setStatus('');
+    setOwner('');
+    setUnmatched(false);
+    setPage(1);
+  };
+
+  const onExport = async (): Promise<void> => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportVerificationCases({
+        ...(status ? { status } : {}),
+        q: debounced,
+        unmatched,
+        ...(owner ? { owner } : {}),
+      });
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="vf-clients">
@@ -154,6 +176,16 @@ export function VerificationCases() {
             <button
               type="button"
               className="vf-btn"
+              disabled={exporting || firstLoad}
+              onClick={() => void onExport()}
+              aria-label="Export filtered cases as CSV"
+            >
+              <Download size={14} />
+              {exporting ? 'Exporting…' : 'Export'}
+            </button>
+            <button
+              type="button"
+              className="vf-btn"
               disabled={list.revalidating || firstLoad}
               onClick={list.reload}
               aria-label="Reload cases"
@@ -176,35 +208,73 @@ export function VerificationCases() {
                 onClick={() => selectStatus(s.id)}
               >
                 {s.label}
+                <ChipCount value={countsPending ? null : statusBucketCount(shownAgg, s.id)} />
+              </button>
+            ))}
+          </div>
+          <div className="vf-filter-group" role="group" aria-label="Queue owner">
+            <span className="vf-filter-label">Owner</span>
+            {OWNER_SCOPE_CHIPS.map((s) => (
+              <button
+                key={s.id || 'all-owners'}
+                type="button"
+                className="vf-chip"
+                aria-pressed={owner === s.id}
+                onClick={() => selectOwner(s.id)}
+              >
+                {s.label}
+                <ChipCount value={countsPending ? null : ownerScopeCount(shownAgg, s.id)} />
               </button>
             ))}
           </div>
           <div className="vf-filter-group" role="group" aria-label="Carrier match">
             <span className="vf-filter-label">Carrier</span>
-            <button type="button" className="vf-chip" aria-pressed={unmatched} onClick={toggleUnmatched}>
+            <button type="button" className="vf-chip" aria-pressed={unmatched} onClick={() => {
+              setUnmatched((v) => !v);
+              setPage(1);
+            }}>
               Unmatched
             </button>
           </div>
         </div>
 
-        <p className="vf-summary" aria-live="polite">
-          <span className="vf-summary-item">
-            <strong>{agg(aggregates?.open)}</strong> open
-          </span>
-          <span className="vf-summary-item">
-            <strong>{agg(aggregates?.shared)}</strong> shared
-          </span>
-          <span className="vf-summary-item">
-            <strong>{agg(aggregates?.inProgress)}</strong> in progress
-          </span>
-          <span className="vf-summary-item">
-            <strong>{agg(aggregates?.awaitingDecision)}</strong> awaiting decision
-          </span>
-          <span className="vf-summary-item">
-            <strong>{agg(aggregates?.unmatched)}</strong> unmatched
-          </span>
-        </p>
+        <VerificationSummary pending={countsPending}>
+          <VerificationSummaryItem pending={countsPending} value={shownAgg?.new ?? 0} label="new" />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.inProgress ?? 0}
+            label="in progress"
+          />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.awaitingDecision ?? 0}
+            label="hold"
+          />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.approved ?? 0}
+            label="approved"
+          />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.rejected ?? 0}
+            label="rejected"
+          />
+          <VerificationSummaryItem
+            pending={countsPending}
+            value={shownAgg?.unclaimed ?? 0}
+            label="unclaimed"
+          />
+          <VerificationSummaryItem pending={countsPending} value={shownAgg?.mine ?? 0} label="mine" />
+          <VerificationSummaryItem pending={countsPending} value={shownAgg?.stale ?? 0} label="stale" />
+        </VerificationSummary>
       </div>
+
+      {exportError ? (
+        <p className="vf-banner-error" role="alert">
+          {exportError}
+        </p>
+      ) : null}
 
       {list.error && items.length > 0 ? (
         <p className="vf-banner-error" role="alert">
@@ -229,21 +299,11 @@ export function VerificationCases() {
           <div className="vf-empty-title">{filtersOn ? 'No cases match' : 'No verification cases yet'}</div>
           <p>
             {filtersOn
-              ? 'Nothing in this status, search or unmatched filter. Clear them to see the full queue.'
+              ? 'Nothing in this status, owner, search or unmatched filter. Clear them to see the full queue.'
               : 'New Zoho applications appear here after intake.'}
           </p>
           {filtersOn ? (
-            <button
-              type="button"
-              className="vf-btn"
-              onClick={() => {
-                setQ('');
-                setDebounced('');
-                setStatus('');
-                setUnmatched(false);
-                setPage(1);
-              }}
-            >
+            <button type="button" className="vf-btn" onClick={clearFilters}>
               Clear filters
             </button>
           ) : null}
@@ -270,19 +330,7 @@ export function VerificationCases() {
           <ul className="vf-case-cards" aria-label="Verification cases">
             {items.map((row) => (
               <li key={row.id}>
-                <button type="button" className="vf-case-card" onClick={() => setOpenId(row.id)}>
-                  <strong>{dash(row.companyName)}</strong>
-                  <span className="vf-card-chips">
-                    <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
-                    <span className="vf-pill is-info">{queueLabel(row.distributeType)}</span>
-                    <span className="vf-pill is-mute">
-                      {row.stagesDone}/{row.stagesTotal}
-                    </span>
-                  </span>
-                  <span>
-                    {dash(row.zohoStage)} · {dash(row.applicationDate)}
-                  </span>
-                </button>
+                <CaseCard row={row} onOpen={setOpenId} />
               </li>
             ))}
           </ul>
@@ -323,45 +371,5 @@ export function VerificationCases() {
         />
       ) : null}
     </div>
-  );
-}
-
-function CaseRow({
-  row,
-  onOpen,
-}: {
-  row: VerificationCaseRow;
-  onOpen: (id: string) => void;
-}) {
-  return (
-    <tr>
-      <td>
-        <button type="button" className="vf-link" onClick={() => onOpen(row.id)}>
-          {dash(row.companyName)}
-        </button>
-      </td>
-      <td>
-        <span className="vf-pill is-info">{dash(row.zohoStage)}</span>
-      </td>
-      <td>{dash(row.applicationDate)}</td>
-      <td>{dash(row.dot)}</td>
-      <td>{dash(row.ownerName)}</td>
-      <td>
-        <span className="vf-pill is-mute">{queueLabel(row.distributeType)}</span>
-      </td>
-      <td>
-        <span className="vf-pill is-mute">
-          {row.stagesDone}/{row.stagesTotal}
-        </span>
-      </td>
-      <td>
-        <span className={`vf-pill ${row.matchedSnapshotId ? 'is-on' : 'is-mute'}`}>
-          {row.matchedSnapshotId ? dash(row.carrierOperatingStatus) || 'Matched' : 'Unmatched'}
-        </span>
-      </td>
-      <td>
-        <span className={`vf-pill ${caseStatusTone(row.status)}`}>{caseStatusLabel(row.status)}</span>
-      </td>
-    </tr>
   );
 }

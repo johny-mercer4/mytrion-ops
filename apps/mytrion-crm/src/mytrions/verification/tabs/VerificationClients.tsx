@@ -80,6 +80,7 @@ export function VerificationClients() {
         rosterTotal={rows.length}
         cachedCaption={cachedCaption}
         revalidating={roster.revalidating}
+        countsPending={firstLoad}
         onFilter={set}
         onSort={(value) => {
           setSort(value);

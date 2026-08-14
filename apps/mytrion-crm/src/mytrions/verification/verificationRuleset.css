@@ -59,7 +59,7 @@
   display: inline-flex;
   align-items: center;
   min-height: var(--space-6);
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2_5);
   border-radius: var(--vf-r-pill);
   border: 1px solid var(--hz-pane-bd);
   background: var(--hz-pane-alt);

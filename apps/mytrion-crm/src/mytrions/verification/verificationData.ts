@@ -15,6 +15,7 @@ import {
   type VerificationCaseDetail,
   type VerificationCaseListResult,
   type VerificationCaseStatus,
+  type VerificationOwnerScope,
 } from '../../api/verificationCases';
 import {
   getVerificationClientDetail,
@@ -72,15 +73,17 @@ export function useVerificationCasesList(input: {
   status: VerificationCaseStatus | '';
   q: string;
   unmatched: boolean;
+  owner: VerificationOwnerScope | '';
   page: number;
 }): CachedLoad<VerificationCaseListResult> {
-  const { status, q, unmatched, page } = input;
-  const key = `verification:cases:${status}:${unmatched ? 1 : 0}:${q}:${page}`;
+  const { status, q, unmatched, owner, page } = input;
+  const key = `verification:cases:${status}:${owner}:${unmatched ? 1 : 0}:${q}:${page}`;
   return useCachedLoad(
     key,
     () =>
       listVerificationCases({
         ...(status ? { status } : {}),
+        ...(owner ? { owner } : {}),
         q,
         unmatched,
         limit: CASES_PAGE_SIZE,

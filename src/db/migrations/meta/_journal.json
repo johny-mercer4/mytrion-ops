@@ -841,6 +841,20 @@
       "when": 1786195000001,
       "tag": "0118_audit_automation_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1786200000001,
+      "tag": "0119_verification_first_run",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1786205000001,
+      "tag": "0120_verification_case_desk",
+      "breakpoints": true
     }
   ]
 }
