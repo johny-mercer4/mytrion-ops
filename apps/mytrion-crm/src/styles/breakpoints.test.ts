@@ -140,10 +140,11 @@ describe('breakpoint ladder', () => {
     // 72 -> 70 merging feature/billing-cs-mobile-view into the origin/build baseline: CS's
     // `shared-responsive.css` carried a 380px block and a 768px block that between them held nothing
     // but four empty rules, so deleting them removed two off-ladder values outright.
+    // 70 -> 69: verification CSS dropped one off-ladder value.
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      70,
+      69,
     );
   });
 
@@ -157,10 +158,11 @@ describe('breakpoint ladder', () => {
     }
     // 92 -> 89 on the same merge: CS's phone sheet was rewritten onto range syntax as part of giving
     // CS a phone layer at all, so its three `max-width` blocks (768/640/380) are gone.
+    // 89 -> 88: verification CSS converted one more block to range syntax.
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      89,
+      88,
     );
   });
 });
@@ -299,7 +301,8 @@ describe('touch', () => {
     // 43 -> 44 on the merge of origin/build: `.cs-app-sort select.cs-form-input` at 13px. Not a live
     // defect — the !important guard in global.css already beats it below the density line. It is
     // counted because it is one more rule that guard has to fight.
-    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 44);
+    // 44 -> 43: verification search/sort fields dropped `font-size` (inherit from the style layer).
+    expectBudget('`font-size` on an input outside styles/ and ds/', { count, sample }, 43);
   });
 });
 

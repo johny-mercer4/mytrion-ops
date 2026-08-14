@@ -16524,3 +16524,11 @@ converting the 14 hand-rolled modals to `ds/Dialog` — that last one restyles t
 desktop, so it needs its own PR and its own review. No real-device pass yet: the
 `--tg-viewport-stable-height` first paint, `--kb-inset`, and rotation all still need a
 phone in Telegram.
+
+## 2026-08-14 — CI: verification unused-var + CRM breakpoint budgets
+
+- Removed unused `asRecord` in `verificationOrchestrationDb.ts` (eslint error).
+- Verification search/sort fields: dropped `font-size` on `input`/`select` (`font: inherit`) so the
+  input-font-size budget went 45 → 43.
+- Ratcheted CRM breakpoint budgets: off-ladder 70 → 69, max-width 89 → 88, input font-size 44 → 43.
+- ESLint now ignores gitignored `ds-bundle/` so local `pnpm lint` matches CI.

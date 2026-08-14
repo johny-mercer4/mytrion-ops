@@ -36,12 +36,6 @@ export function isOrchestrationWriteConfigured(): boolean {
   return isWriteConfigured();
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function decisionRuleMeta(stage: string, meta: Record<string, unknown>): Record<string, unknown> {
   return stage.trim().toLowerCase() === 'decision' ? { ...meta, decision_rule: true } : meta;
 }
