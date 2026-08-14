@@ -53,6 +53,7 @@ const listQuerySchema = z.object({
   cursor: z.string().max(300).optional(),
   q: z.string().trim().max(120).optional(),
   filter: z.enum(['all', 'unread', 'task', 'alert', 'reminder']).default('all'),
+  tag: z.string().trim().max(80).optional(),
 });
 const ownerQuerySchema = z.object({ owner_id: z.string().max(64).optional() });
 const readBodySchema = z.object({ read: z.boolean() });
@@ -171,8 +172,9 @@ export async function inboxMessagesRoutes(app: FastifyInstance): Promise<void> {
         category,
         ...(query.filter === 'unread' ? { unread: true } : {}),
         ...(query.q ? { query: query.q } : {}),
+        ...(query.tag ? { tag: query.tag } : {}),
       }),
-      mytrionInboxMessageRepo.countsForOwner(ctx, ownerId, query.q),
+      mytrionInboxMessageRepo.countsForOwner(ctx, ownerId, query.q, query.tag),
     ]);
     const hasMore = pageRows.length > query.limit;
     const rows = hasMore ? pageRows.slice(0, query.limit) : pageRows;

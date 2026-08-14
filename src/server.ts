@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { env } from './config/env.js';
+import { databaseHost, env, usingLocalOpsDatabase } from './config/env.js';
 import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { closeCmpTunnel } from './integrations/cmpTunnel.js';
@@ -63,7 +63,15 @@ async function main(): Promise<void> {
   const app = await buildApp();
 
   await listenDualStack(app);
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'octane-assistant API listening');
+  logger.info(
+    {
+      port: env.PORT,
+      env: env.NODE_ENV,
+      dbHost: databaseHost(),
+      localOpsOverride: usingLocalOpsDatabase,
+    },
+    'octane-assistant API listening',
+  );
   // Horizon bot only — never setWebhook on TELEGRAM_BOT_TOKEN (that would kill agent-gateway polling).
   await ensureHorizonWebhook();
 

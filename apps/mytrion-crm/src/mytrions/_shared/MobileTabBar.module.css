@@ -53,7 +53,7 @@
 }
 
 .slot[data-active='true'] {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .icon {
@@ -120,7 +120,7 @@
   place-items: center;
   pointer-events: none;
 
-  transition: translate var(--dur-slow) var(--ease-spring);
+  transition: translate var(--hz-dur-wash) var(--hz-ease);
 }
 .indicator::after {
   content: '';
@@ -174,7 +174,7 @@
 
 .sheetRow[data-active='true'] {
   background: var(--row-hover);
-  color: var(--accent);
+  color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
 
@@ -196,7 +196,7 @@
   block-size: var(--icon-size);
 }
 .sheetRow[data-active='true'] .sheetIcon {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .sheetName {

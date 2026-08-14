@@ -65,6 +65,7 @@ function clientRow(overrides: Partial<VerificationClientRow> = {}): Verification
     creditLimit: 25000,
     creditScore: 720,
     isActive: true,
+    lastTransactionAt: null,
     ...overrides,
   };
 }

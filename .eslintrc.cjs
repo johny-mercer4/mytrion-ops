@@ -15,7 +15,7 @@ module.exports = {
   // apps/mytrion-crm is a separate Vite/React app with its own toolchain — the backend eslint
   // config has no React plugin, so linting its hook files here only produces spurious
   // "react-hooks/exhaustive-deps rule not found" errors. It lints itself.
-  ignorePatterns: ['dist', 'node_modules', 'coverage', '*.cjs', 'src/db/migrations', 'apps/mytrion-crm'],
+  ignorePatterns: ['dist', 'node_modules', 'coverage', '*.cjs', 'src/db/migrations', 'apps/mytrion-crm', 'ds-bundle'],
   rules: {
     '@typescript-eslint/no-unused-vars': [
       'error',

@@ -51,6 +51,8 @@ export async function listInboxMessages(input: {
   cursor?: string;
   query?: string;
   filter?: InboxFilter;
+  tag?: string;
+  signal?: AbortSignal;
 } = {}): Promise<InboxMessagePage> {
   const res = (await request('GET', '/inbox/messages', {
     query: {
@@ -60,7 +62,9 @@ export async function listInboxMessages(input: {
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.query?.trim() ? { q: input.query.trim() } : {}),
       filter: input.filter ?? 'all',
+      ...(input.tag ? { tag: input.tag } : {}),
     },
+    ...(input.signal ? { signal: input.signal } : {}),
   })) as Partial<InboxMessagePage>;
   const messages = res.messages ?? [];
   return {

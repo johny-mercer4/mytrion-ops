@@ -68,9 +68,6 @@
 .sidebar {
   width: 248px;
   flex: none;
-  /* Animating width (not transform) because the centre pane must actually reflow into the space —
-     a transform would slide the rail over the content instead of giving it back. */
-  transition: width var(--dur-slow, 220ms) var(--ease-standard);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -245,9 +242,9 @@
 .userBtn {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2_5);
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2_5);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 70%, transparent);
@@ -274,10 +271,12 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps);
 }
 .userAvatar img {
   width: 100%;
@@ -291,13 +290,15 @@
   gap: 1px;
 }
 .userName {
+  font-family: var(--font-body);
   font-size: var(--text-base);
-  font-weight: 650;
+  font-weight: var(--fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .userRole {
+  font-family: var(--font-body);
   font-size: var(--text-xs);
   color: var(--text-muted);
   overflow: hidden;
@@ -334,10 +335,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2_5);
+  gap: var(--space-3);
   width: 100%;
-  height: 38px;
-  padding: 0 var(--space-3);
+  min-height: var(--space-10);
+  height: auto;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
@@ -369,13 +371,10 @@
 /* selected: soft accent-tinted row with a 2px accent bar on the left edge */
 .navActive,
 .navActive:hover {
-  box-shadow: inset 2px 0 0 var(--accent);
   background: var(--ramp-soft);
   border-color: var(--glass-bd-hi);
-  color: var(--primary);
-  box-shadow:
-    0 2px 14px -4px var(--accent-glow),
-    var(--hz-glass-inset);
+  color: var(--text-primary);
+  box-shadow: var(--hz-glass-inset);
   transform: none;
   overflow: hidden;
 }
@@ -410,7 +409,7 @@
 .navSubActive,
 .navSubActive:hover {
   background: var(--ramp-soft);
-  color: var(--primary);
+  color: var(--text-primary);
   transform: none;
 }
 .navSubActive .navLabel {
@@ -450,6 +449,7 @@
   opacity: 1;
 }
 .navLabel {
+  font-family: var(--font-head);
   font-size: var(--mytrion-nav-label-size, 14px);
   font-weight: var(--fw-medium);
   white-space: nowrap;
@@ -482,7 +482,7 @@
 /* One selected-row treatment everywhere. This used to add a per-destination glow to the glyph,
    competing with the rail 2px to its left; `tone` is a rest-state tint and nothing more. */
 .shell .navActive .navIcon {
-  --nav-tone: var(--primary);
+  --nav-tone: var(--text-primary);
 }
 
 /* Chat-as-view: fill the center and neutralize the ChatPanel dock's fixed width + left border. */

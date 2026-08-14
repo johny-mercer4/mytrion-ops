@@ -34,11 +34,27 @@ export async function callTouchpoint<K extends TouchpointKey>(
   return res.data;
 }
 
-/** Catalog ids that differ from the Zoho widget's `config.action` log key. */
+/**
+ * Catalog ids that differ from the Zoho widget's `config.action` log key.
+ *
+ * These exist so ONE automation is ONE row type regardless of which surface fired it. Three were
+ * missing and split their automation across two names in the log: Horizon wrote `balance`,
+ * `account_status` and `unit_driver` while the widget kept writing `balance_check` (822 rows),
+ * `account_status_check` (229) and `unit_driver_change` (13) — same automations, same agents, two
+ * entries in every filter dropdown and two partial histories. The widget's key wins because the
+ * history is already under it.
+ *
+ * (The hyphenated `account-status` / `card-last-used` / `efs-login` / `wex-tasks` rows in the table
+ * are dead residue: they all stop in mid-July 2026, when the hyphen→underscore normalisation below
+ * landed. No live caller writes them, so they need no alias.)
+ */
 const LOG_TYPE_ALIASES: Record<string, string> = {
   'close-app': 'close-wex-application',
   reactivation: 'account-reactivation',
   'wex-apps': 'wex-apps-application',
+  balance: 'balance-check',
+  'account-status': 'account-status-check',
+  'unit-driver': 'unit-driver-change',
 };
 
 /**
@@ -65,6 +81,9 @@ export function logAutomation(automationType: string): void {
       ...(agentName ? { agentName } : {}),
       triggerTime,
       triggerDate,
+      // Every call from this app is Horizon by definition. The legacy Zoho widget posts to the same
+      // endpoint and sends no origin, which is why the server's fallback is 'Mytrion Zoho'.
+      originSource: 'Mytrion Horizon',
     },
   }).catch(() => undefined);
 }

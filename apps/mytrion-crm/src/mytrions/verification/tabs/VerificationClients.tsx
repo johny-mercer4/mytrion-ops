@@ -1,48 +1,43 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Search, Users } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { formatCachedAt } from '../../_shared/swrCache';
 import type { VerificationClientRow } from '../../../api/verificationClients';
 import { VerificationClientCard } from '../VerificationClientCard';
 import { VerificationClientModal } from '../VerificationClientModal';
+import { VerificationFilters } from '../VerificationFilters';
 import {
+  DEFAULT_VERIFICATION_SORT,
   distinctValues,
   EMPTY_VERIFICATION_FILTERS,
+  filtersAreActive,
   useFilteredVerificationClients,
   useVerificationRoster,
-  type VerificationFilters,
+  type VerificationFilters as Filters,
+  type VerificationSort,
 } from '../verificationData';
 
 /**
  * Verification → Existing clients. Every carrier company-wide, from `octane.dim_company`.
  *
  * PAGINATION. The roster is fetched once (cached — see `verificationData.ts`) so search and every
- * filter chip are instant, no round trip. What "proper pagination… fast" buys here is on the RENDER
- * side: only one page's worth is ever mounted at a time, with real Prev/Next + page-number controls
- * — not an ever-growing "show more" list that eventually holds thousands of roster cards at once.
+ * filter chip are instant, no round trip. Only one page's worth is ever mounted at a time.
  */
 
 const PAGE_SIZE = 24;
 
-const TERMS: { id: VerificationFilters['paymentTerms']; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'LOC', label: 'LOC' },
-  { id: 'Prepay', label: 'Prepay' },
-  { id: 'none', label: 'Not set' },
-];
-const DEBTOR: { id: VerificationFilters['debtor']; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'debtors', label: 'Debtors' },
-  { id: 'clear', label: 'No flag' },
-];
-
 export function VerificationClients() {
   const roster = useVerificationRoster();
-  const [filters, setFilters] = useState<VerificationFilters>(EMPTY_VERIFICATION_FILTERS);
+  const [filters, setFilters] = useState<Filters>(EMPTY_VERIFICATION_FILTERS);
+  const [sort, setSort] = useState<VerificationSort>(DEFAULT_VERIFICATION_SORT);
   const [page, setPage] = useState(1);
   const [openClient, setOpenClient] = useState<VerificationClientRow | null>(null);
+  const lastClient = useRef<VerificationClientRow | null>(null);
+  if (openClient) lastClient.current = openClient;
+  const shownClient = openClient ?? lastClient.current;
 
   const rows = roster.data ?? [];
-  const filtered = useFilteredVerificationClients(rows, filters);
+  const deferredQ = useDeferredValue(filters.q);
+  const filtered = useFilteredVerificationClients(rows, { ...filters, q: deferredQ }, sort);
 
   const companyTypes = useMemo(() => distinctValues(rows, 'companyType'), [rows]);
   const cycleTags = useMemo(() => distinctValues(rows, 'billingCycleTag'), [rows]);
@@ -51,115 +46,51 @@ export function VerificationClients() {
   const clampedPage = Math.min(page, totalPages);
   const visible = filtered.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
 
-  // Any filter/search change re-opens on page 1 — staying on page 6 of a now-9-row result shows nothing.
-  const set = <K extends keyof VerificationFilters>(key: K, value: VerificationFilters[K]): void => {
+  const set = <K extends keyof Filters>(key: K, value: Filters[K]): void => {
     setFilters((f) => ({ ...f, [key]: value }));
     setPage(1);
   };
 
-  // Debtor count describes the FILTERED set, matching what's on screen.
+  const clearFilters = (): void => {
+    setFilters(EMPTY_VERIFICATION_FILTERS);
+    setPage(1);
+  };
+
   const debtorCount = useMemo(() => filtered.filter((c) => c.isDebtor).length, [filtered]);
+  const clearCount = filtered.length - debtorCount;
 
   const firstLoad = roster.loading && !roster.data;
   const cachedCaption = formatCachedAt(roster.cachedAt);
+  const emptyBecauseFilters = filtersAreActive(filters);
 
   useEffect(() => {
-    // A refresh can shrink the filtered set below the current page (a carrier dropped off the roster).
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
   return (
     <div className="vf-clients">
-      <div className="vf-toolbar">
-        <label className="vf-search">
-          <Search size={15} />
-          <input
-            value={filters.q}
-            onChange={(e) => set('q', e.target.value)}
-            placeholder="Company or carrier id…"
-          />
-        </label>
-        <div className="vf-summary">
-          <strong>{filtered.length.toLocaleString()}</strong> client{filtered.length === 1 ? '' : 's'} ·{' '}
-          <strong>{debtorCount.toLocaleString()}</strong> debtor{debtorCount === 1 ? '' : 's'}
-        </div>
-        <div className="vf-refresh">
-          {roster.revalidating ? (
-            <span className="vf-cached">Refreshing…</span>
-          ) : cachedCaption ? (
-            <span className="vf-cached">Updated {cachedCaption}</span>
-          ) : null}
-          <button type="button" className="vf-btn" onClick={roster.reload} disabled={roster.revalidating}>
-            <RefreshCw size={14} className={roster.revalidating ? 'vf-spin' : undefined} />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <VerificationFilters
+        filters={filters}
+        sort={sort}
+        companyTypes={companyTypes}
+        cycleTags={cycleTags}
+        matching={filtered.length}
+        clearCount={clearCount}
+        debtorCount={debtorCount}
+        rosterTotal={rows.length}
+        cachedCaption={cachedCaption}
+        revalidating={roster.revalidating}
+        countsPending={firstLoad}
+        onFilter={set}
+        onSort={(value) => {
+          setSort(value);
+          setPage(1);
+        }}
+        onClear={clearFilters}
+        onRefresh={roster.reload}
+      />
 
-      <div className="vf-filters">
-        <div className="vf-filter-group">
-          <span className="vf-filter-label">Payment</span>
-          {TERMS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="vf-chip"
-              aria-pressed={filters.paymentTerms === t.id}
-              onClick={() => set('paymentTerms', t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="vf-filter-group">
-          <span className="vf-filter-label">Debtor</span>
-          {DEBTOR.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              className="vf-chip"
-              aria-pressed={filters.debtor === d.id}
-              onClick={() => set('debtor', d.id)}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-        {companyTypes.length > 0 ? (
-          <div className="vf-filter-group">
-            <span className="vf-filter-label">Type</span>
-            {companyTypes.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className="vf-chip"
-                aria-pressed={filters.companyType === t}
-                onClick={() => set('companyType', filters.companyType === t ? null : t)}
-              >
-                {t.replace(/_/g, ' ')}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {cycleTags.length > 0 ? (
-          <div className="vf-filter-group">
-            <span className="vf-filter-label">Cycle</span>
-            {cycleTags.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className="vf-chip"
-                aria-pressed={filters.billingCycleTag === t}
-                onClick={() => set('billingCycleTag', filters.billingCycleTag === t ? null : t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      {roster.error ? (
+      {roster.error && rows.length > 0 ? (
         <p className="vf-banner-error" role="alert">
           {roster.error}
         </p>
@@ -167,18 +98,33 @@ export function VerificationClients() {
 
       {firstLoad ? (
         <div className="vf-cardc-grid" aria-busy="true" aria-label="Loading clients">
-          {/* PAGE_SIZE, not a round 12: the first load is always unfiltered, so it lands exactly one
-              full page of cards. Reserving half of that made the grid double in height the moment
-              data arrived — the same class of jump the skeleton exists to prevent. */}
           {Array.from({ length: PAGE_SIZE }, (_, i) => (
             <div key={i} className="vf-sk vf-sk-card" />
           ))}
         </div>
+      ) : roster.error && rows.length === 0 ? (
+        <div className="vf-empty" role="alert">
+          <Users size={28} aria-hidden="true" />
+          <div className="vf-empty-title">Couldn’t load clients</div>
+          <p>{roster.error}</p>
+          <button type="button" className="vf-btn" onClick={roster.reload}>
+            Try again
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="vf-empty">
-          <Users size={28} />
+          <Users size={28} aria-hidden="true" />
           <div className="vf-empty-title">No clients match</div>
-          <p>Try a different payment type, debtor status or search term.</p>
+          <p>
+            {emptyBecauseFilters
+              ? 'Nothing in this activity window, payment type, debtor status or search. Clear filters to see the full roster.'
+              : 'The roster is empty.'}
+          </p>
+          {emptyBecauseFilters ? (
+            <button type="button" className="vf-btn" onClick={clearFilters}>
+              Clear filters
+            </button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -216,8 +162,12 @@ export function VerificationClients() {
         </>
       )}
 
-      {openClient ? (
-        <VerificationClientModal client={openClient} onClose={() => setOpenClient(null)} />
+      {shownClient ? (
+        <VerificationClientModal
+          open={openClient != null}
+          client={shownClient}
+          onClose={() => setOpenClient(null)}
+        />
       ) : null}
     </div>
   );
