@@ -4,12 +4,9 @@ import { verificationIngestState, type VerificationIngestState } from '../db/sch
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow, firstOrUndefined } from './util.js';
 
-const LOOKBACK_DAYS = 30;
-
+/** Fresh-only default: now, not a 30-day Application_Date lookback. */
 export function defaultDealWatermark(now = new Date()): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() - LOOKBACK_DAYS);
-  return d.toISOString().slice(0, 10);
+  return now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
 }
 
 export const verificationIngestStateRepo = {
@@ -29,6 +26,30 @@ export const verificationIngestStateRepo = {
       })
       .returning();
     return firstOrThrow(inserted, 'verification_ingest_state insert returned no row');
+  },
+
+  async pinWatermark(ctx: TenantContext, watermark: string): Promise<void> {
+    await db
+      .update(verificationIngestState)
+      .set({
+        pollDealDateWatermark: watermark,
+        updatedAt: new Date(),
+      })
+      .where(eq(verificationIngestState.tenantId, ctx.tenantId));
+  },
+
+  /**
+   * One-time cut: date-only cursors would replay historical Application_Date deals.
+   * Persist `now` at enable/boot so the first cron does not move the floor again.
+   */
+  async pinLegacyToNow(ctx: TenantContext, now = new Date()): Promise<string> {
+    const state = await this.getOrCreate(ctx);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(state.pollDealDateWatermark.trim())) {
+      return state.pollDealDateWatermark;
+    }
+    const next = defaultDealWatermark(now);
+    await this.pinWatermark(ctx, next);
+    return next;
   },
 
   async saveRun(

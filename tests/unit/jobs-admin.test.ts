@@ -67,14 +67,13 @@ describe('jobs admin catalog', () => {
     expect(CRON_SCHEDULES.some((s) => s.name === 'automation.retention.weekly-scan')).toBe(false);
 
     const ingest = catalog.find((j) => j.name === 'automation.verification.case-ingest');
-    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(true);
+    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(false);
     expect(ingest).toMatchObject({
-      active: false,
-      statusLabel: 'Disabled',
-      manualTriggerable: false,
-      scheduleLabel: 'Disabled (not scheduled)',
+      cron: '*/30 * * * *',
+      trigger: 'cron',
+      manualTriggerable: true,
     });
-    expect(CRON_SCHEDULES.some((s) => s.name === 'automation.verification.case-ingest')).toBe(false);
+    expect(CRON_SCHEDULES.some((s) => s.name === 'automation.verification.case-ingest')).toBe(true);
 
     for (const j of catalog) {
       expect(j.manualTriggerable).toBe(MANUAL_TRIGGERABLE_QUEUES.has(j.name));

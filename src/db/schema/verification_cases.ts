@@ -161,7 +161,7 @@ export const verificationCaseStages = pgTable(
   }),
 );
 
-/** Singleton-per-tenant watermark for the 30-minute Zoho Deals poll. */
+/** Singleton-per-tenant Created_Time cursor for the 30-minute Zoho Deals poll. */
 export const verificationIngestState = pgTable(
   'verification_ingest_state',
   {

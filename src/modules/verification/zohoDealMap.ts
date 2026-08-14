@@ -15,14 +15,84 @@ export const ZOHO_DEAL_POLL_STAGES = [
 
 export const ZOHO_DEAL_POLL_LIMIT = 1000;
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const INSTANT_RE =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?/;
+
+/** Zoho COQL datetime: `2026-08-14T17:08:00+00:00`. */
+export function toZohoDateTime(now = new Date()): string {
+  return now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+}
+
+export function isLegacyDateWatermark(value: string): boolean {
+  return DATE_ONLY.test(value.trim());
+}
+
+/** Strip quotes / injection and keep a date or ISO instant. */
+export function sanitizeCoqlInstant(raw: string): string {
+  const trimmed = raw.trim().replace(/'/g, '');
+  const instant = trimmed.match(INSTANT_RE);
+  if (instant) {
+    const tz = !instant[2] || instant[2] === 'Z' ? '+00:00' : instant[2];
+    return `${instant[1]}${tz}`;
+  }
+  const day = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  return day?.[1] ?? '';
+}
+
+/**
+ * Fresh-only cursor. A leftover YYYY-MM-DD Application_Date watermark would replay
+ * ~30 days of deals — bump it to `now` (or VERIFICATION_INGEST_SINCE if later).
+ * A datetime cursor from a prior poll is kept so we do not skip the last interval.
+ */
+export function resolveFreshIngestWatermark(
+  stored: string,
+  now = new Date(),
+  sinceEnv = process.env.VERIFICATION_INGEST_SINCE,
+): string {
+  const nowIso = toZohoDateTime(now);
+  const envMs = sinceEnv?.trim() ? Date.parse(sinceEnv.trim()) : Number.NaN;
+  const envIso = Number.isFinite(envMs) ? toZohoDateTime(new Date(envMs)) : null;
+  const storedMs = Date.parse(stored);
+  const legacy = isLegacyDateWatermark(stored) || !Number.isFinite(storedMs);
+  let cursor = legacy ? nowIso : toZohoDateTime(new Date(storedMs));
+  if (envIso && Date.parse(cursor) < Date.parse(envIso)) cursor = envIso;
+  return cursor;
+}
+
+export function isDealAfterWatermark(createdTime: string, watermark: string): boolean {
+  const created = Date.parse(createdTime);
+  const since = Date.parse(watermark);
+  return Number.isFinite(created) && Number.isFinite(since) && created >= since;
+}
+
+export function maxCreatedTime(times: string[], fallback: string): string {
+  let max = fallback;
+  let maxMs = Date.parse(fallback);
+  if (!Number.isFinite(maxMs)) maxMs = 0;
+  for (const raw of times) {
+    const ms = Date.parse(raw);
+    if (Number.isFinite(ms) && ms > maxMs) {
+      maxMs = ms;
+      max = toZohoDateTime(new Date(ms));
+    }
+  }
+  return max;
+}
+
 export function buildDealPollCoql(watermark: string, limit = ZOHO_DEAL_POLL_LIMIT): string {
-  const safeDate = watermark.slice(0, 10).replace(/'/g, '');
+  const sanitized = sanitizeCoqlInstant(watermark);
+  const instant = sanitized.includes('T')
+    ? sanitized
+    : sanitized
+      ? `${sanitized}T00:00:00+00:00`
+      : toZohoDateTime();
   const stages = ZOHO_DEAL_POLL_STAGES.map((s) => `'${s.replace(/'/g, "''")}'`).join(', ');
   return (
-    `select id, Application_Date from Deals` +
+    `select id, Application_Date, Created_Time from Deals` +
     ` where Stage in (${stages})` +
-    ` and Application_Date >= '${safeDate}'` +
-    ` order by Application_Date asc limit 0, ${Math.max(1, Math.min(limit, ZOHO_DEAL_POLL_LIMIT))}`
+    ` and Created_Time >= '${instant}'` +
+    ` order by Created_Time asc limit 0, ${Math.max(1, Math.min(limit, ZOHO_DEAL_POLL_LIMIT))}`
   );
 }
 

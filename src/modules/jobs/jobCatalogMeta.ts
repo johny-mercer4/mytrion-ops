@@ -53,7 +53,7 @@ const META: Record<string, JobMeta> = {
   'automation.verification.case-ingest': {
     title: 'Verification case ingest',
     description:
-      'DISABLED: Zoho Deals COQL → shared verification_cases. Parked so no new cases are generated; re-enable by removing it from DISABLED_JOB_QUEUES and restoring the 30-minute cron.',
+      'Zoho Deals COQL → shared verification_cases for deals created after the pinned watermark. Does not POST credit-platform requests or backfill historical Application_Date rows.',
   },
   'maintenance.approvals-expiry': {
     title: 'Approvals expiry',

@@ -19,14 +19,16 @@ describe('job catalog', () => {
     for (const s of CRON_SCHEDULES) expect(names.has(s.name)).toBe(true);
   });
 
-  it('parks verification case ingest (defined, no cron, no manual trigger)', () => {
+  it('schedules verification case ingest every 30 minutes and allows a manual trigger', () => {
     expect(ALL_JOBS.some((j) => j.name === verificationCaseIngestJob.name)).toBe(true);
     expect(verificationCaseIngestJob.queue.policy).toBe('singleton');
     expect(verificationCaseIngestJob.queue.retryLimit).toBe(1);
     expect(verificationCaseIngestJob.queue.expireInSeconds).toBe(1500);
-    expect(CRON_SCHEDULES.some((s) => s.name === verificationCaseIngestJob.name)).toBe(false);
-    expect(DISABLED_JOB_QUEUES.has(verificationCaseIngestJob.name)).toBe(true);
-    expect(MANUAL_TRIGGERABLE_QUEUES.has(verificationCaseIngestJob.name)).toBe(false);
+    expect(CRON_SCHEDULES.find((s) => s.name === verificationCaseIngestJob.name)?.cron).toBe(
+      '*/30 * * * *',
+    );
+    expect(DISABLED_JOB_QUEUES.has(verificationCaseIngestJob.name)).toBe(false);
+    expect(MANUAL_TRIGGERABLE_QUEUES.has(verificationCaseIngestJob.name)).toBe(true);
   });
 
   it('agent.run is retry-bounded and dead-letters', () => {

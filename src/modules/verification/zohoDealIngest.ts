@@ -15,7 +15,13 @@ import {
   resolveVerificationCaseOwnerId,
 } from './verificationOwner.js';
 import { DECISION_DESK_STAGE_IDS } from './verificationStages.js';
-import { buildDealPollCoql, mapZohoDeal, maxApplicationDate } from './zohoDealMap.js';
+import {
+  buildDealPollCoql,
+  isDealAfterWatermark,
+  mapZohoDeal,
+  maxCreatedTime,
+  resolveFreshIngestWatermark,
+} from './zohoDealMap.js';
 
 export interface VerificationIngestSummary {
   created: number;
@@ -28,12 +34,19 @@ export interface VerificationIngestSummary {
 export async function ingestVerificationDeals(ctx: TenantContext): Promise<VerificationIngestSummary> {
   const ownerZohoUserId = await resolveVerificationCaseOwnerId();
   const state = await verificationIngestStateRepo.getOrCreate(ctx);
-  const watermark = state.pollDealDateWatermark;
+  const watermark = resolveFreshIngestWatermark(state.pollDealDateWatermark);
+  if (watermark !== state.pollDealDateWatermark) {
+    await verificationIngestStateRepo.pinWatermark(ctx, watermark);
+    logger.info(
+      { from: state.pollDealDateWatermark, to: watermark },
+      'verification ingest watermark pinned fresh-only',
+    );
+  }
   const coql = await zohoCrm.runCoql(buildDealPollCoql(watermark));
   let created = 0;
   let skipped = 0;
   let failed = 0;
-  const seenDates: string[] = [watermark];
+  const seenTimes: string[] = [watermark];
 
   for (const row of coql.rows) {
     const dealId = String(row.id ?? '').trim();
@@ -41,11 +54,15 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
       failed += 1;
       continue;
     }
+    const createdTime = String(row.Created_Time ?? row.created_time ?? '').trim();
+    if (createdTime) seenTimes.push(createdTime);
+    if (!isDealAfterWatermark(createdTime, watermark)) {
+      skipped += 1;
+      continue;
+    }
     const existing = await verificationCaseRepo.findByDealId(ctx, dealId);
     if (existing) {
       skipped += 1;
-      const existingDate = existing.applicationDate ?? '';
-      if (existingDate) seenDates.push(existingDate);
       continue;
     }
 
@@ -60,7 +77,12 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         failed += 1;
         continue;
       }
-      if (mapped.applicationDate) seenDates.push(mapped.applicationDate);
+      const recordCreated = String(record.Created_Time ?? record.created_time ?? createdTime).trim();
+      if (recordCreated) seenTimes.push(recordCreated);
+      if (!isDealAfterWatermark(recordCreated, watermark)) {
+        skipped += 1;
+        continue;
+      }
 
       const inserted = await verificationCaseRepo.insert(ctx, {
         zohoDealId: mapped.zohoDealId,
@@ -145,7 +167,7 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
     }
   }
 
-  const nextWatermark = failed === 0 ? maxApplicationDate(seenDates, watermark) : watermark;
+  const nextWatermark = failed === 0 ? maxCreatedTime(seenTimes, watermark) : watermark;
   await verificationIngestStateRepo.saveRun(ctx, {
     watermark: nextWatermark,
     created,
