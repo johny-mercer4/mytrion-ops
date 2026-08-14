@@ -84,8 +84,16 @@ export interface Pagination {
   offset: number;
 }
 
-export function normalizePagination(input?: { limit?: number; offset?: number }): Pagination {
-  const limit = Math.min(Math.max(input?.limit ?? 50, 1), 200);
+/**
+ * Clamp caller-supplied paging. `maxLimit` defaults to the 200-row page cap every list route uses;
+ * export paths pass a higher ceiling because a CSV/XLSX of the current filter is one request, not a
+ * page the user scrolls.
+ */
+export function normalizePagination(
+  input?: { limit?: number; offset?: number },
+  maxLimit = 200,
+): Pagination {
+  const limit = Math.min(Math.max(input?.limit ?? 50, 1), maxLimit);
   const offset = Math.max(input?.offset ?? 0, 0);
   return { limit, offset };
 }

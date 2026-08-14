@@ -14,6 +14,7 @@ import {
   verifyTelegramUser,
   type MiniAppActorRegistration,
 } from '../../modules/carrier/miniAppAuth.js';
+import { auditMiniAppLogin } from '../../modules/carrier/miniAppLoginAudit.js';
 import {
   loginHintsFor,
   loginWithPassword,
@@ -82,6 +83,9 @@ export async function carrierMiniAppAuthRoutes(app: FastifyInstance): Promise<vo
     }
     // Legacy telegram-mode: initData is enough — never force password.
     if (registration.authMode !== 'password') {
+      // THE carrier sign-in event for these accounts: they never hit /auth/login, so this bootstrap
+      // resolving to `authenticated` is the only moment "this carrier logged in" is observable.
+      await auditMiniAppLogin(registration, telegramUserId, 'telegram');
       return {
         status: 'authenticated' as const,
         authMode: 'telegram' as const,
@@ -101,6 +105,8 @@ export async function carrierMiniAppAuthRoutes(app: FastifyInstance): Promise<vo
     if (token) {
       try {
         await requireRegisteredMiniAppUser(body.initData, { accessToken: token });
+        // A live password session resuming still counts as "this carrier is in the app now".
+        await auditMiniAppLogin(registration, telegramUserId, 'password');
         return {
           status: 'authenticated' as const,
           authMode: 'password' as const,
@@ -147,11 +153,10 @@ export async function carrierMiniAppAuthRoutes(app: FastifyInstance): Promise<vo
     });
     const registration = asCustomerRegistration(actor);
     const { tokens } = await loginWithPassword(registration, body.password);
-    await auditFromContext(ctx, {
-      action: 'mini_app.auth.login',
-      status: 'ok',
-      resourceType: 'registered_mini_app_company',
-      resourceId: registration.id,
+    // Same action as the telegram-mode bootstrap so the Logins view is ONE list of carrier
+    // sign-ins; `detail.method` distinguishes them. Never collapsed — this is an explicit act.
+    await auditMiniAppLogin(registration, registration.telegramUserId, 'password', {
+      collapse: false,
     });
     return {
       ...tokens,

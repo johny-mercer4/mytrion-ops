@@ -30,6 +30,7 @@ import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { auditLogRoutes } from './routes/v1/auditLogs.routes.js';
 import { dataLoaderRoutes } from './routes/v1/dataLoader.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
@@ -424,6 +425,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(auditLogRoutes);
       await v1.register(dataLoaderRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);

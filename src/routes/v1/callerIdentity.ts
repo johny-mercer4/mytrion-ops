@@ -26,6 +26,7 @@ import {
 } from '../../lib/department.js';
 import { RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { auditSessionEvent } from '../../modules/audit/sessionEvents.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { workerRoleFor } from '../../modules/auth/workerRole.js';
@@ -285,9 +286,17 @@ async function actAsContext(
   else delete ctx.userName;
   if (target.role) ctx.callerRole = target.role;
   else delete ctx.callerRole;
-  await auditFromContext(ctx, {
+  /**
+   * Collapsed to one row per impersonator→target per session window. This runs on EVERY request a
+   * view-as session makes, so writing it unthrottled produced 9,178 identical `ok` rows in 30 days
+   * against 116 real logins — the noise that made the Logins view useless. The `denied` branches
+   * above stay unthrottled: a refused impersonation is a distinct security event every time.
+   */
+  await auditSessionEvent(ctx, {
     action: 'auth.act_as',
     status: 'ok',
+    resourceType: 'zoho_user',
+    resourceId: target.zohoUserId,
     detail: { target: target.zohoUserId, impersonator: base.userId },
   });
   return ctx;

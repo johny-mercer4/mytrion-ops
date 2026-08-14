@@ -4,6 +4,7 @@ import type { AdminTabKey } from './adminTabs';
 import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
+import { AutomationLogs } from './AutomationLogs';
 import { CarrierUsers } from './CarrierUsers';
 import { ClientNews } from './ClientNews';
 import { CmpDatabase } from './CmpDatabase';
@@ -222,6 +223,15 @@ export default function AdminMytrion() {
           primary: true,
         },
         {
+          key: 'automation-logs',
+          tone: 'var(--tone-pink)',
+          label: 'Automation Logs',
+          icon: <HistoryIcon size={18} />,
+          active: tab === 'automation-logs',
+          onClick: () => setTab('automation-logs'),
+          keywords: ['automation', 'runs', 'triggers', 'horizon', 'zoho'],
+        },
+        {
           key: 'jobs',
           tone: 'var(--tone-rose)',
           label: 'Jobs',
@@ -310,6 +320,7 @@ export default function AdminMytrion() {
       {tab === 'deals' && <Deals />}
       {tab === 'escalation-routing' && <EscalationRouting />}
       {tab === 'audit' && <AuditLog />}
+      {tab === 'automation-logs' && <AutomationLogs />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}
       {tab === 'data-loader' && <DataLoader />}

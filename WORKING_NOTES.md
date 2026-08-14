@@ -15941,3 +15941,76 @@ a test. 2,611 backend / 794 frontend tests pass (one pre-existing, unrelated fai
 `sales-golive-contract.test.ts` — confirmed present before this branch too, not caused by this work).
 Built on top of this session's earlier `fix/cs-applications-stale-read-cache` branch (same module,
 same session) rather than a fresh branch off `build`.
+
+---
+
+## 2026-08-14 — Audit Log + Automation Logs: filters, coverage, export
+
+Branch `feature/UltraMytrion`. Everything below was measured against the live table first; the row
+counts in the comments are real, not illustrative.
+
+### 1. "Duplicate data" in Logins was `auth.act_as`
+
+`actAsContext()` wrote an `ok` audit row on EVERY request a view-as session made: **9,178 rows in 30
+days against 116 real logins** (1,659 in one week from 14 users). The Logins chip filtered on the
+`auth.` prefix, so it was ~99% the same fact restated.
+
+- New `modules/audit/sessionEvents.ts` — `auditSessionEvent()` collapses an `ok` event to one row per
+  (actor, target) per 30-minute window. In-process TTL map first, one indexed lookback query on a
+  cold key, so a restart or a second instance cannot reopen the flood.
+- **`denied` is never collapsed** — a refused impersonation is a distinct security event every time.
+- Logins now selects its three events by EXACT name (`auth.login`, `auth.zoho.login`,
+  `mini_app.auth.login`), not by prefix. Impersonation got its own chip.
+
+### 2. Carrier mini-app logins did not exist
+
+`mini_app.auth.login` had **zero rows** live. The only writer was the PASSWORD route, and these
+carriers are legacy `telegram` auth-mode registrations that never present a password — the real
+sign-in is the mini app calling `/carrier/mini-app/auth/state` and being told `authenticated`.
+
+- New `modules/carrier/miniAppLoginAudit.ts`, called from both bootstrap and password login.
+- It deliberately does NOT reuse `telegramCtx()`: that context carries no company and no display
+  name, so every carrier login would have landed as an anonymous `telegram:<id>` with an empty
+  Company column. Bootstrap re-opens collapse; an explicit password login never does.
+- This is the carrier client bot, not the Horizon worker bot.
+
+### 3. Mytrion access logging (new security coverage)
+
+`POST /v1/audit/mytrion-access`, written by the SPA's `MytrionGuard` — the single choke point every
+workspace entry passes through (deep link, launcher tile, header switch, auto-route into a home
+Mytrion). Not admin-gated: every worker records their own row. Identity comes from the session; the
+claimed Mytrion is checked against the caller's resolved grant and stored as `granted`, so an
+ungranted claim is recorded `denied` and never collapsed rather than being silently accepted.
+
+### 4. Automation logs split out + `origin_source`
+
+- Migration `0118`: `automation_logs.origin_source` (`'Mytrion Horizon' | 'Mytrion Zoho'`), defaulting
+  to Zoho. That default is a *fallback*, not a guess — pre-existing rows came from either surface and
+  are indistinguishable after the fact, so only a caller that explicitly claims Horizon gets it.
+- Own Admin tab (`Automation Logs`) with origin / automation / agent / date filters. These rows answer
+  a different question from the audit trail and were only visible as `automation.log` with the
+  interesting parts buried in `detail`.
+- Every catalog block already logged via `runAutomation(...).then()`; the real gap was the alias map.
+  Horizon wrote `balance` / `account_status` while the Zoho widget kept writing `balance_check` (820
+  rows) / `account_status_check` (228) — same automations, same agents, two names and two partial
+  histories. Added both aliases; the widget's key wins because the history is already under it.
+
+### 5. Filters + export
+
+- `auditRepo` gained agent-name / profile / role / Zoho-role / resource / date-range / server-side
+  search, plus a `facets()` endpoint so the dropdowns are the tenant's real value space.
+- Free text is now a SERVER filter. It used to narrow only the rows already loaded, which silently
+  disagreed with the "N of M" counter and with any export taken while it was set.
+- Export (CSV + XLSX) on both tabs, re-queried server-side under the current filter so the file is the
+  whole matching set, not the pages scrolled into view. Cap 10,000 rows.
+- **CSV/XLSX formula-injection guard**: audit rows carry user-controlled text, and a cell starting
+  `=`/`+`/`-`/`@` executes on open in Excel and Sheets. Both writers force those cells to text.
+- Migration 0118 also adds the audit_log indexes these filters need — they were seq scans over 41k
+  rows/30d before.
+
+### Verified
+
+- Migration run green on a fresh throwaway DB (never prod; `.env` still points at Render).
+- Backend 2,743 tests pass, lint clean. CRM 947 pass.
+- `apps/mytrion-crm/app/` was NOT committed here: rebuilding it in this working tree also bakes in the
+  uncommitted `feature/verification-cases-intake` UI. Rebuild on a clean tree before the PR.

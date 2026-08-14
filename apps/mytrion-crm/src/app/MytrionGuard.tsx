@@ -9,6 +9,7 @@ import { MytrionLoader } from '../components/MytrionLoader';
 import { Forbidden } from './Forbidden';
 import { NotFound } from './NotFound';
 import { rememberWorkspace } from './launcher/lastWorkspace';
+import { logMytrionAccess } from '../api/mytrionAccessLog';
 
 /**
  * Validates the :mytrion path param (the public URL slug, e.g. "salesmytrion" — see
@@ -32,7 +33,17 @@ export function MytrionGuard() {
    * clicked on the launcher". Gated on canAccess so a 403 or a bad slug records nothing.
    */
   useEffect(() => {
-    if (entered) rememberWorkspace(entered);
+    if (!entered) return;
+    rememberWorkspace(entered);
+    /**
+     * Security trail: which internal user opened which Mytrion, when. This guard is the single
+     * choke point every workspace entry passes through — deep link, launcher tile, header switch,
+     * and the auto-route into a granted home Mytrion alike — so logging anywhere else would miss
+     * whole classes of entry. Gated on `entered` (so a 403 or a bad slug records nothing) and
+     * collapsed server-side to one row per user per Mytrion per session window, because this
+     * effect re-runs on every in-workspace navigation.
+     */
+    logMytrionAccess(entered);
   }, [entered]);
 
   if (!mytrion) return <NotFound />;

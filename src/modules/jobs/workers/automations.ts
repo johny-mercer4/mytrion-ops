@@ -79,7 +79,12 @@ export function makeAutomationHandler(spec: AutomationSpec): () => Promise<void>
         conversationId: result.conversationId,
         usage: result.usage,
       });
-      await automationLogRepo.insert(ctx, { automationType: spec.queue, agentName: spec.agent });
+      // Scheduled department automations are Horizon's own — nothing Zoho about them.
+      await automationLogRepo.insert(ctx, {
+        automationType: spec.queue,
+        agentName: spec.agent,
+        originSource: 'Mytrion Horizon',
+      });
       await notifyTelegram(ctx, `🤖 ${spec.queue}`, result.message);
     } catch (err) {
       const message = errorMessage(err);
