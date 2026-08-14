@@ -41,7 +41,22 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   stub.getBlueprintDetails = vi.fn(async () => null);
   stub.getBlueprintTransitions = vi.fn(async () => []);
   stub.executeBlueprintTransition = vi.fn(async () => undefined);
+  // `getRecord` is driven by the ended-call event (it reads Mytrion_Call_Attempts before bumping
+  // it). Unshadowed it reached the REAL Zoho client: the route swallows the failure, but only after
+  // waiting for a network timeout, so the test's own 5s budget was spent on a socket that was never
+  // going to connect. Fine at low load, over budget once the suite got busier.
+  stub.getRecord = vi.fn(async () => ({ id: 'deal-9', Mytrion_Call_Attempts: 2 }));
   return { ...mod, zohoCrmRecords: stub };
+});
+
+// Same reason: the ended-call event writes a mytrion_calls row, and there is no database in a unit
+// run. The insert is best-effort in the route, but the connection attempt still had to time out.
+vi.mock('../../src/repos/mytrionCallRepo.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/repos/mytrionCallRepo.js')>();
+  return {
+    ...mod,
+    mytrionCallRepo: { ...mod.mytrionCallRepo, create: vi.fn(async () => ({ id: 'call_1' })) },
+  };
 });
 vi.mock('../../src/modules/customerService/fieldResolver.js', async (importOriginal) => {
   const mod =
