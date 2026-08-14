@@ -148,7 +148,9 @@ export async function carrierMiniAppAuthRoutes(app: FastifyInstance): Promise<vo
 
   app.post('/carrier/mini-app/auth/login', async (request) => {
     const body = passwordBody.parse(request.body);
-    const { registration: actor, ctx } = await requireRegisteredMiniAppUser(body.initData, {
+    // No `ctx` destructured: the login row is built by auditMiniAppLogin, which carries the
+    // carrier's company and display name that this context does not.
+    const { registration: actor } = await requireRegisteredMiniAppUser(body.initData, {
       allowWithoutPasswordSession: true,
     });
     const registration = asCustomerRegistration(actor);
