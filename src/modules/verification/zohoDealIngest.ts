@@ -24,12 +24,12 @@ import {
   VERIFICATION_CASE_OWNER_NAME,
   resolveVerificationCaseOwnerId,
 } from './verificationOwner.js';
-import { notifyApplicationAwaitingIntake } from './caseNotify.js';
+import { notifyApplicationCreated } from './caseNotify.js';
 import {
   buildDealPollCoql,
   isDealAfterWatermark,
   mapZohoDeal,
-  maxCreatedTime,
+  maxApplicationDate,
   resolveFreshIngestWatermark,
 } from './zohoDealMap.js';
 
@@ -42,8 +42,9 @@ export interface VerificationIngestSummary {
 }
 
 export async function ingestVerificationDeals(ctx: TenantContext): Promise<VerificationIngestSummary> {
-  // Only used when a Deal has no owner in Zoho — see `createApplicationFromDeal`.
-  const fallbackOwnerZohoUserId = await resolveVerificationCaseOwnerId();
+  // The credit agent who underwrites. Notified about every application, and also stands in as the
+  // row owner when a Deal has no owner in Zoho — see `createApplicationFromDeal`.
+  const verificationOwnerZohoUserId = await resolveVerificationCaseOwnerId();
   const state = await verificationIngestStateRepo.getOrCreate(ctx);
   const watermark = resolveFreshIngestWatermark(state.pollDealDateWatermark);
   if (watermark !== state.pollDealDateWatermark) {
@@ -57,26 +58,53 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
   let created = 0;
   let skipped = 0;
   let failed = 0;
-  const seenTimes: string[] = [watermark];
+  const seenDates: string[] = [watermark];
 
+  /**
+   * Reduce the page to the deals worth fetching, BEFORE touching Zoho or the database per row.
+   *
+   * The cursor rests on a date, so every run re-reads at least one whole day of applications and
+   * most of what comes back is already ingested. Filtering first — then one batched existence
+   * check — means a quiet run costs a single query and zero record fetches instead of a round trip
+   * per deal.
+   */
+  const candidates: Array<{ dealId: string; applicationDate: string }> = [];
+  const seenInPage = new Set<string>();
   for (const row of coql.rows) {
     const dealId = String(row.id ?? '').trim();
     if (!/^\d+$/.test(dealId)) {
       failed += 1;
       continue;
     }
-    const createdTime = String(row.Created_Time ?? row.created_time ?? '').trim();
-    if (createdTime) seenTimes.push(createdTime);
-    if (!isDealAfterWatermark(createdTime, watermark)) {
+    const applicationDate = String(row.Application_Date ?? row.application_date ?? '').trim();
+    if (applicationDate) seenDates.push(applicationDate);
+    if (!isDealAfterWatermark(applicationDate, watermark)) {
       skipped += 1;
       continue;
     }
-    const existing = await verificationCaseRepo.findByDealId(ctx, dealId);
-    if (existing) {
+    // Zoho can return the same deal twice across a boundary; a page-local set keeps the batched
+    // lookup honest and stops two inserts racing on the same id.
+    if (seenInPage.has(dealId)) {
       skipped += 1;
       continue;
     }
+    seenInPage.add(dealId);
+    candidates.push({ dealId, applicationDate });
+  }
 
+  const alreadyIngested = await verificationCaseRepo.findExistingDealIds(
+    ctx,
+    candidates.map((c) => c.dealId),
+  );
+  const fresh = candidates.filter((c) => !alreadyIngested.has(c.dealId));
+  skipped += candidates.length - fresh.length;
+
+  logger.info(
+    { returned: coql.rows.length, candidates: candidates.length, fresh: fresh.length, watermark },
+    'verification deal poll',
+  );
+
+  for (const { dealId } of fresh) {
     try {
       const record = await zohoCrmRecords.getRecord('Deals', dealId);
       if (!record) {
@@ -88,12 +116,8 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         failed += 1;
         continue;
       }
-      const recordCreated = String(record.Created_Time ?? record.created_time ?? createdTime).trim();
-      if (recordCreated) seenTimes.push(recordCreated);
-      if (!isDealAfterWatermark(recordCreated, watermark)) {
-        skipped += 1;
-        continue;
-      }
+      const recordApplied = String(record.Application_Date ?? record.application_date ?? '').trim();
+      if (recordApplied) seenDates.push(recordApplied);
 
       const inserted = await createApplicationFromDeal(ctx, {
         zohoDealId: mapped.zohoDealId,
@@ -120,7 +144,10 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         zohoOwnerId: mapped.zohoOwnerId,
         zohoOwnerName: mapped.zohoOwnerName,
         zohoRaw: mapped.zohoRaw,
-      }, { fallbackOwnerZohoUserId, fallbackOwnerName: VERIFICATION_CASE_OWNER_NAME });
+      }, {
+        fallbackOwnerZohoUserId: verificationOwnerZohoUserId,
+        fallbackOwnerName: VERIFICATION_CASE_OWNER_NAME,
+      });
 
       // Enrichment and notification are best-effort: neither is worth losing an application over,
       // and the poller must not re-create a row it already wrote.
@@ -147,11 +174,14 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         logger.warn({ err: errorMessage(err), dealId }, 'verification carrier enrich failed');
       }
 
+      // Both desks are told. Each recipient is best-effort inside the notifier, so this only
+      // catches a failure to build the messages at all.
       try {
-        await notifyApplicationAwaitingIntake(ctx, {
+        await notifyApplicationCreated(ctx, {
           caseId: inserted.id,
-          ownerZohoUserId: mapped.zohoOwnerId,
-          ownerName: mapped.zohoOwnerName,
+          salesOwnerZohoUserId: mapped.zohoOwnerId,
+          salesOwnerName: mapped.zohoOwnerName,
+          verificationOwnerZohoUserId,
           companyName: mapped.companyName,
           zohoDealId: mapped.zohoDealId,
         });
@@ -166,7 +196,7 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
     }
   }
 
-  const nextWatermark = failed === 0 ? maxCreatedTime(seenTimes, watermark) : watermark;
+  const nextWatermark = failed === 0 ? maxApplicationDate(seenDates, watermark) : watermark;
   await verificationIngestStateRepo.saveRun(ctx, {
     watermark: nextWatermark,
     created,

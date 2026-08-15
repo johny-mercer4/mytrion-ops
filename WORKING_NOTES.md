@@ -16965,3 +16965,63 @@ route test that resolves a session timed out into a 500. Started Docker, `docker
 postgres`, and the count dropped to the 7 that were genuinely mine — all tests asserting the old
 position (ingest parked, Sales creates), rewritten to assert the new invariant rather than flipped.
 A/B before blaming your own diff.
+
+## 2026-08-16 — Poll on Application_Date, batch the duplicate check, tell both desks
+
+### The query
+
+```
+select id, Application_Date from Deals
+ where Stage in (...7 stages...)
+ and Application_Date >= '{watermark}'
+ order by Application_Date asc limit 0, {limit}
+```
+
+Filtered on **Application_Date**, not `Created_Time`. The application date is when the carrier
+actually applied, which is the event this job exists to react to — a Deal created months ago that
+only now gets an application date was invisible to the old cursor. Only `id` and `Application_Date`
+are selected; the full record is fetched per deal afterwards, and only for deals we do not have.
+
+### The cursor is now a DATE, which makes duplicate handling load-bearing
+
+`Application_Date` is a date, so the cursor is `YYYY-MM-DD` and every run re-reads at least one
+whole day. The cursor deliberately rests **on** the last date seen rather than advancing past it —
+a deal applied later that same day must still be picked up — so most of what comes back is already
+ingested. Three things absorb that:
+
+1. **One batched existence check.** `verificationCaseRepo.findExistingDealIds(ctx, ids)` replaces a
+   `findByDealId` per row — up to 1000 round trips against a database ~300ms away before a single
+   new application could be created. Selects the id column only.
+2. **Filter before fetching.** Watermark check and page-local dedupe run first, then the batch
+   query, and only then `getRecord`. A steady-state run where the whole page is known now costs one
+   query and **zero** Zoho record fetches.
+3. **Page-local dedupe.** Zoho can return the same deal twice across a boundary; a `Set` keeps the
+   batch lookup honest and stops two inserts racing the same id. The partial unique index on
+   `zoho_deal_id` is still the backstop.
+
+Date comparison is done on `YYYY-MM-DD` **strings**, not parsed Dates, so no timezone can shift the
+boundary by a day. `resolveFreshIngestWatermark` inverted meaning: a date cursor is now the correct
+form and a leftover `Created_Time` datetime is truncated to its day rather than discarded, so a
+running deployment does not skip an interval. Found and deleted a stale second `maxApplicationDate`
+at the bottom of `zohoDealMap.ts` — a leftover from the original Application_Date design.
+
+**Known consequence:** a Deal in a listed stage with a NULL `Application_Date` never matches
+`Application_Date >= x` and is never ingested. That follows from the filter field; flagged rather
+than worked around.
+
+### Inbox goes to BOTH desks
+
+`notifyApplicationCreated` posts two messages, not one — different people, different jobs, and the
+inbox is per-owner:
+
+- **Sales agent** (the Deal owner): *"Application to complete · <company>"* → `/sales/verification/:id`
+- **Verification agent** (`VERIFICATION_CASE_OWNER_ZOHO_USER_ID`): *"New application · <company>"* →
+  `/verification/applicants/:id`
+
+`zohoRecordId` is unique per tenant, so the rows are suffixed `:sales` / `:verification`. That
+uniqueness doubles as the idempotency guard — a re-run cannot double-post either. Each recipient is
+best-effort: one inbox failing must not cost the other its message, and neither is worth failing the
+ingest over, because the application row already exists.
+
+A Deal with no owner still notifies Verification, at **high** priority and saying so — an
+application nobody has been asked to complete would otherwise sit red forever.

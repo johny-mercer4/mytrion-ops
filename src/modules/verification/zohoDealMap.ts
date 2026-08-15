@@ -16,83 +16,104 @@ export const ZOHO_DEAL_POLL_STAGES = [
 export const ZOHO_DEAL_POLL_LIMIT = 1000;
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const INSTANT_RE =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?/;
 
-/** Zoho COQL datetime: `2026-08-14T17:08:00+00:00`. */
+/** Zoho COQL datetime, kept for callers that still want an instant. */
 export function toZohoDateTime(now = new Date()): string {
   return now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+}
+
+/** `YYYY-MM-DD` — the granularity `Application_Date` actually has. */
+export function toZohoDate(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
 }
 
 export function isLegacyDateWatermark(value: string): boolean {
   return DATE_ONLY.test(value.trim());
 }
 
-/** Strip quotes / injection and keep a date or ISO instant. */
-export function sanitizeCoqlInstant(raw: string): string {
+/**
+ * Strip quotes / injection and reduce to a bare `YYYY-MM-DD`.
+ *
+ * `Application_Date` is a DATE in Zoho, so the cursor is a date. A stored datetime from the old
+ * `Created_Time` cursor is truncated to its day rather than rejected — the poll then re-reads that
+ * one day, which the duplicate check absorbs.
+ */
+export function sanitizeCoqlDate(raw: string): string {
   const trimmed = raw.trim().replace(/'/g, '');
-  const instant = trimmed.match(INSTANT_RE);
-  if (instant) {
-    const tz = !instant[2] || instant[2] === 'Z' ? '+00:00' : instant[2];
-    return `${instant[1]}${tz}`;
-  }
   const day = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
   return day?.[1] ?? '';
 }
 
 /**
- * Fresh-only cursor. A leftover YYYY-MM-DD Application_Date watermark would replay
- * ~30 days of deals — bump it to `now` (or VERIFICATION_INGEST_SINCE if later).
- * A datetime cursor from a prior poll is kept so we do not skip the last interval.
+ * The cursor to poll from.
+ *
+ * Fresh-only by default: with no usable stored cursor we start at TODAY rather than replaying
+ * history, because turning the job on should not manufacture a year of applications. A stored
+ * cursor is always honoured — including a datetime left over from the `Created_Time` era, truncated
+ * to its day — so a running deployment never skips an interval.
+ *
+ * `VERIFICATION_INGEST_SINCE` moves the floor forward, never backward.
  */
 export function resolveFreshIngestWatermark(
   stored: string,
   now = new Date(),
   sinceEnv = process.env.VERIFICATION_INGEST_SINCE,
 ): string {
-  const nowIso = toZohoDateTime(now);
-  const envMs = sinceEnv?.trim() ? Date.parse(sinceEnv.trim()) : Number.NaN;
-  const envIso = Number.isFinite(envMs) ? toZohoDateTime(new Date(envMs)) : null;
-  const storedMs = Date.parse(stored);
-  const legacy = isLegacyDateWatermark(stored) || !Number.isFinite(storedMs);
-  let cursor = legacy ? nowIso : toZohoDateTime(new Date(storedMs));
-  if (envIso && Date.parse(cursor) < Date.parse(envIso)) cursor = envIso;
+  const today = toZohoDate(now);
+  const storedDay = sanitizeCoqlDate(stored);
+  const envDay = sanitizeCoqlDate(sinceEnv ?? '');
+
+  let cursor = storedDay || today;
+  if (envDay && envDay > cursor) cursor = envDay;
   return cursor;
 }
 
-export function isDealAfterWatermark(createdTime: string, watermark: string): boolean {
-  const created = Date.parse(createdTime);
-  const since = Date.parse(watermark);
-  return Number.isFinite(created) && Number.isFinite(since) && created >= since;
+/**
+ * Whether a deal's application date is at or after the cursor.
+ *
+ * Dates compare correctly as strings in `YYYY-MM-DD`, which is why the cursor is normalised to that
+ * form rather than parsed into a Date — no timezone can shift the boundary by a day.
+ */
+export function isDealAfterWatermark(applicationDate: string, watermark: string): boolean {
+  const day = sanitizeCoqlDate(applicationDate);
+  const since = sanitizeCoqlDate(watermark);
+  return day !== '' && since !== '' && day >= since;
 }
 
-export function maxCreatedTime(times: string[], fallback: string): string {
-  let max = fallback;
-  let maxMs = Date.parse(fallback);
-  if (!Number.isFinite(maxMs)) maxMs = 0;
-  for (const raw of times) {
-    const ms = Date.parse(raw);
-    if (Number.isFinite(ms) && ms > maxMs) {
-      maxMs = ms;
-      max = toZohoDateTime(new Date(ms));
-    }
+/**
+ * The furthest application date seen, for the next cursor.
+ *
+ * Deliberately NOT "max + 1 day": a deal applied later on that same day must still be picked up on
+ * the next run, so the cursor rests ON the last date seen and the poll re-reads it. Re-reads are
+ * cheap because the duplicate check drops them before any Zoho record is fetched.
+ */
+export function maxApplicationDate(dates: string[], fallback: string): string {
+  let max = sanitizeCoqlDate(fallback);
+  for (const raw of dates) {
+    const day = sanitizeCoqlDate(raw);
+    if (day && day > max) max = day;
   }
-  return max;
+  return max || sanitizeCoqlDate(fallback);
 }
 
+/**
+ * The poll.
+ *
+ * Filtered on `Application_Date`, not `Created_Time`: the application date is when the carrier
+ * actually applied, which is the event this job exists to react to. A Deal created months ago that
+ * only now gets an application date was invisible to the old cursor.
+ *
+ * Only `id` and `Application_Date` are selected — the full record is fetched per deal afterwards,
+ * and only for deals we have not already ingested.
+ */
 export function buildDealPollCoql(watermark: string, limit = ZOHO_DEAL_POLL_LIMIT): string {
-  const sanitized = sanitizeCoqlInstant(watermark);
-  const instant = sanitized.includes('T')
-    ? sanitized
-    : sanitized
-      ? `${sanitized}T00:00:00+00:00`
-      : toZohoDateTime();
+  const day = sanitizeCoqlDate(watermark) || toZohoDate();
   const stages = ZOHO_DEAL_POLL_STAGES.map((s) => `'${s.replace(/'/g, "''")}'`).join(', ');
   return (
-    `select id, Application_Date, Created_Time from Deals` +
+    `select id, Application_Date from Deals` +
     ` where Stage in (${stages})` +
-    ` and Created_Time >= '${instant}'` +
-    ` order by Created_Time asc limit 0, ${Math.max(1, Math.min(limit, ZOHO_DEAL_POLL_LIMIT))}`
+    ` and Application_Date >= '${day}'` +
+    ` order by Application_Date asc limit 0, ${Math.max(1, Math.min(limit, ZOHO_DEAL_POLL_LIMIT))}`
   );
 }
 
@@ -206,13 +227,4 @@ export function mapZohoDeal(record: Record<string, unknown>): MappedZohoDeal {
     zohoOwnerName: lookupName(record.Owner),
     zohoRaw,
   };
-}
-
-export function maxApplicationDate(dates: string[], fallback: string): string {
-  let max = fallback;
-  for (const raw of dates) {
-    const day = raw.slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > max) max = day;
-  }
-  return max;
 }
