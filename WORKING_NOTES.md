@@ -16828,3 +16828,77 @@ The guard was right and the DB was wrong: a concurrent session had added
 `LOCAL_OPS_DATABASE_URL=…localhost:5433/octane_assistant` to `.env` for `carrier_attachments`, and
 `databaseUrl` prefers it whenever `NODE_ENV=development`. The API in dev reads the local docker
 Postgres, not Render. Migration `0124` is now applied to both.
+
+## 2026-08-15 — Mytrion Watch: pagination, honest labels, and the missing half of the explanation
+
+Second pass on Mytrion Watch after review of the live desk. The cosmetic complaint turned out to be
+sitting on top of a correctness bug.
+
+### The labels were wrong, not just ugly
+
+`WATCH_FEATURE_LABEL` asserted a DIRECTION per feature — "Low payment ratio", "High night / weekend
+activity", "Abnormal payment gap". Three of the eight were then false roughly half the time, because
+these WoE tables are **not monotonic**. Checked against the seeded bins:
+
+- `night_weekend_ratio_31d` — bin 0 (≤0.381) risky, bin 1 protective, bin 3 protective, bin 4 risky.
+  A carrier at 0.333 sits in the LOWEST bin and the desk printed "High night / weekend activity".
+- `payment_gap = null` (no payment history at all) printed "Abnormal payment gap" — a behavioural
+  claim about a carrier we have nothing on.
+- `avg_invoiced_14d` and `median_fuel_31d` alternate across all seven bins.
+
+Direction now comes off the BIN, not the feature: `describeDriver()` reads the bin bounds and emits
+"Very low X" / "Very high X" / "X in a higher-risk range", and the NaN bin gets its own sentence from
+`WATCH_FEATURE_MISSING` ("No payment history yet") because a gap is not a behaviour. A feature with a
+single bin is both ends at once and honestly claims no direction.
+
+Trap inside the fix: the first cut treated a null bound as "skip this comparison", which made every
+bin satisfy `highest` — the top bin's open end matched everything. Unbounded ends are ±Infinity.
+
+Labels are now neutral and unit-bearing (`Invoices paid (31 days)`, `Time on the book`), with
+`WATCH_FEATURE_UNIT` + `WATCH_FEATURE_HELP` shipped alongside the score. Units live with the model,
+not in the client: only the model knows 26 is days and 0.333 is a ratio that runs to **2**. Both
+databases re-scored so the stored `risk_drivers` carry the corrected phrasing.
+
+Also corrected: `mob` is DAYS since first transaction, not months. The bin ladder (13.5 / 30.5 / 44.5
+/ 57.5 / 86.5 / 210.5) only makes sense as days, and "Young account: 5" hid the question entirely.
+
+### Were we showing the values to full extent? No.
+
+Stored and previously unshown: the bin each value fell in, the model's intercept and scaling, the
+band cut-points, `sum_contribution`, `logit`, and the run metadata. Added:
+
+- **Bin bounds travel with each contribution** (joined from `mytrion_watch_model_bins` in the detail
+  query). A weight of +1.60 is arbitrary until you can see the value landed in "up to 47%".
+- **The model comes down with the score**, so `bandCuts()` reads 520/580/640 from the row that
+  produced the score instead of the frontend hardcoding them.
+- **"How this score was reached"** — evidence, baseline, log-odds, probability, score. A credit
+  decision a carrier may appeal has to be reproducible on paper.
+- **Last run** ships with the queue page: scored count and duration, so "is this current" is part of
+  reading the list.
+
+### Pagination
+
+Was `limit: 200` with a footnote; 528 of 728 carriers were unreachable. Now server-side offset paging,
+50 a page, numbered with first/last always present. `pageWindow()` has its own test — which caught
+that an ellipsis was standing in for a single hidden page (same width, one more click).
+
+### Impeccable polish
+
+- **Merged two panes into one.** "What is driving it" and "Behaviour on file" listed the same eight
+  features twice with different columns. One table now: measure + help, value with unit, bucket,
+  effect bar.
+- **3px coloured `border-left` removed** from rows and hero (craft floor refuses a colour rail above
+  1px). Severity is carried by the score colour and the band pill, which already do that job.
+- **Hero facts became labelled pairs.** "Carrier 5840150 Limit $4,000 Default risk 47.5% First
+  snapshot Scored Aug 11" was one run of same-weight text.
+- **Score scale ribbon** — the score drawn against the model's own band zones, so 490 has a size.
+- **Single-snapshot chart replaced.** One dot in an empty frame read as broken; under two points it
+  now says a trend needs two runs.
+- Legend chips are filters like the bar above them; skeleton widths set per context so nothing shifts.
+
+### Artifacts
+
+Two matched explainers published — *New Applicant Underwriting* (the intake lifecycle: shared record,
+red/green gate, ten phases, the capacity formula worked through, six outcomes) and *Mytrion Watch*
+(the existing-client lifecycle: scope, eight measures with units, bands, one score worked end to end,
+why snapshots).

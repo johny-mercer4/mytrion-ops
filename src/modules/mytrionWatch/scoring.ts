@@ -168,6 +168,38 @@ export function scoreCarrier(
 }
 
 /**
+ * Say why one feature is pushing risk up, reading the direction off the BIN.
+ *
+ * The obvious implementation — a fixed phrase per feature — is wrong here, and was: these WoE
+ * tables are not monotonic. `night_weekend_ratio_31d` is risky in its lowest bin, protective in the
+ * next one and risky again two bins later, so "High night and weekend activity" was printed for
+ * carriers sitting at the bottom of the range. The bin boundaries are the only honest source of
+ * direction, and the NaN bin is not a behaviour at all — it means we have nothing on file.
+ */
+export function describeDriver(
+  c: FeatureContribution,
+  bins: readonly WatchBin[],
+  nouns: Readonly<Record<string, string>>,
+  missing: Readonly<Record<string, string>> = {},
+): string {
+  const noun = nouns[c.feature] ?? c.feature;
+  const bin = bins.find((b) => b.binId === c.binId);
+  if (!bin || bin.isNan) return missing[c.feature] ?? `No ${noun} on record`;
+
+  // Unbounded ends are -Infinity / +Infinity, NOT "skip this comparison": treating a null bound as
+  // a pass made every bin satisfy `highest`, because the top bin's open end matched everything.
+  const real = bins.filter((b) => !b.isNan);
+  const lowerOf = (b: WatchBin): number => b.lowerB ?? -Infinity;
+  const upperOf = (b: WatchBin): number => b.upperB ?? Infinity;
+  const lowest = real.every((b) => lowerOf(b) >= lowerOf(bin));
+  const highest = real.every((b) => upperOf(b) <= upperOf(bin));
+  // A feature with a single bin is both ends at once, so no direction can honestly be claimed.
+  if (lowest && !highest) return `Very low ${noun}`;
+  if (highest && !lowest) return `Very high ${noun}`;
+  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} in a higher-risk range`;
+}
+
+/**
  * The features pushing PD UP, worst first.
  *
  * A POSITIVE contribution raises the logit and therefore the probability of default. Every coef in
@@ -176,12 +208,14 @@ export function scoreCarrier(
  */
 export function topRiskDrivers(
   contributions: readonly FeatureContribution[],
-  labels: Readonly<Record<string, string>>,
+  binsByFeature: ReadonlyMap<string, WatchBin[]>,
+  nouns: Readonly<Record<string, string>>,
+  missing: Readonly<Record<string, string>> = {},
   limit = 3,
 ): string[] {
   return contributions
     .filter((c) => c.contribution > 0)
     .sort((a, b) => b.contribution - a.contribution)
     .slice(0, limit)
-    .map((c) => labels[c.feature] ?? c.feature);
+    .map((c) => describeDriver(c, binsByFeature.get(c.feature) ?? [], nouns, missing));
 }

@@ -2,8 +2,9 @@
  * Mytrion Watch — the watchlist for carriers already on the books.
  *
  * Sorted worst-score-first by the server, because this desk exists to answer "who needs attention
- * today", not "show me everyone". Filtering happens server-side: the book is larger than one page,
- * so filtering the page in the browser would quietly hide matches that fell past the limit.
+ * today", not "show me everyone". Filtering and paging both happen server-side: the book is larger
+ * than one page, so filtering the page in the browser would quietly hide matches that fell past the
+ * limit, and a capped list would make a partial view look complete.
  *
  * The aggregator tiles and the band bar always describe the WHOLE snapshot, never the current
  * filter — a counter that changes when you filter by it cannot be used to check your work.
@@ -12,7 +13,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus, Search, ShieldAlert } from 'lucide-react';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchDetail } from './WatchDetail';
-import { BAND_LABEL, BAND_ORDER, BAND_SHORT, fmtDate, fmtDelta, fmtMoney, fmtMoneyShort, fmtScore } from './watchFormat';
+import { WatchPager } from './WatchPager';
+import {
+  BAND_LABEL,
+  BAND_ORDER,
+  BAND_SHORT,
+  fmtDate,
+  fmtDelta,
+  fmtDuration,
+  fmtMoney,
+  fmtMoneyShort,
+  fmtScore,
+} from './watchFormat';
 import {
   listWatchScores,
   watchNum,
@@ -27,13 +39,14 @@ const MOVEMENTS: ReadonlyArray<{ id: WatchMovement; label: string }> = [
   { id: 'improved', label: 'Improved' },
 ];
 
-const PAGE = 200;
+const PAGE_SIZE = 50;
 
 export function MytrionWatch() {
   const [band, setBand] = useState<WatchBand | null>(null);
   const [movement, setMovement] = useState<WatchMovement | null>(null);
   const [term, setTerm] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Typing a carrier name should not fire a query per keystroke against a 700-row snapshot.
@@ -42,35 +55,50 @@ export function MytrionWatch() {
     return () => clearTimeout(t);
   }, [term]);
 
+  // Narrowing the set invalidates the page number — page 9 of a 3-page result is an empty screen.
+  useEffect(() => setPage(0), [band, movement, search]);
+
   const load = useCallback(
     () =>
       listWatchScores({
-        limit: PAGE,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
         ...(band ? { band } : {}),
         ...(movement ? { movement } : {}),
         ...(search ? { search } : {}),
       }),
-    [band, movement, search],
+    [band, movement, search, page],
   );
   const { data, loading, error } = useCachedLoad(
-    `verification:watch:queue:${band ?? 'all'}:${movement ?? 'any'}:${search}`,
+    `verification:watch:queue:${band ?? 'all'}:${movement ?? 'any'}:${search}:${page}`,
     load,
   );
 
   const agg = data?.aggregates;
   const rows = useMemo(() => data?.items ?? [], [data]);
+  const total = data?.total ?? 0;
   const filtered = Boolean(band || movement || search);
+  const run = data?.lastRun ?? null;
 
   if (openId) return <WatchDetail carrierId={openId} onBack={() => setOpenId(null)} />;
 
   return (
     <div className="mw">
       <div className="mw-head">
-        <span className="mw-head-title">Behavioural watchlist</span>
+        <h2 className="mw-head-title">Behavioural watchlist</h2>
         <span className="mw-head-sub">
-          {data?.scoringDate
-            ? `Snapshot of ${fmtDate(data.scoringDate)} · model forward_all_clean_v1`
-            : 'No snapshot yet'}
+          {data?.scoringDate ? (
+            <>
+              Week of {fmtDate(data.scoringDate)}
+              {run?.finishedAt ? (
+                <> · scored {run.scoredCount} carriers in {fmtDuration(run.durationMs)}</>
+              ) : run ? (
+                <> · scoring run still in progress</>
+              ) : null}
+            </>
+          ) : (
+            'No snapshot yet'
+          )}
         </span>
       </div>
 
@@ -79,20 +107,10 @@ export function MytrionWatch() {
           <StatSkeletons />
         ) : (
           <>
-            <Stat label="Carriers scored" value={String(agg?.total ?? 0)} hint="active in the last 31 days" />
+            <Stat label="Carriers scored" value={String(agg?.total ?? 0)} hint="fuelled in the last 31 days" />
             <Stat label="Average score" value={fmtScore(watchNum(agg?.avgScore))} hint="across the snapshot" />
-            <Stat
-              label="Worsened"
-              value={String(agg?.worsened ?? 0)}
-              hint="fell since the previous week"
-              tone="bad"
-            />
-            <Stat
-              label="Improved"
-              value={String(agg?.improved ?? 0)}
-              hint="rose since the previous week"
-              tone="ok"
-            />
+            <Stat label="Worsened" value={String(agg?.worsened ?? 0)} hint="score fell since last week" tone="bad" />
+            <Stat label="Improved" value={String(agg?.improved ?? 0)} hint="score rose since last week" tone="ok" />
             <Stat
               label="Exposure at risk"
               value={fmtMoneyShort(watchNum(agg?.exposureAtRisk))}
@@ -134,9 +152,7 @@ export function MytrionWatch() {
               onClick={() => setMovement(movement === m.id ? null : m.id)}
             >
               {m.label}
-              <span className="vf-chip-n">
-                {m.id === 'worsened' ? (agg?.worsened ?? 0) : (agg?.improved ?? 0)}
-              </span>
+              <span className="vf-chip-n">{m.id === 'worsened' ? (agg?.worsened ?? 0) : (agg?.improved ?? 0)}</span>
             </button>
           ))}
         </div>
@@ -179,29 +195,20 @@ export function MytrionWatch() {
               </li>
             ))}
           </ul>
-          {(data?.total ?? 0) > rows.length ? (
-            <p className="mw-note">
-              Showing the {rows.length} lowest-scoring of {data?.total} matches. Narrow the filters to
-              reach the rest.
-            </p>
-          ) : null}
+          <WatchPager
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            busy={loading}
+            onPage={setPage}
+          />
         </>
       )}
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone?: 'ok' | 'bad';
-}) {
+function Stat({ label, value, hint, tone }: { label: string; value: string; hint: string; tone?: 'ok' | 'bad' }) {
   return (
     <div className="mw-stat" {...(tone ? { 'data-tone': tone } : {})}>
       <span className="mw-stat-label">{label}</span>
@@ -216,9 +223,9 @@ function StatSkeletons() {
     <>
       {Array.from({ length: 5 }, (_, i) => (
         <div key={i} className="mw-stat" aria-hidden="true">
-          <span className="mw-sk mw-sk-line" style={{ width: '58%' }} />
+          <span className="mw-sk mw-sk-line" />
           <span className="mw-sk mw-sk-value" />
-          <span className="mw-sk mw-sk-line" style={{ width: '72%' }} />
+          <span className="mw-sk mw-sk-line" />
         </div>
       ))}
     </>
@@ -257,10 +264,17 @@ function BandDistribution({
       </div>
       <div className="mw-dist-legend">
         {BAND_ORDER.map((b) => (
-          <span key={b} className="mw-legend-item" data-band={b}>
+          <button
+            key={b}
+            type="button"
+            className="mw-legend-item"
+            data-band={b}
+            aria-pressed={active === b}
+            onClick={() => onPick(active === b ? null : b)}
+          >
             <span className="mw-legend-dot" aria-hidden />
             {BAND_SHORT[b]} <span className="mw-legend-n">{counts[b]}</span>
-          </span>
+          </button>
         ))}
       </div>
     </div>
@@ -274,20 +288,20 @@ function RowSkeletons() {
         Loading the watchlist
       </span>
       <ul className="mw-rows" aria-hidden="true">
-        {Array.from({ length: 6 }, (_, i) => (
+        {Array.from({ length: 8 }, (_, i) => (
           <li key={i}>
             <div className="mw-row" data-skeleton="true">
               <span className="mw-score">
                 <span className="mw-sk mw-sk-value" />
-                <span className="mw-sk mw-sk-line" style={{ width: '2.5rem' }} />
+                <span className="mw-sk mw-sk-line" />
               </span>
               <span className="mw-main">
                 <span className="mw-sk mw-sk-title" />
-                <span className="mw-sk mw-sk-line" style={{ width: '48%' }} />
+                <span className="mw-sk mw-sk-line" />
               </span>
               <span className="mw-side">
-                <span className="mw-sk mw-sk-line" style={{ width: '4.5rem' }} />
-                <span className="mw-sk mw-sk-line" style={{ width: '3.5rem' }} />
+                <span className="mw-sk mw-sk-line" />
+                <span className="mw-sk mw-sk-line" />
               </span>
             </div>
           </li>

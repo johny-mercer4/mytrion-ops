@@ -232,14 +232,81 @@ export type MytrionWatchRun = typeof mytrionWatchRuns.$inferSelect;
 /** The model this build ships with. A retrain adds a new version; it never edits this one. */
 export const WATCH_MODEL_VERSION = 'forward_all_clean_v1';
 
-/** Human labels for the drivers, so the UI and the stored `risk_drivers` cannot drift apart. */
+/**
+ * What each feature IS — neutral, no direction claimed.
+ *
+ * These labels used to assert a direction ("Low payment ratio", "High night / weekend activity")
+ * and were therefore wrong roughly half the time: the WoE tables below are NOT monotonic, so a
+ * carrier at 0.333 night/weekend sits in the LOWEST bin while the label said "High". A label that
+ * names the measurement is always true; the direction belongs to the bin, and `describeDriver`
+ * reads it from there.
+ */
 export const WATCH_FEATURE_LABEL: Record<WatchFeature, string> = {
-  pay_ratio_31d: 'Low payment ratio (31d)',
-  payment_gap: 'Abnormal payment gap',
-  longest_dormant_31d: 'Long dormant stretch (31d)',
-  recovery_speed: 'Slow debt recovery',
-  mob: 'Young account',
-  avg_invoiced_14d: 'Average invoice deviation',
-  median_fuel_31d: 'Fuel spend deviation',
-  night_weekend_ratio_31d: 'High night / weekend activity',
+  pay_ratio_31d: 'Invoices paid (31 days)',
+  payment_gap: 'Average days to pay',
+  longest_dormant_31d: 'Longest gap without fuelling',
+  recovery_speed: 'Days to clear an overdue invoice',
+  mob: 'Time on the book',
+  avg_invoiced_14d: 'Average invoice (14 days)',
+  median_fuel_31d: 'Typical fill size',
+  night_weekend_ratio_31d: 'Night and weekend fuelling',
+};
+
+/** How a value is written. `ratio2` is the 0–2 night/weekend scale, which needs saying out loud. */
+export const WATCH_FEATURE_UNIT: Record<WatchFeature, 'percent' | 'days' | 'usd' | 'gallons' | 'ratio2'> = {
+  pay_ratio_31d: 'percent',
+  payment_gap: 'days',
+  longest_dormant_31d: 'days',
+  recovery_speed: 'days',
+  mob: 'days',
+  avg_invoiced_14d: 'usd',
+  median_fuel_31d: 'gallons',
+  night_weekend_ratio_31d: 'ratio2',
+};
+
+/** One plain sentence per feature — what it measures, in the words a credit agent would use. */
+export const WATCH_FEATURE_HELP: Record<WatchFeature, string> = {
+  pay_ratio_31d:
+    'Share of the last 31 days of invoices that has actually been paid. 100% means everything billed has settled.',
+  payment_gap:
+    'Average days between invoice and payment across the carrier’s whole settled history. Blank when nothing has ever been paid.',
+  longest_dormant_31d:
+    'Longest run of consecutive days in the last 31 with no transaction at all. 31 would mean completely stopped.',
+  recovery_speed:
+    'Average days to pay on invoices that actually went past due. Blank when the carrier has never been late.',
+  mob: 'Days since the carrier’s very first transaction. New accounts have no track record to lend against.',
+  avg_invoiced_14d: 'Average invoice amount over the last 14 days — how much credit is being drawn each cycle.',
+  median_fuel_31d: 'Median gallons per fill over the last 31 days. Catches a sudden change in fuelling pattern.',
+  night_weekend_ratio_31d:
+    'How much fuelling happens at night or at the weekend. Night and weekend are counted separately, so a 02:00 Sunday fill counts twice and the scale runs 0 to 2.',
+};
+
+/**
+ * What "no data" means for this feature, as a whole sentence.
+ *
+ * The noun below reads well in "Very low X" but not in "No X on record" — "No time taken to pay on
+ * record" is not English. Only four features have a NaN bin at all; the rest are here so an
+ * unrecognised bin still produces a sentence rather than a shrug.
+ */
+export const WATCH_FEATURE_MISSING: Record<WatchFeature, string> = {
+  pay_ratio_31d: 'Nothing invoiced in the last 31 days',
+  payment_gap: 'No payment history yet',
+  longest_dormant_31d: 'No fuelling history in the last 31 days',
+  recovery_speed: 'Never been past due',
+  mob: 'No first transaction on record',
+  avg_invoiced_14d: 'Nothing invoiced in the last 14 days',
+  median_fuel_31d: 'No fills in the last 31 days',
+  night_weekend_ratio_31d: 'No fills in the last 31 days',
+};
+
+/** The short noun `describeDriver` drops into a sentence, e.g. "Very low **invoices paid**". */
+export const WATCH_FEATURE_NOUN: Record<WatchFeature, string> = {
+  pay_ratio_31d: 'share of invoices paid',
+  payment_gap: 'time taken to pay',
+  longest_dormant_31d: 'gap without fuelling',
+  recovery_speed: 'time to clear an overdue invoice',
+  mob: 'time on the book',
+  avg_invoiced_14d: 'invoice size',
+  median_fuel_31d: 'fill size',
+  night_weekend_ratio_31d: 'night and weekend fuelling',
 };

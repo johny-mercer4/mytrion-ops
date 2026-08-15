@@ -4,8 +4,12 @@
  * Kept out of the components because the queue and the detail must agree: a carrier shown as
  * "Elevated" in a list and "Watch" in its own page is the kind of drift that costs the desk its
  * trust in the score.
+ *
+ * Units are NOT defined here. They come down with the score (`featureMeta`), because only the model
+ * knows that 26 is days and 0.333 is a ratio that runs to 2 — a units table copied into the client
+ * is a units table that will drift the first time a feature is retrained.
  */
-import type { WatchBand } from '@/api/mytrionWatch';
+import type { WatchBand, WatchModel, WatchUnit } from '@/api/mytrionWatch';
 
 /**
  * The bands, worst LAST — a monotone risk ramp (emerald → amber → orange → red) rather than four
@@ -36,17 +40,28 @@ export const BAND_MEANING: Record<WatchBand, string> = {
   high: 'Default risk is material. Review now.',
 };
 
-/** Score cut-points, mirroring `mytrion_watch_models`. Used to draw the guides on the history chart. */
-export const BAND_CUTS: ReadonlyArray<{ band: WatchBand; below: number }> = [
-  { band: 'high', below: 520 },
-  { band: 'elevated', below: 580 },
-  { band: 'watch', below: 640 },
-];
+/** Fallback cut-points, used only until the model arrives — `mytrion_watch_models` is authoritative. */
+const FALLBACK_CUTS = { high: 520, elevated: 580, watch: 640 };
 
-export function bandOf(score: number): WatchBand {
-  if (score < 520) return 'high';
-  if (score < 580) return 'elevated';
-  if (score < 640) return 'watch';
+export interface BandCut {
+  band: WatchBand;
+  below: number;
+}
+
+/** Score cut-points from the model that actually produced the score, worst first. */
+export function bandCuts(model: WatchModel | null | undefined): BandCut[] {
+  return [
+    { band: 'high', below: Number(model?.bandHighBelow ?? FALLBACK_CUTS.high) },
+    { band: 'elevated', below: Number(model?.bandElevatedBelow ?? FALLBACK_CUTS.elevated) },
+    { band: 'watch', below: Number(model?.bandWatchBelow ?? FALLBACK_CUTS.watch) },
+  ];
+}
+
+export function bandOf(score: number, model?: WatchModel | null): WatchBand {
+  const [high, elevated, watch] = bandCuts(model);
+  if (score < (high?.below ?? FALLBACK_CUTS.high)) return 'high';
+  if (score < (elevated?.below ?? FALLBACK_CUTS.elevated)) return 'elevated';
+  if (score < (watch?.below ?? FALLBACK_CUTS.watch)) return 'watch';
   return 'low';
 }
 
@@ -81,15 +96,57 @@ export function fmtMoneyShort(v: number | null | undefined): string {
 }
 
 /**
- * Feature values span six orders of magnitude — a ratio of 0.94, 782 months on book, $2,529
- * invoiced. One formatter with a magnitude rule keeps the column readable without a per-feature
- * lookup that would have to be maintained alongside the model.
+ * A feature value written with its unit.
+ *
+ * The unit is the whole point. "26" is unreadable; "26 days" is a fact a credit agent can act on,
+ * and "0.33 of 2" stops the night/weekend ratio being misread as 33%.
  */
-export function fmtFeature(v: number | null | undefined): string {
+export function fmtValue(v: number | null | undefined, unit: WatchUnit): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return 'No data';
-  if (Number.isInteger(v)) return v.toLocaleString('en-US');
-  if (Math.abs(v) < 10) return v.toFixed(3);
+  switch (unit) {
+    case 'percent':
+      return `${(v * 100).toFixed(v < 0.1 && v > 0 ? 1 : 0)}%`;
+    case 'usd':
+      return fmtMoney(v);
+    case 'gallons':
+      return `${v.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal`;
+    case 'ratio2':
+      return `${v.toFixed(2)} of 2`;
+    case 'days':
+    default:
+      return `${v.toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 1 : 0 })} ${v === 1 ? 'day' : 'days'}`;
+  }
+}
+
+/**
+ * A bare number for a bin boundary — the unit is already on the row's value.
+ *
+ * One decimal, never rounded to whole: these bounds sit on half-values by construction (13.5, 23.5,
+ * 210.5), and rounding 13.5 to "14" prints a boundary the model does not have.
+ */
+function fmtBound(v: number, unit: WatchUnit): string {
+  if (unit === 'percent') return `${Math.round(v * 100)}%`;
+  if (unit === 'usd') return fmtMoney(v);
   return v.toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
+
+/**
+ * The bucket a value landed in, as an interval a person can read.
+ *
+ * This is the missing half of the explanation: a weight of +1.60 means nothing until you can see
+ * that the value fell in "up to 47%" — the worst bucket of six.
+ */
+export function fmtBin(
+  lower: number | null,
+  upper: number | null,
+  isNan: boolean,
+  unit: WatchUnit,
+): string {
+  if (isNan) return 'no data';
+  if (lower === null && upper === null) return 'any value';
+  if (lower === null) return `up to ${fmtBound(upper as number, unit)}`;
+  if (upper === null) return `over ${fmtBound(lower, unit)}`;
+  return `${fmtBound(lower, unit)} – ${fmtBound(upper, unit)}`;
 }
 
 export function fmtDate(iso: string | null | undefined): string {
@@ -97,4 +154,12 @@ export function fmtDate(iso: string | null | undefined): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** "2.3s" / "1m 17s" — how long the last scoring run took. */
+export function fmtDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }

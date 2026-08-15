@@ -56,6 +56,7 @@ export interface WatchQueueResult {
   items: WatchScoreRow[];
   total: number;
   aggregates: WatchAggregates;
+  lastRun: WatchRun | null;
 }
 
 export interface WatchContribution {
@@ -67,6 +68,33 @@ export interface WatchContribution {
   coef: number;
   /** woe x coef. POSITIVE raises the probability of default; negative is protective. */
   contribution: number;
+  /** The bucket this value fell in. Null bound = unbounded; intervals are (lower, upper]. */
+  lowerB: number | null;
+  upperB: number | null;
+  /** True when the value was missing and the model's "no data" weight was used. */
+  isNan: boolean;
+}
+
+export type WatchUnit = 'percent' | 'days' | 'usd' | 'gallons' | 'ratio2';
+
+export interface WatchFeatureMeta {
+  key: string;
+  label: string;
+  unit: WatchUnit;
+  help: string;
+  noun: string;
+}
+
+/** The weights that produced a score, band cut-points included — the desk never hardcodes them. */
+export interface WatchModel {
+  modelVersion: string;
+  intercept: number;
+  baseScore: number;
+  baseOdds: number;
+  pdo: number;
+  bandHighBelow: number;
+  bandElevatedBelow: number;
+  bandWatchBelow: number;
 }
 
 export interface WatchHistoryPoint {
@@ -80,9 +108,9 @@ export interface WatchCarrierDetail {
   score: WatchScoreRow | null;
   contributions: WatchContribution[];
   history: WatchHistoryPoint[];
-  /** Human labels for the eight features, from the model definition rather than the client. */
-  featureLabels: Record<string, string>;
-  features: string[];
+  /** Label, unit and plain-English help for the eight features, in model order. */
+  featureMeta: WatchFeatureMeta[];
+  model: WatchModel | null;
 }
 
 export interface WatchRun {

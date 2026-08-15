@@ -30,21 +30,27 @@
 [data-mytrion='verification'] .mw-back:hover { color: var(--text-primary); }
 
 [data-mytrion='verification'] .mw-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4);
-  border: 1px solid var(--hz-pane-bd);
-  border-left: 3px solid var(--mw-band, var(--hz-pane-bd));
+  border: 1px solid color-mix(in srgb, var(--mw-band, var(--hz-pane-bd)) 28%, var(--hz-pane-bd));
   border-radius: var(--vf-r-panel);
   background: var(--hz-pane);
   box-shadow: var(--hz-glass-inset);
 }
 
+[data-mytrion='verification'] .mw-hero-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
 [data-mytrion='verification'] .mw-hero-score {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-1);
 }
 
@@ -64,20 +70,119 @@
 }
 
 [data-mytrion='verification'] .mw-hero-name {
+  margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 [data-mytrion='verification'] .mw-hero-meaning {
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
+/*
+ * The header facts, as labelled pairs.
+ *
+ * They used to be a single run of same-weight text — "Carrier 5840150 Limit $4,000 Default risk
+ * 47.5% First snapshot Scored Aug 11" — where the reader had to work out which word was the label.
+ */
+[data-mytrion='verification'] .mw-hero-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--hz-pane-bd);
+}
+
+[data-mytrion='verification'] .mw-hf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-hf-k {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-hf-v {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 @media (width < 640px) {
-  [data-mytrion='verification'] .mw-hero {
+  [data-mytrion='verification'] .mw-hero-top {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ------------------------------------------------------------------ score scale */
+
+/*
+ * The score placed on the band scale.
+ *
+ * A bare "490" is not a quantity. Drawn against the model's own cut-points it becomes one: thirty
+ * points below Elevated, a hundred and fifty below Low risk. The zones ARE the bands, so the
+ * picture can never disagree with the pill beside it.
+ */
+[data-mytrion='verification'] .mw-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-scale-track {
+  position: relative;
+  display: flex;
+  overflow: visible;
+  height: 0.5rem;
+  border-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-zone {
+  background: color-mix(in srgb, var(--mw-band, var(--text-muted)) 42%, transparent);
+}
+
+[data-mytrion='verification'] .mw-scale-zone:first-child {
+  border-start-start-radius: var(--vf-r-pill);
+  border-end-start-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-zone:last-child {
+  border-start-end-radius: var(--vf-r-pill);
+  border-end-end-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-scale-mark {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  left: var(--mw-at, 0%);
+  width: 0.25rem;
+  border-radius: var(--vf-r-pill);
+  background: var(--mw-band, var(--text-primary));
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--mw-band, var(--text-primary)) 55%, transparent);
+  translate: -50% 0;
+}
+
+[data-mytrion='verification'] .mw-scale-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 
 [data-mytrion='verification'] .mw-panes {
@@ -171,31 +276,142 @@
   text-anchor: middle;
 }
 
-/* ------------------------------------------------------------------ contribution waterfall */
-
-[data-mytrion='verification'] .mw-contribs {
+/* No trend yet — a single point drawn on a full chart reads as a broken chart. */
+[data-mytrion='verification'] .mw-nochart {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1_5);
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-3);
+  border: 1px dashed var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  text-align: center;
+}
+
+[data-mytrion='verification'] .mw-nochart-v {
+  font-size: var(--text-3xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-nochart-t {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-nochart-b {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ what the score is built from */
+
+/*
+ * One row per measure — what it is, the carrier's value, the bucket that value fell in, and what it
+ * did to the score.
+ *
+ * This replaced two panes that listed the same eight features twice. The bucket column is the piece
+ * that was missing: a weight of +1.60 is arbitrary until you can see the value landed in "up to
+ * 47%", the worst of six.
+ */
+[data-mytrion='verification'] .mw-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-thead,
+[data-mytrion='verification'] .mw-trow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(5.5rem, 0.9fr) minmax(6rem, 1fr) minmax(8rem, 1.4fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .mw-thead {
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-th-effect { text-align: right; }
+
+[data-mytrion='verification'] .mw-trows {
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-[data-mytrion='verification'] .mw-contrib {
+[data-mytrion='verification'] .mw-trow {
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--vf-r-control);
+}
+
+[data-mytrion='verification'] .mw-trow:nth-child(odd) {
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+[data-mytrion='verification'] .mw-tname {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-tlabel {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-thelp {
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-tvalue {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-trow[data-missing='true'] .mw-tvalue {
+  color: var(--text-disabled);
+  font-weight: var(--fw-regular);
+}
+
+[data-mytrion='verification'] .mw-tbin {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-teffect {
   display: grid;
-  grid-template-columns: minmax(7rem, 1.1fr) minmax(0, 1.6fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
 }
 
-[data-mytrion='verification'] .mw-contrib-label {
-  overflow: hidden;
+[data-mytrion='verification'] .mw-tweight {
+  min-width: 3rem;
   font-size: var(--text-xs);
-  color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
+
+[data-mytrion='verification'] .mw-tweight[data-dir='risk'] { color: var(--danger); }
+[data-mytrion='verification'] .mw-tweight[data-dir='safe'] { color: var(--success); }
 
 /*
  * A diverging bar centred on zero: right of centre RAISES the probability of default, left of it
@@ -204,7 +420,7 @@
  */
 [data-mytrion='verification'] .mw-bar {
   position: relative;
-  height: 0.9rem;
+  height: 0.7rem;
   border-radius: var(--vf-r-pill);
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
@@ -220,7 +436,7 @@
 
 [data-mytrion='verification'] .mw-bar-fill {
   position: absolute;
-  inset-block: 0.15rem;
+  inset-block: 0.12rem;
   width: var(--mw-w, 0%);
   border-radius: var(--vf-r-pill);
 }
@@ -235,38 +451,59 @@
   background: var(--success);
 }
 
-[data-mytrion='verification'] .mw-contrib-v {
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  text-align: right;
+/* Below the tablet cut the four columns become two rows; the label keeps the full width. */
+@media (width < 900px) {
+  [data-mytrion='verification'] .mw-thead { display: none; }
+
+  [data-mytrion='verification'] .mw-trow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-1_5);
+  }
+
+  [data-mytrion='verification'] .mw-tname { grid-column: 1 / -1; }
+  [data-mytrion='verification'] .mw-tbin { text-align: right; }
+  [data-mytrion='verification'] .mw-teffect { grid-column: 1 / -1; }
 }
 
-[data-mytrion='verification'] .mw-contrib-note {
-  grid-column: 1 / -1;
-  font-size: var(--text-2xs);
-  color: var(--text-disabled);
-}
+/* ------------------------------------------------------------------ the arithmetic */
 
-/* ------------------------------------------------------------------ feature facts */
-
-[data-mytrion='verification'] .mw-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
-  gap: var(--space-2_5);
+/*
+ * The model, shown rather than implied. A credit decision a carrier may appeal has to be
+ * reproducible on paper, and these five lines are the whole of it.
+ */
+[data-mytrion='verification'] .mw-math {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-[data-mytrion='verification'] .mw-fact-k {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-[data-mytrion='verification'] .mw-fact-v {
-  margin: 0;
+[data-mytrion='verification'] .mw-math-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
   font-size: var(--text-sm);
-  font-weight: var(--fw-semibold);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
+[data-mytrion='verification'] .mw-math-row[data-total='true'] {
+  padding-top: var(--space-1_5);
+  border-top: 1px solid var(--hz-pane-bd);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+[data-mytrion='verification'] .mw-math-v {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-mytrion='verification'] .mw-math-note {
+  padding-top: var(--space-1);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}

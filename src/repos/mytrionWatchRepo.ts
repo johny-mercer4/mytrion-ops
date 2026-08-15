@@ -182,6 +182,8 @@ export const mytrionWatchRepo = {
     score: MytrionWatchScore | null;
     contributions: Array<Record<string, unknown>>;
     history: Array<{ scoringDate: string; creditScore: number; pdScore: number; band: string }>;
+    /** The weights that produced THIS score — band cut-points included, so the desk never guesses. */
+    model: Record<string, unknown> | null;
   }> {
     const rows = await db.execute<{ bundle: Record<string, unknown> }>(sql`
       with latest as (
@@ -192,11 +194,24 @@ export const mytrionWatchRepo = {
       select jsonb_build_object(
         'score', (select to_jsonb(l) from latest l),
         'contributions', coalesce((
-          select jsonb_agg(to_jsonb(c) order by c.contribution desc)
+          -- The bin BOUNDS travel with the contribution. Without them the desk can show "0.333"
+          -- and a weight, but not the one fact that explains the weight: which bucket that value
+          -- fell in, and how wide the bucket is.
+          select jsonb_agg(to_jsonb(c) || jsonb_build_object(
+                   'lowerB', b.lower_b, 'upperB', b.upper_b, 'isNan', coalesce(b.is_nan, false)
+                 ) order by c.contribution desc)
           from mytrion_watch_contributions c
+          left join mytrion_watch_model_bins b
+            on b.model_version = (select model_version from latest)
+           and b.feature       = c.feature
+           and b.bin_id        = c.bin_id
           where c.tenant_id = ${ctx.tenantId}
             and c.score_id = (select id from latest)
         ), '[]'::jsonb),
+        'model', (
+          select to_jsonb(m) from mytrion_watch_models m
+          where m.model_version = (select model_version from latest)
+        ),
         'history', coalesce((
           select jsonb_agg(jsonb_build_object(
                    'scoringDate', h.scoring_date,
@@ -232,6 +247,7 @@ export const mytrionWatchRepo = {
             band: string;
           }>)
         : [],
+      model: bundle?.model ? camel(bundle.model) : null,
     };
   },
 

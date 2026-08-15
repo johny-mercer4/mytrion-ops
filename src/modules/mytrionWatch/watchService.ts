@@ -12,9 +12,12 @@ import { isMissingColumn, isMissingTable } from '../../repos/util.js';
 import { mytrionWatchRepo, type WatchAggregates, type WatchListFilter } from '../../repos/mytrionWatchRepo.js';
 import {
   WATCH_FEATURES,
+  WATCH_FEATURE_HELP,
   WATCH_FEATURE_LABEL,
+  WATCH_FEATURE_MISSING,
+  WATCH_FEATURE_NOUN,
+  WATCH_FEATURE_UNIT,
   WATCH_MODEL_VERSION,
-  type WatchFeature,
 } from '../../db/schema/mytrion_watch.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { WATCH_FEATURE_SQL, WATCH_FEATURE_SQL_ONE, type WatchFeatureRow } from './featureSql.js';
@@ -169,7 +172,7 @@ export async function runScoring(
           prevCreditScore: prev === null ? null : prev.toFixed(2),
           scoreDelta: prev === null ? null : (result.creditScore - prev).toFixed(2),
           features,
-          riskDrivers: topRiskDrivers(result.contributions, WATCH_FEATURE_LABEL),
+          riskDrivers: topRiskDrivers(result.contributions, binsByFeature, WATCH_FEATURE_NOUN, WATCH_FEATURE_MISSING),
         });
         pending.push({ carrierId: row.carrier_id, contributions: result.contributions });
       }
@@ -238,6 +241,7 @@ export const watchService = {
     items: unknown[];
     total: number;
     aggregates: WatchAggregates;
+    lastRun: unknown;
   }> {
     return withWatchSchemaGuard(async () => {
       const scoringDate = filter.scoringDate ?? (await mytrionWatchRepo.latestScoringDate(ctx));
@@ -250,10 +254,16 @@ export const watchService = {
             total: 0, low: 0, watch: 0, elevated: 0, high: 0,
             worsened: 0, improved: 0, avgScore: null, exposureAtRisk: null,
           },
+          lastRun: null,
         };
       }
-      const res = await mytrionWatchRepo.queue(ctx, scoringDate, filter);
-      return { scoringDate, ...res };
+      // Sent with the page rather than fetched separately: "is this snapshot current, and did the
+      // run actually finish" is part of reading the list, not a second question.
+      const [res, runs] = await Promise.all([
+        mytrionWatchRepo.queue(ctx, scoringDate, filter),
+        mytrionWatchRepo.recentRuns(ctx, 1),
+      ]);
+      return { scoringDate, ...res, lastRun: runs[0] ?? null };
     });
   },
 
@@ -262,8 +272,18 @@ export const watchService = {
       const detail = await mytrionWatchRepo.carrierDetail(ctx, carrierId);
       return {
         ...detail,
-        featureLabels: WATCH_FEATURE_LABEL,
-        features: WATCH_FEATURES as readonly WatchFeature[],
+        /**
+         * Label, unit and help travel WITH the score rather than being duplicated in the client.
+         * The desk has to write "0.333 out of 2" and "26 days", and only the model knows which is
+         * which — a units table copied into the frontend is a units table that will drift.
+         */
+        featureMeta: WATCH_FEATURES.map((key) => ({
+          key,
+          label: WATCH_FEATURE_LABEL[key],
+          unit: WATCH_FEATURE_UNIT[key],
+          help: WATCH_FEATURE_HELP[key],
+          noun: WATCH_FEATURE_NOUN[key],
+        })),
       };
     });
   },

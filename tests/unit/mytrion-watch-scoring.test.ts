@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bandFor,
+  describeDriver,
   logisticPd,
   pickBin,
   scaleScore,
@@ -16,7 +17,7 @@ import {
   type WatchBin,
   type WatchModel,
 } from '../../src/modules/mytrionWatch/scoring.js';
-import { WATCH_FEATURE_LABEL } from '../../src/db/schema/mytrion_watch.js';
+import { WATCH_FEATURE_MISSING, WATCH_FEATURE_NOUN } from '../../src/db/schema/mytrion_watch.js';
 
 const MODEL: WatchModel = {
   modelVersion: 'forward_all_clean_v1',
@@ -203,16 +204,45 @@ describe('unmatched features are reported, not silently zeroed', () => {
 });
 
 describe('risk drivers', () => {
+  /** Two features whose bins are the shapes that matter: unbounded ends, a middle, and a NaN bin. */
+  const DRIVER_BINS = new Map<string, WatchBin[]>([
+    ['pay_ratio_31d', PAY_RATIO],
+    [
+      'night_weekend_ratio_31d',
+      [
+        bin('night_weekend_ratio_31d', 0, null, 0.381385, -0.19, -0.600202),
+        bin('night_weekend_ratio_31d', 1, 0.381385, 0.498705, 0.14784, -0.600202),
+        bin('night_weekend_ratio_31d', 6, 0.816986, null, -0.02, -0.600202),
+      ],
+    ],
+    [
+      'mob',
+      [
+        bin('mob', 0, null, 13.5, -0.995343, -0.420568),
+        bin('mob', 6, 210.5, null, 0.584158, -0.420568),
+      ],
+    ],
+  ]);
+
+  it('claims no direction when a feature has only one bin', () => {
+    // A lone bin is both the lowest and the highest, so "very low" would be an invention.
+    const only = [bin('solo', 0, null, null, -0.5, -0.4)];
+    const c = { feature: 'solo', rawValue: 1, binId: 0, woe: -0.5, coef: -0.4, contribution: 0.2 };
+    expect(describeDriver(c, only, { solo: 'solo measure' })).toBe(
+      'Solo measure in a higher-risk range',
+    );
+  });
+
   it('lists only features pushing PD UP, worst first', () => {
     const contributions = [
-      { feature: 'pay_ratio_31d', rawValue: 0.2, binId: 0, woe: -2.1, coef: -0.74, contribution: 1.55 },
-      { feature: 'mob', rawValue: 5, binId: 0, woe: -0.99, coef: -0.42, contribution: 0.42 },
+      { feature: 'pay_ratio_31d', rawValue: 0.2, binId: 0, woe: -2.156863, coef: -0.74019, contribution: 1.55 },
+      { feature: 'mob', rawValue: 5, binId: 0, woe: -0.995343, coef: -0.420568, contribution: 0.42 },
       { feature: 'median_fuel_31d', rawValue: 80, binId: 4, woe: 0.4, coef: -0.96, contribution: -0.38 },
     ];
-    const drivers = topRiskDrivers(contributions, WATCH_FEATURE_LABEL);
+    const drivers = topRiskDrivers(contributions, DRIVER_BINS, WATCH_FEATURE_NOUN);
     expect(drivers).toEqual([
-      WATCH_FEATURE_LABEL.pay_ratio_31d,
-      WATCH_FEATURE_LABEL.mob,
+      `Very low ${WATCH_FEATURE_NOUN.pay_ratio_31d}`,
+      `Very low ${WATCH_FEATURE_NOUN.mob}`,
     ]);
   });
 
@@ -220,6 +250,69 @@ describe('risk drivers', () => {
     const contributions = [
       { feature: 'mob', rawValue: 900, binId: 6, woe: 0.58, coef: -0.42, contribution: -0.24 },
     ];
-    expect(topRiskDrivers(contributions, WATCH_FEATURE_LABEL)).toEqual([]);
+    expect(topRiskDrivers(contributions, DRIVER_BINS, WATCH_FEATURE_NOUN)).toEqual([]);
+  });
+
+  /**
+   * The bug this exists to stop coming back: a fixed phrase per feature printed "High night and
+   * weekend activity" for a carrier sitting in the LOWEST bin, because these WoE tables are not
+   * monotonic. Direction has to come off the bin.
+   */
+  it('says LOW for the bottom bin of a feature whose risk is not monotonic', () => {
+    const c = {
+      feature: 'night_weekend_ratio_31d',
+      rawValue: 0.333,
+      binId: 0,
+      woe: -0.19,
+      coef: -0.600202,
+      contribution: 0.114,
+    };
+    expect(describeDriver(c, DRIVER_BINS.get('night_weekend_ratio_31d') ?? [], WATCH_FEATURE_NOUN)).toBe(
+      `Very low ${WATCH_FEATURE_NOUN.night_weekend_ratio_31d}`,
+    );
+  });
+
+  it('says HIGH for the top bin of that same feature', () => {
+    const c = {
+      feature: 'night_weekend_ratio_31d',
+      rawValue: 1.4,
+      binId: 6,
+      woe: -0.02,
+      coef: -0.600202,
+      contribution: 0.012,
+    };
+    expect(describeDriver(c, DRIVER_BINS.get('night_weekend_ratio_31d') ?? [], WATCH_FEATURE_NOUN)).toBe(
+      `Very high ${WATCH_FEATURE_NOUN.night_weekend_ratio_31d}`,
+    );
+  });
+
+  it('calls a middle bin a higher-risk range rather than high or low', () => {
+    const c = {
+      feature: 'night_weekend_ratio_31d',
+      rawValue: 0.45,
+      binId: 1,
+      woe: 0.14784,
+      coef: -0.600202,
+      contribution: 0.05,
+    };
+    expect(describeDriver(c, DRIVER_BINS.get('night_weekend_ratio_31d') ?? [], WATCH_FEATURE_NOUN)).toBe(
+      'Night and weekend fuelling in a higher-risk range',
+    );
+  });
+
+  /** A NaN bin is not a behaviour — the old copy read "Abnormal payment gap" for a carrier with no
+      payment history at all. */
+  it('reports a missing value as missing, never as a behaviour', () => {
+    const c = {
+      feature: 'pay_ratio_31d',
+      rawValue: null,
+      binId: -1,
+      woe: -0.114759,
+      coef: -0.74019,
+      contribution: 0.085,
+    };
+    expect(describeDriver(c, PAY_RATIO, WATCH_FEATURE_NOUN, WATCH_FEATURE_MISSING)).toBe(
+      WATCH_FEATURE_MISSING.pay_ratio_31d,
+    );
   });
 });
