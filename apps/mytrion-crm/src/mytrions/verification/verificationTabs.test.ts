@@ -7,11 +7,15 @@ describe('VERIFICATION_TABS', () => {
     expect(VERIFICATION_TABS.map((tab) => tab.key)).toEqual([
       'main',
       'applicants',
+      'watch',
       'clients',
       'tickets',
     ]);
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'main')).not.toHaveProperty('group');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'applicants')?.group).toBe('Queue');
+    // Watch sits under Queue beside New applicants: both answer "who deserves credit", one at
+    // intake and one every week after.
+    expect(VERIFICATION_TABS.find((tab) => tab.key === 'watch')?.group).toBe('Queue');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'clients')?.group).toBe('Roster');
     expect(VERIFICATION_TABS.find((tab) => tab.key === 'tickets')?.group).toBe('Roster');
   });

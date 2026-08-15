@@ -220,6 +220,23 @@ export const verificationRecheckJob = defineJob({
 });
 
 /**
+ * Mytrion Watch — weekly behavioural scoring of every active carrier.
+ *
+ * Weekly on purpose: the model is defined on Monday cuts, and the features barely move intra-day.
+ * The real reason to run it on a schedule rather than on demand is that HISTORY CANNOT BE
+ * RECONSTRUCTED — the warehouse's overdue table is mutated in place, so a Monday we do not capture
+ * is a Monday whose true state is gone.
+ */
+export const mytrionWatchScoringJob = defineJob({
+  name: 'automation.verification.watch-scoring',
+  schema: z.object({
+    scoringDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 2, expireInSeconds: 900, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/**
  * Zoho Deals COQL → verification_cases. Does not create credit-platform requests.
  * Parked in DISABLED_JOB_QUEUES (no cron, no Admin trigger) so generation stays off.
  * Worker still registered: leftover queued jobs no-op instead of creating cases.
@@ -300,6 +317,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   billingLedgerSnapshotJob,
   verificationRecheckJob,
   verificationCaseIngestJob,
+  mytrionWatchScoringJob,
   checkpointSweepJob,
   platformKnowledgeSyncJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -351,6 +369,8 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
+  // 06:10 every Monday — after the warehouse's overnight load, before the desk opens.
+  { name: mytrionWatchScoringJob.name, cron: '10 6 * * 1' },
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly

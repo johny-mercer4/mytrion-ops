@@ -1,7 +1,8 @@
-import { Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
+import { Activity, Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
 import { NewApplicants } from './tabs/NewApplicants';
+import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
 import './verificationModal.css';
 import './verificationRuleset.css';
@@ -12,6 +13,11 @@ import './verificationRuleset.css';
  * New applicants is the 10-phase underwriting flow from the New Applicant Underwriting SOP, running
  * entirely on Mytrion's own Postgres (`src/modules/verificationFlow/`). A case arrives here when a
  * Sales agent completes intake; until then it is listed but locked.
+ *
+ * Mytrion Watch is the other half of the same job: new applicants are scored once at intake, and
+ * every carrier already on the books is re-scored weekly from its own payment and fuelling
+ * behaviour (`src/modules/mytrionWatch/`). Both live under Queue because they answer the same
+ * question — who deserves credit — at different points in the relationship.
  *
  * The credit-platform desk (Inbox, Verification cases, Decision rules) is QUARANTINED — see
  * `legacyDesk.ts` and `src/modules/verification/killSwitches.ts`. Its components are still on disk
@@ -42,6 +48,17 @@ const TABS: ModuleTab[] = [
     hideKicker: true,
     keywords: ['queue', 'applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases'],
     content: <NewApplicants />,
+  },
+  {
+    id: 'watch',
+    label: 'Mytrion Watch',
+    description: 'Behavioural scoring for carriers already on the books — who is drifting, and why.',
+    icon: Activity,
+    tone: 'var(--tone-amber)',
+    group: 'Queue',
+    hideKicker: true,
+    keywords: ['watch', 'score', 'scoring', 'risk', 'behaviour', 'behavior', 'monitoring', 'pd', 'default', 'credit score', 'watchlist'],
+    content: <MytrionWatch />,
   },
   {
     id: 'clients',

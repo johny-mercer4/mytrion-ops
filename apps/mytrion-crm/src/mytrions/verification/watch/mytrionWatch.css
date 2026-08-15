@@ -1,0 +1,425 @@
+/*
+ * Mytrion Watch — behavioural scoring desk.
+ *
+ * Same design language as the underwriting flow next door (`flow/verificationFlow.css`): `--hz-pane`
+ * surfaces, `--vf-r-panel` corners, the `--space-*` scale, one hover treatment. What is new here is
+ * a RISK RAMP: four bands that must read as an ordered severity scale before the label is read, so
+ * they run emerald → amber → orange → red rather than four unrelated hues.
+ *
+ * No `backdrop-filter`: the blur budget in `styles/tokens.test.ts` may only go down, and these are
+ * data surfaces, which the guidance says take a solid pane anyway.
+ */
+
+[data-mytrion='verification'] .mw {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  /* The risk ramp, declared once so the queue, the chart and the detail cannot disagree. */
+  --mw-low: var(--success);
+  --mw-watch: var(--tone-amber);
+  --mw-elevated: var(--tone-orange);
+  --mw-high: var(--danger);
+}
+
+[data-mytrion='verification'] .mw [data-band='low'] { --mw-band: var(--mw-low); }
+[data-mytrion='verification'] .mw [data-band='watch'] { --mw-band: var(--mw-watch); }
+[data-mytrion='verification'] .mw [data-band='elevated'] { --mw-band: var(--mw-elevated); }
+[data-mytrion='verification'] .mw [data-band='high'] { --mw-band: var(--mw-high); }
+
+/* ------------------------------------------------------------------ header + aggregators */
+
+[data-mytrion='verification'] .mw-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-head-title {
+  font-size: var(--text-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-head-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10.5rem, 100%), 1fr));
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+  text-align: left;
+}
+
+[data-mytrion='verification'] .mw-stat-label {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-stat-value {
+  font-size: var(--text-xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-stat-hint {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-stat[data-tone='bad'] .mw-stat-value { color: var(--danger); }
+[data-mytrion='verification'] .mw-stat[data-tone='ok'] .mw-stat-value { color: var(--success); }
+
+/* ------------------------------------------------------------------ band distribution bar */
+
+/*
+ * One stacked bar instead of four more counters. The book's shape — "most of it is Watch, twelve
+ * are High" — is the thing a credit lead reads first, and proportion shows that faster than digits.
+ */
+[data-mytrion='verification'] .mw-dist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-dist-bar {
+  display: flex;
+  overflow: hidden;
+  height: 0.75rem;
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+[data-mytrion='verification'] .mw-dist-seg {
+  border: 0;
+  padding: 0;
+  background: var(--mw-band, var(--text-muted));
+  cursor: pointer;
+  transition: filter var(--hz-dur-tone, 160ms) var(--hz-ease, ease);
+}
+
+[data-mytrion='verification'] .mw-dist-seg:hover,
+[data-mytrion='verification'] .mw-dist-seg:focus-visible {
+  filter: brightness(1.18);
+}
+
+[data-mytrion='verification'] .mw-dist-seg[aria-pressed='true'] {
+  filter: brightness(1.25);
+}
+
+[data-mytrion='verification'] .mw-dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .mw-legend-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-legend-dot {
+  align-self: center;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--mw-band, var(--text-muted));
+}
+
+[data-mytrion='verification'] .mw-legend-n {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------ controls */
+
+[data-mytrion='verification'] .mw-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-search {
+  flex: 1 1 14rem;
+  height: var(--vf-field-h);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-control);
+  background: var(--hz-input-bg);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+[data-mytrion='verification'] .mw-search::placeholder { color: var(--text-disabled); }
+
+[data-mytrion='verification'] .mw-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------------ queue rows */
+
+[data-mytrion='verification'] .mw-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Score first, left-aligned in its own fixed column, so 700 rows scan as a single column of numbers
+ * rather than a ragged edge. `auto` on the score column keeps it as wide as the digits need.
+ */
+[data-mytrion='verification'] .mw-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-left: 3px solid var(--mw-band, var(--hz-pane-bd));
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--hz-dur-tone, 160ms) var(--hz-ease, ease),
+    border-color var(--hz-dur-tone, 160ms) var(--hz-ease, ease),
+    translate var(--hz-dur-lift, 140ms) var(--hz-ease, ease);
+}
+
+[data-mytrion='verification'] .mw-row:hover,
+[data-mytrion='verification'] .mw-row:focus-visible {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--mw-band, var(--accent)) 45%, var(--hz-pane-bd));
+  /* `translate`, never `transform` — a permanent transform creates a stacking context. */
+  translate: 0 -1px;
+}
+
+[data-mytrion='verification'] .mw-row[data-skeleton='true'] {
+  cursor: default;
+  translate: 0;
+}
+
+[data-mytrion='verification'] .mw-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0_5);
+  min-width: 4.5rem;
+}
+
+[data-mytrion='verification'] .mw-score-v {
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-delta[data-dir='down'] { color: var(--danger); }
+[data-mytrion='verification'] .mw-delta[data-dir='up'] { color: var(--success); }
+
+[data-mytrion='verification'] .mw-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-name {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .mw-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-drivers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/*
+ * A driver chip states WHY the score is where it is, so it carries the band's colour rather than a
+ * neutral grey — the row's reason and the row's severity are the same fact.
+ */
+[data-mytrion='verification'] .mw-driver {
+  padding: 0.1rem var(--space-1_5);
+  border: 1px solid color-mix(in srgb, var(--mw-band, var(--text-muted)) 35%, transparent);
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--mw-band, var(--text-muted)) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .mw-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-0_5);
+  text-align: right;
+}
+
+[data-mytrion='verification'] .mw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.12rem var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--mw-band, var(--text-muted)) 40%, transparent);
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--mw-band, var(--text-muted)) 14%, transparent);
+  color: var(--mw-band, var(--text-secondary));
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .mw-limit {
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* Below the tablet cut the three columns stack; the score stays first because it is the sort key. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  [data-mytrion='verification'] .mw-side {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    text-align: left;
+  }
+}
+
+/* A footnote under the list — says what the page is NOT showing, so a cut-off list cannot read
+   as the whole snapshot. */
+[data-mytrion='verification'] .mw-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ states */
+
+[data-mytrion='verification'] .mw-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-8) var(--space-4);
+  border: 1px dashed var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+[data-mytrion='verification'] .mw-empty-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: var(--vf-r-panel);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+[data-mytrion='verification'] .mw-banner-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-banner-body {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Skeletons reuse the real boxes so nothing moves when the data lands. */
+[data-mytrion='verification'] .mw-sk {
+  display: block;
+  border-radius: var(--vf-r-pill);
+  background: var(--hz-shimmer, color-mix(in srgb, var(--text-primary) 10%, transparent));
+  animation: mw-pulse 1.4s var(--hz-ease, ease) infinite;
+}
+
+[data-mytrion='verification'] .mw-sk-line { height: 0.6rem; }
+[data-mytrion='verification'] .mw-sk-title { width: 42%; height: 0.85rem; }
+[data-mytrion='verification'] .mw-sk-value { width: 3.5rem; height: 1.5rem; }
+
+@keyframes mw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-mytrion='verification'] .mw-sk { animation: none; }
+  [data-mytrion='verification'] .mw-row { transition: none; translate: 0; }
+}

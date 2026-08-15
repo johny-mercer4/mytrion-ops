@@ -1,0 +1,272 @@
+/*
+ * Mytrion Watch — one carrier's score, and the evidence for it.
+ *
+ * Split from `mytrionWatch.css` on the real seam: the queue answers "who", this answers "why". Both
+ * live inside `.mw`, so the risk ramp declared there (`--mw-low` … `--mw-high`) and the
+ * `[data-band]` mapping apply here unchanged — this file adds no colours of its own.
+ */
+
+/* ------------------------------------------------------------------ detail */
+
+[data-mytrion='verification'] .mw-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+[data-mytrion='verification'] .mw-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+[data-mytrion='verification'] .mw-back:hover { color: var(--text-primary); }
+
+[data-mytrion='verification'] .mw-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--hz-pane-bd);
+  border-left: 3px solid var(--mw-band, var(--hz-pane-bd));
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-hero-score {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-hero-v {
+  font-size: var(--text-4xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-hero-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-hero-name {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-hero-meaning {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+[data-mytrion='verification'] .mw-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (width >= 900px) {
+  [data-mytrion='verification'] .mw-panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  [data-mytrion='verification'] .mw-pane[data-span='full'] {
+    grid-column: 1 / -1;
+  }
+}
+
+[data-mytrion='verification'] .mw-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3_5);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-pane-title {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-pane-sub {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ history chart */
+
+[data-mytrion='verification'] .mw-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+[data-mytrion='verification'] .mw-chart-guide {
+  stroke: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  stroke-dasharray: 3 4;
+  stroke-width: 1;
+}
+
+[data-mytrion='verification'] .mw-chart-guide-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+[data-mytrion='verification'] .mw-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+[data-mytrion='verification'] .mw-chart-area {
+  fill: color-mix(in srgb, var(--accent) 14%, transparent);
+  stroke: none;
+}
+
+[data-mytrion='verification'] .mw-chart-dot {
+  fill: var(--hz-pane-solid, var(--hz-pane));
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+[data-mytrion='verification'] .mw-chart-dot[data-last='true'] {
+  fill: var(--mw-band, var(--accent));
+  stroke: var(--mw-band, var(--accent));
+}
+
+[data-mytrion='verification'] .mw-chart-x {
+  fill: var(--text-muted);
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+/* ------------------------------------------------------------------ contribution waterfall */
+
+[data-mytrion='verification'] .mw-contribs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-contrib {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1.1fr) minmax(0, 1.6fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+[data-mytrion='verification'] .mw-contrib-label {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A diverging bar centred on zero: right of centre RAISES the probability of default, left of it
+ * protects. Direction and colour say the same thing twice on purpose — this is the panel a credit
+ * agent uses to answer "why", and it must not be ambiguous at a glance.
+ */
+[data-mytrion='verification'] .mw-bar {
+  position: relative;
+  height: 0.9rem;
+  border-radius: var(--vf-r-pill);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+[data-mytrion='verification'] .mw-bar::before {
+  content: '';
+  position: absolute;
+  inset-block: -0.15rem;
+  left: 50%;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
+}
+
+[data-mytrion='verification'] .mw-bar-fill {
+  position: absolute;
+  inset-block: 0.15rem;
+  width: var(--mw-w, 0%);
+  border-radius: var(--vf-r-pill);
+}
+
+[data-mytrion='verification'] .mw-bar-fill[data-dir='risk'] {
+  left: 50%;
+  background: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-bar-fill[data-dir='safe'] {
+  right: 50%;
+  background: var(--success);
+}
+
+[data-mytrion='verification'] .mw-contrib-v {
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+[data-mytrion='verification'] .mw-contrib-note {
+  grid-column: 1 / -1;
+  font-size: var(--text-2xs);
+  color: var(--text-disabled);
+}
+
+/* ------------------------------------------------------------------ feature facts */
+
+[data-mytrion='verification'] .mw-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-2_5);
+  margin: 0;
+}
+
+[data-mytrion='verification'] .mw-fact-k {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-fact-v {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+

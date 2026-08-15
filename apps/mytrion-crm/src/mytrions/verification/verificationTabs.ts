@@ -13,6 +13,7 @@ import type { TabDescriptor } from '../../access/tabRegistry';
 export const VERIFICATION_TABS = [
   { key: 'main', label: 'Main' },
   { key: 'applicants', label: 'New applicants', group: 'Queue' },
+  { key: 'watch', label: 'Mytrion Watch', group: 'Queue' },
   { key: 'clients', label: 'Existing clients', group: 'Roster' },
   { key: 'tickets', label: 'Tickets', group: 'Roster', soon: true },
 ] as const satisfies readonly TabDescriptor[];

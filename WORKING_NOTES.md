@@ -16702,3 +16702,129 @@ Migration `0123_carrier_attachments` is hand-written + idempotent — `carrier_a
 
 Left the in-flight verificationFlow files (`applicationService`, `deskService`,
 `verificationFlowRepo`, `verificationFlowBundleRepo`) alone.
+
+## 2026-08-15 — Existing-client modal: local attachments + match New Applications
+
+The Attachment tab's "Run pnpm db:migrate" banner was truthful for the DB the API was using, not a false
+positive. `.env` `MYTRION_OPS_DATABASE_URL` is Render; `0123_carrier_attachments` was applied only to
+local Docker `:5433`. The reused `pnpm dev:all` process never picked up the local migrate.
+
+Fixes (did **not** migrate Render, did **not** set `ALLOW_REMOTE_DB_MIGRATE`):
+
+- `LOCAL_OPS_DATABASE_URL` in gitignored `.env` so `pnpm dev` uses localhost:5433. Same convention as
+  `pnpm dev:local-db` / `USE_LOCAL_OPS_DB=1`.
+- Unmigrated 503 now names the connected host and points at `pnpm dev:local-db`, matching verification
+  cases. The CRM treats `CARRIER_ATTACHMENTS_UNMIGRATED` as an unavailable empty state — no panic
+  banner, no stacked empty, Details still paint immediately.
+- Attachment list uses `useCachedLoad` and fetches only when the Attachment chip is selected. Return
+  visits are cache hits (no skeleton flash).
+
+UI revert (same day): Existing Clients list/modal were briefly flattened toward New Applications.
+User rejected that. Restored incumbent card grid, AggregatorMark multi-color, `vf-tag` badges, and
+the `ds/Dialog` + `vf-stat` modal from HEAD. Kept Attachment tab + cache/unavailable-state only.
+
+## 2026-08-15 — Sales Create: drop the Application tab
+
+Sales Mytrion → Create no longer starts a credit application. The Application sub-tab (and its
+"Who is applying?" intake panel) is unhooked from `CreateTab`. Ticket / Escalate / Lead stay.
+
+Intro copy is the existing `NAV_DESC.create` plus the per-mode sentence — no "Start a credit
+application" line. Sales Verification empty-state no longer points at Create → Application.
+
+Left intact: `applicationIntake.tsx` / `applicationFields.tsx` (still opened from Sales
+Verification for an existing case), Verification Mytrion, and the verificationFlow backend.
+
+## 2026-08-15 — Existing-client modal: Details / Attachment tab chrome only
+
+The two chips in the verification client modal were `ds/Tabs` `size="sm"`: 28px hit target, filled
+Material `description` vs thin `attach_file`, cyan line underline. Restyled **that control only**.
+
+- Lucide `IdCard` / `Files`, both 20px stroke 2 — same family as Existing Clients marks, no fill.
+- Local `.vf-modal-tabs` pill track: full-width, 44px tabs, `--text-base`, `--hz-pane-*` +
+  `--surface-raised` selected. No accent, no cyan, no glow.
+- Left the roster, AggregatorMark, LOC/Prepay tags, `vf-stat` / payment chrome, and attachment
+  upload/download / carrier-id keying alone. Did not flatten toward New Applications.
+
+## 2026-08-15 — Mytrion Watch: behavioural scoring for existing carriers
+
+New tab inside the **Verification** Mytrion (`Queue` group, beside New applicants). New applicants
+are scored once at intake; every carrier already on the books is now re-scored weekly from its own
+payment and fuelling behaviour. Built from `scoring_all_in_one.sql` (logistic regression on WoE,
+model `forward_all_clean_v1`). No escalation wired — this is a watchlist, not a workflow.
+
+### Weights live in a table, not in code
+
+`mytrion_watch_models` (intercept + score scaling + band cut-points) and `mytrion_watch_model_bins`
+(58 WoE bins, seeded by migration `0124`). A retrain is an INSERT with a new `model_version`, and
+every historical score stays explainable against the weights that actually produced it.
+
+### Why we snapshot instead of scoring on request
+
+`verification_staging.postlimit_default_list` is **mutated in place** — `payment_date` /
+`payment_amount` are filled in when a bill is paid — so scoring a past Monday off it uses knowledge
+from the future, and its archive holds one week. Every week not snapshotted is history that is gone.
+Observed live: the same 2026-08-04 cut re-scored ~20 minutes apart moved 3 carriers between
+improved/worsened. That is the table changing under us, not a bug — and it is the whole argument for
+`mytrion_watch_scores` existing.
+
+Weekly pg-boss job `automation.verification.watch-scoring`, cron `10 6 * * 1`.
+
+### The grain decision (highest-risk call in the whole feature)
+
+Source is `octane.mart_transaction_line_items` per the standing decision, but that table is at
+LINE-ITEM grain (1.33M rows) while the model was trained at TRANSACTION grain (971k).
+`median_fuel_31d` is a median over transactions and `night_weekend_ratio_31d` counts them, so line
+items would inflate both and shift carriers into the wrong bins. Validated against the training
+source over 2026-04-01..05-04 joined on `transaction_id`:
+
+- `transaction_fuel_quantity` == trained `fuel_quantity` → **72,340 / 72,340 (100%)**
+- `SUM(line_item_fuel_quantity)` → 48,844 / 72,340 (67%)
+
+So the query does `DISTINCT transaction_id` and reads the transaction-level columns. Same 72,340
+rows also agree on the hour with `Asia/Tashkent` and agree on ZERO with UTC — the reference SQL's
+`EXTRACT(HOUR …)` was session-timezone dependent; ours is deterministic.
+
+Two deliberate departures from the reference SQL:
+
+- `pay_ratio_31d` and `avg_invoiced_14d` are computed in **separate CTEs**. The original joined both
+  invoice windows to `base` in one query, which multiplies the two sets together.
+- The night/weekend **double count is reproduced on purpose** (a 02:00 Sunday swipe counts twice, so
+  the ratio spans 0–2). The published bins top out at 0.816986, which only makes sense on that
+  scale. Do not "fix" it without retraining.
+
+`pickBin` returns `null` when nothing matches instead of contributing zero, and the run logs
+`unmatchedFeatures` — the reference SQL made a data gap indistinguishable from a neutral carrier.
+
+### Surface
+
+`verification/watch/` — queue (`MytrionWatch.tsx`), detail (`WatchDetail.tsx`), history chart. Built
+on the desk's own language, not a second one: `--hz-pane` surfaces, `--vf-r-panel` corners,
+`translate` not `transform` on hover. The one new idea is a **risk ramp** — the four bands run
+emerald → amber → orange → red so severity reads before the label does, declared once on `.mw` so
+the queue, the chart and the detail cannot disagree.
+
+- Aggregators and the band bar always describe the WHOLE snapshot, never the current filter — a
+  counter that changes when you filter by it cannot be used to check your work.
+- Filtering is server-side. The book is larger than one page, so filtering the page in the browser
+  would hide matches that fell past the limit. Search is debounced 300ms.
+- Detail answers the questions in the order they are asked: score → history (with the band
+  cut-points drawn as guides) → diverging contribution bars → the raw feature values. Bars are
+  scaled against the largest ABSOLUTE contribution, so a feature raising risk by 1.6 visibly dwarfs
+  one protecting by 0.2; scaling each side separately would draw them equal and invert the story.
+- Skeletons reuse the real boxes, so nothing shifts when data lands.
+
+### Verified
+
+728 carriers scored in ~6s locally / ~77s against Render. Golden case (carrier 5745870) pinned in
+`tests/unit/mytrion-watch-scoring.test.ts`: sum −0.83734 → logit −3.711708 → PD 0.0238 → score 594.2.
+Routes smoke-tested over HTTP: 200 on list/detail/band/movement/search/runs, 403 for a Sales worker,
+401 anonymous, 403 for a non-admin POST to `/run`. Backfilled 3 weekly snapshots on prod so movement
+is populated before the first cron.
+
+### Trap worth recording
+
+`asWatchSchemaError` reported `MYTRION_WATCH_NOT_MIGRATED` while prod demonstrably had the tables.
+The guard was right and the DB was wrong: a concurrent session had added
+`LOCAL_OPS_DATABASE_URL=…localhost:5433/octane_assistant` to `.env` for `carrier_attachments`, and
+`databaseUrl` prefers it whenever `NODE_ENV=development`. The API in dev reads the local docker
+Postgres, not Render. Migration `0124` is now applied to both.
