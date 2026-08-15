@@ -7,7 +7,7 @@
  * in Postgres. The provider is stamped ON THE ROW, never read from env at download time.
  */
 import { createId } from '@paralleldrive/cuid2';
-import { env } from '../../config/env.js';
+import { databaseHost, env } from '../../config/env.js';
 import type { CarrierAttachment } from '../../db/schema/index.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { carrierAttachmentRepo } from '../../repos/carrierAttachmentRepo.js';
@@ -66,13 +66,23 @@ export function toCarrierAttachmentDto(row: CarrierAttachment): CarrierAttachmen
   };
 }
 
+function notMigratedMessage(): string {
+  return (
+    `Carrier attachments are not on this database (${databaseHost()}) yet. ` +
+    'Start the API with `pnpm dev:local-db` (or USE_LOCAL_OPS_DB=1 pnpm dev:all) to use local Docker Postgres, ' +
+    'or run `pnpm db:migrate` on the database this process uses. ' +
+    'Do not migrate a remote/prod URL unless you have opted in.'
+  );
+}
+
 function withSchemaGuard<T>(fn: () => Promise<T>): Promise<T> {
   return fn().catch((err: unknown) => {
     if (isMissingTable(err, 'carrier_attachments')) {
-      throw new AppError(
-        'Carrier attachments are not migrated in this environment. Run pnpm db:migrate.',
-        { statusCode: 503, code: 'CARRIER_ATTACHMENTS_UNMIGRATED', expose: true },
-      );
+      throw new AppError(notMigratedMessage(), {
+        statusCode: 503,
+        code: 'CARRIER_ATTACHMENTS_UNMIGRATED',
+        expose: true,
+      });
     }
     throw err;
   });

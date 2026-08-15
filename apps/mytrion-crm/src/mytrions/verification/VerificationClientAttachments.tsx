@@ -3,15 +3,15 @@
  * the same Dropbox verification root the underwriting documents use, a different table so a
  * client with no verification case still has a place for files.
  *
- * Fetch starts when this tab mounts (Finance modal's per-tab rule). Upload keeps the list
- * visible; a first-load skeleton is the only loader.
+ * Fetch is owned by the parent (`useCarrierAttachments`, enabled only on this tab). The SWR
+ * cache makes a return visit instant — no remount skeleton. An unmigrated table is an
+ * unavailable empty, not a "run migrate" panic.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Download, Paperclip, Trash2, Upload } from 'lucide-react';
 import {
   deleteCarrierAttachment,
   getCarrierAttachmentDownloadUrl,
-  listCarrierAttachments,
   uploadCarrierAttachment,
   type VerificationCarrierAttachment,
 } from '../../api/verificationClients';
@@ -19,6 +19,8 @@ import { requestBlob } from '../../api/transport';
 import { Button, ConfirmDialog } from '@/ds';
 import { deliverExport } from '../../lib/deliverExport';
 import { isTelegramWebView } from '../../telegram/webApp';
+import { invalidateSwrCache, type CachedLoad } from '../_shared/swrCache';
+import { attachmentsCacheKey, type CarrierAttachmentsLoad } from './verificationData';
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -26,57 +28,38 @@ function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function VerificationClientAttachments({ carrierId }: { carrierId: string }) {
-  const [rows, setRows] = useState<VerificationCarrierAttachment[]>([]);
-  const [loading, setLoading] = useState(true);
+export function VerificationClientAttachments({
+  carrierId,
+  load,
+}: {
+  carrierId: string;
+  load: CachedLoad<CarrierAttachmentsLoad>;
+}) {
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [pendingDelete, setPendingDelete] = useState<VerificationCarrierAttachment | null>(null);
   const [deleting, setDeleting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const unavailable = load.data?.status === 'unavailable';
+  const rows = load.data?.status === 'ok' ? load.data.attachments : [];
+  const canUpload = !unavailable && !uploading;
 
   function refresh(): void {
-    listCarrierAttachments(carrierId)
-      .then((r) => {
-        setRows(r.attachments);
-        setError('');
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load attachments'));
+    invalidateSwrCache(attachmentsCacheKey(carrierId));
+    load.reload();
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    setRows([]);
-    setLoading(true);
-    setError('');
-    listCarrierAttachments(carrierId)
-      .then((r) => {
-        if (cancelled) return;
-        setRows(r.attachments);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Failed to load attachments');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [carrierId]);
-
   async function onFilesPicked(list: FileList | null): Promise<void> {
-    if (!list?.length) return;
+    if (!list?.length || !canUpload) return;
     setUploading(true);
-    setError('');
+    setActionError('');
     try {
       for (const file of Array.from(list)) {
         await uploadCarrierAttachment(carrierId, file);
       }
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed');
+      setActionError(e instanceof Error ? e.message : 'Upload failed');
     } finally {
       setUploading(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -95,7 +78,7 @@ export function VerificationClientAttachments({ carrierId }: { carrierId: string
       );
       await deliverExport(blob, att.fileName);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Download failed');
+      setActionError(e instanceof Error ? e.message : 'Download failed');
     }
   }
 
@@ -107,11 +90,13 @@ export function VerificationClientAttachments({ carrierId }: { carrierId: string
       setPendingDelete(null);
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delete failed');
+      setActionError(e instanceof Error ? e.message : 'Delete failed');
     } finally {
       setDeleting(false);
     }
   }
+
+  const listError = actionError || (load.error && !load.data ? load.error : '');
 
   return (
     <div className="vf-attach">
@@ -129,7 +114,7 @@ export function VerificationClientAttachments({ carrierId }: { carrierId: string
         <Button
           variant="primary"
           size="sm"
-          disabled={uploading}
+          disabled={!canUpload}
           onClick={() => fileInput.current?.click()}
         >
           <Upload size={14} aria-hidden="true" />
@@ -137,13 +122,18 @@ export function VerificationClientAttachments({ carrierId }: { carrierId: string
         </Button>
       </div>
 
-      {error ? (
+      {listError && !unavailable ? (
         <p className="vf-banner-error" role="alert">
-          {error}
+          {listError}
         </p>
       ) : null}
 
-      {loading && rows.length === 0 ? (
+      {unavailable ? (
+        <div className="vf-empty-inline">
+          <Paperclip size={20} aria-hidden="true" />
+          <p>Attachments aren’t available on this database. Details still work.</p>
+        </div>
+      ) : load.loading && rows.length === 0 ? (
         <div className="vf-files" aria-busy="true" aria-label="Loading attachments">
           {Array.from({ length: 3 }, (_, i) => (
             <div key={i} className="vf-sk vf-sk-file" />
@@ -170,11 +160,7 @@ export function VerificationClientAttachments({ carrierId }: { carrierId: string
                 })}
               </span>
               <div className="vf-file-actions">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void onDownload(a)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => void onDownload(a)}>
                   <Download size={14} aria-hidden="true" />
                   Download
                 </Button>

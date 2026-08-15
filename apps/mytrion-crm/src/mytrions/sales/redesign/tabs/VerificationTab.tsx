@@ -252,7 +252,7 @@ export function VerificationTab() {
           title={rows.length === 0 ? 'No applications yet' : 'Nothing in this filter'}
           body={
             rows.length === 0
-              ? 'Start one from Create → Application. It stays with you until every detail and document is in.'
+              ? 'Applications you own appear here. Incomplete ones stay with you until every detail and document is in.'
               : 'Try another filter to see the rest of your applications.'
           }
         />

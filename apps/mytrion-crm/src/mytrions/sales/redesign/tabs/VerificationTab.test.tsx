@@ -82,11 +82,12 @@ describe('loading and empty', () => {
     expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
   });
 
-  it('points a new agent at Create → Application', () => {
+  it('explains the empty list without pointing at Create', () => {
     ready([]);
     render(<VerificationTab />);
     expect(screen.getByText(/No applications yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/Create → Application/i)).toBeInTheDocument();
+    expect(screen.getByText(/Applications you own appear here/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Create → Application/i)).not.toBeInTheDocument();
   });
 });
 

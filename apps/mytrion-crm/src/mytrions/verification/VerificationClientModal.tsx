@@ -7,13 +7,13 @@
  * header/footer stay put while the body scrolls. Attachment fetch starts only when that
  * tab is selected.
  */
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { AlertTriangle, Files, IdCard, type LucideIcon } from 'lucide-react';
 import { Button, Dialog, Tabs } from '@/ds';
 import type { VerificationClientDetail, VerificationClientRow } from '../../api/verificationClients';
 import { AggregatorMark } from './verificationAggregators';
 import { VerificationClientAttachments } from './VerificationClientAttachments';
-import { useVerificationClientDetail } from './verificationData';
+import { useCarrierAttachments, useVerificationClientDetail } from './verificationData';
 import { dash, isPrepayTerms, money } from './verificationFormat';
 
 type ClientTab = 'details' | 'attachment';
@@ -23,6 +23,16 @@ type ClientTab = 'details' | 'attachment';
  * below. Height per row is the shared --vf-field-h, so skeleton and loaded grid agree.
  */
 const DETAIL_FIELD_COUNT = 11;
+
+/** Same lucide stroke as Existing Clients marks — never a filled/outline pair. */
+function ModalTabLabel({ icon: Glyph, children }: { icon: LucideIcon; children: ReactNode }) {
+  return (
+    <span className="vf-modal-tab-face">
+      <Glyph size={20} strokeWidth={2} aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
 
 function Stat({
   label,
@@ -52,6 +62,7 @@ export function VerificationClientModal({
 }) {
   const [tab, setTab] = useState<ClientTab>('details');
   const detail = useVerificationClientDetail(open ? client.carrierId : null);
+  const attachments = useCarrierAttachments(open ? client.carrierId : null, tab === 'attachment');
   const lastDetail = useRef<VerificationClientDetail | null>(null);
   if (detail.data && detail.data.carrierId === client.carrierId) lastDetail.current = detail.data;
   const cached = lastDetail.current?.carrierId === client.carrierId ? lastDetail.current : null;
@@ -107,10 +118,11 @@ export function VerificationClientModal({
         <Tabs
           className="vf-modal-tabs"
           aria-label="Client sections"
-          size="sm"
+          variant="pill"
+          size="md"
           items={[
-            { value: 'details', label: 'Details', icon: 'description' },
-            { value: 'attachment', label: 'Attachment', icon: 'attach_file' },
+            { value: 'details', label: <ModalTabLabel icon={IdCard}>Details</ModalTabLabel> },
+            { value: 'attachment', label: <ModalTabLabel icon={Files}>Attachment</ModalTabLabel> },
           ]}
           value={tab}
           onValueChange={(value) => setTab(value as ClientTab)}
@@ -126,7 +138,7 @@ export function VerificationClientModal({
               error={detail.error && !d ? detail.error : null}
             />
           ) : (
-            <VerificationClientAttachments carrierId={client.carrierId} />
+            <VerificationClientAttachments carrierId={client.carrierId} load={attachments} />
           )}
         </Tabs>
       </div>
