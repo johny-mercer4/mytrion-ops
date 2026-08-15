@@ -16655,3 +16655,50 @@ suite 5/5 clean after.
 
 **Reference:** the process and its Horizon wiring are written up as a shared artifact (10 phases,
 the red/green gate, the capacity formulas and the policy refusal, what is deliberately manual).
+
+## 2026-08-15 — Verification existing-clients: Dropbox attachments keyed on carrier id
+
+The existing-clients modal was read-only DWH profile. Reviewers needed the same attach/list/download
+the CRM already has on Maintenance cases, but tied to the **carrier id** (an existing client often
+has no verification case).
+
+### How Dropbox attachments already worked (unchanged)
+
+One Dropbox app, three root folders, one `ObjectStorage` seam (`storageFor(row.storageProvider)`):
+
+| Pipeline | Table | Root | Env switch |
+| --- | --- | --- | --- |
+| Comms chat | `file_assets` + `mytrion_thread_attachments` | `/comms` | `COMMS_STORAGE_PROVIDER` |
+| Maintenance cases | `maintenance_case_attachments` | `/maintenance` | `MAINTENANCE_STORAGE_PROVIDER` |
+| Verification applicant docs | `verification_case_documents` | `/verification` | `VERIFICATION_STORAGE_PROVIDER` (default Dropbox) |
+
+Auth is the refresh-token grant in `src/integrations/dropbox.ts`. The provider is stamped **on the
+row** so flipping env cannot 404 an old file. Download links are `get_temporary_link` (~4h), fetched
+on click, never embedded in a list. Telegram Mini App cannot open a cross-origin signed URL, so each
+surface also has a `/bytes` proxy.
+
+`file_assets` is the wrong table here (agent-gateway shape, comms provider type). Case documents are
+the wrong table too (keyed on `case_id`).
+
+### What shipped
+
+New `carrier_attachments` table (tenant + `carrier_id`). Bytes go through the existing
+`dropbox_verification` adapter. Storage key:
+
+`{tenantId}/carriers/{carrierId}/{id}-{filename}` → Dropbox `/verification/...`
+
+Routes on the existing roster (verification department, not sales):
+
+- `GET/POST /v1/verification/roster/:carrierId/attachments`
+- `GET .../attachments/:attId/download` (temporary link)
+- `GET .../attachments/:attId/bytes` (Telegram)
+- `DELETE .../attachments/:attId`
+
+CRM: client modal now has Details / Attachment sub-tabs. Attachment fetch starts when that tab
+opens. Upload is a file picker (multi); download opens the temporary link (or `/bytes` in Telegram).
+
+Migration `0123_carrier_attachments` is hand-written + idempotent — `carrier_attachments` is not in
+`drizzle.config.ts` (stale snapshot, same reason as 0101). Apply with `pnpm db:migrate`.
+
+Left the in-flight verificationFlow files (`applicationService`, `deskService`,
+`verificationFlowRepo`, `verificationFlowBundleRepo`) alone.

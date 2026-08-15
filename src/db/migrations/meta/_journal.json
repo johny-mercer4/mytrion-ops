@@ -869,6 +869,13 @@
       "when": 1786215000001,
       "tag": "0122_verification_banking_consistency",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1786220000001,
+      "tag": "0123_carrier_attachments",
+      "breakpoints": true
     }
   ]
 }

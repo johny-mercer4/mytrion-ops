@@ -1,5 +1,22 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Where unit tests point Postgres.
+ *
+ * CI exports `MYTRION_OPS_DATABASE_URL` for its own pg service (port 5432), so an existing value
+ * always wins. The fallback is what matters locally: without it, tests inherit the developer's
+ * `.env`, which points at **Render production in Oregon** — and route suites resolve a session
+ * through the database, so the first test in each file paid a real cross-country round trip.
+ * Measured: 4.4s to 7.2s against a 5s default timeout, i.e. a coin flip, and the cause of
+ * intermittent failures that look like they belong to whatever feature was last touched.
+ *
+ * Same reasoning as the FF_ZOHO_MCP_ENABLED pin below: a unit run must not depend on a network
+ * service answering quickly.
+ */
+const TEST_DATABASE_URL =
+  process.env.MYTRION_OPS_DATABASE_URL ??
+  'postgresql://octane:octane@localhost:5433/octane_assistant';
+
 export default defineConfig({
   test: {
     globals: true,
@@ -12,6 +29,8 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
+      MYTRION_OPS_DATABASE_URL: TEST_DATABASE_URL,
+      DATABASE_URL: TEST_DATABASE_URL,
       FF_FILES_ENABLED: '0',
       FF_ORCHESTRATOR_ENABLED: '0',
       FF_DEEP_AGENTS_ENABLED: '0',

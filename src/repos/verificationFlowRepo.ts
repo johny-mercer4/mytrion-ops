@@ -9,7 +9,7 @@
  * separate opt-in step is an event somebody eventually forgets, and the timeline is the only record
  * of who decided what on a credit file.
  */
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   verificationCaseEvents,
@@ -50,6 +50,21 @@ export const VERIFICATION_FLOW_LIST_COLUMNS = {
   updatedAt: verificationCases.updatedAt,
 } as const;
 
+/**
+ * The same projection as `VERIFICATION_FLOW_LIST_COLUMNS`, as raw SQL, so the one-round-trip queue
+ * query in `verificationFlowBundleRepo` selects exactly the same columns. Two lists that must agree
+ * are a drift risk; `verification-flow-projection.test.ts` asserts they still do.
+ */
+export const VERIFICATION_FLOW_LIST_COLUMN_SQL = sql.raw(
+  [
+    'id', 'company_name', 'first_name', 'last_name', 'email', 'phone',
+    'applicant_type', 'underwriting_route', 'verification_process', 'phase_code', 'status_code',
+    'trucks_count', 'fuel_cards_requested', 'requested_limit', 'approved_limit_amount',
+    'intake_missing', 'submitted_at', 'submitted_by_zoho_user_id', 'owner_zoho_user_id',
+    'owner_name', 'closed_at', 'created_at', 'updated_at',
+  ].join(', '),
+);
+
 export type VerificationFlowListRow = {
   [K in keyof typeof VERIFICATION_FLOW_LIST_COLUMNS]: VerificationCase[K];
 };
@@ -83,11 +98,17 @@ export interface TransitionInput {
   findings?: Record<string, unknown> | undefined;
 }
 
+/** Process-lifetime cache for the seeded status lookup. See `listStatuses`. */
+let statusCache:
+  | Array<{ code: string; phaseCode: string; label: string; isTerminal: boolean; boardColumn: string | null }>
+  | null = null;
+
 function tenant(ctx: TenantContext) {
   return eq(verificationCases.tenantId, ctx.tenantId);
 }
 
-function listWhere(ctx: TenantContext, filter: FlowListFilter) {
+export function listWhere(ctx: TenantContext, filter: FlowListFilter): SQL {
+  // Never undefined: the tenant predicate is always present, which is also the isolation guarantee.
   const clauses = [tenant(ctx)];
   if (filter.statusCode) clauses.push(eq(verificationCases.statusCode, filter.statusCode));
   if (filter.phaseCode) clauses.push(eq(verificationCases.phaseCode, filter.phaseCode));
@@ -112,14 +133,22 @@ function listWhere(ctx: TenantContext, filter: FlowListFilter) {
     );
     if (like) clauses.push(like);
   }
-  return and(...clauses);
+  return and(...clauses) as SQL;
 }
 
 export const verificationFlowRepo = {
-  /** Lookup rows — labels and the Sales board projection. Not tenant-scoped: they are global config. */
+  /**
+   * Lookup rows — labels and the Sales board projection. Not tenant-scoped: they are global config.
+   *
+   * CACHED IN PROCESS. These twelve rows are seeded by migration 0121 and change only when another
+   * migration changes them, but every list call on both desks read them — a ~300ms round trip to
+   * Oregon for a static table. Cached for the process lifetime; a deploy is what changes them, and
+   * a deploy restarts the process.
+   */
   async listStatuses(): Promise<
     Array<{ code: string; phaseCode: string; label: string; isTerminal: boolean; boardColumn: string | null }>
   > {
+    if (statusCache) return statusCache;
     const rows = await db
       .select({
         code: verificationStatuses.code,
@@ -130,7 +159,13 @@ export const verificationFlowRepo = {
       })
       .from(verificationStatuses)
       .orderBy(asc(verificationStatuses.sortOrder));
+    statusCache = rows;
     return rows;
+  },
+
+  /** Drop the cache — for tests, and for anything that edits the lookup at runtime. */
+  clearStatusCache(): void {
+    statusCache = null;
   },
 
   async findById(ctx: TenantContext, id: string): Promise<VerificationCase | undefined> {

@@ -185,13 +185,30 @@ async function refreshGate(
       : row.statusCode
     : VERIFICATION_STATUS.intakeIncomplete;
 
-  const updated = await verificationFlowRepo.setGate(ctx, caseId, {
-    complete: shouldOpen,
-    missing: missingFieldKeys(verdict),
-    statusCode,
-    submittedByZohoUserId: opts.actor,
-    actorName: opts.actorName,
-  });
+  /**
+   * Only WRITE when the stored verdict is actually stale.
+   *
+   * This function runs on every read as well as every mutation, and it used to issue an UPDATE each
+   * time — a write per page view, against a database ~300ms away. Comparing first makes the common
+   * case (opening an application that has not changed) a pure read.
+   */
+  const missing = missingFieldKeys(verdict);
+  const stored = row.intakeMissing ?? [];
+  const unchanged =
+    row.verificationProcess === shouldOpen &&
+    row.statusCode === statusCode &&
+    stored.length === missing.length &&
+    stored.every((f, i) => f === missing[i]);
+
+  const updated = unchanged
+    ? row
+    : await verificationFlowRepo.setGate(ctx, caseId, {
+        complete: shouldOpen,
+        missing,
+        statusCode,
+        submittedByZohoUserId: opts.actor,
+        actorName: opts.actorName,
+      });
   if (!updated) throw new NotFoundError('Application not found');
 
   // Crossing into the desk seeds the phase rail, so Verification opens a case with its skips

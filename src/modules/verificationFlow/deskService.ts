@@ -11,13 +11,10 @@
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { verificationCaseAssetRepo } from '../../repos/verificationCaseAssetRepo.js';
-import { verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
+import { listWhere, verificationFlowRepo } from '../../repos/verificationFlowRepo.js';
+import { verificationFlowBundleRepo } from '../../repos/verificationFlowBundleRepo.js';
 import { verificationScreeningRepo } from '../../repos/verificationScreeningRepo.js';
-import {
-  toNumber,
-  verificationPolicyRepo,
-  verificationReviewRepo,
-} from '../../repos/verificationReviewRepo.js';
+import { toNumber } from '../../repos/verificationReviewRepo.js';
 import {
   VERIFICATION_PHASE,
   VERIFICATION_STATUS,
@@ -70,26 +67,31 @@ async function loadWorkable(ctx: TenantContext, caseId: string): Promise<Verific
 }
 
 export const deskService = {
-  /** Desk queue. Red and green both listed — the desk must SEE what it is waiting on. */
-  async list(
-    ctx: TenantContext,
-    filter: Parameters<typeof verificationFlowRepo.list>[1] = {},
-  ) {
+  /**
+   * Desk queue. Red and green both listed — the desk must SEE what it is waiting on.
+   *
+   * One round trip: rows, filtered total and the six counters come back together, and the status
+   * labels are served from the process cache. This used to be four queries against a database
+   * ~300ms away, each potentially opening its own TLS connection.
+   */
+  async list(ctx: TenantContext, filter: Parameters<typeof verificationFlowRepo.list>[1] = {}) {
     return withFlowSchemaGuard(async () => {
-      const [items, total, aggregates, statuses] = await Promise.all([
-        verificationFlowRepo.list(ctx, filter),
-        verificationFlowRepo.count(ctx, filter),
-        verificationFlowRepo.deskAggregates(ctx),
+      const { limit, offset } = {
+        limit: Math.min(Math.max(filter.limit ?? 50, 1), 2000),
+        offset: Math.max(filter.offset ?? 0, 0),
+      };
+      const [bundle, statuses] = await Promise.all([
+        verificationFlowBundleRepo.queue(ctx, listWhere(ctx, filter), limit, offset),
         verificationFlowRepo.listStatuses(),
       ]);
-      const labels = new Map(statuses.map((s) => [s.code, s.label]));
+      const labels = new Map(statuses.map((st) => [st.code, st.label]));
       return {
-        items: items.map((row) => ({
+        items: bundle.items.map((row) => ({
           ...row,
-          statusLabel: labels.get(row.statusCode) ?? row.statusCode,
+          statusLabel: labels.get(String(row.statusCode)) ?? row.statusCode,
         })),
-        total,
-        aggregates,
+        total: bundle.total,
+        aggregates: bundle.aggregates,
       };
     });
   },
@@ -97,21 +99,46 @@ export const deskService = {
   /** The full case workspace: rail, findings, reviews, documents, timeline. */
   async detail(ctx: TenantContext, caseId: string) {
     return withFlowSchemaGuard(async () => {
-      const row = await verificationFlowRepo.findById(ctx, caseId);
-      if (!row) throw new NotFoundError('Verification case not found');
+      // ONE statement for the whole workspace — see verificationFlowBundleRepo for why.
+      const bundle = await verificationFlowBundleRepo.deskDetail(ctx, caseId);
+      if (!bundle?.case) throw new NotFoundError('Verification case not found');
 
-      const [phases, principals, documents, events, hits, credit, banking, risk, policy] =
-        await Promise.all([
-          verificationCaseAssetRepo.listPhases(ctx, caseId),
-          verificationCaseAssetRepo.listPrincipals(ctx, caseId),
-          verificationCaseAssetRepo.listDocuments(ctx, caseId),
-          verificationFlowRepo.listEvents(ctx, caseId),
-          verificationScreeningRepo.listHits(ctx, caseId),
-          verificationReviewRepo.findCredit(ctx, caseId),
-          verificationReviewRepo.findBanking(ctx, caseId),
-          verificationReviewRepo.findRisk(ctx, caseId),
-          verificationPolicyRepo.get(ctx),
-        ]);
+      const row = bundle.case as unknown as VerificationCase;
+      const phases = bundle.phases as unknown as Array<{
+        phaseCode: string;
+        status: string;
+        outcome: string | null;
+        findings: Record<string, unknown>;
+        note: string | null;
+        decidedAt: Date | null;
+        decidedBy: string | null;
+      }>;
+      const principals = bundle.principals;
+      const documents = bundle.documents as unknown as Array<{ status: string; docType: string }>;
+      const events = bundle.events;
+      const hits = bundle.hits as unknown as Array<{ checkType: string; verdict: string }>;
+      const credit = bundle.credit as unknown as Record<string, never> | null;
+      const banking = bundle.banking as unknown as Record<string, never> | null;
+      const risk = bundle.risk;
+      // A tenant that has never opened the policy screen has no row yet; fall back to the seeded
+      // defaults rather than spending a round trip creating one on a read.
+      const policy = (bundle.policy ?? {
+        strongFactor: '0.800',
+        moderateFactor: null,
+        weakFactor: null,
+        adbReviewThreshold: '500',
+        nsfReviewThreshold: 2,
+        bankFirstTruckMin: 10,
+        wexCardCutoff: 20,
+      }) as unknown as {
+        strongFactor: string | null;
+        moderateFactor: string | null;
+        weakFactor: string | null;
+        adbReviewThreshold: string;
+        nsfReviewThreshold: number;
+        bankFirstTruckMin: number;
+        wexCardCutoff: number;
+      };
 
       const byCode = new Map(phases.map((p) => [p.phaseCode, p]));
       const rail = PHASE_CATALOG.map((descriptor) => {
