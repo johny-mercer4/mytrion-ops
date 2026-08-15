@@ -9,6 +9,7 @@ import { Icon } from '../../sales/redesign/icons';
 import { s } from './style';
 import './verificationFlow.css';
 import { PhaseRail, SkippedPane } from './PhaseRail';
+import { CaseDocuments } from './CaseDocuments';
 import { DecisionBar, HardStopsPane, PaneShell, ScreeningPane } from './PhasePanes';
 import { BankingPane, CreditPane, DecisionPane, RiskPane } from './ReviewPanes';
 import {
@@ -175,6 +176,10 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
               />
             </PaneShell>
           )}
+
+          {/* Every phase from 2 onward is a cross-check against these files, so they sit under the
+              pane rather than inside one phase's body. */}
+          <CaseDocuments caseId={caseId} documents={detail.documents} />
         </div>
       </div>
     </div>

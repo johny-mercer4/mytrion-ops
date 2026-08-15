@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { deskService } from '../../modules/verificationFlow/deskService.js';
+import { documentService } from '../../modules/verificationFlow/documentService.js';
 import { verificationPolicyRepo } from '../../repos/verificationReviewRepo.js';
 import {
   VERIFICATION_APPLICANT_TYPES,
@@ -34,6 +35,7 @@ function requireVerificationWrite(request: FastifyRequest): TenantContext {
 }
 
 const idParams = z.object({ id: z.string().min(1) });
+const docParams = z.object({ id: z.string().min(1), documentId: z.string().min(1) });
 const phaseParams = z.object({ id: z.string().min(1), phase: z.string().min(1) });
 const hitParams = z.object({ id: z.string().min(1), hitId: z.string().min(1) });
 
@@ -177,6 +179,34 @@ export async function verificationFlowRoutes(app: FastifyInstance): Promise<void
     const { id } = idParams.parse(request.params);
     return deskService.detail(ctx, id);
   });
+
+  /**
+   * Open a document Sales uploaded.
+   *
+   * READ-gated, not write: looking at a bank statement is the underwriting job itself, and every
+   * phase from 2 onward depends on it. Without this the desk could see that three statements exist
+   * and never open one — the files went to Dropbox and were unreachable from the product.
+   *
+   * Returns a short-lived link rather than proxying bytes, matching the Sales-side route so both
+   * desks resolve the same document the same way.
+   */
+  app.get<{ Params: { id: string; documentId: string } }>(
+    '/verification/flow/cases/:id/documents/:documentId/download',
+    auth,
+    async (request) => {
+      const ctx = requireVerificationRead(request);
+      const { id, documentId } = docParams.parse(request.params);
+      const link = await documentService.downloadUrl(ctx, id, documentId);
+      await auditFromContext(ctx, {
+        action: 'verification.flow.document_downloaded',
+        status: 'ok',
+        resourceType: 'verification_case',
+        resourceId: id,
+        detail: { documentId, fileName: link.fileName },
+      });
+      return link;
+    },
+  );
 
   app.post<{ Params: { id: string; phase: string } }>(
     '/verification/flow/cases/:id/phases/:phase/decision',

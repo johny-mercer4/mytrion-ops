@@ -317,6 +317,57 @@ export async function createApplication(body: {
   return (await request('POST', '/verification/applications', { body })) as ApplicationDetail;
 }
 
+export interface VerificationDocumentLink {
+  url: string;
+  fileName: string;
+  expiresAt?: string;
+}
+
+/**
+ * Resolve a short-lived link to a stored document.
+ *
+ * Two routes, one call: Sales reaches its own application, Verification reaches the case it is
+ * underwriting. Same document, same storage — only the department gate differs, so the caller says
+ * which desk it is rather than the two surfaces growing separate download code.
+ */
+export async function getDocumentLink(
+  desk: 'sales' | 'verification',
+  caseId: string,
+  documentId: string,
+): Promise<VerificationDocumentLink> {
+  const base =
+    desk === 'sales'
+      ? `/verification/applications/${encodeURIComponent(caseId)}`
+      : `/verification/flow/cases/${encodeURIComponent(caseId)}`;
+  return (await request(
+    'GET',
+    `${base}/documents/${encodeURIComponent(documentId)}/download`,
+  )) as VerificationDocumentLink;
+}
+
+/**
+ * Open a document in a new tab.
+ *
+ * The window is opened BEFORE the await. Safari and Firefox block `window.open` that happens after
+ * an async gap because it is no longer attributable to the click, so the tab is claimed while the
+ * gesture is still live and its location set once the link resolves.
+ */
+export async function openDocument(
+  desk: 'sales' | 'verification',
+  caseId: string,
+  documentId: string,
+): Promise<void> {
+  const tab = window.open('', '_blank', 'noopener,noreferrer');
+  try {
+    const link = await getDocumentLink(desk, caseId, documentId);
+    if (tab) tab.location.href = link.url;
+    else window.location.href = link.url;
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
+
 export async function patchApplication(
   id: string,
   body: Record<string, unknown>,

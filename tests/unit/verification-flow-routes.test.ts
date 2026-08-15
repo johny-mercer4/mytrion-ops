@@ -28,6 +28,10 @@ vi.mock('../../src/modules/verificationFlow/deskService.js', () => ({
   },
 }));
 
+vi.mock('../../src/modules/verificationFlow/documentService.js', () => ({
+  documentService: { downloadUrl: vi.fn(), upload: vi.fn(), request: vi.fn(), remove: vi.fn(), list: vi.fn() },
+}));
+
 vi.mock('../../src/repos/verificationReviewRepo.js', async () => {
   const actual =
     await vi.importActual<typeof import('../../src/repos/verificationReviewRepo.js')>(
@@ -43,6 +47,7 @@ import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { deskService } from '../../src/modules/verificationFlow/deskService.js';
+import { documentService } from '../../src/modules/verificationFlow/documentService.js';
 import { verificationPolicyRepo } from '../../src/repos/verificationReviewRepo.js';
 
 const listMock = vi.mocked(deskService.list);
@@ -51,6 +56,7 @@ const decidePhaseMock = vi.mocked(deskService.decidePhase);
 const bankingMock = vi.mocked(deskService.saveBankingReview);
 const riskMock = vi.mocked(deskService.saveRiskAssessment);
 const decideMock = vi.mocked(deskService.decide);
+const downloadMock = vi.mocked(documentService.downloadUrl);
 const policyGetMock = vi.mocked(verificationPolicyRepo.get);
 const policyUpdateMock = vi.mocked(verificationPolicyRepo.update);
 
@@ -311,5 +317,54 @@ describe('policy is admin-only', () => {
       expect.objectContaining({ weakFactor: null }),
       expect.anything(),
     );
+  });
+});
+
+/**
+ * The desk has to be able to OPEN what Sales attached.
+ *
+ * Every phase from 2 onward cross-checks the application against these files. For a while the desk
+ * could see a document count and had no route to open one — the bytes reached Dropbox and were
+ * unreachable from the product. That is what this guards.
+ */
+describe('documents the desk reads', () => {
+  it('returns a link for a verification worker', async () => {
+    downloadMock.mockResolvedValue({ url: 'https://dl.example/x', fileName: 'statement.pdf' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/documents/vdoc_1/download',
+      headers: bearer(await workerToken('Verification')),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ fileName: 'statement.pdf' });
+    expect(downloadMock).toHaveBeenCalledWith(expect.anything(), 'vc_1', 'vdoc_1');
+  });
+
+  it('is READ-gated, not write — reading a bank statement is the underwriting job', async () => {
+    downloadMock.mockResolvedValue({ url: 'https://dl.example/x', fileName: 'statement.pdf' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/documents/vdoc_1/download',
+      headers: bearer(await workerToken('Verification Read Only')),
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses a sales worker on the verification route', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/documents/vdoc_1/download',
+      headers: bearer(await workerToken('Sales Rep')),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(downloadMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses unauthenticated', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/verification/flow/cases/vc_1/documents/vdoc_1/download',
+    });
+    expect(res.statusCode).toBe(401);
   });
 });

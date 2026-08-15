@@ -16,6 +16,7 @@ import { useSales } from './ctx';
 import { BTN_DISABLED, BTN_PRIMARY, BTN_PRIMARY_BUSY, LABEL } from './createTicketShared';
 import { ApplicantTypePicker, Field, GateBanner, Section, SelectField } from './applicationFields';
 import {
+  openDocument,
   addPrincipal,
   createApplication,
   deleteApplicationDocument,
@@ -394,6 +395,15 @@ export function ApplicationIntake({
       </Section>
 
       <DocumentsSection
+        onOpen={async (documentId) => {
+          if (!id) return;
+          try {
+            await openDocument('sales', id, documentId);
+            setError(null);
+          } catch (e) {
+            fail(e, 'Could not open that document.');
+          }
+        }}
         detail={detail}
         docType={docType}
         onDocType={setDocType}
@@ -528,6 +538,7 @@ function PrincipalsSection({
 }
 
 function DocumentsSection({
+  onOpen,
   detail,
   docType,
   onDocType,
@@ -543,6 +554,7 @@ function DocumentsSection({
   fileRef: React.MutableRefObject<HTMLInputElement | null>;
   onUpload: (files: FileList | null) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
+  onOpen: (id: string) => void | Promise<void>;
 }) {
   const documents = detail?.documents ?? [];
   const requested = documents.filter((d) => d.status === 'requested');
@@ -579,15 +591,24 @@ function DocumentsSection({
                   'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
                 )}
               >
-                <span style={s('display:flex;align-items:center;gap:9px;min-width:0')}>
+                {/* The filename opens the file. An attachment you cannot open is not an
+                    attachment — both desks resolve the same document the same way. */}
+                <button
+                  type="button"
+                  onClick={() => void onOpen(d.id)}
+                  title={`Open ${d.fileName ?? DOC_LABELS[d.docType]}`}
+                  style={s(
+                    'display:flex;align-items:center;gap:9px;min-width:0;flex:1;border:none;background:transparent;padding:0;text-align:left;cursor:pointer',
+                  )}
+                >
                   <Icon name="doc" size={16} color="var(--muted)" />
-                  <span style={s('font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                  <span style={s('font-size:13px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                     {d.fileName ?? DOC_LABELS[d.docType]}
                   </span>
                   <span style={s('font-size:11px;color:var(--faint);flex-shrink:0')}>
                     {DOC_LABELS[d.docType]}
                   </span>
-                </span>
+                </button>
                 {!locked ? (
                   <button
                     type="button"

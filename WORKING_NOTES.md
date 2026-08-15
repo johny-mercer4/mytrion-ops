@@ -17025,3 +17025,68 @@ ingest over, because the application row already exists.
 
 A Deal with no owner still notifies Verification, at **high** priority and saying so — an
 application nobody has been asked to complete would otherwise sit red forever.
+
+## 2026-08-16 — Attachments were write-only. Fixed, and the pages smoke-tested.
+
+### The hole
+
+Files uploaded fine and were then **unreachable from the product**:
+
+- The Verification desk had **no download route at all**. `/verification/flow/*` had
+  `documents/request` and `documents/resume` but nothing to open a file. The workspace showed a
+  document *count* and the summary listed filenames as plain text.
+- The Sales route `/verification/applications/:id/documents/:documentId/download` existed but
+  **nothing called it** — no client function, no UI link. The received-file row rendered the
+  filename as a `<span>`.
+
+So bytes reached Dropbox and neither desk could get them back. Every phase from 2 onward is a
+cross-check against those documents, which makes this the underwriting job, not a convenience.
+
+### Fixed
+
+- `GET /verification/flow/cases/:id/documents/:documentId/download` — **read**-gated, not write:
+  reading a bank statement *is* the work. Returns a short-lived link, matching the Sales route so
+  both desks resolve the same document the same way. Audit-logged.
+- `api/verificationFlow.ts`: `getDocumentLink(desk, caseId, docId)` and `openDocument(...)`. One
+  call for both desks — the caller says which, rather than the two surfaces growing separate
+  download code. The tab is opened BEFORE the await: Safari and Firefox block `window.open` after
+  an async gap because it is no longer attributable to the click.
+- Sales: the filename is now a button that opens the file.
+- Verification: new `flow/CaseDocuments.tsx` under the phase pane — received files open on click,
+  requested-but-not-uploaded rows shown dashed and greyed, because "what am I still waiting on" is
+  the other half of the same question.
+
+### Proven end to end, against real Dropbox
+
+Not just route wiring — the actual bytes:
+
+```
+SALES upload            -> 201   (multipart, as the browser sends it)
+  stored: smoke-statement.pdf  status=received  size=193
+VERIFICATION download   -> 200
+  link host: …dl.dropboxusercontent.com
+  FETCHED  http=200  bytes=193  identical=true
+SALES download          -> 200
+SALES -> verif route    -> 403   (gate holds)
+CLEANUP delete          -> 200
+```
+
+The first attempt was rejected `415 VERIFICATION_DOC_UNSUPPORTED` for a `.txt` — the MIME allowlist
+doing its job.
+
+### Page smoke — no 500s
+
+Every endpoint both Mytrions call on load, with real worker tokens:
+
+| | |
+|---|---|
+| flow/cases, flow/cases/:id, flow/policy | 200 |
+| watch/scores, watch/scores/:carrierId, watch/runs | 200 |
+| verification/roster | 200 |
+| applications, applications/:id | 200 |
+| download of a nonexistent document | 404 (correct, not 500) |
+| Sales token → flow routes | 403 |
+| Verification token → applications | 403 |
+
+Nothing 5xx. Worth recording: the earlier 500 storm was Docker being down, not code — see the
+previous entry.
