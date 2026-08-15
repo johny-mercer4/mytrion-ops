@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
+import { VerificationProgress } from './VerificationProgress';
 import { useSales } from './ctx';
 import { BTN_DISABLED, BTN_PRIMARY, BTN_PRIMARY_BUSY, LABEL } from './createTicketShared';
 import { ApplicantTypePicker, Field, GateBanner, Section, SelectField } from './applicationFields';
@@ -259,6 +260,10 @@ export function ApplicationIntake({
           </span>
         </div>
       ) : null}
+
+      {/* Where underwriting has actually got to. Dimmed until the gate opens, but always present:
+          an agent should never have to ask another department for a status. */}
+      {detail ? <VerificationProgress detail={detail} /> : null}
 
       <Section title="Applicant type">
         <div style={s('grid-column:1/-1')}>

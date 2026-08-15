@@ -1,10 +1,13 @@
 /**
  * Sales "Verification" tab — the agent's own credit applications, on Mytrion's own database.
  *
- * Rebuilt (2026-08-15) off the retired credit_platform pipeline. The card's red/green state IS
- * `verification_process`: red means Sales still owes intake and Verification cannot start; green
- * means it is with the desk. The count of outstanding items comes from the server's evaluation, so
- * the card and the form can never disagree about what is missing.
+ * Applications are NOT started here. The Zoho Deal poller creates them
+ * (`automation.verification.case-ingest`) and assigns them to the Deal's owner; this tab is where
+ * that agent completes intake and then watches underwriting.
+ *
+ * The card's red/green state IS `verification_process`: red means Sales still owes intake and
+ * Verification cannot start; green means it is with the desk. The count of outstanding items comes
+ * from the server's evaluation, so the card and the form can never disagree about what is missing.
  */
 import { useCallback, useState } from 'react';
 import { Icon } from '../icons';
@@ -252,7 +255,7 @@ export function VerificationTab() {
           title={rows.length === 0 ? 'No applications yet' : 'Nothing in this filter'}
           body={
             rows.length === 0
-              ? 'Applications you own appear here. Incomplete ones stay with you until every detail and document is in.'
+              ? 'Applications are created automatically from your Deals in Zoho — you do not start one here. When a Deal reaches an application stage it appears in this list, red, waiting for you to fill in the details and upload the documents.'
               : 'Try another filter to see the rest of your applications.'
           }
         />

@@ -16902,3 +16902,66 @@ Two matched explainers published — *New Applicant Underwriting* (the intake li
 red/green gate, ten phases, the capacity formula worked through, six outcomes) and *Mytrion Watch*
 (the existing-client lifecycle: scope, eight measures with units, bands, one score worked end to end,
 why snapshots).
+
+## 2026-08-16 — Applications are cron-generated, and Sales can see the underwriting
+
+Architecture correction. Applications were being hand-created (Sales drafted one); they must come
+from the **same cron that used to generate verification cases**, appear on both desks, and Sales
+must be able to watch the underwriting and act when it stops.
+
+### Creation moves to the poller
+
+`automation.verification.case-ingest` is un-parked (`VERIFICATION_ZOHO_INGEST_ENABLED = true`,
+removed from `DISABLED_JOB_QUEUES`, cron `*/20 * * * *`, manually triggerable for a backfill). It is
+now the **only** path that creates an application:
+
+- New `verificationFlow/dealIntake.ts` writes the new-era record: `origin='zoho_deal'`,
+  `verification_process=false`, phase `p1_intake`, status `intake_incomplete`, phase rail seeded,
+  missing list computed immediately so the red card is not empty on first open.
+- The credit_platform-era follow-ups were **removed** from that path, not flag-guarded:
+  `verificationCaseStageRepo.seedForCase(DECISION_DESK_STAGE_IDS)`, `syncCaseFromVerificationDb`
+  and `maybeAdvanceFirstRun` are gone. Carrier enrichment stays — it reads the DWH broker snapshot,
+  which phases 2 and 4 genuinely use.
+- `POST /v1/verification/applications` is now **admin-only**, kept as a backfill/support hatch. A
+  second creation path is how the two desks end up with divergent records.
+
+### The ownership bug this exposed
+
+`listForSalesAgent` scoped on `submitted_by_zoho_user_id OR owner_zoho_user_id`, and the old ingest
+put the **Verification** owner on the row. A cron-created application would therefore have been
+invisible to the only person who can complete it. Sales scoping now also matches `zoho_owner_id`
+(the Deal's owner), extracted as `salesOwnership()` so the list, the count and `assertSalesMayEdit`
+cannot drift apart.
+
+A Deal with **no owner** in Zoho still creates the application — it is real work — owned by the desk
+so the NOT NULL column is satisfied, but `zoho_owner_id` stays null so the Sales list does not claim
+an agent who does not exist. Logged loudly; the fix is in Zoho.
+
+`inferApplicantType` only guesses on a confident signal: MC/DOT → carrier, an incorporated name
+without either → company (the SOP's "LLC / corporation without MC/DOT"), otherwise null so the agent
+picks. Guessing wrong selects the wrong intake form and the wrong phase set.
+
+### Sales can now see the underwriting
+
+`ApplicationDetail` carries the ten-phase rail. `buildRail()` was extracted from `deskService` into
+`phases.ts` so both desks render from one builder — building it twice is how the two sides end up
+disagreeing about whether phase 4 was *skipped* or *never reached*.
+
+New `sales/redesign/VerificationProgress.tsx`: read-only rail with Sales-facing words (Cleared /
+In progress / **Waiting on you** / With a manager / Not applicable), and the blocking phase lifted
+out above the timeline — a stop is the only part an agent can act on, so it is stated rather than
+left to be spotted among ten rows. Dimmed before submit, always present: an agent should never have
+to ask another department for a status.
+
+Editing when it goes red was already right — `assertSalesMayEdit` permits `pending_docs` — and the
+document-request/upload path to Dropbox already existed, so "they see it and upload" needed the
+ownership fix and the progress view, not new plumbing.
+
+### Trap worth recording
+
+`pnpm test` showed **115 failures across 16 files**. Stashing proved 108 of them reproduce on a
+clean tree: **Docker Desktop had stopped**, so the local test Postgres on :5433 was gone and every
+route test that resolves a session timed out into a 500. Started Docker, `docker compose up -d
+postgres`, and the count dropped to the 7 that were genuinely mine — all tests asserting the old
+position (ingest parked, Sales creates), rewritten to assert the new invariant rather than flipped.
+A/B before blaming your own diff.

@@ -1,20 +1,30 @@
+/**
+ * The Zoho Deal poller — the ONLY way a new application comes into existence.
+ *
+ * Applications are not hand-created on either desk. This job walks Deals that reached an
+ * application stage, and hands each new one to `createApplicationFromDeal`, which writes the
+ * new-era shared record: red, phase rail seeded, owned by the Deal's Sales agent.
+ *
+ * The credit_platform-era steps that used to run here — legacy decision-desk stage seeding,
+ * `syncCaseFromVerificationDb` and `maybeAdvanceFirstRun` — are gone from this path. They belong to
+ * the quarantined desk (`killSwitches.ts`); calling them would write into a system this deployment
+ * no longer owns. Carrier enrichment stays: it reads the DWH broker snapshot, which Phase 2 and
+ * Phase 4 genuinely use.
+ */
 import { logger } from '../../lib/logger.js';
 import { errorMessage } from '../../lib/errors.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { verificationCaseRepo } from '../../repos/verificationCaseRepo.js';
-import { verificationCaseStageRepo } from '../../repos/verificationCaseStageRepo.js';
 import { verificationIngestStateRepo } from '../../repos/verificationIngestStateRepo.js';
+import { createApplicationFromDeal } from '../verificationFlow/dealIntake.js';
 import { matchBrokerSnapshot } from './carrierEnrich.js';
-import { notifyVerificationCaseCreated } from './caseNotify.js';
-import { syncCaseFromVerificationDb } from './caseSync.js';
-import { maybeAdvanceFirstRun } from './firstRunTrigger.js';
 import {
   VERIFICATION_CASE_OWNER_NAME,
   resolveVerificationCaseOwnerId,
 } from './verificationOwner.js';
-import { DECISION_DESK_STAGE_IDS } from './verificationStages.js';
+import { notifyApplicationAwaitingIntake } from './caseNotify.js';
 import {
   buildDealPollCoql,
   isDealAfterWatermark,
@@ -32,7 +42,8 @@ export interface VerificationIngestSummary {
 }
 
 export async function ingestVerificationDeals(ctx: TenantContext): Promise<VerificationIngestSummary> {
-  const ownerZohoUserId = await resolveVerificationCaseOwnerId();
+  // Only used when a Deal has no owner in Zoho — see `createApplicationFromDeal`.
+  const fallbackOwnerZohoUserId = await resolveVerificationCaseOwnerId();
   const state = await verificationIngestStateRepo.getOrCreate(ctx);
   const watermark = resolveFreshIngestWatermark(state.pollDealDateWatermark);
   if (watermark !== state.pollDealDateWatermark) {
@@ -84,40 +95,35 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         continue;
       }
 
-      const inserted = await verificationCaseRepo.insert(ctx, {
+      const inserted = await createApplicationFromDeal(ctx, {
         zohoDealId: mapped.zohoDealId,
-        zohoApplicationId: mapped.zohoApplicationId || null,
-        carrierId: mapped.carrierId || null,
-        companyName: mapped.companyName || null,
-        firstName: mapped.firstName || null,
-        lastName: mapped.lastName || null,
-        email: mapped.email || null,
-        phone: mapped.phone || null,
-        cell: mapped.cell || null,
-        address: mapped.address || null,
-        city: mapped.city || null,
-        state: mapped.state || null,
-        zip: mapped.zip || null,
-        dateOfBirth: mapped.dateOfBirth || null,
-        dot: mapped.dot || null,
-        mc: mapped.mc || null,
-        truckCount: mapped.truckCount || null,
-        businessType: mapped.businessType || null,
-        zohoStage: mapped.zohoStage || null,
-        applicationStatus: mapped.applicationStatus || null,
-        applicationDate: mapped.applicationDate || null,
-        creditScore: mapped.creditScore || null,
-        creditsafeGrade: mapped.creditsafeGrade || null,
-        zohoOwnerId: mapped.zohoOwnerId || null,
-        zohoOwnerName: mapped.zohoOwnerName || null,
+        zohoApplicationId: mapped.zohoApplicationId,
+        carrierId: mapped.carrierId,
+        companyName: mapped.companyName,
+        firstName: mapped.firstName,
+        lastName: mapped.lastName,
+        email: mapped.email,
+        phone: mapped.phone,
+        cell: mapped.cell,
+        address: mapped.address,
+        city: mapped.city,
+        state: mapped.state,
+        zip: mapped.zip,
+        dateOfBirth: mapped.dateOfBirth,
+        dot: mapped.dot,
+        mc: mapped.mc,
+        truckCount: mapped.truckCount,
+        businessType: mapped.businessType,
+        zohoStage: mapped.zohoStage,
+        applicationStatus: mapped.applicationStatus,
+        applicationDate: mapped.applicationDate,
+        zohoOwnerId: mapped.zohoOwnerId,
+        zohoOwnerName: mapped.zohoOwnerName,
         zohoRaw: mapped.zohoRaw,
-        distributeType: 'shared',
-        ownerZohoUserId,
-        ownerName: VERIFICATION_CASE_OWNER_NAME,
-        status: 'new',
-      });
-      await verificationCaseStageRepo.seedForCase(ctx, inserted.id, DECISION_DESK_STAGE_IDS);
+      }, { fallbackOwnerZohoUserId, fallbackOwnerName: VERIFICATION_CASE_OWNER_NAME });
 
+      // Enrichment and notification are best-effort: neither is worth losing an application over,
+      // and the poller must not re-create a row it already wrote.
       try {
         const match = await matchBrokerSnapshot({
           phone: mapped.phone || mapped.cell,
@@ -142,24 +148,17 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
       }
 
       try {
-        await notifyVerificationCaseCreated(ctx, {
+        await notifyApplicationAwaitingIntake(ctx, {
           caseId: inserted.id,
-          ownerZohoUserId,
+          ownerZohoUserId: mapped.zohoOwnerId,
+          ownerName: mapped.zohoOwnerName,
           companyName: mapped.companyName,
           zohoDealId: mapped.zohoDealId,
         });
       } catch (err) {
-        logger.warn({ err: errorMessage(err), dealId }, 'verification inbox notify failed');
+        logger.warn({ err: errorMessage(err), dealId }, 'verification intake notify failed');
       }
 
-      try {
-        const synced = await syncCaseFromVerificationDb(ctx, inserted.id, mapped.zohoDealId);
-        if (synced.bound) {
-          await maybeAdvanceFirstRun(ctx, inserted.id, { agent: 'system', wait: false });
-        }
-      } catch (err) {
-        logger.warn({ err: errorMessage(err), dealId }, 'verification first-run after ingest skipped');
-      }
       created += 1;
     } catch (err) {
       failed += 1;

@@ -24,7 +24,13 @@ import {
 } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { evaluateIntakeCompleteness, missingFieldKeys, type IntakeVerdict } from './intake.js';
-import { applicablePhases, PHASE_CATALOG, skipReason } from './phases.js';
+import {
+  applicablePhases,
+  buildRail,
+  PHASE_CATALOG,
+  skipReason,
+  type RailPhase,
+} from './phases.js';
 import {
   requiresManagerReviewAtIntake,
   resolveReviewOrder,
@@ -99,6 +105,14 @@ export interface ApplicationDetail {
   principals: VerificationCasePrincipal[];
   documents: VerificationCaseDocument[];
   intake: IntakeVerdict;
+  /**
+   * The 10-phase rail, read-only for Sales.
+   *
+   * Sales needs to see where underwriting has got to and where it stopped — "it is with
+   * Verification" is not an answer an agent can give a carrier. Same rows the desk works, projected
+   * rather than duplicated.
+   */
+  phases: RailPhase[];
   /** Derived, not stored — recomputed from the current card count so it cannot go stale. */
   underwritingRoute: 'octane_internal' | 'wex';
   reviewOrder: 'banking_first' | 'credit_first';
@@ -142,9 +156,10 @@ async function refreshGate(
   const row = await verificationFlowRepo.findById(ctx, caseId);
   if (!row) throw new NotFoundError('Application not found');
 
-  const [principals, documents] = await Promise.all([
+  const [principals, documents, seededPhases] = await Promise.all([
     verificationCaseAssetRepo.listPrincipals(ctx, caseId),
     verificationCaseAssetRepo.listDocuments(ctx, caseId),
+    verificationCaseAssetRepo.listPhases(ctx, caseId),
   ]);
 
   const verdict = evaluateIntakeCompleteness(
@@ -217,12 +232,19 @@ async function refreshGate(
     await seedPhaseRail(ctx, updated);
   }
 
+  // Re-read only when the rail was just written; otherwise the list fetched above is current.
+  const phases = buildRail(
+    shouldOpen && !alreadyOpen ? await verificationCaseAssetRepo.listPhases(ctx, caseId) : seededPhases,
+    updated.applicantType,
+  );
+
   const policy = await verificationPolicyRepo.routing(ctx);
   return {
     case: updated,
     principals,
     documents,
     intake: verdict,
+    phases,
     underwritingRoute: resolveUnderwritingRoute(updated.fuelCardsRequested, policy),
     reviewOrder: resolveReviewOrder(updated.applicantType, updated.trucksCount, policy),
   };
@@ -280,7 +302,12 @@ export const applicationService = {
 
     if (!isAdmin(ctx)) {
       const self = zohoFromCtx(ctx);
-      const owns = row.submittedByZohoUserId === self || row.ownerZohoUserId === self;
+      // Same three routes as the list query — a cron-created application reaches its agent via
+      // `zohoOwnerId`, and an agent who can see a row but not edit it is a dead end.
+      const owns =
+        row.submittedByZohoUserId === self ||
+        row.ownerZohoUserId === self ||
+        row.zohoOwnerId === self;
       if (!owns) {
         throw new AppError('You can only edit applications you raised.', {
           statusCode: 403,

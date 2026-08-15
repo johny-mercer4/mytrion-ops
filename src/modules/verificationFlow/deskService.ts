@@ -35,7 +35,14 @@ import {
 import { documentService } from './documentService.js';
 import { evaluateHardStops, managerReviewIndicators } from './hardStops.js';
 import { informCollectionsOfBlacklist } from './notify.js';
-import { PHASE_CATALOG, isPhaseCode, phaseApplies, phaseByCode, skipReason } from './phases.js';
+import {
+  buildRail,
+  isPhaseCode,
+  phaseApplies,
+  phaseByCode,
+  skipReason,
+  type StoredPhase,
+} from './phases.js';
 import { collectIdentifiers, screeningVerdictSummary } from './screening.js';
 import {
   FINAL_DECISIONS,
@@ -104,15 +111,9 @@ export const deskService = {
       if (!bundle?.case) throw new NotFoundError('Verification case not found');
 
       const row = bundle.case as unknown as VerificationCase;
-      const phases = bundle.phases as unknown as Array<{
-        phaseCode: string;
-        status: string;
-        outcome: string | null;
-        findings: Record<string, unknown>;
-        note: string | null;
-        decidedAt: Date | null;
-        decidedBy: string | null;
-      }>;
+      // The bundle arrives as jsonb, so the status column comes back untyped. `StoredPhase` is the
+      // shape `buildRail` needs; the cast is the one place that claim is made.
+      const phases = bundle.phases as unknown as StoredPhase[];
       const principals = bundle.principals;
       const documents = bundle.documents as unknown as Array<{ status: string; docType: string }>;
       const events = bundle.events;
@@ -140,25 +141,7 @@ export const deskService = {
         wexCardCutoff: number;
       };
 
-      const byCode = new Map(phases.map((p) => [p.phaseCode, p]));
-      const rail = PHASE_CATALOG.map((descriptor) => {
-        const stored = byCode.get(descriptor.code);
-        const applies = phaseApplies(descriptor, row.applicantType);
-        return {
-          code: descriptor.code,
-          label: descriptor.label,
-          order: descriptor.order,
-          description: descriptor.description,
-          applies,
-          skipReason: skipReason(descriptor, row.applicantType),
-          status: stored?.status ?? (applies ? 'not_started' : 'skipped'),
-          outcome: stored?.outcome ?? null,
-          findings: stored?.findings ?? {},
-          note: stored?.note ?? null,
-          decidedAt: stored?.decidedAt ?? null,
-          decidedBy: stored?.decidedBy ?? null,
-        };
-      });
+      const rail = buildRail(phases, row.applicantType);
 
       const routing = { bankFirstTruckMin: policy.bankFirstTruckMin, wexCardCutoff: policy.wexCardCutoff };
       const factors = {

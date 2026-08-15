@@ -82,11 +82,16 @@ describe('loading and empty', () => {
     expect(screen.queryByTestId('application-card')).not.toBeInTheDocument();
   });
 
-  it('explains the empty list without pointing at Create', () => {
+  /**
+   * The empty state has to say where applications COME FROM. An agent who reads "no applications
+   * yet" and has no way to make one will go looking for a button that does not exist.
+   */
+  it('says applications arrive from Zoho rather than being started here', () => {
     ready([]);
     render(<VerificationTab />);
     expect(screen.getByText(/No applications yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/Applications you own appear here/i)).toBeInTheDocument();
+    expect(screen.getByText(/created automatically from your Deals in Zoho/i)).toBeInTheDocument();
+    expect(screen.getByText(/you do not start one here/i)).toBeInTheDocument();
     expect(screen.queryByText(/Create → Application/i)).not.toBeInTheDocument();
   });
 });

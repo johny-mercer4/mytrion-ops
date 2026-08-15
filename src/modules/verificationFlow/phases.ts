@@ -15,7 +15,65 @@ import {
   VERIFICATION_PHASE_ORDER,
   type VerificationApplicantType,
   type VerificationPhaseCode,
+  type VerificationPhaseStatus,
 } from '../../db/schema/verification_flow.js';
+
+/**
+ * One phase as both desks read it — the catalog fact joined to the stored decision.
+ *
+ * Sales sees exactly this, read-only. Building it twice is how the two sides would end up
+ * disagreeing about whether Phase 4 was skipped or simply never reached.
+ */
+export interface RailPhase {
+  code: VerificationPhaseCode;
+  label: string;
+  order: number;
+  description: string;
+  applies: boolean;
+  skipReason: string | null;
+  status: VerificationPhaseStatus;
+  outcome: string | null;
+  findings: Record<string, unknown>;
+  note: string | null;
+  decidedAt: Date | null;
+  decidedBy: string | null;
+}
+
+/** Stored phase rows, keyed however the caller has them. */
+export interface StoredPhase {
+  phaseCode: string;
+  status: VerificationPhaseStatus;
+  outcome: string | null;
+  findings: Record<string, unknown> | null;
+  note: string | null;
+  decidedAt: Date | null;
+  decidedBy: string | null;
+}
+
+export function buildRail(
+  stored: readonly StoredPhase[],
+  applicantType: VerificationApplicantType | null,
+): RailPhase[] {
+  const byCode = new Map(stored.map((p) => [p.phaseCode, p]));
+  return PHASE_CATALOG.map((descriptor) => {
+    const row = byCode.get(descriptor.code);
+    const applies = phaseApplies(descriptor, applicantType);
+    return {
+      code: descriptor.code,
+      label: descriptor.label,
+      order: descriptor.order,
+      description: descriptor.description,
+      applies,
+      skipReason: skipReason(descriptor, applicantType),
+      status: row?.status ?? (applies ? 'not_started' : 'skipped'),
+      outcome: row?.outcome ?? null,
+      findings: row?.findings ?? {},
+      note: row?.note ?? null,
+      decidedAt: row?.decidedAt ?? null,
+      decidedBy: row?.decidedBy ?? null,
+    };
+  });
+}
 
 export interface PhaseDescriptor {
   code: VerificationPhaseCode;

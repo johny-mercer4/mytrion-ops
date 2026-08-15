@@ -21,10 +21,14 @@
 export const VERIFICATION_LEGACY_DESK_ENABLED = false;
 
 /**
- * Zoho Deals → `verification_cases` ingest. Already parked in `DISABLED_JOB_QUEUES`; this states the
- * intent in code so the two cannot drift. Cases now originate in Sales.
+ * Zoho Deals → `verification_cases` ingest.
+ *
+ * ON, and it is now the ONLY way an application comes into existence — neither desk hand-creates
+ * one. The poller writes the new-era shared record (`verificationFlow/dealIntake.ts`), not the
+ * credit_platform mirror it used to; the legacy steps were removed from that path rather than
+ * flagged, because they belong to the quarantined desk above.
  */
-export const VERIFICATION_ZOHO_INGEST_ENABLED = false;
+export const VERIFICATION_ZOHO_INGEST_ENABLED = true;
 
 /**
  * Write-back into `kxd.sales_agent_*` on the credit_platform Postgres. Separate from the desk flag

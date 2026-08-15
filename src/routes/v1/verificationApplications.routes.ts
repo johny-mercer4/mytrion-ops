@@ -134,7 +134,18 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
     return applicationService.get(ctx, id);
   });
 
-  app.post('/verification/applications', auth, async (request, reply) => {
+  /**
+   * Manual create — ADMIN ONLY, and not part of the normal flow.
+   *
+   * Applications come from the Zoho Deal poller (`automation.verification.case-ingest`); a Sales
+   * agent does not start one. This stays as a backfill and support escape hatch — a Deal that never
+   * polled, a test fixture — behind the admin role so it cannot become a second, divergent way for
+   * applications to exist.
+   */
+  app.post(
+    '/verification/applications',
+    { onRequest: [app.authenticate], preHandler: [app.requireRole('admin')] },
+    async (request, reply) => {
     const ctx = requireSales(request);
     const body = createBody.parse(request.body ?? {});
     const detail = await applicationService.create(ctx, {
@@ -146,10 +157,11 @@ export async function verificationApplicationsRoutes(app: FastifyInstance): Prom
       status: 'ok',
       resourceType: 'verification_case',
       resourceId: detail.case.id,
-      detail: { applicantType: detail.case.applicantType },
+      detail: { applicantType: detail.case.applicantType, manual: true },
     });
     return reply.code(201).send(detail);
-  });
+    },
+  );
 
   app.post<{ Params: { id: string } }>('/verification/applications/:id', auth, async (request) => {
     const ctx = requireSales(request);

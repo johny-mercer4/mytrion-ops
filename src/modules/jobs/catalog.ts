@@ -237,9 +237,8 @@ export const mytrionWatchScoringJob = defineJob({
 });
 
 /**
- * Zoho Deals COQL → verification_cases. Does not create credit-platform requests.
- * Parked in DISABLED_JOB_QUEUES (no cron, no Admin trigger) so generation stays off.
- * Worker still registered: leftover queued jobs no-op instead of creating cases.
+ * Zoho Deals COQL → verification_cases. The ONLY path that creates an application.
+ * Writes the new-era shared record red, owned by the Deal's Sales agent, phase rail seeded.
  */
 export const verificationCaseIngestJob = defineJob({
   name: 'automation.verification.case-ingest',
@@ -348,8 +347,6 @@ export const DISABLED_JOB_QUEUES = new Set<string>([
   retentionScanJob.name,
   // Temporary collection pause: protect Zoho API capacity while KPI request volume is reviewed.
   ...KPI_JOB_QUEUES,
-  // Stop creating verification cases until intake is re-enabled on purpose.
-  verificationCaseIngestJob.name,
 ]);
 
 /** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */
@@ -368,6 +365,10 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
+  // Every 20 minutes: Zoho Deals -> applications. Frequent because a Sales agent who just moved a
+  // Deal expects the application to be waiting for them, not to appear tomorrow. Singleton, and the
+  // Created_Time watermark makes a re-run cheap.
+  { name: verificationCaseIngestJob.name, cron: '*/20 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   // 06:10 every Monday — after the warehouse's overnight load, before the desk opens.
   { name: mytrionWatchScoringJob.name, cron: '10 6 * * 1' },
@@ -390,6 +391,7 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
+  verificationCaseIngestJob.name,
   verificationRecheckJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,

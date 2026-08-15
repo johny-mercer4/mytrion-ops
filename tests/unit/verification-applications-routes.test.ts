@@ -103,6 +103,16 @@ async function workerToken(profile: string): Promise<string> {
   });
 }
 
+/** A true admin session carries NO worker block — the worker profile is what resolves the role. */
+async function adminToken(): Promise<string> {
+  return signAccessToken({
+    userId: 'admin-1',
+    tenantId: DEFAULT_TENANT_ID,
+    audience: 'internal',
+    role: 'admin',
+  });
+}
+
 const bearer = (t: string): Record<string, string> => ({ authorization: `Bearer ${t}` });
 
 describe('auth boundary', () => {
@@ -159,11 +169,27 @@ describe('route wiring', () => {
     expect(listMock).toHaveBeenCalled();
   });
 
-  it('creates a draft and returns 201 with the red gate', async () => {
+  /**
+   * Applications are created by the Zoho Deal poller, not by an agent. The manual route survives as
+   * an admin backfill hatch — a Sales rep hitting it is the thing that must not work, because a
+   * second creation path is how the two desks end up with divergent records.
+   */
+  it('refuses a Sales rep the manual create — the poller owns creation', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/verification/applications',
       headers: bearer(await workerToken('Sales Rep')),
+      payload: { applicantType: 'carrier' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('still allows an admin to backfill one, red', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/verification/applications',
+      headers: bearer(await adminToken()),
       payload: { applicantType: 'carrier' },
     });
     expect(res.statusCode).toBe(201);

@@ -42,16 +42,21 @@ describe('shipped switch positions', () => {
     expect(VERIFICATION_LEGACY_DESK_ENABLED).toBe(false);
   });
 
-  it('has Zoho deal ingest parked — cases originate in Sales now', () => {
-    expect(VERIFICATION_ZOHO_INGEST_ENABLED).toBe(false);
+  /**
+   * The ingest is ON and is the ONLY creation path — neither desk hand-creates an application.
+   * The legacy desk beside it stays parked; the poller writes the new-era record instead.
+   */
+  it('has Zoho deal ingest LIVE — it is the only way an application is created', () => {
+    expect(VERIFICATION_ZOHO_INGEST_ENABLED).toBe(true);
   });
 
   it('has credit-platform write-back parked', () => {
     expect(VERIFICATION_CP_WRITEBACK_ENABLED).toBe(false);
   });
 
-  it('keeps the ingest job in DISABLED_JOB_QUEUES so the flag and the queue cannot drift', () => {
-    expect(DISABLED_JOB_QUEUES.has(verificationCaseIngestJob.name)).toBe(true);
+  it('keeps the ingest job OUT of DISABLED_JOB_QUEUES so the flag and the queue cannot drift', () => {
+    // A live flag against a parked queue silently creates nothing, which is the worst of both.
+    expect(DISABLED_JOB_QUEUES.has(verificationCaseIngestJob.name)).toBe(false);
   });
 });
 

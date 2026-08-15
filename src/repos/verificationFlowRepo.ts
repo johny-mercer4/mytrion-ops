@@ -208,15 +208,24 @@ export const verificationFlowRepo = {
   },
 
   /**
-   * The Sales read model: applications this agent raised. Scoped by `submitted_by_zoho_user_id`
-   * OR `owner_zoho_user_id` so a draft the agent has not submitted yet still appears on their board.
+   * The Sales read model: applications this agent is responsible for.
+   *
+   * Three columns, because an application can reach an agent three ways: they submitted it, they
+   * were assigned it, or — the normal case now — the cron created it from a Deal they own in Zoho.
+   * `zoho_owner_id` is what makes a cron-created application visible at all; without it every
+   * generated application would be invisible to the only person who can complete it.
    */
-  buildSalesListQuery(ctx: TenantContext, zohoUserId: string, filter: FlowListFilter = {}) {
-    const { limit, offset } = normalizePagination(filter, 500);
-    const ownership = or(
+  salesOwnership(zohoUserId: string) {
+    return or(
       eq(verificationCases.submittedByZohoUserId, zohoUserId),
       eq(verificationCases.ownerZohoUserId, zohoUserId),
+      eq(verificationCases.zohoOwnerId, zohoUserId),
     );
+  },
+
+  buildSalesListQuery(ctx: TenantContext, zohoUserId: string, filter: FlowListFilter = {}) {
+    const { limit, offset } = normalizePagination(filter, 500);
+    const ownership = this.salesOwnership(zohoUserId);
     return db
       .select(VERIFICATION_FLOW_LIST_COLUMNS)
       .from(verificationCases)
@@ -239,10 +248,7 @@ export const verificationFlowRepo = {
     zohoUserId: string,
     filter: FlowListFilter = {},
   ): Promise<number> {
-    const ownership = or(
-      eq(verificationCases.submittedByZohoUserId, zohoUserId),
-      eq(verificationCases.ownerZohoUserId, zohoUserId),
-    );
+    const ownership = this.salesOwnership(zohoUserId);
     const rows = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(verificationCases)

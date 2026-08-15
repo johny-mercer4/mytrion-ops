@@ -118,6 +118,8 @@ export interface ApplicationDetail {
   principals: VerificationPrincipal[];
   documents: VerificationDocument[];
   intake: { complete: boolean; missing: VerificationMissingItem[] };
+  /** The desk's ten-phase rail, read-only for Sales. Same rows the Verification workspace shows. */
+  phases: VerificationRailPhase[];
   underwritingRoute: VerificationRoute;
   reviewOrder: VerificationReviewOrder;
 }
