@@ -131,7 +131,7 @@ async function managerToken(profile = 'Management'): Promise<string> {
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin',
-    worker: { zohoUserId: '42', userName: 'Robiya', profile },
+    worker: { zohoUserId: '42', userName: 'CI Test Admin', profile },
   });
 }
 const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });

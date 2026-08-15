@@ -172,7 +172,7 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — re-derived from the profile at verify
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 
@@ -276,7 +276,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     carrierId: '123',
     companyName: 'Acme Trucking',
     contact: 'Jane Doe',
-    agentName: 'Robiya',
+    agentName: 'CI Test Admin',
     phone: '555-0100',
     producedCards: 6,
     activeCards: 4,
@@ -321,7 +321,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ clients: [{ carrierId: '123', gallonsThisMonth: 500 }] });
     // Own id + own display name (the name arm resolves the SAME carriers the roster shows).
-    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
+    expect(clientsMock).toHaveBeenCalledWith('42', 'CI Test Admin');
     expect(clientsMock).not.toHaveBeenCalledWith('999');
     expect(clientsMock).not.toHaveBeenCalledWith('999', expect.anything());
   });
@@ -352,7 +352,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(200);
-    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
+    expect(clientsMock).toHaveBeenCalledWith('42', 'CI Test Admin');
   });
 
   it('carries Manager loyalty controls into the Sales client roster', async () => {

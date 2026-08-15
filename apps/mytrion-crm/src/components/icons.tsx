@@ -18,6 +18,7 @@ import {
   Download,
   Eye,
   FileText,
+  FlaskConical,
   Hash,
   Headset,
   Heart,
@@ -83,6 +84,7 @@ export const WarehouseIcon = icon(Layers, 19);
 export const AccessIcon = icon(ShieldCheck, 19);
 export const UsersIcon = icon(Users, 19);
 export const HistoryIcon = icon(History, 13);
+export const VitestIcon = icon(FlaskConical, 19);
 export const JobsIcon = icon(Timer, 19);
 export const ChatIcon = icon(MessageCircleMore, 16);
 

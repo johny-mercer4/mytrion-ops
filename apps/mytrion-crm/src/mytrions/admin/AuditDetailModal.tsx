@@ -8,11 +8,12 @@ import { useEffect, useRef } from 'react';
 import type { AuditEntry } from '../../api/audit';
 import { XIcon } from '../../components/icons';
 import { useModalFocus } from '../_shared/useModalFocus';
+import { auditActorDisplay } from './auditActorDisplay';
 import s from './admin.module.css';
 
 /** "Who" cell: display name first, falling back to the raw user id. */
 function actorName(e: AuditEntry): string {
-  return e.userName ?? e.userId ?? 'system';
+  return auditActorDisplay(e);
 }
 
 export function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () => void }) {

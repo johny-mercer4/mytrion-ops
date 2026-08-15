@@ -31,22 +31,46 @@ import {
   resolveUnderwritingRoute,
 } from './stateMachine.js';
 
-const FLOW_TABLES = [
+/**
+ * EVERY table migration 0121 creates — not a sample.
+ *
+ * An earlier cut listed four of the twelve, which meant the most commonly hit one
+ * (`verification_statuses`, read by every list call) fell straight through the guard and surfaced
+ * as a bare 500 on an environment that simply had not run the migration. That is the exact failure
+ * this function exists to prevent, so the list is now complete and
+ * `verification-flow-schema-guard.test.ts` fails if 0121 ever creates a table missing from it.
+ */
+export const FLOW_TABLES = [
+  'verification_phases',
+  'verification_statuses',
   'verification_case_phases',
-  'verification_case_documents',
+  'verification_case_events',
   'verification_case_principals',
+  'verification_case_documents',
+  'verification_blacklist_entries',
+  'verification_screening_hits',
+  'verification_credit_reviews',
+  'verification_banking_reviews',
+  'verification_risk_assessments',
   'verification_policy',
-];
+] as const;
 
-/** Map a deploy-ahead-of-migration failure onto an actionable 503. */
+/**
+ * Map a deploy-ahead-of-migration failure onto an actionable 503.
+ *
+ * Covers both shapes: a table that does not exist yet (42P01) and — the half that actually bites
+ * more often — `verification_cases` existing but lacking the columns 0121 adds (42703), which is
+ * what an environment one migration behind looks like.
+ */
 export function asFlowSchemaError(err: unknown): AppError | null {
   const missing =
-    FLOW_TABLES.some((t) => isMissingTable(err, t)) ||
+    FLOW_TABLES.some((t) => isMissingTable(err, t) || isMissingColumn(err, t)) ||
     isMissingTable(err, 'verification_cases') ||
-    isMissingColumn(err, 'verification_cases');
+    isMissingColumn(err, 'verification_cases') ||
+    isMissingColumn(err, 'verification_banking_reviews');
   if (!missing) return null;
   return new AppError(
-    'The verification underwriting tables are not migrated on this environment. Run migration 0121_verification_new_era.',
+    'The verification underwriting tables are not migrated on this database. Run `pnpm db:migrate` against it — migrations 0121_verification_new_era and 0122_verification_banking_consistency.',
     { statusCode: 503, code: 'VERIFICATION_FLOW_NOT_MIGRATED', expose: true },
   );
 }

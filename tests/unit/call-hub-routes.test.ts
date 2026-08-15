@@ -91,7 +91,7 @@ async function salesToken(zohoUserId = '42', profile = 'Sales Agent'): Promise<s
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin',
-    worker: { zohoUserId, userName: 'Rep Riley', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 

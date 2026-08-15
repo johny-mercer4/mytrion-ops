@@ -88,7 +88,7 @@ async function workerToken(profile: string): Promise<string> {
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — role is re-derived from the profile at verify
-    worker: { zohoUserId: '42', userName: 'Robiya', profile },
+    worker: { zohoUserId: '42', userName: 'CI Test Admin', profile },
   });
 }
 
@@ -99,7 +99,7 @@ function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
     zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     contactPhone: null,
     preferredLanguage: null,
     isSpanishDesk: false,
@@ -195,7 +195,7 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     carrierId: '104882',
     companyName: 'Ironhide Logistics LLC',
     applicationId: '9001',
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     agentZohoUserId: '777',
     zohoDealId: 'zdeal_104882',
     contactPhone: '5551234567',

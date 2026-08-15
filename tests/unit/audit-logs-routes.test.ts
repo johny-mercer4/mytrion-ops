@@ -141,6 +141,27 @@ describe('GET /v1/admin/audit', () => {
     });
     expect(filter.from).toBeInstanceOf(Date);
     expect(filter.to).toBeInstanceOf(Date);
+    expect(filter.source).toBe('human');
+  });
+
+  it('defaults the Audit Log to human actors and keeps Vitest fixtures off that feed', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/audit',
+      headers: { authorization: await bearer() },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(auditMocks.list.mock.calls[0]![1]).toMatchObject({ source: 'human' });
+  });
+
+  it('the Vitest Logs tab asks only for fixture actors', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/audit?source=vitest',
+      headers: { authorization: await bearer() },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(auditMocks.list.mock.calls[0]![1]).toMatchObject({ source: 'vitest' });
   });
 
   it('accepts the Logins view as an EXACT action list, not a prefix', async () => {
