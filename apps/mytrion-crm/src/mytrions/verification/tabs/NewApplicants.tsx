@@ -1,26 +1,29 @@
 /**
  * Verification desk — new applicants queue.
  *
- * Red cases are LISTED, not hidden. The desk's most useful question on a slow morning is "what am I
- * waiting on?", and a queue that only showed workable cases could not answer it. Red rows are
- * visibly locked instead.
+ * Red cases are LISTED, not hidden: "what am I waiting on?" is the desk's most useful question on a
+ * slow morning, and a workable-only queue cannot answer it. Red rows are visibly locked instead.
+ *
+ * Built on the desk's own `vf-*` / `vfx-*` language rather than inline styles — an earlier cut used
+ * its own colours and spacing, which is what made this surface read as foreign next to the rest of
+ * the Mytrion.
  */
-import { useCallback, useState } from 'react';
-import { Icon } from '../../sales/redesign/icons';
-import { s } from '../flow/style';
+import { useCallback, useMemo, useState } from 'react';
+import { Inbox, Lock, ShieldCheck, Upload } from 'lucide-react';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { CaseWorkspace } from '../flow/CaseWorkspace';
 import { listDeskCases, type VerificationCaseRow } from '@/api/verificationFlow';
+import '../flow/verificationFlow.css';
 
-type Scope = 'workable' | 'awaiting_sales' | 'pending_docs' | 'manager_review' | 'closed' | 'all';
+type Scope = 'all' | 'workable' | 'awaiting_sales' | 'pending_docs' | 'manager_review' | 'closed';
 
 const SCOPES: ReadonlyArray<{ id: Scope; label: string }> = [
+  { id: 'all', label: 'All' },
   { id: 'workable', label: 'Ready to work' },
   { id: 'awaiting_sales', label: 'Waiting on Sales' },
   { id: 'pending_docs', label: 'Pending documents' },
   { id: 'manager_review', label: 'Manager review' },
   { id: 'closed', label: 'Decided' },
-  { id: 'all', label: 'All' },
 ];
 
 function inScope(row: VerificationCaseRow, scope: Scope): boolean {
@@ -59,12 +62,27 @@ const PHASE_ORDER: Record<string, number> = {
   p10_decision: 10,
 };
 
+const APPLICANT_LABEL: Record<string, string> = {
+  owner_operator: 'Owner-operator',
+  carrier: 'Carrier',
+  company: 'Company',
+};
+
 export function NewApplicants() {
-  const [scope, setScope] = useState<Scope>('workable');
+  // Default to ALL. Defaulting to "ready to work" showed an empty state on a desk that had three
+  // cases in it — the first thing an agent saw was "nothing here" while the counters said otherwise.
+  const [scope, setScope] = useState<Scope>('all');
   const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(() => listDeskCases({ limit: 200 }), []);
   const { data, loading, error, reload } = useCachedLoad('verification:flow:cases', load);
+
+  const rows = useMemo(() => data?.items ?? [], [data]);
+  const counts = useMemo(() => {
+    const out = {} as Record<Scope, number>;
+    for (const sc of SCOPES) out[sc.id] = rows.filter((r) => inScope(r, sc.id)).length;
+    return out;
+  }, [rows]);
 
   if (openId) {
     return (
@@ -78,67 +96,65 @@ export function NewApplicants() {
     );
   }
 
-  const rows = data?.items ?? [];
-  const aggregates = data?.aggregates;
   const visible = rows.filter((r) => inScope(r, scope));
+  const agg = data?.aggregates;
 
   return (
-    <div style={s('display:grid;gap:18px')}>
-      {aggregates ? (
-        <div style={s('display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr))')}>
-          <Stat label="Ready to work" value={aggregates.workable} tone="ok" />
-          <Stat label="Waiting on Sales" value={aggregates.awaitingSales} tone="bad" />
-          <Stat label="Pending documents" value={aggregates.pendingDocs} tone="warn" />
-          <Stat label="Manager review" value={aggregates.managerReview} tone="warn" />
-          <Stat label="Decided" value={aggregates.closed} tone="plain" />
-        </div>
-      ) : null}
+    <div className="vfx">
+      {/* Stats render at every stage — skeleton, loaded, empty — so nothing shifts on load. */}
+      <div className="vfx-stats">
+        {loading ? (
+          <StatSkeletons />
+        ) : (
+          <>
+            <Stat label="Ready to work" value={agg?.workable ?? 0} tone="ok" scope="workable" active={scope === 'workable'} onPick={setScope} />
+            <Stat label="Waiting on Sales" value={agg?.awaitingSales ?? 0} tone="bad" scope="awaiting_sales" active={scope === 'awaiting_sales'} onPick={setScope} />
+            <Stat label="Pending documents" value={agg?.pendingDocs ?? 0} tone="warn" scope="pending_docs" active={scope === 'pending_docs'} onPick={setScope} />
+            <Stat label="Manager review" value={agg?.managerReview ?? 0} tone="warn" scope="manager_review" active={scope === 'manager_review'} onPick={setScope} />
+            <Stat label="Decided" value={agg?.closed ?? 0} tone="plain" scope="closed" active={scope === 'closed'} onPick={setScope} />
+          </>
+        )}
+      </div>
 
-      <div role="tablist" aria-label="Filter applicants" style={s('display:flex;flex-wrap:wrap;gap:8px')}>
-        {SCOPES.map((sc) => {
-          const active = scope === sc.id;
-          return (
-            <button
-              key={sc.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setScope(sc.id)}
-              style={s(
-                `min-height:44px;padding:0 16px;border-radius:var(--radius-full);font-size:13px;font-weight:700;cursor:pointer;background:${
-                  active ? 'var(--accent)' : 'var(--surface)'
-                };color:${active ? 'var(--on-accent)' : 'var(--text-secondary)'};border:1px solid ${
-                  active ? 'var(--accent)' : 'var(--border)'
-                }`,
-              )}
-            >
-              {sc.label}
-              <span style={s('margin-left:7px;opacity:.72')}>{rows.filter((r) => inScope(r, sc.id)).length}</span>
-            </button>
-          );
-        })}
+      <div className="vf-chips" role="tablist" aria-label="Filter applicants">
+        {SCOPES.map((sc) => (
+          <button
+            key={sc.id}
+            type="button"
+            role="tab"
+            aria-selected={scope === sc.id}
+            className={`vf-chip${scope === sc.id ? ' is-on' : ''}`}
+            onClick={() => setScope(sc.id)}
+          >
+            {sc.label}
+            <span className="vf-chip-n">{loading ? '·' : counts[sc.id]}</span>
+          </button>
+        ))}
       </div>
 
       {error ? (
-        <p role="alert" style={s('margin:0;font-size:13px;color:var(--danger)')}>
-          Could not load the queue. {String(error)}
-        </p>
+        <div className="vfx-banner" data-tone="bad" role="alert">
+          <span className="vfx-banner-title">Could not load the queue</span>
+          <p className="vfx-banner-body">{String(error)}</p>
+        </div>
       ) : null}
 
       {loading ? (
-        <QueueSkeleton />
+        <RowSkeletons />
       ) : visible.length === 0 ? (
-        <p
-          style={s(
-            'margin:0;padding:32px;text-align:center;color:var(--text-muted);font-size:14px;border-radius:var(--radius-md);border:1px dashed var(--border)',
-          )}
-        >
-          {scope === 'workable'
-            ? 'Nothing ready to underwrite. Applications appear here once Sales completes intake.'
-            : 'Nothing in this filter.'}
-        </p>
+        <div className="vf-empty">
+          <Inbox size={22} aria-hidden />
+          <span className="vf-empty-title">
+            {rows.length === 0 ? 'No applications yet' : 'Nothing in this filter'}
+          </span>
+          <span>
+            {rows.length === 0
+              ? 'Applications appear here once a Sales agent completes intake.'
+              : 'Try another filter to see the rest of the desk.'}
+          </span>
+        </div>
       ) : (
-        <ul style={s('margin:0;padding:0;list-style:none;display:grid;gap:10px')}>
+        <ul className="vfx-rows">
           {visible.map((row) => (
             <li key={row.id}>
               <ApplicantRow row={row} onOpen={() => setOpenId(row.id)} />
@@ -150,57 +166,68 @@ export function NewApplicants() {
   );
 }
 
-/**
- * One loader per surface, matching the desk's existing `vf-sk` shimmer rather than a spinner.
- * `aria-busy` plus an `sr-only` status carries the same information to a screen reader, which a
- * shimmer alone cannot.
- */
-function QueueSkeleton() {
-  return (
-    <div aria-busy="true" style={s('display:grid;gap:10px')}>
-      <span className="sr-only" role="status">
-        Loading applicants
-      </span>
-      {Array.from({ length: 5 }, (_, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={s(
-            'display:grid;gap:10px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
-          )}
-        >
-          <span className="vf-sk" style={s('height:15px;width:38%;border-radius:var(--radius-sm)')} />
-          <span className="vf-sk" style={s('height:12px;width:22%;border-radius:var(--radius-sm)')} />
-          <span className="vf-sk" style={s('height:12px;width:56%;border-radius:var(--radius-sm)')} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
+/** A counter you can act on is a control — clicking it filters the list below. */
 function Stat({
   label,
   value,
   tone,
+  scope,
+  active,
+  onPick,
 }: {
   label: string;
   value: number;
   tone: 'ok' | 'bad' | 'warn' | 'plain';
+  scope: Scope;
+  active: boolean;
+  onPick: (s: Scope) => void;
 }) {
-  const colour =
-    tone === 'ok' ? 'var(--success)' : tone === 'bad' ? 'var(--danger)' : tone === 'warn' ? 'var(--warning)' : 'var(--text-primary)';
   return (
-    <div
-      style={s(
-        'display:grid;gap:3px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
-      )}
+    <button
+      type="button"
+      className="vfx-stat"
+      data-tone={tone}
+      aria-pressed={active}
+      onClick={() => onPick(active ? 'all' : scope)}
     >
-      <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)')}>
-        {label}
+      <span className="vfx-stat-label">{label}</span>
+      <span className="vfx-stat-value">{value}</span>
+    </button>
+  );
+}
+
+/** Same box, same height, same count as the loaded state — only the content is a placeholder. */
+function StatSkeletons() {
+  return (
+    <>
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="vfx-stat" aria-hidden="true">
+          <span className="vfx-sk vfx-sk-line" style={{ width: '58%' }} />
+          <span className="vfx-sk vfx-sk-value" />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function RowSkeletons() {
+  return (
+    <div aria-busy="true">
+      <span className="sr-only" role="status">
+        Loading applicants
       </span>
-      <span style={s(`font-size:22px;font-weight:800;color:${colour};font-variant-numeric:tabular-nums`)}>
-        {value}
-      </span>
+      <ul className="vfx-rows" aria-hidden="true">
+        {Array.from({ length: 4 }, (_, i) => (
+          <li key={i}>
+            <div className="vfx-row" data-skeleton="true">
+              <span className="vfx-sk vfx-sk-title vfx-row-name" />
+              <span className="vfx-sk vfx-sk-line vfx-row-state" style={{ width: 62 }} />
+              <span className="vfx-sk vfx-sk-line vfx-row-line" style={{ width: '34%' }} />
+              <span className="vfx-sk vfx-sk-line vfx-row-meta" style={{ width: '60%' }} />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -209,69 +236,65 @@ function ApplicantRow({ row, onOpen }: { row: VerificationCaseRow; onOpen: () =>
   const locked = !row.verificationProcess;
   const outstanding = row.intakeMissing?.length ?? 0;
   const phase = PHASE_ORDER[row.phaseCode] ?? 1;
+  const decided = Boolean(row.closedAt);
 
   return (
     <button
       type="button"
-      onClick={onOpen}
+      className="vfx-row"
+      data-locked={locked}
       data-testid="applicant-row"
       aria-label={`Open ${nameOf(row)}`}
-      style={s(
-        `width:100%;text-align:left;display:grid;gap:10px;padding:14px 16px;border-radius:var(--radius-md);cursor:pointer;background:var(--surface);border:1px solid ${
-          locked ? 'var(--intent-danger-bd)' : 'var(--border)'
-        }`,
-      )}
+      onClick={onOpen}
     >
-      <div style={s('display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between')}>
-        <span style={s('font-size:15px;font-weight:800;color:var(--text-primary)')}>{nameOf(row)}</span>
-        <span
-          style={s(
-            `font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:${
-              locked ? 'var(--danger)' : 'var(--success)'
-            }`,
+      <span className="vfx-row-name">{nameOf(row)}</span>
+
+      <span className="vfx-row-state">
+        <span className="vfx-pill" data-tone={locked ? 'bad' : decided ? 'ok' : 'plain'}>
+          {locked ? (
+            <>
+              <Lock size={11} aria-hidden /> Locked
+            </>
+          ) : (
+            (row.statusLabel ?? 'In review')
           )}
-        >
-          {locked ? 'Locked' : row.statusLabel ?? 'In review'}
         </span>
-      </div>
+      </span>
 
       {locked ? (
-        <span style={s('display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--danger)')}>
-          <Icon name="lock" size={13} strokeWidth={2.2} />
-          Waiting on Sales — {outstanding} item{outstanding === 1 ? '' : 's'} outstanding
+        <span className="vfx-row-line" data-tone="bad">
+          <ShieldCheck size={13} aria-hidden />
+          {/* A legacy Zoho-ingested case has never been evaluated, so a count would read
+              "0 items outstanding" and mean nothing. Say what is actually true instead. */}
+          {outstanding > 0
+            ? `Waiting on Sales — ${outstanding} item${outstanding === 1 ? '' : 's'} outstanding`
+            : 'Waiting on Sales — intake not started'}
+        </span>
+      ) : row.statusCode === 'pending_docs' ? (
+        <span className="vfx-row-line" data-tone="warn">
+          <Upload size={13} aria-hidden />
+          Documents requested from Sales
         </span>
       ) : (
-        <PhaseMeter phase={phase} />
+        <span className="vfx-row-line" data-tone="plain">
+          <span className="vfx-meter">
+            <span className="vfx-meter-track" aria-hidden>
+              {Array.from({ length: 10 }, (_, i) => (
+                <span key={i} className="vfx-meter-seg" data-on={i < phase} />
+              ))}
+            </span>
+            Phase {phase} of 10
+          </span>
+        </span>
       )}
 
-      <div style={s('display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-muted)')}>
-        <span>{row.applicantType === 'owner_operator' ? 'Owner-operator' : row.applicantType === 'carrier' ? 'Carrier' : 'Company'}</span>
+      <span className="vfx-row-meta">
+        <span>{APPLICANT_LABEL[row.applicantType ?? ''] ?? 'Type not set'}</span>
         <span>{row.trucksCount ?? '—'} trucks</span>
         <span>{row.fuelCardsRequested ?? '—'} cards</span>
-        {row.underwritingRoute === 'wex' ? <span style={s('color:var(--warning);font-weight:700')}>WEX route</span> : null}
+        {row.underwritingRoute === 'wex' ? <span>WEX route</span> : null}
         <span>{row.ownerName}</span>
-      </div>
-    </button>
-  );
-}
-
-/** Ten segments — position in the flow at a glance, without a number to decode. */
-function PhaseMeter({ phase }: { phase: number }) {
-  return (
-    <span style={s('display:flex;align-items:center;gap:8px')}>
-      <span aria-hidden style={s('display:flex;gap:3px')}>
-        {Array.from({ length: 10 }, (_, i) => (
-          <span
-            key={i}
-            style={s(
-              `width:14px;height:4px;border-radius:var(--radius-full);background:${
-                i < phase ? 'var(--accent)' : 'var(--border)'
-              }`,
-            )}
-          />
-        ))}
       </span>
-      <span style={s('font-size:12px;color:var(--text-muted)')}>Phase {phase} of 10</span>
-    </span>
+    </button>
   );
 }

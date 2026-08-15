@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../sales/redesign/icons';
 import { s } from './style';
+import './verificationFlow.css';
 import { PhaseRail, SkippedPane } from './PhaseRail';
 import { DecisionBar, HardStopsPane, PaneShell, ScreeningPane } from './PhasePanes';
 import { BankingPane, CreditPane, DecisionPane, RiskPane } from './ReviewPanes';
@@ -19,6 +20,7 @@ import {
   saveRiskAssessment,
   setScreeningVerdict,
   submitFinalDecision,
+  patchApplication,
   type VerificationDeskDetail,
   type VerificationPhaseOutcome,
 } from '@/api/verificationFlow';
@@ -115,48 +117,42 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
       </div>
 
       {!gateOpen ? (
-        <div
-          role="status"
-          style={s(
-            'display:grid;gap:5px;padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--intent-danger-bd);background:var(--intent-danger-bg)',
-          )}
-        >
-          <span style={s('display:flex;align-items:center;gap:9px;font-size:13px;font-weight:800;color:var(--danger)')}>
-            <Icon name="lock" size={15} strokeWidth={2.2} />
-            Waiting on Sales — {detail.case.intakeMissing?.length ?? 0} item(s) outstanding
+        <div className="vfx-banner" data-tone="bad" role="status">
+          <span className="vfx-banner-title">
+            <Icon name="lock" size={14} strokeWidth={2.2} />
+            {(detail.case.intakeMissing?.length ?? 0) > 0
+              ? `Waiting on Sales — ${detail.case.intakeMissing.length} item(s) outstanding`
+              : 'Waiting on Sales — intake not started'}
           </span>
-          <span style={s('font-size:12px;color:var(--text-secondary);line-height:1.5')}>
-            The application is not complete, so it cannot be underwritten yet. You can read everything
-            here, but no phase can be signed off.
-          </span>
+          <p className="vfx-banner-body">
+            The application is not complete, so it cannot be signed off. You can still read and
+            correct the details below — anything you fix here counts toward completing it.
+          </p>
         </div>
       ) : null}
 
       {closed ? (
-        <div
-          role="status"
-          style={s(
-            'padding:12px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface-alt);font-size:13px;color:var(--text-secondary)',
-          )}
-        >
-          Decided — {detail.case.statusLabel ?? detail.case.statusCode}. This case is closed.
+        <div className="vfx-banner" data-tone="ok" role="status">
+          <span className="vfx-banner-title">Decided — {detail.case.statusLabel ?? 'closed'}</span>
+          <p className="vfx-banner-body">This case is closed and can no longer be worked.</p>
         </div>
       ) : null}
 
       {error ? (
-        <p role="alert" style={s('margin:0;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--intent-danger-bd);background:var(--intent-danger-bg);font-size:13px;color:var(--text-primary)')}>
-          {error}
-        </p>
+        <div className="vfx-banner" data-tone="bad" role="alert">
+          <span className="vfx-banner-title">That action could not be completed</span>
+          <p className="vfx-banner-body">{error}</p>
+        </div>
       ) : null}
 
-      <div className="vf-workspace" style={s('display:grid;gap:20px;grid-template-columns:minmax(220px,260px) 1fr;align-items:start')}>
+      <div className="vfx-workspace">
         <PhaseRail
           rail={detail.rail}
           activeCode={active.code}
           currentCode={detail.case.phaseCode}
           onSelect={setActiveCode}
         />
-        <div style={s('min-width:0')}>
+        <div className="vfx-pane">
           {!active.applies ? (
             <SkippedPane phase={active} />
           ) : (
@@ -175,6 +171,7 @@ export function CaseWorkspace({ caseId, onBack }: { caseId: string; onBack: () =
                 canAct={canAct}
                 onRun={run}
                 caseId={caseId}
+                onSaved={() => void run(() => getDeskCase(caseId))}
               />
             </PaneShell>
           )}
@@ -191,6 +188,7 @@ function PaneBody({
   canAct,
   onRun,
   caseId,
+  onSaved,
 }: {
   detail: VerificationDeskDetail;
   phaseCode: string;
@@ -198,7 +196,11 @@ function PaneBody({
   canAct: boolean;
   onRun: (fn: () => Promise<VerificationDeskDetail>) => Promise<void>;
   caseId: string;
+  onSaved: () => void;
 }) {
+  // Sales-owned intake stays editable for the desk right up until the case is decided — a credit
+  // agent on the phone is often the first to learn a detail was mistyped.
+  const canEdit = !detail.case.closedAt;
   switch (phaseCode) {
     case 'p3_screening':
       return (
@@ -232,7 +234,15 @@ function PaneBody({
         />
       );
     default:
-      return <ChecklistPane detail={detail} phaseCode={phaseCode} />;
+      return (
+        <ChecklistPane
+          detail={detail}
+          phaseCode={phaseCode}
+          caseId={caseId}
+          canEdit={canEdit}
+          onSaved={onSaved}
+        />
+      );
   }
 }
 
@@ -266,11 +276,25 @@ const CHECKLISTS: Record<string, string[]> = {
   ],
 };
 
-function ChecklistPane({ detail, phaseCode }: { detail: VerificationDeskDetail; phaseCode: string }) {
+function ChecklistPane({
+  detail,
+  phaseCode,
+  caseId,
+  canEdit,
+  onSaved,
+}: {
+  detail: VerificationDeskDetail;
+  phaseCode: string;
+  caseId: string;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
   const items = CHECKLISTS[phaseCode] ?? [];
   return (
     <div style={s('display:grid;gap:16px')}>
-      {phaseCode === 'p1_intake' ? <ApplicationFacts detail={detail} /> : null}
+      {phaseCode === 'p1_intake' ? (
+        <ApplicationFacts detail={detail} caseId={caseId} canEdit={canEdit} onSaved={onSaved} />
+      ) : null}
       {items.length > 0 ? (
         <div style={s('display:grid;gap:8px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
           <h3 style={s('margin:0;font-size:13px;font-weight:800;color:var(--text-primary)')}>What to check</h3>
@@ -287,30 +311,148 @@ function ChecklistPane({ detail, phaseCode }: { detail: VerificationDeskDetail; 
   );
 }
 
-function ApplicationFacts({ detail }: { detail: VerificationDeskDetail }) {
+/**
+ * Phase 1 — the application itself, EDITABLE.
+ *
+ * The desk used to get a read-only grid of em-dashes, which is a poor deal: the credit agent is on
+ * the phone with the applicant and is the person most likely to learn that the EIN was mistyped.
+ * They can correct any of it here, at any phase, and the server re-evaluates completeness on save —
+ * so a fix made during underwriting can be what finally turns the application green.
+ */
+function ApplicationFacts({
+  detail,
+  caseId,
+  canEdit,
+  onSaved,
+}: {
+  detail: VerificationDeskDetail;
+  caseId: string;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
   const c = detail.case;
-  const facts: Array<[string, string]> = [
-    ['Applicant type', String(c.applicantType ?? '—')],
-    ['Trucks', c.trucksCount == null ? '—' : String(c.trucksCount)],
-    ['Cards requested', c.fuelCardsRequested == null ? '—' : String(c.fuelCardsRequested)],
-    ['Requested limit', c.requestedLimit ? `$${c.requestedLimit}` : '—'],
-    ['EIN', String((c.ein as string) ?? '—')],
-    ['MC', String((c.mc as string) ?? '—')],
-    ['USDOT', String((c.dot as string) ?? '—')],
-    ['Principals', String(detail.principals.length)],
-    ['Documents', String(detail.documents.filter((d) => d.status === 'received').length)],
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const field = (k: string, fallback: unknown): string =>
+    draft[k] ?? (fallback == null ? '' : String(fallback));
+  const set = (k: string) => (v: string) => {
+    setDraft((d) => ({ ...d, [k]: v }));
+    setSaved(false);
+  };
+
+  const dirty = Object.keys(draft).length > 0;
+
+  const FIELDS: Array<{ k: string; label: string; value: unknown; numeric?: boolean }> = [
+    { k: 'companyName', label: 'Company', value: c.companyName },
+    { k: 'firstName', label: 'First name', value: c.firstName },
+    { k: 'lastName', label: 'Last name', value: c.lastName },
+    { k: 'ein', label: 'EIN', value: (c as Record<string, unknown>).ein },
+    { k: 'mc', label: 'MC number', value: (c as Record<string, unknown>).mc },
+    { k: 'dot', label: 'USDOT', value: (c as Record<string, unknown>).dot },
+    { k: 'email', label: 'Email', value: c.email },
+    { k: 'phone', label: 'Phone', value: c.phone },
+    { k: 'trucksCount', label: 'Trucks', value: c.trucksCount, numeric: true },
+    { k: 'fuelCardsRequested', label: 'Cards requested', value: c.fuelCardsRequested, numeric: true },
+    { k: 'requestedLimit', label: 'Requested limit', value: c.requestedLimit, numeric: true },
   ];
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    try {
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(draft)) {
+        const meta = FIELDS.find((f) => f.k === k);
+        body[k] = v.trim() === '' ? null : meta?.numeric ? Number(v) : v;
+      }
+      await patchApplication(caseId, body);
+      setDraft({});
+      setSaved(true);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save those changes.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <dl style={s('margin:0;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
-      {facts.map(([label, value]) => (
-        <div key={label} style={s('display:grid;gap:3px')}>
-          <dt style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted)')}>
-            {label}
-          </dt>
-          <dd style={s('margin:0;font-size:14px;font-weight:700;color:var(--text-primary)')}>{value}</dd>
+    <div className="vfx-card">
+      <h3 className="vfx-card-title">Application</h3>
+      <div className="vfx-facts">
+        {FIELDS.map((f) => {
+          const id = `vfx-${f.k}`;
+          const value = field(f.k, f.value);
+          return (
+            <div className="vfx-field" key={f.k}>
+              <label className="vfx-label" htmlFor={id}>
+                {f.label}
+              </label>
+              {canEdit ? (
+                <input
+                  id={id}
+                  className="vfx-input"
+                  value={value}
+                  inputMode={f.numeric ? 'decimal' : 'text'}
+                  placeholder="Not recorded"
+                  onChange={(e) => set(f.k)(e.currentTarget.value)}
+                />
+              ) : (
+                <p className="vfx-fact-v" data-empty={value === ''}>
+                  {value === '' ? 'Not recorded' : value}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="vfx-facts">
+        <div className="vfx-fact">
+          <span className="vfx-fact-k">Principals</span>
+          <p className="vfx-fact-v" data-empty={detail.principals.length === 0}>
+            {detail.principals.length || 'None'}
+          </p>
         </div>
-      ))}
-    </dl>
+        <div className="vfx-fact">
+          <span className="vfx-fact-k">Documents</span>
+          <p
+            className="vfx-fact-v"
+            data-empty={detail.documents.filter((d) => d.status === 'received').length === 0}
+          >
+            {detail.documents.filter((d) => d.status === 'received').length || 'None'}
+          </p>
+        </div>
+      </div>
+
+      {err ? (
+        <div className="vfx-banner" data-tone="bad" role="alert">
+          <p className="vfx-banner-body">{err}</p>
+        </div>
+      ) : null}
+
+      {canEdit ? (
+        <div className="vfx-actions">
+          <button
+            type="button"
+            className="vfx-act"
+            data-kind="primary"
+            disabled={!dirty || busy}
+            onClick={() => void save()}
+          >
+            {busy ? 'Saving…' : saved ? 'Saved' : 'Save corrections'}
+          </button>
+          {dirty ? (
+            <button type="button" className="vfx-act" onClick={() => setDraft({})} disabled={busy}>
+              Discard
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -363,7 +505,7 @@ function CaseHeading({ detail }: { detail: VerificationDeskDetail }) {
   return (
     <div style={s('display:grid;gap:2px;text-align:right')}>
       <span style={s('font-size:16px;font-weight:800;color:var(--text-primary)')}>{name}</span>
-      <span style={s('font-size:12px;color:var(--text-muted)')}>{c.statusLabel ?? c.statusCode}</span>
+      <span className="vfx-pill">{c.statusLabel ?? 'In review'}</span>
     </div>
   );
 }
@@ -373,9 +515,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      style={s(
-        'display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:13px;font-weight:700;cursor:pointer',
-      )}
+      className="vfx-act"
     >
       <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
       All applicants
