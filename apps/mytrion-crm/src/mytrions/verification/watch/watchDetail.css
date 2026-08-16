@@ -507,3 +507,9 @@
   line-height: 1.5;
   color: var(--text-muted);
 }
+
+/* An invoice still owed is the one number on this panel worth colouring. */
+[data-mytrion='verification'] .mw-tvalue[data-open] {
+  color: var(--danger);
+  font-weight: var(--fw-bold);
+}

@@ -201,3 +201,38 @@ export async function runWatchScoring(
 ): Promise<WatchRunQueued> {
   return (await request('POST', '/verification/watch/run', { body })) as WatchRunQueued;
 }
+
+export interface CarrierInvoice {
+  invoiceId: string;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  totalAmount: number;
+  totalPaid: number;
+  outstanding: number;
+  status: string | null;
+  paymentCount: number;
+  lastPaymentDate: string | null;
+}
+
+export interface CarrierInvoiceContext {
+  invoices: CarrierInvoice[];
+  openCount: number;
+  openAmount: number;
+}
+
+/**
+ * Open invoices for a carrier — a LIVE warehouse read, on its own route.
+ *
+ * Every other Watch read comes from our snapshot table. This one does not, which is why it is
+ * fetched separately: if the warehouse is slow the panel fails alone and the score still renders.
+ */
+export async function getCarrierInvoices(
+  carrierId: string,
+  signal?: AbortSignal,
+): Promise<CarrierInvoiceContext> {
+  return (await request(
+    'GET',
+    `/verification/watch/scores/${encodeURIComponent(carrierId)}/invoices`,
+    { ...(signal ? { signal } : {}) },
+  )) as CarrierInvoiceContext;
+}

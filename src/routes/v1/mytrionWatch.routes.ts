@@ -12,6 +12,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { watchService } from '../../modules/mytrionWatch/watchService.js';
+import { carrierInvoices } from '../../modules/mytrionWatch/invoiceContext.js';
 import { triggerCatalogJob } from '../../modules/jobs/adminTrigger.js';
 import { mytrionWatchScoringJob } from '../../modules/jobs/catalog.js';
 import { WATCH_BANDS } from '../../db/schema/mytrion_watch.js';
@@ -62,6 +63,24 @@ export async function mytrionWatchRoutes(app: FastifyInstance): Promise<void> {
       const ctx = requireWatchRead(request);
       const { carrierId } = carrierParams.parse(request.params);
       return watchService.carrier(ctx, carrierId);
+    },
+  );
+
+  /**
+   * Open invoices for a carrier — a LIVE warehouse read, on its own route.
+   *
+   * Separate from the carrier detail on purpose: the rest of the desk reads our snapshot and never
+   * touches the DWH. If the warehouse is slow or down, this panel fails alone rather than taking the
+   * score with it.
+   */
+  app.get<{ Params: { carrierId: string } }>(
+    '/verification/watch/scores/:carrierId/invoices',
+    auth,
+    async (request) => {
+      const ctx = requireWatchRead(request);
+      void ctx;
+      const { carrierId } = carrierParams.parse(request.params);
+      return carrierInvoices(carrierId);
     },
   );
 

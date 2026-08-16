@@ -12,6 +12,7 @@ import { ArrowLeft, ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchHistoryChart } from './WatchHistoryChart';
 import { WatchDrivers } from './WatchDrivers';
+import { WatchInvoices } from './WatchInvoices';
 import {
   BAND_LABEL,
   BAND_MEANING,
@@ -121,6 +122,8 @@ export function WatchDetail({ carrierId, onBack }: { carrierId: string; onBack: 
                 features={score.features}
               />
             </section>
+
+            <WatchInvoices carrierId={carrierId} />
           </div>
         </>
       )}

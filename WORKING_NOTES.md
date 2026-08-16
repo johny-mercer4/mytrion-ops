@@ -17508,3 +17508,53 @@ Context that is not a model input, and therefore carries no retraining risk: unp
 `status` per carrier, and the partial-payment picture postlimit collapses (2,974 invoices — 6% — have
 more than one payment). That is a display feature on the carrier detail, not a scoring change. Not
 built, because it was not asked for.
+
+## 2026-08-16 — Invoice context panel, and an honest read on business impact
+
+### The panel
+
+`GET /verification/watch/scores/:carrierId/invoices` → `WatchInvoices`. Open invoices, amount, paid,
+outstanding, status, and — the thing the score's source cannot show — **payment count per invoice**,
+because `stg_cmp_invoice_payment` is a ledger while `postlimit_default_list` collapses partial
+payments into one figure.
+
+Deliberately its OWN route and its own fetch. Every other Watch read comes from our snapshot and
+never touches the warehouse; folding a live CMP query into the carrier detail would give that
+property up for the whole page. Loaded separately, the panel fails alone and says so — "the score
+above is unaffected — it is read from our own snapshot."
+
+Trap on the way: the DWH driver returns column names verbatim, and Postgres folds unquoted aliases to
+lower case. `as invoice_date` under a camelCase interface compiled fine and produced `undefined` on
+every field at runtime. Aliases are quoted now.
+
+### Does this move the needle on bad debt? Measured, not asserted.
+
+The position, from `octane.dim_company`: **786 debtors, 361 bad debtors, $7.58M total debt,
+$1.87M bad debt**, bad debtors averaging **139 days** overdue. **$1.42M of the $1.87M (76%) sits on
+LOC carriers** — which is Watch's population, so the surface is pointed at the right book.
+
+But the discrimination test comes back **inconclusive, and it is important to say so**. Of the 728
+carriers in the 2026-08-11 snapshot:
+
+| band | n | debtors | debt |
+| --- | --- | --- | --- |
+| High | 12 | 0 | $0 |
+| Elevated | 204 | 3 | $2,100 |
+| Watch | 406 | 8 | $6,398 |
+| Low | 106 | 0 | $0 |
+
+Mean score with debt **589.5** (n=10) vs without **598.5**. Nine points, on a scale where 20 points
+is a doubling of odds, with ten cases. That is not evidence of skill; it is not evidence of failure
+either. It is no evidence.
+
+**The reason is structural: the debtor exclusion removes the outcome population.** Watch scores
+carriers who have *not* gone bad, which is correct for how the model was fitted, but it means the
+desk cannot validate itself from its own snapshots.
+
+### What would actually settle it
+
+A backtest. Score the book as of a date 4–6 months back, then check whether the carriers who
+subsequently entered `is_bad_debtor` were in the bottom bands at that time. `postlimit_default_list`
+reaches back to 2025-07-16, and the feature query already filters payments to `< scoringDate`, so
+this is computable — one script, no new infrastructure. Until it is run, the honest claim for Watch
+is "ranks the book and shows why", not "predicts default".
