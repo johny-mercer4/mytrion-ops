@@ -14,6 +14,7 @@ import { request } from './transport';
 export const WATCH_BANDS = ['low', 'watch', 'elevated', 'high'] as const;
 export type WatchBand = (typeof WATCH_BANDS)[number];
 
+export type WatchSize = 'owner_operator' | 'company';
 export type WatchMovement = 'worsened' | 'improved';
 
 /** One carrier, one scoring date. Mirrors `mytrion_watch_scores`. */
@@ -25,6 +26,7 @@ export interface WatchScoreRow {
   companyName: string | null;
   agentName: string | null;
   creditLimit: number | null;
+  activeCards: number | null;
   sumContribution: number;
   logit: number;
   pdScore: number;
@@ -131,6 +133,7 @@ export interface WatchQueueFilter {
   offset?: number;
   band?: WatchBand;
   movement?: WatchMovement;
+  size?: WatchSize;
   search?: string;
   scoringDate?: string;
 }
@@ -157,6 +160,7 @@ export async function listWatchScores(
   if (filter.offset !== undefined) query.offset = filter.offset;
   if (filter.band) query.band = filter.band;
   if (filter.movement) query.movement = filter.movement;
+  if (filter.size) query.size = filter.size;
   if (filter.search) query.search = filter.search;
   if (filter.scoringDate) query.scoringDate = filter.scoringDate;
 
@@ -211,6 +215,10 @@ export interface CarrierInvoice {
   outstanding: number;
   status: string | null;
   paymentCount: number;
+  createDate: string | null;
+  debtDays: number | null;
+  /** Open by Billing's definition (PENDING/PARTIALLY_PAID and >= $1), not by arithmetic. */
+  isOpen: boolean;
   lastPaymentDate: string | null;
 }
 
@@ -218,6 +226,7 @@ export interface CarrierInvoiceContext {
   invoices: CarrierInvoice[];
   openCount: number;
   openAmount: number;
+  oldestOpenDays: number | null;
 }
 
 /**
@@ -254,4 +263,32 @@ export async function getWatchHistory(signal?: AbortSignal): Promise<{ points: P
   return (await request('GET', '/verification/watch/history', {
     ...(signal ? { signal } : {}),
   })) as { points: PortfolioPoint[] };
+}
+
+export interface MissedPrevention {
+  carrierId: string;
+  companyName: string | null;
+  agentName: string | null;
+  score: number;
+  band: WatchBand;
+  flaggedOn: string;
+  creditLimit: number | null;
+  wentBadOn: string;
+  warningDays: number;
+  amount: number;
+}
+
+export interface MissedPreventionReport {
+  items: MissedPrevention[];
+  carrierCount: number;
+  totalAmount: number;
+  medianWarningDays: number | null;
+  evidenceFrom: string | null;
+}
+
+/** Carriers Watch flagged that became bad debtors anyway. */
+export async function getMissedPreventions(signal?: AbortSignal): Promise<MissedPreventionReport> {
+  return (await request('GET', '/verification/watch/missed', {
+    ...(signal ? { signal } : {}),
+  })) as MissedPreventionReport;
 }

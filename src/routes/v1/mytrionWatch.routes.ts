@@ -11,6 +11,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { missedPreventions } from '../../modules/mytrionWatch/missedPrevention.js';
 import { watchService } from '../../modules/mytrionWatch/watchService.js';
 import { carrierInvoices } from '../../modules/mytrionWatch/invoiceContext.js';
 import { triggerCatalogJob } from '../../modules/jobs/adminTrigger.js';
@@ -31,6 +32,7 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   band: z.enum(WATCH_BANDS).optional(),
   movement: z.enum(['worsened', 'improved']).optional(),
+  size: z.enum(['owner_operator', 'company']).optional(),
   search: z.string().trim().min(1).max(120).optional(),
   scoringDate: z
     .string()
@@ -87,6 +89,16 @@ export async function mytrionWatchRoutes(app: FastifyInstance): Promise<void> {
   app.get('/verification/watch/history', auth, async (request) => {
     const ctx = requireWatchRead(request);
     return { points: await watchService.history(ctx) };
+  });
+
+  /**
+   * Carriers Watch flagged that went bad anyway. Its own route, like the invoice panel, because it
+   * is the only Watch read besides that one which touches the warehouse — so a slow DWH degrades
+   * this list alone and never the watchlist.
+   */
+  app.get('/verification/watch/missed', auth, async (request) => {
+    const ctx = requireWatchRead(request);
+    return missedPreventions(ctx);
   });
 
   app.get('/verification/watch/runs', auth, async (request) => {

@@ -728,3 +728,155 @@
   [data-mytrion='verification'] .mw-sk { animation: none; }
   [data-mytrion='verification'] .mw-row { transition: none; translate: 0; }
 }
+
+/* ------------------------------------------------------ what not acting cost
+ *
+ * A list, not a dashboard. Sized up deliberately: this is the one surface a non-specialist reads to
+ * understand why the desk exists, so the money and the days are the two things that must be legible
+ * from across a room.
+ */
+
+[data-mytrion='verification'] .mw-missed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+[data-mytrion='verification'] .mw-missed-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+}
+
+[data-mytrion='verification'] .mw-missed-figure {
+  font-size: var(--text-3xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-missed-lede {
+  max-width: 60ch;
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-missed-lede b { color: var(--text-primary); }
+
+[data-mytrion='verification'] .mw-missed-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+[data-mytrion='verification'] .mw-missed-fact {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  max-width: 46ch;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-missed-fact b { color: var(--text-primary); }
+[data-mytrion='verification'] .mw-missed-fact svg { flex: none; color: var(--text-muted); }
+
+[data-mytrion='verification'] .mw-missed-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-missed-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-left: 3px solid var(--mw-band, var(--text-muted));
+  border-radius: var(--vf-r-control);
+  background: var(--hz-pane);
+}
+
+[data-mytrion='verification'] .mw-missed-amount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-missed-amount svg { flex: none; opacity: 0.75; }
+
+[data-mytrion='verification'] .mw-missed-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-missed-name {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-mytrion='verification'] .mw-missed-sub {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-missed-story {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-missed-step b {
+  font-variant-numeric: tabular-nums;
+  color: var(--mw-band, var(--text-primary));
+}
+
+[data-mytrion='verification'] .mw-missed-arrow { color: var(--text-muted); }
+
+[data-mytrion='verification'] .mw-missed-lead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 5.5rem;
+}
+
+[data-mytrion='verification'] .mw-missed-lead b {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-missed-lead span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (width < 900px) {
+  [data-mytrion='verification'] .mw-missed-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  [data-mytrion='verification'] .mw-missed-story { grid-column: 1 / -1; flex-wrap: wrap; }
+}

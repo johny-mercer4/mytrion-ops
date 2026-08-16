@@ -366,19 +366,19 @@
 }
 
 [data-mytrion='verification'] .mw-tlabel {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
 }
 
 [data-mytrion='verification'] .mw-thelp {
-  font-size: var(--text-2xs);
-  line-height: 1.45;
+  font-size: var(--text-sm);
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
 [data-mytrion='verification'] .mw-tvalue {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -512,4 +512,165 @@
 [data-mytrion='verification'] .mw-tvalue[data-open] {
   color: var(--danger);
   font-weight: var(--fw-bold);
+}
+
+/* ------------------------------------------------------------------ invoices
+ *
+ * Deliberately LARGER than the rest of the detail page. This is the one panel a credit agent reads
+ * as a number rather than scans as a table, and the previous 4-column grid at --text-xs buried the
+ * only figure that matters under three that do not.
+ */
+
+[data-mytrion='verification'] .mw-inv-lede {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+[data-mytrion='verification'] .mw-inv-figure {
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-inv-figure[data-tone='late'] { color: var(--danger); }
+[data-mytrion='verification'] .mw-inv-figure[data-tone='open'] { color: var(--warning); }
+[data-mytrion='verification'] .mw-inv-figure[data-tone='settled'] { color: var(--success); }
+
+[data-mytrion='verification'] .mw-inv-caption {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-inv-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-control);
+  background: var(--surface-data);
+}
+
+/* A settled or void invoice is history, not a task — it recedes but stays legible. */
+[data-mytrion='verification'] .mw-inv-row[data-tone='settled'],
+[data-mytrion='verification'] .mw-inv-row[data-tone='void'] {
+  background: transparent;
+}
+
+[data-mytrion='verification'] .mw-inv-icon { flex: none; margin-top: 2px; color: var(--text-muted); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-icon { color: var(--danger); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='open'] .mw-inv-icon { color: var(--warning); }
+[data-mytrion='verification'] .mw-inv-row[data-tone='settled'] .mw-inv-icon { color: var(--success); }
+
+[data-mytrion='verification'] .mw-inv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-inv-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-inv-status {
+  padding: 1px var(--space-1_5);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-status {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+}
+[data-mytrion='verification'] .mw-inv-row[data-tone='open'] .mw-inv-status {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+
+[data-mytrion='verification'] .mw-inv-meta {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-inv-amounts {
+  display: flex;
+  gap: var(--space-4);
+  flex: none;
+}
+
+[data-mytrion='verification'] .mw-inv-amt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-end;
+  min-width: 5.5rem;
+}
+
+[data-mytrion='verification'] .mw-inv-amt-k {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-inv-amt-v {
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Only the money someone actually owes is emphasised. */
+[data-mytrion='verification'] .mw-inv-amt[data-owed] .mw-inv-amt-v {
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+[data-mytrion='verification'] .mw-inv-row[data-tone='late'] .mw-inv-amt[data-owed] .mw-inv-amt-v {
+  color: var(--danger);
+}
+
+[data-mytrion='verification'] .mw-inv-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-inv-row { flex-wrap: wrap; }
+  [data-mytrion='verification'] .mw-inv-amounts {
+    width: 100%;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  [data-mytrion='verification'] .mw-inv-amt { align-items: flex-start; min-width: 0; }
 }

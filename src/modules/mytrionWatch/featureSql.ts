@@ -31,6 +31,7 @@ export interface WatchFeatureRow {
   company_name: string | null;
   agent_name: string | null;
   credit_limit: string | null;
+  active_cards: number | null;
   pay_ratio_31d: string | null;
   payment_gap: string | null;
   longest_dormant_31d: number | null;
@@ -222,7 +223,8 @@ dormant AS (
 -- rows carried no numeric limit lost its NAME and AGENT too. The dimension covers all 728 scored
 -- carriers with a name and 726 with an agent, so nothing is lost by reading it directly.
 company AS (
-  SELECT carrier_id, company_name, agent AS agent_name, credit_limit
+  SELECT carrier_id, company_name, agent AS agent_name, credit_limit,
+         total_active_cards
   FROM octane.dim_company
 ),
 -- The dimension's credit_limit is populated for LOC carriers (all 2,429 of them) but is null or
@@ -241,6 +243,7 @@ SELECT
   co.company_name,
   co.agent_name,
   COALESCE(NULLIF(co.credit_limit, 0), pl.credit_limit)::text AS credit_limit,
+  co.total_active_cards                                      AS active_cards,
   CASE WHEN COALESCE(p31.invoiced, 0) = 0 THEN NULL
        ELSE (p31.paid / p31.invoiced) END::text              AS pay_ratio_31d,
   h.payment_gap::text                                        AS payment_gap,

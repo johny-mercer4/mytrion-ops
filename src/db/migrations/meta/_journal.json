@@ -890,6 +890,13 @@
       "when": 1786230000001,
       "tag": "0125_hr_file_storage_root",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1786235000001,
+      "tag": "0126_watch_active_cards",
+      "breakpoints": true
     }
   ]
 }

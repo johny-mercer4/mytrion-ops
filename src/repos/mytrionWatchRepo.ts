@@ -36,6 +36,12 @@ export interface WatchListFilter {
   search?: string | undefined;
   /** 'worsened' surfaces the carriers whose score fell since the previous snapshot. */
   movement?: 'worsened' | 'improved' | undefined;
+  /**
+   * Carrier size, in the Loyalty program's terms (`resolveTrack`): an owner-operator runs exactly
+   * one active card, anything more is a company. Carriers with no card count stay out of BOTH
+   * buckets rather than being guessed into one.
+   */
+  size?: 'owner_operator' | 'company' | undefined;
   scoringDate?: string | undefined;
 }
 
@@ -133,6 +139,8 @@ export const mytrionWatchRepo = {
     if (filter.band) clauses.push(sql`band = ${filter.band}`);
     if (filter.movement === 'worsened') clauses.push(sql`score_delta < 0`);
     if (filter.movement === 'improved') clauses.push(sql`score_delta > 0`);
+    if (filter.size === 'owner_operator') clauses.push(sql`active_cards = 1`);
+    if (filter.size === 'company') clauses.push(sql`active_cards > 1`);
     if (filter.search) {
       const needle = `%${filter.search.toLowerCase()}%`;
       clauses.push(
@@ -312,6 +320,47 @@ export const mytrionWatchRepo = {
   },
 
   /** Upsert a batch of scores. Re-running a date CORRECTS the row rather than adding a second. */
+  /**
+   * The worst score each carrier was ever given, but only where that was a WARNING.
+   *
+   * `distinct on (carrier_id) ... order by credit_score asc` is Postgres's cheapest "argmin": it
+   * keeps the row carrying the lowest score, so the date and band travel with it. Restricted to the
+   * two acting bands because a carrier who only ever sat in `watch` was never something the desk was
+   * asked to do anything about, and counting them would inflate the regret.
+   */
+  async worstFlagPerCarrier(ctx: TenantContext): Promise<Array<{
+    carrierId: string;
+    companyName: string | null;
+    agentName: string | null;
+    score: number;
+    band: string;
+    flaggedOn: string;
+    creditLimit: number | null;
+  }>> {
+    const rows = await db.execute<Record<string, unknown>>(sql`
+      select distinct on (carrier_id)
+        carrier_id            as "carrierId",
+        company_name          as "companyName",
+        agent_name            as "agentName",
+        credit_score::float8  as "score",
+        band                  as "band",
+        scoring_date::text    as "flaggedOn",
+        credit_limit::float8  as "creditLimit"
+      from mytrion_watch_scores
+      where tenant_id = ${ctx.tenantId} and band in ('high', 'elevated')
+      order by carrier_id, credit_score asc
+    `);
+    return rows as unknown as Array<{
+      carrierId: string;
+      companyName: string | null;
+      agentName: string | null;
+      score: number;
+      band: string;
+      flaggedOn: string;
+      creditLimit: number | null;
+    }>;
+  },
+
   async upsertScores(
     ctx: TenantContext,
     scores: Array<Omit<NewMytrionWatchScore, 'tenantId'>>,

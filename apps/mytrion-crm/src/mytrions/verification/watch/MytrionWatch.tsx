@@ -15,7 +15,7 @@ import { Tabs } from '@/ds';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchDetail } from './WatchDetail';
 import { WatchFreshness } from './WatchFreshness';
-import { WatchTimeline } from './WatchTimeline';
+import { WatchMissed } from './WatchMissed';
 import { WatchPager } from './WatchPager';
 import {
   BAND_LABEL,
@@ -32,6 +32,7 @@ import {
   watchNum,
   type WatchBand,
   type WatchMovement,
+  type WatchSize,
   type WatchQueueResult,
   type WatchScoreRow,
 } from '@/api/mytrionWatch';
@@ -42,11 +43,25 @@ const MOVEMENTS: ReadonlyArray<{ id: WatchMovement; label: string }> = [
   { id: 'improved', label: 'Improved' },
 ];
 
+/**
+ * Carrier size, in the Loyalty program's own terms.
+ *
+ * `_shared/loyalty.ts` defines T1 = Owner-Operator = exactly 1 active card, and everything above
+ * that is a company (T2 Small Company / T3 Fleet / Enterprise). Watch stores the raw card count and
+ * groups it here rather than re-deciding what an owner-operator is — two Mytrions disagreeing about
+ * that would be worse than not offering the filter.
+ */
+const SIZES: ReadonlyArray<{ id: WatchSize; label: string; hint: string }> = [
+  { id: 'owner_operator', label: 'Owner-operator', hint: 'Runs a single fuel card' },
+  { id: 'company', label: 'Carrier company', hint: 'Two or more fuel cards' },
+];
+
 const PAGE_SIZE = 50;
 
 export function MytrionWatch() {
   const [band, setBand] = useState<WatchBand | null>(null);
   const [movement, setMovement] = useState<WatchMovement | null>(null);
+  const [size, setSize] = useState<WatchSize | null>(null);
   const [term, setTerm] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -55,7 +70,7 @@ export function MytrionWatch() {
    * Two views of the same snapshots: who to look at now, and how the book has moved.
    * A sub-view rather than a Mytrion tab — it is the same data and the same department gate.
    */
-  const [view, setView] = useState<'watchlist' | 'timeline'>('watchlist');
+  const [view, setView] = useState<'watchlist' | 'missed'>('watchlist');
 
   // Typing a carrier name should not fire a query per keystroke against a 700-row snapshot.
   useEffect(() => {
@@ -73,12 +88,13 @@ export function MytrionWatch() {
         offset: page * PAGE_SIZE,
         ...(band ? { band } : {}),
         ...(movement ? { movement } : {}),
+        ...(size ? { size } : {}),
         ...(search ? { search } : {}),
       }),
-    [band, movement, search, page],
+    [band, movement, size, search, page],
   );
   const { data, loading, error, reload } = useCachedLoad(
-    `verification:watch:queue:${band ?? 'all'}:${movement ?? 'any'}:${search}:${page}`,
+    `verification:watch:queue:${band ?? 'all'}:${movement ?? 'any'}:${size ?? 'any'}:${search}:${page}`,
     load,
   );
 
@@ -124,13 +140,13 @@ export function MytrionWatch() {
         aria-label="Watch views"
         items={[
           { value: 'watchlist', label: 'Watchlist' },
-          { value: 'timeline', label: 'Historical timeline' },
+          { value: 'missed', label: 'What it cost' },
         ]}
         value={view}
-        onValueChange={(v) => setView(v as 'watchlist' | 'timeline')}
+        onValueChange={(v) => setView(v as 'watchlist' | 'missed')}
       />
 
-      {view === 'timeline' ? <WatchTimeline /> : null}
+      {view === 'missed' ? <WatchMissed /> : null}
 
       {view === 'watchlist' ? (
       <>
@@ -177,6 +193,20 @@ export function MytrionWatch() {
             onChange={(e) => setTerm(e.target.value)}
           />
         </span>
+        <div className="vf-chips" role="group" aria-label="Filter by carrier size">
+          {SIZES.map((sz) => (
+            <button
+              key={sz.id}
+              type="button"
+              title={sz.hint}
+              aria-pressed={size === sz.id}
+              className={`vf-chip${size === sz.id ? ' is-on' : ''}`}
+              onClick={() => { setSize(size === sz.id ? null : sz.id); setPage(0); }}
+            >
+              {sz.label}
+            </button>
+          ))}
+        </div>
         <div className="vf-chips" role="group" aria-label="Filter by movement">
           {MOVEMENTS.map((m) => (
             <button

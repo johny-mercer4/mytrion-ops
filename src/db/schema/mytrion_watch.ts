@@ -123,6 +123,8 @@ export const mytrionWatchScores = pgTable(
     companyName: text('company_name'),
     agentName: text('agent_name'),
     creditLimit: numeric('credit_limit', { precision: 14, scale: 2 }),
+    /** Active fuel cards. Bucketed by the Loyalty program's `resolveTrack()`, never here. */
+    activeCards: integer('active_cards'),
 
     /** Sum of woe x coef across the eight features, before the intercept. */
     sumContribution: numeric('sum_contribution', { precision: 14, scale: 6 }).notNull(),

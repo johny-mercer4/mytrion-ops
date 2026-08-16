@@ -171,6 +171,7 @@ export async function runScoring(
           companyName: row.company_name,
           agentName: row.agent_name,
           creditLimit: row.credit_limit,
+          activeCards: row.active_cards,
           sumContribution: result.sumContribution.toFixed(6),
           logit: result.logit.toFixed(6),
           pdScore: result.pdScore.toFixed(6),
