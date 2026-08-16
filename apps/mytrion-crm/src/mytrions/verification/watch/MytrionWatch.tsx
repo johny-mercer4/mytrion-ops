@@ -9,7 +9,7 @@
  * The aggregator tiles and the band bar always describe the WHOLE snapshot, never the current
  * filter — a counter that changes when you filter by it cannot be used to check your work.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus, Search, ShieldAlert } from 'lucide-react';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchDetail } from './WatchDetail';
@@ -30,6 +30,7 @@ import {
   watchNum,
   type WatchBand,
   type WatchMovement,
+  type WatchQueueResult,
   type WatchScoreRow,
 } from '@/api/mytrionWatch';
 import './mytrionWatch.css';
@@ -74,11 +75,29 @@ export function MytrionWatch() {
     load,
   );
 
-  const agg = data?.aggregates;
-  const rows = useMemo(() => data?.items ?? [], [data]);
-  const total = data?.total ?? 0;
+  /**
+   * Hold the last payload across a filter change.
+   *
+   * `useCachedLoad` keys its cache on the filter, so switching Worsened -> Improved is a cache MISS:
+   * `data` drops to null, `loading` goes true, and the populated list blanked to skeletons for the
+   * length of one request. That is the flicker — and it is the exact thing the house rule forbids
+   * ("refresh of already-visible content: keep the content and mark it stale; do not blank a
+   * populated panel back to a skeleton").
+   *
+   * The aggregates matter even more: they describe the WHOLE snapshot and are identical for every
+   * filter, so there is never a correct moment to blank them.
+   */
+  const lastGood = useRef<WatchQueueResult | null>(null);
+  if (data) lastGood.current = data;
+  const shown = data ?? lastGood.current;
+
+  const agg = shown?.aggregates;
+  const rows = useMemo(() => shown?.items ?? [], [shown]);
+  const total = shown?.total ?? 0;
   const filtered = Boolean(band || movement || search);
-  const run = data?.lastRun ?? null;
+  const run = shown?.lastRun ?? null;
+  /** Showing carried-over rows while the new set loads — dimmed, not replaced. */
+  const stale = loading && data === null && rows.length > 0;
 
   if (openId) return <WatchDetail carrierId={openId} onBack={() => setOpenId(null)} />;
 
@@ -87,9 +106,9 @@ export function MytrionWatch() {
       <div className="mw-head">
         <h2 className="mw-head-title">Behavioural watchlist</h2>
         <span className="mw-head-sub">
-          {data?.scoringDate ? (
+          {shown?.scoringDate ? (
             <>
-              Week of {fmtDate(data.scoringDate)}
+              Week of {fmtDate(shown.scoringDate)}
               {run?.finishedAt ? (
                 <> · scored {run.scoredCount} carriers in {fmtDuration(run.durationMs)}</>
               ) : run ? (
@@ -134,14 +153,17 @@ export function MytrionWatch() {
         <label className="sr-only" htmlFor="mw-search">
           Search by company or carrier id
         </label>
-        <input
-          id="mw-search"
-          className="mw-search"
-          type="search"
-          placeholder="Search company or carrier id…"
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-        />
+        <span className="mw-searchbox">
+          <Search size={14} aria-hidden />
+          <input
+            id="mw-search"
+            className="mw-search"
+            type="search"
+            placeholder="Search company or carrier id…"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+          />
+        </span>
         <div className="vf-chips" role="group" aria-label="Filter by movement">
           {MOVEMENTS.map((m) => (
             <button
@@ -167,7 +189,7 @@ export function MytrionWatch() {
 
       {loading && rows.length === 0 ? (
         <RowSkeletons />
-      ) : !data?.scoringDate ? (
+      ) : !shown?.scoringDate ? (
         <div className="mw-empty">
           <ShieldAlert size={22} aria-hidden />
           <span className="mw-empty-title">Nothing scored yet</span>
@@ -188,7 +210,7 @@ export function MytrionWatch() {
         </div>
       ) : (
         <>
-          <ul className="mw-rows">
+          <ul className="mw-rows" data-stale={stale || undefined} aria-busy={stale || undefined}>
             {rows.map((row) => (
               <li key={row.id}>
                 <WatchRow row={row} onOpen={() => setOpenId(row.carrierId)} />

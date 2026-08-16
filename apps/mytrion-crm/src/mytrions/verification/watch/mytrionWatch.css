@@ -187,10 +187,33 @@
   gap: var(--space-2);
 }
 
+/*
+ * A search box, not a form field.
+ *
+ * It was `--vf-field-h` (70px — the desk's big application-form input) stretched across the row by
+ * `flex: 1 1`, so the control that filters a list was the tallest thing on the page. Now the
+ * compact control height, capped, and it does not grow.
+ */
+[data-mytrion='verification'] .mw-searchbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 20rem;
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-searchbox svg {
+  position: absolute;
+  inset-inline-start: var(--space-2_5);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
 [data-mytrion='verification'] .mw-search {
-  flex: 1 1 14rem;
-  height: var(--vf-field-h);
-  padding: 0 var(--space-3);
+  width: 100%;
+  height: var(--vf-control-h);
+  /* Leading room for the icon; the trailing side keeps the native clear affordance clickable. */
+  padding: 0 var(--space-3) 0 var(--space-8);
   border: 1px solid var(--hz-pane-bd);
   border-radius: var(--vf-r-control);
   background: var(--hz-input-bg);
@@ -203,6 +226,11 @@
 [data-mytrion='verification'] .mw-search:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* Below the structure line the field takes the row it no longer has to share. */
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-searchbox { flex: 1 1 100%; }
 }
 
 /* ------------------------------------------------------------------ queue rows */
@@ -369,6 +397,17 @@
     width: 100%;
     text-align: left;
   }
+}
+
+/*
+ * Carried-over rows while the next filter loads.
+ *
+ * Dimmed, not replaced — and NOT animated, because the whole point is that the list stops flashing.
+ * `pointer-events: none` stops a click landing on a row that is about to be swapped out.
+ */
+[data-mytrion='verification'] .mw-rows[data-stale] {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* ------------------------------------------------------------------ pager */

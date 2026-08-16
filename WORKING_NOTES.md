@@ -17372,3 +17372,39 @@ One recorded, not built: the detail's score ribbon spans `highCut-80 .. watchCut
 clamps its marker. Today min is 489.96 and max 693.19, so nothing clamps, and the exact score sits
 beside the ribbon regardless. Building for it now would be error handling for a scenario that does
 not occur.
+
+## 2026-08-16 — Watch: the search box was a 70px form field, and filter switching blanked the list
+
+### Search input
+
+`.mw-search` used `--vf-field-h`, which is **70px** — the verification desk's big application-form
+input — and `flex: 1 1 14rem` stretched it across the row. The control that filters a list was the
+tallest element on the page. Now `--vf-control-h` (34px), `flex: 0 1 20rem` so it does not grow, and
+a leading Search icon in a positioned wrapper. Below 640 it takes the full row, which it no longer
+has to share.
+
+### The flicker
+
+Reported as happening "initially", and that word was the clue. `useCachedLoad` keys its cache on the
+filter, so Worsened → Improved is a cache MISS. Reading the hook rather than guessing: a different
+key with no cache does `setData(null)` and then, because `hasData` was just cleared,
+`setLoading(true)`. So the populated list fell to `RowSkeletons` for the length of one request —
+**only the first time**, because the second visit to that filter is a cache hit that swaps instantly.
+That is exactly the house rule's "do not blank a populated panel back to a skeleton".
+
+Two of the three symptoms were worse than the skeletons:
+
+- the header fell back to **"No snapshot yet"**, and
+- the empty-state guard read `data?.scoringDate`, so it could render **"Nothing scored yet"** over a
+  desk with 728 carriers in it.
+
+Fix: hold the last payload in a ref and render `data ?? lastGood`, marking the carried rows stale
+(dimmed, `pointer-events: none`, `aria-busy`) rather than replacing them. The aggregate tiles matter
+most — they describe the whole snapshot and are identical for every filter, so there is never a
+correct moment to blank them.
+
+`MytrionWatch.test.tsx` covers it, and the tests are honest about the cache: `beforeEach` calls
+`invalidateSwrCache`, because a warm cache makes the fix look unnecessary — which is precisely why
+this only ever reproduced on the first switch. **A/B verified: 3 of the 4 fail with the fix
+reverted.** The fourth (the "Nothing scored yet" guard) passes either way, because the skeleton
+branch short-circuits before reaching it — that flicker was latent, not visible.
