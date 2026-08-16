@@ -380,6 +380,7 @@ export const mytrionWatchRepo = {
           companyName: sql`excluded.company_name`,
           agentName: sql`excluded.agent_name`,
           creditLimit: sql`excluded.credit_limit`,
+          activeCards: sql`excluded.active_cards`,
           sumContribution: sql`excluded.sum_contribution`,
           logit: sql`excluded.logit`,
           pdScore: sql`excluded.pd_score`,

@@ -352,3 +352,37 @@ describe('a re-run replaces a date, it does not merge with it', () => {
     expect(guard).toMatch(/pruneScoresNotIn/);
   });
 });
+
+describe('the upsert refreshes every column it inserts', () => {
+  /**
+   * `onConflictDoUpdate` enumerates its `set` columns by hand, so a column added to the INSERT but
+   * forgotten in the SET is written on a first run and silently discarded on every re-run. That is
+   * not hypothetical: `active_cards` shipped exactly that way and read NULL across all 725 rows
+   * after a full re-score, which would have made the owner-operator filter match nothing.
+   *
+   * Compared against the schema rather than a hand-written list, so a new column fails this test
+   * until it is either refreshed or explicitly excluded below.
+   */
+  it('covers every mutable column of mytrion_watch_scores', async () => {
+    const src = readFileSync(
+      new URL('../../src/repos/mytrionWatchRepo.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    const setBlock = src.match(/onConflictDoUpdate\(\{[\s\S]*?set: \{([\s\S]*?)\n {8}\},/)?.[1] ?? '';
+    expect(setBlock).not.toBe('');
+
+    const schema = readFileSync(
+      new URL('../../src/db/schema/mytrion_watch.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    const scoresTable = schema.match(
+      /export const mytrionWatchScores = pgTable\([\s\S]*?\n {2}\(table\) =>/,
+    )?.[0] ?? '';
+    const columns = [...scoresTable.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1] as string);
+
+    // Identity of the row, or set once at creation — refreshing these would be wrong.
+    const IMMUTABLE = new Set(['id', 'tenantId', 'scoringDate', 'carrierId', 'createdAt']);
+    const missing = columns.filter((c) => !IMMUTABLE.has(c) && !setBlock.includes(`${c}:`));
+    expect(missing).toEqual([]);
+  });
+});

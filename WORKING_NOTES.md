@@ -17787,3 +17787,25 @@ and the other an AVERAGE, so uniform replication cancels in both. Equivalent, an
 
 Adding the comment above broke the build: the JS template literal terminated on a backtick inside
 SQL. Same trap as earlier this session. No backticks in `WATCH_FEATURE_SQL` comments.
+
+### Same bug, second time: a hand-maintained upsert column list
+
+`active_cards` shipped NULL across all 725 rows of the latest snapshot even after a full re-score.
+`upsertScores` uses `onConflictDoUpdate` with a hand-enumerated `set` list; the column was added to
+the INSERT and not to the SET, so it would persist on a first write and be silently discarded on
+every re-run — and since the row already existed, every write WAS a re-run. The owner-operator
+filter would have matched nothing.
+
+This is the second defect today from the same shape (the first was `upsertScores` never pruning
+carriers who left the population). The new test derives the expected column set FROM
+`src/db/schema/mytrion_watch.ts` rather than a hand-written list, so a future column fails until it
+is refreshed or explicitly listed immutable. Confirmed it fails on the real bug by reverting the
+one-line fix: `expected [ 'activeCards' ] to deeply equal []`.
+
+Process note worth keeping: typecheck and 3,118 tests were green while the feature was broken,
+because nothing in the suite reads a real row. A single verification query against prod would have
+caught it BEFORE the commit, not after. Verify data-backed features against data.
+
+Populated after the fix, 2026-08-11: 259 owner-operator / 454 company / 12 with no active card
+(left out of both buckets rather than guessed into one). At-risk split: 40 of 259 owner-operators,
+65 of 454 companies.
