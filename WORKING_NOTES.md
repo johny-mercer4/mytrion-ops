@@ -17223,3 +17223,35 @@ light. Contrast passes AA everywhere. The problem was hierarchy and sizing, not 
 Not verified in a browser: jsdom does no layout, and `audit:mobile` drives routes, not a modal
 opened from the account menu. The token, ladder and budget claims are machine-checked; the visual
 result is not.
+
+## 2026-08-16 — ds/Tabs owned neither the seam nor its own hairline
+
+Reported as "no padding between the tab and its content" on the profile modal. It was two defects in
+`ds/Tabs`, not one, and both affected every consumer.
+
+**1. No seam.** `.root` is a column flex with no `gap`, and `.panel` sets only `min-inline-size`. The
+panel sat flush against the rail, so a field label rendered directly under the selected-tab
+indicator and the control read as part of the content. Added `--tabs-gap`, scaled with the control
+like `--tabs-h`: `--space-4` at `md`, `--space-3` at `sm`.
+
+**2. The hairline was under the PANEL.** `.root[data-variant='line']` put `border-block-end` on the
+root — which contains the rail *and* the panel — so the rule painted under the panel's last line of
+content. Meanwhile the selected-tab indicator is positioned `inset-block-end: calc(-1 *
+var(--tabs-ring-pad))` with a comment saying it "sits flush on top of the hairline", and had nothing
+beneath it. Moved the border to `.list`, where the rail's bottom edge actually is.
+
+`verificationModal.css` had been compensating with `padding-block-start: var(--space-4)` on
+`[role='tabpanel']` — a local workaround for a gap the component should own. Removed, or it would
+now double.
+
+### Verified in a real browser, not jsdom
+
+jsdom does no layout, so the suite could not see either defect. Captured the component clipped from
+`/kitchen` over CDP, before and after, using the harness's documented before/after workflow:
+
+- **before** — indicator, then panel content flush beneath it; a stray rule at the bottom of the
+  panel. Clip height **145px**.
+- **after** — indicator, hairline directly under the rail, clear gap, then content. Clip height
+  **161px**.
+
++16px, exactly `--space-4`. The profile modal uses `size="sm"`, so it gets the 12px seam.

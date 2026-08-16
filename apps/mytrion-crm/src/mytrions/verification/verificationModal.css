@@ -356,7 +356,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  padding-block-start: var(--space-4);
+  /* The rail-to-panel seam is `ds/Tabs`'s now (`--tabs-gap`); a local padding here would double it. */
 }
 
 [data-mytrion='verification'] .vf-attach {
