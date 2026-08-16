@@ -12,6 +12,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { watchService } from '../../modules/mytrionWatch/watchService.js';
+import { triggerCatalogJob } from '../../modules/jobs/adminTrigger.js';
+import { mytrionWatchScoringJob } from '../../modules/jobs/catalog.js';
 import { WATCH_BANDS } from '../../db/schema/mytrion_watch.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment, requireMytrionWrite } from './helpers.js';
@@ -69,33 +71,31 @@ export async function mytrionWatchRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Re-score. Admin-only as a preHandler so the check cannot be skipped by an early return, and
-   * because a full run queries a shared analytics database for several seconds.
+   * Re-score the book — the same work the daily cron does.
+   *
+   * ENQUEUES the job rather than running it inline. A full run takes ~77 seconds against the
+   * warehouse, and the previous version awaited it inside the request: any button wired to that
+   * would hit the proxy timeout and report failure while the run carried on to completion. The
+   * queue is a singleton, so two agents pressing this at once collapse into one run.
+   *
+   * Gated on verification WRITE, not admin: refreshing the desk you are reading is a desk action,
+   * and the singleton policy is what makes it safe to expose.
    */
-  app.post(
-    '/verification/watch/run',
-    { onRequest: [app.authenticate], preHandler: [app.requireRole('admin')] },
-    async (request) => {
-      const ctx = requireWatchWrite(request);
-      const body = runBody.parse(request.body ?? {});
-      const result = await watchService.runScoring(ctx, {
-        trigger: 'manual',
-        ...(body.scoringDate ? { scoringDate: body.scoringDate } : {}),
-        ...(body.carrierId ? { carrierId: body.carrierId } : {}),
-      });
-      await auditFromContext(ctx, {
-        action: 'mytrion_watch.scoring_run',
-        status: 'ok',
-        resourceType: 'mytrion_watch_run',
-        resourceId: result.scoringDate,
-        detail: {
-          scored: result.scored,
-          durationMs: result.durationMs,
-          carrierId: body.carrierId ?? null,
-          unmatchedFeatures: result.unmatchedFeatures,
-        },
-      });
-      return result;
-    },
-  );
+  app.post('/verification/watch/run', auth, async (request, reply) => {
+    const ctx = requireWatchWrite(request);
+    const body = runBody.parse(request.body ?? {});
+    const job = await triggerCatalogJob(mytrionWatchScoringJob.name, {
+      trigger: 'manual',
+      ...(body.scoringDate ? { scoringDate: body.scoringDate } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'mytrion_watch.scoring_run',
+      status: 'ok',
+      resourceType: 'mytrion_watch_run',
+      resourceId: body.scoringDate ?? 'today',
+      detail: { jobId: job.jobId, queue: job.name },
+    });
+    // 202: accepted, not done. The desk polls the run row for completion.
+    return reply.code(202).send({ queued: true, jobId: job.jobId });
+  });
 }

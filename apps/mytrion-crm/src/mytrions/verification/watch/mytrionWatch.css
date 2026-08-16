@@ -90,6 +90,102 @@
 [data-mytrion='verification'] .mw-stat[data-tone='bad'] .mw-stat-value { color: var(--danger); }
 [data-mytrion='verification'] .mw-stat[data-tone='ok'] .mw-stat-value { color: var(--success); }
 
+/* ------------------------------------------------------------------ freshness */
+
+/*
+ * How old the numbers are, and the control that changes that.
+ *
+ * Promoted out of the header's muted footnote: with a daily run, "updated 4 hours ago" is the
+ * difference between reading this morning's book and last week's, so it gets a surface of its own.
+ */
+[data-mytrion='verification'] .mw-fresh {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2_5) var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-panel);
+  background: var(--hz-pane);
+  box-shadow: var(--hz-glass-inset);
+}
+
+[data-mytrion='verification'] .mw-fresh-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+[data-mytrion='verification'] .mw-fresh-label {
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-caps-micro, 0.08em);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-fresh-value {
+  font-size: var(--text-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-fresh-detail {
+  grid-column: 1;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+[data-mytrion='verification'] .mw-fresh-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--warning);
+}
+
+[data-mytrion='verification'] .mw-refresh {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  height: var(--vf-control-h);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--vf-r-control);
+  background: var(--hz-pane-alt);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--hz-dur-tone, 160ms) var(--hz-ease, ease),
+    color var(--hz-dur-tone, 160ms) var(--hz-ease, ease);
+}
+
+[data-mytrion='verification'] .mw-refresh:hover:not(:disabled),
+[data-mytrion='verification'] .mw-refresh:focus-visible {
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hz-pane-bd));
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-refresh:disabled { cursor: progress; opacity: 0.7; }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-mytrion='verification'] .mw-refresh-spin { animation: mw-spin 900ms linear infinite; }
+}
+
+@keyframes mw-spin {
+  to { rotate: 360deg; }
+}
+
+@media (width < 640px) {
+  [data-mytrion='verification'] .mw-fresh { grid-template-columns: minmax(0, 1fr); }
+  [data-mytrion='verification'] .mw-refresh { grid-column: 1; grid-row: auto; justify-content: center; }
+}
+
 /* ------------------------------------------------------------------ band distribution bar */
 
 /*

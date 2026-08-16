@@ -163,3 +163,24 @@ export function fmtDuration(ms: number | null | undefined): string {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
+
+/**
+ * "4 minutes ago" / "yesterday" — how fresh the snapshot on screen is.
+ *
+ * The desk's first question about a score is how old it is, and an absolute timestamp makes the
+ * reader do the arithmetic. Past-only by design: a future timestamp is a clock problem, and
+ * "in 3 hours" would read as a bug rather than reporting one.
+ */
+export function fmtSince(iso: string | null | undefined): string {
+  if (!iso) return 'never';
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return 'unknown';
+  const mins = Math.floor((Date.now() - then) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}

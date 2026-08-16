@@ -89,13 +89,19 @@ const num = (v: string | number | null | undefined): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** The Monday on or before `d` — the model is defined on weekly cuts. */
-export function mondayOf(d: Date): string {
-  const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const dow = copy.getUTCDay(); // 0 = Sunday
-  const back = dow === 0 ? 6 : dow - 1;
-  copy.setUTCDate(copy.getUTCDate() - back);
-  return copy.toISOString().slice(0, 10);
+/**
+ * The date a run scores, as `YYYY-MM-DD`.
+ *
+ * Every feature is a rolling window measured back from this date, and the query takes transactions
+ * strictly BEFORE it — so a run on any given morning scores the book as it stood at close of
+ * yesterday. It used to snap to the Monday, which was right while the job was weekly and wrong the
+ * moment it went daily: every run would have overwritten the same Monday row and the desk would
+ * have shown a date that never moved.
+ */
+export function scoringDateFor(d: Date): string {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
 }
 
 export interface WatchRunResult {
@@ -109,15 +115,16 @@ export interface WatchRunResult {
 /**
  * Score the whole book for one date and persist the snapshot.
  *
- * Movement is computed against the most recent EARLIER snapshot rather than "last week" exactly, so
- * a missed run shows as a bigger delta instead of a null.
+ * Movement is computed against the most recent EARLIER snapshot, whatever its date — so a missed
+ * run shows as a bigger delta instead of a null, and the cadence can change without the comparison
+ * breaking.
  */
 export async function runScoring(
   ctx: TenantContext,
   opts: { scoringDate?: string; trigger?: 'cron' | 'manual'; carrierId?: string } = {},
 ): Promise<WatchRunResult> {
   return withWatchSchemaGuard(async () => {
-    const scoringDate = opts.scoringDate ?? mondayOf(new Date());
+    const scoringDate = opts.scoringDate ?? scoringDateFor(new Date());
     const trigger = opts.carrierId ? 'single' : (opts.trigger ?? 'cron');
     const started = Date.now();
     const runId = await mytrionWatchRepo.startRun(ctx, {

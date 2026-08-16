@@ -82,7 +82,7 @@ export function WatchDetail({ carrierId, onBack }: { carrierId: string; onBack: 
               <Fact k="Carrier">{score.carrierId}</Fact>
               <Fact k="Approved limit">{fmtMoney(watchNum(score.creditLimit))}</Fact>
               <Fact k="Chance of default">{fmtPd(watchNum(score.pdScore))}</Fact>
-              <Fact k="Since last week">
+              <Fact k="Since previous run">
                 <span className="mw-delta" data-dir={dir}>
                   <DeltaIcon size={12} aria-hidden />
                   {delta === null ? 'First snapshot' : fmtDelta(delta)}

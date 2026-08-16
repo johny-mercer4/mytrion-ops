@@ -370,8 +370,9 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: stri
   // Created_Time watermark makes a re-run cheap.
   { name: verificationCaseIngestJob.name, cron: '*/20 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
-  // 06:10 every Monday — after the warehouse's overnight load, before the desk opens.
-  { name: mytrionWatchScoringJob.name, cron: '10 6 * * 1' },
+  // 06:10 DAILY — after the warehouse's overnight load, before the desk opens. Was weekly; a
+  // credit agent looking at Thursday's book should not be reading Monday's numbers.
+  { name: mytrionWatchScoringJob.name, cron: '10 6 * * *' },
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
@@ -392,6 +393,8 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   retentionDeadlineSweepJob.name,
   referralBonusCalcJob.name,
   verificationCaseIngestJob.name,
+  // The desk's "Refresh scoring" button enqueues this rather than running it inline.
+  mytrionWatchScoringJob.name,
   verificationRecheckJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,

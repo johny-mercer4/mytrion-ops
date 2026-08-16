@@ -184,18 +184,20 @@ export async function listWatchRuns(signal?: AbortSignal): Promise<{ runs: Watch
   return data as { runs: WatchRun[] };
 }
 
-export interface WatchRunResult {
-  scoringDate: string;
-  scored: number;
-  skipped: number;
-  durationMs: number;
-  unmatchedFeatures: Record<string, number>;
+/** The run is QUEUED, not finished — poll `lastRun` for completion. */
+export interface WatchRunQueued {
+  queued: boolean;
+  jobId: string;
 }
 
-/** Admin-only on the server — a full run queries the warehouse for several seconds. */
+/**
+ * Ask for a re-score. Returns as soon as the job is on the queue.
+ *
+ * A full run takes about a minute against the warehouse, so this deliberately does not wait for it;
+ * the desk watches `lastRun.finishedAt` instead.
+ */
 export async function runWatchScoring(
-  body: { scoringDate?: string; carrierId?: string } = {},
-): Promise<WatchRunResult> {
-  const data = await request('POST', '/verification/watch/run', { body });
-  return data as WatchRunResult;
+  body: { scoringDate?: string } = {},
+): Promise<WatchRunQueued> {
+  return (await request('POST', '/verification/watch/run', { body })) as WatchRunQueued;
 }

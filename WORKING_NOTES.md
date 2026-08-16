@@ -17408,3 +17408,47 @@ correct moment to blank them.
 this only ever reproduced on the first switch. **A/B verified: 3 of the 4 fail with the fix
 reverted.** The fourth (the "Nothing scored yet" guard) passes either way, because the skeleton
 branch short-circuits before reaching it — that flicker was latent, not visible.
+
+## 2026-08-16 — Watch runs daily, refreshes on demand; intake fields were 70px
+
+### Daily, not weekly
+
+Cron `10 6 * * 1` → `10 6 * * *`. Two things had to move with it, or the change would have been
+silently wrong:
+
+- **`mondayOf` → `scoringDateFor`.** The default scoring date snapped to the Monday. Correct while
+  weekly; the moment it went daily every run would have overwritten the same Monday row and the
+  date on the desk would never have moved.
+- **Cadence copy.** "score fell since last week" → "since the previous run"; the detail's
+  "Since last week" → "Since previous run". The delta was always computed against the most recent
+  EARLIER snapshot whatever its date, so only the words were wrong — but they would have been wrong
+  on every row.
+
+### Refresh — the trap
+
+`POST /verification/watch/run` awaited `runScoring` **inline**. A full run is ~77 seconds against
+Render, so a button wired to it would hit the proxy timeout and report failure while the run carried
+on — the user retries, and only the queue stops a stampede. It now enqueues the existing pg-boss job
+and answers **202**; the desk polls `lastRun.finishedAt`.
+
+Gate moved from admin-only to verification **write**: refreshing the desk you are reading is a desk
+action, and the singleton queue policy is what makes it safe to expose. Flagged in case admin-only
+was deliberate. `mytrion-watch-run-route.test.ts` pins all of it, including that `runScoring` is
+never called from the request.
+
+### Last update, promoted
+
+It was a muted footnote in the header. Now its own surface: **"Last updated · 4 hours ago"** with the
+run's carrier count and duration under it, and the Refresh button beside it. While a run is in
+flight the value reads "scoring now…", the button spins and disables, and the page polls every 6s —
+giving up after 4 minutes with "it will finish on its own" rather than spinning forever.
+
+### Intake fields
+
+`.vfx-input` / `.vfx-select` / `.vfx-textarea` stood on `--vf-field-h`, which is **70px** — the
+roster's big display-field token — so an application form of twelve of them read as a wall. That is
+more than double the app's own control: `ds/Input` is **32px**. Now a local `--vfx-field-h: 36px`,
+which keeps a comfortable target for a form the desk types into all day without inventing a height
+nothing else uses. Same root cause as the Watch search box last commit.
+
+Impeccable detector clean (exit 0) across `mytrions/verification`.

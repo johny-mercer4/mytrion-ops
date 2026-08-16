@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus, Search, ShieldAlert } from 'lucide-react';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchDetail } from './WatchDetail';
+import { WatchFreshness } from './WatchFreshness';
 import { WatchPager } from './WatchPager';
 import {
   BAND_LABEL,
@@ -20,7 +21,6 @@ import {
   BAND_SHORT,
   fmtDate,
   fmtDelta,
-  fmtDuration,
   fmtMoney,
   fmtMoneyShort,
   fmtScore,
@@ -70,7 +70,7 @@ export function MytrionWatch() {
       }),
     [band, movement, search, page],
   );
-  const { data, loading, error } = useCachedLoad(
+  const { data, loading, error, reload } = useCachedLoad(
     `verification:watch:queue:${band ?? 'all'}:${movement ?? 'any'}:${search}:${page}`,
     load,
   );
@@ -106,20 +106,11 @@ export function MytrionWatch() {
       <div className="mw-head">
         <h2 className="mw-head-title">Behavioural watchlist</h2>
         <span className="mw-head-sub">
-          {shown?.scoringDate ? (
-            <>
-              Week of {fmtDate(shown.scoringDate)}
-              {run?.finishedAt ? (
-                <> · scored {run.scoredCount} carriers in {fmtDuration(run.durationMs)}</>
-              ) : run ? (
-                <> · scoring run still in progress</>
-              ) : null}
-            </>
-          ) : (
-            'No snapshot yet'
-          )}
+          {shown?.scoringDate ? `Snapshot of ${fmtDate(shown.scoringDate)}` : 'No snapshot yet'}
         </span>
       </div>
+
+      <WatchFreshness lastRun={run} onRefreshed={reload} />
 
       <div className="mw-stats">
         {loading && !agg ? (
@@ -128,8 +119,8 @@ export function MytrionWatch() {
           <>
             <Stat label="Carriers scored" value={String(agg?.total ?? 0)} hint="fuelled in the last 31 days" />
             <Stat label="Average score" value={fmtScore(watchNum(agg?.avgScore))} hint="across the snapshot" />
-            <Stat label="Worsened" value={String(agg?.worsened ?? 0)} hint="score fell since last week" tone="bad" />
-            <Stat label="Improved" value={String(agg?.improved ?? 0)} hint="score rose since last week" tone="ok" />
+            <Stat label="Worsened" value={String(agg?.worsened ?? 0)} hint="score fell since the previous run" tone="bad" />
+            <Stat label="Improved" value={String(agg?.improved ?? 0)} hint="score rose since the previous run" tone="ok" />
             <Stat
               label="Exposure at risk"
               value={fmtMoneyShort(watchNum(agg?.exposureAtRisk))}
