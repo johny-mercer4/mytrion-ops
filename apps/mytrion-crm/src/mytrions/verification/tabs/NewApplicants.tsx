@@ -68,11 +68,22 @@ const APPLICANT_LABEL: Record<string, string> = {
   company: 'Company',
 };
 
-export function NewApplicants() {
+export interface NewApplicantsProps {
+  /**
+   * Open straight into this case. Main's "Needs you today" rows hand a case over rather than
+   * dropping the agent on a list they then have to search — read ONCE, at mount, because
+   * ModuleShell unmounts inactive tabs.
+   */
+  initialCaseId?: string | null;
+  /** Fires when the workspace is closed, so the caller can drop the id it handed over. */
+  onCloseCase?: () => void;
+}
+
+export function NewApplicants({ initialCaseId, onCloseCase }: NewApplicantsProps = {}) {
   // Default to ALL. Defaulting to "ready to work" showed an empty state on a desk that had three
   // cases in it — the first thing an agent saw was "nothing here" while the counters said otherwise.
   const [scope, setScope] = useState<Scope>('all');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialCaseId ?? null);
 
   const load = useCallback(() => listDeskCases({ limit: 200 }), []);
   const { data, loading, error, reload } = useCachedLoad('verification:flow:cases', load);
@@ -90,6 +101,7 @@ export function NewApplicants() {
         caseId={openId}
         onBack={() => {
           setOpenId(null);
+          onCloseCase?.();
           void reload();
         }}
       />

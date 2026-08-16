@@ -68,6 +68,15 @@ export interface ModuleShellProps {
   navLabel: string;
   /** The Main/Home tab id — always first, always built (it's the launcher). */
   tabs: ModuleTab[];
+  /**
+   * A module's own Main page, replacing the built-in hero + Workspaces grid.
+   *
+   * Opt-in and unset for every module but Verification, whose Main is a decisioning dashboard
+   * rather than a launcher. It receives the same `open` the sidebar uses — already re-checked
+   * against the caller's tab grants — and the visible non-Main tabs, so a custom Main can render
+   * its own launchers without reaching around the access layer to rebuild the list.
+   */
+  renderMain?: (api: { open: (tabId: string) => void; launchers: ModuleTab[] }) => ReactNode;
 }
 
 /** Consecutive `group` values become one labelled section. Missing group → no heading. */
@@ -100,6 +109,7 @@ export function ModuleShell({
   heroBlurb,
   navLabel,
   tabs,
+  renderMain,
 }: ModuleShellProps) {
   const user = useUserContext();
   // Layer-2 access predicate AND the permission-set tab grant. One line covers Verification and
@@ -140,7 +150,9 @@ export function ModuleShell({
         <div className="ms-root">
           {active ? (
             <div className="ms-page">
-              {isMain ? (
+              {isMain && renderMain ? (
+                renderMain({ open, launchers })
+              ) : isMain ? (
                 <>
                   <div className="ms-hero">
                     <div className="ms-hero-glow" />

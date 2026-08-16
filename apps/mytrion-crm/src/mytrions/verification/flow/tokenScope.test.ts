@@ -35,6 +35,7 @@ const SALES_SCOPED = [
 const ROOTS = [
   join(process.cwd(), 'src/mytrions/verification/flow'),
   join(process.cwd(), 'src/mytrions/verification/tabs'),
+  join(process.cwd(), 'src/mytrions/verification/main'),
 ];
 
 function walk(dir: string): string[] {
