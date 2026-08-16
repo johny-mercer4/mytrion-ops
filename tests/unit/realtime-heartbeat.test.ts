@@ -127,7 +127,7 @@ describe('ws heartbeat — live', () => {
       tenantId: DEFAULT_TENANT_ID,
       audience: 'internal',
       role: 'worker',
-      worker: { zohoUserId: '42', userName: 'Robiya', profile: 'Sales Rep' },
+      worker: { zohoUserId: '42', userName: 'CI Test Admin', profile: 'Sales Rep' },
     });
     const ws = new WebSocket(`${address.replace('http', 'ws')}/v1/realtime?token=${token}`);
 

@@ -148,14 +148,14 @@ describe('auditFromContext — full actor identity on every row', () => {
       scopes: [],
       departments: ['sales'],
       allDepartmentAccess: false,
-      userName: 'Rep Riley',
+      userName: 'CI Test Admin',
       impersonatorUserId: 'zoho:1',
       requestId: 'rq-3',
     };
     await auditFromContext(ctx, { action: 'tool.call', status: 'ok', toolName: 'crm.list_my_clients' });
     expect(lastInserted()).toMatchObject({
       userId: 'zoho:777',
-      userName: 'Rep Riley',
+      userName: 'CI Test Admin',
       impersonatorUserId: 'zoho:1',
       toolName: 'crm.list_my_clients',
     });

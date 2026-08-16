@@ -127,6 +127,7 @@ function toDeal(r: Record<string, unknown>): Deal {
     cycle: str(r.Billing_Cycle),
     verify: toVerify(r.Billing_Verification),
     avgDays: toNum(r.Avg_Payment_Days),
+    firstSwipeDate: str(r.First_Swipe_Date),
   };
 }
 
@@ -578,6 +579,7 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
             <div className="tx-detail-section-title">Deal Info</div>
             <DetailRow label="Carrier ID" value={<span style={{ fontFamily: MONO }}>{deal.carrierId || '—'}</span>} />
             <DetailRow label="Application Date" value={deal.appDate || '—'} />
+            <DetailRow label="First Swiped" value={deal.firstSwipeDate || 'Never swiped'} />
             <DetailRow
               label="Avg Days to Pay"
               value={

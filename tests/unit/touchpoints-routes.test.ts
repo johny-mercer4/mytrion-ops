@@ -62,7 +62,7 @@ async function salesToken(): Promise<string> {
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — re-derived from the profile at verify
-    worker: { zohoUserId: '42', userName: 'Robiya', profile: 'Sales Rep' },
+    worker: { zohoUserId: '42', userName: 'CI Test Admin', profile: 'Sales Rep' },
   });
 }
 

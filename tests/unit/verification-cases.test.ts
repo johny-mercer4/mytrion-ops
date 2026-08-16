@@ -158,8 +158,10 @@ describe('verificationCasesSchemaError', () => {
     expect(mapped?.statusCode).toBe(503);
     expect(mapped?.code).toBe('VERIFICATION_CASES_NOT_MIGRATED');
     expect(mapped?.expose).toBe(true);
-    expect(mapped?.message).toContain('pnpm dev:local-db');
-    expect(mapped?.message).toContain('Do not migrate a remote/prod URL');
+    expect(mapped?.message).toContain('pnpm db:migrate');
+    // One database everywhere — the message must not send anyone to a different one.
+    expect(mapped?.message).not.toContain('dev:local-db');
+    expect(mapped?.message).toContain('ONE database in every environment');
   });
 
   it('leaves unrelated errors alone', () => {
@@ -253,6 +255,34 @@ describe('getVerificationCase', () => {
       firstRunError: null,
       cpOwnerUsername: null,
       updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      // New-era flow columns (migration 0121). A legacy Zoho-ingested case is red and un-submitted
+      // as far as the new flow is concerned — it never went through Sales intake.
+      verificationProcess: false,
+      origin: 'zoho_deal',
+      applicantType: null,
+      underwritingRoute: null,
+      phaseCode: 'p1_intake',
+      statusCode: 'intake_incomplete',
+      phaseChangedAt: null,
+      ein: null,
+      residentialAddress: null,
+      businessAddress: null,
+      ssnLast4: null,
+      dlLast4: null,
+      dlState: null,
+      trucksCount: null,
+      fuelCardsRequested: null,
+      requestedLimit: null,
+      bankingSource: null,
+      plaidConnected: false,
+      submittedAt: null,
+      submittedByZohoUserId: null,
+      intakeMissing: [],
+      outcomeCode: null,
+      approvedLimitAmount: null,
+      decidedAt: null,
+      decidedBy: null,
+      closedAt: null,
     });
     vi.spyOn(verificationCaseStageRepo, 'listForCase').mockResolvedValue([]);
     syncMock.mockRejectedValue(new Error('verification db unreachable'));

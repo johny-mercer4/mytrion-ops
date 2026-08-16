@@ -90,7 +90,10 @@ export interface Pagination {
  * page the user scrolls.
  */
 export function normalizePagination(
-  input?: { limit?: number; offset?: number },
+  // `| undefined` on each field, not just on `input`: under `exactOptionalPropertyTypes` a caller
+  // holding a filter whose own `limit` is `number | undefined` cannot pass it otherwise, and every
+  // route filter is shaped that way. Widening a parameter only admits more callers.
+  input?: { limit?: number | undefined; offset?: number | undefined },
   maxLimit = 200,
 ): Pagination {
   const limit = Math.min(Math.max(input?.limit ?? 50, 1), maxLimit);

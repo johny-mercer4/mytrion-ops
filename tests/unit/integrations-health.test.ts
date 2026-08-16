@@ -37,7 +37,7 @@ describe('GET /v1/health/integrations', () => {
       tenantId: DEFAULT_TENANT_ID,
       audience: 'internal',
       role: 'admin', // stale — re-derived to worker from the profile
-      worker: { zohoUserId: '42', userName: 'Robiya', profile: 'Sales Rep' },
+      worker: { zohoUserId: '42', userName: 'CI Test Admin', profile: 'Sales Rep' },
     });
     const res = await app.inject({
       method: 'GET',

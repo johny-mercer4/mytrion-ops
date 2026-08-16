@@ -13,6 +13,7 @@ import {
 import { SearchIcon } from '../../components/icons';
 import { AuditDetailModal } from './AuditDetailModal';
 import { exportRowsCsv, exportRowsXlsx, type ExportColumn } from './logsExport';
+import { auditActorDisplay } from './auditActorDisplay';
 import {
   ALL,
   DateField,
@@ -86,7 +87,7 @@ const EMPTY_FACETS: AuditFacets = {
 
 /** "Who" cell: display name first, falling back to the raw user id. */
 function actorName(e: AuditEntry): string {
-  return e.userName ?? e.userId ?? 'system';
+  return auditActorDisplay(e);
 }
 
 function authorityLine(e: AuditEntry): string {
@@ -105,7 +106,7 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<AuditEntry>> = [
   { header: 'When (ISO)', width: 26, value: (e) => e.createdAt },
   { header: 'Action', width: 30, value: (e) => e.action },
   { header: 'Status', width: 10, value: (e) => e.status },
-  { header: 'User', width: 26, value: (e) => e.userName ?? '' },
+  { header: 'User', width: 26, value: (e) => auditActorDisplay(e) },
   { header: 'User id', width: 26, value: (e) => e.userId ?? '' },
   { header: 'Profile', width: 20, value: (e) => e.profile ?? '' },
   { header: 'Zoho role', width: 24, value: (e) => e.callerRole ?? '' },
@@ -123,7 +124,8 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<AuditEntry>> = [
 ];
 
 /** Admin Audit Log — every login, button, automation, and agent action; workers AND carriers. */
-export function AuditLog() {
+export function AuditLog({ source = 'human' }: { source?: 'human' | 'vitest' }) {
+  const vitest = source === 'vitest';
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [facets, setFacets] = useState<AuditFacets>(EMPTY_FACETS);
@@ -174,13 +176,14 @@ export function AuditLog() {
       ...(search.trim() ? { search: search.trim() } : {}),
       ...(from ? { from } : {}),
       ...(to ? { to } : {}),
+      source,
     };
-  }, [preset, audience, status, userName, profile, role, callerRole, search, fromDay, toDay]);
+  }, [preset, audience, status, userName, profile, role, callerRole, search, fromDay, toDay, source]);
 
   // Facets are the whole tenant's value space, not the current page's — loaded once.
   useEffect(() => {
     let alive = true;
-    void auditFacets()
+    void auditFacets(source)
       .then((f) => {
         if (alive) setFacets(f);
       })
@@ -188,7 +191,7 @@ export function AuditLog() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [source]);
 
   const load = useCallback(
     async (offset: number) => {
@@ -257,16 +260,18 @@ export function AuditLog() {
         search.trim() ? `Search: "${search.trim()}"` : '',
       ].filter(Boolean);
       const meta = {
-        title: 'AUDIT LOG',
-        subtitle: 'Mytrion Horizon · Activity trail',
+        title: vitest ? 'VITEST LOGS' : 'AUDIT LOG',
+        subtitle: vitest
+          ? 'Mytrion Horizon · API-test fixture trail'
+          : 'Mytrion Horizon · Activity trail',
         filters,
-        filenameStem: 'Audit_Log',
-        sheetName: 'Audit Log',
+        filenameStem: vitest ? 'Vitest_Logs' : 'Audit_Log',
+        sheetName: vitest ? 'Vitest Logs' : 'Audit Log',
       };
       if (format === 'csv') await exportRowsCsv(rows, EXPORT_COLUMNS, meta);
       else await exportRowsXlsx(rows, EXPORT_COLUMNS, meta);
     },
-    [filter, preset, audience, status, userName, profile, role, callerRole, fromDay, toDay, search],
+    [filter, preset, audience, status, userName, profile, role, callerRole, fromDay, toDay, search, vitest],
   );
 
   const resetFilters = useCallback(() => {
@@ -296,11 +301,12 @@ export function AuditLog() {
     <div className={`${s.panel} ${s.panelWide}`}>
       <div className={s.head}>
         <div>
-          <div className={s.eyebrow}>Activity trail</div>
-          <h2 className={s.h2}>Audit Log</h2>
+          <div className={s.eyebrow}>{vitest ? 'Test fixtures' : 'Activity trail'}</div>
+          <h2 className={s.h2}>{vitest ? 'Vitest Logs' : 'Audit Log'}</h2>
           <p className={s.sub}>
-            Every login, tool call, and admin action, newest first — who did it, with what
-            authority, to what, and what came back.
+            {vitest
+              ? 'Rows written by the API test suite (short Zoho ids like zoho:42). They are not real operators and do not belong on the Audit Log.'
+              : 'Every login, tool call, and admin action, newest first — who did it, with what authority, to what, and what came back. Test-suite noise lives on Vitest Logs.'}
           </p>
         </div>
       </div>

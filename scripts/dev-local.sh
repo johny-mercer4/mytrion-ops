@@ -49,13 +49,6 @@ for port in $API_PORT $WEB_PORT; do
   fi
 done
 
-# ── 3b. Optional: keep .env pointed at Render, run THIS process on local Postgres ─
-# USE_LOCAL_OPS_DB=1 pnpm dev:all  — same override as `pnpm dev:local-db`.
-if [ "${USE_LOCAL_OPS_DB:-}" = "1" ]; then
-  export LOCAL_OPS_DATABASE_URL="${LOCAL_OPS_DATABASE_URL:-postgresql://octane:octane@localhost:5433/octane_assistant}"
-  echo "[setup] USE_LOCAL_OPS_DB=1 — API uses local docker Postgres on localhost:5433"
-fi
-
 # ── 4. Run tunnel + both servers; stop all on exit ───────────────────────────
 cleanup() {
   echo ""

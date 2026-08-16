@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { VERIFICATION_LEGACY_DESK_ENABLED } from '../modules/verification/killSwitches.js';
 import { logger } from '../lib/logger.js';
 
 const TIMEOUT_MS = 8_000;
@@ -30,7 +31,9 @@ function baseUrl(): string {
   return env.CREDIT_PLATFORM_BASE_URL.replace(/\/+$/, '');
 }
 
+/** Quarantined by `VERIFICATION_LEGACY_DESK_ENABLED` — see killSwitches.ts. */
 export function isCreditPlatformConfigured(): boolean {
+  if (!VERIFICATION_LEGACY_DESK_ENABLED) return false;
   return Boolean(env.CREDIT_PLATFORM_BASE_URL && env.CREDIT_PLATFORM_API_KEY);
 }
 

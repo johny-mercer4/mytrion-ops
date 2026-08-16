@@ -49,7 +49,32 @@ When asked to "run the bot / gateway", the answer is almost always `agent-gatewa
 7. Read-only is default. Write tools require `riskClass: 'write'` and admin role.
 8. Every tool call is audit-logged.
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
-10. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders).
+10. **Karpathy guidelines apply to every change** — think before coding, simplicity first, surgical
+    changes, goal-driven execution. Stated in full below and in `.claude/skills/karpathy-guidelines/`.
+11. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders).
+
+## Karpathy guidelines — apply to every change
+
+Full text: `.claude/skills/karpathy-guidelines/SKILL.md` (mirrored to `.agents/skills/` and
+`.cursor/skills/`). Derived from [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876)
+on LLM coding pitfalls; distillation from `forrestchang/andrej-karpathy-skills` (MIT). Biased toward
+caution over speed — for trivial tasks, use judgment.
+
+1. **Think before coding.** State assumptions explicitly; ask when uncertain. Present multiple
+   interpretations rather than picking one silently. Say so when a simpler approach exists. If
+   something is unclear, stop and name it.
+2. **Simplicity first.** Minimum code that solves the problem, nothing speculative. No features
+   beyond what was asked, no abstractions for single-use code, no unrequested flexibility, no error
+   handling for impossible scenarios. 200 lines that could be 50 get rewritten.
+3. **Surgical changes.** Touch only what you must; clean up only your own mess. Don't improve
+   adjacent code, comments or formatting. Don't refactor what isn't broken. Match existing style.
+   Mention unrelated dead code — don't delete it. Every changed line traces to the request.
+4. **Goal-driven execution.** Define success criteria and loop until verified. "Fix the bug" becomes
+   "write a test that reproduces it, then make it pass". For multi-step work, state a plan with a
+   verify step per line.
+
+Where these meet the hard rules above, both apply: `repos/` and `ToolManifest` are tenant-isolation
+and RBAC boundaries, not speculative abstraction, so routing through them IS the minimal solution.
 
 ## Daily workflow
 

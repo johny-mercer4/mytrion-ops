@@ -15,6 +15,7 @@ export interface Deal {
   cycle: string;
   verify: Verify;
   avgDays: number | null;
+  firstSwipeDate: string; // ISO ('YYYY-MM-DD'), '' if the carrier has never swiped a card
 }
 
 export interface Invoice {

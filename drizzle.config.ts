@@ -80,7 +80,7 @@ export default defineConfig({
     './src/db/schema/recruit_settings.ts',
     './src/db/schema/maintenance_cases.ts',
     // NOTE: ledger_* is deliberately ABSENT here, same as maintenance_case_attachments /
-    // maintenance_case_history / verification_sales_responses. The snapshot in meta/ is stale
+    // maintenance_case_history / verification_sales_responses / carrier_attachments. The snapshot in meta/ is stale
     // relative to several teams' schema files, so `db:generate` emits their pending drift
     // (mytrion_thread_*, mytrion_tickets, mytrion_escalations, a file_assets column, …) alongside
     // whatever you actually added — a migration that CREATE TABLEs tables prod already has.

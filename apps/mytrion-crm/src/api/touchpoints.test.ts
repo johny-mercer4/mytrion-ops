@@ -15,7 +15,7 @@ function seedSession(): void {
     JSON.stringify({
       accessToken: 'tok',
       refreshToken: 'r1',
-      worker: { zohoUserId: '42', userName: 'Robiya' },
+      worker: { zohoUserId: '42', userName: 'CI Test Admin' },
     }),
   );
 }
@@ -74,7 +74,7 @@ describe('logAutomation', () => {
     expect(String(url)).toContain('/v1/automation/logs');
     const body = JSON.parse(String(init.body)) as Record<string, string>;
     expect(body.automationType).toBe('tracking');
-    expect(body.agentName).toBe('Robiya');
+    expect(body.agentName).toBe('CI Test Admin');
     expect(body.triggerDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(body.triggerTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     // Everything this app logs is Horizon; the legacy Zoho widget sends no origin at all.

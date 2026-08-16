@@ -152,7 +152,7 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin',
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 
@@ -165,7 +165,7 @@ function activeClient(overrides: Partial<AgentClientRow> = {}): AgentClientRow {
     carrierId: '123',
     companyName: 'Acme Trucking',
     contact: 'Jane Doe',
-    agentName: 'Robiya',
+    agentName: 'CI Test Admin',
     phone: '555-0100',
     producedCards: 1,
     activeCards: 1,
@@ -258,7 +258,7 @@ describe('carrier registration links — Sales write scope + View-as', () => {
       expect.objectContaining({
         carrierId: '123',
         companyName: 'Acme Trucking',
-        agentName: 'Robiya',
+        agentName: 'CI Test Admin',
         agentZohoUserId: PILOT_ZOHO_USER_ID,
       }),
     );
@@ -276,10 +276,10 @@ describe('carrier registration links — Sales write scope + View-as', () => {
 
     expect(res.statusCode, res.body).toBe(201);
     expect(createAgentInviteMock).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: `zoho:${PILOT_ZOHO_USER_ID}`, userName: 'Robiya' }),
+      expect.objectContaining({ userId: `zoho:${PILOT_ZOHO_USER_ID}`, userName: 'CI Test Admin' }),
       expect.objectContaining({
         zohoUserId: PILOT_ZOHO_USER_ID,
-        agentName: 'Robiya',
+        agentName: 'CI Test Admin',
         requestedCarrierId: '123',
       }),
     );

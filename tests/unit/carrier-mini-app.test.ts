@@ -298,7 +298,7 @@ function inviteRow(overrides: Record<string, unknown> = {}) {
     carrierId: '5758544',
     applicationId: 'APP-9',
     companyName: 'Acme Transport LLC',
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     agentZohoUserId: '777',
     cardId: null,
     driverName: null,
@@ -331,7 +331,7 @@ function registrationRow(overrides: Record<string, unknown> = {}) {
     carrierId: '5758544',
     applicationId: 'APP-9',
     companyName: 'Acme Transport LLC',
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     agentZohoUserId: '777',
     cardId: null,
     driverName: null,
@@ -352,7 +352,7 @@ function salesAgentPrincipal(overrides: Record<string, unknown> = {}) {
     id: 'sap_1',
     tenantId: DEFAULT_TENANT_ID,
     zohoUserId: '777',
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     telegramUserId: '123456',
     telegramUsername: 'fleet_owner',
     languageCode: 'en',
@@ -369,7 +369,7 @@ function salesAgentClient(overrides: Partial<AgentClientRow> = {}): AgentClientR
     carrierId: '5758544',
     companyName: 'Acme Transport LLC',
     contact: 'Jane Doe',
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     phone: '555-0100',
     producedCards: 3,
     activeCards: 3,
@@ -404,7 +404,7 @@ function managerInviteDto(overrides: Record<string, unknown> = {}) {
     driverName: 'Ops Manager',
     companyType: 'fleet-manager' as const,
     cardCount: null,
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     agentZohoUserId: '777',
     status: 'pending' as const,
     expiresAt: new Date(Date.now() + 3600_000).toISOString(),
@@ -443,7 +443,7 @@ describe('carrier mini-app redeem flow', () => {
         id: 'rma_1',
         profile: 'owner',
         carrierId: '5758544',
-        agentName: 'Rep Riley',
+        agentName: 'CI Test Admin',
       },
     });
   });
@@ -465,7 +465,7 @@ describe('carrier mini-app redeem flow', () => {
     expect(res.json()).toMatchObject({
       registration: {
         id: 'rma_1',
-        agentName: 'Rep Riley',
+        agentName: 'CI Test Admin',
       },
     });
   });
@@ -621,7 +621,7 @@ describe('carrier mini-app redeem flow', () => {
       expect.anything(),
       expect.objectContaining({
         invitationId: 'inv_agent',
-        agentName: 'Rep Riley',
+        agentName: 'CI Test Admin',
         agentZohoUserId: '777',
       }),
       expect.anything(),
@@ -629,7 +629,7 @@ describe('carrier mini-app redeem flow', () => {
     expect(res.json()).toMatchObject({
       registration: {
         id: 'rma_1',
-        agentName: 'Rep Riley',
+        agentName: 'CI Test Admin',
       },
     });
   });
@@ -653,10 +653,10 @@ describe('Sales-agent mini-app portfolio and selected-company scope', () => {
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({
       kind: 'sales_agent',
-      salesAgent: { id: 'sap_1', zohoUserId: '777', agentName: 'Rep Riley' },
+      salesAgent: { id: 'sap_1', zohoUserId: '777', agentName: 'CI Test Admin' },
       companies: [{ carrierId: '5760000', companyName: 'Eligible Co', status: 'active' }],
     });
-    expect(agentClients).toHaveBeenCalledWith('777', 'Rep Riley', {
+    expect(agentClients).toHaveBeenCalledWith('777', 'CI Test Admin', {
       force: true,
       allowStaleOnError: false,
     });
@@ -698,7 +698,7 @@ describe('Sales-agent mini-app portfolio and selected-company scope', () => {
       carrierId: '5758544',
       companyName: 'Acme Transport LLC',
       driverName: 'Ops Manager',
-      agentName: 'Rep Riley',
+      agentName: 'CI Test Admin',
       agentZohoUserId: '777',
     });
     expect(registrationRepo.findActiveOwnerByCarrier).not.toHaveBeenCalled();

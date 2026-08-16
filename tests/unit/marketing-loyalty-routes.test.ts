@@ -92,7 +92,7 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — re-derived from the profile at verify
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 
@@ -270,7 +270,7 @@ describe('per-client loyalty controls', () => {
       enterpriseGoldTargetGallons: '23000.00',
       enabledRewardIds: ['transaction_fee_waiver', 'loves_rebate'],
       note: 'Contract exception',
-      updatedBy: 'Robiya',
+      updatedBy: 'CI Test Admin',
       createdAt: updatedAt,
       updatedAt,
     });

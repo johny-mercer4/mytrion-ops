@@ -1,0 +1,53 @@
+---
+description: Behavioral guidelines for LLM code generation — think before coding, simplicity first, surgical changes, goal-driven execution
+globs:
+alwaysApply: true
+---
+
+# Karpathy Guidelines
+
+Applies to every code change. Full text and repo-specific notes:
+`.cursor/skills/karpathy-guidelines/SKILL.md`.
+
+Derived from [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on
+LLM coding pitfalls; distillation from `forrestchang/andrej-karpathy-skills` (MIT).
+
+**Tradeoff:** biased toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+State assumptions explicitly; if uncertain, ask. Present multiple interpretations rather than picking
+one silently. Say so when a simpler approach exists. If something is unclear, stop and name it.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+No features beyond what was asked. No abstractions for single-use code. No unrequested "flexibility".
+No error handling for impossible scenarios. If you write 200 lines and it could be 50, rewrite it.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+Don't "improve" adjacent code, comments or formatting. Don't refactor what isn't broken. Match
+existing style. Mention unrelated dead code — don't delete it. Remove only the orphans YOUR change
+created. Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Turn tasks into verifiable goals ("fix the bug" → "write a test that reproduces it, then make it
+pass"). For multi-step work, state a brief plan with a verify step per line. Strong criteria let you
+loop independently; weak ones ("make it work") need constant clarification.
+
+## In this repo
+
+`repos/` and `ToolManifest` are tenant-isolation and RBAC boundaries, not speculative abstraction —
+routing through them IS the minimal solution. Match this codebase's comment density (it explains the
+*why*, at length). Verification means `pnpm lint && pnpm typecheck && pnpm test`, plus
+`pnpm audit:mobile` / `audit:shots` for UI, because jsdom does no layout. A rebuilt
+`apps/*/app/` bundle is part of a UI change, not adjacent churn.

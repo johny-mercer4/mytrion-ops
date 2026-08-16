@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getHrEmployeePhotoLink } from '../../api/hrPerson';
+import { getHrEmployeePhotoLink, getHrEmployeePhotoLinks } from '../../api/hrPerson';
 
 /**
  * Employee avatar: a re-hosted photo when there is one, initials otherwise.
@@ -63,6 +63,37 @@ async function resolvePhotoUrl(employeeId: string, fileId: string): Promise<stri
 
   inFlight.set(fileId, request);
   return request;
+}
+
+/**
+ * Warm the cache for a whole list in one request.
+ *
+ * `HrAvatar` reads the same module cache, so once this resolves every face on the page renders
+ * without a request of its own. Ids already cached (or already in flight) are not asked for again,
+ * which makes calling this on every render harmless.
+ */
+export async function prefetchHrPhotoLinks(
+  people: ReadonlyArray<{ id: string; photoFileId: string | null | undefined }>,
+): Promise<void> {
+  const wanted = people.filter(
+    (p) => p.photoFileId && !cachedPhotoUrl(p.photoFileId) && !inFlight.has(p.photoFileId),
+  );
+  if (wanted.length === 0) return;
+
+  try {
+    const links = await getHrEmployeePhotoLinks(wanted.map((p) => p.id));
+    for (const person of wanted) {
+      const link = links[person.id];
+      if (!link || !person.photoFileId) continue;
+      const parsed = Date.parse(link.expiresAt);
+      linkCache.set(person.photoFileId, {
+        url: link.url,
+        expiresAtMs: Number.isFinite(parsed) ? parsed : Date.now() + FALLBACK_TTL_MS,
+      });
+    }
+  } catch {
+    // Each avatar still resolves itself on mount — the batch is an optimisation, not the mechanism.
+  }
 }
 
 /** Test seam: the cache is module state, so a suite would otherwise leak links between cases. */

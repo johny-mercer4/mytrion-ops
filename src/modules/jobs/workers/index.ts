@@ -21,7 +21,7 @@ import {
   platformKnowledgeSyncJob,
   billingLedgerSnapshotJob,
   verificationCaseIngestJob,
-} from '../catalog.js';
+  mytrionWatchScoringJob,} from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
@@ -47,6 +47,7 @@ import {
 } from './salesKpi.js';
 import { runBocaRequest } from '../../browserAutomation/bocaRequest.js';
 import { runPlatformKnowledgeSync } from './platformKnowledgeSync.js';
+import { runMytrionWatchScoring } from './mytrionWatchScoring.js';
 import { runVerificationCaseIngest } from './verificationCaseIngest.js';
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
@@ -134,6 +135,11 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     const job = jobs[0];
     if (!job) return undefined;
     return runVerificationCaseIngest(verificationCaseIngestJob.schema.parse(job.data ?? {}));
+  });
+  await boss.work(mytrionWatchScoringJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    return runMytrionWatchScoring(mytrionWatchScoringJob.schema.parse(job.data ?? {}));
   });
   await boss.work(deadLetterJob.name, { batchSize: 5 }, handleDeadLetterJobs);
 }

@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { databaseHost, env, usingLocalOpsDatabase } from './config/env.js';
+import { databaseHost, env } from './config/env.js';
 import { assertRuntimeSecrets } from './config/envRuntime.js';
 import { closeDb } from './db/client.js';
 import { closeCmpTunnel } from './integrations/cmpTunnel.js';
@@ -68,7 +68,6 @@ async function main(): Promise<void> {
       port: env.PORT,
       env: env.NODE_ENV,
       dbHost: databaseHost(),
-      localOpsOverride: usingLocalOpsDatabase,
     },
     'octane-assistant API listening',
   );

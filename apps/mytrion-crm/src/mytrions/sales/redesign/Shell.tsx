@@ -16,7 +16,9 @@ import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { MytrionShell, type NavSection } from '../../_shared/MytrionShell';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, TICKETS_ENABLED } from './salesData';
+import { NAV, NAV_GROUPS, TICKETS_ENABLED, isSectionParked } from './salesData';
+import { isAdmin } from '@/access/resolveAccess';
+import { useUserContext } from '@/context/UserContextProvider';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
@@ -122,7 +124,10 @@ export function SalesRedesign() {
   // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
-  const parkedSection = NAV.some((n) => n.id === section && n.comingSoon === true);
+  // Admin sees the Sales-side Verification tab; everyone else gets Coming soon. Verification's own
+  // Mytrion is unaffected — this is the Sales projection of it only.
+  const admin = isAdmin(useUserContext());  // hook call is unconditional — same position every render
+  const parkedSection = isSectionParked(section, admin);
   const fullBleed = FULL_BLEED.has(section) && !parkedSection;
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
@@ -273,7 +278,7 @@ export function SalesRedesign() {
     id: g.id,
     label: GROUP_LABEL[g.id] ?? g.id,
     items: g.items.map((n) => {
-      const soon = n.comingSoon === true;
+      const soon = isSectionParked(n.id, admin);
       const count = badgeCounts[n.id];
       return {
         key: n.id,

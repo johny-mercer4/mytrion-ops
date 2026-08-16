@@ -1,8 +1,7 @@
 /**
- * Sales Mytrion redesign — Create tab. Three modes (matching the legacy widget's tabs): the 3-step
- * "Create a Ticket" wizard, the "Escalate Request" form, and the "Create Lead" form — all wired to
- * live Desk/CRM writes (the first two with optional attachments). The heavy lifting lives in
- * ../createTicketForms; this file is just the mode switch + layout.
+ * Sales Mytrion redesign — Create tab. Three modes: the 3-step "Create a Ticket" wizard, the
+ * "Escalate Request" form, and the "Create Lead" form — all wired to live writes. The heavy
+ * lifting lives in ../createTicketForms; this file is just the mode switch + layout.
  */
 import { useState } from 'react';
 import { ICO, NAV_DESC } from '../salesData';
@@ -25,11 +24,18 @@ const MODE_DESC: Record<Mode, string> = {
 
 export function CreateTab() {
   const [mode, setMode] = useState<Mode>('ticket');
+
   return (
     <SalesPage width="narrow">
       <SalesPageHead description={`${NAV_DESC.create} ${MODE_DESC[mode]}`} />
       <SalesSubTabs items={TABS} value={mode} onChange={setMode} label="What to create" />
-      {mode === 'ticket' ? <TicketWizard /> : mode === 'escalation' ? <EscalationForm /> : <CreateLeadForm />}
+      {mode === 'ticket' ? (
+        <TicketWizard />
+      ) : mode === 'escalation' ? (
+        <EscalationForm />
+      ) : (
+        <CreateLeadForm />
+      )}
     </SalesPage>
   );
 }
