@@ -61,3 +61,37 @@ describe('the single-carrier variant stays in step', () => {
     expect(WATCH_FEATURE_SQL).not.toContain('`');
   });
 });
+
+describe('the pay-ratio window waits for invoices to mature', () => {
+  /**
+   * Invoices fall due on exactly two weekdays — every one of the 247,513 rows in
+   * `postlimit_default_list` has an observation_date that is a Monday or a Thursday. Without a lag,
+   * the score a carrier gets depends on which weekday you happen to run on: measured over the 724
+   * carriers scored on 2026-08-10, this feature contributed 16.75 score points on the Monday anchor
+   * and 0.68 on the Tuesday, because Tuesday's window includes Monday's batch at one day old and
+   * 452 carriers get charged for an invoice nobody could have paid yet.
+   *
+   * That is the entire 16-point Mon/Tue gap, and under the daily cron it renders as a weekly
+   * sawtooth on the portfolio timeline.
+   */
+  it('holds the newest batch back by 3 days', () => {
+    expect(WATCH_FEATURE_SQL).toMatch(
+      /observation_date\s*<\s*\$1::date - INTERVAL '3 days'/,
+    );
+  });
+
+  it('applies the lag to pay_ratio ONLY', () => {
+    // `inv_14` has no payment-maturity term — it averages invoice AMOUNTS, and 14 is already a
+    // multiple of 7 — and `hist` is all-history. Lagging them for symmetry would change features
+    // that do not move across the weekday split. Every changed line has to trace to the defect.
+    const lagged = WATCH_FEATURE_SQL.match(/INTERVAL '3 days'/g) ?? [];
+    expect(lagged).toHaveLength(1);
+    expect(WATCH_FEATURE_SQL).toMatch(/observation_date\s*>=\s*\$1::date - INTERVAL '14 days'/);
+  });
+
+  it('keeps the 31-day lower bound — the fix is batch AGE, not batch COUNT', () => {
+    // Snapping the window to 28 days equalises the batch count for every anchor and does NOT fix
+    // this: measured, Tuesday still came out at -0.63 points with the same 452 penalised carriers.
+    expect(WATCH_FEATURE_SQL).toMatch(/observation_date\s*>=\s*\$1::date - INTERVAL '31 days'/);
+  });
+});

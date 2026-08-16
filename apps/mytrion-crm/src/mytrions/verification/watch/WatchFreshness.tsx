@@ -3,7 +3,7 @@
  *
  * The desk's first question about any score is how fresh it is — it used to be a muted footnote in
  * the header. Scoring runs daily now, so "updated 4 hours ago" is the difference between reading
- * this morning's book and last Monday's.
+ * this morning's book and yesterday's.
  *
  * Refresh ENQUEUES the job rather than running it inline: a full run takes about a minute against
  * the warehouse, and an awaited request would hit the proxy timeout and report failure while the run

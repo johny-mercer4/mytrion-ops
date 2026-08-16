@@ -118,6 +118,27 @@ base AS (
 ),
 -- pay_ratio_31d. Computed on its OWN window rather than joined alongside the 14-day set: the
 -- reference SQL joined both to base in one query, which multiplies the two invoice sets together.
+--
+-- THE 3-DAY MATURITY LAG IS LOAD-BEARING — do not "simplify" it back to $1.
+--
+-- Invoices fall due on exactly two weekdays: every one of the 247,513 rows in
+-- postlimit_default_list has an observation_date that is a Monday (139,039) or a Thursday
+-- (108,474). The denominator admits an invoice the moment its observation_date lands, but the
+-- numerator cannot admit a payment that has not happened yet — so a window whose newest batch is
+-- one day old measures the billing calendar, not the carrier.
+--
+-- Measured over the 724 carriers scored on 2026-08-10, as score points from this feature alone:
+--   anchor  Mon 16.75   Tue  0.68   Wed 14.25   Thu 15.66   Fri 13.28   Sat 16.19   Sun 16.69
+-- Tuesday sees Monday's batch at age 1 and 452 of 724 carriers land in a penalised bin, costing
+-- 16 points book-wide. That is the whole of the Mon/Tue score gap, and under a DAILY cron it would
+-- render as a weekly sawtooth on the portfolio timeline.
+--
+-- 3 days is the minimum lag that makes the newest visible batch at least 4 days old on EVERY
+-- anchor weekday — which is exactly the maturity a Monday anchor always had. It is therefore a
+-- provable no-op on the 48 Monday snapshots already shipped (2026-08-10: mean 16.75, 17 penalised,
+-- 691 in the top bin, identical before and after) while collapsing the weekday spread from 16.07
+-- points to 0.47. Widening the window to a multiple of 7 does NOT fix this: batch COUNT is not the
+-- operative variable, batch AGE is.
 pay_31 AS (
   SELECT carrier_id,
          SUM(invoice_amount) AS invoiced,
@@ -125,7 +146,7 @@ pay_31 AS (
                   THEN COALESCE(payment_amount, 0) ELSE 0 END) AS paid
   FROM ov
   WHERE observation_date >= $1::date - INTERVAL '31 days'
-    AND observation_date <  $1::date
+    AND observation_date <  $1::date - INTERVAL '3 days'
   GROUP BY carrier_id
 ),
 inv_14 AS (

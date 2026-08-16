@@ -17666,3 +17666,72 @@ breath.
 
 `pnpm lint` 0 errors / 23 pre-existing warnings · `pnpm typecheck` clean · `pnpm test` 3111 passed
 (1 skipped) · CRM typecheck clean · CRM test 1029/1029 · `pnpm build:widget` rebuilt and committed.
+
+## 2026-08-16 (later) — the backfill exposed a real scoring defect: a weekday artifact
+
+The 48-Monday backfill finished (48/48, 0 failed) and immediately showed something wrong. Backfilled
+**Mondays** averaged 615 with ~2 carriers in High; the three live **Tuesdays** one day later averaged
+598 with 9-15 in High and **double** the exposure at risk. Three consecutive Mon/Tue pairs, same
+direction, same code path (`backfillWatchHistory.ts` calls the identical `runScoring`).
+
+### Cause — established, verified independently before acting
+
+Invoices in `postlimit_default_list` fall due on exactly **two weekdays**: every one of the 247,513
+rows has an `observation_date` that is a Monday (139,039) or a Thursday (108,474). Zero on any other
+day. `pay_31` was right-open on the scoring date, so the DENOMINATOR admitted an invoice the moment
+it came due while the NUMERATOR could not admit a payment that had not happened yet. A Monday anchor
+never saw anything fresher than 4 days; a Tuesday anchor saw Monday's batch at **one day old**.
+
+Measured over the 724 carriers scored on 2026-08-10, in score points from `pay_ratio_31d` alone:
+
+    Mon 16.75   Tue 0.68   Wed 14.25   Thu 15.66   Fri 13.28   Sat 16.19   Sun 16.69
+
+452 of 724 carriers penalised on the Tuesday against 17 on the Monday. That 16.07-point gap IS the
+observed 614.53 -> 598.37. The model, the bins and the cut-points are not implicated — correct maths
+on a contaminated input. Under the daily cron this would have rendered as a weekly **sawtooth**.
+
+### Fix — one line
+
+`observation_date < $1::date` becomes `observation_date < $1::date - INTERVAL '3 days'`, in `pay_31`
+only. 3 days is the minimum lag that gives every anchor weekday the 4-day maturity a Monday anchor
+always had, which makes it a **provable no-op on shipped history**: 2026-08-10 re-scores bit-identical
+(mean 16.75, 17 penalised, 691 in the top bin) and the weekday spread collapses 16.07 -> 0.47.
+
+**The backtest is unaffected.** 2026-02-16, 2026-03-16 and 2026-04-13 are all Mondays, so 3.46x /
+3.29x / 4.97x stand exactly as reported.
+
+Rejected, with measurements: widening the window to 28 or 35 days "so it is a multiple of 7" — batch
+AGE is the operative variable, not batch COUNT, and 28 days left Tuesday at -0.63 with the same 452
+penalised carriers. Also rejected: snapping the cron back to Mondays (hides it behind one lucky
+anchor), and extending the payment cutoff past `$1` (flattens everything, but it is future knowledge).
+
+### Second defect, independent — stale movement columns
+
+`runScoring` computes movement once at write time, and the backfill inserted earlier dates AFTER the
+Tuesdays. Result: 716/717 rows on 2026-07-28 stored `prev_credit_score` NULL despite a snapshot
+existing the day before, plus 639 and 658 wrong on 08-04 and 08-11. Fixed by re-running the affected
+dates in ASCENDING order — no new machinery, because under a forward-only cron the write-time
+computation is correct.
+
+### Third defect, found while verifying the repair — a re-run merged instead of replacing
+
+`upsertScores` corrects the carriers it is handed and is blind to the rest, so a carrier who left the
+population between two runs of the same date kept their row forever — while `replaceContributions`
+had already deleted the explanation behind it. Five orphans (`GSA EXPRESS INC` on all three dates,
+plus two more), scored 501-570 in High/Elevated with zero contributions. **Not backfill-only:**
+"Refresh scoring" re-runs today, so a carrier tagged a debtor after the morning run would simply stay
+on the watchlist. Added `mytrionWatchRepo.pruneScoresNotIn`, called only on a full-book run — never
+on a single-carrier rescore, which would delete the other ~700.
+
+### The local-DB trap, again
+
+My first repair reported "scored 716" five times and changed **nothing** in prod: a concurrent session
+had re-added `LOCAL_OPS_DATABASE_URL` to `.env` after the backfill ran, so `NODE_ENV=development`
+redirected the writes to localhost (6s/date instead of 90s). The backfill script prints its target;
+the repair script did not. It now prints the resolved host and refuses a local one outright. There is
+no local DB in this project — only prod.
+
+### Result in prod
+
+Tuesdays now sit alongside the Mondays across the whole fortnight — 614.1-615.4, exposure $1.16M-$1.61M,
+High down from 9/15/12 to 3/3/1 — and every Monday is byte-identical to before the fix.

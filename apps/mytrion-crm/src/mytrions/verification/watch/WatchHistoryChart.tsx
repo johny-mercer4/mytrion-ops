@@ -42,8 +42,8 @@ export function WatchHistoryChart({
             </span>
             <span className="mw-nochart-t">First snapshot, {fmtDate(only.scoringDate)}</span>
             <span className="mw-nochart-b">
-              A trend needs two runs. This carrier gets its first movement reading after next
-              Monday’s scoring.
+              A trend needs two runs. This carrier gets its first movement reading after
+              tomorrow’s scoring.
             </span>
           </>
         ) : (
@@ -110,7 +110,7 @@ export function WatchHistoryChart({
           </circle>
         ))}
 
-        {/* Only the ends are labelled: a weekly series crowds the axis and the middle dates are
+        {/* Only the ends are labelled: a long series crowds the axis and the middle dates are
             recoverable from the tooltips. */}
         <text className="mw-chart-x" x={x(0)} y={H - 6}>
           {fmtDate(first?.scoringDate)}
@@ -121,7 +121,7 @@ export function WatchHistoryChart({
       </svg>
 
       <p className="mw-pane-sub">
-        {fmtScore(first?.creditScore)} → {fmtScore(last?.creditScore)} across {history.length} weekly
+        {fmtScore(first?.creditScore)} → {fmtScore(last?.creditScore)} across {history.length}
         snapshots ({move >= 0 ? '+' : ''}
         {Math.round(move)}).
       </p>

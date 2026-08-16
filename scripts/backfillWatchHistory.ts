@@ -27,7 +27,16 @@ function mondays(from: string, to: string): string[] {
 }
 
 const dates = mondays(process.env.FROM ?? '2025-09-15', process.env.TO ?? '2026-08-10');
-console.log(`target ${databaseHost()} — ${dates.length} weekly snapshots`);
+const host = databaseHost();
+console.log(`target ${host} — ${dates.length} weekly snapshots`);
+// `LOCAL_OPS_DATABASE_URL` silently redirects writes to a local docker Postgres under
+// NODE_ENV=development, and a run that reports "scored 716" against the wrong database looks exactly
+// like a successful one — it cost a full repair cycle before anyone noticed. There is no local DB in
+// this project, only prod.
+if (host === 'localhost' || host === '127.0.0.1') {
+  console.error('REFUSING: resolved to a local database. Re-run with LOCAL_OPS_DATABASE_URL= to force prod.');
+  process.exit(1);
+}
 let ok = 0, failed = 0;
 for (const [i, date] of dates.entries()) {
   try {

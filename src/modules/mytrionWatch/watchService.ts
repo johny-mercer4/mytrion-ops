@@ -203,9 +203,11 @@ export async function runScoring(
         }));
       });
 
-      // A single-carrier rescore must not wipe the whole date's contributions.
+      // A single-carrier rescore must not wipe the whole date's contributions — nor prune the
+      // 700-odd carriers it deliberately did not look at.
       if (!opts.carrierId) {
         await mytrionWatchRepo.replaceContributions(ctx, scoringDate, contributionRows);
+        await mytrionWatchRepo.pruneScoresNotIn(ctx, scoringDate, saved.map((s) => s.carrierId));
       }
 
       const durationMs = Date.now() - started;

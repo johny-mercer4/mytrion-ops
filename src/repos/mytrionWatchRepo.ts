@@ -6,7 +6,7 @@
  * trip, for the same reason the Verification desk was collapsed to one — the app database is ~300ms
  * away and query count is the only lever that matters.
  */
-import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, notInArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionWatchContributions,
@@ -343,6 +343,35 @@ export const mytrionWatchRepo = {
         },
       })
       .returning();
+  },
+
+  /**
+   * Drop carriers this run did not score — a re-run REPLACES a date's snapshot, it does not merge.
+   *
+   * `upsertScores` corrects the carriers it is given and is blind to the ones it is not, so a
+   * carrier who left the population between two runs of the same date keeps a row forever, holding
+   * whatever the earlier run computed. That is not a backfill-only concern: "Refresh scoring"
+   * re-runs today, so a carrier scored this morning and then tagged a debtor would stay on the
+   * watchlist, with `replaceContributions` having already deleted the explanation behind their
+   * score.
+   */
+  async pruneScoresNotIn(
+    ctx: TenantContext,
+    scoringDate: string,
+    carrierIds: string[],
+  ): Promise<number> {
+    if (carrierIds.length === 0) return 0;
+    const result = await db
+      .delete(mytrionWatchScores)
+      .where(
+        and(
+          eq(mytrionWatchScores.tenantId, ctx.tenantId),
+          eq(mytrionWatchScores.scoringDate, scoringDate),
+          notInArray(mytrionWatchScores.carrierId, carrierIds),
+        ),
+      )
+      .returning({ id: mytrionWatchScores.id });
+    return result.length;
   },
 
   async replaceContributions(

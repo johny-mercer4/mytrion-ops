@@ -207,7 +207,7 @@ export function MytrionWatch() {
           <ShieldAlert size={22} aria-hidden />
           <span className="mw-empty-title">Nothing scored yet</span>
           <span>
-            Scoring runs every Monday morning and writes a snapshot for the whole book. The first run
+            Scoring runs every morning and writes a snapshot for the whole book. The first run
             populates this list.
           </span>
         </div>

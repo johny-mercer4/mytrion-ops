@@ -5,6 +5,7 @@
  * the golden case is a real carrier pulled from the DWH — so if the binning, the logistic link or
  * the score scaling drifts, this fails with a number a human can trace back to the model.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   bandFor,
@@ -314,5 +315,40 @@ describe('risk drivers', () => {
     expect(describeDriver(c, PAY_RATIO, WATCH_FEATURE_NOUN, WATCH_FEATURE_MISSING)).toBe(
       WATCH_FEATURE_MISSING.pay_ratio_31d,
     );
+  });
+});
+
+describe('a re-run replaces a date, it does not merge with it', () => {
+  /**
+   * `upsertScores` corrects the carriers it is handed and is blind to the rest. Without a prune, a
+   * carrier who leaves the population between two runs of the SAME date keeps their row forever,
+   * holding whatever the earlier run computed — while `replaceContributions` has already deleted
+   * the per-feature explanation behind it.
+   *
+   * Observed for real: re-scoring 2026-07-28 / 08-04 / 08-11 left 5 orphan rows (GSA EXPRESS INC on
+   * all three, plus two more), scored 501-570 in the 'high'/'elevated' bands with zero
+   * contributions. This is not backfill-only — "Refresh scoring" re-runs today, so a carrier tagged
+   * a debtor after the morning run would simply stay on the watchlist.
+   */
+  it('prunes by carrier, never by date alone', async () => {
+    const repo = await import('../../src/repos/mytrionWatchRepo.js');
+    expect(repo.mytrionWatchRepo.pruneScoresNotIn).toBeTypeOf('function');
+    // A prune with an empty carrier list must be a no-op, not "delete the whole date": a run that
+    // scored nobody is a failed run, and it must not take the previous snapshot with it.
+    const src = readFileSync(
+      new URL('../../src/repos/mytrionWatchRepo.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    expect(src).toMatch(/if \(carrierIds\.length === 0\) return 0;/);
+  });
+
+  it('never prunes on a single-carrier rescore', () => {
+    // That path deliberately looks at one carrier; pruning would delete the other ~700.
+    const src = readFileSync(
+      new URL('../../src/modules/mytrionWatch/watchService.ts', import.meta.url).pathname,
+      'utf8',
+    );
+    const guard = src.match(/if \(!opts\.carrierId\) \{[\s\S]*?\n {6}\}/)?.[0] ?? '';
+    expect(guard).toMatch(/pruneScoresNotIn/);
   });
 });

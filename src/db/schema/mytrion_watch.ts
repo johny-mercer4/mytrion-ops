@@ -1,14 +1,15 @@
 /**
  * Mytrion Watch — behavioural credit scoring for EXISTING carriers.
  *
- * A logistic-regression-on-WoE model (`forward_all_clean_v1`) scores every active carrier weekly.
+ * A logistic-regression-on-WoE model (`forward_all_clean_v1`) scores every active carrier daily.
  * The features come from the DWH; everything below is OURS, in the app Postgres, because:
  *
  *   - HISTORY CANNOT BE RECONSTRUCTED. The DWH's overdue table is mutated in place — `payment_date`
- *     and `payment_amount` are filled in when a bill is paid — so scoring a past Monday off it uses
- *     knowledge from the future. Its archive holds one week. Every week we do not snapshot is a
- *     week of history that is gone, which is the whole argument for storing rather than computing
- *     on demand.
+ *     and `payment_amount` are filled in when a bill is paid — so scoring a past date off it reads
+ *     a payment history that has since moved on. (The table does retain settled rows: 247,513 of
+ *     them back to 2025-07-17. What it does not retain is what it looked like on any given morning.)
+ *     Every day we do not snapshot is a day of history that is gone, which is the whole argument
+ *     for storing rather than computing on demand.
  *   - The trend IS the product. "PD 0.14" tells a credit agent far less than "620 → 540 over six
  *     weeks, driven by pay ratio", and that only exists if we keep the rows.
  *   - The DWH is a small shared analytics Postgres with a low connection cap. An eight-CTE scoring
