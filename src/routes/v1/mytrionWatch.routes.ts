@@ -84,6 +84,11 @@ export async function mytrionWatchRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get('/verification/watch/history', auth, async (request) => {
+    const ctx = requireWatchRead(request);
+    return { points: await watchService.history(ctx) };
+  });
+
   app.get('/verification/watch/runs', auth, async (request) => {
     const ctx = requireWatchRead(request);
     return { runs: await watchService.runs(ctx) };

@@ -11,9 +11,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus, Search, ShieldAlert } from 'lucide-react';
+import { Tabs } from '@/ds';
 import { useCachedLoad } from '../../_shared/swrCache';
 import { WatchDetail } from './WatchDetail';
 import { WatchFreshness } from './WatchFreshness';
+import { WatchTimeline } from './WatchTimeline';
 import { WatchPager } from './WatchPager';
 import {
   BAND_LABEL,
@@ -49,6 +51,11 @@ export function MytrionWatch() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * Two views of the same snapshots: who to look at now, and how the book has moved.
+   * A sub-view rather than a Mytrion tab — it is the same data and the same department gate.
+   */
+  const [view, setView] = useState<'watchlist' | 'timeline'>('watchlist');
 
   // Typing a carrier name should not fire a query per keystroke against a 700-row snapshot.
   useEffect(() => {
@@ -112,6 +119,21 @@ export function MytrionWatch() {
 
       <WatchFreshness lastRun={run} onRefreshed={reload} />
 
+      <Tabs
+        size="sm"
+        aria-label="Watch views"
+        items={[
+          { value: 'watchlist', label: 'Watchlist' },
+          { value: 'timeline', label: 'Historical timeline' },
+        ]}
+        value={view}
+        onValueChange={(v) => setView(v as 'watchlist' | 'timeline')}
+      />
+
+      {view === 'timeline' ? <WatchTimeline /> : null}
+
+      {view === 'watchlist' ? (
+      <>
       <div className="mw-stats">
         {loading && !agg ? (
           <StatSkeletons />
@@ -217,6 +239,8 @@ export function MytrionWatch() {
           />
         </>
       )}
+      </>
+      ) : null}
     </div>
   );
 }

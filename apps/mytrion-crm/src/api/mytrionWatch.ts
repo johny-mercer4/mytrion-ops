@@ -236,3 +236,22 @@ export async function getCarrierInvoices(
     { ...(signal ? { signal } : {}) },
   )) as CarrierInvoiceContext;
 }
+
+/** One snapshot of the whole book — a point on the portfolio timeline. */
+export interface PortfolioPoint {
+  scoringDate: string;
+  total: number;
+  low: number;
+  watch: number;
+  elevated: number;
+  high: number;
+  avgScore: number | null;
+  exposureAtRisk: number | null;
+}
+
+/** The book over time. Our snapshot table only — no warehouse call, so it is fast. */
+export async function getWatchHistory(signal?: AbortSignal): Promise<{ points: PortfolioPoint[] }> {
+  return (await request('GET', '/verification/watch/history', {
+    ...(signal ? { signal } : {}),
+  })) as { points: PortfolioPoint[] };
+}

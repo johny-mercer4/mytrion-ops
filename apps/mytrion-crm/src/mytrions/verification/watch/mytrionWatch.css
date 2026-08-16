@@ -506,6 +506,81 @@
   pointer-events: none;
 }
 
+/* ------------------------------------------------------------------ portfolio timeline */
+
+[data-mytrion='verification'] .mw-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/*
+ * Band mix, one column per snapshot.
+ *
+ * Proportional, not absolute: the scored population moves week to week, so raw counts would show a
+ * book "improving" simply because fewer carriers fuelled. Share is the honest comparison.
+ */
+[data-mytrion='verification'] .mw-mix {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 8rem;
+}
+
+[data-mytrion='verification'] .mw-mix-col {
+  display: flex;
+  flex-direction: column-reverse;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--vf-r-control);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+[data-mytrion='verification'] .mw-mix-seg {
+  background: var(--mw-band, var(--text-muted));
+}
+
+/*
+ * The mix in words. The columns carry their counts on `title`, which no finger can summon, so the
+ * latest snapshot is also written out — and that readout doubles as the colour legend.
+ */
+[data-mytrion='verification'] .mw-mix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-mytrion='verification'] .mw-mix-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+[data-mytrion='verification'] .mw-mix-key b {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+[data-mytrion='verification'] .mw-mix-key-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--mw-band, var(--text-muted));
+}
+
+[data-mytrion='verification'] .mw-mix-key-note {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 /* ------------------------------------------------------------------ pager */
 
 [data-mytrion='verification'] .mw-pager {

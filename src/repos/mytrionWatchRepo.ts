@@ -39,6 +39,18 @@ export interface WatchListFilter {
   scoringDate?: string | undefined;
 }
 
+/** One snapshot of the whole book, for the portfolio timeline. */
+export interface PortfolioPoint {
+  scoringDate: string;
+  total: number;
+  low: number;
+  watch: number;
+  elevated: number;
+  high: number;
+  avgScore: number | null;
+  exposureAtRisk: number | null;
+}
+
 export interface WatchAggregates {
   total: number;
   low: number;
@@ -249,6 +261,35 @@ export const mytrionWatchRepo = {
         : [],
       model: bundle?.model ? camel(bundle.model) : null,
     };
+  },
+
+  /**
+   * The book's own history — one row per snapshot date.
+   *
+   * The per-carrier chart answers "is this carrier drifting". This answers the question a credit
+   * lead asks instead: "is the BOOK drifting". One grouped scan of our own table; the warehouse is
+   * not involved.
+   */
+  async history(ctx: TenantContext, limit = 180): Promise<PortfolioPoint[]> {
+    const rows = await db.execute<Record<string, unknown>>(sql`
+      select
+        scoring_date                                                        as "scoringDate",
+        count(*)::int                                                       as total,
+        count(*) filter (where band = 'low')::int                           as low,
+        count(*) filter (where band = 'watch')::int                         as watch,
+        count(*) filter (where band = 'elevated')::int                      as elevated,
+        count(*) filter (where band = 'high')::int                          as high,
+        round(avg(credit_score), 1)::float8                                 as "avgScore",
+        coalesce(sum(credit_limit) filter (where band in ('elevated','high')), 0)::float8
+                                                                            as "exposureAtRisk"
+      from mytrion_watch_scores
+      where tenant_id = ${ctx.tenantId}
+      group by scoring_date
+      order by scoring_date desc
+      limit ${limit}
+    `);
+    // Oldest first — a timeline reads left to right.
+    return (rows as unknown as PortfolioPoint[]).slice().reverse();
   },
 
   /** Previous scores keyed by carrier, so a run can compute movement without a query per carrier. */

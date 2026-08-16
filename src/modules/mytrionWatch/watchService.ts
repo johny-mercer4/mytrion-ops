@@ -295,6 +295,11 @@ export const watchService = {
     });
   },
 
+  /** The book over time. Reads our snapshot table only — no warehouse call. */
+  async history(ctx: TenantContext) {
+    return withWatchSchemaGuard(() => mytrionWatchRepo.history(ctx));
+  },
+
   async runs(ctx: TenantContext) {
     return withWatchSchemaGuard(() => mytrionWatchRepo.recentRuns(ctx));
   },

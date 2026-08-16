@@ -17610,3 +17610,59 @@ what is "predicted" is an accounting threshold rather than economic loss.
 Honest claim: **strong directional evidence** — monotone bands, 3.3-5.0x in the top band, near-zero
 default in Low, 69-78% capture at ~40% coverage, median 3-6 weeks of warning. Not yet an audited
 number to underwrite policy on.
+
+## 2026-08-16 — Watch: read-only proof, portfolio timeline, reference artifact
+
+### The DWH is read-only, and now provably so
+
+The standing constraint ("Mytrion Watch should NOT insert/update in the DWH — we are read-only")
+was already true and is now pinned. `src/integrations/dwh.ts` exposes exactly one data method,
+`query()`. 34 call sites, zero writes against any warehouse schema. New
+`tests/unit/dwh-is-read-only.test.ts` (3 tests) fails the build if an INSERT/UPDATE/DELETE is ever
+aimed at `octane.` / `dbt.` / `verification_staging.` / `verification_public.`, or if a write helper
+appears on the client, or if `watchService` stops routing persistence through `mytrionWatchRepo`.
+
+### Portfolio timeline
+
+`mytrion_watch_scores` already held one row per carrier per date, so the book's history was in the
+table and simply unread. Added `mytrionWatchRepo.history()` (one grouped query, 180 dates max),
+`watchService.history()`, `GET /v1/verification/watch/history`, and `WatchTimeline.tsx` mounted as a
+`ds/Tabs` sub-view beside the watchlist.
+
+Three deliberate calls in that component:
+
+- **Proportional band columns, not counts.** The scored population moves week to week, so raw
+  counts would show the book "improving" simply because fewer carriers fuelled.
+- **Zero-based money axis.** A truncated exposure axis exaggerates every wobble.
+- **Under two snapshots it refuses to draw a trend** and says so, rather than joining two dots and
+  calling it a line.
+
+Polish pass on the same file found four real defects, all fixed:
+
+1. `fmtMoneyShort` prints no sign, so a $120k **fall** in exposure at risk rendered identically to a
+   $120k rise — on that tile, the difference between good news and bad. Added `signed()`.
+2. The snapshot span read "Sep 15 → Aug 10" once the backfill crossed a year boundary, which reads
+   backwards. `fmtSpan()` now shows years only when the range crosses one.
+3. The band columns carried their numbers on `title=` only — unreachable with a finger. Added
+   `BandLegend`, which writes out the latest snapshot and doubles as the colour key.
+4. `WatchTimeline` used `.mw-pane` / `.mw-chart-*` while importing neither stylesheet; it worked only
+   because `MytrionWatch` statically imports `WatchDetail`. Now imports `watchDetail.css` itself.
+
+### Backfill
+
+`scripts/backfillWatchHistory.ts` running 49 Mondays 2025-09-15 → 2026-08-11 with production
+semantics (debtor exclusion ON). ~17 dates / 14.6k rows in at the time of writing; the timeline
+deepens as it lands, with no code change needed.
+
+### Artifact
+
+Republished the Mytrion Watch reference to the same URL, now the full document: every warehouse
+table it reads and why that one, the actual CTEs from `WATCH_FEATURE_SQL`, the invoice-context
+query, all eight measures with units, a worked score, the five tables we write, the daily pipeline,
+the API surface, and the backtest evidence with its three unresolved biases stated in the same
+breath.
+
+### Gates
+
+`pnpm lint` 0 errors / 23 pre-existing warnings · `pnpm typecheck` clean · `pnpm test` 3111 passed
+(1 skipped) · CRM typecheck clean · CRM test 1029/1029 · `pnpm build:widget` rebuilt and committed.
