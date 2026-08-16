@@ -95,3 +95,30 @@ describe('the pay-ratio window waits for invoices to mature', () => {
     expect(WATCH_FEATURE_SQL).toMatch(/observation_date\s*>=\s*\$1::date - INTERVAL '31 days'/);
   });
 });
+
+describe('the feature SQL reproduces scoring_all_in_one.sql', () => {
+  /**
+   * The training script IS the specification. Verified end to end on 2026-04-27 (the last Monday
+   * inside the training source's coverage — verification_public.dbt_stg_cmp_transactions ends
+   * 2026-05-04): 873 of 873 carriers, identical population and identical credit_score.
+   *
+   * These pin the two clauses where a plausible-looking edit would silently diverge from it.
+   */
+  it('counts a payment that has an amount but no date, as the model does', () => {
+    // Training's ov_31: `payment_date IS NULL OR payment_date < $1`. Inverting this to
+    // `IS NOT NULL AND` is the natural-looking spelling and is WRONG: 1,208 rows table-wide carry
+    // a payment_amount with no payment_date, worth $2.14M.
+    expect(WATCH_FEATURE_SQL).toMatch(
+      /CASE WHEN payment_date IS NULL OR payment_date < \$1::date/,
+    );
+    expect(WATCH_FEATURE_SQL).not.toMatch(/payment_date IS NOT NULL AND payment_date < \$1::date\s*\n\s*THEN COALESCE\(payment_amount/);
+  });
+
+  it('keeps recovery_speed restricted to invoices that actually went past due', () => {
+    // Training's tmp_hist_feats: payment_gap is AVG over ALL settled invoices, recovery_speed only
+    // over those with exage3 > 0. Collapsing the two is the obvious "simplification" and destroys
+    // the distinction the model was fitted on.
+    expect(WATCH_FEATURE_SQL).toMatch(/AVG\(\(payment_date - invoice_date\)::numeric\) AS payment_gap/);
+    expect(WATCH_FEATURE_SQL).toMatch(/AVG\(CASE WHEN exage3 > 0 THEN \(payment_date - invoice_date\)::numeric END\)/);
+  });
+});

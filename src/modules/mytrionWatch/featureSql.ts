@@ -142,7 +142,12 @@ base AS (
 pay_31 AS (
   SELECT carrier_id,
          SUM(invoice_amount) AS invoiced,
-         SUM(CASE WHEN payment_date IS NOT NULL AND payment_date < $1::date
+         -- Verbatim from the training script's ov_31. Note the NULL arm: a payment with an AMOUNT
+         -- but no DATE counts as paid. Ours had the condition inverted (IS NOT NULL AND), which is
+         -- silent on most windows — 0 value differences across all 873 carriers on 2026-04-27 — but
+         -- 1,208 rows table-wide carry an amount with no date, worth $2.14M, so the inversion was a
+         -- latent divergence from the model's own definition rather than a harmless one.
+         SUM(CASE WHEN payment_date IS NULL OR payment_date < $1::date
                   THEN COALESCE(payment_amount, 0) ELSE 0 END) AS paid
   FROM ov
   WHERE observation_date >= $1::date - INTERVAL '31 days'

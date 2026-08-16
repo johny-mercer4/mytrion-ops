@@ -17735,3 +17735,55 @@ no local DB in this project — only prod.
 
 Tuesdays now sit alongside the Mondays across the whole fortnight — 614.1-615.4, exposure $1.16M-$1.61M,
 High down from 9/15/12 to 3/3/1 — and every Monday is byte-identical to before the fix.
+
+## 2026-08-16 (later still) — the training script arrived; scoring verified against it
+
+The user supplied `scoring_all_in_one.sql` (LogReg + WoE, forward_all_clean_v1). It is the
+specification, so I verified our implementation against it rather than describing it.
+
+### Verified EXACT
+
+| check | result |
+|---|---|
+| 58 WoE bins — bounds, is_nan, woe, coef | all 58 identical |
+| intercept | -2.874368 = -2.874368 |
+| score anchors | base 600 / odds 50 / PDO 20 |
+| bin selection (lower exclusive, upper inclusive, bin_id order, NaN bin) | `pickBin` matches |
+| **full run, 2026-04-27** | **873 / 873 carriers — same population, same credit_score** |
+
+Ported the script verbatim, changing only schema names (`public.dbt_stg_cmp_transactions` ->
+`verification_public.…`, `staging.` -> `verification_staging.`), session TZ pinned to Asia/Tashkent
+because the training source is `timestamptz` and the original leans on the reader's session TZ — its
+own header flags that line. Kept as `scripts/verifyWatchAgainstTraining.mjs`; it writes nothing.
+
+Date choice matters: `verification_public.dbt_stg_cmp_transactions` is a FROZEN training snapshot
+ending 2026-05-04, so 2026-04-27 is the last Monday it can score. At 2026-08-10 it returns 0 rows.
+
+### The open question from this morning is CLOSED
+
+The script's default scoring date is 2026-05-11 — a **Monday** — and its header instructs replacing
+it with «нужный понедельник» (the desired Monday). **The model is Monday-anchored by design.** That
+is why the weekday artifact never appeared in training, and it confirms the 3-day maturity lag is
+consistent with the fitted convention: measured at feature level on 2026-04-27, our lag changes
+`pay_ratio_31d` for **0 of 873** carriers and moves **0** across a bin.
+
+### One latent divergence found and fixed
+
+Training's `ov_31`:      `payment_date IS NULL OR payment_date < $1`  -> count payment_amount
+Ours had:                `payment_date IS NOT NULL AND payment_date < $1`
+
+Inverted for the NULL arm: a payment with an AMOUNT but no DATE counts as paid in training and did
+not for us. It produced **0 value differences across all 873 carriers** on the tested Monday, so
+nothing shipped wrong — but 1,208 rows table-wide carry an amount with no date, worth $2.14M, so it
+was a latent divergence from the model's own definition. Now verbatim, and pinned by a test along
+with the payment_gap / recovery_speed split (`exage3 > 0`), which is the other clause an
+"obvious simplification" would destroy.
+
+Also re-confirmed harmless: splitting `pay_ratio_31d` and `avg_invoiced_14d` into separate CTEs. The
+original LEFT JOINs both windows to base in one query, which fans out — but one feature is a RATIO
+and the other an AVERAGE, so uniform replication cancels in both. Equivalent, and 873/873 proves it.
+
+### Backticks in a SQL comment, again
+
+Adding the comment above broke the build: the JS template literal terminated on a backtick inside
+SQL. Same trap as earlier this session. No backticks in `WATCH_FEATURE_SQL` comments.
