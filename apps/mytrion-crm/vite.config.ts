@@ -1,13 +1,30 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+/** Stamp a content hash on the entry chunk. Hashless `assets/index.js` keeps index.html
+ *  paths stable (fewer PR conflicts on `build`); stale-build reload reads this id, not the filename. */
+function octaneBuildId(): Plugin {
+  return {
+    name: 'octane-build-id',
+    apply: 'build',
+    generateBundle(_opts, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (item.type !== 'chunk' || !item.isEntry) continue;
+        const id = createHash('sha256').update(item.code).digest('hex').slice(0, 16);
+        item.code = `window.__OCTANE_BUILD__=${JSON.stringify(id)};${item.code}`;
+      }
+    },
+  };
+}
 
 // Dev server is pinned to :5173 (strictPort → always 5173, never auto-drifts to 5174). This
 // origin must be in the backend's CORS allowlist (CORS_ORIGINS in the API's .env).
 // `base: './'` makes the build use relative asset paths, which a Zoho widget bundle requires.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), octaneBuildId()],
   base: './',
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
@@ -33,6 +50,12 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
+        // Hashless entry + CSS so committed index.html always points at the same paths. Two PRs
+        // that both run `pnpm build:widget` then stop colliding on `src="./assets/index-XXXX.js"`.
+        // Lazy chunks stay content-hashed. widgetStatic must serve these two as no-cache (not
+        // immutable/1y) or a deploy keeps the old entry. staleBuildReload compares __OCTANE_BUILD__.
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name]-[hash].js',
         // Fonts get a STABLE, UNHASHED path under assets/fonts/ so index.html can preload them by
         // name without knowing a build hash.
         //
@@ -42,14 +65,14 @@ export default defineConfig({
         // and 404. That is why the faces are imported through the Vite graph rather than dropped
         // in public/.
         //
-        // Unhashed is safe because these four files never change: a webface is versioned by its
-        // filename. If a face is ever swapped, rename the file — @fastify/static serves non-HTML
-        // as `immutable, max-age=1y`, so a same-named replacement would be cached for a year.
+        // Unhashed fonts are safe because these four files never change: a webface is versioned by
+        // its filename. If a face is ever swapped, rename the file — hashed/lazy assets stay
+        // `immutable, max-age=1y`; the hashless entry/CSS do not (see widgetStatic.ts).
         assetFileNames: (info) => {
           const name = info.name ?? info.originalFileNames?.[0] ?? '';
-          return name.endsWith('.woff2')
-            ? 'assets/fonts/[name][extname]'
-            : 'assets/[name]-[hash][extname]';
+          if (name.endsWith('.woff2')) return 'assets/fonts/[name][extname]';
+          if (name === 'index.css') return 'assets/index.css';
+          return 'assets/[name]-[hash][extname]';
         },
       },
     },

@@ -78,9 +78,11 @@ export function useKpiPresence(): void {
     activityEvents.forEach((name) => window.addEventListener(name, noteInteraction, { passive: true }));
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onPageHide);
-    heartbeat();
+    // Do not compete with Home + sidebar badge fan-out on the first tick (HTTP/2 refused streams).
+    const first = window.setTimeout(heartbeat, 800);
     const timer = window.setInterval(heartbeat, 60_000);
     return () => {
+      window.clearTimeout(first);
       window.clearInterval(timer);
       activityEvents.forEach((name) => window.removeEventListener(name, noteInteraction));
       document.removeEventListener('visibilitychange', onVisibility);

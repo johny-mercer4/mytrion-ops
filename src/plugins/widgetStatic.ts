@@ -71,11 +71,17 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
       // fallback to index.html for non-API GETs is handled by the not-found handler (errorHandler).
       prefix: '/',
       index: ['index.html'],
-      // index.html must revalidate so a redeploy is picked up; vite's hashed assets cache hard.
+      // index.html + the hashless entry/CSS must revalidate so a redeploy is picked up.
+      // Hashed lazy chunks stay immutable/1y. See apps/mytrion-crm/vite.config.ts.
       setHeaders: (res, filePath) => {
+        const normalized = filePath.replace(/\\/g, '/');
+        const revalidate =
+          normalized.endsWith('.html') ||
+          normalized.endsWith('/assets/index.js') ||
+          normalized.endsWith('/assets/index.css');
         res.header(
           'Cache-Control',
-          filePath.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable',
+          revalidate ? 'no-cache' : 'public, max-age=31536000, immutable',
         );
       },
     });

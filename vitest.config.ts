@@ -3,25 +3,39 @@ import { defineConfig } from 'vitest/config';
 /**
  * Where unit tests point Postgres.
  *
- * CI exports `MYTRION_OPS_DATABASE_URL` for its own pg service (port 5432), so an existing value
- * always wins. The fallback is what matters locally: without it, tests inherit the developer's
- * `.env`, which points at **Render production in Oregon** — and route suites resolve a session
- * through the database, so the first test in each file paid a real cross-country round trip.
- * Measured: 4.4s to 7.2s against a 5s default timeout, i.e. a coin flip, and the cause of
- * intermittent failures that look like they belong to whatever feature was last touched.
+ * The app itself is local=prod (MYTRION_OPS_DATABASE_URL is the Render DSN on developer
+ * machines). The suite is not the app. If we inherit that DSN, every `pnpm test` writes
+ * audit_log / session rows into production and the first query in each file is a
+ * cross-country round trip (measured 4.4s–7.2s vs a 5s default timeout).
  *
- * Same reasoning as the FF_ZOHO_MCP_ENABLED pin below: a unit run must not depend on a network
- * service answering quickly.
+ * Resolution, in order:
+ *   1. VITEST_DATABASE_URL — explicit escape hatch, never used by the app.
+ *   2. CI's MYTRION_OPS_DATABASE_URL — GitHub Actions sets CI=true and points this at the
+ *      job's throwaway pgvector service, not Render.
+ *   3. Local docker-compose Postgres on :5433.
+ *
+ * Same reasoning as the FF_ZOHO_MCP_ENABLED pin below: a unit run must not depend on a
+ * network service answering quickly, and must not mutate the shared prod database.
  */
-const TEST_DATABASE_URL =
-  process.env.MYTRION_OPS_DATABASE_URL ??
-  'postgresql://octane:octane@localhost:5433/octane_assistant';
+function resolveTestDatabaseUrl(): string {
+  if (process.env.VITEST_DATABASE_URL) return process.env.VITEST_DATABASE_URL;
+  if (process.env.CI === 'true' && process.env.MYTRION_OPS_DATABASE_URL) {
+    return process.env.MYTRION_OPS_DATABASE_URL;
+  }
+  return 'postgresql://octane:octane@localhost:5433/octane_assistant';
+}
+
+const TEST_DATABASE_URL = resolveTestDatabaseUrl();
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Default reporter lists every case (~3k lines). CI uses dots + annotations so failures
+    // stay visible and the log is readable. Console from passed tests is suppressed in CI only.
+    reporter: process.env.GITHUB_ACTIONS ? ['dot', 'github-actions'] : 'default',
+    silent: Boolean(process.env.GITHUB_ACTIONS),
     // Applied to process.env BEFORE the app's `dotenv/config` runs (dotenv never overrides an
     // existing value), so a developer's local .env (which now carries feature flags for `pnpm dev`)
     // can't make the suite non-deterministic. Tests that need a flag ON toggle it at runtime and
@@ -91,6 +105,49 @@ export default defineConfig({
       // either branch sets it at runtime and restores to this baseline.
       HORIZON_MINI_APP_SHORT_NAME: '',
       HORIZON_MINI_APP_DIRECT: '',
+      // Audit writes default ON. Unpinned, every route/tool test inserts into whatever
+      // database the suite resolved — including prod when a developer DSN leaked in —
+      // which is the "CI Test Admin" flood in Admin → Audit Log. Suites that assert
+      // audit rows turn the flag back on (see audit-logging.test.ts).
+      FF_AUDIT_LOG_ENABLED: '0',
+      // Live vendors. dotenv will not override these, so a developer .env (or a CI secret
+      // that happened to be in the runner env) cannot make `pnpm test` call EFS / servercrm
+      // / Zoho / DWH / Telegram / RingCentral / Composio / OpenAI. Suites that need a stub
+      // URL set it in vi.hoisted() before importing env.ts.
+      FF_COMPOSIO_ENABLED: '0',
+      FF_MANAGER_EFS_WRITES_ENABLED: '0',
+      MANAGER_EFS_LIVE_ACTIONS: '',
+      EFS_WSDL_URL: '',
+      EFS_GROUP_WSDL_URL: '',
+      EFS_LOGIN: '',
+      EFS_PASSWORD: '',
+      SERVER_CRM_URL: '',
+      SERVER_CRM_KEY: '',
+      DWH_DATABASE_URL: '',
+      VERIFICATION_DATABASE_URL: '',
+      OPENAI_API_KEY: '',
+      TELEGRAM_BOT_TOKEN: '',
+      TELEGRAM_CARRIER_BOT_TOKEN: '',
+      ZOHO_REFRESH_TOKEN: '',
+      ZOHO_CRM_REFRESH_TOKEN: '',
+      ZOHO_DESK_REFRESH_TOKEN: '',
+      ZOHO_PEOPLE_REFRESH_TOKEN: '',
+      ZOHO_CLIENT_SECRET: '',
+      ZOHO_CRM_CLIENT_SECRET: '',
+      RINGCENTRAL_JWT: '',
+      RINGCENTRAL_CLIENT_SECRET: '',
+      COMPOSIO_API_KEY: '',
+      DBT_MCP_URL: '',
+      DBT_MCP_CLIENT_SECRET: '',
+      ZOHO_MCP_URL: '',
+      CMP_PRODUCTION_URL: '',
+      CMP_PRODUCTION_PASSWORD: '',
+      CMP_SANDBOX_URL: '',
+      CMP_SANDBOX_PASSWORD: '',
+      AWS_MYSQL_DATABASE_URL: '',
+      AWS_MYSQL_PASSWORD: '',
+      DROPBOX_REFRESH_TOKEN: '',
+      CREDIT_PLATFORM_API_KEY: '',
     },
     coverage: {
       provider: 'v8',
