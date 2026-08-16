@@ -187,12 +187,24 @@ dormant AS (
     SELECT carrier_id, grp, COUNT(*) AS len FROM runs WHERE inactive = 1 GROUP BY carrier_id, grp
   ) x GROUP BY carrier_id
 ),
--- The approved limit is the largest row for the carrier (the contract-less row carries the total).
-limits AS (
+-- Identity comes from the COMPANY DIMENSION, one row per carrier.
+--
+-- It used to be MAX() over postlimit_default_list, an overdue export. Measured against
+-- octane.dim_company over the 2,913 carriers in both: the agent disagreed for 2,272 and was
+-- missing entirely for 476, and names differed for 771 — though 591 of those were casing only.
+-- Worse, that CTE's WHERE also filtered on a parseable credit_limit, so a carrier whose overdue
+-- rows carried no numeric limit lost its NAME and AGENT too. The dimension covers all 728 scored
+-- carriers with a name and 726 with an agent, so nothing is lost by reading it directly.
+company AS (
+  SELECT carrier_id, company_name, agent AS agent_name, credit_limit
+  FROM octane.dim_company
+),
+-- The dimension's credit_limit is populated for LOC carriers (all 2,429 of them) but is null or
+-- zero elsewhere, while 460 carriers company-wide have an approved limit ONLY in the overdue list.
+-- So the dimension wins where it has a figure and this is the fallback — for this column alone.
+pl_limit AS (
   SELECT carried_id::bigint AS carrier_id,
-         MAX(NULLIF(credit_limit, '')::numeric) AS credit_limit,
-         MAX(company_name)                      AS company_name,
-         MAX(agent)                             AS agent_name
+         MAX(NULLIF(credit_limit, '')::numeric) AS credit_limit
   FROM verification_staging.postlimit_default_list
   WHERE carried_id   ~ '^[0-9]+$'
     AND credit_limit ~ '^[0-9]+(\\.[0-9]+)?$'
@@ -200,9 +212,9 @@ limits AS (
 )
 SELECT
   b.carrier_id::text                                         AS carrier_id,
-  l.company_name,
-  l.agent_name,
-  l.credit_limit::text                                       AS credit_limit,
+  co.company_name,
+  co.agent_name,
+  COALESCE(NULLIF(co.credit_limit, 0), pl.credit_limit)::text AS credit_limit,
   CASE WHEN COALESCE(p31.invoiced, 0) = 0 THEN NULL
        ELSE (p31.paid / p31.invoiced) END::text              AS pay_ratio_31d,
   h.payment_gap::text                                        AS payment_gap,
@@ -218,7 +230,8 @@ LEFT JOIN inv_14    i14 USING (carrier_id)
 LEFT JOIN hist      h   USING (carrier_id)
 LEFT JOIN dormant   d   USING (carrier_id)
 LEFT JOIN txn_feats tf  USING (carrier_id)
-LEFT JOIN limits    l   USING (carrier_id)
+LEFT JOIN company   co  USING (carrier_id)
+LEFT JOIN pl_limit  pl  USING (carrier_id)
 `;
 
 /** Same query, narrowed to one carrier — the on-demand "rescore now" path. */

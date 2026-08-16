@@ -17310,3 +17310,65 @@ guidelines, not the detector:
 Surgical held elsewhere: the `ds/Tabs` change reached a shared component and another consumer's
 override, which is fixing the cause rather than the symptom — and the override removal was cleaning
 up a double-space MY change would have created.
+
+## 2026-08-16 — Mytrion Watch identity was coming from the wrong table
+
+Asked to inspect `octane.dim_company` and check nothing on the Watch desk is false. It was.
+
+### What dim_company actually is
+
+A true dimension: **8,256 rows, 8,256 distinct carrier_id**, one row per carrier, carrying
+`company_name`, `credit_limit` (numeric), `agent` / `agent_zoho_user_id` / `agent_email`,
+`payment_terms`, `is_debtor`, `first_swipe_date`, `credit_score`, `trucks`, `dot` and more. It covers
+**728/728** scored carriers: 728 with a name, 726 with an agent, 724 with a positive limit.
+
+### The defect
+
+Watch took company name, agent and credit limit from `MAX()` over
+`verification_staging.postlimit_default_list` — an **overdue export**, not a company record. Measured
+over the 2,913 carriers present in both:
+
+| field | disagreement |
+| --- | --- |
+| agent | **2,272 of 2,913** differ; 476 missing there entirely |
+| company_name | 771 differ — but 591 of those only by casing |
+| credit_limit | 529 differ; 460 carriers have a limit ONLY in the overdue list |
+
+And a latent bug: that CTE's `WHERE` also filtered on a parseable `credit_limit`, so a carrier whose
+overdue rows carried no numeric limit **lost its name and agent too**.
+
+Against what was actually stored for 2026-08-11: **496 of 728 agents changed, 281 of which had no
+agent at all.** Real corrections, e.g. carrier 5745870 "Alicia McNeil" → "Manal Alqassimi". The desk
+was attributing two-thirds of the book to the wrong sales agent.
+
+### Fixed, and deliberately narrowly
+
+Identity now reads `octane.dim_company`. `credit_limit` prefers the dimension and falls back to the
+overdue list — the dimension's limit is populated for all 2,429 LOC carriers but null/zero elsewhere,
+and dropping the fallback would blank 460 carriers. Re-scored both databases: **728 carriers,
+avgScore 598.4 and the band distribution unchanged** — this touched no model input. Exposure at risk
+moved $2,448,699 → $2,433,699, which is the 10 corrected limits.
+
+### NOT changed — a business decision, not a refactor
+
+`dim_company` also exposes `payment_terms` and `is_debtor`, which look like better versions of the
+two exclusion filters. They are not interchangeable:
+
+- **prepay** — tag-based 751, `payment_terms='Prepay'` 733, agree on 728.
+- **debtor** — tag-based 1,243, `is_debtor` 786, **agree on only 671**.
+
+These filters define who gets scored, and the model was trained on the tag-based population.
+Swapping the debtor rule would silently re-score hundreds of carriers against a model fitted to a
+different population. Surfaced rather than picked — `mytrion-watch-feature-sql.test.ts` pins the
+current definitions so the choice stays deliberate.
+
+### Trust / UI review
+
+Impeccable detector clean (exit 0) on `verification/watch`. The surface degrades honestly — no
+company name renders as "Carrier N", no agent as "Unassigned", no limit as an em dash — so a gap
+never reads as a figure.
+
+One recorded, not built: the detail's score ribbon spans `highCut-80 .. watchCut+120` (440–760) and
+clamps its marker. Today min is 489.96 and max 693.19, so nothing clamps, and the exact score sits
+beside the ribbon regardless. Building for it now would be error handling for a scenario that does
+not occur.
