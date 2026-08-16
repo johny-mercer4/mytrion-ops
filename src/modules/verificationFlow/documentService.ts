@@ -14,6 +14,7 @@
  */
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { storageFor, verificationStorageProvider } from '../files/storage/index.js';
+import { requireCarrierAttachmentStorage } from '../verification/carrierAttachmentService.js';
 import { verificationCaseAssetRepo } from '../../repos/verificationCaseAssetRepo.js';
 import type {
   VerificationCaseDocument,
@@ -116,6 +117,10 @@ export const documentService = {
       const key = keyFor(ctx.tenantId, caseId, input.docType, rowId, input.fileName);
 
       // Bytes first: a storage failure must not leave a metadata row pointing at nothing.
+      // Same precondition the carrier-attachment surface uses: an unconfigured Dropbox otherwise
+      // surfaces as a raw 500 from deep inside the adapter, which reads as "the app is broken"
+      // rather than "this environment has no file storage".
+      requireCarrierAttachmentStorage();
       await storageFor(provider).put(key, input.buffer, { contentType: input.mime });
 
       if (existing) {
@@ -188,6 +193,7 @@ export const documentService = {
           expose: true,
         });
       }
+      requireCarrierAttachmentStorage();
       const link = await storageFor(doc.storageProvider).presignGet(doc.s3Key, {
         filename: doc.fileName ?? 'document',
       });

@@ -6,6 +6,7 @@
  * drifts for both at once rather than silently for one.
  */
 import { request, requestMultipart } from './transport';
+import { openSignedFile } from '../lib/openSignedFile';
 
 export type VerificationApplicantType = 'owner_operator' | 'carrier' | 'company';
 export type VerificationRoute = 'octane_internal' | 'wex';
@@ -345,27 +346,13 @@ export async function getDocumentLink(
   )) as VerificationDocumentLink;
 }
 
-/**
- * Open a document in a new tab.
- *
- * The window is opened BEFORE the await. Safari and Firefox block `window.open` that happens after
- * an async gap because it is no longer attributable to the click, so the tab is claimed while the
- * gesture is still live and its location set once the link resolves.
- */
+/** Open a stored document in a new tab. Tab-before-await lives in `openSignedFile`. */
 export async function openDocument(
   desk: 'sales' | 'verification',
   caseId: string,
   documentId: string,
 ): Promise<void> {
-  const tab = window.open('', '_blank', 'noopener,noreferrer');
-  try {
-    const link = await getDocumentLink(desk, caseId, documentId);
-    if (tab) tab.location.href = link.url;
-    else window.location.href = link.url;
-  } catch (err) {
-    tab?.close();
-    throw err;
-  }
+  await openSignedFile(async () => (await getDocumentLink(desk, caseId, documentId)).url);
 }
 
 export async function patchApplication(

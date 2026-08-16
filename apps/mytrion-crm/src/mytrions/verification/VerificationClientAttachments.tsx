@@ -17,6 +17,7 @@ import {
 } from '../../api/verificationClients';
 import { requestBlob } from '../../api/transport';
 import { Button, ConfirmDialog } from '@/ds';
+import { openSignedFile } from '../../lib/openSignedFile';
 import { deliverExport } from '../../lib/deliverExport';
 import { isTelegramWebView } from '../../telegram/webApp';
 import { invalidateSwrCache, type CachedLoad } from '../_shared/swrCache';
@@ -37,6 +38,7 @@ export function VerificationClientAttachments({
 }) {
   const [uploading, setUploading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<VerificationCarrierAttachment | null>(null);
   const [deleting, setDeleting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -67,18 +69,31 @@ export function VerificationClientAttachments({
   }
 
   async function onDownload(att: VerificationCarrierAttachment): Promise<void> {
+    setActionError('');
+    setOpeningId(att.id);
     try {
-      if (!isTelegramWebView()) {
-        const { url } = await getCarrierAttachmentDownloadUrl(carrierId, att.id);
-        window.open(url, '_blank', 'noopener');
-        return;
-      }
-      const blob = await requestBlob(
-        `/verification/roster/${encodeURIComponent(carrierId)}/attachments/${encodeURIComponent(att.id)}/bytes`,
+      /**
+       * The tab is claimed inside `openSignedFile` BEFORE the link request goes out. This used to
+       * be `await getCarrierAttachmentDownloadUrl(...)` and then `window.open(url)`, which Safari
+       * and Firefox discard because the popup is no longer attributable to the click — the file
+       * opened in Chrome and silently did nothing elsewhere.
+       */
+      await openSignedFile(
+        async () => (await getCarrierAttachmentDownloadUrl(carrierId, att.id)).url,
+        {
+          shouldUseFallback: isTelegramWebView,
+          fallback: async () => {
+            const blob = await requestBlob(
+              `/verification/roster/${encodeURIComponent(carrierId)}/attachments/${encodeURIComponent(att.id)}/bytes`,
+            );
+            await deliverExport(blob, att.fileName);
+          },
+        },
       );
-      await deliverExport(blob, att.fileName);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Download failed');
+      setActionError(e instanceof Error ? e.message : 'Could not open that file.');
+    } finally {
+      setOpeningId(null);
     }
   }
 
@@ -160,9 +175,16 @@ export function VerificationClientAttachments({
                 })}
               </span>
               <div className="vf-file-actions">
-                <Button variant="ghost" size="sm" onClick={() => void onDownload(a)}>
+                {/* Resolving a Dropbox link is a real network round trip, so the control says so
+                    — without it a slow link looks like a dead button and gets clicked again. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={openingId === a.id}
+                  onClick={() => void onDownload(a)}
+                >
                   <Download size={14} aria-hidden="true" />
-                  Download
+                  {openingId === a.id ? 'Opening…' : 'Open'}
                 </Button>
                 <button
                   type="button"

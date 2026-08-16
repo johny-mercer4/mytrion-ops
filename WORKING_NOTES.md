@@ -17090,3 +17090,73 @@ Every endpoint both Mytrions call on load, with real worker tokens:
 
 Nothing 5xx. Worth recording: the earlier 500 storm was Docker being down, not code — see the
 previous entry.
+
+## 2026-08-16 — Dropbox view paths audited across every Mytrion (CS excluded)
+
+Ran a 28-agent audit (5 surfaces → adversarial verify) over every Dropbox-backed attachment surface,
+asking one question: can a user actually OPEN the file, every time.
+
+### It caught a regression in the previous commit
+
+`openSignedFile` claimed the tab with `window.open('', '_blank', 'noopener,noreferrer')`. Per the
+HTML spec's window-open steps, **"if noopener is true, then return null"** — and `noreferrer`
+implies `noopener`. So the tab was created but the handle was always `null`: the tab-before-await
+protection was **inert**, every click leaked an orphan `about:blank`, and the code fell through to
+`window.location.href` — navigating the user's own workspace tab at the file. Strictly worse than
+the bug it replaced.
+
+The unit test passed because the mock returned a fake handle. **A mock cannot catch this.** The
+test now asserts on the ARGUMENTS — no `noopener`, no `noreferrer` in the features string — which
+is the only thing that would have failed. Fix is `window.open('about:blank', '_blank')` + severing
+`opener` by hand, the shape `RecordsTab.tsx:297` has used for the Telegram mini-app all along.
+
+### Fixed
+
+- **Existing clients (carrier attachments)** — the user's actual question. `window.open` sat AFTER
+  the awaited presign call, so Safari and Firefox discarded it: the Download button did literally
+  nothing, no error, no spinner. Now routed through `openSignedFile`. The `/bytes` proxy route is
+  gated behind `isTelegramWebView()` and was never a desktop fallback.
+- Button now shows in-flight state and reads **Open** rather than Download — resolving a Dropbox
+  link is a real network round trip, and a silent slow button gets clicked again.
+- `documentService` gained the storage precondition `carrierAttachmentService` already had:
+  unconfigured Dropbox now returns **503 STORAGE_NOT_CONFIGURED** instead of a raw 500 from inside
+  the adapter. Verified by unsetting the env.
+
+### Verified end to end against real Dropbox
+
+Carrier attachments: upload 201 → presign 200 → fetched from `dl.dropboxusercontent.com`,
+**69 bytes, byte-identical** → `/bytes` proxy 200, also identical → Sales token 403 → delete 200.
+
+### Reported, deliberately NOT touched — Customer Service
+
+Both carry the identical post-await `window.open` bug and both are one-line fixes with
+`openSignedFile`, but they are CS surfaces:
+
+- `mytrions/customer-service/MaintenanceAttachments.tsx:68`
+- `features/comms/ChatThread.tsx:241` (shared comms console — used by CS as well as Sales)
+
+### Dead code, not fixed
+
+`VerificationDetail.tsx:286` and `VerificationCaseDocuments.tsx:35` both swallow download failures
+with a bare `void`. Neither is mounted: `VerificationDetail` has no mount point at all, and the
+`VerificationCaseModal` chain hangs off the Inbox/Cases tabs that `verificationTabs.ts` deliberately
+does not declare.
+
+### HR — there is no HR Dropbox implementation
+
+Worth recording plainly, since the assumption was that there is one. HR has exactly ONE object-store
+surface: the employee avatar (`hr_employees.photo_file_id` → `file_assets`). The attendance CSV is
+built in memory and returned in a JSON envelope; the account profile picture is a data URL column.
+There is no `/hr` root, no `dropboxHrStorage`, no `dropbox_hr` provider.
+
+HR photos DO reach Dropbox — by riding the generic `file_assets` pipeline, whose destination is
+`FILE_STORAGE_PROVIDER=dropbox` → `dropboxStorage`, rooted at **`/comms`**. So HR headshots land in
+the comms folder mixed with chat attachments, which contradicts the "each service gets its own named
+subfolder" rule the storage module documents. Only ONE HR photo exists (`file_assets`
+`gnhvyysz18njinypzqik3ppi`), and 0 of 222 `hr_employees` rows reference one, so this is cheap to
+correct now and expensive later — but it needs a decision plus an object move, so it is left as a
+recommendation.
+
+Second HR finding: a team lead holding attendance-only access can open the Attendance tab but every
+avatar request 403s, silently falling back to initials. Cosmetic today (no photos exist) and the fix
+widens an RBAC gate, so it is reported rather than taken unilaterally.
