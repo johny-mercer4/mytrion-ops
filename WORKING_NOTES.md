@@ -17452,3 +17452,59 @@ which keeps a comfortable target for a form the desk types into all day without 
 nothing else uses. Same root cause as the Watch search box last commit.
 
 Impeccable detector clean (exit 0) across `mytrions/verification`.
+
+## 2026-08-16 — Reviewed the invoice / CMP tables for Mytrion Watch. Recommendation: do not switch.
+
+Asked whether the invoice and CMP integration data could help Watch. Inspected rather than assumed.
+**No code changed** — the answer is a negative result, and it is worth writing down so nobody
+(including me) does this later on the assumption it would be an improvement.
+
+### What is there
+
+`octane` / `dbt` carry a full CMP mirror — ~48 `stg_cmp_*` tables plus marts. The relevant ones:
+
+| table | shape |
+| --- | --- |
+| `octane.stg_cmp_invoice` | 53,952 invoices, 2,598 carriers, `carrier_id` direct, `invoice_date`, `due_date`, `total_amount`, `total_paid`, `status` |
+| `octane.stg_cmp_invoice_payment` | 53,214 payments — **one row per payment**, with `payment_date`, `amount`, `payment_source`, `is_failed` |
+| `octane.intm_invoices`, `intm_invoice_payment_roll_base` | modelled layers over the same |
+
+The payment table is a genuine **append-only ledger**: 52,045 of 53,214 payments (97.8%) were created
+on the same day they are dated, only 157 backdated by 2+ days. Structurally better than
+`postlimit_default_list`, whose `payment_date` is overwritten in place.
+
+### Why it still cannot replace what Watch uses
+
+**`postlimit_default_list` is not an invoice table.** For July 2026 it holds 13,083 rows over only
+6,800 distinct `(carrier, invoice_date)` pairs — roughly two rows per invoice-date — and its columns
+(`contract_id`, `exage`, `exage2`, `exage3`, `list_type_soft`, `ld1..ld4`) show what it is: a
+purpose-built overdue-analysis list with one row per grace-period variant. Watch's observation date
+is literally `invoice_date + exage3`, and **`stg_cmp_invoice` has no equivalent of exage3**.
+
+The two do not reconcile. Over 1,350 carriers present in both for July 2026:
+
+- row counts match for **158 of 1,350** (12%)
+- amounts match for **152** (11%)
+- postlimit averages 9.7 rows per carrier against the invoice table's 5.2
+
+So this is not a drop-in source swap. The WoE bins were fitted to feature distributions computed
+from postlimit; feeding them a different distribution would produce scores that look identical and
+mean something else. **Switching is a retraining project, not a refactor.**
+
+### Three specific hopes, each killed by the data
+
+- **Failed payments as a credit signal.** `is_failed` is **0 across all 53,214 rows**. The column
+  exists; the signal does not.
+- **`due_date` as a better grace period.** Present on 100% of invoices, but averages **1.27 days**
+  after `invoice_date` (range 0–14). It is an invoicing artifact, not a net-30 style due date, and is
+  not a substitute for `exage3`.
+- **Reconstructible history.** The ledger would make past dates deterministic — but `stg_cmp_invoice`
+  only starts **2026-01-09**, while postlimit reaches back to **2025-07-16**. The deeper history is
+  in the source we already use.
+
+### What it WOULD be good for
+
+Context that is not a model input, and therefore carries no retraining risk: unpaid-invoice count and
+`status` per carrier, and the partial-payment picture postlimit collapses (2,974 invoices — 6% — have
+more than one payment). That is a display feature on the carrier detail, not a scoring change. Not
+built, because it was not asked for.
