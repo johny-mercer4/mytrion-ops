@@ -32,9 +32,8 @@ const VERIFICATION_CASE_TABLES = ['verification_cases', 'verification_case_stage
 function notMigratedMessage(): string {
   return (
     `Verification cases are not on this database (${databaseHost()}) yet. ` +
-    'Start the API with `pnpm dev:local-db` to use local Docker Postgres on localhost:5433 without changing .env, ' +
-    'or run `pnpm db:migrate` on the database this process uses. ' +
-    'Do not migrate a remote/prod URL unless you have opted in.'
+    'Run `pnpm db:migrate` against it. This app uses ONE database in every environment, ' +
+    'including localhost, so there is no other database to point at.'
   );
 }
 

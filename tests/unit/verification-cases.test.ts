@@ -158,8 +158,10 @@ describe('verificationCasesSchemaError', () => {
     expect(mapped?.statusCode).toBe(503);
     expect(mapped?.code).toBe('VERIFICATION_CASES_NOT_MIGRATED');
     expect(mapped?.expose).toBe(true);
-    expect(mapped?.message).toContain('pnpm dev:local-db');
-    expect(mapped?.message).toContain('Do not migrate a remote/prod URL');
+    expect(mapped?.message).toContain('pnpm db:migrate');
+    // One database everywhere — the message must not send anyone to a different one.
+    expect(mapped?.message).not.toContain('dev:local-db');
+    expect(mapped?.message).toContain('ONE database in every environment');
   });
 
   it('leaves unrelated errors alone', () => {

@@ -17827,3 +17827,36 @@ like a broken filter.
 
 Third time today that the local/prod split produced a bogus symptom. The durable fix is removing
 `LOCAL_OPS_DATABASE_URL` from `.env` — left to the user, since a concurrent session is using it.
+
+## 2026-08-16 — removed the local-database override entirely
+
+Standing instruction, stated three times: **there is no local database. Everything, including
+localhost, uses the real prod database.** It kept coming back because the override lived in code, so
+removing the `.env` line alone would not have held.
+
+Removed the mechanism, not just the value:
+
+- `.env` and `.env.example` — the `LOCAL_OPS_DATABASE_URL` line is gone.
+- `src/config/env.ts` — the zod key, the `usingLocalOpsDatabase` flag, and the branch in
+  `databaseUrl`. It is now unconditionally `env.MYTRION_OPS_DATABASE_URL || env.DATABASE_URL`.
+- `src/server.ts` — the `localOpsOverride` boot log field.
+- `package.json` — the `dev:local-db` script.
+- `scripts/dev-local.sh` — the `USE_LOCAL_OPS_DB` export block.
+- Operator-facing 503 messages in `verificationCases.ts` and `carrierAttachmentService.ts` no longer
+  advertise pointing at a different database — those are read by someone at 2am and telling them to
+  switch database is how the wrong one gets used.
+
+Verified: with `NODE_ENV=development` the app resolves to the Render host, and it STILL resolves
+there when `LOCAL_OPS_DATABASE_URL` is re-exported in the shell. The override cannot be reinstated
+by environment alone.
+
+`tests/unit/no-local-db-override.test.ts` (3 tests) pins all of it.
+
+**What this cost before it was removed**, all in one day, each looking like a code bug and each
+actually being "which database am I reading":
+1. A repair script reported "scored 716" five times and wrote nothing to prod.
+2. A 503 was blamed on an unmigrated prod database that was already migrated.
+3. The owner-operator filter was reported broken while reading an empty local snapshot.
+
+Consequence to know: `pnpm db:migrate` now always targets a remote host, so it needs
+`ALLOW_REMOTE_DB_MIGRATE=1`. That guard stays — it is a deliberate confirmation, not an obstacle.

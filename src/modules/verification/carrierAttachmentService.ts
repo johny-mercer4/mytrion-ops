@@ -69,9 +69,8 @@ export function toCarrierAttachmentDto(row: CarrierAttachment): CarrierAttachmen
 function notMigratedMessage(): string {
   return (
     `Carrier attachments are not on this database (${databaseHost()}) yet. ` +
-    'Start the API with `pnpm dev:local-db` (or USE_LOCAL_OPS_DB=1 pnpm dev:all) to use local Docker Postgres, ' +
-    'or run `pnpm db:migrate` on the database this process uses. ' +
-    'Do not migrate a remote/prod URL unless you have opted in.'
+    'Run `pnpm db:migrate` against it. This app uses ONE database in every environment, ' +
+    'including localhost, so there is no other database to point at.'
   );
 }
 

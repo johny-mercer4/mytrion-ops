@@ -23,15 +23,16 @@ const EnvSchema = z.object({
   CORS_ORIGIN_SUFFIXES: z.string().default('zappsusercontent.com'),
 
   // --- Database: Mytrion OPS Postgres (sessions, logging, knowledge) ---
-  // No localhost default on MYTRION_OPS_DATABASE_URL: a missing value should fail loudly
-  // (see assertRuntimeSecrets). `DATABASE_URL` is a legacy alias. In development only,
-  // LOCAL_OPS_DATABASE_URL overrides so `pnpm dev:local-db` can use Docker :5433 without
-  // rewriting a .env that points at Render.
+  // No localhost default: a missing value should fail loudly (see assertRuntimeSecrets).
+  // `DATABASE_URL` is a legacy alias.
+  //
+  // THERE IS NO LOCAL DATABASE OVERRIDE, deliberately. A `LOCAL_OPS_DATABASE_URL` used to redirect
+  // this in development, and it cost three separate false diagnoses in one day: a repair script that
+  // reported "scored 716" five times while writing nothing to prod, a 503 blamed on an unmigrated
+  // prod database that was in fact migrated, and a filter reported as broken that was reading an
+  // empty local snapshot. Localhost and prod must be the same database. See
+  // tests/unit/no-local-db-override.test.ts.
   MYTRION_OPS_DATABASE_URL: z.string().default(''),
-  // Dev-only override. When NODE_ENV=development and this is set, `databaseUrl` uses it instead of
-  // MYTRION_OPS_DATABASE_URL so a machine whose .env points at Render can still run against local
-  // Docker Postgres (`pnpm dev:local-db`) without rewriting .env. Ignored in test/production.
-  LOCAL_OPS_DATABASE_URL: z.string().default(''),
   DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   // Admin Data Loader launch target. NocoDB owns its own auth and runs outside this process.
@@ -722,20 +723,12 @@ export const isTest = env.NODE_ENV === 'test';
 export const isDev = env.NODE_ENV === 'development';
 
 /**
- * True when this process is using `LOCAL_OPS_DATABASE_URL` instead of `MYTRION_OPS_DATABASE_URL`.
- * Development only — test and production always honor the canonical URL.
+ * Resolved app database URL — the Mytrion OPS external Postgres. `DATABASE_URL` is a legacy alias
+ * kept only as a fallback. Empty means unconfigured (caught at startup).
+ *
+ * One database, in every environment including localhost. No dev-only override.
  */
-export const usingLocalOpsDatabase = isDev && Boolean(env.LOCAL_OPS_DATABASE_URL);
-
-/**
- * Resolved app database URL — the Mytrion OPS external Postgres. `DATABASE_URL` is a
- * legacy alias kept only as a fallback. Empty means unconfigured (caught at startup).
- * In development, `LOCAL_OPS_DATABASE_URL` wins when set (`pnpm dev:local-db`).
- */
-export const databaseUrl: string =
-  (usingLocalOpsDatabase ? env.LOCAL_OPS_DATABASE_URL : '') ||
-  env.MYTRION_OPS_DATABASE_URL ||
-  env.DATABASE_URL;
+export const databaseUrl: string = env.MYTRION_OPS_DATABASE_URL || env.DATABASE_URL;
 
 /** Hostname only — safe to log / return in operator-facing 503s. Never includes credentials. */
 export function databaseHost(url = databaseUrl): string {
