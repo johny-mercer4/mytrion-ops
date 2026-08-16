@@ -17558,3 +17558,55 @@ subsequently entered `is_bad_debtor` were in the bottom bands at that time. `pos
 reaches back to 2025-07-16, and the feature query already filters payments to `< scoringDate`, so
 this is computable — one script, no new infrastructure. Until it is run, the honest claim for Watch
 is "ranks the book and shows why", not "predicts default".
+
+## 2026-08-16 — Backtest: would Watch have caught the bad debt? Yes, and my first answer was wrong.
+
+### The result (corrected methodology)
+
+Scored three past dates with the production scorer and `forward_all_clean_v1` weights, debtor
+exclusion removed (it filters on CURRENT tags and would have dropped exactly the carriers who later
+went bad). Ground truth is **`octane.mart_bad_debt_history`** — a genuine daily snapshot with
+per-invoice `is_bad_debt`, 892 carriers ever flagged.
+
+At-risk = in the scored population AND never flagged bad on or before T. Positive = first-ever
+bad-debt flag within a **fixed 90-day window** (equal horizons at every date).
+
+| as of | at-risk | base | **High** | Elevated | Watch | **Low** | bottom two caught | median lead |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-02-16 | 1090 | 7.3% | **3.46x** (25.4%) | 1.37x | 0.50x | **0.9%** | 78%, $218k/$292k | **46d** |
+| 2026-03-16 | 1200 | 8.3% | **3.29x** (27.5%) | 1.57x | 0.67x | **0.0%** | 70%, $200k/$334k | **43d** |
+| 2026-04-13 | 1269 | 9.1% | **4.97x** (45.5%) | 1.50x | 0.66x | **0.0%** | 69%, $165k/$227k | **22d** |
+
+**Monotone at all three dates** — high > elevated > watch > low, which the first attempt never
+achieved. Low band: **1, 0, 0** defaults out of 107 / 180 / 193.
+
+### I got it wrong first, in the conservative direction
+
+v1 used `dim_company.max_debt_days` to decide "already bad at T". Adversarial review established
+what that column actually is, from `octane.intm_carrier_debtors`: `CURRENT_DATE - due_date` of the
+carrier's **oldest still-open invoice**. So it **resets** when that invoice clears (40 of 345 bad
+debtors understate their first-bad date by >15 days, worst by 181) and is **hard-censored** because
+`stg_cmp_invoice` holds nothing before 2026-01-11, capping it at ~217 days — which bites hardest at
+the earliest date, the one carrying the claim.
+
+Consequence: ~31% of the "predictions" were carriers already flagged bad, while 5/10/15 genuine
+future defaulters were wrongly discarded. The reported **1.46x was an artifact**. Reproduced the
+reviewers' corrected figures independently before believing them.
+
+### Lead time — the sharpest remaining objection, tested
+
+"A carrier ten days late that crosses the threshold next week is tautology, not prediction." Real,
+and bounded: of the caught defaulters, **≤15 days out is 18% / 24% / 39%**, and the **median lead is
+46 / 43 / 22 days**. Most of the catch is weeks ahead, not days.
+
+### Still unresolved — do not present this as settled
+
+Five of six reviewers flagged inflation risks in classes the lead-time check does not close:
+features read the **mutated** `postlimit_default_list`, so point-in-time purity is assumed not
+proven; the backtest population (1090-1269 at-risk) is **not** the live desk population (728 with
+the debtor exclusion on); and `is_bad_debt` is partly mechanical (~15 days past due), so some of
+what is "predicted" is an accounting threshold rather than economic loss.
+
+Honest claim: **strong directional evidence** — monotone bands, 3.3-5.0x in the top band, near-zero
+default in Low, 69-78% capture at ~40% coverage, median 3-6 weeks of warning. Not yet an audited
+number to underwrite policy on.
