@@ -44,6 +44,8 @@ if [ ! -f .env ]; then
 NODE_ENV=development
 PORT=3001
 LOG_LEVEL=info
+# Allow the local Vite dev server (:5173) to call the API cross-origin.
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 # App database: local Postgres 16 + pgvector on :5433 (started by .cursor/start.sh)
 MYTRION_OPS_DATABASE_URL=postgresql://octane:octane@localhost:5433/octane_assistant
