@@ -262,7 +262,8 @@ export const watchService = {
           total: 0,
           aggregates: {
             total: 0, low: 0, watch: 0, elevated: 0, high: 0,
-            worsened: 0, improved: 0, avgScore: null, exposureAtRisk: null,
+            worsened: 0, improved: 0, ownerOperator: 0, company: 0,
+            avgScore: null, exposureAtRisk: null,
           },
           lastRun: null,
         };

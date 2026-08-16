@@ -204,6 +204,9 @@ export function MytrionWatch() {
               onClick={() => { setSize(size === sz.id ? null : sz.id); setPage(0); }}
             >
               {sz.label}
+              <span className="vf-chip-n">
+                {sz.id === 'owner_operator' ? (agg?.ownerOperator ?? 0) : (agg?.company ?? 0)}
+              </span>
             </button>
           ))}
         </div>

@@ -65,6 +65,15 @@ export interface WatchAggregates {
   high: number;
   worsened: number;
   improved: number;
+  /**
+   * Carrier size, counted on the same snapshot as everything else here.
+   *
+   * These exist so the chips can show a number. A snapshot scored before `active_cards` was added
+   * has both at 0, and a chip reading "Owner-operator 0" says "this data predates the filter" where
+   * a silent empty list said "there are no owner-operators" — which is a different, wrong, claim.
+   */
+  ownerOperator: number;
+  company: number;
   avgScore: number | null;
   exposureAtRisk: number | null;
 }
@@ -165,6 +174,8 @@ export const mytrionWatchRepo = {
           count(*) filter (where band = 'high')::int high,
           count(*) filter (where score_delta < 0)::int worsened,
           count(*) filter (where score_delta > 0)::int improved,
+          count(*) filter (where active_cards = 1)::int owner_operator,
+          count(*) filter (where active_cards > 1)::int company,
           round(avg(credit_score), 1)::float8 avg_score,
           coalesce(sum(credit_limit) filter (where band in ('elevated','high')), 0)::float8 exposure_at_risk
         from mytrion_watch_scores

@@ -17809,3 +17809,21 @@ caught it BEFORE the commit, not after. Verify data-backed features against data
 Populated after the fix, 2026-08-11: 259 owner-operator / 454 company / 12 with no active card
 (left out of both buckets rather than guessed into one). At-risk split: 40 of 259 owner-operators,
 65 of 454 companies.
+
+### The size filter looked broken; it was empty data with a misleading empty state
+
+Reported as "filter is not working at all" — both chips returned "No carriers match". The filter SQL
+was correct. The dev API reads the LOCAL database (NODE_ENV=development + LOCAL_OPS_DATABASE_URL),
+whose latest snapshot 2026-08-16 was scored BEFORE migration 0126 added `active_cards`, so all 725
+rows were NULL and both buckets matched zero. Prod was fine throughout (2026-08-11: 259/454).
+
+Re-scored local (725 in 8.7s) -> 260 owner-operator / 453 company.
+
+The real defect was the EMPTY STATE, not the filter. A chip that silently returns nothing says "there
+are no owner-operators", which is a different and wrong claim from "this snapshot predates the
+filter". Both counts now come down with the aggregates and render on the chips, matching the
+Worsened/Improved pattern: a snapshot without card data reads "Owner-operator 0" instead of looking
+like a broken filter.
+
+Third time today that the local/prod split produced a bogus symptom. The durable fix is removing
+`LOCAL_OPS_DATABASE_URL` from `.env` — left to the user, since a concurrent session is using it.

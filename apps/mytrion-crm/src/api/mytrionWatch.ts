@@ -47,6 +47,8 @@ export interface WatchAggregates {
   high: number;
   worsened: number;
   improved: number;
+  ownerOperator: number;
+  company: number;
   avgScore: number | null;
   /** Approved credit sitting on carriers in the Elevated and High bands. */
   exposureAtRisk: number | null;
