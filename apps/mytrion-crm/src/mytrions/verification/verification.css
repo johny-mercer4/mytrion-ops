@@ -8,8 +8,12 @@
    jump-desc 14, btn 13.5, section-title 12 — for no reason other than "a larger type scale than the
    other five `.ms-*` modules". That is the same drift as the Inter fork this file already deleted:
    a module that picks its own typeface is the same drift as a module that picks its own accent, and
-   a module that picks its own type SCALE is that argument a third time. `.ms-title` had already gone
-   the same way when page titles moved to the shared 32px PageHead. `moduleShell.css` is still
+   a module that picks its own type SCALE is that argument a third time. THE FACE FORK IS GONE TOO:
+   this file rebound --font-body to the system stack, dropping Space Grotesk, so Verification's page
+   title, tab rail and chrome rendered in a different typeface from every other workspace — read on
+   screen as "the header font is bigger here". It now inherits theme.css's --face-ui like the rest.
+   `.ms-title` had already gone the same way when page titles moved to the shared 32px PageHead.
+   `moduleShell.css` is still
    UNCHANGED — the module now just reads it, so Verification's chrome matches every other workspace.
 
    Horizon language (identical to HR/Finance/Manager):
@@ -38,11 +42,6 @@
    ===================================================== */
 
 [data-mytrion='verification'] {
-  /* Body face is the system UI stack already in --face-ui's fallback — Grotesk stays on --font-head
-     for titles and tab labels only. No new font file. */
-  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-family: var(--font-body);
-
   /* Radius aliases, never numbers — one block moves all 14 call sites. Controls (search field,
      button, icon button) take the 4px control corner, panes (toolbar, card, modal, stat, field,
      skeleton) the 8px panel corner. Declared on [data-mytrion], not on .ms-root, so the modal —
