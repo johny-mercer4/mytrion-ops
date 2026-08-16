@@ -220,12 +220,16 @@ export const verificationRecheckJob = defineJob({
 });
 
 /**
- * Mytrion Watch — weekly behavioural scoring of every active carrier.
+ * Mytrion Watch — DAILY behavioural scoring of every active carrier.
  *
- * Weekly on purpose: the model is defined on Monday cuts, and the features barely move intra-day.
- * The real reason to run it on a schedule rather than on demand is that HISTORY CANNOT BE
- * RECONSTRUCTED — the warehouse's overdue table is mutated in place, so a Monday we do not capture
- * is a Monday whose true state is gone.
+ * Was weekly, on the argument that the model is defined on Monday cuts. It is daily now because a
+ * credit agent looking at Thursday's book should not be reading Monday's numbers. The Monday
+ * convention still matters — the model was fitted on Monday anchors — which is why `pay_31` carries
+ * a 3-day maturity lag: without it the score depends on which weekday the job happens to run.
+ *
+ * The reason to run it on a schedule rather than on demand is that HISTORY CANNOT BE RECONSTRUCTED —
+ * the warehouse's overdue table is mutated in place, so a day we do not capture is a day whose true
+ * state is gone.
  */
 export const mytrionWatchScoringJob = defineJob({
   name: 'automation.verification.watch-scoring',
