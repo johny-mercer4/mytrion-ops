@@ -40,7 +40,7 @@ vi.mock('../../src/modules/tools/serverCrmScope.js', async (importOriginal) => {
   return {
     ...mod,
     resolveZohoUserId: vi.fn((_ctx: unknown, override?: string) => override?.trim() || '777'),
-    resolveAgentName: vi.fn((_ctx: unknown, override?: string) => override?.trim() || 'Rep Riley'),
+    resolveAgentName: vi.fn((_ctx: unknown, override?: string) => override?.trim() || 'CI Test Admin'),
     assertCarrierOwned: vi.fn(async () => undefined),
   };
 });
@@ -75,7 +75,7 @@ async function salesToken(zohoUserId = '777'): Promise<string> {
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'worker',
-    worker: { zohoUserId, userName: 'Rep Riley', profile: 'Sales Rep' },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile: 'Sales Rep' },
   });
 }
 
@@ -86,7 +86,7 @@ function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
     zohoDealId: null,
     companyName: 'Ironhide',
     applicationId: null,
-    agentName: 'Rep Riley',
+    agentName: 'CI Test Admin',
     contactPhone: null,
     preferredLanguage: null,
     isSpanishDesk: false,

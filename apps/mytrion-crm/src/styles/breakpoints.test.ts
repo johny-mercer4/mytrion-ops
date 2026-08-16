@@ -141,10 +141,11 @@ describe('breakpoint ladder', () => {
     // `shared-responsive.css` carried a 380px block and a 768px block that between them held nothing
     // but four empty rules, so deleting them removed two off-ladder values outright.
     // 70 -> 69: verification CSS dropped one off-ladder value.
+    // 69 -> 68: the profile modal's 560px block moved onto the 640 structure line.
     expectBudget(
       'off-ladder breakpoint values',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      69,
+      68,
     );
   });
 
@@ -159,10 +160,11 @@ describe('breakpoint ladder', () => {
     // 92 -> 89 on the same merge: CS's phone sheet was rewritten onto range syntax as part of giving
     // CS a phone layer at all, so its three `max-width` blocks (768/640/380) are gone.
     // 89 -> 88: verification CSS converted one more block to range syntax.
+    // 88 -> 87: the profile modal's block became `(width < 640px)`.
     expectBudget(
       'legacy max-width/min-width media conditions',
       { count: offenders.length, sample: offenders.slice(0, 8) },
-      88,
+      87,
     );
   });
 });

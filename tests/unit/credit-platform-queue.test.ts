@@ -16,6 +16,18 @@ vi.mock('../../src/config/env.js', async (importOriginal) => {
   };
 });
 
+/**
+ * The credit-platform desk is quarantined (see `src/modules/verification/killSwitches.ts`), which
+ * makes `isCreditPlatformConfigured()` false and every call here a no-op. These tests describe how
+ * the client behaves WHEN RESTORED, so they turn the switch back on — which is exactly the value of
+ * parking the code rather than deleting it: the contract stays covered while the desk is off.
+ */
+vi.mock('../../src/modules/verification/killSwitches.js', () => ({
+  VERIFICATION_LEGACY_DESK_ENABLED: true,
+  VERIFICATION_ZOHO_INGEST_ENABLED: false,
+  VERIFICATION_CP_WRITEBACK_ENABLED: true,
+}));
+
 import {
   claimManualReview,
   parseBankStatements,

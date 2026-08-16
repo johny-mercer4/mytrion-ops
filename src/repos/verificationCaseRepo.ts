@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   verificationCases,
@@ -121,6 +121,28 @@ function listWhere(
 }
 
 export const verificationCaseRepo = {
+  /**
+   * Which of these Deal ids are already ingested — ONE query, not one per deal.
+   *
+   * The poll re-reads its cursor day every run, so most rows it returns are already known. Checking
+   * them one at a time cost a round trip each (up to 1000 against a database ~300ms away) before a
+   * single new application could be created. Selecting just the id column keeps the result small
+   * even when the whole page is duplicates.
+   */
+  async findExistingDealIds(ctx: TenantContext, zohoDealIds: string[]): Promise<Set<string>> {
+    if (zohoDealIds.length === 0) return new Set();
+    const rows = await db
+      .select({ zohoDealId: verificationCases.zohoDealId })
+      .from(verificationCases)
+      .where(
+        and(
+          eq(verificationCases.tenantId, ctx.tenantId),
+          inArray(verificationCases.zohoDealId, zohoDealIds),
+        ),
+      );
+    return new Set(rows.map((r) => r.zohoDealId).filter((id): id is string => Boolean(id)));
+  },
+
   async findByDealId(ctx: TenantContext, zohoDealId: string): Promise<VerificationCase | undefined> {
     const rows = await db
       .select()

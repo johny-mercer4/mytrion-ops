@@ -143,6 +143,29 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /**
+ * Sections a Sales agent sees as "coming soon" while an admin can open them.
+ *
+ * SALES ONLY. The Verification Mytrion's own tabs are untouched — a verification agent works the
+ * same applications there all day. This gates the SALES-side view of them, which is still settling,
+ * so the desk is not sent into a surface that will change under them.
+ *
+ * `comingSoon: true` in NAV_GROUPS parks a tab for EVERYONE and stays the right tool for that. This
+ * is the narrower case: parked by default, open to admins.
+ */
+const ADMIN_ONLY_SECTIONS = new Set<string>(['verification']);
+
+/**
+ * Is this section parked for THIS user?
+ *
+ * One predicate, used by both the nav chip and the panel, so a tab can never render navigable in the
+ * sidebar and blocked in the body — the failure you get when two call sites decide separately.
+ */
+export function isSectionParked(id: string, admin: boolean): boolean {
+  if (NAV.some((n) => n.id === id && n.comingSoon === true)) return true;
+  return !admin && ADMIN_ONLY_SECTIONS.has(id);
+}
+
+/**
  * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the unread badge
  * (`/v1/comms/unread`) and openTicket navigation, so parking the tab switches both off in one place.
  *

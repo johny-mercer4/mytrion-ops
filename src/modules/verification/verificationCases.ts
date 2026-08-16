@@ -32,9 +32,8 @@ const VERIFICATION_CASE_TABLES = ['verification_cases', 'verification_case_stage
 function notMigratedMessage(): string {
   return (
     `Verification cases are not on this database (${databaseHost()}) yet. ` +
-    'Start the API with `pnpm dev:local-db` to use local Docker Postgres on localhost:5433 without changing .env, ' +
-    'or run `pnpm db:migrate` on the database this process uses. ' +
-    'Do not migrate a remote/prod URL unless you have opted in.'
+    'Run `pnpm db:migrate` against it. This app uses ONE database in every environment, ' +
+    'including localhost, so there is no other database to point at.'
   );
 }
 
@@ -148,6 +147,25 @@ async function loadOrThrow(ctx: TenantContext, id: string): Promise<Verification
   return row;
 }
 
+/**
+ * The credit-platform request id for a legacy Decision Desk action.
+ *
+ * `zoho_deal_id` became nullable in 0121 because a sales-originated application has no Zoho Deal —
+ * and such a case has no credit-platform request either. Falling through with a null would send
+ * `undefined` down the HTTP client and fail somewhere unhelpful, so the refusal is stated here:
+ * these actions belong to the retired credit_platform pipeline, and a new-era case is not part of it.
+ */
+function creditPlatformRequestId(row: VerificationCase): string {
+  const requestId = row.requestId ?? row.zohoDealId;
+  if (!requestId) {
+    throw new AppError(
+      'This application was raised in Sales and is underwritten by the Mytrion verification flow — it has no credit-platform request to act on.',
+      { statusCode: 409, code: 'VERIFICATION_NOT_CREDIT_PLATFORM_CASE', expose: true },
+    );
+  }
+  return requestId;
+}
+
 async function syncOrWarn(ctx: TenantContext, caseId: string, requestId: string): Promise<void> {
   try {
     await syncCaseFromVerificationDb(ctx, caseId, requestId);
@@ -231,7 +249,7 @@ export async function runVerificationCaseStage(
   opts: { bureauProvider?: string } = {},
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
-  const requestId = row.requestId ?? row.zohoDealId;
+  const requestId = creditPlatformRequestId(row);
   const started = await runDecisionDeskStage(requestId, stageId, {
     actor: creditPlatformActor(ctx),
     ...(opts.bureauProvider ? { bureauProvider: opts.bureauProvider } : {}),
@@ -251,7 +269,7 @@ export async function resetVerificationCaseStage(
   stageId: string,
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
-  const requestId = row.requestId ?? row.zohoDealId;
+  const requestId = creditPlatformRequestId(row);
   const done = await resetDecisionDeskStage(requestId, stageId, creditPlatformActor(ctx));
   if (!done.ok) {
     await verificationCaseStageRepo.upsertMany(ctx, row.id, [
@@ -269,7 +287,7 @@ export async function approveVerificationCaseStage(
   note?: string,
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
-  const requestId = row.requestId ?? row.zohoDealId;
+  const requestId = creditPlatformRequestId(row);
   const done = await approveDecisionDeskStage(requestId, stageId, note, creditPlatformActor(ctx));
   if (!done.ok) {
     await verificationCaseStageRepo.upsertMany(ctx, row.id, [
@@ -287,7 +305,7 @@ export async function decideVerificationCase(
   reason?: string,
 ): Promise<VerificationCaseDetail> {
   const row = await withVerificationCaseTables(() => loadOrThrow(ctx, id));
-  const requestId = row.requestId ?? row.zohoDealId;
+  const requestId = creditPlatformRequestId(row);
   const done = await submitManualDecision(requestId, decision, reason, creditPlatformActor(ctx));
   if (!done.ok) {
     await verificationCaseRepo.update(ctx, row.id, {

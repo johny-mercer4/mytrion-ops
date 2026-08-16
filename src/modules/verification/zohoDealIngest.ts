@@ -1,25 +1,35 @@
+/**
+ * The Zoho Deal poller — the ONLY way a new application comes into existence.
+ *
+ * Applications are not hand-created on either desk. This job walks Deals that reached an
+ * application stage, and hands each new one to `createApplicationFromDeal`, which writes the
+ * new-era shared record: red, phase rail seeded, owned by the Deal's Sales agent.
+ *
+ * The credit_platform-era steps that used to run here — legacy decision-desk stage seeding,
+ * `syncCaseFromVerificationDb` and `maybeAdvanceFirstRun` — are gone from this path. They belong to
+ * the quarantined desk (`killSwitches.ts`); calling them would write into a system this deployment
+ * no longer owns. Carrier enrichment stays: it reads the DWH broker snapshot, which Phase 2 and
+ * Phase 4 genuinely use.
+ */
 import { logger } from '../../lib/logger.js';
 import { errorMessage } from '../../lib/errors.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { verificationCaseRepo } from '../../repos/verificationCaseRepo.js';
-import { verificationCaseStageRepo } from '../../repos/verificationCaseStageRepo.js';
 import { verificationIngestStateRepo } from '../../repos/verificationIngestStateRepo.js';
+import { createApplicationFromDeal } from '../verificationFlow/dealIntake.js';
 import { matchBrokerSnapshot } from './carrierEnrich.js';
-import { notifyVerificationCaseCreated } from './caseNotify.js';
-import { syncCaseFromVerificationDb } from './caseSync.js';
-import { maybeAdvanceFirstRun } from './firstRunTrigger.js';
 import {
   VERIFICATION_CASE_OWNER_NAME,
   resolveVerificationCaseOwnerId,
 } from './verificationOwner.js';
-import { DECISION_DESK_STAGE_IDS } from './verificationStages.js';
+import { notifyApplicationCreated } from './caseNotify.js';
 import {
   buildDealPollCoql,
   isDealAfterWatermark,
   mapZohoDeal,
-  maxCreatedTime,
+  maxApplicationDate,
   resolveFreshIngestWatermark,
 } from './zohoDealMap.js';
 
@@ -32,7 +42,9 @@ export interface VerificationIngestSummary {
 }
 
 export async function ingestVerificationDeals(ctx: TenantContext): Promise<VerificationIngestSummary> {
-  const ownerZohoUserId = await resolveVerificationCaseOwnerId();
+  // The credit agent who underwrites. Notified about every application, and also stands in as the
+  // row owner when a Deal has no owner in Zoho — see `createApplicationFromDeal`.
+  const verificationOwnerZohoUserId = await resolveVerificationCaseOwnerId();
   const state = await verificationIngestStateRepo.getOrCreate(ctx);
   const watermark = resolveFreshIngestWatermark(state.pollDealDateWatermark);
   if (watermark !== state.pollDealDateWatermark) {
@@ -46,26 +58,53 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
   let created = 0;
   let skipped = 0;
   let failed = 0;
-  const seenTimes: string[] = [watermark];
+  const seenDates: string[] = [watermark];
 
+  /**
+   * Reduce the page to the deals worth fetching, BEFORE touching Zoho or the database per row.
+   *
+   * The cursor rests on a date, so every run re-reads at least one whole day of applications and
+   * most of what comes back is already ingested. Filtering first — then one batched existence
+   * check — means a quiet run costs a single query and zero record fetches instead of a round trip
+   * per deal.
+   */
+  const candidates: Array<{ dealId: string; applicationDate: string }> = [];
+  const seenInPage = new Set<string>();
   for (const row of coql.rows) {
     const dealId = String(row.id ?? '').trim();
     if (!/^\d+$/.test(dealId)) {
       failed += 1;
       continue;
     }
-    const createdTime = String(row.Created_Time ?? row.created_time ?? '').trim();
-    if (createdTime) seenTimes.push(createdTime);
-    if (!isDealAfterWatermark(createdTime, watermark)) {
+    const applicationDate = String(row.Application_Date ?? row.application_date ?? '').trim();
+    if (applicationDate) seenDates.push(applicationDate);
+    if (!isDealAfterWatermark(applicationDate, watermark)) {
       skipped += 1;
       continue;
     }
-    const existing = await verificationCaseRepo.findByDealId(ctx, dealId);
-    if (existing) {
+    // Zoho can return the same deal twice across a boundary; a page-local set keeps the batched
+    // lookup honest and stops two inserts racing on the same id.
+    if (seenInPage.has(dealId)) {
       skipped += 1;
       continue;
     }
+    seenInPage.add(dealId);
+    candidates.push({ dealId, applicationDate });
+  }
 
+  const alreadyIngested = await verificationCaseRepo.findExistingDealIds(
+    ctx,
+    candidates.map((c) => c.dealId),
+  );
+  const fresh = candidates.filter((c) => !alreadyIngested.has(c.dealId));
+  skipped += candidates.length - fresh.length;
+
+  logger.info(
+    { returned: coql.rows.length, candidates: candidates.length, fresh: fresh.length, watermark },
+    'verification deal poll',
+  );
+
+  for (const { dealId } of fresh) {
     try {
       const record = await zohoCrmRecords.getRecord('Deals', dealId);
       if (!record) {
@@ -77,47 +116,41 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         failed += 1;
         continue;
       }
-      const recordCreated = String(record.Created_Time ?? record.created_time ?? createdTime).trim();
-      if (recordCreated) seenTimes.push(recordCreated);
-      if (!isDealAfterWatermark(recordCreated, watermark)) {
-        skipped += 1;
-        continue;
-      }
+      const recordApplied = String(record.Application_Date ?? record.application_date ?? '').trim();
+      if (recordApplied) seenDates.push(recordApplied);
 
-      const inserted = await verificationCaseRepo.insert(ctx, {
+      const inserted = await createApplicationFromDeal(ctx, {
         zohoDealId: mapped.zohoDealId,
-        zohoApplicationId: mapped.zohoApplicationId || null,
-        carrierId: mapped.carrierId || null,
-        companyName: mapped.companyName || null,
-        firstName: mapped.firstName || null,
-        lastName: mapped.lastName || null,
-        email: mapped.email || null,
-        phone: mapped.phone || null,
-        cell: mapped.cell || null,
-        address: mapped.address || null,
-        city: mapped.city || null,
-        state: mapped.state || null,
-        zip: mapped.zip || null,
-        dateOfBirth: mapped.dateOfBirth || null,
-        dot: mapped.dot || null,
-        mc: mapped.mc || null,
-        truckCount: mapped.truckCount || null,
-        businessType: mapped.businessType || null,
-        zohoStage: mapped.zohoStage || null,
-        applicationStatus: mapped.applicationStatus || null,
-        applicationDate: mapped.applicationDate || null,
-        creditScore: mapped.creditScore || null,
-        creditsafeGrade: mapped.creditsafeGrade || null,
-        zohoOwnerId: mapped.zohoOwnerId || null,
-        zohoOwnerName: mapped.zohoOwnerName || null,
+        zohoApplicationId: mapped.zohoApplicationId,
+        carrierId: mapped.carrierId,
+        companyName: mapped.companyName,
+        firstName: mapped.firstName,
+        lastName: mapped.lastName,
+        email: mapped.email,
+        phone: mapped.phone,
+        cell: mapped.cell,
+        address: mapped.address,
+        city: mapped.city,
+        state: mapped.state,
+        zip: mapped.zip,
+        dateOfBirth: mapped.dateOfBirth,
+        dot: mapped.dot,
+        mc: mapped.mc,
+        truckCount: mapped.truckCount,
+        businessType: mapped.businessType,
+        zohoStage: mapped.zohoStage,
+        applicationStatus: mapped.applicationStatus,
+        applicationDate: mapped.applicationDate,
+        zohoOwnerId: mapped.zohoOwnerId,
+        zohoOwnerName: mapped.zohoOwnerName,
         zohoRaw: mapped.zohoRaw,
-        distributeType: 'shared',
-        ownerZohoUserId,
-        ownerName: VERIFICATION_CASE_OWNER_NAME,
-        status: 'new',
+      }, {
+        fallbackOwnerZohoUserId: verificationOwnerZohoUserId,
+        fallbackOwnerName: VERIFICATION_CASE_OWNER_NAME,
       });
-      await verificationCaseStageRepo.seedForCase(ctx, inserted.id, DECISION_DESK_STAGE_IDS);
 
+      // Enrichment and notification are best-effort: neither is worth losing an application over,
+      // and the poller must not re-create a row it already wrote.
       try {
         const match = await matchBrokerSnapshot({
           phone: mapped.phone || mapped.cell,
@@ -141,25 +174,21 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
         logger.warn({ err: errorMessage(err), dealId }, 'verification carrier enrich failed');
       }
 
+      // Both desks are told. Each recipient is best-effort inside the notifier, so this only
+      // catches a failure to build the messages at all.
       try {
-        await notifyVerificationCaseCreated(ctx, {
+        await notifyApplicationCreated(ctx, {
           caseId: inserted.id,
-          ownerZohoUserId,
+          salesOwnerZohoUserId: mapped.zohoOwnerId,
+          salesOwnerName: mapped.zohoOwnerName,
+          verificationOwnerZohoUserId,
           companyName: mapped.companyName,
           zohoDealId: mapped.zohoDealId,
         });
       } catch (err) {
-        logger.warn({ err: errorMessage(err), dealId }, 'verification inbox notify failed');
+        logger.warn({ err: errorMessage(err), dealId }, 'verification intake notify failed');
       }
 
-      try {
-        const synced = await syncCaseFromVerificationDb(ctx, inserted.id, mapped.zohoDealId);
-        if (synced.bound) {
-          await maybeAdvanceFirstRun(ctx, inserted.id, { agent: 'system', wait: false });
-        }
-      } catch (err) {
-        logger.warn({ err: errorMessage(err), dealId }, 'verification first-run after ingest skipped');
-      }
       created += 1;
     } catch (err) {
       failed += 1;
@@ -167,7 +196,7 @@ export async function ingestVerificationDeals(ctx: TenantContext): Promise<Verif
     }
   }
 
-  const nextWatermark = failed === 0 ? maxCreatedTime(seenTimes, watermark) : watermark;
+  const nextWatermark = failed === 0 ? maxApplicationDate(seenDates, watermark) : watermark;
   await verificationIngestStateRepo.saveRun(ctx, {
     watermark: nextWatermark,
     created,

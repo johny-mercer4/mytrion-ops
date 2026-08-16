@@ -48,6 +48,8 @@ export interface AuditFilter {
   /** ISO instants. */
   from?: string;
   to?: string;
+  /** Default `human`. `vitest` is the Vitest Logs tab only. */
+  source?: 'human' | 'vitest';
   limit?: number;
   offset?: number;
 }
@@ -79,6 +81,7 @@ function toQuery(filter: AuditFilter): Record<string, string | number | undefine
     search: filter.search,
     from: filter.from,
     to: filter.to,
+    source: filter.source,
   };
 }
 
@@ -95,9 +98,10 @@ export async function listAudit(
   })) as { entries: AuditEntry[]; total: number };
 }
 
-export async function auditFacets(): Promise<AuditFacets> {
+export async function auditFacets(source: 'human' | 'vitest' = 'human'): Promise<AuditFacets> {
   return (await request('GET', '/admin/audit/facets', {
     impersonate: false,
+    query: { source },
   })) as AuditFacets;
 }
 

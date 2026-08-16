@@ -1,13 +1,22 @@
 import { createId } from '@paralleldrive/cuid2';
+import { sql } from 'drizzle-orm';
 import {
+  boolean,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import type {
+  VerificationApplicantType,
+  VerificationBankingSource,
+  VerificationCaseOrigin,
+  VerificationRoute,
+} from './verification_flow.js';
 
 export const VERIFICATION_CASE_STATUSES = [
   'new',
@@ -49,8 +58,17 @@ export const VERIFICATION_FIRST_RUN_STEPS = [
 export type VerificationFirstRunStep = (typeof VERIFICATION_FIRST_RUN_STEPS)[number];
 
 /**
- * One Zoho Deal ingested as a Verification Mytrion case. Pipeline truth still lives in
- * credit_platform `requests`; this row is the Mytrion-owned intake + assignment + list model.
+ * THE SHARED RECORD between Sales and Verification — one row, both desks read and write it.
+ * Sales fills the Phase-1 intake and submits; Verification works the 10 underwriting phases
+ * (see verification_flow.ts). There is no per-department copy, exactly like `retention_cases`.
+ *
+ * `verification_process` is the gate: false = intake incomplete, the application shows RED and
+ * Verification cannot work it. Sales submitting a complete application flips it true (GREEN).
+ * Only the server sets it — never a client.
+ *
+ * Origin is now `sales_application`. The `zoho_*`, `cp_*`, `first_run_*`, `matched_*` and `plaid_*`
+ * columns below belong to the retired credit_platform mirror; they are kept (not dropped) so the
+ * quarantine stays reversible and any existing row still reads correctly.
  */
 export const verificationCases = pgTable(
   'verification_cases',
@@ -59,7 +77,8 @@ export const verificationCases = pgTable(
       .primaryKey()
       .$defaultFn(() => `vc_${createId()}`),
     tenantId: text('tenant_id').notNull(),
-    zohoDealId: text('zoho_deal_id').notNull(),
+    /** Nullable since 0121: a sales-originated application has no Deal. Unique index is partial. */
+    zohoDealId: text('zoho_deal_id'),
     zohoApplicationId: text('zoho_application_id'),
     carrierId: text('carrier_id'),
     requestId: text('request_id'),
@@ -119,17 +138,71 @@ export const verificationCases = pgTable(
     plaidMode: text('plaid_mode'),
     cpClaimedAt: timestamp('cp_claimed_at', { withTimezone: true }),
     cpReviewUpdatedAt: timestamp('cp_review_updated_at', { withTimezone: true }),
+
+    // ---- New-era underwriting flow (0121) ----
+    /** THE GATE. false = red, Sales still owes intake. Server-set only, on a complete submit. */
+    verificationProcess: boolean('verification_process').notNull().default(false),
+    origin: text('origin').$type<VerificationCaseOrigin>().notNull().default('sales_application'),
+    applicantType: text('applicant_type').$type<VerificationApplicantType>(),
+    underwritingRoute: text('underwriting_route').$type<VerificationRoute>(),
+    phaseCode: text('phase_code').notNull().default('p1_intake'),
+    statusCode: text('status_code').notNull().default('intake_incomplete'),
+    phaseChangedAt: timestamp('phase_changed_at', { withTimezone: true }),
+
+    // Phase 1 intake — superset of Flow A (owner-operator) and Flow B (carrier).
+    ein: text('ein'),
+    residentialAddress: text('residential_address'),
+    businessAddress: text('business_address'),
+    /** Full SSN / DL are never stored — the card and licence live as Dropbox documents. */
+    ssnLast4: text('ssn_last4'),
+    dlLast4: text('dl_last4'),
+    dlState: text('dl_state'),
+    trucksCount: integer('trucks_count'),
+    fuelCardsRequested: integer('fuel_cards_requested'),
+    requestedLimit: numeric('requested_limit', { precision: 14, scale: 2 }),
+    bankingSource: text('banking_source').$type<VerificationBankingSource>(),
+    plaidConnected: boolean('plaid_connected').notNull().default(false),
+
+    // Sales gate
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedByZohoUserId: text('submitted_by_zoho_user_id'),
+    /** Last computed missing-field list — what the red card lists back to the agent. */
+    intakeMissing: jsonb('intake_missing').$type<string[]>().notNull().default([]),
+
+    // Outcome
+    outcomeCode: text('outcome_code'),
+    approvedLimitAmount: numeric('approved_limit_amount', { precision: 14, scale: 2 }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decidedBy: text('decided_by'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tenantDealUq: uniqueIndex('verification_cases_tenant_deal_uq').on(table.tenantId, table.zohoDealId),
+    /**
+     * PARTIAL since 0121. Sales-origin cases have a NULL deal id; without the predicate every
+     * such row would collide on (tenant, NULL) in Postgres' NULLS NOT DISTINCT-free default only
+     * by luck — the partial index states the intent instead of relying on it.
+     */
+    tenantDealUq: uniqueIndex('verification_cases_tenant_deal_uq')
+      .on(table.tenantId, table.zohoDealId)
+      .where(sql`${table.zohoDealId} IS NOT NULL`),
     tenantStatusIdx: index('verification_cases_tenant_status_idx').on(
       table.tenantId,
       table.status,
       table.createdAt,
     ),
     tenantOwnerIdx: index('verification_cases_tenant_owner_idx').on(table.tenantId, table.ownerZohoUserId),
+    tenantFlowIdx: index('verification_cases_tenant_flow_idx').on(
+      table.tenantId,
+      table.statusCode,
+      table.phaseCode,
+    ),
+    tenantSubmitterIdx: index('verification_cases_tenant_submitter_idx').on(
+      table.tenantId,
+      table.submittedByZohoUserId,
+    ),
   }),
 );
 

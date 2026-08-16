@@ -3,6 +3,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../db/client.js';
 import { auditLog, type AuditEntry, type NewAuditEntry } from '../db/schema/index.js';
 import type { Audience, TenantContext } from '../types/tenantContext.js';
+import { ciTestActorSql } from '../modules/audit/auditActorDisplay.js';
 import { normalizePagination } from './util.js';
 
 /** Row ceiling for a filtered export. Above this the answer is a report, not a spreadsheet. */
@@ -34,6 +35,11 @@ export interface AuditFilter {
   search?: string;
   from?: Date;
   to?: Date;
+  /**
+   * `human` (default) hides Vitest fixture actors (`zoho:42`, `zoho:888`, …).
+   * `vitest` is only those rows — the Admin "Vitest Logs" tab.
+   */
+  source?: 'human' | 'vitest';
   limit?: number;
   offset?: number;
 }
@@ -56,6 +62,7 @@ function whereFor(ctx: TenantContext, filter?: AuditFilter): SQL | undefined {
   if (filter?.resourceId) clauses.push(eq(auditLog.resourceId, filter.resourceId));
   if (filter?.from) clauses.push(gte(auditLog.createdAt, filter.from));
   if (filter?.to) clauses.push(lte(auditLog.createdAt, filter.to));
+  clauses.push(ciTestActorSql(filter?.source === 'vitest'));
   if (filter?.search) {
     // Escape the LIKE wildcards so a carrier id containing '%' or '_' is searched literally.
     const term = `%${filter.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -75,11 +82,16 @@ function whereFor(ctx: TenantContext, filter?: AuditFilter): SQL | undefined {
 }
 
 /** One DISTINCT column, non-null, alphabetical — the option list behind a filter dropdown. */
-async function distinct(ctx: TenantContext, column: AnyPgColumn, cap = 500): Promise<string[]> {
+async function distinct(
+  ctx: TenantContext,
+  column: AnyPgColumn,
+  extra?: SQL,
+  cap = 500,
+): Promise<string[]> {
   const rows = await db
     .selectDistinct({ value: column })
     .from(auditLog)
-    .where(and(eq(auditLog.tenantId, ctx.tenantId), isNotNull(column)))
+    .where(and(eq(auditLog.tenantId, ctx.tenantId), isNotNull(column), extra))
     .orderBy(asc(column))
     .limit(cap);
   // `AnyPgColumn` erases the column's data type, so Drizzle infers `value: never` for the generic
@@ -122,13 +134,14 @@ export const auditRepo = {
   },
 
   /** Option lists for the Audit Log filter dropdowns (agent name, profile, role). */
-  async facets(ctx: TenantContext): Promise<AuditFacets> {
+  async facets(ctx: TenantContext, filter?: Pick<AuditFilter, 'source'>): Promise<AuditFacets> {
+    const source = ciTestActorSql(filter?.source === 'vitest');
     const [userNames, profiles, roles, callerRoles, actions] = await Promise.all([
-      distinct(ctx, auditLog.userName),
-      distinct(ctx, auditLog.profile),
-      distinct(ctx, auditLog.role),
-      distinct(ctx, auditLog.callerRole),
-      distinct(ctx, auditLog.action),
+      distinct(ctx, auditLog.userName, source),
+      distinct(ctx, auditLog.profile, source),
+      distinct(ctx, auditLog.role, source),
+      distinct(ctx, auditLog.callerRole, source),
+      distinct(ctx, auditLog.action, source),
     ]);
     return { userNames, profiles, roles, callerRoles, actions };
   },

@@ -16,7 +16,12 @@
  */
 import { env } from '../../../config/env.js';
 import type { ObjectStorage } from './types.js';
-import { dropboxMaintenanceStorage, dropboxStorage } from './dropboxStorage.js';
+import {
+  dropboxMaintenanceStorage,
+  dropboxStorage,
+  dropboxVerificationStorage,
+  dropboxHrStorage,
+} from './dropboxStorage.js';
 import { s3Storage } from './s3Storage.js';
 
 export type { ObjectStorage } from './types.js';
@@ -32,7 +37,20 @@ export type { ObjectStorage } from './types.js';
  */
 export type CommsStorageProvider = 's3' | 'dropbox';
 export type MaintenanceStorageProvider = 's3' | 'dropbox_maintenance';
-export type StorageProvider = CommsStorageProvider | MaintenanceStorageProvider;
+export type VerificationStorageProvider = 's3' | 'dropbox_verification';
+export type HrStorageProvider = 's3' | 'dropbox_hr';
+/**
+ * What `file_assets.storage_provider` may hold.
+ *
+ * Wider than `CommsStorageProvider` because HR photos share that table but must NOT share the comms
+ * folder. The DB CHECK constraint (migration 0125) is the other half of this claim.
+ */
+export type FileAssetStorageProvider = CommsStorageProvider | 'dropbox_hr';
+export type StorageProvider =
+  | CommsStorageProvider
+  | MaintenanceStorageProvider
+  | VerificationStorageProvider
+  | HrStorageProvider;
 
 let override: ObjectStorage | null = null;
 
@@ -40,6 +58,8 @@ const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   s3: s3Storage,
   dropbox: dropboxStorage,
   dropbox_maintenance: dropboxMaintenanceStorage,
+  dropbox_verification: dropboxVerificationStorage,
+  dropbox_hr: dropboxHrStorage,
 };
 
 /**
@@ -79,6 +99,15 @@ export function maintenanceStorageProvider(): MaintenanceStorageProvider {
 }
 
 /**
+ * Where a NEW Verification applicant document goes. Defaults to Dropbox (not S3, unlike the older
+ * pipelines) because the underwriting flow was built on Dropbox from the start — there are no
+ * pre-existing S3 rows for this table whose reads a default could repoint.
+ */
+export function verificationStorageProvider(): VerificationStorageProvider {
+  return env.VERIFICATION_STORAGE_PROVIDER;
+}
+
+/**
  * Where a NEW general-pipeline file goes — uploads (import) and generated CSV/Excel/PDF (export).
  *
  * Only safe to read from env because `storeFile` persists the result on the `file_assets` row, so flipping
@@ -88,6 +117,14 @@ export function maintenanceStorageProvider(): MaintenanceStorageProvider {
  */
 export function fileStorageProvider(): CommsStorageProvider {
   return env.FILE_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW HR people file goes. Separate from `fileStorageProvider()` so employee photos cannot
+ * be dragged into the comms folder by a change to the general file pipeline's env.
+ */
+export function hrStorageProvider(): HrStorageProvider {
+  return env.HR_STORAGE_PROVIDER;
 }
 
 export function setStorageForTests(storage: ObjectStorage | null): void {

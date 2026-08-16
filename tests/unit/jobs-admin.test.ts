@@ -39,7 +39,11 @@ describe('jobs admin catalog', () => {
   });
 
   it('lists every catalog queue with titles, schedules, and active flags', () => {
-    const live = new Set([retentionCaseSyncJob.name, 'maintenance.approvals-expiry']);
+    const live = new Set([
+      retentionCaseSyncJob.name,
+      'maintenance.approvals-expiry',
+      'automation.verification.case-ingest',
+    ]);
     const catalog = listJobCatalog({ jobsEnabled: true, liveScheduleNames: live });
     expect(catalog.length).toBeGreaterThanOrEqual(8);
     const sync = catalog.find((j) => j.name === retentionCaseSyncJob.name);
@@ -66,15 +70,18 @@ describe('jobs admin catalog', () => {
     });
     expect(CRON_SCHEDULES.some((s) => s.name === 'automation.retention.weekly-scan')).toBe(false);
 
+    // Case ingest is the only path that creates an application, so Admin must show it as live and
+    // let an operator run a backfill.
     const ingest = catalog.find((j) => j.name === 'automation.verification.case-ingest');
-    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(true);
+    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(false);
     expect(ingest).toMatchObject({
-      active: false,
-      statusLabel: 'Disabled',
-      manualTriggerable: false,
-      scheduleLabel: 'Disabled (not scheduled)',
+      active: true,
+      statusLabel: 'Active',
+      trigger: 'cron',
+      manualTriggerable: true,
+      scheduleLabel: expect.stringContaining('20 minutes'),
     });
-    expect(CRON_SCHEDULES.some((s) => s.name === 'automation.verification.case-ingest')).toBe(false);
+    expect(CRON_SCHEDULES.some((s) => s.name === 'automation.verification.case-ingest')).toBe(true);
 
     for (const j of catalog) {
       expect(j.manualTriggerable).toBe(MANUAL_TRIGGERABLE_QUEUES.has(j.name));

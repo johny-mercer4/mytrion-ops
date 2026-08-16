@@ -61,7 +61,7 @@ function tokenFor(profile: string): Promise<string> {
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'worker',
-    worker: { zohoUserId: '42', userName: 'Robiya', profile },
+    worker: { zohoUserId: '42', userName: 'CI Test Admin', profile },
   });
 }
 const salesToken = (): Promise<string> => tokenFor('Sales Rep');

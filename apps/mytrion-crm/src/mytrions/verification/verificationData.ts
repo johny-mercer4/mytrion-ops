@@ -17,9 +17,12 @@ import {
   type VerificationCaseStatus,
   type VerificationOwnerScope,
 } from '../../api/verificationCases';
+import { ApiError } from '../../api/transport';
 import {
   getVerificationClientDetail,
+  listCarrierAttachments,
   listVerificationRoster,
+  type VerificationCarrierAttachment,
   type VerificationClientDetail,
   type VerificationClientRow,
 } from '../../api/verificationClients';
@@ -113,6 +116,38 @@ export function useVerificationStrategies(enabled = true): CachedLoad<DecisionSt
     enabled,
     staleMs: STALE_RULES,
   });
+}
+
+export type CarrierAttachmentsLoad =
+  | { status: 'ok'; attachments: VerificationCarrierAttachment[] }
+  | { status: 'unavailable' };
+
+export function attachmentsCacheKey(carrierId: string): string {
+  return `verification:attachments:${carrierId}`;
+}
+
+async function loadCarrierAttachments(carrierId: string): Promise<CarrierAttachmentsLoad> {
+  try {
+    const result = await listCarrierAttachments(carrierId);
+    return { status: 'ok', attachments: result.attachments };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'CARRIER_ATTACHMENTS_UNMIGRATED') {
+      return { status: 'unavailable' };
+    }
+    throw err;
+  }
+}
+
+/** Lazy: pass `enabled` only while the Attachment tab is open. Cache makes a return visit instant. */
+export function useCarrierAttachments(
+  carrierId: string | null,
+  enabled: boolean,
+): CachedLoad<CarrierAttachmentsLoad> {
+  return useCachedLoad(
+    carrierId ? attachmentsCacheKey(carrierId) : 'verification:attachments:none',
+    () => loadCarrierAttachments(carrierId!),
+    { enabled: Boolean(carrierId) && enabled, staleMs: 60_000 },
+  );
 }
 
 export function useVerificationInbox(): CachedLoad<InboxMessage[]> {

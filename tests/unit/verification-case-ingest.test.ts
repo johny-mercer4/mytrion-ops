@@ -13,16 +13,26 @@ import { runVerificationCaseIngest } from '../../src/modules/jobs/workers/verifi
 import { DISABLED_JOB_QUEUES } from '../../src/modules/jobs/catalog.js';
 
 describe('verification case ingest worker', () => {
-  it('no-ops while the queue is parked in DISABLED_JOB_QUEUES', async () => {
-    const result = await runVerificationCaseIngest({ trigger: 'manual' });
-    expect(result).toEqual({ skipped: true, reason: 'disabled' });
-    expect(ingestVerificationDeals).not.toHaveBeenCalled();
+  it('runs — this queue is the only path that creates an application', async () => {
+    await runVerificationCaseIngest({ trigger: 'manual' });
+    expect(ingestVerificationDeals).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps case-ingest disabled and never POSTs /api/v1/requests', () => {
-    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(true);
+  it('is not parked, and still never reaches the credit_platform API', () => {
+    expect(DISABLED_JOB_QUEUES.has('automation.verification.case-ingest')).toBe(false);
     const src = readFileSync(new URL('../../src/modules/verification/zohoDealIngest.ts', import.meta.url), 'utf8');
     expect(src).not.toContain('createAndStartRequest');
     expect(src).not.toContain('/api/v1/requests');
+    // The credit_platform-era follow-ups were REMOVED from this path, not merely flag-guarded.
+    // Matched on the IMPORT, not on the word: the header explains why they are gone, and a prose
+    // mention is not a call.
+    expect(src).not.toMatch(/^import .*caseSync\.js/m);
+    expect(src).not.toMatch(/^import .*firstRunTrigger\.js/m);
+  });
+
+  it('writes the new-era record rather than the legacy decision-desk mirror', () => {
+    const src = readFileSync(new URL('../../src/modules/verification/zohoDealIngest.ts', import.meta.url), 'utf8');
+    expect(src).toContain('createApplicationFromDeal');
+    expect(src).not.toContain('DECISION_DESK_STAGE_IDS');
   });
 });

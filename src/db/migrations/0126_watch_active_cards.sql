@@ -1,0 +1,11 @@
+-- Mytrion Watch: carrier size, so the desk can separate an owner-operator from a company.
+--
+-- The classification itself is NOT defined here. It is the Loyalty program's, in
+-- apps/mytrion-crm/src/mytrions/_shared/loyalty.ts `resolveTrack()`: 1 active card = Owner-Operator
+-- (T1), 2-3 = Small Company, 4-11 = Fleet, 12+ = Enterprise. We store the raw card count and let
+-- that shared function do the bucketing, so the two Mytrions cannot drift apart.
+--
+-- `total_active_cards` rather than `dim_company.company_type`: measured on the 725 carriers scored
+-- on 2026-08-11, the card count is present for 725 and company_type for only 715, and the two
+-- disagree anyway (91 carriers typed 'solo' hold 2-3 active cards).
+ALTER TABLE mytrion_watch_scores ADD COLUMN IF NOT EXISTS active_cards integer;

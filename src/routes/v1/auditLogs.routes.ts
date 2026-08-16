@@ -18,6 +18,7 @@ import { MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { auditSessionEvent } from '../../modules/audit/sessionEvents.js';
 import { AUTOMATION_ORIGIN_SOURCES } from '../../db/schema/index.js';
+import { displayAuditUserName } from '../../modules/audit/auditActorDisplay.js';
 import { auditRepo, type AuditFilter } from '../../repos/auditRepo.js';
 import { automationLogRepo, type AutomationLogFilter } from '../../repos/automationLogRepo.js';
 import { requireContext } from './helpers.js';
@@ -55,6 +56,8 @@ const auditQuerySchema = z.object({
   search: z.string().max(200).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
+  /** Default `human` — Vitest fixture actors live on the Vitest Logs tab. */
+  source: z.enum(['human', 'vitest']).optional(),
   limit: z.coerce.number().int().min(1).max(10_000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -117,6 +120,7 @@ function toAuditFilter(q: z.infer<typeof auditQuerySchema>): AuditFilter {
     ...(q.search ? { search: q.search } : {}),
     ...(q.from ? { from: q.from } : {}),
     ...(q.to ? { to: q.to } : {}),
+    source: q.source ?? 'human',
     ...(q.limit !== undefined ? { limit: q.limit } : {}),
     ...(q.offset !== undefined ? { offset: q.offset } : {}),
   };
@@ -190,8 +194,12 @@ export async function auditLogRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/admin/audit/facets', guard, async (request) => {
     const ctx = requireAdmin(request);
-    const facets = await auditRepo.facets(ctx);
-    return { ...facets, loginActions: LOGIN_ACTIONS };
+    const q = auditQuerySchema.pick({ source: true }).parse(request.query);
+    const facets = await auditRepo.facets(ctx, { source: q.source ?? 'human' });
+    const userNames = [
+      ...new Set(facets.userNames.map((name) => displayAuditUserName(null, name) ?? name)),
+    ];
+    return { ...facets, userNames, loginActions: LOGIN_ACTIONS };
   });
 
   // Audit trail for the Mytrion Admin: who (user/name/profile/role/company) did what, when.
@@ -205,7 +213,10 @@ export async function auditLogRoutes(app: FastifyInstance): Promise<void> {
     ]);
     // Drop tenantId from the wire DTO; everything else is display data for the admin.
     return {
-      entries: entries.map(({ tenantId: _tenantId, ...rest }) => rest),
+      entries: entries.map(({ tenantId: _tenantId, ...rest }) => ({
+        ...rest,
+        userName: displayAuditUserName(rest.userId, rest.userName),
+      })),
       total,
     };
   });

@@ -41,7 +41,22 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', async (importOriginal) => {
   stub.getBlueprintDetails = vi.fn(async () => null);
   stub.getBlueprintTransitions = vi.fn(async () => []);
   stub.executeBlueprintTransition = vi.fn(async () => undefined);
+  // `getRecord` is driven by the ended-call event (it reads Mytrion_Call_Attempts before bumping
+  // it). Unshadowed it reached the REAL Zoho client: the route swallows the failure, but only after
+  // waiting for a network timeout, so the test's own 5s budget was spent on a socket that was never
+  // going to connect. Fine at low load, over budget once the suite got busier.
+  stub.getRecord = vi.fn(async () => ({ id: 'deal-9', Mytrion_Call_Attempts: 2 }));
   return { ...mod, zohoCrmRecords: stub };
+});
+
+// Same reason: the ended-call event writes a mytrion_calls row, and there is no database in a unit
+// run. The insert is best-effort in the route, but the connection attempt still had to time out.
+vi.mock('../../src/repos/mytrionCallRepo.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/repos/mytrionCallRepo.js')>();
+  return {
+    ...mod,
+    mytrionCallRepo: { ...mod.mytrionCallRepo, create: vi.fn(async () => ({ id: 'call_1' })) },
+  };
 });
 vi.mock('../../src/modules/customerService/fieldResolver.js', async (importOriginal) => {
   const mod =
@@ -157,7 +172,7 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
     role: 'admin', // stale claim — re-derived from the profile at verify
-    worker: { zohoUserId, userName: 'Robiya', profile },
+    worker: { zohoUserId, userName: 'CI Test Admin', profile },
   });
 }
 
@@ -261,7 +276,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     carrierId: '123',
     companyName: 'Acme Trucking',
     contact: 'Jane Doe',
-    agentName: 'Robiya',
+    agentName: 'CI Test Admin',
     phone: '555-0100',
     producedCards: 6,
     activeCards: 4,
@@ -306,7 +321,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ clients: [{ carrierId: '123', gallonsThisMonth: 500 }] });
     // Own id + own display name (the name arm resolves the SAME carriers the roster shows).
-    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
+    expect(clientsMock).toHaveBeenCalledWith('42', 'CI Test Admin');
     expect(clientsMock).not.toHaveBeenCalledWith('999');
     expect(clientsMock).not.toHaveBeenCalledWith('999', expect.anything());
   });
@@ -337,7 +352,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(200);
-    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
+    expect(clientsMock).toHaveBeenCalledWith('42', 'CI Test Admin');
   });
 
   it('carries Manager loyalty controls into the Sales client roster', async () => {

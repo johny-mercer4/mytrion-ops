@@ -137,7 +137,8 @@ export function buildCasesCsv(
   rows: Array<{
     companyName: string | null;
     zohoApplicationId: string | null;
-    zohoDealId: string;
+    /** Nullable since 0121 — a sales-originated application has no Zoho Deal. */
+    zohoDealId: string | null;
     dot: string | null;
     status: string;
     distributeType: string;
@@ -153,7 +154,9 @@ export function buildCasesCsv(
     lines.push(
       [
         row.companyName ?? '',
-        row.zohoApplicationId || row.zohoDealId,
+        // Both are nullable now; the cells are String()-ed below, so a bare null would export the
+        // literal text "null" into the analyst's spreadsheet.
+        row.zohoApplicationId || row.zohoDealId || '',
         row.dot ?? '',
         row.status,
         row.distributeType === 'shared' ? 'Shared' : 'Personal',

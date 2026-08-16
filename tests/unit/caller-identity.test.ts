@@ -242,7 +242,7 @@ describe('view-as for NON-admins (targeted, DB-granted impersonation)', () => {
   }
 
   it('a granted non-admin may view-as the specific target (runs AS them, audited impersonator)', async () => {
-    actAsTarget.mockResolvedValue({ zohoUserId: '777', name: 'Rep Riley', email: null, profile: 'Sales Rep', role: 'Sales Agent',
+    actAsTarget.mockResolvedValue({ zohoUserId: '777', name: 'CI Test Admin', email: null, profile: 'Sales Rep', role: 'Sales Agent',
       isOnline: false,
     });
     const ctx = await buildCallerContext(viewAsReq(['777'], '777'), {});
@@ -271,7 +271,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
   it('ignores spoofed x-act-as identity headers; authority comes from the CRM record', async () => {
     actAsTarget.mockResolvedValue({
       zohoUserId: '777',
-      name: 'Rep Riley',
+      name: 'CI Test Admin',
       email: null,
       profile: 'Sales Agent',
       role: 'Sales Agent',
@@ -287,7 +287,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
     const ctx = await buildCallerContext(req, { department_scope: ['sales'] });
     expect(actAsTarget).toHaveBeenCalledWith('777');
     expect(ctx.userId).toBe('zoho:777');
-    expect(ctx.userName).toBe('Rep Riley'); // CRM name, not the header
+    expect(ctx.userName).toBe('CI Test Admin'); // CRM name, not the header
     expect(ctx.profiles).toEqual(['Sales Agent']); // CRM profile, not 'Administrator'
     expect(ctx.allDepartmentAccess).toBe(false); // spoofed headers minted no authority
     expect(ctx.role).toBe('worker'); // impersonation runs with the TARGET's authority

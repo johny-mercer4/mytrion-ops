@@ -12,12 +12,16 @@
 import pg from 'pg';
 import type { Pool, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
+import { VERIFICATION_CP_WRITEBACK_ENABLED } from '../modules/verification/killSwitches.js';
 import { logger } from '../lib/logger.js';
 
 let pool: Pool | null = null;
 
 /** True when write-back is enabled (VERIFICATION_WRITE_ENABLED) and the DB URL is set. */
 export function isWriteConfigured(): boolean {
+  // Two flags on purpose: a read-only legacy desk is a coherent state to want, writing into a
+  // system we no longer own is not. Either one being off stops the writes.
+  if (!VERIFICATION_CP_WRITEBACK_ENABLED) return false;
   return env.VERIFICATION_WRITE_ENABLED && Boolean(env.VERIFICATION_DATABASE_URL);
 }
 

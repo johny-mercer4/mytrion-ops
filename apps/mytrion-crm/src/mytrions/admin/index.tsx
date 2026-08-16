@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PermissionSets } from './PermissionSets';
 import type { AdminTabKey } from './adminTabs';
-import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle } from '../../components/icons';
+import { AccessIcon, AlertIcon, BuildingIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon, Sparkle, VitestIcon } from '../../components/icons';
 import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
 import { AutomationLogs } from './AutomationLogs';
@@ -223,6 +223,15 @@ export default function AdminMytrion() {
           primary: true,
         },
         {
+          key: 'vitest-logs',
+          tone: 'var(--tone-amber)',
+          label: 'Vitest Logs',
+          icon: <VitestIcon size={18} />,
+          active: tab === 'vitest-logs',
+          onClick: () => setTab('vitest-logs'),
+          keywords: ['vitest', 'ci', 'fixture', 'test'],
+        },
+        {
           key: 'automation-logs',
           tone: 'var(--tone-pink)',
           label: 'Automation Logs',
@@ -319,7 +328,8 @@ export default function AdminMytrion() {
       {tab === 'news' && <ClientNews />}
       {tab === 'deals' && <Deals />}
       {tab === 'escalation-routing' && <EscalationRouting />}
-      {tab === 'audit' && <AuditLog />}
+      {tab === 'audit' && <AuditLog source="human" />}
+      {tab === 'vitest-logs' && <AuditLog source="vitest" />}
       {tab === 'automation-logs' && <AutomationLogs />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'kpi-data' && <KpiData />}
