@@ -17255,3 +17255,58 @@ jsdom does no layout, so the suite could not see either defect. Captured the com
   **161px**.
 
 +16px, exactly `--space-4`. The profile modal uses `size="sm"`, so it gets the 12px seam.
+
+## 2026-08-16 — Karpathy guidelines installed natively for all three assistants
+
+### What they actually are
+
+Not a document Karpathy wrote. They are a community distillation of
+[his observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls, from
+[`forrestchang/andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills)
+(MIT). Reproduced **verbatim** rather than paraphrased, and the provenance is stated in the file —
+attributing invented text to a named person would have been worse than not installing them.
+
+### Installed where each tool actually looks
+
+"By default" means a different file per assistant, so six artifacts:
+
+| Surface | Tool | Mechanism |
+| --- | --- | --- |
+| `.claude/skills/karpathy-guidelines/SKILL.md` | Claude Code | canonical copy |
+| `.agents/skills/…` · `.cursor/skills/…` | Codex · Cursor | mirrors, byte-identical |
+| `CLAUDE.md` | Claude Code | auto-loaded; **hard rule 10** + full principles inline |
+| `AGENTS.md` | Codex, Cursor | auto-loaded cross-tool standard |
+| `.cursor/rules/karpathy-guidelines.mdc` | Cursor | `alwaysApply: true` |
+
+Six copies drift, so `tests/unit/karpathy-guidelines-install.test.ts` asserts the mirrors are
+byte-identical to the source, every auto-loaded file carries all four principles, the Cursor rule is
+`alwaysApply: true` rather than glob-scoped, and the attribution line survives.
+
+The skill also carries an "In this repo" section for the two places the guidelines could be
+misread: `repos/` and `ToolManifest` are tenant-isolation and RBAC boundaries, not speculative
+abstraction; and "verify" here means the repo's own gates plus `audit:mobile` / `audit:shots` for
+UI, because jsdom does no layout.
+
+### Reviewing my own recent work against them
+
+Impeccable's detector is clean (exit 0) on `ds/Tabs` and `_shared`. The honest findings are from the
+guidelines, not the detector:
+
+- **Simplicity, violated.** `mytrion_watch.ts` carries FIVE parallel `Record<WatchFeature, …>` maps
+  — LABEL, UNIT, HELP, MISSING, NOUN — that must stay in sync by hand, when the API already
+  assembles them into one object per feature (`featureMeta`). One
+  `Record<WatchFeature, {label, unit, help, noun, missing}>` is the same information with the sync
+  problem deleted. Recorded, not refactored: guideline 3 says don't refactor what isn't broken, and
+  this is covered by tests and working. Worth doing next time this file is opened.
+- **Goal-driven, violated — already paid for.** The `openSignedFile` regression shipped because the
+  success criterion was "the unit test passes" and the test mocked `window.open`. A mock cannot
+  observe that `noopener` makes the real call return null. Weak criteria are exactly what principle
+  4 warns about; the fix was to assert on the ARGUMENTS and to check the rendered result in a real
+  browser.
+- **Scope, minor.** `CaseDocuments` also renders requested-but-not-uploaded rows. Beyond the literal
+  ask ("verification agent can access files"), justified as the other half of the same question, but
+  it is an addition and worth naming.
+
+Surgical held elsewhere: the `ds/Tabs` change reached a shared component and another consumer's
+override, which is fixing the cause rather than the symptom — and the override removal was cleaning
+up a double-space MY change would have created.
