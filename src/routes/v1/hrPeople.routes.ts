@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { deleteFile, presignFile, storeFile } from '../../modules/files/fileService.js';
+import { hrStorageProvider } from '../../modules/files/storage/index.js';
 import { buildHrPersonOverview } from '../../modules/hr/hrPersonOverview.js';
 import { hrEmployeeRepo } from '../../repos/hrEmployeeRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -164,6 +165,12 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
       kind: 'upload',
       createdBy: 'hr.employee.photo',
       /**
+       * HR's OWN Dropbox root, not the general file pipeline's. Employee headshots used to fall
+       * through to `fileStorageProvider()` and land in `/comms` beside chat attachments; the folder
+       * a photo lives in is part of how HR data stays separable.
+       */
+      storageProvider: hrStorageProvider(),
+      /**
        * Tagged 'hr' so the asset inherits the same department boundary as the directory it belongs to:
        * a headshot must not become readable through the generic `/v1/files` list by a worker with no HR
        * grant. The read path (`/photo-link`) is gated on the HR department too, so the two agree.
@@ -216,6 +223,44 @@ export async function hrPeopleRoutes(app: FastifyInstance): Promise<void> {
    * The caller never names a file. The id comes off the employee row, so a file id alone can never be
    * turned into bytes here.
    */
+  /**
+   * The SAME link, for the handful of employees a page is actually rendering.
+   *
+   * Deliberately not "presign the whole directory" — the single-employee route above explains why
+   * that is wrong, and this does not change it. What it removes is the browser making one HTTP
+   * request per face: a team panel with twenty members cost twenty round trips through our API,
+   * each of which then made its own Dropbox call. The client asks once for what is on screen.
+   *
+   * A per-employee failure yields no entry rather than failing the batch — one unreadable photo
+   * must not blank the other nineteen. Ids the caller cannot see resolve to nothing, so this is not
+   * a way to enumerate employees either.
+   */
+  app.post('/hr/employees/photo-links', auth, async (request) => {
+    const ctx = requireHrInternal(request);
+    const { employeeIds } = z
+      .object({ employeeIds: z.array(z.string().min(1)).min(1).max(100) })
+      .parse(request.body ?? {});
+
+    const unique = [...new Set(employeeIds)];
+    const rows = await Promise.all(unique.map((id) => hrEmployeeRepo.getById(ctx, id)));
+    const withPhotos = rows.filter(
+      (r): r is NonNullable<typeof r> & { photoFileId: string } => Boolean(r?.photoFileId),
+    );
+
+    const resolved = await Promise.all(
+      withPhotos.map(async (employee) => {
+        try {
+          const link = await presignFile(ctx, employee.photoFileId);
+          return [employee.id, { url: link.url, expiresAt: link.expiresAt }] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return { links: Object.fromEntries(resolved.filter(Boolean) as Array<readonly [string, unknown]>) };
+  });
+
   app.get<{ Params: { id: string } }>('/hr/employees/:id/photo-link', auth, async (request) => {
     const ctx = requireHrInternal(request);
     const employee = await hrEmployeeRepo.getById(ctx, request.params.id);

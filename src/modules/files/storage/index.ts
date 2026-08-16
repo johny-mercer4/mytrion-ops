@@ -20,6 +20,7 @@ import {
   dropboxMaintenanceStorage,
   dropboxStorage,
   dropboxVerificationStorage,
+  dropboxHrStorage,
 } from './dropboxStorage.js';
 import { s3Storage } from './s3Storage.js';
 
@@ -37,10 +38,19 @@ export type { ObjectStorage } from './types.js';
 export type CommsStorageProvider = 's3' | 'dropbox';
 export type MaintenanceStorageProvider = 's3' | 'dropbox_maintenance';
 export type VerificationStorageProvider = 's3' | 'dropbox_verification';
+export type HrStorageProvider = 's3' | 'dropbox_hr';
+/**
+ * What `file_assets.storage_provider` may hold.
+ *
+ * Wider than `CommsStorageProvider` because HR photos share that table but must NOT share the comms
+ * folder. The DB CHECK constraint (migration 0125) is the other half of this claim.
+ */
+export type FileAssetStorageProvider = CommsStorageProvider | 'dropbox_hr';
 export type StorageProvider =
   | CommsStorageProvider
   | MaintenanceStorageProvider
-  | VerificationStorageProvider;
+  | VerificationStorageProvider
+  | HrStorageProvider;
 
 let override: ObjectStorage | null = null;
 
@@ -49,6 +59,7 @@ const ADAPTERS: Record<StorageProvider, ObjectStorage> = {
   dropbox: dropboxStorage,
   dropbox_maintenance: dropboxMaintenanceStorage,
   dropbox_verification: dropboxVerificationStorage,
+  dropbox_hr: dropboxHrStorage,
 };
 
 /**
@@ -106,6 +117,14 @@ export function verificationStorageProvider(): VerificationStorageProvider {
  */
 export function fileStorageProvider(): CommsStorageProvider {
   return env.FILE_STORAGE_PROVIDER;
+}
+
+/**
+ * Where a NEW HR people file goes. Separate from `fileStorageProvider()` so employee photos cannot
+ * be dragged into the comms folder by a change to the general file pipeline's env.
+ */
+export function hrStorageProvider(): HrStorageProvider {
+  return env.HR_STORAGE_PROVIDER;
 }
 
 export function setStorageForTests(storage: ObjectStorage | null): void {

@@ -38,7 +38,7 @@ export const fileAssets = pgTable(
      * the object behind.
      */
     storageProvider: text('storage_provider')
-      .$type<'s3' | 'dropbox'>()
+      .$type<'s3' | 'dropbox' | 'dropbox_hr'>()
       .notNull()
       .default('s3'),
     kind: text('kind').$type<'generated' | 'upload'>().notNull(),

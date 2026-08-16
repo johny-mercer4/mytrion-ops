@@ -119,6 +119,15 @@ export const dropboxVerificationStorage: ObjectStorage = makeDropboxStorage(
   env.DROPBOX_VERIFICATION_ROOT_PATH,
 );
 
+/**
+ * HR people files — employee photos today, HR documents later. Its own root, never `/comms`.
+ *
+ * These used to ride the generic `file_assets` pipeline straight into the comms folder, so employee
+ * headshots landed among chat attachments. Per-row `storage_provider` means the rows already written
+ * that way keep resolving to `/comms` correctly; only new files come here.
+ */
+export const dropboxHrStorage: ObjectStorage = makeDropboxStorage(env.DROPBOX_HR_ROOT_PATH);
+
 /** Byte size without downloading — used to reconcile a stored size against Dropbox. */
 export async function dropboxSize(key: string, rootPath: string = env.DROPBOX_ROOT_PATH): Promise<number> {
   const meta = await dropboxMetadata(keyToDropboxPath(key, rootPath));

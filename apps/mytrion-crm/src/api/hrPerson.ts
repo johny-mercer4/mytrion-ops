@@ -31,6 +31,25 @@ export async function clearHrEmployeePhoto(id: string): Promise<HrEmployeeDto> {
   )) as HrEmployeeDto;
 }
 
+/**
+ * Short-lived URLs for the employees a page is rendering, in ONE request.
+ *
+ * Employees without a photo, and ids the caller may not see, are simply absent from the result —
+ * the caller falls back to initials for those, which is the same thing a 404 means on the single
+ * route.
+ */
+export async function getHrEmployeePhotoLinks(
+  employeeIds: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, HrPhotoLink>> {
+  if (employeeIds.length === 0) return {};
+  const res = (await request('POST', '/hr/employees/photo-links', {
+    body: { employeeIds },
+    ...(signal ? { signal } : {}),
+  })) as { links?: Record<string, HrPhotoLink> };
+  return res.links ?? {};
+}
+
 /** A short-lived URL for one employee's avatar. 404s when they have none. */
 export async function getHrEmployeePhotoLink(
   id: string,

@@ -27,7 +27,7 @@ import {
 } from '../../api/hrPerson';
 import { departmentIcon, departmentTone } from './departmentAppearance';
 import { HrAttendanceWeek } from './HrAttendanceWeek';
-import { HrAvatar } from './HrAvatar';
+import { HrAvatar, prefetchHrPhotoLinks } from './HrAvatar';
 import { HrEmpty, HrPageLoader, Pill, toneFor } from './HrBits';
 import { tashkentToday } from './attendanceTime';
 
@@ -108,6 +108,19 @@ export function HrPersonView({
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  /**
+   * One request for every face on this page instead of one per face.
+   *
+   * `HrAvatar` reads the same module cache, so by the time the team list paints its links are
+   * already there. Without this a twenty-person team made twenty API calls, each of which made its
+   * own Dropbox round trip.
+   */
+  useEffect(() => {
+    const members = data?.team?.members ?? [];
+    if (members.length === 0) return;
+    void prefetchHrPhotoLinks(members.map((m) => ({ id: m.id, photoFileId: m.photoFileId })));
+  }, [data?.team?.members]);
 
   const employee = data?.employee;
   const displayName = employee ? `${employee.firstName} ${employee.lastName}`.trim() : name;

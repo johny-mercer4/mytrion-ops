@@ -17160,3 +17160,66 @@ recommendation.
 Second HR finding: a team lead holding attendance-only access can open the Attendance tab but every
 avatar request 403s, silently falling back to initials. Cosmetic today (no photos exist) and the fix
 widens an RBAC gate, so it is reported rather than taken unilaterally.
+
+## 2026-08-16 — HR files onto their own object-storage root; profile modal reworked
+
+### Employee files now have their own Dropbox folder
+
+HR photos rode the generic `file_assets` pipeline, so `fileStorageProvider()` sent them wherever
+`FILE_STORAGE_PROVIDER` pointed — in prod, `dropbox` → the **`/comms`** root, mixed in with chat
+attachments.
+
+- New `dropbox_hr` provider + `dropboxHrStorage` rooted at `DROPBOX_HR_ROOT_PATH` (default `/hr`).
+- `HR_STORAGE_PROVIDER` is separate from `FILE_STORAGE_PROVIDER` on purpose: employee photos must
+  not be moved by a change to the general file pipeline's env.
+- `hrPeople.routes.ts` pins the provider explicitly rather than falling through.
+- Migration `0125` widens the `file_assets_storage_provider_chk` CHECK. **Additive only — no
+  UPDATE.** Because the provider is recorded per row, the one photo already in prod keeps
+  `storage_provider='dropbox'` and still resolves to `/comms`, which is where its bytes are. Nothing
+  had to be moved. Applied to local and prod.
+
+Proven end to end against real Dropbox: stored → `storage_provider=dropbox_hr`, path
+`/hr/octane/upload/2026-08/…/hr-root-smoke.png` → presign → fetch **22 bytes, byte-identical** →
+delete. (Two false alarms on the way: `storeFile`'s return has no `s3Key`, and a synthetic ctx
+without `departments` crashes `fileVisibilityFilter` — both were my harness, not the product.)
+
+### Optimised the read
+
+`HrAvatar` resolved one link per face, so a twenty-person team panel made twenty API calls, each of
+which made its own Dropbox `get_temporary_link` round trip. Added
+`POST /hr/employees/photo-links` (max 100 ids, per-employee failures yield no entry rather than
+failing the batch) plus `prefetchHrPhotoLinks`, which warms the SAME module cache `HrAvatar`
+already reads. `HrPersonView` warms it once per team. Deliberately NOT "presign the whole
+directory" — the single-employee route's comment explains why that is wrong, and this does not
+change it; it batches only what is on screen.
+
+### Profile modal
+
+`/impeccable` polish plus `modern-web-guidance`. Note: **there is no `karpathy` skill installed** in
+this project or globally — said rather than silently substituted.
+
+Measured before changing anything: `--text-muted` is **5.12–5.59:1** on dark and **6.31:1** on
+light. Contrast passes AA everywhere. The problem was hierarchy and sizing, not contrast.
+
+- `@media (max-width: 560px)` → `@media (width < 640px)`. A fifth breakpoint value in a four-value
+  ladder, in the inclusive spelling. Both budgets ratcheted in the same commit: off-ladder 69 → 68,
+  legacy max-width 88 → 87.
+- `gap: 2px` → `var(--space-0_5)`; `letter-spacing: 0.08em` → `var(--tr-caps-micro, …)`.
+- **One type size across the field grid.** `.mono` dropped a whole step to `--text-xs` while
+  `.value` was `--text-sm`, so a two-column grid rendered at two sizes depending on which column a
+  value landed in. Mono now differs by family and tabular figures only.
+- The email — the line that identifies the account — was the smallest, faintest thing in the dialog
+  (`--text-xs`, muted). Now `--text-sm`, `--text-secondary`.
+- Hero `padding-bottom` was `--space-5`, the same step as the body gap, so the rule under it sat in
+  double the spacing of every other seam. Now `--space-4`.
+- `.hint` had `margin-top` fighting the parent's flex gap. Spacing moved into a `.panel` wrapper.
+- Removed the `count: 9` badge on the Employee tab — it read as nine things needing attention; it
+  was the number of read-only fields.
+- **The tab strip no longer shifts.** The Employee tab was appended after the HR fetch resolved,
+  moving the strip under the pointer. The slot is now held disabled with a title while loading, and
+  the floating "Loading employee record…" line under the tabs is gone.
+- Mobile: hero gains a gap when stacked and the photo buttons fill the row.
+
+Not verified in a browser: jsdom does no layout, and `audit:mobile` drives routes, not a modal
+opened from the account menu. The token, ladder and budget claims are machine-checked; the visual
+result is not.
