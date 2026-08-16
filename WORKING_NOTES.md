@@ -16536,3 +16536,21 @@ Ingest disabled again; no new cases until re-enabled. `automation.verification.c
   input-font-size budget went 45 → 43.
 - Ratcheted CRM breakpoint budgets: off-ladder 70 → 69, max-width 89 → 88, input font-size 44 → 43.
 - ESLint now ignores gitignored `ds-bundle/` so local `pnpm lint` matches CI.
+
+## 2026-08-16 — Cloud Agent dev environment (`.cursor/environment.json`)
+
+Added a reproducible Cloud Agent dev environment so the stack comes up end-to-end without Docker
+(Docker is unavailable in the Cloud Agent VM).
+
+- **Postgres 16 + pgvector installed natively** (apt `postgresql-16` + `postgresql-16-pgvector`),
+  cluster pinned to `:5433` to match the repo convention. Replaces `docker compose up postgres`.
+- **`.cursor/install.sh`** (install phase): ensures Postgres+pgvector present, installs backend +
+  CRM deps from the committed lockfiles, writes dev-only `.env` / `apps/mytrion-crm/.env.local`
+  when missing. Idempotent.
+- **`.cursor/start.sh`** (start phase): starts the cluster on `:5433`, ensures role/db/`vector`
+  extension, runs `db:migrate` + `db:seed` (both idempotent).
+- **`terminals`**: `api` = `pnpm dev` (:3001), `web` = CRM Vite (:5173).
+- Verified end-to-end on the VM: `/health` ok, `POST /v1/auth/login` (admin@octane.com/changeme)
+  returns JWTs, `GET /v1/auth/me` returns the admin, and the login is written to `audit_log`.
+  `pnpm test` = 2846 passed / 1 skipped (RBAC gate green), `pnpm typecheck` clean, `pnpm lint`
+  0 errors.

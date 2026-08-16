@@ -1,0 +1,19 @@
+{
+  "name": "Octane Assistant",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "corepack pnpm dev"
+    },
+    {
+      "name": "web",
+      "command": "corepack pnpm -C apps/mytrion-crm dev"
+    }
+  ],
+  "ports": [
+    { "name": "api", "port": 3001 },
+    { "name": "web", "port": 5173 }
+  ]
+}
