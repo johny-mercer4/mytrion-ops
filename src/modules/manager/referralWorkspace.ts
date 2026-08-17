@@ -14,10 +14,16 @@ import {
   fetchReferralVolumeSets,
   type ReferralCarrierVolume,
 } from '../../integrations/dwhReferralVolume.js';
+import { ValidationError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { referralBonusRepo } from '../../repos/referralBonusRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { computeReferralBonus, isClaimedStatus } from './referralBonusMath.js';
+import {
+  enumerateReferralMonths,
+  REFERRAL_PERIOD_MAX_MONTHS,
+  referralMonthSpan,
+} from './referralPeriodRange.js';
 import { REFERRAL_BONUS_SPEC_BY_TYPE, type ReferralBonusSpec } from './referralBonusTypes.js';
 import {
   fetchReferralCalculationRecords,
@@ -30,6 +36,15 @@ import {
   type ReferralDealSource,
   type ReferralParentSource,
 } from './referralResolution.js';
+
+export interface ReferralMonthPreview {
+  periodMonth: string;
+  periodGallons: number;
+  periodSwipes: number;
+  cumulativeGallons: number;
+  amountUsd: string;
+  payableAmountUsd: string;
+}
 
 export interface ReferralCalculationPreview {
   parentId: string;
@@ -56,6 +71,7 @@ export interface ReferralCalculationPreview {
   progressPct: number;
   state: 'tracking' | 'earned' | 'paid';
   ledgerStatus: ReferralBonusStatus | null;
+  months: ReferralMonthPreview[];
 }
 
 export interface ReferralWorkspaceSummary {
@@ -74,6 +90,8 @@ export interface ReferralWorkspaceSummary {
 
 export interface ReferralWorkspaceResult {
   periodMonth: string;
+  periodFrom: string;
+  periodTo: string;
   generatedAt: string;
   parents: ReferralRecordsResult;
   children: ReferralRecordsResult;
@@ -156,22 +174,38 @@ async function loadVolumeBySpec(
   );
 }
 
-/** Build the complete card + modal payload for one calendar month. Read-only. */
+function emptyVolume(carrierId: number): ReferralCarrierVolume {
+  return { carrierId, gallons: 0, swipes: 0, cumulativeGallons: 0 };
+}
+
+/** Build the complete card + modal payload for one month or an inclusive month range. Read-only. */
 async function computeReferralWorkspace(
   ctx: TenantContext,
-  periodMonth: string,
+  periodFrom: string,
+  periodTo: string,
   forceSources: boolean,
 ): Promise<ReferralWorkspaceResult> {
+  const span = referralMonthSpan(periodFrom, periodTo);
+  if (span <= 0) {
+    throw new ValidationError('period_from must be on or before period_to');
+  }
+  if (span > REFERRAL_PERIOD_MAX_MONTHS) {
+    throw new ValidationError(`Referral range cannot exceed ${REFERRAL_PERIOD_MAX_MONTHS} months`);
+  }
+  const months = enumerateReferralMonths(periodFrom, periodTo);
   const [records, priorClaims] = await Promise.all([
     fetchReferralCalculationRecords({ force: forceSources }),
-    referralBonusRepo.listOneTimeClaims(ctx, periodMonth),
+    referralBonusRepo.listOneTimeClaims(ctx, periodTo),
   ]);
   const { parents, children, associations } = records;
   const parentSources = parents.rows.map(parentSource);
   const childSources = children.rows.map(childSource);
   const dealSources = associations.deals.rows.map(dealSource);
   const resolution = resolveReferralTargets(parentSources, childSources, dealSources);
-  const volumeBySpec = await loadVolumeBySpec(resolution.targets, periodMonth);
+  const volumeByMonth: Array<Map<string, Map<number, ReferralCarrierVolume>>> = [];
+  for (const month of months) {
+    volumeByMonth.push(await loadVolumeBySpec(resolution.targets, month));
+  }
 
   const claimByCarrierType = new Map(
     priorClaims
@@ -185,23 +219,49 @@ async function computeReferralWorkspace(
   );
   const previews: ReferralCalculationPreview[] = resolution.targets.map((target) => {
     const spec = REFERRAL_BONUS_SPEC_BY_TYPE[target.bonusType];
-    const volume = volumeBySpec.get(specKey(spec))?.get(target.carrierId) ?? {
-      carrierId: target.carrierId,
-      gallons: 0,
-      swipes: 0,
-      cumulativeGallons: 0,
-    };
     const claim =
       claimByCarrierType.get(`${target.carrierId}:${target.bonusType}`) ??
       claimByChildType.get(`${target.child.id}:${target.bonusType}`);
     const claimed = target.alreadyPaidInZoho || claim !== undefined;
-    const calculation = computeReferralBonus(spec, volume, claimed);
+    const monthRows = months.map((month, index) => {
+      const volume =
+        volumeByMonth[index]?.get(specKey(spec))?.get(target.carrierId) ??
+        emptyVolume(target.carrierId);
+      return { month, volume, calculation: computeReferralBonus(spec, volume, claimed) };
+    });
+    const last = monthRows[monthRows.length - 1] ?? {
+      month: periodTo,
+      volume: emptyVolume(target.carrierId),
+      calculation: computeReferralBonus(spec, emptyVolume(target.carrierId), claimed),
+    };
+    const periodGallons = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.volume.gallons, 0)
+      : last.volume.gallons;
+    const periodSwipes = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.volume.swipes, 0)
+      : last.volume.swipes;
+    const amount = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.calculation.amount, 0)
+      : last.calculation.amount;
+    const payableAmount = spec.recurring
+      ? monthRows.reduce((sum, row) => sum + row.calculation.payableAmount, 0)
+      : last.calculation.payableAmount;
+    const progressPct = spec.recurring
+      ? amount > 0
+        ? 100
+        : 0
+      : last.calculation.progressPct;
+    const calcState = spec.recurring
+      ? amount > 0
+        ? 'earned'
+        : 'tracking'
+      : last.calculation.state;
     const state =
       target.alreadyPaidInZoho || claim?.status === 'paid'
         ? 'paid'
         : claim
           ? 'earned'
-          : calculation.state;
+          : calcState;
     return {
       parentId: target.parent.id,
       childId: target.child.id,
@@ -219,14 +279,30 @@ async function computeReferralWorkspace(
       recurring: spec.recurring,
       rateUsd: spec.rateUsd,
       thresholdGallons: spec.thresholdGallons,
-      periodGallons: volume.gallons,
-      periodSwipes: volume.swipes,
-      cumulativeGallons: volume.cumulativeGallons,
-      amountUsd: calculation.amount.toFixed(2),
-      payableAmountUsd: calculation.payableAmount.toFixed(2),
-      progressPct: calculation.progressPct,
+      periodGallons,
+      periodSwipes,
+      cumulativeGallons: last.volume.cumulativeGallons,
+      amountUsd: amount.toFixed(2),
+      payableAmountUsd: payableAmount.toFixed(2),
+      progressPct,
       state,
       ledgerStatus: claim?.status ?? null,
+      months: monthRows.map((row) => ({
+        periodMonth: row.month,
+        periodGallons: row.volume.gallons,
+        periodSwipes: row.volume.swipes,
+        cumulativeGallons: row.volume.cumulativeGallons,
+        amountUsd: spec.recurring
+          ? row.calculation.amount.toFixed(2)
+          : row.month === last.month
+            ? last.calculation.amount.toFixed(2)
+            : '0.00',
+        payableAmountUsd: spec.recurring
+          ? row.calculation.payableAmount.toFixed(2)
+          : row.month === last.month
+            ? last.calculation.payableAmount.toFixed(2)
+            : '0.00',
+      })),
     };
   });
 
@@ -245,7 +321,9 @@ async function computeReferralWorkspace(
   );
 
   return {
-    periodMonth,
+    periodMonth: periodTo,
+    periodFrom,
+    periodTo,
     generatedAt: new Date().toISOString(),
     parents,
     children,
@@ -281,8 +359,8 @@ const REFERRAL_WORKSPACE_CACHE_MAX = 12;
 const workspaceCache = new Map<string, ReferralWorkspaceCacheEntry>();
 const workspaceInFlight = new Map<string, Promise<ReferralWorkspaceResult>>();
 
-function workspaceKey(ctx: TenantContext, periodMonth: string): string {
-  return `${ctx.tenantId}:${periodMonth}`;
+function workspaceKey(ctx: TenantContext, periodFrom: string, periodTo: string): string {
+  return `${ctx.tenantId}:${periodFrom}:${periodTo}`;
 }
 
 function writeWorkspaceCache(key: string, value: ReferralWorkspaceResult): void {
@@ -310,16 +388,18 @@ function writeWorkspaceCache(key: string, value: ReferralWorkspaceResult): void 
 export async function fetchReferralWorkspace(
   ctx: TenantContext,
   periodMonth: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; periodTo?: string } = {},
 ): Promise<ReferralWorkspaceResult> {
-  const key = workspaceKey(ctx, periodMonth);
+  const periodFrom = periodMonth;
+  const periodTo = options.periodTo ?? periodMonth;
+  const key = workspaceKey(ctx, periodFrom, periodTo);
   const cached = workspaceCache.get(key);
   if (!options.force && cached && cached.expiresAt > Date.now()) return cached.value;
 
   const running = workspaceInFlight.get(key);
   if (running) return running;
 
-  const computation = computeReferralWorkspace(ctx, periodMonth, options.force === true)
+  const computation = computeReferralWorkspace(ctx, periodFrom, periodTo, options.force === true)
     .then((value) => {
       writeWorkspaceCache(key, value);
       return value;
@@ -330,7 +410,8 @@ export async function fetchReferralWorkspace(
           {
             err: error instanceof Error ? error.message : String(error),
             tenantId: ctx.tenantId,
-            periodMonth,
+            periodFrom,
+            periodTo,
           },
           'referral workspace refresh failed — serving recent snapshot',
         );

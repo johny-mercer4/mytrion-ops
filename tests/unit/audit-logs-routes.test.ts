@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
+  process.env.FF_AUDIT_LOG_ENABLED = '1';
 });
 
 const auditMocks = vi.hoisted(() => ({

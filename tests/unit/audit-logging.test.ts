@@ -8,6 +8,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
+  // Suite baseline leaves audit writes off so tests cannot flood the shared DB.
+  process.env.FF_AUDIT_LOG_ENABLED = '1';
 });
 
 vi.mock('../../src/repos/auditRepo.js', () => ({
@@ -53,11 +55,12 @@ vi.mock('../../src/modules/access/mytrionAccessService.js', async () => {
 });
 
 import { buildApp } from '../../src/app.js';
+import { env } from '../../src/config/env.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import type { NewAuditEntry } from '../../src/db/schema/index.js';
 import { contextFromClaims } from '../../src/modules/auth/authService.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
-import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
+import { audit, auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { auditRepo } from '../../src/repos/auditRepo.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
@@ -83,6 +86,20 @@ function lastInserted(): NewAuditEntry {
   if (!row) throw new Error('no audit row inserted');
   return row;
 }
+
+describe('audit — flag gate', () => {
+  it('does not insert when FF_AUDIT_LOG_ENABLED is off', async () => {
+    const saved = env.FF_AUDIT_LOG_ENABLED;
+    env.FF_AUDIT_LOG_ENABLED = false;
+    try {
+      repo.insert.mockClear();
+      await audit({ tenantId: DEFAULT_TENANT_ID, action: 'ci.noise', status: 'ok' });
+      expect(repo.insert).not.toHaveBeenCalled();
+    } finally {
+      env.FF_AUDIT_LOG_ENABLED = saved;
+    }
+  });
+});
 
 describe('auditFromContext — full actor identity on every row', () => {
   it('stamps a WORKER identity: name, profile, Zoho role, internal role', async () => {

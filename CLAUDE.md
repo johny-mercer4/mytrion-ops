@@ -78,7 +78,6 @@ and RBAC boundaries, not speculative abstraction, so routing through them IS the
 
 ## Daily workflow
 
-- Append a dated entry to `WORKING_NOTES.md` for each session.
 - Run `pnpm lint && pnpm typecheck && pnpm test` before pushing.
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`.
 - **UI PRs — rebuild vendored frontends before opening/pushing the PR** (see below). Source-only
@@ -98,6 +97,8 @@ Prod (Render) serves **committed** static bundles — it does **not** run Vite a
 1. Run the rebuild command for the app you touched.
 2. Commit the updated `app/` (and `app/index.html`) in the **same PR** as the source change.
 3. Confirm the new behavior string exists in the hashed bundle (e.g. `rg 'EFS Balance' apps/mytrion-crm/app`).
+
+Rebase on `build` and rebuild the widget last before opening the PR.
 
 Skipping this ships code that looks merged on GitHub while prod still shows the old screen
 *(2026-08-07: Overview EFS Balance tile missing until `app/` was rebuilt — PR #149).*
@@ -144,6 +145,8 @@ committing `app/` when opening a PR to `build` / `main`.
   directly. Fetch the latest `build`, branch off it, set up locally, and work there — merging back
   into `build` goes through review, not a direct push.
 - **Branch naming:** `feature/***`, `fix/***`, `hotfix/***`.
+- Agents may `git push` the current `feature/*` / `fix/*` / `hotfix/*` branch (that is how PRs to `build` get opened). Never push `build` or `main` — not `origin build`/`origin main`, not `HEAD:build`/`HEAD:main`, not `--force` to those refs. Merge to `build`/`main` is PRs only.
+- One-time: `git config core.hooksPath .githooks` so the pre-push hook is active.
 
 ## When in doubt
 

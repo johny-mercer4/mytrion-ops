@@ -1,5 +1,6 @@
 import type { ReferralCalculationPreview } from '../../../api/referrals';
 import type { ReferralCardModel } from './referralModel';
+import { periodFileStamp } from './referralPeriod';
 import { deliverExport } from '@/lib/deliverExport';
 
 export interface ReferralExportRow {
@@ -90,11 +91,12 @@ function activity(preview: ReferralCalculationPreview): { metric: string; value:
 function previewRow(
   card: ReferralCardModel,
   preview: ReferralCalculationPreview,
-  periodMonth: string,
+  periodFrom: string,
+  periodTo: string,
 ): ReferralExportRow {
   const primaryActivity = activity(preview);
   return {
-    period: periodMonth.slice(0, 7),
+    period: periodFrom === periodTo ? periodFrom.slice(0, 7) : periodFileStamp(periodFrom, periodTo),
     parentReferrerId: card.referrerId,
     parentName: card.name,
     company: card.company,
@@ -128,15 +130,17 @@ function previewRow(
 /** Full, unfiltered export rows. Parents that are not calculable remain visible as setup rows. */
 export function buildReferralExportRows(
   cards: ReferralCardModel[],
-  periodMonth: string,
+  periodFrom: string,
+  periodTo = periodFrom,
 ): ReferralExportRow[] {
   return cards.flatMap((card) => {
     if (card.previews.length) {
-      return card.previews.map((preview) => previewRow(card, preview, periodMonth));
+      return card.previews.map((preview) => previewRow(card, preview, periodFrom, periodTo));
     }
     return [
       {
-        period: periodMonth.slice(0, 7),
+        period:
+          periodFrom === periodTo ? periodFrom.slice(0, 7) : periodFileStamp(periodFrom, periodTo),
         parentReferrerId: card.referrerId,
         parentName: card.name,
         company: card.company,
@@ -174,23 +178,28 @@ function csvCell(value: unknown): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export async function downloadReferralCsv(cards: ReferralCardModel[], periodMonth: string): Promise<void> {
-  const rows = buildReferralExportRows(cards, periodMonth);
+export async function downloadReferralCsv(
+  cards: ReferralCardModel[],
+  periodFrom: string,
+  periodTo = periodFrom,
+): Promise<void> {
+  const rows = buildReferralExportRows(cards, periodFrom, periodTo);
   const lines = [
     COLUMNS.map((column) => csvCell(column.label)).join(','),
     ...rows.map((row) => COLUMNS.map((column) => csvCell(row[column.key])).join(',')),
   ];
   await deliverExport(
     new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }),
-    `referral-calculations_${periodMonth.slice(0, 7)}.csv`,
+    `referral-calculations_${periodFileStamp(periodFrom, periodTo)}.csv`,
   );
 }
 
 export async function downloadReferralExcel(
   cards: ReferralCardModel[],
-  periodMonth: string,
+  periodFrom: string,
+  periodTo = periodFrom,
 ): Promise<void> {
-  const rows = buildReferralExportRows(cards, periodMonth);
+  const rows = buildReferralExportRows(cards, periodFrom, periodTo);
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Mytrion Manager';
@@ -206,7 +215,7 @@ export async function downloadReferralExcel(
   const paidAwards = rows.filter((row) => row.state === 'paid').length;
   summary.addRows([
     ['Referral calculation export'],
-    ['Calculation month', periodMonth.slice(0, 7)],
+    ['Calculation month', periodFileStamp(periodFrom, periodTo)],
     ['Parent referrers', cards.length],
     ['Ready parent referrers', readyParents],
     ['Parents needing setup', setupRequired],
@@ -266,6 +275,6 @@ export async function downloadReferralExcel(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
-    `referral-calculations_${periodMonth.slice(0, 7)}.xlsx`,
+    `referral-calculations_${periodFileStamp(periodFrom, periodTo)}.xlsx`,
   );
 }

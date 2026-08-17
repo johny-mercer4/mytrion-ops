@@ -67,6 +67,15 @@ export type ReferralBonusType =
   | 'gallons_parent'
   | 'gallons_child';
 
+export interface ReferralMonthPreview {
+  periodMonth: string;
+  periodGallons: number;
+  periodSwipes: number;
+  cumulativeGallons: number;
+  amountUsd: string;
+  payableAmountUsd: string;
+}
+
 export interface ReferralCalculationPreview {
   parentId: string;
   childId: string;
@@ -92,6 +101,7 @@ export interface ReferralCalculationPreview {
   progressPct: number;
   state: 'tracking' | 'earned' | 'paid';
   ledgerStatus: 'calculated' | 'approved' | 'paid' | 'void' | null;
+  months?: ReferralMonthPreview[];
 }
 
 export interface ReferralWorkspaceSummary {
@@ -110,6 +120,8 @@ export interface ReferralWorkspaceSummary {
 
 export interface ReferralWorkspace {
   periodMonth: string;
+  periodFrom?: string;
+  periodTo?: string;
   generatedAt: string;
   parents: ReferralRecords;
   children: ReferralRecords;
@@ -122,13 +134,20 @@ export interface ReferralWorkspace {
 
 /** One request for the full card grid, modal detail, and server-calculated MART preview. */
 export const getReferralWorkspace = (
-  periodMonth?: string,
-  options: { refresh?: boolean } = {},
-): Promise<ReferralWorkspace> =>
-  request('GET', '/marketing/referrals/workspace', {
+  periodFrom?: string,
+  options: { refresh?: boolean; periodTo?: string } = {},
+): Promise<ReferralWorkspace> => {
+  const periodTo = options.periodTo ?? periodFrom;
+  const ranged = Boolean(periodFrom && periodTo && periodFrom !== periodTo);
+  return request('GET', '/marketing/referrals/workspace', {
     query: {
-      ...(periodMonth ? { period_month: periodMonth } : {}),
+      ...(ranged
+        ? { period_from: periodFrom, period_to: periodTo }
+        : periodFrom
+          ? { period_month: periodFrom }
+          : {}),
       ...(options.refresh ? { refresh: '1' } : {}),
     },
     headers: MKT_HEADERS,
   }) as Promise<ReferralWorkspace>;
+};

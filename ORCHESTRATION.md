@@ -8,7 +8,7 @@
 ## 1. Roles
 
 **Claude (me) — orchestrator.** Holds the system model, decomposes work, writes the brief each
-executor gets, reviews diffs against `CLAUDE.md`, and owns the `WORKING_NOTES.md` entry. I do not
+executor gets, and reviews diffs against `CLAUDE.md`. I do not
 try to be the fastest typist in the room; I make sure three agents don't write three different
 answers to the same question.
 
@@ -50,17 +50,16 @@ Repo: octane-assistant (Mytrion Horizon). Read CLAUDE.md before writing anything
 - No `any`, no unexplained `as unknown as X`. Files ≤ 600 lines.
 - All DB access through src/repos/, ctx: TenantContext first arg, tenant filter first in .where().
 - Schema change → edit src/db/schema/*.ts → `pnpm db:generate` → commit .ts + .sql + _journal.json.
-  NEVER `drizzle-kit push`.
-  ⚠️ Before generating: drizzle.config.ts is missing agent_blackboards.ts, agent_skills.ts,
-     mytrion_role_defaults.ts, support_bot_messages.ts. Add them or generate will emit DROPs.
+  NEVER `drizzle-kit push`. Schema files that exist must be listed in drizzle.config.ts
+  (see that file — do not re-warn about names already there).
 - Every tool implements ToolManifest and dispatches through toolDispatcher. Read-only default.
 - Before handing back: pnpm lint && pnpm typecheck && pnpm test.
-  Baseline is 183/184 (dashDebtorsData fails already) and 16 typecheck errors. Do not regress it.
+  CI green is the floor. Do not regress. Do not embed a live test count here — read the
+  latest verify job on `build` / `main`.
 - UI work: consult modern-web-guidance skill. Horizon tokens (--hz-*), per-Mytrion accent,
   one loader per surface.
 - apps/mytrion-crm/app/ is committed build output. It will show dirty. Reset with:
   git clean -fd -- apps/mytrion-crm/app && git checkout -- apps/mytrion-crm/app
-- Append a dated entry to WORKING_NOTES.md describing what you changed and WHY.
 ```
 
 Plus, per task, the three things agents most often get wrong here:
@@ -88,7 +87,7 @@ Serialize — single-writer only:
 - **Migrations.** Two agents generating migrations produce two `00XX_` files with colliding numbers
   and a corrupt `_journal.json`. One owner at a time.
 - **`src/config/env.ts`**, **`src/modules/jobs/catalog.ts`**, **`src/lib/mytrions.ts` +
-  `apps/mytrion-crm/src/access/mytrions.config.ts`** (must move together), **`WORKING_NOTES.md`**,
+  `apps/mytrion-crm/src/access/mytrions.config.ts`** (must move together),
   and **`apps/mytrion-crm/app/`** (rebuild output — one builder, or you get merge garbage).
 
 ---
@@ -104,8 +103,7 @@ Before a fleet diff is accepted:
       schema file.
 - [ ] New queues: dead-letter target created before the referrer; retry policy is deliberate
       (retryLimit 0 where the side effect isn't idempotent — see `notification.statement-weekly`).
-- [ ] `pnpm test` still 183/184; typecheck errors ≤ 16.
-- [ ] `WORKING_NOTES.md` entry explains the *why*, not just the *what*.
+- [ ] `pnpm lint && pnpm typecheck && pnpm test` match CI green. Do not regress.
 - [ ] If a Mytrion was added or renamed, both `mytrions.ts` files changed in the same commit.
 
 ---
@@ -114,7 +112,6 @@ Before a fleet diff is accepted:
 
 | Task | Owner | Why |
 | --- | --- | --- |
-| Fix `drizzle.config.ts` schema list (4 missing files) | Claude Code | Blocks all future `db:generate` — highest-leverage one-liner in the repo |
 | Investigate breached live-eval floors (routing 0.46, grounding 0.50, delegation 0.00) | Claude Code + Gemini (read `eval-reports/`) | Agent quality is currently unmeasured-good |
 | Decide + execute: turn pg-boss on in prod, or delete the cron surface | orchestrator → Claude Code | 13 queues exist and none run in prod |
 | Finish Horizon propagation: Sales + Finance off inline styles onto tokens | Cursor/Grok | Largest remaining visual inconsistency |

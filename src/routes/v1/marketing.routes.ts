@@ -35,6 +35,10 @@ import {
   fetchReferralRecords,
   isReferralModuleKey,
 } from '../../modules/manager/referralRecords.js';
+import {
+  REFERRAL_PERIOD_MAX_MONTHS,
+  referralMonthSpan,
+} from '../../modules/manager/referralPeriodRange.js';
 import { fetchReferralWorkspace } from '../../modules/manager/referralWorkspace.js';
 
 /** Marketing tab access gate — internal audience + admin/all-dept/bypass/`marketing` department. */
@@ -82,17 +86,45 @@ export async function marketingRoutes(app: FastifyInstance): Promise<void> {
   // Complete card + modal read model. Static route must be registered before `:module`.
   app.get('/marketing/referrals/workspace', guard, async (request) => {
     const ctx = requireMarketingAccess(request);
+    const monthStartToken = z.string().regex(/^\d{4}-\d{2}-01$/);
     const query = z
       .object({
-        period_month: z
-          .string()
-          .regex(/^\d{4}-\d{2}-01$/)
-          .optional(),
+        period_month: monthStartToken.optional(),
+        period_from: monthStartToken.optional(),
+        period_to: monthStartToken.optional(),
         refresh: z.enum(['1']).optional(),
       })
+      .superRefine((value, refineCtx) => {
+        if ((value.period_from == null) !== (value.period_to == null)) {
+          refineCtx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'period_from and period_to are required together',
+          });
+        }
+        if (value.period_from && value.period_to && value.period_from > value.period_to) {
+          refineCtx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'period_from must be on or before period_to',
+          });
+        }
+        if (
+          value.period_from &&
+          value.period_to &&
+          referralMonthSpan(value.period_from, value.period_to) > REFERRAL_PERIOD_MAX_MONTHS
+        ) {
+          refineCtx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Referral range cannot exceed ${REFERRAL_PERIOD_MAX_MONTHS} months`,
+          });
+        }
+      })
       .parse(request.query);
-    return fetchReferralWorkspace(ctx, query.period_month ?? monthStart(new Date()), {
+    const periodFrom =
+      query.period_from ?? query.period_month ?? monthStart(new Date());
+    const periodTo = query.period_to ?? periodFrom;
+    return fetchReferralWorkspace(ctx, periodFrom, {
       force: query.refresh === '1',
+      periodTo,
     });
   });
 
