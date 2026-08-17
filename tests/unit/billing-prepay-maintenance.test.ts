@@ -1,12 +1,19 @@
 /**
- * The prepay ledger's maintenance term now comes from OUR Postgres, not from servercrm's Zoho read.
+ * The prepay ledger's maintenance/zelle/chase/merchant terms now come from OUR Postgres, not from
+ * servercrm's Zoho read.
  *
- * Two things here are easy to get wrong and impossible to notice from a passing screen:
- *   - a carrier servercrm still reports from Zoho must not keep that stale figure, so the override
- *     zeroes every reported carrier before writing ours in;
- *   - `difference` in the daily ledger is a RUNNING balance, so replacing one day's maintenance
- *     invalidates that day and every day after it. A partial recompute produces a plausible,
- *     wrong closing balance.
+ * Three things here are easy to get wrong and impossible to notice from a passing screen:
+ *   - a carrier servercrm still reports from Zoho must not keep that stale figure, so the maintenance
+ *     override zeroes every reported carrier before writing ours in;
+ *   - `difference` in the daily ledger is a RUNNING balance, so replacing one day's maintenance/zelle/
+ *     chase/merchant invalidates that day and every day after it. A partial recompute produces a
+ *     plausible, wrong closing balance;
+ *   - zelle/chase/merchant read Zoho's Zelle_Transactions/Chase_Transactions modules directly in
+ *     servercrm, which payments landing straight in payment_transactions since the Postgres migration
+ *     never get written back into — confirmed live 2026-08-18 (carrier 5788724): four real top-ups
+ *     had a matching Postgres Zelle row the modal showed as unmatched, inflating a running Difference
+ *     from $0 to $3,200 even though the company list (already Postgres-sourced) correctly showed a
+ *     $66.70 residual. Same override treatment as maintenance, just three columns instead of one.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,20 +29,26 @@ vi.mock('../../src/repos/maintenanceCaseRepo.js', () => ({
 }));
 vi.mock('../../src/integrations/dwh.js', () => ({ dwh: { query: vi.fn(async () => []) } }));
 vi.mock('../../src/repos/paymentTransactionRepo.js', () => ({
-  paymentTransactionRepo: { sumForPrepay: vi.fn(async () => []) },
+  paymentTransactionRepo: { sumForPrepay: vi.fn(async () => []), sumForPrepayByDay: vi.fn(async () => []) },
 }));
 
 import { serverCrmGet } from '../../src/integrations/serverCrm.js';
 import { maintenanceCaseRepo } from '../../src/repos/maintenanceCaseRepo.js';
+import { paymentTransactionRepo } from '../../src/repos/paymentTransactionRepo.js';
 import { getPrepayExternalsBatch, getPrepayLedgerProxy } from '../../src/modules/billing/prepayLedger.js';
 
 const proxied = vi.mocked(serverCrmGet);
 const repo = vi.mocked(maintenanceCaseRepo, true);
+const pgRepo = vi.mocked(paymentTransactionRepo, true);
+
+/** Shape `sumForPrepayByDay` returns: one row per (day, source) that had any amount. */
+const pgSum = (...rows: Array<{ day: string; source: 'zelle' | 'chase' | 'mx'; total: number }>) => rows;
 
 beforeEach(() => {
   vi.clearAllMocks();
   repo.sumPrepayByCarrier.mockResolvedValue(new Map());
   repo.sumPrepayByDay.mockResolvedValue(new Map());
+  pgRepo.sumForPrepayByDay.mockResolvedValue([]);
 });
 
 describe('externals batch', () => {
@@ -137,8 +150,10 @@ describe('daily ledger', () => {
     expect(out.totals.net).toBe(850);
   });
 
-  it('applies servercrm\'s exact delta formula', async () => {
+  it('applies servercrm\'s exact delta formula, with zelle/chase/merchant from OUR Postgres', async () => {
     // delta = top_up - rmve + maintenance + money_code - stripe - zelle - chase - merchant
+    // top_up/rmve/money_code/stripe still pass through from servercrm's reply unmodified; only
+    // zelle/chase/merchant are ours (servercrm's own 2/3/4 on this row must be ignored).
     proxied.mockResolvedValue({
       rows: [
         day('2026-07-01', {
@@ -154,6 +169,9 @@ describe('daily ledger', () => {
       totals: {},
     });
     repo.sumPrepayByDay.mockResolvedValue(new Map([['2026-07-01', 20]]));
+    pgRepo.sumForPrepayByDay.mockResolvedValue(
+      pgSum({ day: '2026-07-01', source: 'zelle', total: 2 }, { day: '2026-07-01', source: 'chase', total: 3 }, { day: '2026-07-01', source: 'mx', total: 4 }),
+    );
 
     const out = (await getPrepayLedgerProxy('1', '2026-07-01', '2026-08-01')) as {
       rows: Array<{ delta: number; difference: number }>;
@@ -161,6 +179,61 @@ describe('daily ledger', () => {
     // 100 - 10 + 20 + 5 - 1 - 2 - 3 - 4 = 105
     expect(out.rows[0]!.delta).toBe(105);
     expect(out.rows[0]!.difference).toBe(105);
+  });
+
+  it('replaces servercrm\'s stale Zoho zelle/chase/merchant with ours, recomputing the running balance', async () => {
+    // Regression pin for the live 2026-08-18 bug: servercrm shows a top-up as unmatched (zelle: 0)
+    // even though Postgres has the real matching Zelle row, inflating Difference day after day.
+    proxied.mockResolvedValue({
+      rows: [
+        day('2026-07-25', { top_up: 1000, zelle: 0, delta: 1000, difference: 1000 }),
+        day('2026-07-26', { delta: 0, difference: 1000 }),
+      ],
+      totals: { top_up: 1000, zelle: 0, net: 1000 },
+    });
+    pgRepo.sumForPrepayByDay.mockResolvedValue(pgSum({ day: '2026-07-25', source: 'zelle', total: 1000 }));
+
+    const out = (await getPrepayLedgerProxy('5788724', '2026-07-25', '2026-08-01')) as {
+      rows: Array<{ zelle: number; delta: number; difference: number }>;
+      totals: Record<string, number>;
+    };
+    expect(out.rows.map((r) => r.zelle)).toEqual([1000, 0]);
+    expect(out.rows.map((r) => r.delta)).toEqual([0, 0]);
+    expect(out.rows.map((r) => r.difference)).toEqual([0, 0]);
+    expect(out.totals.zelle).toBe(1000);
+    expect(out.totals.net).toBe(0);
+  });
+
+  it('zeroes a stale merchant value servercrm reported for a day we have nothing on', async () => {
+    proxied.mockResolvedValue({
+      rows: [day('2026-07-01', { merchant: 300, delta: -300, difference: -300 })],
+      totals: { merchant: 300, net: -300 },
+    });
+    pgRepo.sumForPrepayByDay.mockResolvedValue([]);
+
+    const out = (await getPrepayLedgerProxy('1', '2026-07-01', '2026-08-01')) as {
+      rows: Array<{ merchant: number; difference: number }>;
+      totals: Record<string, number>;
+    };
+    expect(out.rows[0]!.merchant).toBe(0);
+    expect(out.rows[0]!.difference).toBe(0);
+    expect(out.totals.merchant).toBe(0);
+    expect(out.totals.net).toBe(0);
+  });
+
+  it('keeps chase isolated from zelle/merchant on the same day (per-source grouping)', async () => {
+    proxied.mockResolvedValue({
+      rows: [day('2026-07-01', { delta: 0, difference: 0 })],
+      totals: {},
+    });
+    pgRepo.sumForPrepayByDay.mockResolvedValue(
+      pgSum({ day: '2026-07-01', source: 'chase', total: 60 }, { day: '2026-07-01', source: 'zelle', total: 0 }),
+    );
+
+    const out = (await getPrepayLedgerProxy('1', '2026-07-01', '2026-08-01')) as {
+      rows: Array<{ zelle: number; chase: number; merchant: number; delta: number }>;
+    };
+    expect(out.rows[0]).toMatchObject({ zelle: 0, chase: 60, merchant: 0, delta: -60 });
   });
 
   it('zeroes a stale maintenance value servercrm reported for a day we have nothing on', async () => {
@@ -207,5 +280,11 @@ describe('daily ledger', () => {
     proxied.mockResolvedValue({ rows: [] });
     await getPrepayLedgerProxy('5000010', '2026-07-01', '2026-08-01');
     expect(repo.sumPrepayByDay).toHaveBeenCalledWith('5000010', '2026-07-01', '2026-08-01');
+    expect(pgRepo.sumForPrepayByDay).toHaveBeenCalledWith(
+      ['zelle', 'chase', 'mx'],
+      '5000010',
+      '2026-07-01',
+      '2026-08-01',
+    );
   });
 });

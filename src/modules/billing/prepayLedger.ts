@@ -255,31 +255,63 @@ interface LedgerReply {
 }
 
 /**
- * Per-carrier daily ledger (modal) — proxied to servercrm, with the maintenance column replaced from
- * our Postgres.
+ * Per-carrier daily ledger (modal) — proxied to servercrm, with the maintenance/zelle/chase/merchant
+ * columns replaced from our Postgres.
  *
- * `difference` is a RUNNING balance, so swapping a day's maintenance invalidates that day and every
- * day after it. The delta formula below is servercrm's, copied verbatim from its row builder; if that
- * formula ever changes there, this recomputation silently diverges — hence the assertion-by-comment.
+ * servercrm's reply still sources zelle/chase from Zoho's `Zelle_Transactions`/`Chase_Transactions`
+ * modules directly (services/prepayLedger.js) and merchant is exposed there as `merchant` too — but
+ * payments ingested straight into `payment_transactions` since the Postgres migration are never
+ * written back into those Zoho modules, so the modal showed real top-ups as unmatched (a growing
+ * running Difference) even though the company list's total already counted them correctly via
+ * `paymentTransactionRepo.sumForPrepay`. Confirmed live 2026-08-18 for carrier 5788724: the list's
+ * Payments (Postgres-sourced) matched the database; the modal's per-day Zelle column did not.
+ *
+ * `difference` is a RUNNING balance, so swapping a day's maintenance/zelle/chase/merchant invalidates
+ * that day and every day after it. The delta formula below is servercrm's, copied verbatim from its
+ * row builder; if that formula ever changes there, this recomputation silently diverges — hence the
+ * assertion-by-comment.
  */
 export async function getPrepayLedgerProxy(
   carrierId: string,
   startDate: string,
   endDate: string,
 ): Promise<unknown> {
-  const [reply, maint] = await Promise.all([
+  const [reply, maint, pgSums] = await Promise.all([
     serverCrmGet<LedgerReply>(
       `/api/billing/prepay-ledger?carrierId=${encodeURIComponent(carrierId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
     ),
     maintenanceCaseRepo.sumPrepayByDay(carrierId, startDate, endDate),
+    paymentTransactionRepo.sumForPrepayByDay(['zelle', 'chase', 'mx'], carrierId, startDate, endDate),
   ]);
   if (!Array.isArray(reply.rows)) return reply;
 
+  // day -> source -> total, so each row looks up its own day once per source.
+  const bySource: Record<'zelle' | 'chase' | 'mx', Map<string, number>> = {
+    zelle: new Map(),
+    chase: new Map(),
+    mx: new Map(),
+  };
+  for (const s of pgSums) {
+    if (s.source === 'zelle' || s.source === 'chase' || s.source === 'mx') {
+      bySource[s.source].set(s.day, s.total);
+    }
+  }
+
   let running = 0;
   let maintTotal = 0;
+  let zelleTotal = 0;
+  let chaseTotal = 0;
+  let merchantTotal = 0;
   const rows = reply.rows.map((r) => {
-    const maintenance = round2(maint.get(String(r.date).slice(0, 10)) ?? 0);
+    const day = String(r.date).slice(0, 10);
+    const maintenance = round2(maint.get(day) ?? 0);
+    const zelle = round2(bySource.zelle.get(day) ?? 0);
+    const chase = round2(bySource.chase.get(day) ?? 0);
+    const merchant = round2(bySource.mx.get(day) ?? 0);
     maintTotal += maintenance;
+    zelleTotal += zelle;
+    chaseTotal += chase;
+    merchantTotal += merchant;
     // servercrm: delta = top_up - rmve + maintenance + money_code - stripe - zelle - chase - merchant
     const delta =
       (r.top_up ?? 0) -
@@ -287,17 +319,24 @@ export async function getPrepayLedgerProxy(
       maintenance +
       (r.money_code ?? 0) -
       (r.stripe ?? 0) -
-      (r.zelle ?? 0) -
-      (r.chase ?? 0) -
-      (r.merchant ?? 0);
+      zelle -
+      chase -
+      merchant;
     running += delta;
-    return { ...r, maintenance, delta: round2(delta), difference: round2(running) };
+    return { ...r, maintenance, zelle, chase, merchant, delta: round2(delta), difference: round2(running) };
   });
 
   return {
     ...reply,
     rows,
-    totals: { ...(reply.totals ?? {}), maintenance: round2(maintTotal), net: round2(running) },
+    totals: {
+      ...(reply.totals ?? {}),
+      maintenance: round2(maintTotal),
+      zelle: round2(zelleTotal),
+      chase: round2(chaseTotal),
+      merchant: round2(merchantTotal),
+      net: round2(running),
+    },
   };
 }
 
