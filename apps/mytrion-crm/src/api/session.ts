@@ -39,6 +39,12 @@ export interface SessionWorker {
    * nothing about what the server returns.
    */
   leadsTeam?: boolean;
+  /**
+   * May hard-delete a manually-entered Chase transaction, beyond the base admin bypass. A HINT, not
+   * a grant — the delete route re-checks the same grant table per request; this only decides
+   * whether the Delete button renders.
+   */
+  canDeleteChaseTransactions?: boolean;
 }
 
 export interface StoredSession {

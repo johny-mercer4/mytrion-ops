@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   applySplits as applySplitsApi,
   billingTouchpoint,
+  deleteTransaction,
   fuzzyCarrier,
   mapTransaction,
   saveCarrierMemory,
@@ -104,8 +105,13 @@ export interface TransactionModalProps {
   currentUserName: string;
   /** When false, hide map/unmap/split/memory writes (Billing read-only). */
   canWrite?: boolean;
+  /** Admin, or an explicitly granted user — see modules/billing/paymentDeleteAccess.ts. Combined
+   *  with tx.source === 'chase' && !tx.isInvoiceMapped to decide whether Delete renders at all. */
+  canDeleteChase?: boolean;
   onClose: () => void;
   onPatch: (patch: Partial<TxRow>) => void;
+  /** The row was hard-deleted server-side — parent closes the modal and drops/reloads the row. */
+  onDeleted?: () => void;
   onToast: (kind: ToastKind, message: string) => void;
 }
 
@@ -113,8 +119,10 @@ export function TransactionModal({
   tx,
   currentUserName,
   canWrite = true,
+  canDeleteChase = false,
   onClose,
   onPatch,
+  onDeleted,
   onToast,
 }: TransactionModalProps) {
   /* ── Single-carrier search state ── */
@@ -137,6 +145,9 @@ export function TransactionModal({
   /* ── Unmap ── */
   const [unmapping, setUnmapping] = useState(false);
   const [confirmingUnmap, setConfirmingUnmap] = useState(false);
+  /* ── Delete (manually-entered Chase rows only) ── */
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   /* ── Fuzzy suggestions ── */
   const [fuzzy, setFuzzy] = useState<FuzzyCarrier[]>([]);
   const [fuzzyLoading, setFuzzyLoading] = useState(false);
@@ -398,6 +409,23 @@ export function TransactionModal({
     }
   }
 
+  /* ── Delete (manually-entered Chase rows only, unmapped, admin/granted) ── */
+  async function deleteTx(): Promise<void> {
+    if (deleting) return;
+    setDeleting(true);
+    setSaveMsg(null);
+    try {
+      const res = await deleteTransaction(tx.recordId);
+      if (readStr(res.status) !== 'success') throw new Error(readStr(res.message) || 'Delete failed');
+      onToast('success', 'Transaction deleted');
+      onDeleted?.();
+    } catch (e) {
+      setSaveMsg({ type: 'error', text: 'Delete failed. ' + errMsg(e) });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   /* ── Split-mapping helpers ── */
   const splitTotal = round2(splits.reduce((s, a) => s + (a.amount || 0), 0));
   const splitRemaining = round2(tx.amount - splitTotal);
@@ -529,6 +557,11 @@ export function TransactionModal({
       tx.mappingType.startsWith('CRM-Sync') ||
       tx.mappingType.startsWith('Auto-Mapped'));
   const editable = canWrite && !tx.isInvoiceMapped;
+  // Chase is the one rail with no automated feed — every Chase row is a manual entry. A mapped row
+  // must be unmapped first (real CMP money is still referenced), so this and showUnmap never both
+  // show at once for the same transaction. canDeleteChase is a courtesy hint from the session; the
+  // server re-checks the real grant regardless.
+  const showDelete = canWrite && canDeleteChase && tx.source === 'chase' && !tx.isInvoiceMapped;
 
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -1072,6 +1105,33 @@ export function TransactionModal({
                             {unmapping ? 'Unmapping…' : 'Confirm Unmap'}
                           </button>
                           <button className="tx-unmap-confirm-no" disabled={unmapping} onClick={() => setConfirmingUnmap(false)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  ) : null}
+                  {showDelete ? (
+                    !confirmingDelete ? (
+                      <div className="tx-unmap-bar">
+                        <span className="tx-unmap-hint">Entered in error?</span>
+                        <button className="tx-unmap-btn" disabled={deleting} onClick={() => setConfirmingDelete(true)}>
+                          <Icon d="M6 6L18 18M6 18L18 6" size={12} w={2} />
+                          Delete
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="tx-unmap-confirm">
+                        <div className="tx-unmap-confirm-msg">
+                          <Icon d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" size={14} w={2} />
+                          <span>Permanently delete this transaction? This can&apos;t be undone.</span>
+                        </div>
+                        <div className="tx-unmap-confirm-actions">
+                          <button className="tx-unmap-confirm-yes" disabled={deleting} onClick={() => void deleteTx()}>
+                            {!deleting ? <Icon d="M5 13l4 4L19 7" size={12} w={2.5} /> : null}
+                            {deleting ? 'Deleting…' : 'Confirm Delete'}
+                          </button>
+                          <button className="tx-unmap-confirm-no" disabled={deleting} onClick={() => setConfirmingDelete(false)}>
                             Cancel
                           </button>
                         </div>

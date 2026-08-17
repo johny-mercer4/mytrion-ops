@@ -720,8 +720,13 @@ export function Transactions() {
           tx={openTx}
           currentUserName={user.userName}
           canWrite={canWrite}
+          canDeleteChase={user.allDepartmentAccess === true || user.canDeleteChaseTransactions === true}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
+          onDeleted={() => {
+            setOpenId(null);
+            firstPage.refresh();
+          }}
           onToast={notify}
         />
       ) : null}
