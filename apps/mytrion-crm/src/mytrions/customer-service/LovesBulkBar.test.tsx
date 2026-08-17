@@ -48,6 +48,7 @@ function app(id: string, company: string): Application {
     chn: 0,
     verified: false,
     carrierId: '',
+    lovesVerification: '',
   };
 }
 

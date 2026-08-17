@@ -72,7 +72,11 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Date_Filled', label: 'Date Filled', type: 'readonly', get: (a) => a.date },
   { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent || 'not assigned' },
   { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },
-  { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: () => null },
+  // Still readonly here — editing happens via the bulk Love's-clearance push (Applications.tsx /
+  // LovesBulkBar.tsx), not per-record in this modal. Was hardcoded to null (always '—') because the
+  // live view-model didn't carry it; now that it does (data.ts's lovesVerification), show the real
+  // on-file value instead of a placeholder that stayed blank even after a bulk push set it.
+  { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: (a) => a.lovesVerification || null },
   // Bulk-fetched on the Clients-tab table (see Applications.tsx) — already on the row by the time
   // this modal opens, so no extra lookup here.
   { field: 'Tracking_Number', label: 'Tracking Number', type: 'readonly', get: (a) => a.trackingNumber ?? null },

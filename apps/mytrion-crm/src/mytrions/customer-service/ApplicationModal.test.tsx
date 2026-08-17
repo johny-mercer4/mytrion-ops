@@ -49,6 +49,7 @@ function baseApp(overrides: Partial<Application> = {}): Application {
     chn: 0,
     verified: false,
     carrierId: '',
+    lovesVerification: '',
     ...overrides,
   };
 }

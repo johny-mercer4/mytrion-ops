@@ -75,6 +75,7 @@ function mapAppRow(r: CsApplicationRow): Application {
     chn: bool01(pick(r, 'Chain_Policy', 'Chain_policy')),
     verified: r.Verified === true || r.Verified === 'true',
     carrierId: str(r.Carrier_ID),
+    lovesVerification: str(r.Loves_Verification),
   };
 }
 
