@@ -15141,3 +15141,31 @@ Two fixes, because the cause and the message were separate problems:
 **Not done: keeping old assets across deploys.** It would make stale tabs work rather than recover, but
 it means never pruning `app/assets`, so the committed bundle grows every build. The reload is the smaller
 answer; worth revisiting only if tabs are routinely left open through deploys.
+
+### 2026-08-14 — Today's attendance card said "No shift scheduled" for people who have a shift
+
+Reported: the **Today** card in the attendance week showed `Unscheduled` / `No shift scheduled` /
+`0h 00m` even for a night worker who is on a shift. Should show the shift.
+
+**Root cause: `Unscheduled` was overloaded to mean two different things.** In `summary.ts` the status
+ladder returned `Unscheduled` both when (a) no shift covers the day AND (b) a shift covers it but its
+window has not closed yet. Every current assignment is the same overnight shift `UZB Tashkent · Ganga`
+19:00–03:00 (checked prod, read-only: 120 of 143 active employees have it, incl. shohruh), and a
+19:00–03:00 window only closes at 03:00 the NEXT day — so for the whole of today a scheduled worker's
+own card scored `Unscheduled`, and the client printed "No shift scheduled". A flat denial of the shift
+they were about to work.
+
+**Fix — split the status.** New `DayStatus` value `Scheduled` (+ `totals.scheduled`) for "a shift
+covers the day, window not closed, no scan yet — upcoming or still running". `Unscheduled` now means
+only "no shift covers this day". `present` / `absent` / `weekend` / `payableDays` are unchanged; the
+only reclassification is the days that used to be mislabelled. A closed window with no scan is still
+`Absent` (regression-tested), and a check-in still wins as `Present`.
+
+Client (`HrAttendanceWeek.tsx`): a `Scheduled` empty day now reads `Shift 19:00–03:00 UZT · no entry
+scan yet` (from `data.shift`), with the badge `Scheduled` instead of `Unscheduled`. No CSS/structure
+change — the badge reuses the existing neutral pill.
+
+Verified: new backend scorer test (6, incl. a full mid-week fixture: closed=Absent, open=Scheduled,
+weekend=Weekend) + workdate regression 2/2; frontend week test +3 (names the window, badges Scheduled
+not Unscheduled, null-shift fallback). Backend uzb+routes 39/39, all frontend HR 125/125, both
+typechecks clean, lint 0 errors. Prod DB touched read-only only (diagnosis) — no writes.
