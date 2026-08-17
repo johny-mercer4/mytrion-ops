@@ -74,13 +74,14 @@ function tabsFor(
   },
   {
     id: 'applicants',
-    label: 'New applicants',
+    label: 'Verification Case',
     description: 'The 10-phase underwriting flow, from intake through to the credit decision.',
     icon: ClipboardCheck,
     tone: 'var(--tone-indigo)',
     group: 'Queue',
     hideKicker: true,
-    keywords: ['queue', 'applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases'],
+    // The old name stays searchable — the rail's search is how people who learned it find it.
+    keywords: ['queue', 'applicants', 'new applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases', 'cases'],
     // Renders its own PageHead — the queue's search, filters and refresh sit on the title's
     // baseline, which is the one thing ModuleShell's head cannot express.
     ownHead: true,
@@ -131,7 +132,7 @@ function tabsFor(
 
 export default function VerificationMytrion() {
   /**
-   * The case Main asked for, handed to New applicants when that tab mounts.
+   * The case Main asked for, handed to the Verification Case tab when it mounts.
    *
    * Cleared the moment the workspace is closed, so leaving and re-entering the tab shows the queue
    * rather than silently reopening a case the agent already finished with — ModuleShell unmounts
@@ -139,10 +140,10 @@ export default function VerificationMytrion() {
    */
   const [pendingCase, setPendingCase] = useState<string | null>(null);
   // The active tab lives here, not in the shell, because Main and the Inbox both open a case in the
-  // New applicants workspace — see ModuleShell's `view` / `onViewChange`.
+  // Verification Case workspace — see ModuleShell's `view` / `onViewChange`.
   const [view, setView] = useState('main');
 
-  /** Hand a case to New applicants and go there. Used by Main's queue and the Inbox's linked case. */
+  /** Hand a case to the Verification Case tab and go there. Used by Main's queue and the Inbox. */
   const openCase = (caseId: string): void => {
     setPendingCase(caseId);
     setView('applicants');

@@ -124,6 +124,19 @@ export function statusLabel(row: Pick<VerificationCaseRow, 'statusCode' | 'statu
   return row.statusLabel ?? STATUS_LABEL[row.statusCode] ?? row.statusCode;
 }
 
+/**
+ * The same status, in the word a table cell can hold — `STATUS_LABEL` first, server label second.
+ *
+ * The precedence is deliberately the OPPOSITE of `statusLabel`'s. The list endpoint stitches
+ * "Incomplete application" for every locked case, which is 22 characters inside a chip that is
+ * `white-space: nowrap`, and the design's own list shows this state as "Locked" — one word beside a
+ * lock glyph. The long phrase is not lost: it stays on the cell's `title`, and the case header,
+ * which has a full row to itself, keeps using `statusLabel`.
+ */
+export function statusShort(row: Pick<VerificationCaseRow, 'statusCode' | 'statusLabel'>): string {
+  return STATUS_LABEL[row.statusCode] ?? row.statusLabel ?? row.statusCode;
+}
+
 export function isLocked(row: Pick<VerificationCaseRow, 'verificationProcess'>): boolean {
   return !row.verificationProcess;
 }
@@ -180,15 +193,23 @@ export function inScope(row: VerificationCaseRow, scope: Scope): boolean {
   }
 }
 
-/** One sentence saying what the case is waiting on, from facts on the list row alone. */
+/**
+ * One sentence saying what the case is waiting on, from facts on the list row alone.
+ *
+ * It says WHAT, not WHO, and says it in a cell 13% of a table wide. The queue carries a Sales owner
+ * column, so prefixing seventeen rows with "Waiting on Sales —" made the reader skip the same nine
+ * characters to reach the only part that differs; "intake" went the same way, because the phase cell
+ * on the same row already reads "1/10 · Intake". The SLA breach keeps its own wording — there the
+ * elapsed time IS the point.
+ */
 export function blockedOn(row: VerificationCaseRow, slaDays: number, now: number): string {
   const outstanding = row.intakeMissing?.length ?? 0;
   if (isLocked(row)) {
     const age = ageDays(row, now);
-    if (age > slaDays) return `${age} days waiting on Sales — past the ${slaDays}-day SLA`;
+    if (age > slaDays) return `${age} days waiting — past the ${slaDays}-day SLA`;
     return outstanding > 0
-      ? `Waiting on Sales — ${outstanding} item${outstanding === 1 ? '' : 's'} outstanding`
-      : 'Waiting on Sales — intake not started';
+      ? `${outstanding} item${outstanding === 1 ? '' : 's'} outstanding`
+      : 'Intake not started';
   }
   if (row.closedAt) return `Decided — ${statusLabel(row)}`;
   switch (row.statusCode) {

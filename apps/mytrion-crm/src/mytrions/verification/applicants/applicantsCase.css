@@ -147,7 +147,33 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--space-1);
+  gap: var(--space-2_5);
+}
+/* The Sales owner, as a person. A bordered chip rather than a line of prose: this is the one piece
+   of the header that names somebody to contact, and it has to survive being glanced at. */
+[data-mytrion='verification'] .va-case-owner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2_5);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--va-r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-data-alt);
+}
+[data-mytrion='verification'] .va-case-owner-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+[data-mytrion='verification'] .va-case-owner-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 [data-mytrion='verification'] .va-case-meta-line {
   display: flex;

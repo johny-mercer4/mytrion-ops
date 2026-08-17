@@ -1,18 +1,22 @@
 /**
  * Verification Mytrion tabs. React-free — see the note in admin/adminTabs.ts for why.
  *
- * The legacy credit-platform tabs (Inbox, Verification cases, Decision rules) are NOT declared here
- * while `legacyDesk.ts` has them off. `tabRegistry.test.ts` asserts every declared key is actually
- * rendered by this Mytrion, so declaring a tab the shell will not mount would fail the suite — and
- * a permission set could be granted for a tab nobody can open.
+ * DECLARING A TAB IS NOT COSMETIC. `canSeeTab` reads a user's tab grant and shows only the keys in
+ * it, and the admin picker builds those grants from THIS list — so a tab the shell renders but this
+ * file omits is invisible to every non-admin who has a verification permission set. That is how the
+ * rebuilt Inbox shipped hidden: it renders in `index.tsx` and was not declared here.
  *
- * Their components remain on disk, quarantined, and come back with the flag.
+ * The remaining legacy credit-platform tabs (Verification cases, Decision rules) are still NOT
+ * declared while `legacyDesk.ts` has them off, for the opposite reason: `tabRegistry.test.ts` asserts
+ * every declared key is actually rendered, and a declared-but-unmounted tab is a permission set
+ * granted for a screen nobody can open. Their components remain on disk and come back with the flag.
  */
 import type { TabDescriptor } from '../../access/tabRegistry';
 
 export const VERIFICATION_TABS = [
   { key: 'main', label: 'Main' },
-  { key: 'applicants', label: 'New applicants', group: 'Queue' },
+  { key: 'inbox', label: 'Inbox', group: 'Queue' },
+  { key: 'applicants', label: 'Verification Case', group: 'Queue' },
   { key: 'watch', label: 'Mytrion Watch', group: 'Queue' },
   { key: 'clients', label: 'Existing clients', group: 'Roster' },
   { key: 'tickets', label: 'Tickets', group: 'Roster', soon: true },

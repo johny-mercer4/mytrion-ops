@@ -52,7 +52,7 @@ export function NeedsTodayPanel({
 }: {
   rows: readonly NeedsRow[];
   onOpenQueue: () => void;
-  /** Opens the case in the New applicants workspace — the desk's actual next action. */
+  /** Opens the case in the Verification Case workspace — the desk's actual next action. */
   onOpenCase: (caseId: string) => void;
 }) {
   return (

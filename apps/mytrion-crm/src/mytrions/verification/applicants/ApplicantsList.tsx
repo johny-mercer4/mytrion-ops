@@ -55,6 +55,7 @@ import {
   selectRows,
   SORT_OPTIONS,
   statusLabel,
+  statusShort,
   type Filters,
   type Scope,
   type SortDir,
@@ -62,7 +63,12 @@ import {
 } from './applicantsModel';
 import './applicants.css';
 
-const PAGE_SIZE = 25;
+/**
+ * 15, not 25. Comfortable rows measure 66px, so a 25-row page is 1,650px of table — four screens of
+ * scroll to reach a paginator, on a queue that has never left the teens. At 15 the page is about one
+ * screen and the control is reachable without scrolling to it.
+ */
+const PAGE_SIZE = 15;
 
 /**
  * Height reserved for the table while it loads.
@@ -71,11 +77,10 @@ const PAGE_SIZE = 25;
  * only — so the panel stands ~90px tall and then leaps to a full page when the rows land. Measured:
  * the queue jumped 645px and the roster 999px, both under the reader's cursor.
  *
- * The reservation is sized to what this surface ACTUALLY holds rather than to its page size — the
- * desk queue has sat in the teens and never fills a 25-row page. It is a FLOOR, not a cap: a bigger
- * queue simply grows past it. Compact rows measure 45px, the header 34px.
+ * Sized to a FULL page, which is now also the most the table can hold, so a full first page lands
+ * with no movement at all. Measured in Chrome at 1440px: comfortable row 66px, header 37px.
  */
-const LOADING_MIN_HEIGHT = `${16 * 45 + 34}px`;
+const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 66 + 37}px`;
 
 /** The tenant's card cutoff moves about once a year; the queue re-reads it hourly at most. */
 const STALE_POLICY = 60 * 60_000;
@@ -179,7 +184,7 @@ export function ApplicantsList({
         header: 'Applicant',
         rowHeader: true,
         sortable: true,
-        width: '25%',
+        width: '22%',
         mobile: 'primary',
         cell: (row) => (
           <span className="va-ident">
@@ -195,7 +200,9 @@ export function ApplicantsList({
                 ) : null}
                 {/* The ellipsis needs its own block: the row above is a flex container (it seats the
                     lock glyph beside the name), and `text-overflow` does nothing to a flex item. */}
-                <span className="va-ident-label">{caseName(row)}</span>
+                <span className="va-ident-label" title={caseName(row)}>
+                  {caseName(row)}
+                </span>
               </span>
               <span className="va-ident-sub">
                 {APPLICANT_LABEL[row.applicantType ?? ''] ?? 'Type not set'} ·{' '}
@@ -210,14 +217,20 @@ export function ApplicantsList({
         id: 'status',
         header: 'Status',
         sortable: true,
-        width: '15%',
+        // `Badge` is `white-space: nowrap` by design, so a chip wider than its column does not wrap
+        // or clip — it paints over the next cell. Two things keep it in: `statusShort` (the design's
+        // own one-word label rather than the endpoint's stitched phrase) and the wrapper's
+        // `min-width: 0` + ellipsis, which is what makes the width not load-bearing.
+        width: '12%',
         mobile: 'value',
         cell: (row) => {
           const chip = statusChip(row);
           return (
-            <Badge intent={chip.intent} size="sm" icon={chip.icon}>
-              {statusLabel(row)}
-            </Badge>
+            <span className="va-status-cell" title={statusLabel(row)}>
+              <Badge intent={chip.intent} size="sm" icon={chip.icon}>
+                <span className="va-status-label">{statusShort(row)}</span>
+              </Badge>
+            </span>
           );
         },
       },
@@ -249,7 +262,7 @@ export function ApplicantsList({
       {
         id: 'blocked',
         header: 'Blocked on',
-        width: '14%',
+        width: '13%',
         priority: 3,
         mobile: 'secondary',
         cell: (row) => (
@@ -266,12 +279,16 @@ export function ApplicantsList({
             {blockedOn(row, DECISION_SLA_DAYS, now)}
           </span>
         ),
+        mobileCell: (row) => blockedOn(row, DECISION_SLA_DAYS, now),
       },
       {
         id: 'trucks',
         header: 'Trucks',
         numeric: true,
         sortable: true,
+        // 6.5%, the design's own track. A numeric header is its LABEL plus a sort glyph — "TRUCKS"
+        // with the arrows is 64px at 1280, and a 5% track (49px) let the glyph overflow left into
+        // "Blocked on". The values are one digit; the header is what sets the floor here.
         width: '6.5%',
         priority: 3,
         cell: (row) => row.trucksCount ?? '—',
@@ -290,9 +307,8 @@ export function ApplicantsList({
         header: 'Limit',
         numeric: true,
         sortable: true,
-        width: '9%',
+        width: '8%',
         priority: 2,
-        mobile: 'secondary',
         cell: (row) => money(row.approvedLimitAmount ?? row.requestedLimit),
       },
       {
@@ -300,7 +316,7 @@ export function ApplicantsList({
         header: 'Age',
         numeric: true,
         sortable: true,
-        width: '6%',
+        width: '5%',
         cell: (row) => {
           const age = ageDays(row, now);
           return (
@@ -312,16 +328,22 @@ export function ApplicantsList({
       },
       {
         id: 'owner',
-        header: 'Owner',
-        align: 'end',
-        width: '7%',
+        header: 'Sales owner',
+        sortable: true,
+        width: '16%',
         priority: 2,
+        // The NAME, not just a mark. Two initials in a circle is unreadable as an identity — the desk
+        // has to know which Sales agent to chase, and hovering 17 rows to find out is not reading.
+        // `xs`, not `sm`: at 1280 the column has ~126px of content box, and a 24px mark with a 8px
+        // gap left too little for "Islombek Mamurov". `title` recovers the rest of a long name.
         cell: (row) => (
           <span className="va-owner" title={row.ownerName}>
             <Avatar initials={personInitials(row.ownerName)} size="xs" />
+            <span className="va-owner-name">{row.ownerName}</span>
           </span>
         ),
-        mobileCell: () => null,
+        mobile: 'secondary',
+        mobileCell: (row) => row.ownerName,
       },
     ],
     [wexCardCutoff, now],
@@ -347,7 +369,7 @@ export function ApplicantsList({
   return (
     <div className="va-list">
       <PageHead
-        title="New applicants"
+        title="Verification Case"
         description="The 10-phase underwriting flow, from intake through to the credit decision."
         actions={
           <div className="va-head-actions">
@@ -496,7 +518,7 @@ export function ApplicantsList({
             rowKey={(row) => row.id}
             columns={columns}
             layout="fixed"
-            density="compact"
+            density="comfortable"
             loading={cases.loading}
             {...(cases.loading && !cases.data
               ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } }
@@ -533,19 +555,18 @@ export function ApplicantsList({
           />
 
           <div className="va-foot">
+            {/* ONE summary. `Pagination` renders its own "Showing X–Y of Z" when handed `total` and
+                `pageSize`, which put two counts of the same rows side by side. It gets neither, so
+                it renders controls only and this line is the single count. */}
             <span className="va-foot-count">
-              Showing <strong className="num">{paged.length}</strong> of{' '}
-              <strong className="num">{visible.length}</strong> · sorted by {sortLabel}
+              Showing{' '}
+              <strong className="num">
+                {visible.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+                {(currentPage - 1) * PAGE_SIZE + paged.length}
+              </strong>{' '}
+              of <strong className="num">{visible.length}</strong> · sorted by {sortLabel}
             </span>
-            <Pagination
-              page={currentPage}
-              pageCount={pageCount}
-              onPageChange={setPage}
-              pageSize={PAGE_SIZE}
-              total={visible.length}
-              itemLabel="applications"
-              size="sm"
-            />
+            <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
           </div>
         </div>
       )}

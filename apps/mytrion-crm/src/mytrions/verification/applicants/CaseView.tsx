@@ -15,7 +15,17 @@
  * bar does not. The desk must see what it is waiting on without being able to sign it off.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Icon, Skeleton, SkeletonRegion, type BadgeIntent, type IconName } from '@/ds';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Icon,
+  Skeleton,
+  SkeletonRegion,
+  type BadgeIntent,
+  type IconName,
+} from '@/ds';
+import { initials as personInitials } from '@/lib/initials';
 import {
   decidePhase,
   getDeskCase,
@@ -163,7 +173,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           <p className="va-banner-body">{error ?? 'The case could not be found.'}</p>
         </div>
         <Button variant="secondary" icon="chevron_left" onClick={onBack}>
-          All applicants
+          All cases
         </Button>
       </div>
     );
@@ -202,9 +212,9 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
       <section className="va-case-head" data-locked={locked}>
         <div className="va-crumbs">
           <Button variant="secondary" size="sm" icon="chevron_left" onClick={onBack}>
-            All applicants
+            All cases
           </Button>
-          <span className="va-crumb">New applicants</span>
+          <span className="va-crumb">Verification Case</span>
           <Icon name="chevron_right" size="sm" className="va-crumb-sep" />
           <span className="va-crumb-current">{name}</span>
           <span className="va-crumbs-gap" />
@@ -237,11 +247,17 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           </div>
 
           <div className="va-case-meta">
-            <div className="va-case-meta-line">
-              <span>
-                Owner <strong>{c.ownerName}</strong>
+            {/* The Sales agent who owns the case, as an identified person rather than a word in an
+                11px corner line. Every red case on this desk is waiting on this human — they are
+                who the reviewer picks up the phone to, so they get a name, a face and a label. */}
+            <div className="va-case-owner">
+              <Avatar initials={personInitials(c.ownerName)} size="md" />
+              <span className="va-case-owner-text">
+                <span className="t-eyebrow">Sales owner</span>
+                <span className="va-case-owner-name">{c.ownerName}</span>
               </span>
-              <span className="va-meta-sep" aria-hidden="true" />
+            </div>
+            <div className="va-case-meta-line">
               <span>
                 Opened{' '}
                 <strong className="num">
@@ -251,8 +267,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                   })}
                 </strong>
               </span>
-            </div>
-            <div className="va-case-meta-line">
+              <span className="va-meta-sep" aria-hidden="true" />
               <span>
                 {APPLICANT_LABEL[c.applicantType ?? ''] ?? 'Type not set'} ·{' '}
                 {routeLabel(routeOf(c, wexCardCutoff))}
@@ -268,10 +283,12 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
             <Icon name="lock" size="sm" />
           </span>
           <span className="va-banner-text">
+            {/* Names the agent, not just the department: "waiting on Sales" is not an action, and
+                the desk should not have to scan the header to find out who to chase. */}
             <span className="va-banner-title">
               {missing > 0
-                ? `Waiting on Sales — ${missing} item${missing === 1 ? '' : 's'} outstanding`
-                : 'Waiting on Sales — intake not started'}
+                ? `Waiting on ${c.ownerName} — ${missing} item${missing === 1 ? '' : 's'} outstanding`
+                : `Waiting on ${c.ownerName} — intake not started`}
             </span>
             <span className="va-banner-body">
               Not decidable yet. You can still correct the application below.

@@ -60,11 +60,16 @@
   text-wrap: pretty;
 }
 
+/* `flex: 0 1 auto`, not `none`. `.head` wraps, so the actions block gets its own line on a phone —
+   but at `flex: none` its width is its max-content, so a slot holding a 250px search plus two
+   buttons (the Verification queue) painted ~100px past the right edge of a 375px viewport with
+   nothing able to shrink it. `min-width: 0` is what lets the shrink reach the children. */
 .actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .action {

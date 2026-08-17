@@ -46,7 +46,7 @@ export interface VerificationMainProps {
   open: (tabId: string) => void;
   /** Every tab but Main, already filtered to what this user may see. */
   launchers: ModuleTab[];
-  /** Open a specific case in the New applicants workspace. */
+  /** Open a specific case in the Verification Case workspace. */
   onOpenCase: (caseId: string) => void;
 }
 

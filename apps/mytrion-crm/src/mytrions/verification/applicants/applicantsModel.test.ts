@@ -171,20 +171,22 @@ describe('blocked-on sentence', () => {
       intakeMissing: ['ein'],
     });
     expect(blockedOn(late, DECISION_SLA_DAYS, NOW)).toBe(
-      `9 days waiting on Sales — past the ${DECISION_SLA_DAYS}-day SLA`,
+      `9 days waiting — past the ${DECISION_SLA_DAYS}-day SLA`,
     );
   });
 
+  // The owner column names the agent; this column says what is missing. Restoring a
+  // "Waiting on Sales —" prefix here puts the same nine characters on every row again.
   it('counts what is outstanding, with the right plural', () => {
     const one = row({ id: 'a', verificationProcess: false, createdAt: daysAgo(1), intakeMissing: ['ein'] });
-    expect(blockedOn(one, DECISION_SLA_DAYS, NOW)).toBe('Waiting on Sales — 1 item outstanding');
+    expect(blockedOn(one, DECISION_SLA_DAYS, NOW)).toBe('1 item outstanding');
     const many = { ...one, intakeMissing: ['ein', 'mc'] };
-    expect(blockedOn(many, DECISION_SLA_DAYS, NOW)).toBe('Waiting on Sales — 2 items outstanding');
+    expect(blockedOn(many, DECISION_SLA_DAYS, NOW)).toBe('2 items outstanding');
   });
 
   it('says intake has not started rather than "0 items outstanding"', () => {
     const legacy = row({ id: 'a', verificationProcess: false, createdAt: daysAgo(1), intakeMissing: [] });
-    expect(blockedOn(legacy, DECISION_SLA_DAYS, NOW)).toBe('Waiting on Sales — intake not started');
+    expect(blockedOn(legacy, DECISION_SLA_DAYS, NOW)).toBe('Intake not started');
   });
 });
 
