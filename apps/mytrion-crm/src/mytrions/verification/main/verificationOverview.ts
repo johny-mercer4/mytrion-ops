@@ -227,10 +227,9 @@ function whyFor(row: VerificationCaseRow, age: number): string {
       : 'Waiting on Sales — intake not started';
   }
   if (row.statusCode === 'manager_review') {
+    // The amount is a FACT on the row; "over the desk limit" would be a cause no column records.
     const requested = amount(row.requestedLimit);
-    return requested == null
-      ? 'Manager review — over the desk limit'
-      : `Manager review — ${moneyShort(requested)} requested`;
+    return requested == null ? 'Manager review' : `Manager review — ${moneyShort(requested)} requested`;
   }
   if (row.statusCode === 'pending_docs') return 'Documents requested from Sales';
   if (row.statusCode === 'intake_submitted') return 'Intake complete — ready to work';

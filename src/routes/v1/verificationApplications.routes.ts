@@ -63,7 +63,12 @@ const digitsOnly = (max: number, label: string) =>
     .nullable()
     .optional();
 
-const patchBody = z.object({
+/**
+ * The intake patch shape, EXPORTED — the Verification desk corrects the same columns through its
+ * own route (`POST /verification/flow/cases/:id/intake`) and must accept exactly the same body.
+ * Two copies of this schema would drift the first time a field's validation changed on one desk.
+ */
+export const patchBody = z.object({
   applicantType: z.enum(VERIFICATION_APPLICANT_TYPES).optional(),
   companyName: nullableText(200),
   firstName: nullableText(100),

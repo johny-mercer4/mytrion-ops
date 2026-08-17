@@ -39,6 +39,14 @@ export interface ModuleTab {
   group?: string;
   /** Hide the page-head kicker — the title already names the page. */
   hideKicker?: boolean;
+  /**
+   * The tab renders its OWN `PageHead`, so the shell omits one.
+   *
+   * For a tab whose head carries controls that depend on the tab's own state — a search box, a
+   * filter toggle — which cannot be declared in this static array. The tab is then responsible for
+   * the title and description; it should pass the same strings it declares here.
+   */
+  ownHead?: boolean;
   /** Layer-2 gate. Defaults to open — narrow it rather than hiding the item in the shell. */
   access?: (user: UserContext) => boolean;
   /** Unbuilt: renders <ComingSoon />. Mutually exclusive with `content`. */
@@ -199,11 +207,13 @@ export function ModuleShell({
                 </>
               ) : (
                 <>
-                  <PageHead
-                    {...(active.hideKicker ? {} : { kicker })}
-                    title={active.label}
-                    description={active.description}
-                  />
+                  {active.ownHead ? null : (
+                    <PageHead
+                      {...(active.hideKicker ? {} : { kicker })}
+                      title={active.label}
+                      description={active.description}
+                    />
+                  )}
                   {active.soon ? (
                     <ComingSoon
                       icon={<active.icon size={26} />}

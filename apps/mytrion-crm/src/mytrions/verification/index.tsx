@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Activity, Building2, ClipboardCheck, Home, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
 import { VerificationClients } from './tabs/VerificationClients';
-import { NewApplicants } from './tabs/NewApplicants';
+import { ApplicantsList } from './applicants/ApplicantsList';
 import { VerificationMain } from './main/VerificationMain';
 import { MytrionWatch } from './watch/MytrionWatch';
 import './verification.css';
@@ -54,7 +54,10 @@ function tabsFor(pendingCase: string | null, clearPendingCase: () => void): Modu
     group: 'Queue',
     hideKicker: true,
     keywords: ['queue', 'applicants', 'underwriting', 'credit', 'approve', 'decline', 'applications', 'phases'],
-    content: <NewApplicants initialCaseId={pendingCase} onCloseCase={clearPendingCase} />,
+    // Renders its own PageHead — the queue's search, filters and refresh sit on the title's
+    // baseline, which is the one thing ModuleShell's head cannot express.
+    ownHead: true,
+    content: <ApplicantsList initialCaseId={pendingCase} onCloseCase={clearPendingCase} />,
   },
   {
     id: 'watch',
