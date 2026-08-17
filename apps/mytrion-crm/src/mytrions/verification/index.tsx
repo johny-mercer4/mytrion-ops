@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Activity, Building2, ClipboardCheck, Home, Inbox, Ticket } from 'lucide-react';
 import { ModuleShell, type ModuleTab } from '../_shared/ModuleShell';
-import { VerificationClients } from './tabs/VerificationClients';
+import { VerificationClients } from './clients/ClientsList';
 import { ApplicantsList } from './applicants/ApplicantsList';
 import { VerificationInbox } from './inbox/VerificationInbox';
 import { isUnread } from './inbox/inboxModel';
@@ -105,6 +105,8 @@ function tabsFor(
     tone: 'var(--tone-emerald)',
     group: 'Roster',
     keywords: ['existing', 're-verification', 'compliance', 'review', 'renewal', 'roster', 'clients'],
+    // Renders its own PageHead — the roster's search, filters and refresh sit on the title baseline.
+    ownHead: true,
     content: <VerificationClients />,
   },
   {
