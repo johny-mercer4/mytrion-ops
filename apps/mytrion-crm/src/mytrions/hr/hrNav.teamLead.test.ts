@@ -1,9 +1,10 @@
 /**
- * A team lead's HR workspace is Attendance and nothing else.
+ * A team lead's HR workspace: the company directory (read-only) PLUS their team's Attendance.
  *
- * The hiding here is a courtesy — `hrAttendance.routes.ts` re-derives the team per request and the
- * directory/departments/org routes still demand real `hr` access. What these pin is that the client
- * does not invite someone into screens their session will refuse, which is what reads as broken.
+ * The directory (Employees / Departments / Org) is company-wide now, so a lead sees it like everyone
+ * else; Attendance is the extra they get for leading a team. Settings stays admin-only. The hiding is a
+ * courtesy — the backend re-derives the team per request and gates management — but it keeps the client
+ * from inviting someone into a screen their session would refuse (Attendance for a plain employee).
  */
 import { describe, expect, it } from 'vitest';
 import type { UserContext } from '../../context/userContext';
@@ -34,15 +35,22 @@ describe('team lead HR access', () => {
     expect(resolveAccessibleMytrions(plainWorker()).accessible).not.toContain('hr');
   });
 
-  it('shows a team lead Attendance and only Attendance', () => {
-    expect(accessibleHrTabs(lead()).map((t) => t.id)).toEqual(['attendance']);
+  it('shows a team lead the directory plus their team Attendance — but not Settings', () => {
+    expect(accessibleHrTabs(lead()).map((t) => t.id)).toEqual([
+      'home',
+      'employees',
+      'departments',
+      'org',
+      'attendance',
+      'requests',
+    ]);
   });
 
-  it('refuses to open any other HR tab for them', () => {
-    for (const tab of ['home', 'employees', 'departments', 'org', 'requests', 'settings'] as const) {
-      expect(canOpenHrTab(lead(), tab)).toBe(false);
+  it('opens the directory + Attendance for them, but never Settings', () => {
+    for (const tab of ['home', 'employees', 'departments', 'org', 'requests', 'attendance'] as const) {
+      expect(canOpenHrTab(lead(), tab)).toBe(true);
     }
-    expect(canOpenHrTab(lead(), 'attendance')).toBe(true);
+    expect(canOpenHrTab(lead(), 'settings')).toBe(false);
   });
 
   /** Real HR staff must not be narrowed by this — the predicate keys off the ABSENCE of hr access. */

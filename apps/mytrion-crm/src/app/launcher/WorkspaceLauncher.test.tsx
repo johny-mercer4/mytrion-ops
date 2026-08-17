@@ -20,6 +20,13 @@ vi.mock('../../context/UserContextProvider', () => ({
     userName: 'Jane Doe',
     trusted: true,
   }),
+  useRealUserContext: () => ({
+    userId: 'zoho:1',
+    profile: 'Administrator',
+    role: 'CEO',
+    userName: 'Jane Doe',
+    trusted: true,
+  }),
 }));
 vi.mock('../../components/AppHeader', () => ({
   AppHeader: ({ search }: { search?: { value: string; onChange: (v: string) => void } }) =>

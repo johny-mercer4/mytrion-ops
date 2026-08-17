@@ -168,17 +168,17 @@ describe('HR employees — auth', () => {
     expect(repo.list).not.toHaveBeenCalled();
   });
 
-  it('GET /hr/employees REFUSES a sales worker — the directory is not company-wide', async () => {
-    // This test previously asserted 200. That was pinning a hole: the route checked only
-    // `audience === 'internal'`, so any signed-in worker could read all 213 employee rows — names,
-    // emails, mobiles, joining dates, reporting lines — plus the whole org structure.
+  it('GET /hr/employees allows ANY internal worker — the directory is company-wide', async () => {
+    // The org opened the people directory to all staff (read-only): every internal worker may look up
+    // colleagues, departments and the org chart. Management stays gated (requireHrManage), and a
+    // customer / unauthenticated caller is still refused.
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees',
       headers: bearer(await workerToken('Sales Rep')),
     });
-    expect(res.statusCode).toBe(403);
-    expect(repo.list).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(repo.list).toHaveBeenCalledTimes(1);
   });
 
   it('GET /hr/employees allows a worker holding the hr department', async () => {
@@ -587,31 +587,32 @@ describe('HR employees — photo', () => {
     expect(presignFileMock).not.toHaveBeenCalled();
   });
 
-  it('refuses the link to a worker with no HR grant', async () => {
+  it('lets ANY internal worker resolve a photo link — directory is company-wide', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees/hre_1/photo-link',
       headers: bearer(await workerToken('Sales Rep', 'sales-photo-peek')),
     });
-    expect(res.statusCode).toBe(403);
-    expect(presignFileMock).not.toHaveBeenCalled();
+    // Not 403: the HR-grant gate is gone for reads. (Any 404 here is only the fixture having no photo.)
+    expect(res.statusCode).not.toBe(403);
   });
 });
 
 /**
- * The person panel routes. The gate is the point: the panel shows a colleague's department, team,
- * attendance and time off in one payload, so it must sit behind the HR directory grant — not merely
- * behind "is signed in".
+ * The person panel routes. The directory is company-wide (read-only), so any internal worker may open
+ * a colleague's panel — department, team, attendance, time off. Attendance inside it is still
+ * team-scoped by the builder (`canView`), and management stays gated; customers are refused.
  */
 describe('HR employees — person overview', () => {
-  it('refuses the Zoho-user lookup to a worker with no HR grant', async () => {
+  it('lets ANY internal worker resolve a Zoho sign-in — directory is company-wide', async () => {
+    repo.findByZohoUserId.mockResolvedValue(employeeRow({ zohoUserId: '42' }));
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees/by-zoho-user/42',
       headers: bearer(await workerToken('Sales Rep', 'sales-peek')),
     });
-    expect(res.statusCode).toBe(403);
-    expect(repo.findByZohoUserId).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(repo.findByZohoUserId).toHaveBeenCalled();
   });
 
   it('404s a Zoho sign-in that has no employee record', async () => {
@@ -636,14 +637,23 @@ describe('HR employees — person overview', () => {
     expect(repo.findByZohoUserId).toHaveBeenCalledWith(expect.anything(), '77');
   });
 
-  it('refuses the overview to a worker with no HR grant', async () => {
+  it('lets ANY internal worker read the overview — directory is company-wide', async () => {
+    repo.getById.mockResolvedValue(employeeRow());
+    overviewMock.mockResolvedValue({
+      employee: employeeRow(),
+      department: null,
+      manager: null,
+      team: { members: [], directReportCount: 0, ledDepartments: [] },
+      attendance: { from: '2026-08-03', to: '2026-08-09', summary: null, canView: false },
+      timeOff: { year: 2026, balances: [], requests: [] },
+    } as never);
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/employees/hre_1/overview',
       headers: bearer(await workerToken('Sales Rep', 'sales-peek')),
     });
-    expect(res.statusCode).toBe(403);
-    expect(overviewMock).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(overviewMock).toHaveBeenCalled();
   });
 
   it('returns the assembled panel for an HR reader', async () => {

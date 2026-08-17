@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Building2, Plus, RefreshCw, Search, UserRoundCheck, Users } from 'lucide-react';
-import { isAdmin } from '../../../access/resolveAccess';
+import { canManageHr } from '../../../access/resolveAccess';
 import { deleteHrDepartment, type HrDepartmentDto } from '../../../api/hr';
 import { useUserContext } from '../../../context/UserContextProvider';
 import { formatCachedAt } from '../../_shared/swrCache';
@@ -34,7 +34,9 @@ import {
  */
 export function HrDepartments() {
   const user = useUserContext();
-  const admin = isAdmin(user);
+  // "May manage" — admins AND HR Managers (granted HR in full mode). A plain HR grant is read-only,
+  // so this gates every write affordance below. Backend re-checks with requireHrManage.
+  const admin = canManageHr(user);
 
   const [q, setQ] = useState('');
   const [modal, setModal] = useState<DepartmentModalMode | null>(null);

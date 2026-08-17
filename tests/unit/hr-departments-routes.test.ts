@@ -104,18 +104,16 @@ describe('HR departments — auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET REFUSES a sales worker — the department table is not company-wide', async () => {
-    // This previously asserted 200, which pinned a hole open: the route checked only
-    // `audience === 'internal'`, so any signed-in worker could read every department along with its
-    // lead name and lead email. The employees route was tightened to require the `hr` department grant;
-    // this half had been left behind, so the two ends of the same tab disagreed about who may read it.
+  it('GET allows ANY internal worker — the department table is company-wide', async () => {
+    // The org opened the directory (Employees / Departments / Org) to all staff, read-only. A non-HR
+    // internal worker reads it; create/edit/delete stays gated (requireHrManage) and customers refused.
     const res = await app.inject({
       method: 'GET',
       url: '/v1/hr/departments',
       headers: bearer(await workerToken('Sales Rep')),
     });
-    expect(res.statusCode).toBe(403);
-    expect(repo.list).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(repo.list).toHaveBeenCalledTimes(1);
   });
 
   it('GET allows a worker holding the hr department', async () => {

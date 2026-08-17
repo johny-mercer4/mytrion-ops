@@ -291,6 +291,51 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * The effective access of ANOTHER user — powers the admin "View as" RBAC preview.
+   *
+   * Admin-only (all-department). This does NOT grant the caller anything: it reports what the target
+   * would see, so the client can render its workspace AS them for testing. Every real request still
+   * carries the caller's own Bearer plus `x-act-as-*`, and the backend re-derives the target's context
+   * server-side (buildCallerContext) — so this preview can never widen what the target may actually do.
+   * The identity (name/profile/role) comes from the CRM directory, never from client input.
+   */
+  app.get<{ Params: { zohoUserId: string } }>(
+    '/auth/view-as/:zohoUserId',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireContext(request);
+      if (!ctx.allDepartmentAccess && !ctx.bypassRbac && ctx.role !== 'admin') {
+        throw new RBACError('View-as preview is available to admins only');
+      }
+      const zohoUserId = z.string().min(1).max(120).parse(request.params.zohoUserId);
+      const target = await resolveActAsTarget(zohoUserId);
+      if (!target) throw new NotFoundError('No active user matches that id');
+      const access = await mytrionAccessService.resolveWorkerAccess({
+        tenantId: ctx.tenantId,
+        zohoUserId: target.zohoUserId,
+        profileName: target.profile ?? null,
+        zohoRole: target.role ?? null,
+        userName: target.name ?? null,
+      });
+      return {
+        worker: {
+          zohoUserId: target.zohoUserId,
+          userName: target.name ?? null,
+          email: target.email ?? null,
+          profile: target.profile ?? null,
+          role: target.role ?? null,
+          allDepartmentAccess: access.allDepartmentAccess,
+          accessibleMytrions: access.accessibleMytrions,
+          homeMytrion: access.homeMytrion,
+          mytrionAccessModes: access.mytrionAccessModes,
+          mytrionTabGrants: access.mytrionTabGrants,
+          leadsTeam: await leadsTeamFor(target.zohoUserId),
+        },
+      };
+    },
+  );
+
+  /**
    * Upload / clear the signed-in worker's profile picture.
    *
    * Body is a client-resized data-URL (not multipart) so we do not depend on FF_FILES / S3 for a

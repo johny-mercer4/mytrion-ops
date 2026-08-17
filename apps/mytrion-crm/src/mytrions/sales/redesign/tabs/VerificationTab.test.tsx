@@ -25,6 +25,7 @@ vi.mock('../dcCache', () => ({ useCachedLoad: () => state.current }));
 vi.mock('@/api/impersonation', () => ({ getImpersonation: () => null }));
 vi.mock('@/context/UserContextProvider', () => ({
   useUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
+  useRealUserContext: () => ({ userId: 'u1', role: 'CEO', userName: 'Admin', allDepartmentAccess: true }),
 }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
 vi.mock('../applicationIntake', () => ({

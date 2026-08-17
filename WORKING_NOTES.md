@@ -17889,3 +17889,119 @@ Verified: new backend scorer test (6, incl. a full mid-week fixture: closed=Abse
 weekend=Weekend) + workdate regression 2/2; frontend week test +3 (names the window, badges Scheduled
 not Unscheduled, null-shift fallback). Backend uzb+routes 39/39, all frontend HR 125/125, both
 typechecks clean, lint 0 errors. Prod DB touched read-only only (diagnosis) — no writes.
+
+## 2026-08-18 — HR RBAC: an "HR Manager" tier between read-only staff and full admins
+
+Ask: a simple employee should see the Employees / Departments / Org lists but not create/manage them,
+not see Settings; only admins or "Managers" manage.
+
+**Finding first: the read-only tier already existed.** Backend writes were `requireHrAdmin`
+(all-department admins only); the client already gated every create/edit/delete/reparent affordance and
+the Settings tab on `isAdmin`. A non-admin HR user already saw read-only lists + org and no Settings.
+The person reporting it was signed in as a full admin, so they saw every button. The real gap was that
+there was NO middle tier — only full admins could manage. (Confirmed with the user: read tier = already
+works; wanted = admins + a distinct HR Manager, designated per-user.)
+
+**What "HR Manager" is: admin OR an explicit `hr: full` grant, fail-closed.**
+- `mytrionAccessService`: HR now DEFAULTS to `read` (`READ_DEFAULT_MYTRIONS = {'hr'}`), unlike every
+  other Mytrion which defaults `full`. So a bare HR directory grant is look-only; write is the explicit
+  "Full access" grant an admin sets in Admin → User Management. A new HR hire looks-but-can't-change
+  until promoted, instead of manager-until-someone-downgrades-them.
+- New `requireHrManage` (hrAccess.ts): admin / allDept / bypass, OR `mytrionAccessModes.hr === 'full'`.
+  Deliberately demands an EXPLICIT full (not merely "not read"), so an absent mode also denies —
+  defense-in-depth on top of the default flip. Mirrors the client's new `canManageHr` exactly.
+- Applied `requireHrManage` to: employee create/edit/delete + photo, department create/edit/delete,
+  `PATCH /hr/org/position` and `/reparent`. KEPT `requireHrAdmin` on infrastructure — Zoho employee /
+  department sync and identity linking (`/employees/:id/zoho-user`) stay full-admin only.
+- Client: `canManageHr` (resolveAccess) replaces `isAdmin` as the write gate in HrEmployees /
+  HrDepartments / HrOrgStructure. Settings tab stays `isAdmin` (Zoho sync + migrate tooling is not a
+  manager's job).
+
+**Modes are re-resolved per request** (contextFromClaims → resolveWorkerAccess reads only the profile;
+the JWT never carries modes), so the HR→read default applies to every live session on deploy — no
+stale-token window where an old bake keeps write.
+
+**Side effect, intended:** HR Time Off SETTINGS (`requireMytrionWrite('hr')`, already in place) was
+fail-open (default full) — any HR-access user could write leave policy via API. With HR defaulting to
+read it is now admin/manager-only. Consistent with the ask; the Settings TAB was already admin-only, so
+no UI changed, only the API gap closed.
+
+Tests: `require-hr-manage` (5, incl. fail-closed on absent mode), resolver defaults in `mytrion-access`
+(+3: HR→read, user-full override → manager, allDept → full), client `canManageHr` (+5). Existing HR
+route + component suites unchanged and green. Route-level manager-SUCCESS tests were dropped on purpose:
+contextFromClaims re-resolves from profile, so a token cannot mint `hr: full` without prod access config
+— the gate unit test covers manager admission deterministically instead. Backend+CRM typecheck clean,
+lint 0 errors.
+
+**Open question for follow-up:** if HR Managers should also manage leave policy / holidays (which live
+under Settings), split Settings into HR-policy (managers) vs platform/sync (admins). Left admin-only for
+now.
+
+## 2026-08-18 — "View as" becomes a global RBAC preview (admin testing tool)
+
+Ask: picking a user in "View as" should render the app AS them (RBAC), and it should keep working when
+you move between sections. Two real gaps behind that:
+- It only sent `x-act-as-*` headers (backend DATA), never touched the frontend `UserContext`, so the UI
+  kept showing the admin's tabs/buttons — "choosing a user changed nothing".
+- The act-as store was **per-Mytrion by design**, so it evaporated on section change.
+
+Also found: the SAME `actingAs` slot was doing double duty — HrShell used it as HR's only way to open a
+person's RECORD (safe only while act-as was per-Mytrion). Confirmed with the user: make "View as" one
+global RBAC preview; move HR's record-opening into HR.
+
+**What shipped (admins only, per the decision):**
+- Backend `GET /auth/view-as/:zohoUserId` (admin-only) → the TARGET's effective access
+  (accessibleMytrions, mytrionAccessModes, allDepartmentAccess, leadsTeam, identity from the CRM
+  directory). Reports what they'd see; never widens anything — every real request still carries the
+  admin's Bearer + `x-act-as-*` and the backend re-derives the target server-side.
+- `api/impersonation.ts` is now a single GLOBAL slot (was per-Mytrion; old keys migrated). Sales et al.
+  already called `getImpersonation()` with no arg, so they keep working — now reading the global id.
+- `EffectiveUserProvider` (below UserContextProvider + ImpersonationProvider) overlays the target's
+  access onto `useUserContext()` so EVERY gate — Mytrion list, tabs, Settings, the HR manage buttons —
+  renders as the previewed user. `useRealUserContext()` stays the signed-in admin; MytrionShell and
+  AppHeader use it so the account cluster and the picker/Exit never disappear while previewing.
+- HR person records decoupled to HrShell's OWN local state; opened via a new "View full record" action
+  in the employee detail modal (read action — everyone with HR access gets it). Ignores act-as, reads
+  through the admin/HR endpoints as before.
+
+Modes re-resolve per request (contextFromClaims → resolveWorkerAccess from the profile; the JWT never
+carries modes), so this is the natural place for the preview and the backend can't be fooled by it.
+
+Tests: `auth-view-as` (4: target access to admin, 403 non-admin, 404 unknown, 401 unauth); HrShell.nav
+rewritten for the local-state record flow; 7 UserContextProvider test mocks updated with
+`useRealUserContext`. Full CRM suite 1014 pass / 27 fail — all 27 are pre-existing env failures in 6
+unrelated files (`localStorage.clear is not a function`, etc.), unchanged by this work. Backend + CRM
+typecheck clean, lint 0 errors.
+
+Known edge: previewing a user with NO access to the section you're on lets the Mytrion guard redirect
+you (correct — they can't see it); Exit stays available from any Mytrion's chrome. Verified by tests,
+not yet live (needs a Zoho login + an hr:full grant to watch end-to-end).
+
+## 2026-08-18 — Company-wide read: the employee directory opens to all staff
+
+Follow-on from the RBAC work, discovered while testing View-as: an admin previewing a regular employee
+(Xusan) hit "No access — cannot access HR Mytrion." That was correct for the old scoping (HR reads were
+HR-staff-only), but the org's decision is that the directory (Employees / Departments / Org) is a
+company-wide, read-only resource. Chosen explicitly: "Full directory to everyone" (contact details
+included); management stays admin/HR-Manager only.
+
+- Backend: new `requireHrRead` (any INTERNAL worker) replaces `requireHrInternal` on the directory READ
+  routes — `/hr/employees` (list + :id), `/hr/employees/by-zoho-user/:id`, `/hr/employees/:id/overview`,
+  photo-links, `/hr/meta/designations`, `/hr/org-structure`, `/hr/departments` (list + :id). Writes stay
+  `requireHrManage`; sync / identity-linking stay `requireHrAdmin`; customers still refused. This
+  deliberately reverses the earlier HR-only lockdown (the hrAccess.ts comment is updated to say why).
+- Frontend: `canAccess('hr')` is now true for every internal worker (the MytrionGuard uses it, so the
+  "No access" card is gone and View-as a regular employee shows the read-only directory). `hrNav`: the
+  directory tabs (Home / Employees / Departments / Org / Requests) are `() => true`; Attendance is gated
+  to HR staff / team leads / admins (a plain employee has no attendance access and would only 403);
+  Settings stays admin. Team leads therefore see the directory now, not attendance-only.
+
+DELIBERATELY NOT DONE: pinning HR to every employee's launcher. Adding 'hr' to `resolveAccessibleMytrions`
+gave even a zero-grant ("Forbidden") user HR and broke the single-workspace auto-enter, so it was
+reverted. HR is reachable (guard + URL + View-as) but not a launcher card for non-HR staff — a launcher
+entry is a deliberate follow-up (needs the auto-enter count to exclude the universal 'hr').
+
+Tests: hr-routes / hr-departments "refuses a sales worker" flipped to "allows any internal worker";
+hrNav team-lead test rewritten (directory + attendance, not attendance-only). Backend HR/access suites
+green (125), full CRM suite 1014 pass / 27 pre-existing env fails (6 unrelated files). Typechecks clean,
+lint 0 errors.

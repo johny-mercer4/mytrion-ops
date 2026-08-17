@@ -24,7 +24,10 @@ const user = {
 
 let accessible: string[] = ['sales', 'billing'];
 
-vi.mock('../context/UserContextProvider', () => ({ useUserContext: () => user }));
+vi.mock('../context/UserContextProvider', () => ({
+  useUserContext: () => user,
+  useRealUserContext: () => user,
+}));
 vi.mock('../access/resolveAccess', () => ({
   isAdmin: () => false,
   resolveAccessibleMytrions: () => ({ accessible, homeMytrion: null }),

@@ -15,6 +15,7 @@ import { departmentWouldCycle } from '../../modules/hr/orgReparent.js';
 import { hrDepartmentRepo, type HrDepartmentRow } from '../../repos/hrDepartmentRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
+import { requireHrManage, requireHrRead } from './hrAccess.js';
 
 /**
  * READ access — requires the `hr` department grant, matching `hr.routes.ts`.
@@ -109,7 +110,7 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
   const auth: RouteShorthandOptions = { onRequest: [app.authenticate] };
 
   app.get('/hr/departments', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const q = listQuery.parse(request.query);
     const filters = {
       ...(q.q !== undefined ? { q: q.q } : {}),
@@ -127,7 +128,7 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/hr/departments', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = writeBody.parse(request.body);
     const row = await hrDepartmentRepo.createManual(ctx, {
       name: body.name,
@@ -175,14 +176,14 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>('/hr/departments/:id', auth, async (request) => {
-    const ctx = requireHrInternal(request);
+    const ctx = requireHrRead(request);
     const row = await hrDepartmentRepo.getById(ctx, request.params.id);
     if (!row) throw new NotFoundError('Department not found');
     return toDto(row);
   });
 
   app.patch<{ Params: { id: string } }>('/hr/departments/:id', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const body = patchBody.parse(request.body);
     const patch = {
       ...(body.name !== undefined ? { name: body.name } : {}),
@@ -223,7 +224,7 @@ export async function hrDepartmentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<{ Params: { id: string } }>('/hr/departments/:id', auth, async (request) => {
-    const ctx = requireHrAdmin(request);
+    const ctx = requireHrManage(request);
     const ok = await hrDepartmentRepo.delete(ctx, request.params.id);
     if (!ok) throw new NotFoundError('Department not found');
     await auditFromContext(ctx, {

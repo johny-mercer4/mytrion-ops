@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserContext } from '../context/userContext';
-import { resolveAccessibleMytrions, canAccess, isAdmin, ruleAllows } from './resolveAccess';
+import { resolveAccessibleMytrions, canAccess, canManageHr, isAdmin, ruleAllows } from './resolveAccess';
 import { COMING_SOON_MYTRION_IDS, MYTRIONS } from './mytrions.config';
 
 function ctx(over: Partial<UserContext>): UserContext {
@@ -144,5 +144,35 @@ describe('DEFAULT_PROFILE_SEED mirror (fallback table only — server list wins 
     );
     expect(accessible).toEqual(['sales']);
     expect(homeMytrion).toBeNull(); // Landing's length===1 rule must not depend on home
+  });
+});
+
+describe('canManageHr — who may create/manage the HR directory', () => {
+  it('admins manage (all-department access)', () => {
+    expect(canManageHr(ctx({ allDepartmentAccess: true }))).toBe(true);
+  });
+
+  it('an Administrator profile manages even before server-resolved flags arrive', () => {
+    expect(canManageHr(ctx({ profile: 'Administrator' }))).toBe(true);
+  });
+
+  it('an HR Manager — HR granted in full mode — manages', () => {
+    expect(
+      canManageHr(ctx({ allDepartmentAccess: false, mytrionAccessModes: { hr: 'full' } })),
+    ).toBe(true);
+  });
+
+  it('a plain HR directory user (hr: read) may NOT manage', () => {
+    expect(
+      canManageHr(ctx({ allDepartmentAccess: false, mytrionAccessModes: { hr: 'read' } })),
+    ).toBe(false);
+  });
+
+  it('is fail-closed when no HR mode is present', () => {
+    // A legacy session or one that never carried modes must read as read-only, not accidentally elevate.
+    expect(canManageHr(ctx({ allDepartmentAccess: false }))).toBe(false);
+    expect(
+      canManageHr(ctx({ allDepartmentAccess: false, mytrionAccessModes: { billing: 'full' } })),
+    ).toBe(false);
   });
 });
