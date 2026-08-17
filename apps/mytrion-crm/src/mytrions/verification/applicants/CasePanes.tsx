@@ -254,6 +254,7 @@ export function IntakePane({
    * the server calls complete. This is the same rule Sales' own intake form follows.
    */
   const missing = new Set(c.intakeMissing ?? []);
+  const offForm = [...missing].filter((k) => !INTAKE_FIELDS.some((f) => f.k === k)).length;
 
   const submit = async (): Promise<void> => {
     const body: Record<string, unknown> = {};
@@ -308,13 +309,11 @@ export function IntakePane({
         })}
       </div>
 
-      {/* The gate can be waiting on things this form does not hold — a licence scan, a principal,
-          a bank connection. Naming the count keeps the pane from implying it shows everything. */}
-      {missing.size > 0 && [...missing].some((k) => !INTAKE_FIELDS.some((f) => f.k === k)) ? (
+      {/* The gate can be waiting on things this form does not hold — a licence scan, a principal, a
+          bank connection. The count keeps the pane from implying it shows everything. */}
+      {offForm > 0 ? (
         <p className="va-pane-body">
-          {[...missing].filter((k) => !INTAKE_FIELDS.some((f) => f.k === k)).length} outstanding
-          item(s) are not fields on this form — documents, principals or the bank connection. Sales
-          collects those on the application.
+          {offForm} more outstanding on the application — documents, principals or banking.
         </p>
       ) : null}
 
@@ -361,11 +360,9 @@ export function IntakePane({
               Discard
             </Button>
           ) : null}
-          <span className="va-save-hint">
-            {locked
-              ? 'Completeness is re-evaluated on save — a fix here can be what finally unlocks the case.'
-              : 'Corrections are audited against your Zoho user.'}
-          </span>
+          {locked ? (
+            <span className="va-save-hint">Saving re-checks completeness — this can unlock the case.</span>
+          ) : null}
         </div>
       )}
     </div>
@@ -416,11 +413,9 @@ export function RecordedPane({
         ))}
       </div>
       {phase.note ? <p className="va-pane-body">{phase.note}</p> : null}
-      <p className="va-pane-body">
-        {phase.status === 'passed'
-          ? 'This phase is signed off. Reopening it re-runs every phase after it, so the decision is never based on a check that was overwritten.'
-          : 'Nothing has been recorded against this phase yet. Work it from the checklist beside this pane, then sign it off.'}
-      </p>
+      {phase.status === 'passed' ? null : (
+        <p className="va-pane-body">Nothing recorded yet. Work the checklist, then sign off.</p>
+      )}
     </div>
   );
 }

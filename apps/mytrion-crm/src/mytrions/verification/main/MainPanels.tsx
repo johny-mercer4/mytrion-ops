@@ -74,7 +74,7 @@ export function NeedsTodayPanel({
           size="panel"
           icon="check_circle"
           title="Nothing waiting on you"
-          description={`Every open case is inside the ${DECISION_SLA_DAYS}-day SLA and none are in manager review. New intakes land here as Sales completes them.`}
+          description={`Nothing past the ${DECISION_SLA_DAYS}-day SLA and nothing in manager review.`}
         />
       ) : (
         <div>
@@ -236,7 +236,7 @@ export function DecisionsPanel({ rows }: { rows: readonly DecisionRow[] }) {
           size="panel"
           icon="gavel"
           title="No decisions yet"
-          description="Signed-off applications appear here with the limit that was granted. The first one lands as soon as a case reaches phase 10."
+          description="Sign-offs appear here with the limit granted."
         />
       ) : (
         <div>

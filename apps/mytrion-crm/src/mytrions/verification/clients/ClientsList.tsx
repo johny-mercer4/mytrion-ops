@@ -60,6 +60,18 @@ import './clients.css';
 
 const PAGE_SIZE = 24;
 
+/**
+ * Height reserved for the table while it loads.
+ *
+ * `DataTable`'s table-mode loading state is a single `TableMessageRow` — `skeletonRows` is card-mode
+ * only — so the panel stands ~90px tall and then leaps to a full page when the rows land. Measured:
+ * the queue jumped 645px and the roster 999px, both under the reader's cursor.
+ *
+ * The roster is 8,000+ carriers, so a page is always full and a full page is the exact reservation.
+ * Compact rows measure 45px, the header 34px.
+ */
+const LOADING_MIN_HEIGHT = `${PAGE_SIZE * 45 + 34}px`;
+
 type View = 'table' | 'cards';
 
 /** The four filters the design puts in the panel. `debtor` is a SCOPE tab here, not a filter. */
@@ -403,7 +415,7 @@ export function VerificationClients() {
           size="page"
           icon="apartment"
           title="No clients match"
-          description="Nothing in this activity window, payment type, debtor status or search. Clear the filters to see the full roster."
+          description="Clear the filters to see the full roster."
         />
       ) : view === 'cards' ? (
         <>
@@ -432,6 +444,7 @@ export function VerificationClients() {
             layout="fixed"
             density="compact"
             loading={firstLoad}
+            {...(firstLoad ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } } : {})}
             onRowActivate={open}
             rowState={(row) => ({ className: `vc-row-${rowEdge(row)}` })}
             leading={(row) => (
@@ -454,7 +467,7 @@ export function VerificationClients() {
                 setPage(1);
               },
             }}
-            empty="No clients match. Clear the filters to see the full roster."
+            empty="No clients match."
           />
           <RosterFoot
             shown={paged.length}

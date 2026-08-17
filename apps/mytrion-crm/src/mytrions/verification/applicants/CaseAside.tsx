@@ -152,7 +152,7 @@ export function CaseAside({
             ))}
           </div>
           <p className="va-aside-note" id="va-check-note">
-            These tick when the phase is signed off — they are the SOP's checks, not a saved list.
+            Ticks follow the phase — not a saved list.
           </p>
         </section>
       ) : null}
@@ -170,7 +170,7 @@ export function CaseAside({
             size="panel"
             icon="draft"
             title="Nothing attached"
-            description="Sales has not uploaded documents and Plaid is not connected. Ask for what this phase needs."
+            description="Nothing from Sales, and no Plaid connection."
           />
         ) : (
           <div className="va-docs">
@@ -245,9 +245,7 @@ export function CaseAside({
                 Cancel
               </Button>
             </div>
-            <p className="va-aside-note">
-              Asking parks the case on pending documents and returns it to this phase when they land.
-            </p>
+            <p className="va-aside-note">Parks the case until they land.</p>
           </div>
         ) : (
           <Button

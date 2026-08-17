@@ -173,7 +173,7 @@ export function VerificationInbox({
           size="page"
           icon="inbox"
           title="No verification inbox messages yet"
-          description="A new application notifies the verification queue owner the moment Sales creates it. Decisions, document requests and blacklist notices land here as they happen."
+          description="New applications, decisions and blacklist notices land here."
         />
       ) : (
         <>
@@ -225,7 +225,7 @@ export function VerificationInbox({
                 );
               })}
               {visible.length === 0 ? (
-                <li className="vi-none">Nothing in this filter. Try another tab.</li>
+                <li className="vi-none">Nothing in this filter.</li>
               ) : null}
             </ul>
 
@@ -234,8 +234,7 @@ export function VerificationInbox({
 
           {inbox.data?.pagination.hasMore ? (
             <p className="vi-window">
-              Showing the {messages.length} most recent of {inbox.data.pagination.total}. Older
-              messages stay on the record and are not shown here.
+              {messages.length} most recent of {inbox.data.pagination.total}.
             </p>
           ) : null}
         </>

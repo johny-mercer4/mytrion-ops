@@ -490,23 +490,6 @@
   color: var(--danger);
 }
 
-[data-mytrion='verification'] .vc-attach {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-[data-mytrion='verification'] .vc-attach-hint {
-  margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  color: var(--text-muted);
-  max-width: 52ch;
-}
-[data-mytrion='verification'] .vc-attach-hint strong {
-  font-weight: var(--fw-semibold);
-  color: var(--text-secondary);
-}
-
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 /* 900 — the density line. The scope tabs and the view switcher stop sharing a row. */
 @media (width < 900px) {

@@ -200,7 +200,7 @@ export function ClientDetailDialog({
                 <EmptyState
                   size="panel"
                   tone="error"
-                  title="Could not load this carrier's contact details"
+                  title="Could not load contact details"
                   description={detail.error}
                 />
               ) : contactFacts.length === 0 ? (
@@ -235,13 +235,7 @@ export function ClientDetailDialog({
             </section>
           </div>
         ) : (
-          <div className="vc-attach">
-            <p className="vc-attach-hint">
-              Files stay with carrier <strong className="num">#{client.carrierId}</strong>, so they
-              follow the account across re-verification.
-            </p>
-            <VerificationClientAttachments carrierId={client.carrierId} load={attachments} />
-          </div>
+          <VerificationClientAttachments carrierId={client.carrierId} load={attachments} />
         )}
       </div>
     </Dialog>

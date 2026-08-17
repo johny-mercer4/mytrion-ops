@@ -64,6 +64,19 @@ import './applicants.css';
 
 const PAGE_SIZE = 25;
 
+/**
+ * Height reserved for the table while it loads.
+ *
+ * `DataTable`'s table-mode loading state is a single `TableMessageRow` — `skeletonRows` is card-mode
+ * only — so the panel stands ~90px tall and then leaps to a full page when the rows land. Measured:
+ * the queue jumped 645px and the roster 999px, both under the reader's cursor.
+ *
+ * The reservation is sized to what this surface ACTUALLY holds rather than to its page size — the
+ * desk queue has sat in the teens and never fills a 25-row page. It is a FLOOR, not a cap: a bigger
+ * queue simply grows past it. Compact rows measure 45px, the header 34px.
+ */
+const LOADING_MIN_HEIGHT = `${16 * 45 + 34}px`;
+
 /** The tenant's card cutoff moves about once a year; the queue re-reads it hourly at most. */
 const STALE_POLICY = 60 * 60_000;
 
@@ -473,7 +486,7 @@ export function ApplicantsList({
           size="page"
           icon="inbox"
           title="No applications yet"
-          description="Applications appear here once a Sales agent completes intake. Until then the case is listed but locked — nothing is hidden from this queue."
+          description="Applications appear once Sales starts intake. Locked ones are listed too."
         />
       ) : (
         <div className="va-panel">
@@ -485,6 +498,9 @@ export function ApplicantsList({
             layout="fixed"
             density="compact"
             loading={cases.loading}
+            {...(cases.loading && !cases.data
+              ? { scrollerStyle: { minBlockSize: LOADING_MIN_HEIGHT } }
+              : {})}
             sort={{
               by: sortKey,
               direction: sortDir === 'asc' ? 'ascending' : 'descending',
@@ -511,8 +527,8 @@ export function ApplicantsList({
             )}
             empty={
               filtersActive(filters) || search.trim() !== ''
-                ? 'Nothing matches this search and these filters. Clear them to see the rest of the desk.'
-                : 'Nothing in this state right now. Try another tab.'
+                ? 'Nothing matches. Clear the filters.'
+                : 'Nothing in this state.'
             }
           />
 

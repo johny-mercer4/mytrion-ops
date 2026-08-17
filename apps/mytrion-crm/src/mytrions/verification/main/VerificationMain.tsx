@@ -358,12 +358,24 @@ function compactMoney(value: number): string {
   });
 }
 
-/** Mirrors the two panel rows so nothing shifts when the data lands. */
+/**
+ * Mirrors BOTH panel rows so nothing shifts when the data lands.
+ *
+ * The heights are MEASURED, not chosen — 441px is the ten-row phase pipeline, 203px the ageing and
+ * decisions row. The first cut rendered one 320px row for a page that has two, and the page grew
+ * 346px under the reader the moment the data arrived.
+ */
 function PanelSkeletons() {
   return (
-    <section className="vm-cols">
-      <Skeleton variant="rect" height="320px" radius="panel" />
-      <Skeleton variant="rect" height="320px" radius="panel" />
-    </section>
+    <>
+      <section className="vm-cols">
+        <Skeleton variant="rect" height="441px" radius="panel" />
+        <Skeleton variant="rect" height="441px" radius="panel" />
+      </section>
+      <section className="vm-cols vm-cols-even">
+        <Skeleton variant="rect" height="203px" radius="panel" />
+        <Skeleton variant="rect" height="203px" radius="panel" />
+      </section>
+    </>
   );
 }

@@ -274,8 +274,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
                 : 'Waiting on Sales — intake not started'}
             </span>
             <span className="va-banner-body">
-              The application is not complete, so it cannot be signed off. You can still read and
-              correct the details below — anything you fix here counts toward completing it.
+              Not decidable yet. You can still correct the application below.
             </span>
           </span>
         </div>
@@ -288,10 +287,7 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           </span>
           <span className="va-banner-text">
             <span className="va-banner-title">Decided — {statusText}</span>
-            <span className="va-banner-body">
-              This case is closed. Its file stays readable as the evidence for the decision, and can
-              no longer be edited.
-            </span>
+            <span className="va-banner-body">Read-only from here.</span>
           </span>
         </div>
       ) : null}
@@ -367,10 +363,10 @@ export function CaseView({ caseId, onBack }: { caseId: string; onBack: () => voi
           <span className="va-decide-note" data-tone={locked || closed ? 'muted' : 'plain'}>
             <Icon name={locked || closed ? 'lock' : 'shield'} size="sm" />
             {locked
-              ? 'Decisions are locked while intake is incomplete. Correct what you can above; Sales owns the rest.'
+              ? 'Locked while intake is incomplete.'
               : closed
-                ? 'This case is decided. Its phase history stays readable and cannot be changed.'
-                : `Signing off ${PHASE_SHORT[active.code] ?? 'this phase'} advances the case to phase ${Math.min(10, active.order + 1)}. Every action is written to the audit trail.`}
+                ? 'Decided.'
+                : `Passing advances to phase ${Math.min(10, active.order + 1)}.`}
           </span>
           <div className="va-decide-actions">
             <Button
